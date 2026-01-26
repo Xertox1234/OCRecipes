@@ -6,6 +6,7 @@ import {
   TextInput,
   ActivityIndicator,
   Image,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -22,6 +23,72 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
+
+interface DietaryProfile {
+  allergies?: { name: string; severity: string }[];
+  healthConditions?: string[];
+  dietType?: string | null;
+  primaryGoal?: string | null;
+  activityLevel?: string | null;
+  cuisinePreferences?: string[];
+  cookingSkillLevel?: string | null;
+  cookingTimeAvailable?: string | null;
+}
+
+const DIET_LABELS: Record<string, string> = {
+  omnivore: "Omnivore",
+  vegetarian: "Vegetarian",
+  vegan: "Vegan",
+  pescatarian: "Pescatarian",
+  keto: "Keto",
+  paleo: "Paleo",
+  mediterranean: "Mediterranean",
+  halal: "Halal",
+  kosher: "Kosher",
+  low_fodmap: "Low FODMAP",
+};
+
+const GOAL_LABELS: Record<string, string> = {
+  lose_weight: "Lose Weight",
+  gain_muscle: "Build Muscle",
+  maintain: "Maintain Weight",
+  eat_healthier: "Eat Healthier",
+  manage_condition: "Manage Health Condition",
+};
+
+const ACTIVITY_LABELS: Record<string, string> = {
+  sedentary: "Sedentary",
+  light: "Lightly Active",
+  moderate: "Moderately Active",
+  active: "Very Active",
+  athlete: "Athlete",
+};
+
+const SKILL_LABELS: Record<string, string> = {
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+};
+
+const TIME_LABELS: Record<string, string> = {
+  quick: "Quick (< 15 min)",
+  moderate: "Moderate (15-30 min)",
+  extended: "Extended (30-60 min)",
+  leisurely: "Leisurely (60+ min)",
+};
+
+const CONDITION_LABELS: Record<string, string> = {
+  diabetes_type1: "Type 1 Diabetes",
+  diabetes_type2: "Type 2 Diabetes",
+  heart_disease: "Heart Disease",
+  high_blood_pressure: "High Blood Pressure",
+  high_cholesterol: "High Cholesterol",
+  ibs: "IBS",
+  celiac: "Celiac Disease",
+  kidney_disease: "Kidney Disease",
+  pcos: "PCOS",
+  gerd: "GERD/Acid Reflux",
+};
 
 interface DailySummary {
   totalCalories: number;
@@ -108,6 +175,11 @@ export default function ProfileScreen() {
 
   const { data: todaySummary } = useQuery<DailySummary>({
     queryKey: ["/api/daily-summary"],
+    enabled: !!user,
+  });
+
+  const { data: dietaryProfile } = useQuery<DietaryProfile>({
+    queryKey: ["/api/user/dietary-profile"],
     enabled: !!user,
   });
 
@@ -301,6 +373,182 @@ export default function ProfileScreen() {
 
       <Animated.View entering={FadeInDown.delay(400).duration(400)}>
         <ThemedText type="h4" style={styles.sectionTitle}>
+          Dietary Preferences
+        </ThemedText>
+        <Card elevation={1} style={styles.dietaryCard}>
+          {dietaryProfile ? (
+            <>
+              {dietaryProfile.allergies && dietaryProfile.allergies.length > 0 ? (
+                <View style={styles.dietaryRow}>
+                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.error + "20" }]}>
+                    <Feather name="alert-triangle" size={16} color={Colors.light.error} />
+                  </View>
+                  <View style={styles.dietaryContent}>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      Allergies
+                    </ThemedText>
+                    <View style={styles.chipRow}>
+                      {dietaryProfile.allergies.map((a, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.chip,
+                            {
+                              backgroundColor:
+                                a.severity === "severe"
+                                  ? Colors.light.error + "20"
+                                  : a.severity === "moderate"
+                                  ? Colors.light.warning + "20"
+                                  : theme.backgroundSecondary,
+                            },
+                          ]}
+                        >
+                          <ThemedText
+                            type="small"
+                            style={{
+                              color:
+                                a.severity === "severe"
+                                  ? Colors.light.error
+                                  : a.severity === "moderate"
+                                  ? Colors.light.warning
+                                  : theme.text,
+                            }}
+                          >
+                            {a.name}
+                          </ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              ) : null}
+
+              {dietaryProfile.healthConditions && dietaryProfile.healthConditions.length > 0 ? (
+                <View style={styles.dietaryRow}>
+                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.info + "20" }]}>
+                    <Feather name="heart" size={16} color={Colors.light.info} />
+                  </View>
+                  <View style={styles.dietaryContent}>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      Health Conditions
+                    </ThemedText>
+                    <ThemedText type="body">
+                      {dietaryProfile.healthConditions
+                        .map(c => CONDITION_LABELS[c] || c)
+                        .join(", ")}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+
+              {dietaryProfile.dietType ? (
+                <View style={styles.dietaryRow}>
+                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.success + "20" }]}>
+                    <Feather name="target" size={16} color={Colors.light.success} />
+                  </View>
+                  <View style={styles.dietaryContent}>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      Diet Type
+                    </ThemedText>
+                    <ThemedText type="body">
+                      {DIET_LABELS[dietaryProfile.dietType] || dietaryProfile.dietType}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+
+              {dietaryProfile.primaryGoal ? (
+                <View style={styles.dietaryRow}>
+                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.calorieAccent + "20" }]}>
+                    <Feather name="flag" size={16} color={Colors.light.calorieAccent} />
+                  </View>
+                  <View style={styles.dietaryContent}>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      Goal
+                    </ThemedText>
+                    <ThemedText type="body">
+                      {GOAL_LABELS[dietaryProfile.primaryGoal] || dietaryProfile.primaryGoal}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+
+              {dietaryProfile.activityLevel ? (
+                <View style={styles.dietaryRow}>
+                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.proteinAccent + "20" }]}>
+                    <Feather name="activity" size={16} color={Colors.light.proteinAccent} />
+                  </View>
+                  <View style={styles.dietaryContent}>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      Activity Level
+                    </ThemedText>
+                    <ThemedText type="body">
+                      {ACTIVITY_LABELS[dietaryProfile.activityLevel] || dietaryProfile.activityLevel}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+
+              {dietaryProfile.cuisinePreferences && dietaryProfile.cuisinePreferences.length > 0 ? (
+                <View style={styles.dietaryRow}>
+                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.carbsAccent + "20" }]}>
+                    <Feather name="globe" size={16} color={Colors.light.carbsAccent} />
+                  </View>
+                  <View style={styles.dietaryContent}>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      Cuisine Preferences
+                    </ThemedText>
+                    <ThemedText type="body">
+                      {dietaryProfile.cuisinePreferences.join(", ")}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+
+              {dietaryProfile.cookingSkillLevel ? (
+                <View style={styles.dietaryRow}>
+                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.fatAccent + "20" }]}>
+                    <Feather name="award" size={16} color={Colors.light.fatAccent} />
+                  </View>
+                  <View style={styles.dietaryContent}>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      Cooking Skill
+                    </ThemedText>
+                    <ThemedText type="body">
+                      {SKILL_LABELS[dietaryProfile.cookingSkillLevel] || dietaryProfile.cookingSkillLevel}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+
+              {dietaryProfile.cookingTimeAvailable ? (
+                <View style={styles.dietaryRow}>
+                  <View style={[styles.dietaryIcon, { backgroundColor: theme.backgroundSecondary }]}>
+                    <Feather name="clock" size={16} color={theme.text} />
+                  </View>
+                  <View style={styles.dietaryContent}>
+                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                      Cooking Time
+                    </ThemedText>
+                    <ThemedText type="body">
+                      {TIME_LABELS[dietaryProfile.cookingTimeAvailable] || dietaryProfile.cookingTimeAvailable}
+                    </ThemedText>
+                  </View>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.emptyDietary}>
+              <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
+                No dietary preferences set
+              </ThemedText>
+            </View>
+          )}
+        </Card>
+      </Animated.View>
+
+      <Animated.View entering={FadeInDown.delay(500).duration(400)}>
+        <ThemedText type="h4" style={styles.sectionTitle}>
           Account
         </ThemedText>
         <Card elevation={1} style={styles.settingsCard}>
@@ -469,6 +717,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing["2xl"],
     borderRadius: BorderRadius.full,
     justifyContent: "center",
+    alignItems: "center",
+  },
+  dietaryCard: {
+    padding: Spacing.lg,
+    marginBottom: Spacing["2xl"],
+  },
+  dietaryRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: Spacing.lg,
+    gap: Spacing.md,
+  },
+  dietaryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: BorderRadius.xs,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dietaryContent: {
+    flex: 1,
+    gap: Spacing.xs,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+  },
+  chip: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  emptyDietary: {
+    padding: Spacing.xl,
     alignItems: "center",
   },
 });
