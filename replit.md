@@ -21,8 +21,16 @@ Preferred communication style: Simple, everyday language.
 
 **Navigation Structure**:
 - Root Stack: Login → Onboarding → Main (tabs)
-- Tab Navigator: History, Scan (camera), Profile
+- Onboarding Navigator: 6-step flow (Welcome, Allergies, HealthConditions, DietType, Goals, Preferences)
+- Tab Navigator: History, Scan (camera), Chat, Profile
 - Each tab has its own stack navigator for drill-down screens
+
+**Onboarding Flow** (client/navigation/OnboardingNavigator.tsx):
+- Collects comprehensive dietary information across 6 screens
+- Allergies include severity levels (mild/moderate/severe) for safety-critical warnings
+- All screens have skip option for users who prefer defaults
+- Data persisted via OnboardingContext and saved to server on completion
+- After completion, user.onboardingCompleted=true triggers navigation to main app
 
 **Key Design Patterns**:
 - Custom hooks for theming (`useTheme`), authentication (`useAuth`), and screen options
