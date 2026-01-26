@@ -6,6 +6,7 @@ interface User {
   username: string;
   displayName?: string;
   dailyCalorieGoal?: number;
+  onboardingCompleted?: boolean;
 }
 
 interface AuthContextType {

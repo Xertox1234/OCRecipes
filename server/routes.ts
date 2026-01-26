@@ -52,6 +52,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         username: user.username,
         displayName: user.displayName,
         dailyCalorieGoal: user.dailyCalorieGoal,
+        onboardingCompleted: user.onboardingCompleted,
       });
     } catch (error) {
       console.error("Registration error:", error);
@@ -86,6 +87,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         username: user.username,
         displayName: user.displayName,
         dailyCalorieGoal: user.dailyCalorieGoal,
+        onboardingCompleted: user.onboardingCompleted,
       });
     } catch (error) {
       console.error("Login error:", error);
@@ -118,6 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       username: user.username,
       displayName: user.displayName,
       dailyCalorieGoal: user.dailyCalorieGoal,
+      onboardingCompleted: user.onboardingCompleted,
     });
   });
 
@@ -142,10 +145,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
         username: user.username,
         displayName: user.displayName,
         dailyCalorieGoal: user.dailyCalorieGoal,
+        onboardingCompleted: user.onboardingCompleted,
       });
     } catch (error) {
       console.error("Profile update error:", error);
       res.status(500).json({ error: "Failed to update profile" });
+    }
+  });
+
+  app.get("/api/user/dietary-profile", async (req: Request, res: Response) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const profile = await storage.getUserProfile(req.session.userId);
+      res.json(profile || null);
+    } catch (error) {
+      console.error("Error fetching dietary profile:", error);
+      res.status(500).json({ error: "Failed to fetch dietary profile" });
+    }
+  });
+
+  app.post("/api/user/dietary-profile", async (req: Request, res: Response) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const {
+        allergies,
+        healthConditions,
+        dietType,
+        foodDislikes,
+        primaryGoal,
+        activityLevel,
+        householdSize,
+        cuisinePreferences,
+        cookingSkillLevel,
+        cookingTimeAvailable,
+      } = req.body;
+
+      const existingProfile = await storage.getUserProfile(req.session.userId);
+
+      let profile;
+      if (existingProfile) {
+        profile = await storage.updateUserProfile(req.session.userId, {
+          allergies,
+          healthConditions,
+          dietType,
+          foodDislikes,
+          primaryGoal,
+          activityLevel,
+          householdSize,
+          cuisinePreferences,
+          cookingSkillLevel,
+          cookingTimeAvailable,
+        });
+      } else {
+        profile = await storage.createUserProfile({
+          userId: req.session.userId,
+          allergies,
+          healthConditions,
+          dietType,
+          foodDislikes,
+          primaryGoal,
+          activityLevel,
+          householdSize,
+          cuisinePreferences,
+          cookingSkillLevel,
+          cookingTimeAvailable,
+        });
+      }
+
+      await storage.updateUser(req.session.userId, { onboardingCompleted: true });
+
+      res.status(201).json(profile);
+    } catch (error) {
+      console.error("Error saving dietary profile:", error);
+      res.status(500).json({ error: "Failed to save dietary profile" });
+    }
+  });
+
+  app.put("/api/user/dietary-profile", async (req: Request, res: Response) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const updates = req.body;
+      const profile = await storage.updateUserProfile(req.session.userId, updates);
+
+      if (!profile) {
+        return res.status(404).json({ error: "Profile not found" });
+      }
+
+      res.json(profile);
+    } catch (error) {
+      console.error("Error updating dietary profile:", error);
+      res.status(500).json({ error: "Failed to update dietary profile" });
     }
   });
 

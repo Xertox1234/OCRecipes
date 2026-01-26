@@ -5,9 +5,12 @@ import {
   type InsertScannedItem,
   type DailyLog,
   type InsertDailyLog,
+  type UserProfile,
+  type InsertUserProfile,
   users,
   scannedItems,
   dailyLogs,
+  userProfiles,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
@@ -17,6 +20,10 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+
+  getUserProfile(userId: string): Promise<UserProfile | undefined>;
+  createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
+  updateUserProfile(userId: string, updates: Partial<InsertUserProfile>): Promise<UserProfile | undefined>;
 
   getScannedItems(userId: string): Promise<ScannedItem[]>;
   getScannedItem(id: number): Promise<ScannedItem | undefined>;
@@ -65,6 +72,34 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return user || undefined;
+  }
+
+  async getUserProfile(userId: string): Promise<UserProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId));
+    return profile || undefined;
+  }
+
+  async createUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
+    const [newProfile] = await db
+      .insert(userProfiles)
+      .values(profile)
+      .returning();
+    return newProfile;
+  }
+
+  async updateUserProfile(
+    userId: string,
+    updates: Partial<InsertUserProfile>
+  ): Promise<UserProfile | undefined> {
+    const [profile] = await db
+      .update(userProfiles)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(userProfiles.userId, userId))
+      .returning();
+    return profile || undefined;
   }
 
   async getScannedItems(userId: string): Promise<ScannedItem[]> {
