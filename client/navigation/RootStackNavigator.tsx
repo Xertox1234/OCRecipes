@@ -5,6 +5,7 @@ import { ActivityIndicator, View, StyleSheet } from "react-native";
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import LoginScreen from "@/screens/LoginScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
+import OnboardingNavigator from "@/navigation/OnboardingNavigator";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -12,6 +13,7 @@ import { Colors } from "@/constants/theme";
 
 export type RootStackParamList = {
   Login: undefined;
+  Onboarding: undefined;
   Main: undefined;
   NutritionDetail: {
     barcode?: string;
@@ -24,7 +26,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootStackNavigator() {
   const screenOptions = useScreenOptions();
-  const { isAuthenticated, isLoading } = useAuthContext();
+  const { isAuthenticated, isLoading, user } = useAuthContext();
   const { theme } = useTheme();
 
   if (isLoading) {
@@ -35,9 +37,23 @@ export default function RootStackNavigator() {
     );
   }
 
+  const needsOnboarding = isAuthenticated && !user?.onboardingCompleted;
+
   return (
     <Stack.Navigator screenOptions={screenOptions}>
-      {isAuthenticated ? (
+      {!isAuthenticated ? (
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }}
+        />
+      ) : needsOnboarding ? (
+        <Stack.Screen
+          name="Onboarding"
+          component={OnboardingNavigator}
+          options={{ headerShown: false }}
+        />
+      ) : (
         <>
           <Stack.Screen
             name="Main"
@@ -53,12 +69,6 @@ export default function RootStackNavigator() {
             }}
           />
         </>
-      ) : (
-        <Stack.Screen
-          name="Login"
-          component={LoginScreen}
-          options={{ headerShown: false }}
-        />
       )}
     </Stack.Navigator>
   );
