@@ -75,7 +75,7 @@ export default function PreferencesScreen() {
         <View style={styles.header}>
           <View style={[styles.stepIndicator, { backgroundColor: Colors.light.success + "15" }]}>
             <ThemedText type="small" style={{ color: Colors.light.success, fontWeight: "600" }}>
-              Step 5 of 5
+              Step 5 of 6
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>

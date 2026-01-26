@@ -51,7 +51,7 @@ export default function GoalsScreen() {
         <View style={styles.header}>
           <View style={[styles.stepIndicator, { backgroundColor: Colors.light.success + "15" }]}>
             <ThemedText type="small" style={{ color: Colors.light.success, fontWeight: "600" }}>
-              Step 4 of 5
+              Step 4 of 6
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>

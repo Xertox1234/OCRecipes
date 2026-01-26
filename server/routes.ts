@@ -130,11 +130,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      const { displayName, dailyCalorieGoal } = req.body;
-      const user = await storage.updateUser(req.session.userId, {
-        displayName,
-        dailyCalorieGoal,
-      });
+      const { displayName, dailyCalorieGoal, onboardingCompleted } = req.body;
+      const updates: Record<string, unknown> = {};
+      if (displayName !== undefined) updates.displayName = displayName;
+      if (dailyCalorieGoal !== undefined) updates.dailyCalorieGoal = dailyCalorieGoal;
+      if (onboardingCompleted !== undefined) updates.onboardingCompleted = onboardingCompleted;
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ error: "No valid fields to update" });
+      }
+
+      const user = await storage.updateUser(req.session.userId, updates);
 
       if (!user) {
         return res.status(404).json({ error: "User not found" });

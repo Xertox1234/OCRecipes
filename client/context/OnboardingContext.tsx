@@ -51,8 +51,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<OnboardingData>(defaultData);
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { checkAuth } = useAuthContext();
-  const totalSteps = 5;
+  const { checkAuth, updateUser } = useAuthContext();
+  const totalSteps = 6;
 
   const updateData = (updates: Partial<OnboardingData>) => {
     setData((prev) => ({ ...prev, ...updates }));
@@ -74,7 +74,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setIsSubmitting(true);
     try {
       await apiRequest("POST", "/api/user/dietary-profile", defaultData);
-      await checkAuth();
+      await updateUser({ onboardingCompleted: true });
     } finally {
       setIsSubmitting(false);
     }
@@ -84,7 +84,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setIsSubmitting(true);
     try {
       await apiRequest("POST", "/api/user/dietary-profile", data);
-      await checkAuth();
+      await updateUser({ onboardingCompleted: true });
     } finally {
       setIsSubmitting(false);
     }
