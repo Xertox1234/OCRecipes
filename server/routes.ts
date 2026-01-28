@@ -2,7 +2,13 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import bcrypt from "bcrypt";
 import session from "express-session";
+import OpenAI from "openai";
 import { storage } from "./storage";
+
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
 
 declare module "express-session" {
   interface SessionData {
@@ -349,6 +355,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching daily summary:", error);
       res.status(500).json({ error: "Failed to fetch summary" });
+    }
+  });
+
+  app.post("/api/items/:id/suggestions", async (req: Request, res: Response) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    try {
+      const itemId = parseInt(req.params.id);
+      const item = await storage.getScannedItem(itemId);
+
+      if (!item) {
+        return res.status(404).json({ error: "Item not found" });
+      }
+
+      const userProfile = await storage.getUserProfile(req.session.userId);
+
+      let dietaryContext = "";
+      if (userProfile) {
+        if (userProfile.allergies && Array.isArray(userProfile.allergies) && userProfile.allergies.length > 0) {
+          dietaryContext += `User allergies (avoid these ingredients): ${(userProfile.allergies as any[]).map(a => a.name).join(", ")}. `;
+        }
+        if (userProfile.dietType) {
+          dietaryContext += `Diet: ${userProfile.dietType}. `;
+        }
+        if (userProfile.cookingSkillLevel) {
+          dietaryContext += `Cooking skill: ${userProfile.cookingSkillLevel}. `;
+        }
+        if (userProfile.cookingTimeAvailable) {
+          dietaryContext += `Time: ${userProfile.cookingTimeAvailable}. `;
+        }
+      }
+
+      const prompt = `Given this food item: "${item.productName}"${item.brandName ? ` by ${item.brandName}` : ""}, generate creative suggestions.
+
+${dietaryContext ? `User preferences: ${dietaryContext}` : ""}
+
+Generate exactly 4 suggestions in this JSON format:
+{
+  "suggestions": [
+    {
+      "type": "recipe",
+      "title": "Recipe name",
+      "description": "Brief 1-2 sentence description of how to use this ingredient",
+      "difficulty": "Easy/Medium/Hard",
+      "timeEstimate": "15 min"
+    },
+    {
+      "type": "recipe",
+      "title": "Another recipe",
+      "description": "Description",
+      "difficulty": "Easy",
+      "timeEstimate": "30 min"
+    },
+    {
+      "type": "craft",
+      "title": "Fun kid activity with food packaging or theme",
+      "description": "Brief description of a creative activity for kids",
+      "timeEstimate": "20 min"
+    },
+    {
+      "type": "pairing",
+      "title": "What goes well with this",
+      "description": "Complementary foods or drinks that pair nicely"
+    }
+  ]
+}
+
+Keep descriptions concise. Make recipes practical and kid activities fun and safe. Return only valid JSON.`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful culinary and crafts assistant. Always respond with valid JSON only, no markdown formatting.",
+          },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 1024,
+      });
+
+      const responseText = completion.choices[0]?.message?.content || "{}";
+      const suggestions = JSON.parse(responseText);
+
+      res.json(suggestions);
+    } catch (error) {
+      console.error("Error generating suggestions:", error);
+      res.status(500).json({ error: "Failed to generate suggestions" });
     }
   });
 
