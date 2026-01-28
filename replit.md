@@ -32,6 +32,12 @@ Preferred communication style: Simple, everyday language.
 - Data persisted via OnboardingContext and saved to server on completion
 - After completion, user.onboardingCompleted=true triggers navigation to main app
 
+**Item Detail Screen** (client/screens/ItemDetailScreen.tsx):
+- Displays full nutrition facts for a scanned food item
+- Auto-fetches AI-generated suggestions on load
+- Suggestions include: 2 recipes, 1 kid-friendly craft activity, 1 food pairing idea
+- AI suggestions respect user's dietary profile (allergies, diet type, cooking skill)
+
 **Key Design Patterns**:
 - Custom hooks for theming (`useTheme`), authentication (`useAuth`), and screen options
 - Reanimated for smooth animations
