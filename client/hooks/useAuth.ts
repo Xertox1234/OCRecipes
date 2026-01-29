@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { tokenStorage } from "@/lib/token-storage";
 
 interface User {
   id: string;
@@ -27,6 +28,12 @@ export function useAuth() {
 
   const checkAuth = useCallback(async () => {
     try {
+      const token = await tokenStorage.get();
+      if (!token) {
+        setState({ user: null, isLoading: false, isAuthenticated: false });
+        return;
+      }
+
       const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
       if (stored) {
         try {
@@ -35,15 +42,27 @@ export function useAuth() {
           });
           if (response.ok) {
             const freshUser = await response.json();
-            await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(freshUser));
-            setState({ user: freshUser, isLoading: false, isAuthenticated: true });
+            await AsyncStorage.setItem(
+              AUTH_STORAGE_KEY,
+              JSON.stringify(freshUser),
+            );
+            setState({
+              user: freshUser,
+              isLoading: false,
+              isAuthenticated: true,
+            });
           } else {
+            await tokenStorage.clear();
             await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
             setState({ user: null, isLoading: false, isAuthenticated: false });
           }
         } catch {
           const localUser = JSON.parse(stored);
-          setState({ user: localUser, isLoading: false, isAuthenticated: true });
+          setState({
+            user: localUser,
+            isLoading: false,
+            isAuthenticated: true,
+          });
         }
       } else {
         setState({ user: null, isLoading: false, isAuthenticated: false });
@@ -62,7 +81,8 @@ export function useAuth() {
       username,
       password,
     });
-    const user = await response.json();
+    const { user, token } = await response.json();
+    await tokenStorage.set(token);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     setState({ user, isLoading: false, isAuthenticated: true });
     return user;
@@ -73,7 +93,8 @@ export function useAuth() {
       username,
       password,
     });
-    const user = await response.json();
+    const { user, token } = await response.json();
+    await tokenStorage.set(token);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     setState({ user, isLoading: false, isAuthenticated: true });
     return user;
@@ -82,20 +103,23 @@ export function useAuth() {
   const logout = useCallback(async () => {
     try {
       await apiRequest("POST", "/api/auth/logout", {});
-    } catch {
-    }
+    } catch {}
+    await tokenStorage.clear();
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 
-  const updateUser = useCallback(async (updates: Partial<User>) => {
-    if (!state.user) return;
-    const response = await apiRequest("PUT", "/api/auth/profile", updates);
-    const updatedUser = await response.json();
-    await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
-    setState((prev) => ({ ...prev, user: updatedUser }));
-    return updatedUser;
-  }, [state.user]);
+  const updateUser = useCallback(
+    async (updates: Partial<User>) => {
+      if (!state.user) return;
+      const response = await apiRequest("PUT", "/api/auth/profile", updates);
+      const updatedUser = await response.json();
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updatedUser));
+      setState((prev) => ({ ...prev, user: updatedUser }));
+      return updatedUser;
+    },
+    [state.user],
+  );
 
   return {
     ...state,
