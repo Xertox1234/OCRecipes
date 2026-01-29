@@ -260,9 +260,7 @@ export default function ScanScreen() {
                 { backgroundColor: Colors.light.success },
               ]}
             >
-              <View style={styles.shutterInner}>
-                <Feather name="camera" size={32} color="#FFFFFF" />
-              </View>
+              <View style={styles.shutterInner} />
             </Pressable>
           </AnimatedView>
 
@@ -407,8 +405,10 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   shutterInner: {
-    justifyContent: "center",
-    alignItems: "center",
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#FFFFFF",
   },
   spacer: {
     width: 56,
