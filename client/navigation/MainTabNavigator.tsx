@@ -71,6 +71,7 @@ export default function MainTabNavigator() {
         component={ScanStackNavigator}
         options={{
           title: "Scan",
+          tabBarStyle: { display: "none" },
           tabBarIcon: ({ color, focused }) => (
             <View
               style={[
