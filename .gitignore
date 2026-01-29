@@ -30,8 +30,12 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# Environment and secrets - SECURITY CRITICAL
+.env
+.env.*
 .env*.local
+*.secret
+*.secrets
 
 # typescript
 *.tsbuildinfo
@@ -41,3 +45,21 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Replit specific
+.replit
+replit.nix
+.config/
+.cache/
+.local/
+.upm/
+.breakpoints
+replit_zip_error_log.txt
+
+# Attached assets (user uploads during development)
+attached_assets/
+
+# Logs
+*.log
+logs/
+/tmp/
