@@ -19,7 +19,23 @@ import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
-import { ScannedItemResponse } from "@shared/types/models";
+
+// API response type (dates come as strings over JSON)
+type ScannedItemResponse = {
+  id: number;
+  productName: string;
+  brandName?: string | null;
+  servingSize?: string | null;
+  calories?: string | null;
+  protein?: string | null;
+  carbs?: string | null;
+  fat?: string | null;
+  fiber?: string | null;
+  sugar?: string | null;
+  sodium?: string | null;
+  imageUrl?: string | null;
+  scannedAt: string;
+};
 
 type ItemDetailRouteProp = RouteProp<
   { ItemDetail: { itemId: number } },

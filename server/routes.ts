@@ -5,13 +5,18 @@ import OpenAI from "openai";
 import rateLimit from "express-rate-limit";
 import { z, ZodError } from "zod";
 import { storage } from "./storage";
+import { db } from "./db";
 import { requireAuth, generateToken } from "./middleware/auth";
 import {
   insertUserProfileSchema,
   insertScannedItemSchema,
-  insertDailyLogSchema,
   allergySchema,
+  scannedItems,
+  dailyLogs,
+  userProfiles,
+  users,
 } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -70,32 +75,11 @@ const userProfileInputSchema = insertUserProfileSchema.extend({
   cookingTimeAvailable: z.string().max(50).optional().nullable(),
 });
 
-// Helper to parse numeric ID parameters
-function parseIdParam(id: string | string[]): number {
-  const idStr = Array.isArray(id) ? id[0] : id;
-  const parsed = parseInt(idStr, 10);
-  if (isNaN(parsed) || parsed <= 0) {
-    throw new ZodError([
-      {
-        code: "custom",
-        path: ["id"],
-        message: "ID must be a positive integer",
-      },
-    ]);
-  }
-  return parsed;
-}
-
-// Helper to format Zod errors for API response
-function formatZodError(error: ZodError): { error: string; details: z.ZodIssue[] } {
-  const messages = error.errors.map((e) => {
-    const path = e.path.join(".");
-    return path ? `${path}: ${e.message}` : e.message;
-  });
-  return {
-    error: messages.join("; "),
-    details: error.errors,
-  };
+// Format Zod validation errors as a simple string
+function formatZodError(error: ZodError): string {
+  return error.errors
+    .map((e) => (e.path.length ? `${e.path.join(".")}: ${e.message}` : e.message))
+    .join("; ");
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -128,7 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       if (error instanceof ZodError) {
-        return res.status(400).json(formatZodError(error));
+        return res.status(400).json({ error: formatZodError(error) });
       }
       console.error("Registration error:", error);
       res.status(500).json({ error: "Failed to create account" });
@@ -225,7 +209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json(formatZodError(error));
+          return res.status(400).json({ error: formatZodError(error) });
         }
         console.error("Profile update error:", error);
         res.status(500).json({ error: "Failed to update profile" });
@@ -257,27 +241,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId: req.userId!,
         });
 
-        // Use transaction to ensure profile creation/update and onboarding flag are atomic
-        const { profile } = await storage.createOrUpdateProfileWithOnboarding(
-          req.userId!,
-          {
-            allergies: validated.allergies,
-            healthConditions: validated.healthConditions,
-            dietType: validated.dietType,
-            foodDislikes: validated.foodDislikes,
-            primaryGoal: validated.primaryGoal,
-            activityLevel: validated.activityLevel,
-            householdSize: validated.householdSize,
-            cuisinePreferences: validated.cuisinePreferences,
-            cookingSkillLevel: validated.cookingSkillLevel,
-            cookingTimeAvailable: validated.cookingTimeAvailable,
-          },
-        );
+        const profileData = {
+          allergies: validated.allergies,
+          healthConditions: validated.healthConditions,
+          dietType: validated.dietType,
+          foodDislikes: validated.foodDislikes,
+          primaryGoal: validated.primaryGoal,
+          activityLevel: validated.activityLevel,
+          householdSize: validated.householdSize,
+          cuisinePreferences: validated.cuisinePreferences,
+          cookingSkillLevel: validated.cookingSkillLevel,
+          cookingTimeAvailable: validated.cookingTimeAvailable,
+        };
+
+        // Transaction: create/update profile + mark onboarding complete
+        const profile = await db.transaction(async (tx) => {
+          const [existing] = await tx
+            .select()
+            .from(userProfiles)
+            .where(eq(userProfiles.userId, req.userId!));
+
+          let result;
+          if (existing) {
+            [result] = await tx
+              .update(userProfiles)
+              .set({ ...profileData, updatedAt: new Date() })
+              .where(eq(userProfiles.userId, req.userId!))
+              .returning();
+          } else {
+            [result] = await tx
+              .insert(userProfiles)
+              .values({ ...profileData, userId: req.userId! })
+              .returning();
+          }
+
+          await tx
+            .update(users)
+            .set({ onboardingCompleted: true })
+            .where(eq(users.id, req.userId!));
+
+          return result;
+        });
 
         res.status(201).json(profile);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json(formatZodError(error));
+          return res.status(400).json({ error: formatZodError(error) });
         }
         console.error("Error saving dietary profile:", error);
         res.status(500).json({ error: "Failed to save dietary profile" });
@@ -303,7 +312,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(profile);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json(formatZodError(error));
+          return res.status(400).json({ error: formatZodError(error) });
         }
         console.error("Error updating dietary profile:", error);
         res.status(500).json({ error: "Failed to update dietary profile" });
@@ -333,7 +342,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/scanned-items/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseIdParam(req.params.id);
+      const id = parseInt(req.params.id as string, 10);
+      if (isNaN(id) || id <= 0) {
+        return res.status(400).json({ error: "Invalid item ID" });
+      }
 
       const item = await storage.getScannedItem(id);
 
@@ -343,9 +355,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json(item);
     } catch (error) {
-      if (error instanceof ZodError) {
-        return res.status(400).json(formatZodError(error));
-      }
       console.error("Error fetching scanned item:", error);
       res.status(500).json({ error: "Failed to fetch item" });
     }
@@ -397,34 +406,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId: req.userId!,
         });
 
-        // Use transaction to ensure scanned item and daily log are created atomically
-        const { item } = await storage.createScannedItemWithLog(
-          {
-            userId: validated.userId,
-            barcode: validated.barcode,
-            productName: validated.productName,
-            brandName: validated.brandName,
-            servingSize: validated.servingSize,
-            calories: validated.calories,
-            protein: validated.protein,
-            carbs: validated.carbs,
-            fat: validated.fat,
-            fiber: validated.fiber,
-            sugar: validated.sugar,
-            sodium: validated.sodium,
-            imageUrl: validated.imageUrl,
-          },
-          {
+        // Transaction: create scanned item + daily log together
+        const item = await db.transaction(async (tx) => {
+          const [scannedItem] = await tx
+            .insert(scannedItems)
+            .values({
+              userId: validated.userId,
+              barcode: validated.barcode,
+              productName: validated.productName,
+              brandName: validated.brandName,
+              servingSize: validated.servingSize,
+              calories: validated.calories,
+              protein: validated.protein,
+              carbs: validated.carbs,
+              fat: validated.fat,
+              fiber: validated.fiber,
+              sugar: validated.sugar,
+              sodium: validated.sodium,
+              imageUrl: validated.imageUrl,
+            })
+            .returning();
+
+          await tx.insert(dailyLogs).values({
             userId: req.userId!,
+            scannedItemId: scannedItem.id,
             servings: "1",
             mealType: null,
-          },
-        );
+          });
+
+          return scannedItem;
+        });
 
         res.status(201).json(item);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json(formatZodError(error));
+          return res.status(400).json({ error: formatZodError(error) });
         }
         console.error("Error creating scanned item:", error);
         res.status(500).json({ error: "Failed to save item" });
@@ -454,7 +470,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const itemId = parseIdParam(req.params.id);
+        const itemId = parseInt(req.params.id as string, 10);
+        if (isNaN(itemId) || itemId <= 0) {
+          return res.status(400).json({ error: "Invalid item ID" });
+        }
+
         const item = await storage.getScannedItem(itemId);
 
         if (!item) {
@@ -539,9 +559,6 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
 
         res.json(suggestions);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return res.status(400).json(formatZodError(error));
-        }
         console.error("Error generating suggestions:", error);
         res.status(500).json({ error: "Failed to generate suggestions" });
       }

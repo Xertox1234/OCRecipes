@@ -14,13 +14,6 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
-import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import type * as schema from "@shared/schema";
-
-// Transaction type for Drizzle with our schema
-type Transaction = Parameters<
-  Parameters<NodePgDatabase<typeof schema>["transaction"]>[0]
->[0];
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -55,17 +48,6 @@ export interface IStorage {
     totalFat: number;
     itemCount: number;
   }>;
-
-  // Transaction-based operations for multi-table consistency
-  createScannedItemWithLog(
-    item: InsertScannedItem,
-    log: Omit<InsertDailyLog, "scannedItemId">,
-  ): Promise<{ item: ScannedItem; log: DailyLog }>;
-
-  createOrUpdateProfileWithOnboarding(
-    userId: string,
-    profile: Omit<InsertUserProfile, "userId">,
-  ): Promise<{ profile: UserProfile; user: User }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -230,89 +212,6 @@ export class DatabaseStorage implements IStorage {
         itemCount: 0,
       }
     );
-  }
-
-  /**
-   * Execute a function within a database transaction.
-   * If the function throws, the transaction is rolled back automatically.
-   */
-  async withTransaction<T>(fn: (tx: Transaction) => Promise<T>): Promise<T> {
-    return db.transaction(fn);
-  }
-
-  /**
-   * Create a scanned item and its corresponding daily log entry in a single transaction.
-   * Ensures both records are created together or neither is created.
-   */
-  async createScannedItemWithLog(
-    item: InsertScannedItem,
-    log: Omit<InsertDailyLog, "scannedItemId">,
-  ): Promise<{ item: ScannedItem; log: DailyLog }> {
-    return this.withTransaction(async (tx) => {
-      const [scannedItem] = await tx
-        .insert(scannedItems)
-        .values(item)
-        .returning();
-
-      const [dailyLog] = await tx
-        .insert(dailyLogs)
-        .values({
-          ...log,
-          scannedItemId: scannedItem.id,
-        })
-        .returning();
-
-      return { item: scannedItem, log: dailyLog };
-    });
-  }
-
-  /**
-   * Create or update a user profile and mark onboarding as completed in a single transaction.
-   * Ensures the profile and user update are consistent.
-   */
-  async createOrUpdateProfileWithOnboarding(
-    userId: string,
-    profileData: Omit<InsertUserProfile, "userId">,
-  ): Promise<{ profile: UserProfile; user: User }> {
-    return this.withTransaction(async (tx) => {
-      // Check if profile exists
-      const [existingProfile] = await tx
-        .select()
-        .from(userProfiles)
-        .where(eq(userProfiles.userId, userId));
-
-      let profile: UserProfile;
-
-      if (existingProfile) {
-        // Update existing profile
-        const [updatedProfile] = await tx
-          .update(userProfiles)
-          .set({ ...profileData, updatedAt: new Date() })
-          .where(eq(userProfiles.userId, userId))
-          .returning();
-        profile = updatedProfile;
-      } else {
-        // Create new profile
-        const [newProfile] = await tx
-          .insert(userProfiles)
-          .values({ ...profileData, userId })
-          .returning();
-        profile = newProfile;
-      }
-
-      // Update user's onboarding status
-      const [user] = await tx
-        .update(users)
-        .set({ onboardingCompleted: true })
-        .where(eq(users.id, userId))
-        .returning();
-
-      if (!user) {
-        throw new Error("User not found");
-      }
-
-      return { profile, user };
-    });
   }
 }
 

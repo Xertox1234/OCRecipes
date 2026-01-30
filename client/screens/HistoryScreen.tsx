@@ -27,13 +27,24 @@ import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
-import {
-  ScannedItemResponse,
-  PaginatedScannedItemsResponse,
-} from "@shared/types/models";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import type { HistoryScreenNavigationProp } from "@/types/navigation";
+
+// API response types (dates come as strings over JSON)
+type ScannedItemResponse = {
+  id: number;
+  productName: string;
+  brandName?: string | null;
+  calories?: string | null;
+  imageUrl?: string | null;
+  scannedAt: string;
+};
+
+type PaginatedResponse = {
+  items: ScannedItemResponse[];
+  total: number;
+};
 
 const PAGE_SIZE = 50;
 
@@ -250,19 +261,14 @@ export default function HistoryScreen() {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteQuery<
-    PaginatedScannedItemsResponse,
-    Error,
-    { pages: PaginatedScannedItemsResponse[]; pageParams: number[] },
-    string[],
-    number
-  >({
+  } = useInfiniteQuery({
     queryKey: ["/api/scanned-items"],
-    queryFn: async ({ pageParam }) => {
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }): Promise<PaginatedResponse> => {
       const baseUrl = getApiUrl();
       const url = new URL("/api/scanned-items", baseUrl);
       url.searchParams.set("limit", PAGE_SIZE.toString());
-      url.searchParams.set("offset", pageParam.toString());
+      url.searchParams.set("offset", String(pageParam));
 
       const headers: Record<string, string> = {};
       const token = await tokenStorage.get();
@@ -277,7 +283,6 @@ export default function HistoryScreen() {
       }
       return res.json();
     },
-    initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       const loadedCount = allPages.reduce(
         (sum, page) => sum + page.items.length,
