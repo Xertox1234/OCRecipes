@@ -10,16 +10,66 @@ import { useOnboarding } from "@/context/OnboardingContext";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
 
 const DIET_TYPES = [
-  { id: "omnivore", name: "Omnivore", description: "I eat everything", icon: "globe" },
-  { id: "vegetarian", name: "Vegetarian", description: "No meat or fish", icon: "feather" },
-  { id: "vegan", name: "Vegan", description: "No animal products", icon: "sun" },
-  { id: "pescatarian", name: "Pescatarian", description: "Vegetarian + fish", icon: "anchor" },
-  { id: "keto", name: "Keto", description: "Very low carb, high fat", icon: "zap" },
-  { id: "paleo", name: "Paleo", description: "Whole foods, no grains", icon: "leaf" },
-  { id: "mediterranean", name: "Mediterranean", description: "Plant-based, healthy fats", icon: "droplet" },
-  { id: "halal", name: "Halal", description: "Islamic dietary laws", icon: "moon" },
-  { id: "kosher", name: "Kosher", description: "Jewish dietary laws", icon: "star" },
-  { id: "low_fodmap", name: "Low FODMAP", description: "For digestive health", icon: "activity" },
+  {
+    id: "omnivore",
+    name: "Omnivore",
+    description: "I eat everything",
+    icon: "globe",
+  },
+  {
+    id: "vegetarian",
+    name: "Vegetarian",
+    description: "No meat or fish",
+    icon: "feather",
+  },
+  {
+    id: "vegan",
+    name: "Vegan",
+    description: "No animal products",
+    icon: "sun",
+  },
+  {
+    id: "pescatarian",
+    name: "Pescatarian",
+    description: "Vegetarian + fish",
+    icon: "anchor",
+  },
+  {
+    id: "keto",
+    name: "Keto",
+    description: "Very low carb, high fat",
+    icon: "zap",
+  },
+  {
+    id: "paleo",
+    name: "Paleo",
+    description: "Whole foods, no grains",
+    icon: "leaf",
+  },
+  {
+    id: "mediterranean",
+    name: "Mediterranean",
+    description: "Plant-based, healthy fats",
+    icon: "droplet",
+  },
+  {
+    id: "halal",
+    name: "Halal",
+    description: "Islamic dietary laws",
+    icon: "moon",
+  },
+  {
+    id: "kosher",
+    name: "Kosher",
+    description: "Jewish dietary laws",
+    icon: "star",
+  },
+  {
+    id: "low_fodmap",
+    name: "Low FODMAP",
+    description: "For digestive health",
+    icon: "activity",
+  },
 ];
 
 export default function DietTypeScreen() {
@@ -42,16 +92,28 @@ export default function DietTypeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View style={[styles.stepIndicator, { backgroundColor: Colors.light.success + "15" }]}>
-            <ThemedText type="small" style={{ color: Colors.light.success, fontWeight: "600" }}>
+          <View
+            style={[
+              styles.stepIndicator,
+              { backgroundColor: Colors.light.success + "15" },
+            ]}
+          >
+            <ThemedText
+              type="small"
+              style={{ color: Colors.light.success, fontWeight: "600" }}
+            >
               Step 3 of 6
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>
             What's Your Diet?
           </ThemedText>
-          <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Choose your primary eating style. We'll use this to suggest compatible recipes.
+          <ThemedText
+            type="body"
+            style={[styles.subtitle, { color: theme.textSecondary }]}
+          >
+            Choose your primary eating style. We'll use this to suggest
+            compatible recipes.
           </ThemedText>
         </View>
 
@@ -65,22 +127,44 @@ export default function DietTypeScreen() {
                 style={[
                   styles.dietItem,
                   {
-                    backgroundColor: selected ? Colors.light.success + "15" : theme.backgroundDefault,
+                    backgroundColor: selected
+                      ? Colors.light.success + "15"
+                      : theme.backgroundDefault,
                     borderColor: selected ? Colors.light.success : theme.border,
                   },
                 ]}
               >
-                <View style={[styles.dietIcon, { backgroundColor: selected ? Colors.light.success + "20" : theme.backgroundSecondary }]}>
+                <View
+                  style={[
+                    styles.dietIcon,
+                    {
+                      backgroundColor: selected
+                        ? Colors.light.success + "20"
+                        : theme.backgroundSecondary,
+                    },
+                  ]}
+                >
                   <Feather
                     name={diet.icon as keyof typeof Feather.glyphMap}
                     size={24}
-                    color={selected ? Colors.light.success : theme.textSecondary}
+                    color={
+                      selected ? Colors.light.success : theme.textSecondary
+                    }
                   />
                 </View>
-                <ThemedText type="body" style={{ fontWeight: selected ? "600" : "400", textAlign: "center" }}>
+                <ThemedText
+                  type="body"
+                  style={{
+                    fontWeight: selected ? "600" : "400",
+                    textAlign: "center",
+                  }}
+                >
                   {diet.name}
                 </ThemedText>
-                <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "center" }}>
+                <ThemedText
+                  type="caption"
+                  style={{ color: theme.textSecondary, textAlign: "center" }}
+                >
                   {diet.description}
                 </ThemedText>
                 {selected ? (
@@ -94,7 +178,9 @@ export default function DietTypeScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}>
+      <View
+        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
+      >
         <View style={styles.footerButtons}>
           <Pressable onPress={prevStep} style={styles.backButton}>
             <Feather name="arrow-left" size={24} color={theme.text} />

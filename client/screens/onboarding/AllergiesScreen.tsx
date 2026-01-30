@@ -46,7 +46,9 @@ export default function AllergiesScreen() {
 
   const setSeverity = (severity: "mild" | "moderate" | "severe") => {
     if (selectedAllergen) {
-      const filtered = data.allergies.filter((a) => a.name !== selectedAllergen);
+      const filtered = data.allergies.filter(
+        (a) => a.name !== selectedAllergen,
+      );
       updateData({
         allergies: [...filtered, { name: selectedAllergen, severity }],
       });
@@ -73,16 +75,28 @@ export default function AllergiesScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View style={[styles.stepIndicator, { backgroundColor: Colors.light.success + "15" }]}>
-            <ThemedText type="small" style={{ color: Colors.light.success, fontWeight: "600" }}>
+          <View
+            style={[
+              styles.stepIndicator,
+              { backgroundColor: Colors.light.success + "15" },
+            ]}
+          >
+            <ThemedText
+              type="small"
+              style={{ color: Colors.light.success, fontWeight: "600" }}
+            >
               Step 1 of 6
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>
             Any Food Allergies?
           </ThemedText>
-          <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Select any allergens and we'll help you avoid them. This is important for your safety.
+          <ThemedText
+            type="body"
+            style={[styles.subtitle, { color: theme.textSecondary }]}
+          >
+            Select any allergens and we'll help you avoid them. This is
+            important for your safety.
           </ThemedText>
         </View>
 
@@ -97,12 +111,17 @@ export default function AllergiesScreen() {
                 style={[
                   styles.allergenItem,
                   {
-                    backgroundColor: selected ? Colors.light.success + "15" : theme.backgroundDefault,
+                    backgroundColor: selected
+                      ? Colors.light.success + "15"
+                      : theme.backgroundDefault,
                     borderColor: selected ? Colors.light.success : theme.border,
                   },
                 ]}
               >
-                <ThemedText type="body" style={{ fontWeight: selected ? "600" : "400" }}>
+                <ThemedText
+                  type="body"
+                  style={{ fontWeight: selected ? "600" : "400" }}
+                >
                   {allergen.name}
                 </ThemedText>
                 {severity ? (
@@ -114,17 +133,24 @@ export default function AllergiesScreen() {
                           severity === "severe"
                             ? Colors.light.error
                             : severity === "moderate"
-                            ? Colors.light.warning
-                            : Colors.light.success,
+                              ? Colors.light.warning
+                              : Colors.light.success,
                       },
                     ]}
                   >
-                    <ThemedText type="caption" style={{ color: "#FFF", fontWeight: "600" }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: "#FFF", fontWeight: "600" }}
+                    >
                       {severity.charAt(0).toUpperCase() + severity.slice(1)}
                     </ThemedText>
                   </View>
                 ) : selected ? (
-                  <Feather name="check" size={18} color={Colors.light.success} />
+                  <Feather
+                    name="check"
+                    size={18}
+                    color={Colors.light.success}
+                  />
                 ) : null}
               </Pressable>
             );
@@ -132,9 +158,19 @@ export default function AllergiesScreen() {
         </View>
 
         {selectedAllergen ? (
-          <View style={[styles.severityModal, { backgroundColor: theme.backgroundDefault }]}>
-            <ThemedText type="body" style={{ fontWeight: "600", marginBottom: Spacing.md }}>
-              How severe is your {COMMON_ALLERGENS.find((a) => a.id === selectedAllergen)?.name} allergy?
+          <View
+            style={[
+              styles.severityModal,
+              { backgroundColor: theme.backgroundDefault },
+            ]}
+          >
+            <ThemedText
+              type="body"
+              style={{ fontWeight: "600", marginBottom: Spacing.md }}
+            >
+              How severe is your{" "}
+              {COMMON_ALLERGENS.find((a) => a.id === selectedAllergen)?.name}{" "}
+              allergy?
             </ThemedText>
             <View style={styles.severityOptions}>
               {SEVERITY_OPTIONS.map((option) => (
@@ -148,21 +184,24 @@ export default function AllergiesScreen() {
                         option.value === "severe"
                           ? Colors.light.error + "15"
                           : option.value === "moderate"
-                          ? Colors.light.warning + "15"
-                          : Colors.light.success + "15",
+                            ? Colors.light.warning + "15"
+                            : Colors.light.success + "15",
                       borderColor:
                         option.value === "severe"
                           ? Colors.light.error
                           : option.value === "moderate"
-                          ? Colors.light.warning
-                          : Colors.light.success,
+                            ? Colors.light.warning
+                            : Colors.light.success,
                     },
                   ]}
                 >
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
                     {option.label}
                   </ThemedText>
-                  <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                  <ThemedText
+                    type="caption"
+                    style={{ color: theme.textSecondary }}
+                  >
                     {option.description}
                   </ThemedText>
                 </Pressable>
@@ -172,7 +211,9 @@ export default function AllergiesScreen() {
         ) : null}
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}>
+      <View
+        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
+      >
         <View style={styles.footerButtons}>
           <Pressable onPress={prevStep} style={styles.backButton}>
             <Feather name="arrow-left" size={24} color={theme.text} />

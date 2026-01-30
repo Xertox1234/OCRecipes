@@ -16,9 +16,16 @@ export default function WelcomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <View style={[styles.content, { paddingTop: insets.top + Spacing["3xl"] }]}>
+      <View
+        style={[styles.content, { paddingTop: insets.top + Spacing["3xl"] }]}
+      >
         <View style={styles.iconContainer}>
-          <View style={[styles.iconCircle, { backgroundColor: Colors.light.success + "15" }]}>
+          <View
+            style={[
+              styles.iconCircle,
+              { backgroundColor: Colors.light.success + "15" },
+            ]}
+          >
             <Feather name="heart" size={48} color={Colors.light.success} />
           </View>
         </View>
@@ -27,8 +34,13 @@ export default function WelcomeScreen() {
           Let's Personalize Your Experience
         </ThemedText>
 
-        <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Answer a few quick questions so we can give you personalized nutrition advice, filter recipes for your dietary needs, and help you reach your health goals.
+        <ThemedText
+          type="body"
+          style={[styles.subtitle, { color: theme.textSecondary }]}
+        >
+          Answer a few quick questions so we can give you personalized nutrition
+          advice, filter recipes for your dietary needs, and help you reach your
+          health goals.
         </ThemedText>
 
         <View style={styles.features}>
@@ -53,7 +65,9 @@ export default function WelcomeScreen() {
         </View>
       </View>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}>
+      <View
+        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
+      >
         <Button onPress={nextStep} style={styles.button}>
           Get Started
         </Button>
@@ -84,7 +98,12 @@ function FeatureItem({
 }) {
   return (
     <View style={styles.featureItem}>
-      <View style={[styles.featureIcon, { backgroundColor: Colors.light.success + "15" }]}>
+      <View
+        style={[
+          styles.featureIcon,
+          { backgroundColor: Colors.light.success + "15" },
+        ]}
+      >
         <Feather name={icon} size={20} color={Colors.light.success} />
       </View>
       <View style={styles.featureText}>

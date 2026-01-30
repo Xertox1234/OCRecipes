@@ -25,9 +25,21 @@ const CUISINES = [
 ];
 
 const SKILL_LEVELS = [
-  { id: "beginner", name: "Beginner", description: "Simple recipes, basic techniques" },
-  { id: "intermediate", name: "Intermediate", description: "Comfortable with most recipes" },
-  { id: "advanced", name: "Advanced", description: "Complex techniques welcome" },
+  {
+    id: "beginner",
+    name: "Beginner",
+    description: "Simple recipes, basic techniques",
+  },
+  {
+    id: "intermediate",
+    name: "Intermediate",
+    description: "Comfortable with most recipes",
+  },
+  {
+    id: "advanced",
+    name: "Advanced",
+    description: "Complex techniques welcome",
+  },
 ];
 
 const COOKING_TIMES = [
@@ -39,13 +51,16 @@ const COOKING_TIMES = [
 export default function PreferencesScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data, updateData, prevStep, completeOnboarding, isSubmitting } = useOnboarding();
+  const { data, updateData, prevStep, completeOnboarding, isSubmitting } =
+    useOnboarding();
 
   const toggleCuisine = (cuisineId: string) => {
     const isSelected = data.cuisinePreferences.includes(cuisineId);
     if (isSelected) {
       updateData({
-        cuisinePreferences: data.cuisinePreferences.filter((c) => c !== cuisineId),
+        cuisinePreferences: data.cuisinePreferences.filter(
+          (c) => c !== cuisineId,
+        ),
       });
     } else {
       updateData({
@@ -55,11 +70,16 @@ export default function PreferencesScreen() {
   };
 
   const selectSkillLevel = (levelId: string) => {
-    updateData({ cookingSkillLevel: data.cookingSkillLevel === levelId ? null : levelId });
+    updateData({
+      cookingSkillLevel: data.cookingSkillLevel === levelId ? null : levelId,
+    });
   };
 
   const selectCookingTime = (timeId: string) => {
-    updateData({ cookingTimeAvailable: data.cookingTimeAvailable === timeId ? null : timeId });
+    updateData({
+      cookingTimeAvailable:
+        data.cookingTimeAvailable === timeId ? null : timeId,
+    });
   };
 
   return (
@@ -73,16 +93,28 @@ export default function PreferencesScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View style={[styles.stepIndicator, { backgroundColor: Colors.light.success + "15" }]}>
-            <ThemedText type="small" style={{ color: Colors.light.success, fontWeight: "600" }}>
+          <View
+            style={[
+              styles.stepIndicator,
+              { backgroundColor: Colors.light.success + "15" },
+            ]}
+          >
+            <ThemedText
+              type="small"
+              style={{ color: Colors.light.success, fontWeight: "600" }}
+            >
               Step 5 of 6
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>
             Cooking Preferences
           </ThemedText>
-          <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Almost done! Tell us about your cooking style so we can suggest recipes you'll love.
+          <ThemedText
+            type="body"
+            style={[styles.subtitle, { color: theme.textSecondary }]}
+          >
+            Almost done! Tell us about your cooking style so we can suggest
+            recipes you'll love.
           </ThemedText>
         </View>
 
@@ -100,8 +132,12 @@ export default function PreferencesScreen() {
                   style={[
                     styles.cuisineChip,
                     {
-                      backgroundColor: selected ? Colors.light.success : theme.backgroundDefault,
-                      borderColor: selected ? Colors.light.success : theme.border,
+                      backgroundColor: selected
+                        ? Colors.light.success
+                        : theme.backgroundDefault,
+                      borderColor: selected
+                        ? Colors.light.success
+                        : theme.border,
                     },
                   ]}
                 >
@@ -134,23 +170,39 @@ export default function PreferencesScreen() {
                   style={[
                     styles.optionItem,
                     {
-                      backgroundColor: selected ? Colors.light.success + "15" : theme.backgroundDefault,
-                      borderColor: selected ? Colors.light.success : theme.border,
+                      backgroundColor: selected
+                        ? Colors.light.success + "15"
+                        : theme.backgroundDefault,
+                      borderColor: selected
+                        ? Colors.light.success
+                        : theme.border,
                     },
                   ]}
                 >
                   <View style={styles.optionContent}>
-                    <ThemedText type="body" style={{ fontWeight: selected ? "600" : "400" }}>
+                    <ThemedText
+                      type="body"
+                      style={{ fontWeight: selected ? "600" : "400" }}
+                    >
                       {level.name}
                     </ThemedText>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       {level.description}
                     </ThemedText>
                   </View>
                   {selected ? (
-                    <Feather name="check-circle" size={22} color={Colors.light.success} />
+                    <Feather
+                      name="check-circle"
+                      size={22}
+                      color={Colors.light.success}
+                    />
                   ) : (
-                    <View style={[styles.radio, { borderColor: theme.border }]} />
+                    <View
+                      style={[styles.radio, { borderColor: theme.border }]}
+                    />
                   )}
                 </Pressable>
               );
@@ -172,23 +224,39 @@ export default function PreferencesScreen() {
                   style={[
                     styles.optionItem,
                     {
-                      backgroundColor: selected ? Colors.light.success + "15" : theme.backgroundDefault,
-                      borderColor: selected ? Colors.light.success : theme.border,
+                      backgroundColor: selected
+                        ? Colors.light.success + "15"
+                        : theme.backgroundDefault,
+                      borderColor: selected
+                        ? Colors.light.success
+                        : theme.border,
                     },
                   ]}
                 >
                   <View style={styles.optionContent}>
-                    <ThemedText type="body" style={{ fontWeight: selected ? "600" : "400" }}>
+                    <ThemedText
+                      type="body"
+                      style={{ fontWeight: selected ? "600" : "400" }}
+                    >
                       {time.name}
                     </ThemedText>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       {time.description}
                     </ThemedText>
                   </View>
                   {selected ? (
-                    <Feather name="check-circle" size={22} color={Colors.light.success} />
+                    <Feather
+                      name="check-circle"
+                      size={22}
+                      color={Colors.light.success}
+                    />
                   ) : (
-                    <View style={[styles.radio, { borderColor: theme.border }]} />
+                    <View
+                      style={[styles.radio, { borderColor: theme.border }]}
+                    />
                   )}
                 </Pressable>
               );
@@ -197,7 +265,9 @@ export default function PreferencesScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}>
+      <View
+        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
+      >
         <View style={styles.footerButtons}>
           <Pressable onPress={prevStep} style={styles.backButton}>
             <Feather name="arrow-left" size={24} color={theme.text} />

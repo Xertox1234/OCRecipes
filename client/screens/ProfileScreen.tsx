@@ -169,7 +169,7 @@ export default function ProfileScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [calorieGoal, setCalorieGoal] = useState(
-    (user?.dailyCalorieGoal || 2000).toString()
+    (user?.dailyCalorieGoal || 2000).toString(),
   );
   const [isSaving, setIsSaving] = useState(false);
 
@@ -207,7 +207,7 @@ export default function ProfileScreen() {
   const calorieProgress = todaySummary
     ? Math.min(
         (todaySummary.totalCalories / (user?.dailyCalorieGoal || 2000)) * 100,
-        100
+        100,
       )
     : 0;
 
@@ -305,7 +305,10 @@ export default function ProfileScreen() {
 
           <View style={styles.macrosSummary}>
             <View style={styles.macroSummaryItem}>
-              <ThemedText type="h4" style={{ color: Colors.light.proteinAccent }}>
+              <ThemedText
+                type="h4"
+                style={{ color: Colors.light.proteinAccent }}
+              >
                 {todaySummary?.totalProtein
                   ? Math.round(todaySummary.totalProtein)
                   : 0}
@@ -328,9 +331,7 @@ export default function ProfileScreen() {
             </View>
             <View style={styles.macroSummaryItem}>
               <ThemedText type="h4" style={{ color: Colors.light.fatAccent }}>
-                {todaySummary?.totalFat
-                  ? Math.round(todaySummary.totalFat)
-                  : 0}
+                {todaySummary?.totalFat ? Math.round(todaySummary.totalFat) : 0}
                 g
               </ThemedText>
               <ThemedText type="caption" style={{ color: theme.textSecondary }}>
@@ -378,13 +379,26 @@ export default function ProfileScreen() {
         <Card elevation={1} style={styles.dietaryCard}>
           {dietaryProfile ? (
             <>
-              {dietaryProfile.allergies && dietaryProfile.allergies.length > 0 ? (
+              {dietaryProfile.allergies &&
+              dietaryProfile.allergies.length > 0 ? (
                 <View style={styles.dietaryRow}>
-                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.error + "20" }]}>
-                    <Feather name="alert-triangle" size={16} color={Colors.light.error} />
+                  <View
+                    style={[
+                      styles.dietaryIcon,
+                      { backgroundColor: Colors.light.error + "20" },
+                    ]}
+                  >
+                    <Feather
+                      name="alert-triangle"
+                      size={16}
+                      color={Colors.light.error}
+                    />
                   </View>
                   <View style={styles.dietaryContent}>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       Allergies
                     </ThemedText>
                     <View style={styles.chipRow}>
@@ -398,8 +412,8 @@ export default function ProfileScreen() {
                                 a.severity === "severe"
                                   ? Colors.light.error + "20"
                                   : a.severity === "moderate"
-                                  ? Colors.light.warning + "20"
-                                  : theme.backgroundSecondary,
+                                    ? Colors.light.warning + "20"
+                                    : theme.backgroundSecondary,
                             },
                           ]}
                         >
@@ -410,8 +424,8 @@ export default function ProfileScreen() {
                                 a.severity === "severe"
                                   ? Colors.light.error
                                   : a.severity === "moderate"
-                                  ? Colors.light.warning
-                                  : theme.text,
+                                    ? Colors.light.warning
+                                    : theme.text,
                             }}
                           >
                             {a.name}
@@ -423,18 +437,27 @@ export default function ProfileScreen() {
                 </View>
               ) : null}
 
-              {dietaryProfile.healthConditions && dietaryProfile.healthConditions.length > 0 ? (
+              {dietaryProfile.healthConditions &&
+              dietaryProfile.healthConditions.length > 0 ? (
                 <View style={styles.dietaryRow}>
-                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.info + "20" }]}>
+                  <View
+                    style={[
+                      styles.dietaryIcon,
+                      { backgroundColor: Colors.light.info + "20" },
+                    ]}
+                  >
                     <Feather name="heart" size={16} color={Colors.light.info} />
                   </View>
                   <View style={styles.dietaryContent}>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       Health Conditions
                     </ThemedText>
                     <ThemedText type="body">
                       {dietaryProfile.healthConditions
-                        .map(c => CONDITION_LABELS[c] || c)
+                        .map((c) => CONDITION_LABELS[c] || c)
                         .join(", ")}
                     </ThemedText>
                   </View>
@@ -443,15 +466,28 @@ export default function ProfileScreen() {
 
               {dietaryProfile.dietType ? (
                 <View style={styles.dietaryRow}>
-                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.success + "20" }]}>
-                    <Feather name="target" size={16} color={Colors.light.success} />
+                  <View
+                    style={[
+                      styles.dietaryIcon,
+                      { backgroundColor: Colors.light.success + "20" },
+                    ]}
+                  >
+                    <Feather
+                      name="target"
+                      size={16}
+                      color={Colors.light.success}
+                    />
                   </View>
                   <View style={styles.dietaryContent}>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       Diet Type
                     </ThemedText>
                     <ThemedText type="body">
-                      {DIET_LABELS[dietaryProfile.dietType] || dietaryProfile.dietType}
+                      {DIET_LABELS[dietaryProfile.dietType] ||
+                        dietaryProfile.dietType}
                     </ThemedText>
                   </View>
                 </View>
@@ -459,15 +495,28 @@ export default function ProfileScreen() {
 
               {dietaryProfile.primaryGoal ? (
                 <View style={styles.dietaryRow}>
-                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.calorieAccent + "20" }]}>
-                    <Feather name="flag" size={16} color={Colors.light.calorieAccent} />
+                  <View
+                    style={[
+                      styles.dietaryIcon,
+                      { backgroundColor: Colors.light.calorieAccent + "20" },
+                    ]}
+                  >
+                    <Feather
+                      name="flag"
+                      size={16}
+                      color={Colors.light.calorieAccent}
+                    />
                   </View>
                   <View style={styles.dietaryContent}>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       Goal
                     </ThemedText>
                     <ThemedText type="body">
-                      {GOAL_LABELS[dietaryProfile.primaryGoal] || dietaryProfile.primaryGoal}
+                      {GOAL_LABELS[dietaryProfile.primaryGoal] ||
+                        dietaryProfile.primaryGoal}
                     </ThemedText>
                   </View>
                 </View>
@@ -475,27 +524,53 @@ export default function ProfileScreen() {
 
               {dietaryProfile.activityLevel ? (
                 <View style={styles.dietaryRow}>
-                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.proteinAccent + "20" }]}>
-                    <Feather name="activity" size={16} color={Colors.light.proteinAccent} />
+                  <View
+                    style={[
+                      styles.dietaryIcon,
+                      { backgroundColor: Colors.light.proteinAccent + "20" },
+                    ]}
+                  >
+                    <Feather
+                      name="activity"
+                      size={16}
+                      color={Colors.light.proteinAccent}
+                    />
                   </View>
                   <View style={styles.dietaryContent}>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       Activity Level
                     </ThemedText>
                     <ThemedText type="body">
-                      {ACTIVITY_LABELS[dietaryProfile.activityLevel] || dietaryProfile.activityLevel}
+                      {ACTIVITY_LABELS[dietaryProfile.activityLevel] ||
+                        dietaryProfile.activityLevel}
                     </ThemedText>
                   </View>
                 </View>
               ) : null}
 
-              {dietaryProfile.cuisinePreferences && dietaryProfile.cuisinePreferences.length > 0 ? (
+              {dietaryProfile.cuisinePreferences &&
+              dietaryProfile.cuisinePreferences.length > 0 ? (
                 <View style={styles.dietaryRow}>
-                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.carbsAccent + "20" }]}>
-                    <Feather name="globe" size={16} color={Colors.light.carbsAccent} />
+                  <View
+                    style={[
+                      styles.dietaryIcon,
+                      { backgroundColor: Colors.light.carbsAccent + "20" },
+                    ]}
+                  >
+                    <Feather
+                      name="globe"
+                      size={16}
+                      color={Colors.light.carbsAccent}
+                    />
                   </View>
                   <View style={styles.dietaryContent}>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       Cuisine Preferences
                     </ThemedText>
                     <ThemedText type="body">
@@ -507,15 +582,28 @@ export default function ProfileScreen() {
 
               {dietaryProfile.cookingSkillLevel ? (
                 <View style={styles.dietaryRow}>
-                  <View style={[styles.dietaryIcon, { backgroundColor: Colors.light.fatAccent + "20" }]}>
-                    <Feather name="award" size={16} color={Colors.light.fatAccent} />
+                  <View
+                    style={[
+                      styles.dietaryIcon,
+                      { backgroundColor: Colors.light.fatAccent + "20" },
+                    ]}
+                  >
+                    <Feather
+                      name="award"
+                      size={16}
+                      color={Colors.light.fatAccent}
+                    />
                   </View>
                   <View style={styles.dietaryContent}>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       Cooking Skill
                     </ThemedText>
                     <ThemedText type="body">
-                      {SKILL_LABELS[dietaryProfile.cookingSkillLevel] || dietaryProfile.cookingSkillLevel}
+                      {SKILL_LABELS[dietaryProfile.cookingSkillLevel] ||
+                        dietaryProfile.cookingSkillLevel}
                     </ThemedText>
                   </View>
                 </View>
@@ -523,15 +611,24 @@ export default function ProfileScreen() {
 
               {dietaryProfile.cookingTimeAvailable ? (
                 <View style={styles.dietaryRow}>
-                  <View style={[styles.dietaryIcon, { backgroundColor: theme.backgroundSecondary }]}>
+                  <View
+                    style={[
+                      styles.dietaryIcon,
+                      { backgroundColor: theme.backgroundSecondary },
+                    ]}
+                  >
                     <Feather name="clock" size={16} color={theme.text} />
                   </View>
                   <View style={styles.dietaryContent}>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       Cooking Time
                     </ThemedText>
                     <ThemedText type="body">
-                      {TIME_LABELS[dietaryProfile.cookingTimeAvailable] || dietaryProfile.cookingTimeAvailable}
+                      {TIME_LABELS[dietaryProfile.cookingTimeAvailable] ||
+                        dietaryProfile.cookingTimeAvailable}
                     </ThemedText>
                   </View>
                 </View>
@@ -539,7 +636,10 @@ export default function ProfileScreen() {
             </>
           ) : (
             <View style={styles.emptyDietary}>
-              <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
+              <ThemedText
+                type="body"
+                style={{ color: theme.textSecondary, textAlign: "center" }}
+              >
                 No dietary preferences set
               </ThemedText>
             </View>

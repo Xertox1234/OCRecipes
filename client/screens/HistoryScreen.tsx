@@ -88,7 +88,10 @@ function HistoryItem({
           <Card elevation={1} style={styles.itemCard}>
             <View style={styles.itemContent}>
               {item.imageUrl ? (
-                <Image source={{ uri: item.imageUrl }} style={styles.itemImage} />
+                <Image
+                  source={{ uri: item.imageUrl }}
+                  style={styles.itemImage}
+                />
               ) : (
                 <View
                   style={[
@@ -96,12 +99,20 @@ function HistoryItem({
                     { backgroundColor: theme.backgroundSecondary },
                   ]}
                 >
-                  <Feather name="package" size={24} color={theme.textSecondary} />
+                  <Feather
+                    name="package"
+                    size={24}
+                    color={theme.textSecondary}
+                  />
                 </View>
               )}
 
               <View style={styles.itemInfo}>
-                <ThemedText type="body" style={styles.itemName} numberOfLines={1}>
+                <ThemedText
+                  type="body"
+                  style={styles.itemName}
+                  numberOfLines={1}
+                >
                   {item.productName}
                 </ThemedText>
                 {item.brandName ? (
@@ -136,7 +147,11 @@ function HistoryItem({
                 </ThemedText>
               </View>
 
-              <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+              <Feather
+                name="chevron-right"
+                size={20}
+                color={theme.textSecondary}
+              />
             </View>
           </Card>
         </Pressable>
@@ -231,7 +246,13 @@ export default function HistoryScreen() {
     navigation.navigate("ItemDetail", { itemId: item.id });
   };
 
-  const renderItem = ({ item, index }: { item: ScannedItem; index: number }) => (
+  const renderItem = ({
+    item,
+    index,
+  }: {
+    item: ScannedItem;
+    index: number;
+  }) => (
     <HistoryItem
       item={item}
       index={index}

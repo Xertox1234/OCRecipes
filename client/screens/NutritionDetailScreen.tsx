@@ -128,7 +128,7 @@ export default function NutritionDetailScreen() {
   const fetchBarcodeData = async (code: string) => {
     try {
       const response = await fetch(
-        `https://world.openfoodfacts.org/api/v0/product/${code}.json`
+        `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
       );
       const data = await response.json();
 
@@ -146,7 +146,9 @@ export default function NutritionDetailScreen() {
           fat: nutriments.fat_100g,
           fiber: nutriments.fiber_100g,
           sugar: nutriments.sugars_100g,
-          sodium: nutriments.sodium_100g ? nutriments.sodium_100g * 1000 : undefined,
+          sodium: nutriments.sodium_100g
+            ? nutriments.sodium_100g * 1000
+            : undefined,
           imageUrl: product.image_url || product.image_front_url,
           barcode: code,
         });
@@ -221,7 +223,10 @@ export default function NutritionDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         {nutrition?.imageUrl ? (
-          <Animated.View entering={FadeIn.duration(400)} style={styles.imageContainer}>
+          <Animated.View
+            entering={FadeIn.duration(400)}
+            style={styles.imageContainer}
+          >
             <Image
               source={{ uri: nutrition.imageUrl }}
               style={styles.productImage}
@@ -259,7 +264,11 @@ export default function NutritionDetailScreen() {
               { backgroundColor: Colors.light.warning + "20" },
             ]}
           >
-            <Feather name="alert-triangle" size={20} color={Colors.light.warning} />
+            <Feather
+              name="alert-triangle"
+              size={20}
+              color={Colors.light.warning}
+            />
             <ThemedText
               type="small"
               style={{ color: Colors.light.warning, flex: 1 }}
@@ -282,7 +291,10 @@ export default function NutritionDetailScreen() {
           >
             <ThemedText
               type="h1"
-              style={[styles.calorieValue, { color: Colors.light.calorieAccent }]}
+              style={[
+                styles.calorieValue,
+                { color: Colors.light.calorieAccent },
+              ]}
             >
               {nutrition?.calories !== undefined
                 ? Math.round(nutrition.calories)
@@ -318,9 +330,9 @@ export default function NutritionDetailScreen() {
           />
         </View>
 
-        {(nutrition?.fiber !== undefined ||
-          nutrition?.sugar !== undefined ||
-          nutrition?.sodium !== undefined) ? (
+        {nutrition?.fiber !== undefined ||
+        nutrition?.sugar !== undefined ||
+        nutrition?.sodium !== undefined ? (
           <Animated.View
             entering={FadeInUp.delay(500).duration(400)}
             style={styles.additionalNutrients}
@@ -362,7 +374,10 @@ export default function NutritionDetailScreen() {
             <Button
               onPress={handleAddToLog}
               disabled={addToLogMutation.isPending}
-              style={[styles.addButton, { backgroundColor: Colors.light.success }]}
+              style={[
+                styles.addButton,
+                { backgroundColor: Colors.light.success },
+              ]}
             >
               {addToLogMutation.isPending ? (
                 <ActivityIndicator color="#FFFFFF" size="small" />

@@ -8,7 +8,11 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { CameraView, useCameraPermissions, BarcodeScanningResult } from "expo-camera";
+import {
+  CameraView,
+  useCameraPermissions,
+  BarcodeScanningResult,
+} from "expo-camera";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -47,10 +51,10 @@ export default function ScanScreen() {
     cornerOpacity.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 1000 }),
-        withTiming(0.6, { duration: 1000 })
+        withTiming(0.6, { duration: 1000 }),
       ),
       -1,
-      true
+      true,
     );
   }, []);
 
@@ -78,7 +82,7 @@ export default function ScanScreen() {
 
     scanSuccessScale.value = withSequence(
       withSpring(1.2, { damping: 10 }),
-      withSpring(1, { damping: 15 })
+      withSpring(1, { damping: 15 }),
     );
 
     if (scanTimeoutRef.current) {
@@ -102,14 +106,16 @@ export default function ScanScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      navigation.navigate("NutritionDetail", { imageUri: result.assets[0].uri });
+      navigation.navigate("NutritionDetail", {
+        imageUri: result.assets[0].uri,
+      });
     }
   };
 
   const handleShutterPress = async () => {
     pulseScale.value = withSequence(
       withSpring(0.9, { damping: 15 }),
-      withSpring(1, { damping: 15 })
+      withSpring(1, { damping: 15 }),
     );
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -119,7 +125,7 @@ export default function ScanScreen() {
         const photo = await cameraRef.current.takePictureAsync({
           quality: 1,
         });
-        
+
         if (photo?.uri) {
           navigation.navigate("NutritionDetail", { imageUri: photo.uri });
         }
@@ -131,7 +137,9 @@ export default function ScanScreen() {
 
   if (!permission) {
     return (
-      <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+      <View
+        style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      >
         <ActivityIndicator size="large" color={Colors.light.success} />
       </View>
     );
@@ -170,7 +178,10 @@ export default function ScanScreen() {
                   await Linking.openSettings();
                 } catch {}
               }}
-              style={[styles.permissionButton, { backgroundColor: Colors.light.success }]}
+              style={[
+                styles.permissionButton,
+                { backgroundColor: Colors.light.success },
+              ]}
             >
               <ThemedText type="body" style={styles.permissionButtonText}>
                 Open Settings
@@ -187,7 +198,10 @@ export default function ScanScreen() {
         ) : (
           <Pressable
             onPress={requestPermission}
-            style={[styles.permissionButton, { backgroundColor: Colors.light.success }]}
+            style={[
+              styles.permissionButton,
+              { backgroundColor: Colors.light.success },
+            ]}
           >
             <ThemedText type="body" style={styles.permissionButtonText}>
               Enable Camera
@@ -227,7 +241,11 @@ export default function ScanScreen() {
             onPress={() => setTorch(!torch)}
             style={[
               styles.controlButton,
-              { backgroundColor: torch ? Colors.light.success : "rgba(0,0,0,0.4)" },
+              {
+                backgroundColor: torch
+                  ? Colors.light.success
+                  : "rgba(0,0,0,0.4)",
+              },
             ]}
           >
             <Feather
@@ -238,7 +256,10 @@ export default function ScanScreen() {
           </Pressable>
           <Pressable
             onPress={() => navigation.navigate("HistoryTab")}
-            style={[styles.controlButton, { backgroundColor: "rgba(0,0,0,0.4)" }]}
+            style={[
+              styles.controlButton,
+              { backgroundColor: "rgba(0,0,0,0.4)" },
+            ]}
           >
             <Feather name="x" size={24} color="#FFFFFF" />
           </Pressable>
@@ -261,7 +282,9 @@ export default function ScanScreen() {
           />
 
           <ThemedText type="body" style={styles.reticleText}>
-            {isScanning ? "Scanning..." : "Scan barcode or tap shutter for food photo"}
+            {isScanning
+              ? "Scanning..."
+              : "Scan barcode or tap shutter for food photo"}
           </ThemedText>
         </View>
 

@@ -200,7 +200,11 @@ export default function LoginScreen() {
                 { backgroundColor: Colors.light.error + "15" },
               ]}
             >
-              <Feather name="alert-circle" size={16} color={Colors.light.error} />
+              <Feather
+                name="alert-circle"
+                size={16}
+                color={Colors.light.error}
+              />
               <ThemedText
                 type="small"
                 style={[styles.errorText, { color: Colors.light.error }]}

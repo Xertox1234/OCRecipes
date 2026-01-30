@@ -10,19 +10,55 @@ import { useOnboarding } from "@/context/OnboardingContext";
 import { Spacing, BorderRadius, Colors } from "@/constants/theme";
 
 const GOALS = [
-  { id: "lose_weight", name: "Lose Weight", icon: "trending-down", color: "#FF6B35" },
-  { id: "gain_muscle", name: "Build Muscle", icon: "trending-up", color: "#00C853" },
+  {
+    id: "lose_weight",
+    name: "Lose Weight",
+    icon: "trending-down",
+    color: "#FF6B35",
+  },
+  {
+    id: "gain_muscle",
+    name: "Build Muscle",
+    icon: "trending-up",
+    color: "#00C853",
+  },
   { id: "maintain", name: "Maintain Weight", icon: "minus", color: "#2196F3" },
-  { id: "eat_healthier", name: "Eat Healthier", icon: "heart", color: "#E91E63" },
-  { id: "manage_condition", name: "Manage Condition", icon: "activity", color: "#9C27B0" },
+  {
+    id: "eat_healthier",
+    name: "Eat Healthier",
+    icon: "heart",
+    color: "#E91E63",
+  },
+  {
+    id: "manage_condition",
+    name: "Manage Condition",
+    icon: "activity",
+    color: "#9C27B0",
+  },
 ];
 
 const ACTIVITY_LEVELS = [
   { id: "sedentary", name: "Sedentary", description: "Little to no exercise" },
-  { id: "light", name: "Lightly Active", description: "Light exercise 1-3 days/week" },
-  { id: "moderate", name: "Moderately Active", description: "Moderate exercise 3-5 days/week" },
-  { id: "active", name: "Very Active", description: "Hard exercise 6-7 days/week" },
-  { id: "athlete", name: "Athlete", description: "Professional or intense training" },
+  {
+    id: "light",
+    name: "Lightly Active",
+    description: "Light exercise 1-3 days/week",
+  },
+  {
+    id: "moderate",
+    name: "Moderately Active",
+    description: "Moderate exercise 3-5 days/week",
+  },
+  {
+    id: "active",
+    name: "Very Active",
+    description: "Hard exercise 6-7 days/week",
+  },
+  {
+    id: "athlete",
+    name: "Athlete",
+    description: "Professional or intense training",
+  },
 ];
 
 export default function GoalsScreen() {
@@ -35,7 +71,9 @@ export default function GoalsScreen() {
   };
 
   const selectActivityLevel = (levelId: string) => {
-    updateData({ activityLevel: data.activityLevel === levelId ? null : levelId });
+    updateData({
+      activityLevel: data.activityLevel === levelId ? null : levelId,
+    });
   };
 
   return (
@@ -49,16 +87,28 @@ export default function GoalsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <View style={[styles.stepIndicator, { backgroundColor: Colors.light.success + "15" }]}>
-            <ThemedText type="small" style={{ color: Colors.light.success, fontWeight: "600" }}>
+          <View
+            style={[
+              styles.stepIndicator,
+              { backgroundColor: Colors.light.success + "15" },
+            ]}
+          >
+            <ThemedText
+              type="small"
+              style={{ color: Colors.light.success, fontWeight: "600" }}
+            >
               Step 4 of 6
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>
             Your Goals
           </ThemedText>
-          <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-            What are you hoping to achieve? This helps us personalize recommendations.
+          <ThemedText
+            type="body"
+            style={[styles.subtitle, { color: theme.textSecondary }]}
+          >
+            What are you hoping to achieve? This helps us personalize
+            recommendations.
           </ThemedText>
         </View>
 
@@ -76,19 +126,32 @@ export default function GoalsScreen() {
                   style={[
                     styles.goalItem,
                     {
-                      backgroundColor: selected ? goal.color + "15" : theme.backgroundDefault,
+                      backgroundColor: selected
+                        ? goal.color + "15"
+                        : theme.backgroundDefault,
                       borderColor: selected ? goal.color : theme.border,
                     },
                   ]}
                 >
-                  <View style={[styles.goalIcon, { backgroundColor: goal.color + "20" }]}>
+                  <View
+                    style={[
+                      styles.goalIcon,
+                      { backgroundColor: goal.color + "20" },
+                    ]}
+                  >
                     <Feather
                       name={goal.icon as keyof typeof Feather.glyphMap}
                       size={24}
                       color={goal.color}
                     />
                   </View>
-                  <ThemedText type="small" style={{ fontWeight: selected ? "600" : "400", textAlign: "center" }}>
+                  <ThemedText
+                    type="small"
+                    style={{
+                      fontWeight: selected ? "600" : "400",
+                      textAlign: "center",
+                    }}
+                  >
                     {goal.name}
                   </ThemedText>
                 </Pressable>
@@ -111,23 +174,39 @@ export default function GoalsScreen() {
                   style={[
                     styles.activityItem,
                     {
-                      backgroundColor: selected ? Colors.light.success + "15" : theme.backgroundDefault,
-                      borderColor: selected ? Colors.light.success : theme.border,
+                      backgroundColor: selected
+                        ? Colors.light.success + "15"
+                        : theme.backgroundDefault,
+                      borderColor: selected
+                        ? Colors.light.success
+                        : theme.border,
                     },
                   ]}
                 >
                   <View style={styles.activityContent}>
-                    <ThemedText type="body" style={{ fontWeight: selected ? "600" : "400" }}>
+                    <ThemedText
+                      type="body"
+                      style={{ fontWeight: selected ? "600" : "400" }}
+                    >
                       {level.name}
                     </ThemedText>
-                    <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
                       {level.description}
                     </ThemedText>
                   </View>
                   {selected ? (
-                    <Feather name="check-circle" size={22} color={Colors.light.success} />
+                    <Feather
+                      name="check-circle"
+                      size={22}
+                      color={Colors.light.success}
+                    />
                   ) : (
-                    <View style={[styles.radio, { borderColor: theme.border }]} />
+                    <View
+                      style={[styles.radio, { borderColor: theme.border }]}
+                    />
                   )}
                 </Pressable>
               );
@@ -136,7 +215,9 @@ export default function GoalsScreen() {
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}>
+      <View
+        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
+      >
         <View style={styles.footerButtons}>
           <Pressable onPress={prevStep} style={styles.backButton}>
             <Feather name="arrow-left" size={24} color={theme.text} />

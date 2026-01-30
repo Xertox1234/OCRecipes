@@ -84,43 +84,58 @@ function NutritionRow({
   );
 }
 
-function SuggestionCard({ suggestion, index }: { suggestion: Suggestion; index: number }) {
+function SuggestionCard({
+  suggestion,
+  index,
+}: {
+  suggestion: Suggestion;
+  index: number;
+}) {
   const { theme } = useTheme();
 
   const iconName =
     suggestion.type === "recipe"
       ? "book-open"
       : suggestion.type === "craft"
-      ? "scissors"
-      : "coffee";
+        ? "scissors"
+        : "coffee";
 
   const iconColor =
     suggestion.type === "recipe"
       ? Colors.light.success
       : suggestion.type === "craft"
-      ? Colors.light.proteinAccent
-      : Colors.light.fatAccent;
+        ? Colors.light.proteinAccent
+        : Colors.light.fatAccent;
 
   return (
     <Animated.View entering={FadeInDown.delay(index * 100).duration(300)}>
       <Card elevation={1} style={styles.suggestionCard}>
         <View style={styles.suggestionHeader}>
           <View
-            style={[styles.suggestionIcon, { backgroundColor: `${iconColor}20` }]}
+            style={[
+              styles.suggestionIcon,
+              { backgroundColor: `${iconColor}20` },
+            ]}
           >
             <Feather name={iconName} size={20} color={iconColor} />
           </View>
           <View style={styles.suggestionMeta}>
             <ThemedText
               type="caption"
-              style={{ color: theme.textSecondary, textTransform: "capitalize" }}
+              style={{
+                color: theme.textSecondary,
+                textTransform: "capitalize",
+              }}
             >
               {suggestion.type === "craft" ? "Kid Activity" : suggestion.type}
             </ThemedText>
             {suggestion.timeEstimate ? (
               <View style={styles.timeBadge}>
                 <Feather name="clock" size={12} color={theme.textSecondary} />
-                <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                <ThemedText
+                  type="caption"
+                  style={{ color: theme.textSecondary }}
+                >
                   {suggestion.timeEstimate}
                 </ThemedText>
               </View>
@@ -181,7 +196,7 @@ export default function ItemDetailScreen() {
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ productName: item.productName }),
-        }
+        },
       );
 
       if (!response.ok) {
@@ -265,7 +280,10 @@ export default function ItemDetailScreen() {
         <Card elevation={2} style={styles.headerCard}>
           <View style={styles.headerContent}>
             {item.imageUrl ? (
-              <Image source={{ uri: item.imageUrl }} style={styles.productImage} />
+              <Image
+                source={{ uri: item.imageUrl }}
+                style={styles.productImage}
+              />
             ) : (
               <View
                 style={[
@@ -314,10 +332,7 @@ export default function ItemDetailScreen() {
           ) : null}
           <View style={styles.caloriesRow}>
             <ThemedText type="body">Calories</ThemedText>
-            <ThemedText
-              type="h2"
-              style={{ color: Colors.light.calorieAccent }}
-            >
+            <ThemedText type="h2" style={{ color: Colors.light.calorieAccent }}>
               {item.calories ? Math.round(parseFloat(item.calories)) : "--"}
             </ThemedText>
           </View>
@@ -359,7 +374,11 @@ export default function ItemDetailScreen() {
           </ThemedText>
           {suggestionsError ? (
             <Pressable onPress={fetchSuggestions} style={styles.retryButton}>
-              <Feather name="refresh-cw" size={16} color={Colors.light.success} />
+              <Feather
+                name="refresh-cw"
+                size={16}
+                color={Colors.light.success}
+              />
               <ThemedText type="small" style={{ color: Colors.light.success }}>
                 Retry
               </ThemedText>
