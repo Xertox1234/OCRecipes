@@ -1,6 +1,6 @@
 ---
 title: "Delete unused Spacer component"
-status: ready
+status: complete
 priority: low
 created: 2026-01-30
 updated: 2026-01-30

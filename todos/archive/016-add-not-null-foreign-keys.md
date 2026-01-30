@@ -1,6 +1,6 @@
 ---
 title: "Add NOT NULL constraints to foreign key columns"
-status: ready
+status: complete
 priority: medium
 created: 2026-01-30
 updated: 2026-01-30

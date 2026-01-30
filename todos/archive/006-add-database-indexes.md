@@ -1,6 +1,6 @@
 ---
 title: "Add database indexes for frequently queried columns"
-status: ready
+status: complete
 priority: high
 created: 2026-01-30
 updated: 2026-01-30

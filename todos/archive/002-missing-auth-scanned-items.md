@@ -1,6 +1,6 @@
 ---
 title: "Add authentication to GET /api/scanned-items/:id endpoint"
-status: ready
+status: complete
 priority: critical
 created: 2026-01-30
 updated: 2026-01-30
