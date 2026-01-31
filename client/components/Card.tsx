@@ -1,5 +1,11 @@
 import React from "react";
-import { StyleSheet, Pressable, ViewStyle, StyleProp } from "react-native";
+import {
+  StyleSheet,
+  Pressable,
+  View,
+  ViewStyle,
+  StyleProp,
+} from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -73,20 +79,8 @@ export function Card({
     scale.value = withSpring(1, springConfig);
   };
 
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={[
-        styles.card,
-        {
-          backgroundColor: cardBackgroundColor,
-        },
-        animatedStyle,
-        style,
-      ]}
-    >
+  const content = (
+    <>
       {title ? (
         <ThemedText type="h4" style={styles.cardTitle}>
           {title}
@@ -98,7 +92,43 @@ export function Card({
         </ThemedText>
       ) : null}
       {children}
-    </AnimatedPressable>
+    </>
+  );
+
+  // Only render as Pressable when onPress is provided
+  // This prevents nested Pressables from blocking touch events
+  if (onPress) {
+    return (
+      <AnimatedPressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={[
+          styles.card,
+          {
+            backgroundColor: cardBackgroundColor,
+          },
+          animatedStyle,
+          style,
+        ]}
+      >
+        {content}
+      </AnimatedPressable>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: cardBackgroundColor,
+        },
+        style,
+      ]}
+    >
+      {content}
+    </View>
   );
 }
 

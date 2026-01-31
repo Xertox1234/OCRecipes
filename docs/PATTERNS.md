@@ -7,8 +7,10 @@ This document captures established patterns for the NutriScan codebase. Follow t
 - [Security Patterns](#security-patterns)
 - [TypeScript Patterns](#typescript-patterns)
 - [API Patterns](#api-patterns)
+- [External API Patterns](#external-api-patterns)
 - [Database Patterns](#database-patterns)
 - [Client State Patterns](#client-state-patterns)
+- [React Native Patterns](#react-native-patterns)
 - [Performance Patterns](#performance-patterns)
 - [Documentation Patterns](#documentation-patterns)
 
@@ -38,7 +40,7 @@ app.get(
     }
 
     res.json(item);
-  }
+  },
 );
 ```
 
@@ -50,7 +52,7 @@ app.get(
   async (req: Request, res: Response) => {
     const item = await storage.getScannedItem(req.params.id);
     res.json(item); // No ownership check!
-  }
+  },
 );
 ```
 
@@ -190,19 +192,19 @@ export interface AccessTokenPayload {
 
 // Create a type guard
 export function isAccessTokenPayload(
-  payload: unknown
+  payload: unknown,
 ): payload is AccessTokenPayload {
   return (
-    typeof payload === 'object' &&
+    typeof payload === "object" &&
     payload !== null &&
-    typeof (payload as AccessTokenPayload).sub === 'string'
+    typeof (payload as AccessTokenPayload).sub === "string"
   );
 }
 
 // Usage
 const payload = jwt.verify(token, secret);
 if (!isAccessTokenPayload(payload)) {
-  throw new Error('Invalid payload');
+  throw new Error("Invalid payload");
 }
 // payload is now typed as AccessTokenPayload
 ```
@@ -258,10 +260,12 @@ import { ScannedItemResponse } from '@shared/types/models';
 ```
 
 **When to use shared types:**
+
 - Auth types (User, AuthResponse) - used in multiple places
 - Database schema types - shared by ORM
 
 **When NOT to use shared types:**
+
 - API response shapes - keep local to consuming component
 - One-off request/response types
 
@@ -275,13 +279,14 @@ All API errors should follow this structure:
 
 ```typescript
 interface ApiError {
-  error: string;              // Human-readable message
-  code?: string;              // Machine-readable code for client logic
-  details?: Record<string, string>;  // Field-specific errors (validation)
+  error: string; // Human-readable message
+  code?: string; // Machine-readable code for client logic
+  details?: Record<string, string>; // Field-specific errors (validation)
 }
 ```
 
 Example error codes:
+
 - `TOKEN_EXPIRED` - JWT token has expired
 - `TOKEN_INVALID` - JWT token is malformed or invalid
 - `NO_TOKEN` - No authentication token provided
@@ -314,7 +319,7 @@ Validate required environment variables at module load time, not at request time
 // Good: Fails immediately on server start
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required');
+  throw new Error("JWT_SECRET environment variable is required");
 }
 
 export function requireAuth(req, res, next) {
@@ -328,7 +333,7 @@ export function requireAuth(req, res, next) {
 export function requireAuth(req, res, next) {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    return res.status(500).json({ error: 'Server misconfigured' });
+    return res.status(500).json({ error: "Server misconfigured" });
   }
 }
 ```
@@ -340,7 +345,9 @@ Use TanStack Query's `useInfiniteQuery` for paginated lists:
 ```typescript
 const PAGE_SIZE = 50;
 
-async function fetchScannedItems({ pageParam = 0 }): Promise<PaginatedResponse> {
+async function fetchScannedItems({
+  pageParam = 0,
+}): Promise<PaginatedResponse> {
   const token = await tokenStorage.get();
   const baseUrl = getApiUrl();
   const url = new URL("/api/scanned-items", baseUrl);
@@ -368,7 +375,10 @@ const {
   queryKey: ["api", "scanned-items"],
   queryFn: fetchScannedItems,
   getNextPageParam: (lastPage, allPages) => {
-    const totalFetched = allPages.reduce((sum, page) => sum + page.items.length, 0);
+    const totalFetched = allPages.reduce(
+      (sum, page) => sum + page.items.length,
+      0,
+    );
     return totalFetched < lastPage.total ? totalFetched : undefined;
   },
   initialPageParam: 0,
@@ -384,7 +394,7 @@ const allItems = data?.pages.flatMap((page) => page.items) ?? [];
 app.get("/api/scanned-items", requireAuth, async (req, res) => {
   const limit = Math.min(
     Math.max(parseInt(req.query.limit as string) || 50, 1),
-    100 // Maximum 100 items per page
+    100, // Maximum 100 items per page
   );
   const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
 
@@ -392,6 +402,68 @@ app.get("/api/scanned-items", requireAuth, async (req, res) => {
   res.json(result);
 });
 ```
+
+---
+
+## External API Patterns
+
+### Per-Field Fallback for Partial Data
+
+When consuming external APIs that may return partial data, use nullish coalescing (`??`) per-field rather than all-or-nothing fallback:
+
+```typescript
+// Good: Each field falls back independently
+const nutriments = apiResponse.nutriments || {};
+
+setNutrition({
+  calories: nutriments["energy-kcal_serving"] ?? nutriments["energy-kcal_100g"],
+  protein: nutriments.proteins_serving ?? nutriments.proteins_100g,
+  carbs: nutriments.carbohydrates_serving ?? nutriments.carbohydrates_100g,
+  fat: nutriments.fat_serving ?? nutriments.fat_100g,
+  fiber: nutriments.fiber_serving ?? nutriments.fiber_100g,
+});
+```
+
+```typescript
+// Bad: All-or-nothing fallback loses partial data
+const hasServingData = nutriments["energy-kcal_serving"] !== undefined;
+
+setNutrition({
+  calories: hasServingData
+    ? nutriments["energy-kcal_serving"]
+    : nutriments["energy-kcal_100g"],
+  protein: hasServingData
+    ? nutriments.proteins_serving // Could be undefined even when hasServingData is true!
+    : nutriments.proteins_100g,
+  // ...
+});
+```
+
+**When to use:** External APIs (OpenFoodFacts, nutrition databases, third-party services) where different fields may have different data availability.
+
+**Why:** External APIs often have inconsistent data coverage. A product might have per-serving calories but only per-100g fiber data. Per-field fallback ensures you get the best available data for each field.
+
+### Indicate Data Source to Users
+
+When falling back to different data formats, inform users what they're seeing:
+
+```typescript
+const hasServingData = nutriments["energy-kcal_serving"] !== undefined;
+setIsPer100g(!hasServingData);
+
+// In UI:
+<ThemedText>
+  Calories{isPer100g ? " (per 100g)" : ""}
+</ThemedText>
+
+{isPer100g && (
+  <InfoMessage>
+    Values shown per 100g. Check package for actual serving size.
+  </InfoMessage>
+)}
+```
+
+**Why:** Prevents user confusion when displayed values don't match package labels.
 
 ---
 
@@ -418,11 +490,12 @@ export const scannedItems = pgTable(
   (table) => ({
     userIdIdx: index("scanned_items_user_id_idx").on(table.userId),
     scannedAtIdx: index("scanned_items_scanned_at_idx").on(table.scannedAt),
-  })
+  }),
 );
 ```
 
 **Why:**
+
 - `userId` index: Fast filtering by user (every query filters by user)
 - `scannedAt` index: Fast sorting for history screen (ORDER BY scannedAt DESC)
 
@@ -483,7 +556,7 @@ const profile = await db.transaction(async (tx) => {
 ```typescript
 // Bad: Over-abstracted transaction helper
 async function withTransaction<T>(
-  callback: (tx: Transaction) => Promise<T>
+  callback: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
   return await db.transaction(callback);
 }
@@ -514,7 +587,7 @@ export const storage = {
       try {
         cachedValue = await AsyncStorage.getItem(KEY);
       } catch (error) {
-        console.error('Storage read failed:', error);
+        console.error("Storage read failed:", error);
         cachedValue = null;
       }
       cacheInitialized = true;
@@ -555,10 +628,10 @@ const token = await tokenStorage.get();
 
 const headers: HeadersInit = {};
 if (data) {
-  headers['Content-Type'] = 'application/json';
+  headers["Content-Type"] = "application/json";
 }
 if (token) {
-  headers['Authorization'] = `Bearer ${token}`;
+  headers["Authorization"] = `Bearer ${token}`;
 }
 
 const response = await fetch(url, { method, headers, body });
@@ -576,6 +649,115 @@ if (response.status === 401) {
   // Trigger re-authentication flow
 }
 ```
+
+---
+
+## React Native Patterns
+
+### Conditional Pressable Rendering
+
+When building reusable wrapper components that may or may not be interactive, conditionally render as `View` or `Pressable` based on whether `onPress` is provided:
+
+```typescript
+// Good: Renders as View when not interactive
+export function Card({ children, onPress, style }: CardProps) {
+  const content = <>{children}</>;
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} style={[styles.card, style]}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <View style={[styles.card, style]}>{content}</View>;
+}
+
+// Usage - Card passes through touch events to parent
+<Pressable onPress={handleNavigate}>
+  <Card>  {/* Renders as View, doesn't block touches */}
+    <Text>Tap me</Text>
+  </Card>
+</Pressable>
+```
+
+```typescript
+// Bad: Always renders as Pressable
+export function Card({ children, onPress, style }: CardProps) {
+  return (
+    <Pressable onPress={onPress} style={[styles.card, style]}>
+      {children}
+    </Pressable>
+  );
+}
+
+// Problem - nested Pressables block touch events
+<Pressable onPress={handleNavigate}>  {/* This onPress never fires! */}
+  <Card>  {/* Inner Pressable captures and swallows the touch */}
+    <Text>Tap me</Text>
+  </Card>
+</Pressable>
+```
+
+**Why:** In React Native, nested `Pressable` components cause the inner one to capture touch events. If the inner `Pressable` has no `onPress` handler, the touch is swallowed and the parent never receives it.
+
+**When to use:** Any reusable component (Card, ListItem, Container) that wraps content and may optionally be tappable.
+
+### Safe Area Handling
+
+Always use `useSafeAreaInsets()` for screen layouts:
+
+```typescript
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+export default function MyScreen() {
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+
+  return (
+    <ScrollView
+      contentContainerStyle={{
+        paddingTop: headerHeight + Spacing.lg,
+        paddingBottom: insets.bottom + Spacing.xl,
+      }}
+    >
+      {/* Content */}
+    </ScrollView>
+  );
+}
+```
+
+**Why:** Handles iOS notch, Dynamic Island, and home indicator. Adding theme spacing (`Spacing.lg`, `Spacing.xl`) provides visual breathing room beyond the safe area.
+
+### Haptic Feedback on User Actions
+
+Provide haptic feedback for meaningful interactions:
+
+```typescript
+import * as Haptics from "expo-haptics";
+
+// Light impact for navigation/selection
+const handleItemPress = () => {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  navigation.navigate("Detail");
+};
+
+// Success notification for completed actions
+const handleSave = async () => {
+  await saveData();
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+};
+
+// Error notification for failures
+const handleError = () => {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+};
+```
+
+**When to use:** Navigation, successful saves, errors, toggle switches, barcode scan success.
+
+**When NOT to use:** Every tap, scrolling, or high-frequency interactions.
 
 ---
 
@@ -702,10 +884,10 @@ Document key architectural choices with rationale:
 ```markdown
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Token type | Single access token | No refresh token complexity |
-| Token expiry | 30 days | Balances security with UX |
+| Decision     | Choice              | Rationale                   |
+| ------------ | ------------------- | --------------------------- |
+| Token type   | Single access token | No refresh token complexity |
+| Token expiry | 30 days             | Balances security with UX   |
 ```
 
 ### Files to Modify Table
@@ -715,15 +897,16 @@ List all files affected by a change:
 ```markdown
 ## Files to Modify
 
-| File | Action |
-|------|--------|
-| `shared/types/auth.ts` | Create - type definitions |
-| `server/routes.ts` | Modify - use new middleware |
+| File                   | Action                      |
+| ---------------------- | --------------------------- |
+| `shared/types/auth.ts` | Create - type definitions   |
+| `server/routes.ts`     | Modify - use new middleware |
 ```
 
 ### Implementation Patterns in Todos
 
 Include copy-paste ready code examples in todos for complex changes. This ensures:
+
 - Consistent implementation
 - Faster development
 - Built-in code review

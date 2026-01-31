@@ -98,6 +98,7 @@ export default function NutritionDetailScreen() {
   const [nutrition, setNutrition] = useState<NutritionData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isPer100g, setIsPer100g] = useState(false);
 
   const { data: existingItem } = useQuery<NutritionData>({
     queryKey: ["/api/scanned-items", itemId],
@@ -136,19 +137,28 @@ export default function NutritionDetailScreen() {
         const product = data.product;
         const nutriments = product.nutriments || {};
 
+        // Prefer per-serving values, fall back to per-100g
+        // OpenFoodFacts provides both *_serving and *_100g fields
+        const hasServingData = nutriments["energy-kcal_serving"] !== undefined;
+        setIsPer100g(!hasServingData);
+
+        // Use per-serving values with per-100g fallback for each field
+        const sodiumValue = nutriments.sodium_serving ?? nutriments.sodium_100g;
+
         setNutrition({
           productName: product.product_name || "Unknown Product",
           brandName: product.brands,
           servingSize: product.serving_size || product.quantity || "100g",
-          calories: nutriments["energy-kcal_100g"] || nutriments.energy_value,
-          protein: nutriments.proteins_100g,
-          carbs: nutriments.carbohydrates_100g,
-          fat: nutriments.fat_100g,
-          fiber: nutriments.fiber_100g,
-          sugar: nutriments.sugars_100g,
-          sodium: nutriments.sodium_100g
-            ? nutriments.sodium_100g * 1000
-            : undefined,
+          calories: hasServingData
+            ? nutriments["energy-kcal_serving"]
+            : nutriments["energy-kcal_100g"] || nutriments.energy_value,
+          protein: nutriments.proteins_serving ?? nutriments.proteins_100g,
+          carbs:
+            nutriments.carbohydrates_serving ?? nutriments.carbohydrates_100g,
+          fat: nutriments.fat_serving ?? nutriments.fat_100g,
+          fiber: nutriments.fiber_serving ?? nutriments.fiber_100g,
+          sugar: nutriments.sugars_serving ?? nutriments.sugars_100g,
+          sodium: sodiumValue !== undefined ? sodiumValue * 1000 : undefined,
           imageUrl: product.image_url || product.image_front_url,
           barcode: code,
         });
@@ -301,10 +311,27 @@ export default function NutritionDetailScreen() {
                 : "--"}
             </ThemedText>
             <ThemedText type="body" style={{ color: theme.textSecondary }}>
-              Calories
+              Calories{isPer100g ? " (per 100g)" : ""}
             </ThemedText>
           </Card>
         </Animated.View>
+
+        {isPer100g && !itemId ? (
+          <View
+            style={[
+              styles.infoContainer,
+              { backgroundColor: Colors.light.info + "15" },
+            ]}
+          >
+            <Feather name="info" size={16} color={Colors.light.info} />
+            <ThemedText
+              type="small"
+              style={{ color: Colors.light.info, flex: 1 }}
+            >
+              Values shown per 100g. Check package for actual serving size.
+            </ThemedText>
+          </View>
+        ) : null}
 
         <View style={styles.macrosGrid}>
           <MacroCard
@@ -431,6 +458,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   warningContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.xs,
+    marginBottom: Spacing.lg,
+  },
+  infoContainer: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,

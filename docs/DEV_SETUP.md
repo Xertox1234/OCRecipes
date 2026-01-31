@@ -8,12 +8,12 @@ This guide covers everything needed to set up the NutriScan development environm
 
 ### Required Software
 
-| Software | Version | Installation |
-|----------|---------|--------------|
-| Node.js | 18+ | [nodejs.org](https://nodejs.org) |
-| npm | 9+ | Included with Node.js |
-| PostgreSQL | 12+ | `brew install postgresql` (macOS) |
-| Expo Go | Latest | App Store / Play Store |
+| Software   | Version | Installation                      |
+| ---------- | ------- | --------------------------------- |
+| Node.js    | 18+     | [nodejs.org](https://nodejs.org)  |
+| npm        | 9+      | Included with Node.js             |
+| PostgreSQL | 12+     | `brew install postgresql` (macOS) |
+| Expo Go    | Latest  | App Store / Play Store            |
 
 ### Optional Tools
 
@@ -68,11 +68,11 @@ npm run db:push
 
 ## Port Configuration
 
-| Service | Port | Notes |
-|---------|------|-------|
+| Service         | Port | Notes                      |
+| --------------- | ---- | -------------------------- |
 | Express Backend | 3000 | Avoid 5000 (Apple AirPlay) |
-| Expo Metro | 8081 | Auto-tunneled by Expo |
-| PostgreSQL | 5432 | Default |
+| Expo Metro      | 8081 | Auto-tunneled by Expo      |
+| PostgreSQL      | 5432 | Default                    |
 
 ## Starting Development Servers
 
@@ -85,6 +85,7 @@ npm run server:dev
 This starts the Express server on port 3000 with hot reloading.
 
 Expected output:
+
 ```
 Server running on port 3000
 Connected to database
@@ -99,6 +100,7 @@ npm run expo:dev
 This starts Expo with automatic ngrok tunneling (via `--tunnel` flag).
 
 Expected output:
+
 ```
 Metro waiting on exp://...
 › Tunnel ready
@@ -114,11 +116,16 @@ npx localtunnel --port 3000
 This creates a public HTTPS URL for your backend API.
 
 Expected output:
+
 ```
-your url is: https://violet-areas-talk.loca.lt
+your url is: https://major-snakes-draw.loca.lt
 ```
 
-**Important**: The tunnel URL changes each time you restart!
+**Important**:
+
+- The tunnel URL changes each time you restart localtunnel
+- You MUST open the tunnel URL in a browser first and click "Click to Continue" on the security page
+- Without this step, all API requests will timeout with 408 errors
 
 ### 4. Configure API URL
 
@@ -130,7 +137,7 @@ export function getApiUrl(): string {
 
   if (!host) {
     // UPDATE THIS URL EVERY TIME YOU RESTART LOCALTUNNEL
-    return "https://violet-areas-talk.loca.lt";
+    return "https://major-snakes-draw.loca.lt";
   }
   // ...
 }
@@ -138,7 +145,25 @@ export function getApiUrl(): string {
 
 Or set `EXPO_PUBLIC_DOMAIN` in your `.env` file.
 
-## Complete Startup Sequence
+### 5. Bypass Localtunnel Security Page
+
+**CRITICAL STEP**: Open your tunnel URL (e.g., `https://major-snakes-draw.loca.lt`) in a web browser:
+
+1. You'll see a localtunnel security/landing page
+2. Click "Click to Continue"
+3. This unlocks the tunnel for API requests
+
+If you skip this step, your mobile app will get 408 timeout errors when trying to login/register.
+
+##IMPORTANT: Follow these steps after starting localtunnel:
+
+# 1. Copy the tunnel URL (e.g., https://major-snakes-draw.loca.lt)
+
+# 2. Update client/lib/query-client.ts with the new URL
+
+# 3. Open the tunnel URL in a browser and click "Click to Continue"
+
+# 4. Reload your app in Expo Go
 
 ```bash
 # Terminal 1: Backend
@@ -173,7 +198,7 @@ This prevents 403 CORS errors when accessing from mobile devices.
 
 ## Code Quality Commands
 
-```bash
+````bash
 # ESLint
 npm run lint           # Check for issues
 npm run lint:fix       # Auto-fix issues
@@ -184,12 +209,13 @@ npm run check:types    # Type checking
 # Prettier
 npm run format         # Format all files
 npm run check:format   # Check formatting
-```
+``` / 408 Timeout
 
-## Troubleshooting
-
-### Network Request Failed
-
+1. **Open tunnel URL in browser** - Visit the localtunnel URL and click "Click to Continue"
+2. Verify backend tunnel is running: `ps aux | grep localtunnel`
+3. Check `query-client.ts` has the correct tunnel URL
+4. Ensure CORS is allowing all origins
+5. Restart localtunnel if it's been idle (tunnels can expire)
 1. Verify backend tunnel is running
 2. Check `query-client.ts` has the correct tunnel URL
 3. Ensure CORS is allowing all origins
@@ -203,7 +229,7 @@ lsof -ti:3000 | xargs kill -9
 
 # Or use a different port
 PORT=3001 npm run server:dev
-```
+````
 
 ### Database Connection Failed
 
@@ -215,7 +241,9 @@ pg_isready
 psql $DATABASE_URL
 
 # Create database if missing
-createdb nutriscan
+**Localtunnel Security Page**: Always open the tunnel URL in a browser first and click through the security page. This is required for API requests to work.
+
+Localtunnel can be unreliable. If you experience frequent timeouts, try a
 ```
 
 ### Tunnel Connection Issues
@@ -223,11 +251,13 @@ createdb nutriscan
 Localtunnel can be unreliable. Alternatives:
 
 **ngrok** (requires free account):
+
 ```bash
 ngrok http 3000
 ```
 
 **cloudflared** (Cloudflare tunnel):
+
 ```bash
 cloudflared tunnel --url http://localhost:3000
 ```
@@ -252,11 +282,11 @@ npm install
 
 ## Why Tunneling?
 
-| Issue | Solution |
-|-------|----------|
-| Mobile can't reach localhost | Public tunnel URL |
+| Issue                                | Solution             |
+| ------------------------------------ | -------------------- |
+| Mobile can't reach localhost         | Public tunnel URL    |
 | Local IPs unreliable across networks | Consistent HTTPS URL |
-| Need HTTPS for secure features | Tunnels provide SSL |
+| Need HTTPS for secure features       | Tunnels provide SSL  |
 
 ## Development Tips
 

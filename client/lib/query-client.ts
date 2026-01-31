@@ -9,8 +9,9 @@ export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    // Default tunnel URL for development
-    return "https://violet-areas-talk.loca.lt";
+    // Use local network IP (more stable than localtunnel)
+    // Device must be on same WiFi network as your Mac
+    return "http://192.168.137.175:3000";
   }
 
   // Check if host starts with http:// or https://
