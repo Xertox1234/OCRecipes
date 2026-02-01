@@ -30,6 +30,16 @@ export const visionCameraBarcodeTypes = [
 
 export type VisionCameraBarcodeType = (typeof visionCameraBarcodeTypes)[number];
 
+/**
+ * Type guard to check if a string is a valid VisionCameraBarcodeType.
+ * Use this instead of type assertions for safer type narrowing.
+ */
+export function isVisionCameraBarcodeType(
+  type: string,
+): type is VisionCameraBarcodeType {
+  return (visionCameraBarcodeTypes as readonly string[]).includes(type);
+}
+
 // Mapping between expo-camera and vision-camera barcode types
 export const BARCODE_TYPE_MAP: Record<
   ExpoBarcodeType,

@@ -16,8 +16,9 @@ import {
 import {
   BARCODE_TYPE_MAP,
   BARCODE_TYPE_REVERSE_MAP,
-  type VisionCameraBarcodeType,
+  isVisionCameraBarcodeType,
 } from "@shared/types/camera";
+import { Spacing } from "@/constants/theme";
 import type {
   CameraViewProps,
   CameraRef,
@@ -58,9 +59,10 @@ function mapBarcodeTypes(
 
 // Map vision camera code to our barcode result
 function mapCodeToResult(code: Code): BarcodeResult | null {
-  const visionType = code.type as VisionCameraBarcodeType;
-  const expoType = BARCODE_TYPE_REVERSE_MAP[visionType];
+  // Use type guard instead of type assertion for safety
+  if (!isVisionCameraBarcodeType(code.type)) return null;
 
+  const expoType = BARCODE_TYPE_REVERSE_MAP[code.type];
   if (!expoType) return null;
 
   return {
@@ -133,8 +135,8 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
             width: photo.width,
             height: photo.height,
           };
-        } catch (error) {
-          console.error("Error taking picture:", error);
+        } catch {
+          // Photo capture failed - return null to let caller handle gracefully
           return null;
         }
       },
@@ -187,13 +189,13 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 32,
+    gap: Spacing.md,
+    paddingHorizontal: Spacing["3xl"],
   },
   unavailableTitle: {
     fontSize: 18,
     fontWeight: "600",
-    marginTop: 8,
+    marginTop: Spacing.sm,
   },
   unavailableSubtitle: {
     fontSize: 14,

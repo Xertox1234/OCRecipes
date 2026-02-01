@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -38,6 +38,9 @@ import { usePremiumContext } from "@/context/PremiumContext";
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 
+/** Timeout ref type for cleanup */
+type TimeoutRef = ReturnType<typeof setTimeout> | null;
+
 /** Timing constants for scan operations */
 const SCAN_TIMING = {
   /** Debounce between barcode scans to prevent duplicates */
@@ -59,6 +62,10 @@ export default function ScanScreen() {
   } = useCameraPermissions();
   const [torch, setTorch] = useState(false);
 
+  // Timeout refs for cleanup
+  const navigationTimeoutRef = useRef<TimeoutRef>(null);
+  const resetTimeoutRef = useRef<TimeoutRef>(null);
+
   // Premium features
   const { availableBarcodeTypes, canScan, remainingScans, isPremium } =
     usePremiumCamera();
@@ -75,12 +82,12 @@ export default function ScanScreen() {
           withSpring(1, { damping: 15 }),
         );
 
-        // Navigate after brief delay for animation
-        setTimeout(() => {
+        // Navigate after brief delay for animation (with cleanup tracking)
+        navigationTimeoutRef.current = setTimeout(() => {
           navigation.navigate("NutritionDetail", { barcode: result.data });
           // Refresh scan count after navigation
           refreshScanCount();
-          setTimeout(() => {
+          resetTimeoutRef.current = setTimeout(() => {
             resetScanning();
             scanSuccessScale.value = 0;
           }, SCAN_TIMING.RESET_DELAY_MS);
@@ -89,10 +96,21 @@ export default function ScanScreen() {
       debounceMs: SCAN_TIMING.SCAN_DEBOUNCE_MS,
     });
 
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (navigationTimeoutRef.current)
+        clearTimeout(navigationTimeoutRef.current);
+      if (resetTimeoutRef.current) clearTimeout(resetTimeoutRef.current);
+    };
+  }, []);
+
   const pulseScale = useSharedValue(1);
   const cornerOpacity = useSharedValue(0.6);
   const scanSuccessScale = useSharedValue(0);
 
+  // Start corner pulse animation on mount
+  // Note: cornerOpacity is a stable useSharedValue ref, safe to omit from deps
   useEffect(() => {
     cornerOpacity.value = withRepeat(
       withSequence(
@@ -102,6 +120,7 @@ export default function ScanScreen() {
       -1,
       true,
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pulseStyle = useAnimatedStyle(() => ({
@@ -147,8 +166,9 @@ export default function ScanScreen() {
         if (photo?.uri) {
           navigation.navigate("NutritionDetail", { imageUri: photo.uri });
         }
-      } catch (error) {
-        console.error("Error taking picture:", error);
+      } catch {
+        // Photo capture failed - provide haptic feedback to indicate failure
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     }
   };
@@ -170,7 +190,7 @@ export default function ScanScreen() {
       <View
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       >
-        <ActivityIndicator size="large" color={Colors.light.success} />
+        <ActivityIndicator size="large" color={theme.success} />
       </View>
     );
   }
@@ -206,11 +226,16 @@ export default function ScanScreen() {
               onPress={async () => {
                 try {
                   await Linking.openSettings();
-                } catch {}
+                } catch {
+                  // Settings couldn't be opened - user can manually navigate
+                  Haptics.notificationAsync(
+                    Haptics.NotificationFeedbackType.Error,
+                  );
+                }
               }}
               style={[
                 styles.permissionButton,
-                { backgroundColor: Colors.light.success },
+                { backgroundColor: theme.success },
               ]}
             >
               <ThemedText type="body" style={styles.permissionButtonText}>
@@ -230,7 +255,7 @@ export default function ScanScreen() {
             onPress={requestPermission}
             style={[
               styles.permissionButton,
-              { backgroundColor: Colors.light.success },
+              { backgroundColor: theme.success },
             ]}
           >
             <ThemedText type="body" style={styles.permissionButtonText}>
@@ -250,7 +275,6 @@ export default function ScanScreen() {
         onBarcodeScanned={onBarcodeScanned}
         enableTorch={torch}
         facing="back"
-        isActive={true}
       />
 
       <View style={[styles.overlay, { paddingTop: insets.top + Spacing.md }]}>
@@ -260,9 +284,7 @@ export default function ScanScreen() {
             style={[
               styles.controlButton,
               {
-                backgroundColor: torch
-                  ? Colors.light.success
-                  : "rgba(0,0,0,0.4)",
+                backgroundColor: torch ? theme.success : "rgba(0,0,0,0.4)",
               },
             ]}
           >
@@ -295,7 +317,7 @@ export default function ScanScreen() {
             style={[
               styles.successPulse,
               successStyle,
-              { backgroundColor: Colors.light.success },
+              { backgroundColor: theme.success },
             ]}
           />
 
@@ -328,10 +350,7 @@ export default function ScanScreen() {
           <AnimatedView style={pulseStyle}>
             <Pressable
               onPress={handleShutterPress}
-              style={[
-                styles.shutterButton,
-                { backgroundColor: Colors.light.success },
-              ]}
+              style={[styles.shutterButton, { backgroundColor: theme.success }]}
             >
               <View style={styles.shutterInner} />
             </Pressable>

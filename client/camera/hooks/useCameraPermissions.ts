@@ -52,8 +52,8 @@ export function useCameraPermissions(): UseCameraPermissionsReturn {
       try {
         const status = await Camera.getCameraPermissionStatus();
         setPermission(mapPermission(status));
-      } catch (error) {
-        console.error("Error checking camera permission:", error);
+      } catch {
+        // Permission check failed - default to undetermined to allow retry
         setPermission({ status: "undetermined", canAskAgain: true });
       } finally {
         setIsLoading(false);
@@ -70,8 +70,8 @@ export function useCameraPermissions(): UseCameraPermissionsReturn {
         const result = mapPermission(status);
         setPermission(result);
         return result;
-      } catch (error) {
-        console.error("Error requesting camera permission:", error);
+      } catch {
+        // Permission request failed - treat as denied
         return { status: "denied", canAskAgain: false };
       }
     }, [mapPermission]);

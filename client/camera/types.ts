@@ -51,13 +51,3 @@ export interface CameraViewProps {
   /** Style for the camera view */
   style?: StyleProp<ViewStyle>;
 }
-
-// Camera adapter interface that implementations must follow
-export interface CameraAdapter {
-  // Permission methods
-  requestPermission(): Promise<CameraPermissionResult>;
-  getPermissionStatus(): Promise<CameraPermissionResult>;
-
-  // Camera operations
-  takePicture(options?: PhotoOptions): Promise<PhotoResult | null>;
-}
