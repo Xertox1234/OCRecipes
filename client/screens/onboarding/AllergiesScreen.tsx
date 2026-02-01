@@ -180,6 +180,8 @@ export default function AllergiesScreen() {
                 <Pressable
                   key={option.value}
                   onPress={() => setSeverity(option.value)}
+                  accessibilityLabel={`${option.label}: ${option.description}`}
+                  accessibilityRole="button"
                   style={[
                     styles.severityOption,
                     {

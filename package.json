@@ -12,6 +12,7 @@
     "db:push": "drizzle-kit push",
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
+    "lint:a11y": "node scripts/check-accessibility.js",
     "check:types": "tsc --noEmit",
     "check:format": "prettier --check \"**/*.{js,ts,tsx,css,json}\"",
     "format": "prettier --write \"**/*.{js,ts,tsx,css,json}\"",
@@ -98,6 +99,9 @@
     "*.{ts,tsx}": [
       "eslint --fix",
       "prettier --write"
+    ],
+    "client/**/*.tsx": [
+      "node scripts/check-accessibility.js"
     ],
     "*.{js,json,md}": [
       "prettier --write"

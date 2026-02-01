@@ -251,6 +251,7 @@ export default function ProfileScreen() {
             onChangeText={setDisplayName}
             placeholder="Display Name"
             placeholderTextColor={theme.textSecondary}
+            accessibilityLabel="Display name"
             autoFocus
           />
         ) : (
@@ -367,6 +368,7 @@ export default function ProfileScreen() {
                 onChangeText={setCalorieGoal}
                 keyboardType="numeric"
                 maxLength={5}
+                accessibilityLabel="Daily calorie target"
               />
             ) : (
               <ThemedText type="body" style={{ fontWeight: "600" }}>
@@ -672,6 +674,8 @@ export default function ProfileScreen() {
               </Button>
               <Pressable
                 onPress={() => setIsEditing(false)}
+                accessibilityLabel="Cancel editing"
+                accessibilityRole="button"
                 style={[
                   styles.cancelButton,
                   { backgroundColor: theme.backgroundSecondary },

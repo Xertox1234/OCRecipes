@@ -45,6 +45,8 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
       {__DEV__ ? (
         <Pressable
           onPress={() => setIsModalVisible(true)}
+          accessibilityLabel="View error details"
+          accessibilityRole="button"
           style={({ pressed }) => [
             styles.topButton,
             {
@@ -68,6 +70,8 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
 
         <Pressable
           onPress={handleRestart}
+          accessibilityLabel="Try again and reload the app"
+          accessibilityRole="button"
           style={({ pressed }) => [
             styles.button,
             {
@@ -101,6 +105,8 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
                 </ThemedText>
                 <Pressable
                   onPress={() => setIsModalVisible(false)}
+                  accessibilityLabel="Close error details"
+                  accessibilityRole="button"
                   style={({ pressed }) => [
                     styles.closeButton,
                     { opacity: pressed ? 0.6 : 1 },
