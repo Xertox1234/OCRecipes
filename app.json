@@ -46,17 +46,13 @@
       ],
       "expo-web-browser",
       [
-        "expo-camera",
+        "react-native-vision-camera",
         {
-          "cameraPermission": "NutriScan needs camera access to scan barcodes and nutrition labels."
+          "cameraPermissionText": "NutriScan needs camera access to scan barcodes and nutrition labels.",
+          "enableCodeScanner": true
         }
       ],
-      [
-        "expo-barcode-scanner",
-        {
-          "cameraPermission": "NutriScan needs camera access to scan barcodes."
-        }
-      ]
+      "react-native-worklets-core"
     ],
     "experiments": {
       "reactCompiler": true

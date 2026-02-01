@@ -17,6 +17,11 @@ import {
   users,
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import {
+  TIER_FEATURES,
+  type SubscriptionTier,
+  type SubscriptionStatus,
+} from "@shared/types/premium";
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -112,6 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             displayName: user.displayName,
             dailyCalorieGoal: user.dailyCalorieGoal,
             onboardingCompleted: user.onboardingCompleted,
+            subscriptionTier: user.subscriptionTier || "free",
           },
           token,
         });
@@ -157,6 +163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             displayName: user.displayName,
             dailyCalorieGoal: user.dailyCalorieGoal,
             onboardingCompleted: user.onboardingCompleted,
+            subscriptionTier: user.subscriptionTier || "free",
           },
           token,
         });
@@ -184,6 +191,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       displayName: user.displayName,
       dailyCalorieGoal: user.dailyCalorieGoal,
       onboardingCompleted: user.onboardingCompleted,
+      subscriptionTier: user.subscriptionTier || "free",
     });
   });
 
@@ -217,6 +225,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           displayName: user.displayName,
           dailyCalorieGoal: user.dailyCalorieGoal,
           onboardingCompleted: user.onboardingCompleted,
+          subscriptionTier: user.subscriptionTier || "free",
         });
       } catch (error) {
         if (error instanceof ZodError) {
@@ -482,6 +491,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.error("Error fetching daily summary:", error);
         res.status(500).json({ error: "Failed to fetch summary" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/subscription/status",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const subscriptionData = await storage.getSubscriptionStatus(
+          req.userId!,
+        );
+
+        if (!subscriptionData) {
+          return res.status(404).json({ error: "User not found" });
+        }
+
+        const tier = subscriptionData.tier as SubscriptionTier;
+        const expiresAt = subscriptionData.expiresAt;
+
+        // Check if premium subscription has expired
+        const isActive =
+          tier === "free" ||
+          (tier === "premium" &&
+            (!expiresAt || new Date(expiresAt) > new Date()));
+
+        const effectiveTier: SubscriptionTier = isActive ? tier : "free";
+
+        const response: SubscriptionStatus = {
+          tier: effectiveTier,
+          expiresAt: expiresAt?.toISOString() || null,
+          features: TIER_FEATURES[effectiveTier],
+          isActive,
+        };
+
+        res.json(response);
+      } catch (error) {
+        console.error("Error fetching subscription status:", error);
+        res.status(500).json({ error: "Failed to fetch subscription status" });
+      }
+    },
+  );
+
+  app.get(
+    "/api/subscription/scan-count",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const count = await storage.getDailyScanCount(req.userId!, new Date());
+        res.json({ count });
+      } catch (error) {
+        console.error("Error fetching scan count:", error);
+        res.status(500).json({ error: "Failed to fetch scan count" });
       }
     },
   );

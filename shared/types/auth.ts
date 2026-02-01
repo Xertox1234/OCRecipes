@@ -23,6 +23,7 @@ export interface User {
   displayName?: string;
   dailyCalorieGoal?: number;
   onboardingCompleted?: boolean;
+  subscriptionTier?: "free" | "premium";
 }
 
 // API response types

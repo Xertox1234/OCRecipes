@@ -14,6 +14,10 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
+import {
+  subscriptionTierSchema,
+  type SubscriptionTier,
+} from "@shared/types/premium";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -48,6 +52,20 @@ export interface IStorage {
     totalFat: number;
     itemCount: number;
   }>;
+
+  getSubscriptionStatus(userId: string): Promise<
+    | {
+        tier: SubscriptionTier;
+        expiresAt: Date | null;
+      }
+    | undefined
+  >;
+  updateSubscription(
+    userId: string,
+    tier: SubscriptionTier,
+    expiresAt: Date | null,
+  ): Promise<User | undefined>;
+  getDailyScanCount(userId: string, date: Date): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -212,6 +230,64 @@ export class DatabaseStorage implements IStorage {
         itemCount: 0,
       }
     );
+  }
+
+  async getSubscriptionStatus(userId: string): Promise<
+    | {
+        tier: SubscriptionTier;
+        expiresAt: Date | null;
+      }
+    | undefined
+  > {
+    const [user] = await db
+      .select({
+        tier: users.subscriptionTier,
+        expiresAt: users.subscriptionExpiresAt,
+      })
+      .from(users)
+      .where(eq(users.id, userId));
+
+    if (!user) return undefined;
+
+    // Validate tier with Zod schema, fallback to "free" if invalid
+    const parsedTier = subscriptionTierSchema.safeParse(user.tier);
+    return {
+      tier: parsedTier.success ? parsedTier.data : "free",
+      expiresAt: user.expiresAt,
+    };
+  }
+
+  async updateSubscription(
+    userId: string,
+    tier: SubscriptionTier,
+    expiresAt: Date | null,
+  ): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ subscriptionTier: tier, subscriptionExpiresAt: expiresAt })
+      .where(eq(users.id, userId))
+      .returning();
+    return user || undefined;
+  }
+
+  async getDailyScanCount(userId: string, date: Date): Promise<number> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(scannedItems)
+      .where(
+        and(
+          eq(scannedItems.userId, userId),
+          gte(scannedItems.scannedAt, startOfDay),
+          lt(scannedItems.scannedAt, endOfDay),
+        ),
+      );
+
+    return Number(result[0]?.count ?? 0);
   }
 }
 

@@ -23,6 +23,8 @@ export const users = pgTable("users", {
   displayName: text("display_name"),
   dailyCalorieGoal: integer("daily_calorie_goal").default(2000),
   onboardingCompleted: boolean("onboarding_completed").default(false),
+  subscriptionTier: text("subscription_tier").default("free"),
+  subscriptionExpiresAt: timestamp("subscription_expires_at"),
   createdAt: timestamp("created_at")
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),

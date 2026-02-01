@@ -209,6 +209,68 @@ if (!isAccessTokenPayload(payload)) {
 // payload is now typed as AccessTokenPayload
 ```
 
+### Zod safeParse with Fallback for Database Values
+
+When reading enum or constrained values from database/storage, use `safeParse()` with a fallback instead of unsafe type assertions:
+
+```typescript
+import { z } from "zod";
+
+// Define the schema for valid values
+const subscriptionTierSchema = z.enum(["free", "premium", "enterprise"]);
+type SubscriptionTier = z.infer<typeof subscriptionTierSchema>;
+
+// Good: Safe parsing with fallback
+function getSubscriptionTier(dbValue: unknown): SubscriptionTier {
+  const result = subscriptionTierSchema.safeParse(dbValue);
+  return result.success ? result.data : "free";
+}
+
+// Usage in storage layer
+async getUser(id: string): Promise<User | null> {
+  const row = await db.query.users.findFirst({ where: eq(users.id, id) });
+  if (!row) return null;
+
+  return {
+    ...row,
+    subscriptionTier: getSubscriptionTier(row.subscriptionTier),
+  };
+}
+```
+
+```typescript
+// Bad: Unsafe type assertion
+async getUser(id: string): Promise<User | null> {
+  const row = await db.query.users.findFirst({ where: eq(users.id, id) });
+  if (!row) return null;
+
+  return {
+    ...row,
+    // DANGER: If database has invalid value (e.g., "premium_trial"),
+    // TypeScript thinks it's valid but runtime behavior is undefined
+    subscriptionTier: row.subscriptionTier as SubscriptionTier,
+  };
+}
+```
+
+**Why:** Database values can become invalid due to:
+
+- Schema migrations leaving stale data
+- Direct database edits bypassing application logic
+- Enum values being removed from code but not cleaned from database
+
+**When to use:**
+
+- Reading enum fields from database
+- Parsing stored JSON with expected structure
+- Any database field with constrained values (status, role, tier, type)
+
+**Fallback strategy:**
+
+- Use the most restrictive/safe default (e.g., "free" tier, "pending" status)
+- Consider logging unexpected values for monitoring
+- The application continues working even with corrupted data
+
 ### Extend Express Types Properly
 
 When adding properties to Express Request:
@@ -729,6 +791,77 @@ export default function MyScreen() {
 ```
 
 **Why:** Handles iOS notch, Dynamic Island, and home indicator. Adding theme spacing (`Spacing.lg`, `Spacing.xl`) provides visual breathing room beyond the safe area.
+
+### useRef for Synchronous Checks in Callbacks
+
+When a callback needs to check mutable state synchronously (e.g., debouncing, rate limiting), use `useRef` instead of state. State values captured in closures become stale:
+
+```typescript
+// Good: useRef for synchronous checks
+export function useCamera() {
+  const [isScanning, setIsScanning] = useState(false);
+  const isScanningRef = useRef(false);
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleBarcodeScanned = useCallback((barcode: string) => {
+    // Use ref for synchronous check - always has current value
+    if (isScanningRef.current) return;
+
+    isScanningRef.current = true;
+    setIsScanning(true);
+
+    // Process barcode...
+
+    // Debounce: reset after delay
+    debounceTimeoutRef.current = setTimeout(() => {
+      isScanningRef.current = false;
+      setIsScanning(false);
+    }, 2000);
+  }, []); // Empty deps - refs don't need to be dependencies
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return { isScanning, handleBarcodeScanned };
+}
+```
+
+```typescript
+// Bad: State check in callback - always stale!
+export function useCamera() {
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleBarcodeScanned = useCallback(
+    (barcode: string) => {
+      // BUG: isScanning is captured at callback creation time
+      // It will always be the initial value (false)
+      if (isScanning) return; // This never blocks!
+
+      setIsScanning(true);
+      // Process barcode... but rapid scans all get through
+    },
+    [isScanning],
+  ); // Adding dependency recreates callback but doesn't fix the issue
+}
+```
+
+**Why this happens:** `useCallback` creates a closure that captures state values at creation time. Even with dependencies, the check happens against a potentially outdated snapshot.
+
+**When to use:**
+
+- Debouncing rapid events (barcode scans, button clicks)
+- Rate limiting (API calls, animations)
+- Any callback that needs to check "am I already processing?"
+
+**Pattern:** Keep both `useState` (for UI rendering) and `useRef` (for synchronous logic) when you need both reactive UI updates and reliable synchronous checks.
+
+---
 
 ### Haptic Feedback on User Actions
 

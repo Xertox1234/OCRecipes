@@ -19,6 +19,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 **Problem:** Session-based authentication with `express-session` and HTTP cookies does not work reliably in React Native/Expo Go.
 
 **Root Cause:**
+
 - Expo Go runs in a sandboxed JavaScript environment
 - HTTP cookies are not reliably persisted across app restarts
 - Cookie storage is inconsistent between iOS and Android in development mode
@@ -27,12 +28,14 @@ This document captures key learnings, gotchas, and architectural decisions disco
 **Solution:** Migrate to JWT tokens stored in AsyncStorage with Authorization Bearer headers.
 
 **Implementation:**
+
 1. Server generates JWT tokens on login/register
 2. Client stores token in AsyncStorage with in-memory caching
 3. Client includes token via `Authorization: Bearer <token>` header on every request
 4. Server validates token with middleware, attaches `userId` to `req`
 
 **Key Files:**
+
 - `/Users/williamtower/projects/Nutri-Cam/server/middleware/auth.ts` - JWT generation and validation
 - `/Users/williamtower/projects/Nutri-Cam/client/lib/token-storage.ts` - Token persistence with caching
 - `/Users/williamtower/projects/Nutri-Cam/shared/types/auth.ts` - Shared auth types
@@ -50,7 +53,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 ```typescript
 // Over-abstracted
 async function withTransaction<T>(
-  callback: (tx: Transaction) => Promise<T>
+  callback: (tx: Transaction) => Promise<T>,
 ): Promise<T> {
   return await db.transaction(callback);
 }
@@ -70,12 +73,14 @@ const result = await db.transaction(async (tx) => {
 ```
 
 **Why the change?**
+
 - The helper added zero value (just wrapped `db.transaction()`)
 - Made stack traces harder to read
 - Added unnecessary indirection
 - No consistency benefit since transactions vary significantly
 
 **Lesson:** Don't create abstractions unless they provide clear value:
+
 - ✅ Reduce duplication (3+ uses)
 - ✅ Encapsulate complex logic
 - ✅ Enforce invariants
@@ -92,6 +97,7 @@ const result = await db.transaction(async (tx) => {
 **Decision:** Keep API response types inline at the call site, not in shared type files.
 
 **Bad pattern:**
+
 ```typescript
 // shared/types/models.ts
 export interface ScannedItemResponse { ... }
@@ -102,6 +108,7 @@ export interface DailySummaryResponse { ... }
 ```
 
 **Good pattern:**
+
 ```typescript
 // client/screens/HistoryScreen.tsx
 type ScannedItemResponse = {
@@ -117,6 +124,7 @@ type PaginatedResponse = {
 ```
 
 **Why?**
+
 - Response shapes are implementation details of the consuming component
 - Tight coupling between client screen and shared type file makes refactoring harder
 - When response shape changes, you update it where it's used
@@ -143,6 +151,7 @@ async function checkAuth() {
 ```
 
 **Fix:**
+
 ```typescript
 async function checkAuth() {
   const response = await apiRequest("GET", "/api/auth/me");
@@ -161,6 +170,7 @@ async function checkAuth() {
 **Observation:** Every API request in initial implementation read token from AsyncStorage (2-10ms per read).
 
 **Impact:**
+
 - 10 API calls = 20-100ms wasted on storage reads
 - Stuttering UI when making rapid requests
 - Poor user experience on slower devices
@@ -196,6 +206,7 @@ export const tokenStorage = {
 **Symptom:** "Warning: Can't perform a React state update on an unmounted component"
 
 **Fix:**
+
 ```typescript
 useEffect(() => {
   const timer = setTimeout(() => {
@@ -207,10 +218,74 @@ useEffect(() => {
 ```
 
 **Lesson:** ALWAYS return cleanup functions from useEffect hooks that set up:
+
 - Timers (setTimeout, setInterval)
 - Event listeners
 - Subscriptions
 - Animation frames
+
+---
+
+### Stale Closures in Callbacks: State vs Refs
+
+**Problem:** During camera migration, `handleBarcodeScanned` callback checked `isScanning` state to debounce rapid scans, but the check always passed (never blocked duplicate scans).
+
+**Root Cause:** The callback was created with `useCallback` and captured the `isScanning` value at creation time. Even when `isScanning` was updated to `true`, the callback still had the old `false` value in its closure.
+
+```typescript
+// Bug: isScanning is always the initial false value
+const handleBarcodeScanned = useCallback(
+  (barcode: string) => {
+    if (isScanning) return; // Never true!
+    setIsScanning(true);
+    // Process barcode...
+  },
+  [isScanning],
+);
+```
+
+**Why adding dependency didn't help:** Adding `isScanning` to the dependency array recreates the callback when state changes, but the check still happens against the captured snapshot. The real issue is that state updates are asynchronous - multiple rapid events can all see `isScanning = false` before any update takes effect.
+
+**Solution:** Use `useRef` for synchronous mutable checks:
+
+```typescript
+const isScanningRef = useRef(false);
+const [isScanning, setIsScanning] = useState(false);
+
+const handleBarcodeScanned = useCallback((barcode: string) => {
+  if (isScanningRef.current) return; // Synchronous check works!
+  isScanningRef.current = true;
+  setIsScanning(true);
+  // Process barcode...
+}, []); // No dependencies needed for refs
+```
+
+**Key insight:** Use both state AND ref:
+
+- `useRef` for synchronous logic (debouncing, rate limiting)
+- `useState` for reactive UI updates (showing loading indicator)
+
+**File:** `/Users/williamtower/projects/Nutri-Cam/client/camera/hooks/useCamera.ts`
+
+**Pattern:** See "useRef for Synchronous Checks in Callbacks" in PATTERNS.md
+
+---
+
+### Camera Library Migration: expo-camera to react-native-vision-camera
+
+**Context:** Migrated from expo-camera to react-native-vision-camera for better performance and ML Kit support.
+
+**Key discoveries during migration:**
+
+1. **Stale closure bug** (see above) - The old expo-camera code worked differently; vision-camera's callback pattern exposed the closure issue.
+
+2. **Cleanup is critical** - The debounce timeout for scan cooldown must be cleaned up on unmount to prevent memory leaks and "state update on unmounted component" warnings.
+
+3. **Style prop typing** - Vision camera components need `StyleProp<ViewStyle>` instead of generic `object` type for proper TypeScript support.
+
+4. **Permission handling differs** - Vision camera has its own permission API; don't mix with Expo's permission system.
+
+**Lesson:** When migrating between libraries with similar APIs, don't assume patterns that worked before will work identically. The underlying callback/event model may differ enough to expose latent bugs.
 
 ---
 
@@ -243,6 +318,7 @@ app.get("/api/scanned-items/:id", requireAuth, async (req, res) => {
 ```
 
 **Lesson:** For single-resource endpoints (GET /resource/:id), always check:
+
 1. Resource exists
 2. Current user owns the resource
 
@@ -257,6 +333,7 @@ Return 404 (not 403) to avoid information disclosure about what IDs exist.
 **Before:** `res.header("Access-Control-Allow-Origin", "*")`
 
 **Problem:**
+
 - Allows ANY website to make authenticated requests to your API
 - Credentials can be stolen if user visits malicious site
 - No protection against CSRF attacks
@@ -285,12 +362,14 @@ function isAllowedOrigin(origin: string | undefined): boolean {
 **Added:** Zod validation to all API endpoints.
 
 **Benefits:**
+
 1. **Injection prevention:** Malformed data caught before DB queries
 2. **Type safety:** Numbers are numbers, strings are strings
 3. **Business logic:** Username regex, min/max lengths enforced
 4. **Clear errors:** Users get actionable feedback
 
 **Example Attack Prevented:**
+
 ```typescript
 // Without validation:
 POST /api/auth/register
@@ -314,6 +393,7 @@ const registerSchema = z.object({
 ### Delete Code Aggressively
 
 **Removed in code review:**
+
 - ~600 LOC of unused web support (landing page, web-specific hooks)
 - Unused Spacer component
 - Unused chat schema
@@ -321,6 +401,7 @@ const registerSchema = z.object({
 - Commented-out code
 
 **Why delete instead of "keep for later"?**
+
 - Unused code has maintenance cost (must be updated when dependencies change)
 - Creates confusion ("Is this used? Should I update it?")
 - Git history preserves deleted code if you need it back
@@ -335,6 +416,7 @@ const registerSchema = z.object({
 ### Replace `any` with Proper Types
 
 **Before:**
+
 ```typescript
 function handleSubmit(data: any) {
   navigation.navigate("NextScreen", { data });
@@ -342,8 +424,9 @@ function handleSubmit(data: any) {
 ```
 
 **After:**
+
 ```typescript
-import type { HomeScreenNavigationProp } from '@/types/navigation';
+import type { HomeScreenNavigationProp } from "@/types/navigation";
 
 function handleSubmit(data: { username: string; password: string }) {
   navigation.navigate("NextScreen", { data });
@@ -351,6 +434,7 @@ function handleSubmit(data: { username: string; password: string }) {
 ```
 
 **Benefits:**
+
 - Autocomplete in IDE
 - Compile-time error checking
 - Refactoring safety
@@ -365,16 +449,19 @@ function handleSubmit(data: { username: string; password: string }) {
 ### Database Indexes Are Not Optional
 
 **Added indexes to:**
+
 - `scannedItems.userId` - Filtered on every query
 - `scannedItems.scannedAt` - Sorted on every history query
 - `dailyLogs.userId` - Filtered on every query
 - `dailyLogs.loggedAt` - Filtered by date range
 
 **Query performance improvement:**
+
 - Before: Full table scan on 10k+ items = ~500ms
 - After: Index scan = ~5ms
 
 **Rule of thumb:** Add indexes to columns used in:
+
 - WHERE clauses (especially foreign keys)
 - ORDER BY clauses
 - JOIN conditions
@@ -388,6 +475,7 @@ function handleSubmit(data: { username: string; password: string }) {
 ### Pagination Prevents OOM Crashes
 
 **Before:** Loaded ALL scanned items in one query:
+
 ```typescript
 app.get("/api/scanned-items", async (req, res) => {
   const items = await storage.getAllScannedItems(req.userId);
@@ -396,11 +484,13 @@ app.get("/api/scanned-items", async (req, res) => {
 ```
 
 **Problem:**
+
 - Large JSON responses (>10MB) crash mobile devices
 - Slow network transfers
 - UI freezes rendering huge lists
 
 **After:** Pagination with useInfiniteQuery:
+
 ```typescript
 app.get("/api/scanned-items", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 100);
