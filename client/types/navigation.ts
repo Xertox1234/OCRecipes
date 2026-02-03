@@ -24,6 +24,17 @@ export type HistoryScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
+ * Navigation prop for HistoryScreen (Today dashboard).
+ * Uses CompositeNavigationProp to navigate across stacks:
+ * - Navigate within HistoryStack (ItemDetail)
+ * - Navigate to ScanTab (MainTab - for quick scan CTA)
+ */
+export type TodayDashboardNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<HistoryStackParamList, "History">,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+/**
  * Navigation prop for ScanScreen
  * Uses CompositeNavigationProp to navigate across stacks:
  * - Navigate to NutritionDetail (RootStack)
@@ -44,4 +55,22 @@ export type ScanScreenNavigationProp = CompositeNavigationProp<
 export type NutritionDetailScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "NutritionDetail"
+>;
+
+/**
+ * Navigation prop for PhotoAnalysisScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "PhotoAnalysis"
+>;
+
+/**
+ * Navigation prop for GoalSetupScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type GoalSetupScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "GoalSetup"
 >;

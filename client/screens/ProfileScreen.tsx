@@ -9,6 +9,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useNavigation } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -23,6 +24,16 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { CompositeNavigationProp } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+import type { MainTabParamList } from "@/navigation/MainTabNavigator";
+
+type ProfileScreenNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, "ProfileTab">,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
 type FeatherIconName = ComponentProps<typeof Feather>["name"];
 
@@ -100,6 +111,13 @@ interface DailySummary {
   itemCount: number;
 }
 
+interface UserGoals {
+  dailyCalorieGoal: number | null;
+  dailyProteinGoal: number | null;
+  dailyCarbsGoal: number | null;
+  dailyFatGoal: number | null;
+}
+
 function SettingsItem({
   icon,
   label,
@@ -169,16 +187,19 @@ export default function ProfileScreen() {
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const { user, logout, updateUser } = useAuthContext();
+  const navigation = useNavigation<ProfileScreenNavigationProp>();
 
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || "");
-  const [calorieGoal, setCalorieGoal] = useState(
-    (user?.dailyCalorieGoal || 2000).toString(),
-  );
   const [isSaving, setIsSaving] = useState(false);
 
   const { data: todaySummary } = useQuery<DailySummary>({
     queryKey: ["/api/daily-summary"],
+    enabled: !!user,
+  });
+
+  const { data: userGoals } = useQuery<UserGoals>({
+    queryKey: ["/api/goals"],
     enabled: !!user,
   });
 
@@ -197,7 +218,6 @@ export default function ProfileScreen() {
     try {
       await updateUser({
         displayName: displayName.trim() || undefined,
-        dailyCalorieGoal: parseInt(calorieGoal) || 2000,
       });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       setIsEditing(false);
@@ -356,33 +376,207 @@ export default function ProfileScreen() {
           reducedMotion ? undefined : FadeInDown.delay(300).duration(400)
         }
       >
-        <ThemedText type="h4" style={styles.sectionTitle}>
-          Nutrition Goals
-        </ThemedText>
-        <Card elevation={1} style={styles.settingsCard}>
-          <View style={styles.goalRow}>
-            <ThemedText type="body">Daily Calorie Target</ThemedText>
-            {isEditing ? (
-              <TextInput
-                style={[
-                  styles.goalInput,
-                  {
-                    backgroundColor: theme.backgroundSecondary,
-                    color: theme.text,
-                  },
-                ]}
-                value={calorieGoal}
-                onChangeText={setCalorieGoal}
-                keyboardType="numeric"
-                maxLength={5}
-                accessibilityLabel="Daily calorie target"
-              />
-            ) : (
-              <ThemedText type="body" style={{ fontWeight: "600" }}>
-                {user?.dailyCalorieGoal || 2000} kcal
+        <View style={styles.sectionHeaderRow}>
+          <ThemedText type="h4" style={styles.sectionTitle}>
+            Nutrition Goals
+          </ThemedText>
+          <Pressable
+            onPress={() => navigation.navigate("GoalSetup")}
+            accessibilityLabel="Set up nutrition goals"
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.setupGoalsButton,
+              {
+                backgroundColor: theme.success + "20",
+                opacity: pressed ? 0.7 : 1,
+              },
+            ]}
+          >
+            <Feather name="sliders" size={14} color={theme.success} />
+            <ThemedText type="small" style={{ color: theme.success }}>
+              {userGoals?.dailyProteinGoal ? "Edit" : "Set Up"}
+            </ThemedText>
+          </Pressable>
+        </View>
+        <Card elevation={1} style={styles.goalsCard}>
+          {userGoals?.dailyProteinGoal ? (
+            <>
+              {/* Calorie Goal */}
+              <View style={styles.macroGoalRow}>
+                <View style={styles.macroGoalInfo}>
+                  <ThemedText type="body">Calories</ThemedText>
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    {todaySummary ? Math.round(todaySummary.totalCalories) : 0}{" "}
+                    /{" "}
+                    {userGoals.dailyCalorieGoal ||
+                      user?.dailyCalorieGoal ||
+                      2000}
+                  </ThemedText>
+                </View>
+                <View
+                  style={[
+                    styles.macroProgressBar,
+                    { backgroundColor: theme.backgroundSecondary },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.macroProgressFill,
+                      {
+                        width: `${Math.min(
+                          ((todaySummary?.totalCalories || 0) /
+                            (userGoals.dailyCalorieGoal ||
+                              user?.dailyCalorieGoal ||
+                              2000)) *
+                            100,
+                          100,
+                        )}%`,
+                        backgroundColor: theme.calorieAccent,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              {/* Protein Goal */}
+              <View style={styles.macroGoalRow}>
+                <View style={styles.macroGoalInfo}>
+                  <ThemedText type="body">Protein</ThemedText>
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    {todaySummary ? Math.round(todaySummary.totalProtein) : 0}g
+                    / {userGoals.dailyProteinGoal}g
+                  </ThemedText>
+                </View>
+                <View
+                  style={[
+                    styles.macroProgressBar,
+                    { backgroundColor: theme.backgroundSecondary },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.macroProgressFill,
+                      {
+                        width: `${Math.min(
+                          ((todaySummary?.totalProtein || 0) /
+                            userGoals.dailyProteinGoal) *
+                            100,
+                          100,
+                        )}%`,
+                        backgroundColor: theme.proteinAccent,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              {/* Carbs Goal */}
+              <View style={styles.macroGoalRow}>
+                <View style={styles.macroGoalInfo}>
+                  <ThemedText type="body">Carbs</ThemedText>
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    {todaySummary ? Math.round(todaySummary.totalCarbs) : 0}g /{" "}
+                    {userGoals.dailyCarbsGoal}g
+                  </ThemedText>
+                </View>
+                <View
+                  style={[
+                    styles.macroProgressBar,
+                    { backgroundColor: theme.backgroundSecondary },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.macroProgressFill,
+                      {
+                        width: `${Math.min(
+                          ((todaySummary?.totalCarbs || 0) /
+                            (userGoals.dailyCarbsGoal || 1)) *
+                            100,
+                          100,
+                        )}%`,
+                        backgroundColor: theme.carbsAccent,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+
+              {/* Fat Goal */}
+              <View style={[styles.macroGoalRow, { marginBottom: 0 }]}>
+                <View style={styles.macroGoalInfo}>
+                  <ThemedText type="body">Fat</ThemedText>
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    {todaySummary ? Math.round(todaySummary.totalFat) : 0}g /{" "}
+                    {userGoals.dailyFatGoal}g
+                  </ThemedText>
+                </View>
+                <View
+                  style={[
+                    styles.macroProgressBar,
+                    { backgroundColor: theme.backgroundSecondary },
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.macroProgressFill,
+                      {
+                        width: `${Math.min(
+                          ((todaySummary?.totalFat || 0) /
+                            (userGoals.dailyFatGoal || 1)) *
+                            100,
+                          100,
+                        )}%`,
+                        backgroundColor: theme.fatAccent,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            </>
+          ) : (
+            <View style={styles.noGoalsContainer}>
+              <Feather name="target" size={32} color={theme.textSecondary} />
+              <ThemedText
+                type="body"
+                style={{
+                  color: theme.textSecondary,
+                  textAlign: "center",
+                  marginTop: Spacing.md,
+                }}
+              >
+                Set personalized nutrition goals based on your profile
               </ThemedText>
-            )}
-          </View>
+              <Pressable
+                onPress={() => navigation.navigate("GoalSetup")}
+                accessibilityLabel="Set up goals"
+                accessibilityRole="button"
+                style={[
+                  styles.setGoalsButton,
+                  { backgroundColor: theme.success },
+                ]}
+              >
+                <ThemedText
+                  type="body"
+                  style={{ color: "#FFFFFF", fontWeight: "600" }}
+                >
+                  Set Up Goals
+                </ThemedText>
+              </Pressable>
+            </View>
+          )}
         </Card>
       </Animated.View>
 
@@ -923,5 +1117,51 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  setupGoalsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.full,
+  },
+  goalsCard: {
+    padding: Spacing.lg,
+    marginBottom: Spacing["2xl"],
+  },
+  macroGoalRow: {
+    marginBottom: Spacing.lg,
+  },
+  macroGoalInfo: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.xs,
+  },
+  macroProgressBar: {
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  macroProgressFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  noGoalsContainer: {
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  setGoalsButton: {
+    marginTop: Spacing.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing["2xl"],
+    borderRadius: BorderRadius.full,
   },
 });

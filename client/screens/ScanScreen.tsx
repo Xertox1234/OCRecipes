@@ -155,19 +155,34 @@ export default function ScanScreen() {
   }));
 
   const handlePickImage = async () => {
+    // Check if user can scan today (daily limit)
+    if (!canScan) {
+      haptics.notification(Haptics.NotificationFeedbackType.Warning);
+      // TODO: Show upgrade modal
+      return;
+    }
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 1,
     });
 
     if (!result.canceled && result.assets[0]) {
-      navigation.navigate("NutritionDetail", {
+      navigation.navigate("PhotoAnalysis", {
         imageUri: result.assets[0].uri,
       });
+      refreshScanCount();
     }
   };
 
   const handleShutterPress = async () => {
+    // Check if user can scan today (daily limit)
+    if (!canScan) {
+      haptics.notification(Haptics.NotificationFeedbackType.Warning);
+      // TODO: Show upgrade modal
+      return;
+    }
+
     pulseScale.value = withSequence(
       withSpring(0.9, { damping: 15 }),
       withSpring(1, { damping: 15 }),
@@ -182,7 +197,8 @@ export default function ScanScreen() {
         });
 
         if (photo?.uri) {
-          navigation.navigate("NutritionDetail", { imageUri: photo.uri });
+          navigation.navigate("PhotoAnalysis", { imageUri: photo.uri });
+          refreshScanCount();
         }
       } catch {
         // Photo capture failed - provide haptic feedback to indicate failure

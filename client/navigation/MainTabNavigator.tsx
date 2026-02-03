@@ -60,7 +60,7 @@ export default function MainTabNavigator() {
         name="HistoryTab"
         component={HistoryStackNavigator}
         options={{
-          title: "History",
+          title: "Today",
           tabBarIcon: ({ color, size }) => (
             <Feather name="clock" size={size} color={color} />
           ),

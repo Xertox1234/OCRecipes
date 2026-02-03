@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nutriscan.app",
+      "bundleIdentifier": "com.williamtower.nutriscan",
       "infoPlist": {
         "NSCameraUsageDescription": "NutriScan needs camera access to scan barcodes and nutrition labels."
       }
@@ -51,8 +51,7 @@
           "cameraPermissionText": "NutriScan needs camera access to scan barcodes and nutrition labels.",
           "enableCodeScanner": true
         }
-      ],
-      "react-native-worklets-core"
+      ]
     ],
     "experiments": {
       "reactCompiler": true

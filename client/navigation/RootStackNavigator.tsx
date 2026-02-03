@@ -5,6 +5,8 @@ import { ActivityIndicator, View, StyleSheet } from "react-native";
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import LoginScreen from "@/screens/LoginScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
+import PhotoAnalysisScreen from "@/screens/PhotoAnalysisScreen";
+import GoalSetupScreen from "@/screens/GoalSetupScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
@@ -20,6 +22,10 @@ export type RootStackParamList = {
     imageUri?: string;
     itemId?: number;
   };
+  PhotoAnalysis: {
+    imageUri: string;
+  };
+  GoalSetup: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -65,6 +71,22 @@ export default function RootStackNavigator() {
             component={NutritionDetailScreen}
             options={{
               headerTitle: "Nutrition Facts",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="PhotoAnalysis"
+            component={PhotoAnalysisScreen}
+            options={{
+              headerTitle: "Meal Analysis",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="GoalSetup"
+            component={GoalSetupScreen}
+            options={{
+              headerTitle: "Set Goals",
               presentation: "modal",
             }}
           />

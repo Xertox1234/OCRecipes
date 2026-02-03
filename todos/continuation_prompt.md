@@ -42,38 +42,38 @@ Currently on branch: `feat/photo-calorie-tracker`
 
 ## What Remains
 
-### Phase 4: Frontend Screens (NOT STARTED)
+### Phase 4: Frontend Screens (COMPLETE)
 
-1. **Task #9: Create PhotoAnalysisScreen** (`client/screens/PhotoAnalysisScreen.tsx`)
+1. **Task #9: Create PhotoAnalysisScreen** (`client/screens/PhotoAnalysisScreen.tsx`) ✅
    - Shows AI analysis results with food items and nutrition
    - Follow-up question modal when AI confidence < 70%
    - Inline editing of food items before confirming
    - Memory cleanup on unmount (see `docs/solutions/logic-errors/useeffect-cleanup-memory-leak.md`)
 
-2. **Task #10: Update ScanScreen with shutter button** (`client/screens/ScanScreen.tsx`)
+2. **Task #10: Update ScanScreen with shutter button** (`client/screens/ScanScreen.tsx`) ✅
    - Add camera shutter button alongside barcode scanning
    - Navigate to PhotoAnalysisScreen with captured image URI
    - Premium gate check (shared limit with barcode scans)
 
-3. **Task #11: Create GoalSetupScreen** (`client/screens/GoalSetupScreen.tsx`)
+3. **Task #11: Create GoalSetupScreen** (`client/screens/GoalSetupScreen.tsx`) ✅
    - Collect physical profile: age, weight, height, gender, activity level, goal
    - Call `/api/goals/calculate` endpoint
    - Display calculated goals with manual adjustment option
 
-4. **Task #12: Add goal section to ProfileScreen** (`client/screens/ProfileScreen.tsx`)
+4. **Task #12: Add goal section to ProfileScreen** (`client/screens/ProfileScreen.tsx`) ✅
    - Show current goals (calories + macros)
    - Link to GoalSetupScreen for setup/editing
    - Daily progress indicators
 
-### Phase 5: Navigation (NOT STARTED)
+### Phase 5: Navigation (COMPLETE)
 
-5. **Task #13: Update navigation types** (`client/types/navigation.ts`)
+5. **Task #13: Update navigation types** (`client/types/navigation.ts`) ✅
    - Add PhotoAnalysisScreen and GoalSetupScreen to navigation types
    - Update stack navigator
 
-### Phase 6: Testing (NOT STARTED)
+### Phase 6: Testing (COMPLETE)
 
-6. **Task #14: Write unit tests**
+6. **Task #14: Write unit tests** ✅
    - Goal calculator tests (TDEE formula, macro splits)
    - Zod schema validation tests
    - Photo upload utility tests

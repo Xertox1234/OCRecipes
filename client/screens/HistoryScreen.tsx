@@ -7,12 +7,17 @@ import {
   RefreshControl,
   Image,
   ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation } from "@react-navigation/native";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, {
@@ -24,7 +29,7 @@ import Animated, {
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
-import { SkeletonList } from "@/components/SkeletonLoader";
+import { SkeletonList, SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -33,24 +38,17 @@ import { Spacing, BorderRadius } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
-import type { HistoryScreenNavigationProp } from "@/types/navigation";
-
-// API response types (dates come as strings over JSON)
-type ScannedItemResponse = {
-  id: number;
-  productName: string;
-  brandName?: string | null;
-  calories?: string | null;
-  imageUrl?: string | null;
-  scannedAt: string;
-};
-
-type PaginatedResponse = {
-  items: ScannedItemResponse[];
-  total: number;
-};
+import type { TodayDashboardNavigationProp } from "@/types/navigation";
+import type { HistoryStackParamList } from "@/navigation/HistoryStackNavigator";
+import type {
+  ScannedItemResponse,
+  PaginatedResponse,
+  DailySummaryResponse,
+} from "@/types/api";
+import type { RouteProp } from "@react-navigation/native";
 
 const PAGE_SIZE = 50;
+const DASHBOARD_ITEM_LIMIT = 5;
 
 /** Item height for getItemLayout optimization (padding + content + padding) */
 const ITEM_HEIGHT = Spacing.lg * 2 + 56; // 88px
@@ -230,19 +228,299 @@ function LoadingFooter() {
   );
 }
 
+function DashboardSkeleton() {
+  return (
+    <View accessibilityElementsHidden>
+      {/* Stats row skeleton */}
+      <View style={styles.statsRow}>
+        <SkeletonBox
+          width="48%"
+          height={100}
+          borderRadius={BorderRadius["2xl"]}
+        />
+        <SkeletonBox
+          width="48%"
+          height={100}
+          borderRadius={BorderRadius["2xl"]}
+        />
+      </View>
+      {/* CTA skeleton */}
+      <SkeletonBox
+        width="100%"
+        height={120}
+        borderRadius={BorderRadius["2xl"]}
+        style={{ marginTop: Spacing.xl }}
+      />
+      {/* Section header skeleton */}
+      <SkeletonBox
+        width={150}
+        height={24}
+        style={{ marginTop: Spacing["2xl"], marginBottom: Spacing.lg }}
+      />
+      {/* Recent items skeleton */}
+      <SkeletonList count={3} />
+    </View>
+  );
+}
+
+/** Props for DashboardHeader component */
+type DashboardHeaderProps = {
+  userName: string;
+  currentCalories: number;
+  calorieGoal: number;
+  calorieProgress: number;
+  itemCount: number;
+  reducedMotion: boolean;
+  onScanPress: () => void;
+};
+
+const DashboardHeader = React.memo(function DashboardHeader({
+  userName,
+  currentCalories,
+  calorieGoal,
+  calorieProgress,
+  itemCount,
+  reducedMotion,
+  onScanPress,
+}: DashboardHeaderProps) {
+  const { theme } = useTheme();
+
+  return (
+    <View>
+      {/* Welcome */}
+      <Animated.View
+        entering={
+          reducedMotion ? undefined : FadeInDown.delay(50).duration(300)
+        }
+      >
+        <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+          WELCOME BACK
+        </ThemedText>
+        <ThemedText type="h2" style={{ marginBottom: Spacing.xl }}>
+          {userName}
+        </ThemedText>
+      </Animated.View>
+
+      {/* Stats row */}
+      <Animated.View
+        entering={
+          reducedMotion ? undefined : FadeInDown.delay(100).duration(300)
+        }
+        style={styles.statsRow}
+      >
+        {/* Calories card */}
+        <Card
+          elevation={1}
+          style={[styles.statCard, { backgroundColor: theme.link }]}
+        >
+          <View
+            accessible={true}
+            accessibilityRole="text"
+            accessibilityLabel={`Today's calories: ${currentCalories} of ${calorieGoal} consumed. ${Math.round(calorieProgress)} percent of daily goal.`}
+          >
+            <ThemedText
+              type="caption"
+              style={{ color: "rgba(255,255,255,0.8)" }}
+            >
+              TODAY&apos;S CALORIES
+            </ThemedText>
+            <View style={styles.statValueRow}>
+              <ThemedText type="h2" style={{ color: "#FFFFFF" }}>
+                {currentCalories.toLocaleString()}
+              </ThemedText>
+              <ThemedText
+                type="body"
+                style={{
+                  color: "rgba(255,255,255,0.8)",
+                  marginLeft: Spacing.xs,
+                }}
+              >
+                / {calorieGoal.toLocaleString()}
+              </ThemedText>
+            </View>
+          </View>
+        </Card>
+
+        {/* Items scanned card */}
+        <Card
+          elevation={1}
+          style={[styles.statCard, { backgroundColor: theme.warning }]}
+        >
+          <View
+            accessible={true}
+            accessibilityRole="text"
+            accessibilityLabel={`Items scanned today: ${itemCount}`}
+          >
+            <ThemedText
+              type="caption"
+              style={{ color: "rgba(255,255,255,0.8)" }}
+            >
+              ITEMS SCANNED
+            </ThemedText>
+            <ThemedText type="h2" style={{ color: "#FFFFFF" }}>
+              {itemCount}
+            </ThemedText>
+          </View>
+        </Card>
+      </Animated.View>
+
+      {/* Scan CTA */}
+      <Animated.View
+        entering={
+          reducedMotion ? undefined : FadeInDown.delay(150).duration(300)
+        }
+      >
+        <Pressable
+          style={[
+            styles.scanCTA,
+            { backgroundColor: theme.backgroundSecondary },
+          ]}
+          onPress={onScanPress}
+          accessibilityRole="button"
+          accessibilityLabel="Scan barcode. Opens camera to scan food barcode."
+        >
+          <View style={styles.scanCTAIcon}>
+            <Feather name="camera" size={32} color={theme.text} />
+          </View>
+          <ThemedText type="h4" style={{ marginTop: Spacing.md }}>
+            Scan Barcode
+          </ThemedText>
+          <ThemedText
+            type="small"
+            style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
+          >
+            Identify food & get AI recipes
+          </ThemedText>
+        </Pressable>
+      </Animated.View>
+
+      {/* Recent History section header */}
+      <Animated.View
+        entering={
+          reducedMotion ? undefined : FadeInDown.delay(200).duration(300)
+        }
+        style={styles.sectionHeader}
+      >
+        <ThemedText type="h4">Recent History</ThemedText>
+      </Animated.View>
+    </View>
+  );
+});
+
+/** Props for FullHistoryHeader component */
+type FullHistoryHeaderProps = {
+  onBackPress: () => void;
+};
+
+const FullHistoryHeader = React.memo(function FullHistoryHeader({
+  onBackPress,
+}: FullHistoryHeaderProps) {
+  const { theme } = useTheme();
+
+  return (
+    <View style={styles.fullHistoryHeader}>
+      <Pressable
+        onPress={onBackPress}
+        style={styles.backButton}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel="Back to Today dashboard"
+      >
+        <Feather name="arrow-left" size={20} color={theme.link} />
+        <ThemedText
+          type="body"
+          style={{ color: theme.link, marginLeft: Spacing.xs }}
+        >
+          Today
+        </ThemedText>
+      </Pressable>
+      <ThemedText type="h4" style={{ marginTop: Spacing.md }}>
+        All History
+      </ThemedText>
+    </View>
+  );
+});
+
+/** Props for ViewAllFooter component */
+type ViewAllFooterProps = {
+  onViewAllPress: () => void;
+};
+
+const ViewAllFooter = React.memo(function ViewAllFooter({
+  onViewAllPress,
+}: ViewAllFooterProps) {
+  const { theme } = useTheme();
+
+  return (
+    <View style={styles.viewAllContainer}>
+      <Pressable
+        onPress={onViewAllPress}
+        style={styles.viewAllLink}
+        accessibilityRole="link"
+        accessibilityLabel="View all history"
+      >
+        <ThemedText type="body" style={{ color: theme.link }}>
+          View All History
+        </ThemedText>
+        <Feather
+          name="arrow-right"
+          size={16}
+          color={theme.link}
+          style={{ marginLeft: Spacing.xs }}
+        />
+      </Pressable>
+    </View>
+  );
+});
+
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
-  const navigation = useNavigation<HistoryScreenNavigationProp>();
+  const navigation = useNavigation<TodayDashboardNavigationProp>();
+  const route = useRoute<RouteProp<HistoryStackParamList, "History">>();
   const { user } = useAuthContext();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
+  const queryClient = useQueryClient();
 
+  // Determine if we're showing dashboard or full history
+  const showAll = route.params?.showAll ?? false;
+
+  // Dashboard queries (only when not showing all)
+  const {
+    data: todaySummary,
+    isLoading: summaryLoading,
+    isFetching: summaryFetching,
+  } = useQuery<DailySummaryResponse>({
+    queryKey: ["/api/daily-summary"],
+    queryFn: async (): Promise<DailySummaryResponse> => {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/daily-summary", baseUrl);
+
+      const headers: Record<string, string> = {};
+      const token = await tokenStorage.get();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json();
+    },
+    staleTime: 1000 * 60 * 2, // 2 minutes
+    refetchOnWindowFocus: true,
+    enabled: !!user && !showAll,
+  });
+
+  // Full history with infinite scroll (for showAll mode)
   const {
     data,
-    isLoading,
+    isLoading: historyLoading,
     refetch,
     isRefetching,
     fetchNextPage,
@@ -251,7 +529,9 @@ export default function HistoryScreen() {
   } = useInfiniteQuery({
     queryKey: ["/api/scanned-items"],
     initialPageParam: 0,
-    queryFn: async ({ pageParam }): Promise<PaginatedResponse> => {
+    queryFn: async ({
+      pageParam,
+    }): Promise<PaginatedResponse<ScannedItemResponse>> => {
       const baseUrl = getApiUrl();
       const url = new URL("/api/scanned-items", baseUrl);
       url.searchParams.set("limit", PAGE_SIZE.toString());
@@ -283,10 +563,30 @@ export default function HistoryScreen() {
     enabled: !!user,
   });
 
-  const items = useMemo(
+  const allItems = useMemo(
     () => data?.pages.flatMap((page) => page.items) ?? [],
     [data],
   );
+
+  // Items to display: limited for dashboard, all for full history
+  const displayItems = showAll
+    ? allItems
+    : allItems.slice(0, DASHBOARD_ITEM_LIMIT);
+
+  const isLoading = showAll ? historyLoading : historyLoading || summaryLoading;
+  const isRefreshingDashboard = summaryFetching || isRefetching;
+
+  // Coordinated pull-to-refresh for dashboard
+  const handleRefresh = useCallback(async () => {
+    if (!showAll) {
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["/api/daily-summary"] }),
+        queryClient.refetchQueries({ queryKey: ["/api/scanned-items"] }),
+      ]);
+    } else {
+      refetch();
+    }
+  }, [showAll, queryClient, refetch]);
 
   const handleItemPress = useCallback(
     (item: ScannedItemResponse) => {
@@ -295,6 +595,21 @@ export default function HistoryScreen() {
     },
     [navigation, haptics],
   );
+
+  const handleScanPress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    navigation.navigate("ScanTab");
+  }, [navigation, haptics]);
+
+  const handleViewAllPress = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    navigation.setParams({ showAll: true });
+  }, [navigation, haptics]);
+
+  const handleBackToDashboard = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    navigation.setParams({ showAll: false });
+  }, [navigation, haptics]);
 
   const renderItem = useCallback(
     ({ item, index }: { item: ScannedItemResponse; index: number }) => (
@@ -309,10 +624,10 @@ export default function HistoryScreen() {
   );
 
   const handleEndReached = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) {
+    if (showAll && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [showAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const getItemLayout = useCallback(
     (_: unknown, index: number) => ({
@@ -323,6 +638,30 @@ export default function HistoryScreen() {
     [],
   );
 
+  // Calculate calorie progress
+  const calorieGoal = user?.dailyCalorieGoal || 2000;
+  const currentCalories = Math.round(todaySummary?.totalCalories || 0);
+  const calorieProgress = Math.min((currentCalories / calorieGoal) * 100, 100);
+  const userName = user?.displayName || user?.username || "there";
+  const itemCount = todaySummary?.itemCount || 0;
+
+  // Render loading state for dashboard
+  if (!showAll && isLoading) {
+    return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
+        contentContainerStyle={{
+          paddingTop: headerHeight + Spacing.xl,
+          paddingBottom: tabBarHeight + Spacing.xl,
+          paddingHorizontal: Spacing.lg,
+        }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
+      >
+        <DashboardSkeleton />
+      </ScrollView>
+    );
+  }
+
   return (
     <FlatList
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
@@ -332,12 +671,27 @@ export default function HistoryScreen() {
           paddingTop: headerHeight + Spacing.xl,
           paddingBottom: tabBarHeight + Spacing.xl,
         },
-        items.length === 0 && !isLoading && styles.emptyListContent,
+        displayItems.length === 0 && !isLoading && styles.emptyListContent,
       ]}
       scrollIndicatorInsets={{ bottom: insets.bottom }}
-      data={isLoading ? [] : items}
+      data={isLoading ? [] : displayItems}
       renderItem={renderItem}
       keyExtractor={(item) => item.id.toString()}
+      ListHeaderComponent={
+        showAll ? (
+          <FullHistoryHeader onBackPress={handleBackToDashboard} />
+        ) : (
+          <DashboardHeader
+            userName={userName}
+            currentCalories={currentCalories}
+            calorieGoal={calorieGoal}
+            calorieProgress={calorieProgress}
+            itemCount={itemCount}
+            reducedMotion={reducedMotion}
+            onScanPress={handleScanPress}
+          />
+        )
+      }
       ListEmptyComponent={
         isLoading ? (
           <View accessibilityElementsHidden>
@@ -347,19 +701,29 @@ export default function HistoryScreen() {
           <EmptyState />
         )
       }
-      ListFooterComponent={isFetchingNextPage ? <LoadingFooter /> : null}
+      ListFooterComponent={
+        showAll ? (
+          isFetchingNextPage ? (
+            <LoadingFooter />
+          ) : null
+        ) : displayItems.length > 0 ? (
+          <ViewAllFooter onViewAllPress={handleViewAllPress} />
+        ) : null
+      }
       refreshControl={
         <RefreshControl
-          refreshing={isRefetching}
-          onRefresh={refetch}
+          refreshing={showAll ? isRefetching : isRefreshingDashboard}
+          onRefresh={handleRefresh}
           tintColor={theme.success}
         />
       }
       ItemSeparatorComponent={ItemSeparator}
-      getItemLayout={getItemLayout}
+      getItemLayout={showAll ? getItemLayout : undefined}
       onEndReached={handleEndReached}
       onEndReachedThreshold={0.5}
-      accessibilityLabel="Scan history list"
+      accessibilityLabel={
+        showAll ? "Full scan history list" : "Today dashboard"
+      }
       accessibilityRole="list"
     />
   );
@@ -372,6 +736,56 @@ const styles = StyleSheet.create({
   emptyListContent: {
     flexGrow: 1,
     justifyContent: "center",
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  statCard: {
+    flex: 1,
+    padding: Spacing.lg,
+  },
+  statValueRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    marginTop: Spacing.sm,
+  },
+  scanCTA: {
+    padding: Spacing.xl,
+    borderRadius: BorderRadius["2xl"],
+    alignItems: "center",
+    marginBottom: Spacing["2xl"],
+  },
+  scanCTAIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.full,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sectionHeader: {
+    marginBottom: Spacing.lg,
+  },
+  fullHistoryHeader: {
+    marginBottom: Spacing.lg,
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+  },
+  viewAllContainer: {
+    alignItems: "center",
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.md,
+  },
+  viewAllLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    minHeight: 44,
   },
   itemCard: {
     padding: Spacing.lg,

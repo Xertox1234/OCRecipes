@@ -20,23 +20,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
-
-// API response type (dates come as strings over JSON)
-type ScannedItemResponse = {
-  id: number;
-  productName: string;
-  brandName?: string | null;
-  servingSize?: string | null;
-  calories?: string | null;
-  protein?: string | null;
-  carbs?: string | null;
-  fat?: string | null;
-  fiber?: string | null;
-  sugar?: string | null;
-  sodium?: string | null;
-  imageUrl?: string | null;
-  scannedAt: string;
-};
+import type { ScannedItemResponse } from "@/types/api";
 
 type ItemDetailRouteProp = RouteProp<
   { ItemDetail: { itemId: number } },

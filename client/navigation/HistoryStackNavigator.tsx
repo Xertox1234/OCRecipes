@@ -7,7 +7,7 @@ import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type HistoryStackParamList = {
-  History: undefined;
+  History: { showAll?: boolean } | undefined;
   ItemDetail: { itemId: number };
 };
 
@@ -22,7 +22,7 @@ export default function HistoryStackNavigator() {
         name="History"
         component={HistoryScreen}
         options={{
-          headerTitle: () => <HeaderTitle title="History" />,
+          headerTitle: () => <HeaderTitle title="Today" />,
         }}
       />
       <Stack.Screen

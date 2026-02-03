@@ -9,9 +9,13 @@ NutriScan is a mobile nutrition tracking app built with Expo/React Native (front
 ## Development Commands
 
 ```bash
-# Start development (run both in parallel)
+# Start development - iOS Simulator (recommended for testing camera features)
 npm run server:dev    # Express backend on port 3000
-npm run expo:dev      # Expo frontend with tunneling
+npx expo run:ios      # Build and run in iOS simulator with native modules
+
+# Start development - Expo Go (simpler, but no camera support)
+npm run server:dev    # Express backend on port 3000
+npm run expo:dev      # Expo frontend with tunneling (camera won't work in Expo Go)
 
 # Database
 npm run db:push       # Push Drizzle schema to PostgreSQL
@@ -141,3 +145,216 @@ If tests fail or linting errors occur, the commit is blocked.
 - `AI_INTEGRATIONS_OPENAI_API_KEY` - OpenAI API
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` - Custom OpenAI endpoint
 - `EXPO_PUBLIC_DOMAIN` - Public API domain for mobile client
+
+## iOS Simulator Setup
+
+### First Time Setup
+
+The app uses `react-native-vision-camera` which requires native code compilation. You cannot use Expo Go for camera features.
+
+1. **Start Backend Server**
+
+   ```bash
+   npm run server:dev
+   ```
+
+   Backend will run on `http://localhost:3000`
+
+2. **Configure API URL**
+   Update `.env` to use your Mac's local IP (simulator can access this):
+
+   ```bash
+   EXPO_PUBLIC_DOMAIN=http://192.168.137.175:3000
+   ```
+
+   To find your IP: `ipconfig getifaddr en0`
+
+3. **Build & Launch Development Client**
+   ```bash
+   npx expo run:ios
+   ```
+   This will:
+   - Install CocoaPods dependencies (~2 minutes)
+   - Build the native iOS app with camera support (~5-10 minutes first time)
+   - Launch in iOS Simulator
+   - Enable hot reloading for future code changes
+
+### Subsequent Runs
+
+After the first build, you can launch faster:
+
+```bash
+# Terminal 1: Backend
+npm run server:dev
+
+# Terminal 2: Launch app (much faster after first build)
+npx expo run:ios
+```
+
+The app will automatically reload when you make code changes (hot reload).
+
+### Troubleshooting
+
+**Build Errors (expo-barcode-scanner)**
+
+- If you see `EXBarcodeScannerInterface.h` not found errors:
+  ```bash
+  npm uninstall expo-barcode-scanner
+  cd ios && rm -rf Pods Podfile.lock && cd ..
+  npx pod-install
+  npx expo run:ios
+  ```
+
+**Network Errors (408, 503)**
+
+- Ensure backend is running: check for "express server serving on port 3000"
+- Verify `.env` has correct local IP, not a tunnel URL
+- If using a physical device, ensure it's on the same WiFi network
+
+**Camera Not Working in Expo Go**
+
+- `react-native-vision-camera` is NOT supported in Expo Go
+- You must use the development client: `npx expo run:ios`
+
+## Physical Device Setup (iPhone)
+
+The app requires a physical device for full camera functionality testing. **Your iPhone must be connected via USB cable to build the app.**
+
+### Prerequisites
+
+1. **Install expo-dev-client**:
+
+   ```bash
+   npx expo install expo-dev-client
+   ```
+
+2. **Enable Developer Mode on iPhone** (iOS 16+):
+   - Go to **Settings → Privacy & Security → Developer Mode**
+   - Turn it **ON**
+   - iPhone will **restart**
+   - After restart, tap **Turn On** to confirm
+
+### First Time Build & Install
+
+1. **Connect your iPhone to MacBook** via USB cable
+
+2. **Unlock iPhone** and tap **"Trust This Computer"** when prompted
+
+3. **Set up code signing in Xcode**:
+
+   ```bash
+   open ios/NutriScan.xcworkspace
+   ```
+
+   In Xcode:
+   - Click **"NutriScan"** project (blue icon) in left sidebar
+   - Select **"NutriScan"** target under TARGETS
+   - Click **"Signing & Capabilities"** tab
+   - Enable **"Automatically manage signing"** checkbox
+   - Select your **Team** (your Apple ID) from dropdown
+   - If bundle identifier conflict: change to `com.yourname.nutriscan`
+   - Also update `app.json` to match: `"bundleIdentifier": "com.yourname.nutriscan"`
+
+4. **Build and install** (takes 5-10 minutes first time):
+
+   ```bash
+   xcodebuild -workspace ios/NutriScan.xcworkspace -scheme NutriScan \
+     -configuration Debug -destination id=YOUR_DEVICE_ID \
+     -allowProvisioningUpdates build
+   ```
+
+   To find your device ID:
+
+   ```bash
+   xcrun xctrace list devices | grep "iPhone"
+   ```
+
+5. **Install the built app**:
+
+   ```bash
+   xcrun devicectl device install app --device YOUR_DEVICE_ID \
+     /Users/YOUR_USERNAME/Library/Developer/Xcode/DerivedData/NutriScan-*/Build/Products/Debug-iphoneos/NutriScan.app
+   ```
+
+6. **Trust developer certificate on iPhone**:
+   - Go to **Settings → General → VPN & Device Management**
+   - Tap your Apple ID under "Developer App"
+   - Tap **"Trust [Your Name] (Personal Team)"**
+   - Tap **Trust** in popup
+
+### Running the App
+
+1. **Start backend server**:
+
+   ```bash
+   npm run server:dev
+   ```
+
+2. **Start Metro bundler**:
+
+   ```bash
+   npx expo start --dev-client --lan
+   ```
+
+3. **Open NutriScan app on iPhone**
+   - If it shows "No development servers found":
+     - Ensure iPhone and Mac are on **same WiFi network**
+     - Tap **"Enter URL manually"**
+     - Enter: `http://YOUR_MAC_IP:8081` (e.g., `http://192.168.137.175:8081`)
+     - Tap **Connect**
+
+4. **Find your Mac's IP** (if needed):
+   ```bash
+   ifconfig | grep "inet " | grep -v 127.0.0.1
+   ```
+
+### Subsequent Development
+
+After first install, **USB cable is NOT required**. Just ensure both devices are on same WiFi:
+
+```bash
+# Terminal 1: Backend (MUST start this first!)
+npm run server:dev
+# Wait for: "express server serving on port 3000"
+
+# Terminal 2: Metro bundler
+npx expo start --dev-client --lan --clear
+# The --clear flag ensures fresh bundle with latest .env variables
+```
+
+**On your iPhone:**
+
+1. Open the NutriScan app
+2. If it shows "No development servers found":
+   - Tap **"Enter URL manually"**
+   - Enter: `http://192.168.137.175:8081`
+   - Tap **Connect**
+3. App should load and connect to backend at `http://192.168.137.175:3000`
+
+**Troubleshooting:**
+
+- If login fails with "Network request failed": The backend server isn't running or isn't reachable
+  - Verify backend is running: `curl http://localhost:3000/api/health` should return `{"status":"ok"}`
+  - Check `.env` has correct IP: `EXPO_PUBLIC_DOMAIN=http://192.168.137.175:3000`
+  - Restart Metro with `--clear` flag to reload environment variables
+- If app can't connect to Metro: Both devices must be on same WiFi network
+- To force reload on phone: Shake device → tap "Reload"
+
+### Quick Start Commands
+
+```bash
+# Start both servers (run in separate terminals)
+npm run server:dev
+npx expo start --dev-client --lan
+
+# Or use screen/tmux for persistent sessions
+```
+
+### Important Notes
+
+- **USB cable is required** for the initial build only
+- After installation, you can develop wirelessly (phone and Mac on same WiFi)
+- **ALWAYS start backend server before Metro bundler** - Metro needs the backend running
+- QR codes from `npx expo start` **do NOT work** - the app needs the native camera module
+- Always use `--dev-client` flag, NOT Expo Go
+- Your Mac IP is: `192.168.137.175` (update in `.env` if it changes)

@@ -6,11 +6,15 @@ This document captures established patterns for the NutriScan codebase. Follow t
 
 - [Security Patterns](#security-patterns)
 - [TypeScript Patterns](#typescript-patterns)
+  - [Shared Client API Types](#shared-client-api-types-exception-pattern)
 - [API Patterns](#api-patterns)
 - [External API Patterns](#external-api-patterns)
 - [Database Patterns](#database-patterns)
 - [Client State Patterns](#client-state-patterns)
 - [React Native Patterns](#react-native-patterns)
+  - [Route Params for Mode Toggling](#route-params-for-mode-toggling)
+  - [CompositeNavigationProp for Cross-Stack Navigation](#compositenavigationprop-for-cross-stack-navigation)
+  - [Coordinated Pull-to-Refresh](#coordinated-pull-to-refresh-for-multiple-queries)
   - [Accessibility Props Pattern](#accessibility-props-pattern)
   - [Touch Target Size Pattern](#touch-target-size-pattern)
   - [Accessibility Grouping Pattern](#accessibility-grouping-pattern)
@@ -23,6 +27,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Query Error Retry Pattern](#query-error-retry-pattern)
 - [Animation Patterns](#animation-patterns)
 - [Performance Patterns](#performance-patterns)
+  - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
 - [Documentation Patterns](#documentation-patterns)
 
 ---
@@ -542,11 +547,60 @@ import { ScannedItemResponse } from '@shared/types/models';
 
 - Auth types (User, AuthResponse) - used in multiple places
 - Database schema types - shared by ORM
+- API response types used by 3+ screens with identical shape (see below)
 
 **When NOT to use shared types:**
 
-- API response shapes - keep local to consuming component
+- API response shapes used by only 1-2 components
 - One-off request/response types
+
+### Shared Client API Types (Exception Pattern)
+
+When the same API response shape is used by multiple screens (3+), create a shared types file to eliminate duplication:
+
+```typescript
+// client/types/api.ts - Good: Single source of truth for widely-used types
+export type ScannedItemResponse = {
+  id: number;
+  productName: string;
+  brandName?: string | null;
+  calories?: string | null;
+  protein?: string | null;
+  carbs?: string | null;
+  fat?: string | null;
+  imageUrl?: string | null;
+  scannedAt: string;
+};
+
+export type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+};
+
+export type DailySummaryResponse = {
+  totalCalories: number;
+  itemCount: number;
+};
+```
+
+```typescript
+// Usage in multiple screens
+import type { ScannedItemResponse, PaginatedResponse } from "@/types/api";
+
+// HistoryScreen.tsx
+const { data } = useInfiniteQuery<PaginatedResponse<ScannedItemResponse>>({...});
+
+// ItemDetailScreen.tsx
+const { data } = useQuery<ScannedItemResponse>({...});
+```
+
+**When to use:**
+
+- Same type used in 3+ components
+- Type represents a core domain entity (ScannedItem, User, DailySummary)
+- Changes to the API shape should update all consumers
+
+**Why generic `PaginatedResponse<T>`:** Enables reuse across different paginated endpoints while maintaining type safety.
 
 ---
 
@@ -1014,6 +1068,138 @@ export function Card({ children, onPress, style }: CardProps) {
 **Why:** In React Native, nested `Pressable` components cause the inner one to capture touch events. If the inner `Pressable` has no `onPress` handler, the touch is swallowed and the parent never receives it.
 
 **When to use:** Any reusable component (Card, ListItem, Container) that wraps content and may optionally be tappable.
+
+### Route Params for Mode Toggling
+
+Use route params to toggle between screen modes instead of creating separate screens:
+
+```typescript
+// Good: Single screen with mode param (HistoryScreen.tsx)
+type HistoryScreenRouteProp = RouteProp<
+  { History: { showAll?: boolean } },
+  "History"
+>;
+
+export default function HistoryScreen() {
+  const route = useRoute<HistoryScreenRouteProp>();
+  const showAll = route.params?.showAll ?? false;
+
+  // Conditional rendering based on mode
+  if (showAll) {
+    return <FullHistoryView onBack={() => navigation.setParams({ showAll: false })} />;
+  }
+
+  return <DashboardView onViewAll={() => navigation.setParams({ showAll: true })} />;
+}
+```
+
+```typescript
+// Bad: Separate screens for each mode
+// HistoryDashboardScreen.tsx
+// FullHistoryScreen.tsx
+// Duplicates shared logic, state management, and navigation setup
+```
+
+**When to use:**
+
+- Dashboard + expanded view (Today dashboard vs full history)
+- List view + detail view in same context
+- Compact + expanded modes of same data
+
+**Benefits:**
+
+- Shared state and queries (no refetch when switching modes)
+- Cleaner navigation stack (back button works naturally)
+- Single source of truth for the data
+
+### CompositeNavigationProp for Cross-Stack Navigation
+
+When navigating from one tab stack to a screen in another tab stack, use `CompositeNavigationProp`:
+
+```typescript
+import {
+  CompositeNavigationProp,
+  useNavigation,
+} from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+
+// Define the composite type for cross-tab navigation
+type HistoryScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<HistoryStackParamList, "History">,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+export default function HistoryScreen() {
+  const navigation = useNavigation<HistoryScreenNavigationProp>();
+
+  const handleScanPress = () => {
+    // Navigate to ScanTab (different tab stack)
+    navigation.navigate("ScanTab");
+  };
+
+  const handleItemPress = (itemId: number) => {
+    // Navigate within current stack
+    navigation.navigate("ItemDetail", { itemId });
+  };
+}
+```
+
+**When to use:**
+
+- Dashboard with "Scan" CTA that navigates to camera tab
+- Profile screen navigating to history or settings in other tabs
+- Any cross-tab navigation from within a stack
+
+**Why:** Standard `NativeStackNavigationProp` only knows about screens in its own stack. `CompositeNavigationProp` combines the stack navigator's type with the tab navigator's type, enabling type-safe navigation across both.
+
+### Coordinated Pull-to-Refresh for Multiple Queries
+
+When a screen fetches data from multiple endpoints, coordinate refresh with `Promise.all`:
+
+```typescript
+const {
+  data: summaryData,
+  refetch: refetchSummary,
+} = useQuery<DailySummaryResponse>({
+  queryKey: ["/api/daily-summary"],
+});
+
+const {
+  data: itemsData,
+  refetch: refetchItems,
+} = useInfiniteQuery<PaginatedResponse<ScannedItemResponse>>({
+  queryKey: ["/api/scanned-items"],
+});
+
+const [refreshing, setRefreshing] = useState(false);
+
+const handleRefresh = useCallback(async () => {
+  setRefreshing(true);
+  try {
+    // Refresh all queries in parallel
+    await Promise.all([refetchSummary(), refetchItems()]);
+  } finally {
+    setRefreshing(false);
+  }
+}, [refetchSummary, refetchItems]);
+
+return (
+  <FlatList
+    refreshing={refreshing}
+    onRefresh={handleRefresh}
+    // ...
+  />
+);
+```
+
+**When to use:**
+
+- Dashboard screens with stats + list data
+- Profile screens with user info + activity data
+- Any screen combining data from multiple API calls
+
+**Why:** Individual `refetch()` calls would cause jarring partial updates. Coordinated refresh ensures the UI updates atomically when all data is ready.
 
 ### Safe Area Handling
 
@@ -1798,6 +1984,78 @@ export default function HistoryScreen() {
 ```
 
 **Why:** FlatList re-renders items when renderItem function changes. Memoization ensures renders only happen when data changes.
+
+### React.memo for FlatList Header/Footer Components
+
+Extract `ListHeaderComponent` and `ListFooterComponent` as `React.memo` components with typed props instead of inline functions or `useCallback`:
+
+```typescript
+// Good: Extract as React.memo with typed props
+type DashboardHeaderProps = {
+  userName: string;
+  currentCalories: number;
+  calorieGoal: number;
+  onScanPress: () => void;
+};
+
+const DashboardHeader = React.memo(function DashboardHeader({
+  userName,
+  currentCalories,
+  calorieGoal,
+  onScanPress,
+}: DashboardHeaderProps) {
+  const { theme } = useTheme();
+
+  return (
+    <View>
+      <ThemedText>Hello, {userName}</ThemedText>
+      <CalorieProgress current={currentCalories} goal={calorieGoal} />
+      <Pressable onPress={onScanPress}>
+        <ThemedText>Scan Food</ThemedText>
+      </Pressable>
+    </View>
+  );
+});
+
+// Usage in parent
+<FlatList
+  ListHeaderComponent={
+    <DashboardHeader
+      userName={user?.username ?? ""}
+      currentCalories={summary?.totalCalories ?? 0}
+      calorieGoal={user?.dailyCalorieGoal ?? 2000}
+      onScanPress={handleScanPress}
+    />
+  }
+/>
+```
+
+```typescript
+// Bad: useCallback for complex header components
+const ListHeader = useCallback(() => (
+  <View>
+    {/* Complex JSX with multiple hooks, theme access, etc. */}
+  </View>
+), [/* many dependencies */]);
+
+// Bad: Inline function (re-creates on every render)
+<FlatList
+  ListHeaderComponent={() => <ComplexHeader />}
+/>
+```
+
+**When to use:**
+
+- Headers/footers with their own hooks (`useTheme`, `useAccessibility`)
+- Components with 3+ props from parent state
+- Headers/footers with interactive elements (buttons, links)
+
+**Why:**
+
+- `React.memo` prevents re-renders when props are unchanged
+- Typed props interface documents the component's data requirements
+- Named function provides better stack traces and React DevTools identification
+- Cleaner than `useCallback` with many dependencies
 
 ### Cleanup Side Effects in useEffect
 
