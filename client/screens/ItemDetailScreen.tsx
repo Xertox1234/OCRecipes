@@ -16,6 +16,7 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { SuggestionCard, type Suggestion } from "@/components/SuggestionCard";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -26,14 +27,6 @@ type ItemDetailRouteProp = RouteProp<
   { ItemDetail: { itemId: number } },
   "ItemDetail"
 >;
-
-interface Suggestion {
-  type: "recipe" | "craft" | "pairing";
-  title: string;
-  description: string;
-  difficulty?: string;
-  timeEstimate?: string;
-}
 
 interface SuggestionsResponse {
   suggestions: Suggestion[];
@@ -66,114 +59,6 @@ function NutritionRow({
         {unit ? ` ${unit}` : ""}
       </ThemedText>
     </View>
-  );
-}
-
-function SuggestionCard({
-  suggestion,
-  index,
-  reducedMotion,
-}: {
-  suggestion: Suggestion;
-  index: number;
-  reducedMotion: boolean;
-}) {
-  const { theme } = useTheme();
-
-  const iconName =
-    suggestion.type === "recipe"
-      ? "book-open"
-      : suggestion.type === "craft"
-        ? "scissors"
-        : "coffee";
-
-  const iconColor =
-    suggestion.type === "recipe"
-      ? theme.success
-      : suggestion.type === "craft"
-        ? theme.proteinAccent
-        : theme.fatAccent;
-
-  const typeLabel =
-    suggestion.type === "craft" ? "Kid Activity" : suggestion.type;
-
-  // Skip entrance animation when reduced motion is preferred
-  const enteringAnimation = reducedMotion
-    ? undefined
-    : FadeInDown.delay(index * 100).duration(300);
-
-  return (
-    <Animated.View
-      entering={enteringAnimation}
-      accessible={true}
-      accessibilityLabel={`${typeLabel}: ${suggestion.title}. ${suggestion.description}`}
-      accessibilityRole="text"
-    >
-      <Card
-        elevation={1}
-        style={[styles.suggestionCard, { borderLeftColor: iconColor }]}
-      >
-        <View style={styles.suggestionHeader}>
-          <View
-            style={[
-              styles.suggestionIcon,
-              { backgroundColor: `${iconColor}15` },
-            ]}
-          >
-            <Feather name={iconName} size={24} color={iconColor} />
-          </View>
-          <View style={styles.suggestionMeta}>
-            <View>
-              <ThemedText
-                type="caption"
-                style={{
-                  color: iconColor,
-                  textTransform: "uppercase",
-                  fontWeight: "600",
-                  letterSpacing: 0.5,
-                }}
-              >
-                {suggestion.type === "craft" ? "Kid Activity" : suggestion.type}
-              </ThemedText>
-              {suggestion.timeEstimate ? (
-                <View style={styles.timeBadge}>
-                  <Feather name="clock" size={12} color={theme.textSecondary} />
-                  <ThemedText
-                    type="caption"
-                    style={{ color: theme.textSecondary }}
-                  >
-                    {suggestion.timeEstimate}
-                  </ThemedText>
-                </View>
-              ) : null}
-            </View>
-          </View>
-        </View>
-        <ThemedText type="h4" style={styles.suggestionTitle}>
-          {suggestion.title}
-        </ThemedText>
-        <ThemedText
-          type="body"
-          style={[styles.suggestionDescription, { color: theme.textSecondary }]}
-        >
-          {suggestion.description}
-        </ThemedText>
-        {suggestion.difficulty ? (
-          <View style={styles.suggestionFooter}>
-            <View
-              style={[
-                styles.difficultyBadge,
-                { backgroundColor: `${iconColor}15` },
-              ]}
-            >
-              <ThemedText type="caption" style={{ color: iconColor }}>
-                {suggestion.difficulty}
-              </ThemedText>
-            </View>
-          </View>
-        ) : null}
-      </Card>
-    </Animated.View>
   );
 }
 
@@ -422,8 +307,9 @@ export default function ItemDetailScreen() {
               <SuggestionCard
                 key={`${suggestion.type}-${index}`}
                 suggestion={suggestion}
-                index={index}
-                reducedMotion={reducedMotion}
+                itemId={itemId}
+                suggestionIndex={index}
+                productName={item.productName}
               />
             ))}
           </View>
@@ -528,52 +414,5 @@ const styles = StyleSheet.create({
     padding: Spacing.xl,
     alignItems: "center",
     justifyContent: "center",
-  },
-  suggestionCard: {
-    padding: Spacing.lg,
-    borderLeftWidth: 4,
-    overflow: "hidden",
-  },
-  suggestionHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  suggestionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.lg,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  suggestionMeta: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  timeBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    marginTop: Spacing.xs,
-  },
-  suggestionTitle: {
-    fontWeight: "700",
-    marginBottom: Spacing.sm,
-  },
-  suggestionDescription: {
-    lineHeight: 22,
-  },
-  suggestionFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: Spacing.md,
-  },
-  difficultyBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
   },
 });

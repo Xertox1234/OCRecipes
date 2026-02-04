@@ -2003,30 +2003,188 @@ Define animation configs in a central location for consistency:
 
 ```typescript
 // client/constants/animations.ts
-import { WithSpringConfig } from "react-native-reanimated";
+import {
+  WithSpringConfig,
+  WithTimingConfig,
+  Easing,
+} from "react-native-reanimated";
 
+// Spring configs for press feedback
 export const pressSpringConfig: WithSpringConfig = {
   damping: 15,
   stiffness: 150,
 };
 
-export const entranceSpringConfig: WithSpringConfig = {
-  damping: 20,
-  stiffness: 200,
+// Timing configs for expand/collapse animations
+export const expandTimingConfig: WithTimingConfig = {
+  duration: 300,
+  easing: Easing.out(Easing.cubic),
+};
+
+export const collapseTimingConfig: WithTimingConfig = {
+  duration: 250,
+  easing: Easing.in(Easing.cubic),
+};
+
+export const contentRevealTimingConfig: WithTimingConfig = {
+  duration: 200,
+  easing: Easing.out(Easing.cubic),
 };
 ```
 
 **Usage:**
 
 ```typescript
-import { pressSpringConfig } from "@/constants/animations";
+import { pressSpringConfig, expandTimingConfig } from "@/constants/animations";
 
 const handlePressIn = () => {
   scale.value = withSpring(0.98, pressSpringConfig);
 };
+
+const handleExpand = () => {
+  height.value = withTiming(200, expandTimingConfig);
+};
 ```
 
-**Why:** Consistent animation feel across the app. Changing spring parameters in one place updates all press animations.
+**Why:** Consistent animation feel across the app. Changing parameters in one place updates all related animations.
+
+### Expandable Card with Lazy-Loaded Content
+
+For cards that expand to show additional content fetched on-demand:
+
+```typescript
+type CardState = "collapsed" | "loading" | "expanded";
+
+function ExpandableCard({ itemId }: { itemId: number }) {
+  const { reducedMotion } = useAccessibility();
+  const [cardState, setCardState] = useState<CardState>("collapsed");
+  const animatedHeight = useSharedValue(0);
+
+  // Fetch content only when expanded
+  const { data, error } = useQuery({
+    queryKey: [`/api/items/${itemId}/details`],
+    enabled: cardState === "loading" || cardState === "expanded",
+    staleTime: 30 * 60 * 1000, // Cache for 30 minutes
+  });
+
+  // Transition to expanded when data arrives
+  useEffect(() => {
+    if (cardState === "loading" && data) {
+      setCardState("expanded");
+    }
+  }, [cardState, data]);
+
+  // Collapse on error
+  useEffect(() => {
+    if (cardState === "loading" && error) {
+      setCardState("collapsed");
+    }
+  }, [cardState, error]);
+
+  const handlePress = useCallback(() => {
+    if (cardState === "collapsed") {
+      setCardState("loading");
+      if (!reducedMotion) {
+        animatedHeight.value = withTiming(200, expandTimingConfig);
+      }
+    } else if (cardState === "expanded") {
+      setCardState("collapsed");
+      if (!reducedMotion) {
+        animatedHeight.value = withTiming(0, collapseTimingConfig);
+      }
+    }
+    // Don't toggle while loading
+  }, [cardState, reducedMotion, animatedHeight]);
+
+  // ...render with animated height
+}
+```
+
+**When to use:**
+
+- Cards with "show more" content that requires API fetch
+- Recipe/activity suggestions with detailed instructions
+- List items that expand to show full details
+
+**Key elements:**
+
+- Three-state machine: `collapsed` → `loading` → `expanded`
+- TanStack Query's `enabled` flag for on-demand fetching
+- Longer `staleTime` since content is deterministic once generated
+- Animated height respecting reduced motion
+
+### Extracted Content for Animation Branches
+
+When the same content appears in both animated and non-animated (reduced motion) code paths, extract it into a separate component to avoid duplication:
+
+```typescript
+// Good: Shared content extracted
+interface ExpandedContentProps {
+  isLoading: boolean;
+  data: ContentData | undefined;
+  onLayout?: (event: LayoutChangeEvent) => void;
+}
+
+function ExpandedContent({ isLoading, data, onLayout }: ExpandedContentProps) {
+  if (isLoading) {
+    return (
+      <View accessibilityLabel="Loading content" accessibilityRole="progressbar">
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (data) {
+    return (
+      <View onLayout={onLayout}>
+        <Text>{data.content}</Text>
+      </View>
+    );
+  }
+
+  return null;
+}
+
+// Usage - same content, different wrappers
+{reducedMotion ? (
+  (isLoading || isExpanded) && (
+    <View>
+      <ExpandedContent isLoading={isLoading} data={data} onLayout={handleLayout} />
+    </View>
+  )
+) : (
+  <Animated.View style={animatedStyle}>
+    <ExpandedContent isLoading={isLoading} data={data} onLayout={handleLayout} />
+  </Animated.View>
+)}
+```
+
+```typescript
+// Bad: Duplicated content in both branches
+{reducedMotion ? (
+  (isLoading || isExpanded) && (
+    <View>
+      {isLoading ? (
+        <ActivityIndicator /> // Duplicated
+      ) : data ? (
+        <Text>{data.content}</Text> // Duplicated
+      ) : null}
+    </View>
+  )
+) : (
+  <Animated.View style={animatedStyle}>
+    {isLoading ? (
+      <ActivityIndicator /> // Duplicated
+    ) : data ? (
+      <Text>{data.content}</Text> // Duplicated
+    ) : null}
+  </Animated.View>
+)}
+```
+
+**Why:** Reduces maintenance burden - changes to content structure only need to be made in one place.
+
+**When to use:** Any component with conditional animation that wraps the same content in `Animated.View` vs regular `View`.
 
 ---
 
