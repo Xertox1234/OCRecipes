@@ -11,6 +11,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
 - [External API Patterns](#external-api-patterns)
 - [Database Patterns](#database-patterns)
 - [Client State Patterns](#client-state-patterns)
+  - [Business Logic Errors in Mutations](#business-logic-errors-in-mutations)
 - [React Native Patterns](#react-native-patterns)
   - [Route Params for Mode Toggling](#route-params-for-mode-toggling)
   - [CompositeNavigationProp for Cross-Stack Navigation](#compositenavigationprop-for-cross-stack-navigation)
@@ -626,6 +627,7 @@ Example error codes:
 - `VALIDATION_ERROR` - Request body validation failed
 - `NOT_FOUND` - Resource not found
 - `CONFLICT` - Resource already exists (e.g., duplicate username)
+- `LIMIT_REACHED` - User has reached a resource limit (e.g., max saved items)
 
 ### Auth Response Structure
 
@@ -1014,6 +1016,101 @@ if (response.status === 401) {
   // Trigger re-authentication flow
 }
 ```
+
+### Business Logic Errors in Mutations
+
+When an API returns a business logic error (like `LIMIT_REACHED`) that should not trigger error states, use custom fetch logic in the mutation to return a discriminated union instead of throwing:
+
+```typescript
+// Good: Return discriminated union for business logic errors
+export function useCreateSavedItem() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (item: CreateSavedItemInput) => {
+      const baseUrl = getApiUrl();
+      const token = await tokenStorage.get();
+
+      const response = await fetch(`${baseUrl}/api/saved-items`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        body: JSON.stringify(item),
+      });
+
+      // Handle business logic error (403 with specific code)
+      if (response.status === 403) {
+        const data = await response.json();
+        if (data.error === "LIMIT_REACHED") {
+          return { limitReached: true as const };
+        }
+        throw new Error(data.message || "Forbidden");
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`${response.status}: ${text}`);
+      }
+
+      const savedItem = (await response.json()) as SavedItem;
+      return { limitReached: false as const, item: savedItem };
+    },
+    onSuccess: (data) => {
+      // Only invalidate cache if operation succeeded
+      if (!data.limitReached) {
+        queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+      }
+    },
+  });
+}
+
+// Usage in component
+const createMutation = useCreateSavedItem();
+
+const handleSave = async () => {
+  const result = await createMutation.mutateAsync(item);
+
+  if (result.limitReached) {
+    // Show upgrade prompt or limit warning
+    setShowLimitReachedModal(true);
+  } else {
+    // Success path
+    haptics.notification(NotificationFeedbackType.Success);
+  }
+};
+```
+
+```typescript
+// Bad: Using apiRequest which throws on all non-2xx responses
+export function useCreateSavedItem() {
+  return useMutation({
+    mutationFn: async (item: CreateSavedItemInput) => {
+      // apiRequest throws on 403, triggering error state
+      return await apiRequest<SavedItem>("POST", "/api/saved-items", item);
+    },
+    onError: (error) => {
+      // Can't distinguish LIMIT_REACHED from other 403 errors
+      // Must parse error message string - fragile!
+    },
+  });
+}
+```
+
+**When to use:**
+
+- Resource limits (max items, storage quota)
+- Soft validation failures (duplicate name, conflicting schedule)
+- Any 4xx error that represents a recoverable business condition
+
+**When NOT to use:**
+
+- Authentication errors (401) - use global handler
+- Server errors (5xx) - let TanStack Query handle retry/error state
+- Validation errors on form fields - use form validation library
+
+**Why discriminated union:** TypeScript can narrow `result` based on `limitReached`, ensuring you handle both cases. The `as const` assertion makes the literal type precise.
 
 ---
 

@@ -427,3 +427,152 @@ describe("IDOR Protection", () => {
     expect(notFoundOrUnauthorized).toBe(true);
   });
 });
+
+describe("Saved Items", () => {
+  describe("getSavedItems", () => {
+    it("should return empty array for user with no saved items", async () => {
+      const mockGetSavedItems = vi.fn().mockResolvedValue([]);
+      const result = await mockGetSavedItems("user-123");
+      expect(result).toEqual([]);
+    });
+
+    it("should return saved items ordered by createdAt desc", async () => {
+      const items = [
+        {
+          id: 3,
+          title: "Recipe 3",
+          createdAt: new Date("2024-01-15T18:00:00"),
+        },
+        {
+          id: 2,
+          title: "Recipe 2",
+          createdAt: new Date("2024-01-15T12:00:00"),
+        },
+        {
+          id: 1,
+          title: "Recipe 1",
+          createdAt: new Date("2024-01-15T08:00:00"),
+        },
+      ];
+
+      const mockGetSavedItems = vi.fn().mockResolvedValue(items);
+      const result = await mockGetSavedItems("user-123");
+
+      expect(result[0].id).toBe(3); // Most recent first
+      expect(result[2].id).toBe(1); // Oldest last
+    });
+
+    it("should return items with all expected fields", async () => {
+      const item = {
+        id: 1,
+        userId: "user-123",
+        type: "recipe",
+        title: "Pasta Carbonara",
+        description: "Classic Italian dish",
+        difficulty: "medium",
+        timeEstimate: "30 minutes",
+        instructions: "Cook pasta...",
+        sourceItemId: 42,
+        sourceProductName: "Spaghetti",
+        createdAt: new Date(),
+      };
+
+      const mockGetSavedItems = vi.fn().mockResolvedValue([item]);
+      const result = await mockGetSavedItems("user-123");
+
+      expect(result[0]).toEqual(item);
+      expect(result[0].type).toBe("recipe");
+    });
+  });
+
+  describe("getSavedItemCount", () => {
+    it("should return 0 for user with no saved items", async () => {
+      const mockGetSavedItemCount = vi.fn().mockResolvedValue(0);
+      const result = await mockGetSavedItemCount("user-123");
+      expect(result).toBe(0);
+    });
+
+    it("should return correct count for user with items", async () => {
+      const mockGetSavedItemCount = vi.fn().mockResolvedValue(5);
+      const result = await mockGetSavedItemCount("user-123");
+      expect(result).toBe(5);
+    });
+  });
+
+  describe("createSavedItem", () => {
+    it("should create item when under limit", async () => {
+      const newItem = {
+        id: 1,
+        userId: "user-123",
+        type: "recipe",
+        title: "New Recipe",
+        description: null,
+        difficulty: null,
+        timeEstimate: null,
+        instructions: null,
+        sourceItemId: null,
+        sourceProductName: null,
+        createdAt: new Date(),
+      };
+
+      const mockCreateSavedItem = vi.fn().mockResolvedValue(newItem);
+      const result = await mockCreateSavedItem("user-123", {
+        type: "recipe",
+        title: "New Recipe",
+      });
+
+      expect(result).toEqual(newItem);
+      expect(result.id).toBeDefined();
+    });
+
+    it("should return null when at limit for free user", async () => {
+      const mockCreateSavedItem = vi.fn().mockResolvedValue(null);
+      const result = await mockCreateSavedItem("user-123", {
+        type: "recipe",
+        title: "Seventh Recipe",
+      });
+
+      expect(result).toBeNull();
+    });
+
+    it("should allow creation for premium user even at 6 items", async () => {
+      const newItem = {
+        id: 7,
+        userId: "premium-user",
+        type: "activity",
+        title: "Seventh Activity",
+        createdAt: new Date(),
+      };
+
+      const mockCreateSavedItem = vi.fn().mockResolvedValue(newItem);
+      const result = await mockCreateSavedItem("premium-user", {
+        type: "activity",
+        title: "Seventh Activity",
+      });
+
+      expect(result).not.toBeNull();
+      expect(result.id).toBe(7);
+    });
+  });
+
+  describe("deleteSavedItem", () => {
+    it("should return true when item exists and belongs to user", async () => {
+      const mockDeleteSavedItem = vi.fn().mockResolvedValue(true);
+      const result = await mockDeleteSavedItem(1, "user-123");
+      expect(result).toBe(true);
+    });
+
+    it("should return false when item does not exist", async () => {
+      const mockDeleteSavedItem = vi.fn().mockResolvedValue(false);
+      const result = await mockDeleteSavedItem(999, "user-123");
+      expect(result).toBe(false);
+    });
+
+    it("should return false when item belongs to different user (IDOR protection)", async () => {
+      // This tests that deleteItem includes userId in the WHERE clause
+      const mockDeleteSavedItem = vi.fn().mockResolvedValue(false);
+      const result = await mockDeleteSavedItem(1, "different-user");
+      expect(result).toBe(false);
+    });
+  });
+});

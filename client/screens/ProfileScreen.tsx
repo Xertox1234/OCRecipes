@@ -23,16 +23,21 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
+import { useSavedItemCount } from "@/hooks/useSavedItems";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { CompositeNavigationProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 
 type ProfileScreenNavigationProp = CompositeNavigationProp<
-  BottomTabNavigationProp<MainTabParamList, "ProfileTab">,
-  NativeStackNavigationProp<RootStackParamList>
+  NativeStackNavigationProp<ProfileStackParamList, "Profile">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList, "ProfileTab">,
+    NativeStackNavigationProp<RootStackParamList>
+  >
 >;
 
 type FeatherIconName = ComponentProps<typeof Feather>["name"];
@@ -212,6 +217,8 @@ export default function ProfileScreen() {
     queryKey: ["/api/user/dietary-profile"],
     enabled: !!user,
   });
+
+  const { data: savedItemCount } = useSavedItemCount();
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -898,6 +905,47 @@ export default function ProfileScreen() {
         }
       >
         <ThemedText type="h4" style={styles.sectionTitle}>
+          My Library
+        </ThemedText>
+        <Card
+          elevation={1}
+          onPress={() => navigation.navigate("SavedItems")}
+          accessibilityLabel={`My Library, ${savedItemCount?.count ?? 0} saved items`}
+          accessibilityHint="Tap to view your saved recipes and activities"
+          style={styles.libraryCard}
+        >
+          <View style={styles.libraryContent}>
+            <View
+              style={[
+                styles.libraryIcon,
+                { backgroundColor: theme.link + "20" },
+              ]}
+            >
+              <Feather name="bookmark" size={24} color={theme.link} />
+            </View>
+            <View style={styles.libraryInfo}>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>
+                Saved Items
+              </ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                {savedItemCount?.count ?? 0} recipes & activities
+              </ThemedText>
+            </View>
+            <Feather
+              name="chevron-right"
+              size={20}
+              color={theme.textSecondary}
+            />
+          </View>
+        </Card>
+      </Animated.View>
+
+      <Animated.View
+        entering={
+          reducedMotion ? undefined : FadeInDown.delay(600).duration(400)
+        }
+      >
+        <ThemedText type="h4" style={styles.sectionTitle}>
           Account
         </ThemedText>
         <Card elevation={1} style={styles.settingsCard}>
@@ -1163,5 +1211,25 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing["2xl"],
     borderRadius: BorderRadius.full,
+  },
+  libraryCard: {
+    padding: Spacing.lg,
+    marginBottom: Spacing["2xl"],
+  },
+  libraryContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  libraryIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  libraryInfo: {
+    flex: 1,
+    gap: Spacing.xs,
   },
 });

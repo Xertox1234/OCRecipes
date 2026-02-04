@@ -151,9 +151,51 @@ export const nutritionCache = pgTable(
   }),
 );
 
+// Saved items types (recipes and activities from suggestions)
+export const savedItemTypes = ["recipe", "activity"] as const;
+export type SavedItemType = (typeof savedItemTypes)[number];
+
+export const savedItems = pgTable(
+  "saved_items",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id", { length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    // Content type - text with Zod validation (matches existing patterns)
+    type: text("type").notNull(),
+
+    // Saved content (frozen at save time - GPT output is non-deterministic)
+    title: text("title").notNull(),
+    description: text("description"),
+    difficulty: text("difficulty"),
+    timeEstimate: text("time_estimate"),
+    instructions: text("instructions"),
+
+    // Source reference
+    sourceItemId: integer("source_item_id").references(() => scannedItems.id, {
+      onDelete: "set null",
+    }),
+    sourceProductName: text("source_product_name"),
+
+    // Metadata
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userIdCreatedAtIdx: index("saved_items_user_id_created_at_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+  }),
+);
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   scannedItems: many(scannedItems),
   dailyLogs: many(dailyLogs),
+  savedItems: many(savedItems),
   profile: one(userProfiles, {
     fields: [users.id],
     references: [userProfiles.userId],
@@ -175,6 +217,7 @@ export const scannedItemsRelations = relations(
       references: [users.id],
     }),
     dailyLogs: many(dailyLogs),
+    savedItems: many(savedItems),
   }),
 );
 
@@ -185,6 +228,17 @@ export const dailyLogsRelations = relations(dailyLogs, ({ one }) => ({
   }),
   scannedItem: one(scannedItems, {
     fields: [dailyLogs.scannedItemId],
+    references: [scannedItems.id],
+  }),
+}));
+
+export const savedItemsRelations = relations(savedItems, ({ one }) => ({
+  user: one(users, {
+    fields: [savedItems.userId],
+    references: [users.id],
+  }),
+  sourceItem: one(scannedItems, {
+    fields: [savedItems.sourceItemId],
     references: [scannedItems.id],
   }),
 }));
@@ -219,3 +273,5 @@ export type DailyLog = typeof dailyLogs.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type NutritionCache = typeof nutritionCache.$inferSelect;
+export type SavedItem = typeof savedItems.$inferSelect;
+export type InsertSavedItem = typeof savedItems.$inferInsert;

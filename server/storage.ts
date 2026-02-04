@@ -7,11 +7,14 @@ import {
   type InsertDailyLog,
   type UserProfile,
   type InsertUserProfile,
+  type SavedItem,
   users,
   scannedItems,
   dailyLogs,
   userProfiles,
+  savedItems,
 } from "@shared/schema";
+import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import { db } from "./db";
 import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
 import {
@@ -66,6 +69,15 @@ export interface IStorage {
     expiresAt: Date | null,
   ): Promise<User | undefined>;
   getDailyScanCount(userId: string, date: Date): Promise<number>;
+
+  // Saved items
+  getSavedItems(userId: string): Promise<SavedItem[]>;
+  getSavedItemCount(userId: string): Promise<number>;
+  createSavedItem(
+    userId: string,
+    item: CreateSavedItemInput,
+  ): Promise<SavedItem | null>;
+  deleteSavedItem(id: number, userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -288,6 +300,55 @@ export class DatabaseStorage implements IStorage {
       );
 
     return Number(result[0]?.count ?? 0);
+  }
+
+  async getSavedItems(userId: string): Promise<SavedItem[]> {
+    return db
+      .select()
+      .from(savedItems)
+      .where(eq(savedItems.userId, userId))
+      .orderBy(desc(savedItems.createdAt));
+  }
+
+  async getSavedItemCount(userId: string): Promise<number> {
+    const result = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(savedItems)
+      .where(eq(savedItems.userId, userId));
+    return result[0]?.count ?? 0;
+  }
+
+  async createSavedItem(
+    userId: string,
+    itemData: CreateSavedItemInput,
+  ): Promise<SavedItem | null> {
+    // Simple count check - sufficient for single-user mobile app
+    // Worst case race condition: user gets 7 items instead of 6. Not catastrophic.
+    const count = await this.getSavedItemCount(userId);
+    const subscription = await this.getSubscriptionStatus(userId);
+    const isPremium = subscription?.tier === "premium";
+    const limit = isPremium ? Infinity : 6;
+
+    if (count >= limit) {
+      return null; // Signal limit reached
+    }
+
+    const [item] = await db
+      .insert(savedItems)
+      .values({ ...itemData, userId })
+      .returning();
+
+    return item;
+  }
+
+  async deleteSavedItem(id: number, userId: string): Promise<boolean> {
+    // IDOR protection: only delete if owned by user
+    const result = await db
+      .delete(savedItems)
+      .where(and(eq(savedItems.id, id), eq(savedItems.userId, userId)))
+      .returning({ id: savedItems.id });
+
+    return result.length > 0;
   }
 }
 
