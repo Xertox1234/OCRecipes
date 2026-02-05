@@ -11,6 +11,7 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, Spacing, FontFamily } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
+import { withOpacity } from "@/lib/colors";
 
 type ChipVariant = "outline" | "filled";
 
@@ -64,8 +65,8 @@ export function Chip({
     if (variant === "filled") {
       return {
         backgroundColor: selected
-          ? theme.link + "30" // 30% opacity when selected
-          : theme.link + "15", // 15% opacity
+          ? withOpacity(theme.link, 19) // ~19% opacity when selected
+          : withOpacity(theme.link, 8), // ~8% opacity
         borderWidth: 0,
         borderColor: "transparent",
         textColor: theme.link,
@@ -74,7 +75,7 @@ export function Chip({
 
     // Outline variant
     return {
-      backgroundColor: selected ? theme.link + "10" : "transparent",
+      backgroundColor: selected ? withOpacity(theme.link, 6) : "transparent",
       borderWidth: 1,
       borderColor: theme.link,
       textColor: selected ? theme.link : theme.text,

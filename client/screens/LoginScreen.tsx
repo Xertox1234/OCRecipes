@@ -21,6 +21,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { withOpacity } from "@/lib/colors";
 
 const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
 
@@ -168,7 +169,7 @@ export default function LoginScreen() {
             <View
               style={[
                 styles.errorContainer,
-                { backgroundColor: theme.error + "15" },
+                { backgroundColor: withOpacity(theme.error, 6) },
               ]}
             >
               <Feather name="alert-circle" size={16} color={theme.error} />

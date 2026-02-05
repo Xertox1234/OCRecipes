@@ -27,6 +27,7 @@ import { useAuthContext } from "@/context/AuthContext";
 import { useSavedItemCount } from "@/hooks/useSavedItems";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
+import { withOpacity } from "@/lib/colors";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
@@ -119,7 +120,7 @@ function SettingsItem({
           styles.settingsIcon,
           {
             backgroundColor: danger
-              ? theme.error + "20"
+              ? withOpacity(theme.error, 12)
               : theme.backgroundSecondary,
           },
         ]}
@@ -322,7 +323,7 @@ export default function ProfileScreen() {
           style={({ pressed }) => [
             styles.avatar,
             {
-              backgroundColor: theme.success + "20",
+              backgroundColor: withOpacity(theme.success, 12),
               opacity: pressed ? 0.8 : 1,
             },
           ]}
@@ -338,7 +339,10 @@ export default function ProfileScreen() {
             <Feather name="user" size={40} color={theme.success} />
           )}
           <View
-            style={[styles.avatarEditBadge, { backgroundColor: theme.success }]}
+            style={[
+              styles.avatarEditBadge,
+              { backgroundColor: theme.success, borderColor: theme.buttonText },
+            ]}
           >
             <Feather name="camera" size={14} color={theme.buttonText} />
           </View>
@@ -547,7 +551,7 @@ export default function ProfileScreen() {
             style={({ pressed }) => [
               styles.setupGoalsButton,
               {
-                backgroundColor: theme.success + "20",
+                backgroundColor: withOpacity(theme.success, 12),
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
@@ -756,7 +760,7 @@ export default function ProfileScreen() {
             style={({ pressed }) => [
               styles.setupGoalsButton,
               {
-                backgroundColor: theme.success + "20",
+                backgroundColor: withOpacity(theme.success, 12),
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
@@ -776,7 +780,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: theme.error + "20" },
+                      { backgroundColor: withOpacity(theme.error, 12) },
                     ]}
                   >
                     <Feather
@@ -801,9 +805,9 @@ export default function ProfileScreen() {
                             {
                               backgroundColor:
                                 a.severity === "severe"
-                                  ? theme.error + "20"
+                                  ? withOpacity(theme.error, 12)
                                   : a.severity === "moderate"
-                                    ? theme.warning + "20"
+                                    ? withOpacity(theme.warning, 12)
                                     : theme.backgroundSecondary,
                             },
                           ]}
@@ -834,7 +838,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: theme.info + "20" },
+                      { backgroundColor: withOpacity(theme.info, 12) },
                     ]}
                   >
                     <Feather name="heart" size={16} color={theme.info} />
@@ -860,7 +864,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: theme.success + "20" },
+                      { backgroundColor: withOpacity(theme.success, 12) },
                     ]}
                   >
                     <Feather name="target" size={16} color={theme.success} />
@@ -885,7 +889,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: theme.calorieAccent + "20" },
+                      { backgroundColor: withOpacity(theme.calorieAccent, 12) },
                     ]}
                   >
                     <Feather
@@ -914,7 +918,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: theme.proteinAccent + "20" },
+                      { backgroundColor: withOpacity(theme.proteinAccent, 12) },
                     ]}
                   >
                     <Feather
@@ -944,7 +948,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: theme.carbsAccent + "20" },
+                      { backgroundColor: withOpacity(theme.carbsAccent, 12) },
                     ]}
                   >
                     <Feather name="globe" size={16} color={theme.carbsAccent} />
@@ -968,7 +972,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: theme.fatAccent + "20" },
+                      { backgroundColor: withOpacity(theme.fatAccent, 12) },
                     ]}
                   >
                     <Feather name="award" size={16} color={theme.fatAccent} />
@@ -1090,7 +1094,7 @@ export default function ProfileScreen() {
             <View
               style={[
                 styles.libraryIcon,
-                { backgroundColor: theme.link + "20" },
+                { backgroundColor: withOpacity(theme.link, 12) },
               ]}
             >
               <Feather name="bookmark" size={24} color={theme.link} />
@@ -1188,7 +1192,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#FFFFFF",
   },
   nameRow: {
     flexDirection: "row",
