@@ -8,7 +8,7 @@ import HistoryStackNavigator from "@/navigation/HistoryStackNavigator";
 import ScanStackNavigator from "@/navigation/ScanStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { useTheme } from "@/hooks/useTheme";
-import { Colors, Spacing, BorderRadius } from "@/constants/theme";
+import { Colors, Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 
 export type MainTabParamList = {
   HistoryTab: undefined;
@@ -25,34 +25,40 @@ export default function MainTabNavigator() {
     <Tab.Navigator
       initialRouteName="HistoryTab"
       screenOptions={{
-        tabBarActiveTintColor: Colors.light.success,
+        tabBarActiveTintColor: theme.link,
         tabBarInactiveTintColor: theme.tabIconDefault,
         tabBarStyle: {
           position: "absolute",
           backgroundColor: Platform.select({
             ios: "transparent",
-            android: theme.backgroundRoot,
+            android: theme.backgroundSecondary,
           }),
           borderTopWidth: 0,
           elevation: 0,
           height: Platform.select({
-            ios: 85,
-            android: 70,
+            ios: 88,
+            android: 72,
           }),
           paddingTop: Spacing.sm,
+          // Shadow for elevated appearance (Figma design)
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.04,
+          shadowRadius: 4,
         },
         tabBarBackground: () =>
           Platform.OS === "ios" ? (
             <BlurView
-              intensity={100}
+              intensity={isDark ? 60 : 80}
               tint={isDark ? "dark" : "light"}
               style={StyleSheet.absoluteFill}
             />
           ) : null,
         headerShown: false,
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "500",
+          fontFamily: FontFamily.medium,
+          fontSize: 10,
+          letterSpacing: 0.1,
         },
       }}
     >
@@ -78,7 +84,7 @@ export default function MainTabNavigator() {
                 styles.scanIconContainer,
                 {
                   backgroundColor: focused
-                    ? Colors.light.success
+                    ? theme.link
                     : theme.backgroundSecondary,
                 },
               ]}

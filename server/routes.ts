@@ -53,6 +53,11 @@ function isValidSubscriptionTier(tier: string): tier is SubscriptionTier {
   return (subscriptionTiers as readonly string[]).includes(tier);
 }
 
+/** Extract IP address for rate limiting fallback when user is not authenticated */
+function ipKeyGenerator(req: Request): string {
+  return req.ip || req.socket.remoteAddress || "unknown";
+}
+
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10, // 10 attempts per window

@@ -2,12 +2,13 @@ import React, { useState } from "react";
 import {
   StyleSheet,
   View,
-  TextInput,
   Pressable,
   Image,
   ActivityIndicator,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -15,16 +16,19 @@ import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollV
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
+import { TextInput } from "@/components/TextInput";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
+const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
+
 type Mode = "login" | "register";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const haptics = useHaptics();
   const { login, register } = useAuthContext();
 
@@ -77,135 +81,87 @@ export default function LoginScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      {/* Hero Image with Gradient Fade */}
+      <View style={styles.heroContainer}>
+        <Image
+          source={require("../../assets/images/login-hero.jpg")}
+          style={styles.heroImage}
+          resizeMode="cover"
+        />
+        <LinearGradient
+          colors={[
+            "transparent",
+            isDark ? "rgba(33,40,50,0.6)" : "rgba(255,255,255,0.6)",
+            isDark ? "#212832" : "#FFFFFF",
+          ]}
+          locations={[0, 0.5, 1]}
+          style={styles.heroGradient}
+        />
+      </View>
+
       <KeyboardAwareScrollViewCompat
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: insets.top + Spacing["4xl"],
+            paddingTop: Spacing.xl,
             paddingBottom: insets.bottom + Spacing["2xl"],
           },
         ]}
       >
         <View style={styles.header}>
-          <Image
-            source={require("../../assets/images/icon.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
           <ThemedText type="h2" style={styles.title}>
-            NutriScan
+            Welcome!
           </ThemedText>
           <ThemedText
             type="body"
             style={[styles.subtitle, { color: theme.textSecondary }]}
           >
             {mode === "login"
-              ? "Welcome back! Sign in to continue"
+              ? "Sign in to continue"
               : "Create an account to get started"}
           </ThemedText>
         </View>
 
         <View style={styles.form}>
-          <View style={styles.inputContainer}>
-            <Feather
-              name="user"
-              size={20}
-              color={theme.textSecondary}
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: theme.backgroundDefault,
-                  color: theme.text,
-                  borderColor: theme.border,
-                },
-              ]}
-              placeholder="Username"
-              placeholderTextColor={theme.textSecondary}
-              value={username}
-              onChangeText={setUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-              testID="input-username"
-              accessibilityLabel="Username"
-              accessibilityHint="Enter your username"
-            />
-          </View>
+          <TextInput
+            leftIcon="user"
+            placeholder="Username"
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="none"
+            autoCorrect={false}
+            testID="input-username"
+            accessibilityLabel="Username"
+            accessibilityHint="Enter your username"
+          />
 
-          <View style={styles.inputContainer}>
-            <Feather
-              name="lock"
-              size={20}
-              color={theme.textSecondary}
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={[
-                styles.input,
-                {
-                  backgroundColor: theme.backgroundDefault,
-                  color: theme.text,
-                  borderColor: theme.border,
-                },
-              ]}
-              placeholder="Password"
-              placeholderTextColor={theme.textSecondary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              testID="input-password"
-              accessibilityLabel="Password"
-              accessibilityHint="Enter your password"
-            />
-            <Pressable
-              onPress={() => setShowPassword(!showPassword)}
-              style={styles.eyeButton}
-              accessibilityLabel={
-                showPassword ? "Hide password" : "Show password"
-              }
-              accessibilityRole="button"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Feather
-                name={showPassword ? "eye-off" : "eye"}
-                size={20}
-                color={theme.textSecondary}
-              />
-            </Pressable>
-          </View>
+          <TextInput
+            leftIcon="lock"
+            rightIcon={showPassword ? "eye-off" : "eye"}
+            onRightIconPress={() => setShowPassword(!showPassword)}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            testID="input-password"
+            accessibilityLabel="Password"
+            accessibilityHint="Enter your password"
+          />
 
           {mode === "register" ? (
-            <View style={styles.inputContainer}>
-              <Feather
-                name="lock"
-                size={20}
-                color={theme.textSecondary}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: theme.backgroundDefault,
-                    color: theme.text,
-                    borderColor: theme.border,
-                  },
-                ]}
-                placeholder="Confirm Password"
-                placeholderTextColor={theme.textSecondary}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showPassword}
-                autoCapitalize="none"
-                testID="input-confirm-password"
-                accessibilityLabel="Confirm password"
-                accessibilityHint="Re-enter your password to confirm"
-              />
-            </View>
+            <TextInput
+              leftIcon="lock"
+              placeholder="Confirm Password"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              testID="input-confirm-password"
+              accessibilityLabel="Confirm password"
+              accessibilityHint="Re-enter your password to confirm"
+            />
           ) : null}
 
           {error ? (
@@ -237,7 +193,7 @@ export default function LoginScreen() {
                   ? "Sign In"
                   : "Create Account"
             }
-            style={[styles.button, { backgroundColor: theme.success }]}
+            style={styles.button}
           >
             {isLoading ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
@@ -265,7 +221,7 @@ export default function LoginScreen() {
           >
             <ThemedText
               type="body"
-              style={[styles.linkText, { color: theme.success }]}
+              style={[styles.linkText, { color: theme.link }]}
             >
               {mode === "login" ? "Sign Up" : "Sign In"}
             </ThemedText>
@@ -280,6 +236,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  heroContainer: {
+    height: HERO_HEIGHT,
+    width: "100%",
+    position: "relative",
+  },
+  heroImage: {
+    width: "100%",
+    height: "100%",
+    opacity: 0.85,
+  },
+  heroGradient: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: HERO_HEIGHT * 0.6,
+  },
   scrollView: {
     flex: 1,
   },
@@ -288,16 +261,11 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   header: {
-    alignItems: "center",
-    marginBottom: Spacing["4xl"],
-  },
-  logo: {
-    width: 100,
-    height: 100,
-    marginBottom: Spacing.lg,
+    alignItems: "flex-start",
+    marginBottom: Spacing["3xl"],
   },
   title: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   subtitle: {
     textAlign: "center",
@@ -306,34 +274,12 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
     marginBottom: Spacing["3xl"],
   },
-  inputContainer: {
-    position: "relative",
-  },
-  inputIcon: {
-    position: "absolute",
-    left: Spacing.lg,
-    top: 14,
-    zIndex: 1,
-  },
-  input: {
-    height: Spacing.inputHeight,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    paddingHorizontal: Spacing.lg,
-    paddingLeft: Spacing["4xl"] + Spacing.sm,
-    fontSize: 16,
-  },
-  eyeButton: {
-    position: "absolute",
-    right: Spacing.lg,
-    top: 14,
-  },
   errorContainer: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
     padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
+    borderRadius: BorderRadius.input,
   },
   errorText: {
     flex: 1,

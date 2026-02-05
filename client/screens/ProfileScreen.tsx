@@ -45,6 +45,10 @@ import {
   TIME_LABELS,
   CONDITION_LABELS,
 } from "@/constants/dietary-options";
+import {
+  useThemePreference,
+  type ThemePreference,
+} from "@/context/ThemeContext";
 
 type ProfileScreenNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<ProfileStackParamList, "Profile">,
@@ -143,6 +147,12 @@ function SettingsItem({
   );
 }
 
+const THEME_LABELS: Record<ThemePreference, string> = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
+
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -152,6 +162,8 @@ export default function ProfileScreen() {
   const { reducedMotion } = useAccessibility();
   const { user, logout, updateUser, checkAuth } = useAuthContext();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
+  const { preference: themePreference, setPreference: setThemePreference } =
+    useThemePreference();
 
   const [isEditing, setIsEditing] = useState(false);
   const [displayName, setDisplayName] = useState(user?.displayName || "");
@@ -202,6 +214,17 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     await logout();
+  };
+
+  const handleThemeToggle = async () => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    const nextPreference: ThemePreference =
+      themePreference === "system"
+        ? "light"
+        : themePreference === "light"
+          ? "dark"
+          : "system";
+    await setThemePreference(nextPreference);
   };
 
   const handleAvatarPress = async () => {
@@ -1107,6 +1130,20 @@ export default function ProfileScreen() {
               setNameSelection({ start: 0, end: currentName.length });
               setIsEditing(true);
             }}
+          />
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
+          <SettingsItem
+            icon={
+              themePreference === "dark"
+                ? "moon"
+                : themePreference === "light"
+                  ? "sun"
+                  : "smartphone"
+            }
+            label="Appearance"
+            value={THEME_LABELS[themePreference]}
+            onPress={handleThemeToggle}
+            showChevron={false}
           />
           <View style={[styles.divider, { backgroundColor: theme.border }]} />
           <SettingsItem

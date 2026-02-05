@@ -2,44 +2,58 @@ import { Platform } from "react-native";
 
 export const Colors = {
   light: {
-    text: "#1A1A1A",
-    textSecondary: "#757575",
+    // Text - from Figma light mode
+    text: "#212832",
+    textSecondary: "#878787",
     buttonText: "#FFFFFF",
-    tabIconDefault: "#757575",
-    tabIconSelected: "#00C853",
-    link: "#00C853",
-    linkPressed: "#00A043",
-    backgroundRoot: "#FAFAFA",
+    // Navigation
+    tabIconDefault: "#878787",
+    tabIconSelected: "#9372F1",
+    // Links - purple accent
+    link: "#9372F1",
+    linkPressed: "#6B42DE",
+    // Backgrounds - from Figma light mode
+    backgroundRoot: "#FFFFFF",
     backgroundDefault: "#FFFFFF",
-    backgroundSecondary: "#F5F5F5",
-    backgroundTertiary: "#EEEEEE",
+    backgroundSecondary: "#F2F2F2",
+    backgroundTertiary: "#E8E8E8",
+    // Border
     border: "#E0E0E0",
+    // Status colors (unchanged)
     error: "#D32F2F",
     warning: "#F57C00",
     success: "#00C853",
     info: "#2196F3",
+    // Nutrition accents (unchanged)
     calorieAccent: "#FF6B35",
     proteinAccent: "#00C853",
     carbsAccent: "#FF6B35",
     fatAccent: "#FFC107",
   },
   dark: {
-    text: "#ECEDEE",
-    textSecondary: "#9BA1A6",
+    // Text - from Figma dark mode
+    text: "#FFFFFF",
+    textSecondary: "#C4C4C4",
     buttonText: "#FFFFFF",
-    tabIconDefault: "#9BA1A6",
-    tabIconSelected: "#00C853",
-    link: "#00C853",
-    linkPressed: "#00A043",
-    backgroundRoot: "#121212",
-    backgroundDefault: "#1E1E1E",
-    backgroundSecondary: "#2A2A2A",
-    backgroundTertiary: "#333333",
-    border: "#404040",
+    // Navigation
+    tabIconDefault: "#C4C4C4",
+    tabIconSelected: "#9372F1",
+    // Links - purple accent
+    link: "#9372F1",
+    linkPressed: "#6B42DE",
+    // Backgrounds - from Figma dark mode (warm navy)
+    backgroundRoot: "#212832",
+    backgroundDefault: "#212832",
+    backgroundSecondary: "#393948",
+    backgroundTertiary: "#4A4A5A",
+    // Border
+    border: "#4A4A5A",
+    // Status colors (unchanged)
     error: "#EF5350",
     warning: "#FFB74D",
     success: "#00E676",
     info: "#64B5F6",
+    // Nutrition accents (unchanged)
     calorieAccent: "#FF8A65",
     proteinAccent: "#00E676",
     carbsAccent: "#FF8A65",
@@ -63,6 +77,7 @@ export const Spacing = {
 };
 
 export const BorderRadius = {
+  // Scale (keep existing for backward compatibility)
   xs: 8,
   sm: 12,
   md: 18,
@@ -71,45 +86,69 @@ export const BorderRadius = {
   "2xl": 40,
   "3xl": 50,
   full: 9999,
+  // Semantic names (from Figma design - use these for new components)
+  input: 8,
+  button: 8,
+  card: 15,
+  chip: 28,
+  tag: 28,
+  thumbnail: 10,
+  avatar: 9999,
+};
+
+// Poppins font family names (loaded in App.tsx)
+export const FontFamily = {
+  regular: "Poppins_400Regular",
+  medium: "Poppins_500Medium",
+  semiBold: "Poppins_600SemiBold",
+  bold: "Poppins_700Bold",
 };
 
 export const Typography = {
   h1: {
+    fontFamily: FontFamily.bold,
     fontSize: 32,
     lineHeight: 40,
     fontWeight: "700" as const,
   },
   h2: {
+    fontFamily: FontFamily.bold,
     fontSize: 28,
     lineHeight: 36,
     fontWeight: "700" as const,
   },
   h3: {
+    fontFamily: FontFamily.semiBold,
     fontSize: 24,
     lineHeight: 32,
     fontWeight: "600" as const,
   },
   h4: {
+    fontFamily: FontFamily.semiBold,
     fontSize: 20,
     lineHeight: 28,
     fontWeight: "600" as const,
   },
   body: {
+    fontFamily: FontFamily.regular,
     fontSize: 16,
     lineHeight: 24,
     fontWeight: "400" as const,
   },
   small: {
+    fontFamily: FontFamily.regular,
     fontSize: 14,
     lineHeight: 20,
     fontWeight: "400" as const,
   },
   caption: {
+    fontFamily: FontFamily.regular,
     fontSize: 12,
     lineHeight: 16,
     fontWeight: "400" as const,
   },
   link: {
+    fontFamily: FontFamily.regular,
     fontSize: 16,
     lineHeight: 24,
     fontWeight: "400" as const,

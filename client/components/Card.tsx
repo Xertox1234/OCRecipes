@@ -5,6 +5,8 @@ import {
   View,
   ViewStyle,
   StyleProp,
+  Image,
+  ImageSourcePropType,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -15,19 +17,40 @@ import Animated, {
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { Spacing, BorderRadius, Colors } from "@/constants/theme";
+import { Spacing, BorderRadius, Colors, FontFamily } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
 
 type Theme = (typeof Colors)["light"] | (typeof Colors)["dark"];
 
+type BadgeVariant = "default" | "success" | "warning" | "error" | "info";
+
+interface Badge {
+  label: string;
+  variant?: BadgeVariant;
+}
+
 interface CardProps {
+  /** Elevation level (1-3) affects background color */
   elevation?: number;
+  /** Card title */
   title?: string;
+  /** Card description/subtitle */
   description?: string;
+  /** Optional header image */
+  image?: ImageSourcePropType;
+  /** Image height (default: 120) */
+  imageHeight?: number;
+  /** Badges to display on the image */
+  badges?: Badge[];
+  /** Card content */
   children?: React.ReactNode;
+  /** Press handler */
   onPress?: () => void;
+  /** Custom styles */
   style?: StyleProp<ViewStyle>;
+  /** Accessibility label */
   accessibilityLabel?: string;
+  /** Accessibility hint */
   accessibilityHint?: string;
 }
 
@@ -47,19 +70,40 @@ const getBackgroundColorForElevation = (
   }
 };
 
+const getBadgeColors = (
+  variant: BadgeVariant,
+  theme: Theme,
+): { bg: string; text: string } => {
+  switch (variant) {
+    case "success":
+      return { bg: theme.success + "20", text: theme.success };
+    case "warning":
+      return { bg: theme.warning + "20", text: theme.warning };
+    case "error":
+      return { bg: theme.error + "20", text: theme.error };
+    case "info":
+      return { bg: theme.info + "20", text: theme.info };
+    default:
+      return { bg: theme.link + "20", text: theme.link };
+  }
+};
+
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function Card({
   elevation = 1,
   title,
   description,
+  image,
+  imageHeight = 120,
+  badges,
   children,
   onPress,
   style,
   accessibilityLabel,
   accessibilityHint,
 }: CardProps) {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { reducedMotion } = useAccessibility();
   const scale = useSharedValue(1);
 
@@ -81,24 +125,79 @@ export function Card({
     }
   };
 
+  const shadowStyle = isDark
+    ? {}
+    : {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        elevation: 2,
+      };
+
   const content = (
     <>
-      {title ? (
-        <ThemedText type="h4" style={styles.cardTitle}>
-          {title}
-        </ThemedText>
+      {image ? (
+        <View style={styles.imageContainer}>
+          <Image
+            source={image}
+            style={[styles.image, { height: imageHeight }]}
+            resizeMode="cover"
+          />
+          {badges && badges.length > 0 ? (
+            <View style={styles.badgeContainer}>
+              {badges.map((badge, index) => {
+                const colors = getBadgeColors(
+                  badge.variant || "default",
+                  theme,
+                );
+                return (
+                  <View
+                    key={index}
+                    style={[styles.badge, { backgroundColor: colors.bg }]}
+                  >
+                    <ThemedText
+                      type="caption"
+                      style={[styles.badgeText, { color: colors.text }]}
+                    >
+                      {badge.label}
+                    </ThemedText>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
       ) : null}
-      {description ? (
-        <ThemedText type="small" style={styles.cardDescription}>
-          {description}
-        </ThemedText>
-      ) : null}
-      {children}
+      <View style={[styles.contentContainer, !image && styles.contentOnly]}>
+        {title ? (
+          <ThemedText type="h4" style={styles.cardTitle}>
+            {title}
+          </ThemedText>
+        ) : null}
+        {description ? (
+          <ThemedText
+            type="small"
+            style={[styles.cardDescription, { color: theme.textSecondary }]}
+          >
+            {description}
+          </ThemedText>
+        ) : null}
+        {children}
+      </View>
     </>
   );
 
+  const cardStyles = [
+    styles.card,
+    shadowStyle,
+    {
+      backgroundColor: cardBackgroundColor,
+    },
+    style,
+  ];
+
   // Only render as Pressable when onPress is provided
-  // This prevents nested Pressables from blocking touch events
   if (onPress) {
     return (
       <AnimatedPressable
@@ -108,44 +207,55 @@ export function Card({
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
-        style={[
-          styles.card,
-          {
-            backgroundColor: cardBackgroundColor,
-          },
-          animatedStyle,
-          style,
-        ]}
+        style={[cardStyles, animatedStyle]}
       >
         {content}
       </AnimatedPressable>
     );
   }
 
-  return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: cardBackgroundColor,
-        },
-        style,
-      ]}
-    >
-      {content}
-    </View>
-  );
+  return <View style={cardStyles}>{content}</View>;
 }
 
 const styles = StyleSheet.create({
   card: {
+    borderRadius: BorderRadius.card,
+    overflow: "hidden",
+  },
+  imageContainer: {
+    position: "relative",
+  },
+  image: {
+    width: "100%",
+    borderTopLeftRadius: BorderRadius.card,
+    borderTopRightRadius: BorderRadius.card,
+  },
+  badgeContainer: {
+    position: "absolute",
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    flexDirection: "row",
+    gap: Spacing.xs,
+  },
+  badge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.chip,
+  },
+  badgeText: {
+    fontFamily: FontFamily.medium,
+    fontWeight: "500",
+  },
+  contentContainer: {
+    padding: Spacing.lg,
+  },
+  contentOnly: {
     padding: Spacing.xl,
-    borderRadius: BorderRadius["2xl"],
   },
   cardTitle: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xs,
   },
   cardDescription: {
-    opacity: 0.7,
+    marginBottom: Spacing.sm,
   },
 });
