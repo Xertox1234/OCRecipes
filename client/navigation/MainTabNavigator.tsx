@@ -5,6 +5,7 @@ import { BlurView } from "expo-blur";
 import { Platform, StyleSheet, View } from "react-native";
 
 import HistoryStackNavigator from "@/navigation/HistoryStackNavigator";
+import MealPlanStackNavigator from "@/navigation/MealPlanStackNavigator";
 import ScanStackNavigator from "@/navigation/ScanStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { useTheme } from "@/hooks/useTheme";
@@ -12,6 +13,7 @@ import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 
 export type MainTabParamList = {
   HistoryTab: undefined;
+  MealPlanTab: undefined;
   ScanTab: undefined;
   ProfileTab: undefined;
 };
@@ -69,6 +71,16 @@ export default function MainTabNavigator() {
           title: "Today",
           tabBarIcon: ({ color, size }) => (
             <Feather name="clock" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="MealPlanTab"
+        component={MealPlanStackNavigator}
+        options={{
+          title: "Plan",
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="calendar" size={size} color={color} />
           ),
         }}
       />

@@ -10,6 +10,7 @@ import {
   boolean,
   jsonb,
   index,
+  date,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -393,6 +394,159 @@ export const recipeGenerationLogRelations = relations(
   }),
 );
 
+// ============================================================================
+// MEAL PLANNING TABLES
+// ============================================================================
+
+export const mealPlanRecipes = pgTable(
+  "meal_plan_recipes",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    title: text("title").notNull(),
+    description: text("description"),
+    sourceType: text("source_type").notNull().default("user_created"),
+    sourceUrl: text("source_url"),
+    externalId: text("external_id"),
+    cuisine: text("cuisine"),
+    difficulty: text("difficulty"),
+    servings: integer("servings").default(2),
+    prepTimeMinutes: integer("prep_time_minutes"),
+    cookTimeMinutes: integer("cook_time_minutes"),
+    imageUrl: text("image_url"),
+    instructions: text("instructions"),
+    dietTags: jsonb("diet_tags").$type<string[]>().default([]),
+    caloriesPerServing: decimal("calories_per_serving", {
+      precision: 10,
+      scale: 2,
+    }),
+    proteinPerServing: decimal("protein_per_serving", {
+      precision: 10,
+      scale: 2,
+    }),
+    carbsPerServing: decimal("carbs_per_serving", {
+      precision: 10,
+      scale: 2,
+    }),
+    fatPerServing: decimal("fat_per_serving", { precision: 10, scale: 2 }),
+    fiberPerServing: decimal("fiber_per_serving", {
+      precision: 10,
+      scale: 2,
+    }),
+    sugarPerServing: decimal("sugar_per_serving", {
+      precision: 10,
+      scale: 2,
+    }),
+    sodiumPerServing: decimal("sodium_per_serving", {
+      precision: 10,
+      scale: 2,
+    }),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("meal_plan_recipes_user_id_idx").on(table.userId),
+  }),
+);
+
+export const recipeIngredients = pgTable(
+  "recipe_ingredients",
+  {
+    id: serial("id").primaryKey(),
+    recipeId: integer("recipe_id")
+      .references(() => mealPlanRecipes.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    quantity: decimal("quantity", { precision: 10, scale: 2 }),
+    unit: text("unit"),
+    category: text("category").default("other"),
+    displayOrder: integer("display_order").default(0),
+  },
+  (table) => ({
+    recipeIdIdx: index("recipe_ingredients_recipe_id_idx").on(table.recipeId),
+  }),
+);
+
+export const mealPlanItems = pgTable(
+  "meal_plan_items",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    recipeId: integer("recipe_id").references(() => mealPlanRecipes.id, {
+      onDelete: "cascade",
+    }),
+    scannedItemId: integer("scanned_item_id").references(
+      () => scannedItems.id,
+      { onDelete: "cascade" },
+    ),
+    plannedDate: date("planned_date").notNull(),
+    mealType: text("meal_type").notNull(),
+    displayOrder: integer("display_order").default(0),
+    servings: decimal("servings", { precision: 5, scale: 2 }).default("1"),
+    source: text("source").default("manual"),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userDateIdx: index("meal_plan_items_user_date_idx").on(
+      table.userId,
+      table.plannedDate,
+    ),
+    userDateMealIdx: index("meal_plan_items_user_date_meal_idx").on(
+      table.userId,
+      table.plannedDate,
+      table.mealType,
+    ),
+  }),
+);
+
+// Meal planning relations
+export const mealPlanRecipesRelations = relations(
+  mealPlanRecipes,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [mealPlanRecipes.userId],
+      references: [users.id],
+    }),
+    ingredients: many(recipeIngredients),
+    mealPlanItems: many(mealPlanItems),
+  }),
+);
+
+export const recipeIngredientsRelations = relations(
+  recipeIngredients,
+  ({ one }) => ({
+    recipe: one(mealPlanRecipes, {
+      fields: [recipeIngredients.recipeId],
+      references: [mealPlanRecipes.id],
+    }),
+  }),
+);
+
+export const mealPlanItemsRelations = relations(mealPlanItems, ({ one }) => ({
+  user: one(users, {
+    fields: [mealPlanItems.userId],
+    references: [users.id],
+  }),
+  recipe: one(mealPlanRecipes, {
+    fields: [mealPlanItems.recipeId],
+    references: [mealPlanRecipes.id],
+  }),
+  scannedItem: one(scannedItems, {
+    fields: [mealPlanItems.scannedItemId],
+    references: [scannedItems.id],
+  }),
+}));
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -430,3 +584,30 @@ export type InsertSavedItem = typeof savedItems.$inferInsert;
 export type CommunityRecipe = typeof communityRecipes.$inferSelect;
 export type InsertCommunityRecipe = typeof communityRecipes.$inferInsert;
 export type RecipeGenerationLog = typeof recipeGenerationLog.$inferSelect;
+
+// Meal planning types
+export const insertMealPlanRecipeSchema = createInsertSchema(
+  mealPlanRecipes,
+).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertRecipeIngredientSchema = createInsertSchema(
+  recipeIngredients,
+).omit({
+  id: true,
+});
+export const insertMealPlanItemSchema = createInsertSchema(mealPlanItems).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type MealPlanRecipe = typeof mealPlanRecipes.$inferSelect;
+export type InsertMealPlanRecipe = z.infer<typeof insertMealPlanRecipeSchema>;
+export type RecipeIngredient = typeof recipeIngredients.$inferSelect;
+export type InsertRecipeIngredient = z.infer<
+  typeof insertRecipeIngredientSchema
+>;
+export type MealPlanItem = typeof mealPlanItems.$inferSelect;
+export type InsertMealPlanItem = z.infer<typeof insertMealPlanItemSchema>;

@@ -11,6 +11,12 @@ import {
   type SuggestionData,
   type CommunityRecipe,
   type InsertCommunityRecipe,
+  type MealPlanRecipe,
+  type InsertMealPlanRecipe,
+  type RecipeIngredient,
+  type InsertRecipeIngredient,
+  type MealPlanItem,
+  type InsertMealPlanItem,
   users,
   scannedItems,
   dailyLogs,
@@ -20,6 +26,9 @@ import {
   instructionCache,
   communityRecipes,
   recipeGenerationLog,
+  mealPlanRecipes,
+  recipeIngredients,
+  mealPlanItems,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import { db } from "./db";
@@ -136,6 +145,44 @@ export interface IStorage {
   getCommunityRecipe(id: number): Promise<CommunityRecipe | undefined>;
   deleteCommunityRecipe(recipeId: number, authorId: string): Promise<boolean>;
   getUserRecipes(userId: string): Promise<CommunityRecipe[]>;
+
+  // Meal plan recipes
+  getMealPlanRecipe(id: number): Promise<MealPlanRecipe | undefined>;
+  getMealPlanRecipeWithIngredients(
+    id: number,
+  ): Promise<
+    (MealPlanRecipe & { ingredients: RecipeIngredient[] }) | undefined
+  >;
+  getUserMealPlanRecipes(userId: string): Promise<MealPlanRecipe[]>;
+  createMealPlanRecipe(
+    recipe: InsertMealPlanRecipe,
+    ingredients?: InsertRecipeIngredient[],
+  ): Promise<MealPlanRecipe>;
+  updateMealPlanRecipe(
+    id: number,
+    userId: string,
+    updates: Partial<InsertMealPlanRecipe>,
+  ): Promise<MealPlanRecipe | undefined>;
+  deleteMealPlanRecipe(id: number, userId: string): Promise<boolean>;
+
+  // Meal plan items
+  getMealPlanItems(
+    userId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<
+    (MealPlanItem & {
+      recipe: MealPlanRecipe | null;
+      scannedItem: ScannedItem | null;
+    })[]
+  >;
+  addMealPlanItem(item: InsertMealPlanItem): Promise<MealPlanItem>;
+  updateMealPlanItem(
+    id: number,
+    userId: string,
+    updates: Partial<InsertMealPlanItem>,
+  ): Promise<MealPlanItem | undefined>;
+  removeMealPlanItem(id: number, userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -636,6 +683,202 @@ export class DatabaseStorage implements IStorage {
       .from(communityRecipes)
       .where(eq(communityRecipes.authorId, userId))
       .orderBy(desc(communityRecipes.createdAt));
+  }
+
+  // ============================================================================
+  // MEAL PLAN RECIPES
+  // ============================================================================
+
+  async getMealPlanRecipe(id: number): Promise<MealPlanRecipe | undefined> {
+    const [recipe] = await db
+      .select()
+      .from(mealPlanRecipes)
+      .where(eq(mealPlanRecipes.id, id));
+    return recipe || undefined;
+  }
+
+  async getMealPlanRecipeWithIngredients(
+    id: number,
+  ): Promise<
+    (MealPlanRecipe & { ingredients: RecipeIngredient[] }) | undefined
+  > {
+    const recipe = await this.getMealPlanRecipe(id);
+    if (!recipe) return undefined;
+
+    const ingredients = await db
+      .select()
+      .from(recipeIngredients)
+      .where(eq(recipeIngredients.recipeId, id))
+      .orderBy(recipeIngredients.displayOrder);
+
+    return { ...recipe, ingredients };
+  }
+
+  async getUserMealPlanRecipes(userId: string): Promise<MealPlanRecipe[]> {
+    return db
+      .select()
+      .from(mealPlanRecipes)
+      .where(eq(mealPlanRecipes.userId, userId))
+      .orderBy(desc(mealPlanRecipes.createdAt));
+  }
+
+  async createMealPlanRecipe(
+    recipe: InsertMealPlanRecipe,
+    ingredients?: InsertRecipeIngredient[],
+  ): Promise<MealPlanRecipe> {
+    if (ingredients && ingredients.length > 0) {
+      return db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(mealPlanRecipes)
+          .values(recipe)
+          .returning();
+        await tx.insert(recipeIngredients).values(
+          ingredients.map((ing, idx) => ({
+            ...ing,
+            recipeId: created.id,
+            displayOrder: ing.displayOrder ?? idx,
+          })),
+        );
+        return created;
+      });
+    }
+
+    const [created] = await db
+      .insert(mealPlanRecipes)
+      .values(recipe)
+      .returning();
+    return created;
+  }
+
+  async updateMealPlanRecipe(
+    id: number,
+    userId: string,
+    updates: Partial<InsertMealPlanRecipe>,
+  ): Promise<MealPlanRecipe | undefined> {
+    const [recipe] = await db
+      .update(mealPlanRecipes)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(
+        and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)),
+      )
+      .returning();
+    return recipe || undefined;
+  }
+
+  async deleteMealPlanRecipe(id: number, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(mealPlanRecipes)
+      .where(
+        and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)),
+      )
+      .returning({ id: mealPlanRecipes.id });
+    return result.length > 0;
+  }
+
+  // ============================================================================
+  // MEAL PLAN ITEMS
+  // ============================================================================
+
+  async getMealPlanItems(
+    userId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<
+    (MealPlanItem & {
+      recipe: MealPlanRecipe | null;
+      scannedItem: ScannedItem | null;
+    })[]
+  > {
+    const items = await db
+      .select()
+      .from(mealPlanItems)
+      .where(
+        and(
+          eq(mealPlanItems.userId, userId),
+          gte(mealPlanItems.plannedDate, startDate),
+          lt(
+            mealPlanItems.plannedDate,
+            // Add one day to endDate to include it in range
+            new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000)
+              .toISOString()
+              .split("T")[0],
+          ),
+        ),
+      )
+      .orderBy(mealPlanItems.plannedDate, mealPlanItems.displayOrder);
+
+    // Batch-fetch related recipes and scanned items
+    const recipeIds = [
+      ...new Set(items.filter((i) => i.recipeId).map((i) => i.recipeId!)),
+    ];
+    const scannedItemIds = [
+      ...new Set(
+        items.filter((i) => i.scannedItemId).map((i) => i.scannedItemId!),
+      ),
+    ];
+
+    const recipesMap = new Map<number, MealPlanRecipe>();
+    const scannedItemsMap = new Map<number, ScannedItem>();
+
+    if (recipeIds.length > 0) {
+      const recipes = await db
+        .select()
+        .from(mealPlanRecipes)
+        .where(
+          sql`${mealPlanRecipes.id} IN (${sql.join(
+            recipeIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        );
+      for (const r of recipes) recipesMap.set(r.id, r);
+    }
+
+    if (scannedItemIds.length > 0) {
+      const scanned = await db
+        .select()
+        .from(scannedItems)
+        .where(
+          sql`${scannedItems.id} IN (${sql.join(
+            scannedItemIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        );
+      for (const s of scanned) scannedItemsMap.set(s.id, s);
+    }
+
+    return items.map((item) => ({
+      ...item,
+      recipe: item.recipeId ? recipesMap.get(item.recipeId) || null : null,
+      scannedItem: item.scannedItemId
+        ? scannedItemsMap.get(item.scannedItemId) || null
+        : null,
+    }));
+  }
+
+  async addMealPlanItem(item: InsertMealPlanItem): Promise<MealPlanItem> {
+    const [created] = await db.insert(mealPlanItems).values(item).returning();
+    return created;
+  }
+
+  async updateMealPlanItem(
+    id: number,
+    userId: string,
+    updates: Partial<InsertMealPlanItem>,
+  ): Promise<MealPlanItem | undefined> {
+    const [item] = await db
+      .update(mealPlanItems)
+      .set(updates)
+      .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
+      .returning();
+    return item || undefined;
+  }
+
+  async removeMealPlanItem(id: number, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(mealPlanItems)
+      .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
+      .returning({ id: mealPlanItems.id });
+    return result.length > 0;
   }
 }
 

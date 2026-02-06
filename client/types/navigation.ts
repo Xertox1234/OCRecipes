@@ -7,12 +7,14 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 import type { HistoryStackParamList } from "@/navigation/HistoryStackNavigator";
 import type { ScanStackParamList } from "@/navigation/ScanStackNavigator";
+import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 
 // Re-export types from navigation files for convenience
 export type { RootStackParamList } from "@/navigation/RootStackNavigator";
 export type { MainTabParamList } from "@/navigation/MainTabNavigator";
 export type { HistoryStackParamList } from "@/navigation/HistoryStackNavigator";
 export type { ScanStackParamList } from "@/navigation/ScanStackNavigator";
+export type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 
 /**
  * Navigation prop for HistoryScreen
@@ -82,4 +84,22 @@ export type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
 export type GoalSetupScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "GoalSetup"
+>;
+
+/**
+ * Navigation prop for MealPlanHomeScreen
+ * Can navigate within meal plan stack and to other tabs
+ */
+export type MealPlanHomeScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<MealPlanStackParamList, "MealPlanHome">,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+/**
+ * Navigation prop for RecipeDetailScreen
+ * Can navigate within meal plan stack
+ */
+export type RecipeDetailScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList,
+  "RecipeDetail"
 >;
