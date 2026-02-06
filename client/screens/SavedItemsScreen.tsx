@@ -18,7 +18,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useSavedItems, useSavedItemCount } from "@/hooks/useSavedItems";
 import { usePremiumContext } from "@/context/PremiumContext";
-import { Spacing } from "@/constants/theme";
+import { Spacing, withOpacity } from "@/constants/theme";
 import type { SavedItem } from "@shared/schema";
 
 const ITEM_SEPARATOR_HEIGHT = Spacing.md;
@@ -95,7 +95,7 @@ export default function SavedItemsScreen() {
         <View
           style={[
             styles.limitBanner,
-            { backgroundColor: theme.warning + "20" },
+            { backgroundColor: withOpacity(theme.warning, 0.12) },
           ]}
         >
           <Feather name="alert-circle" size={16} color={theme.warning} />

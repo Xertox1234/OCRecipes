@@ -476,11 +476,11 @@ export function RecipeGenerationModal({
               </>
             ) : (
               <>
-                <Feather name="zap" size={20} color="#FFFFFF" />
+                <Feather name="zap" size={20} color={theme.buttonText} />
                 <ThemedText
                   type="body"
                   style={{
-                    color: "#FFFFFF",
+                    color: theme.buttonText,
                     marginLeft: Spacing.sm,
                     fontWeight: "600",
                   }}

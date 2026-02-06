@@ -23,7 +23,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { apiRequest } from "@/lib/query-client";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
 
 type RouteParams = {
@@ -352,7 +352,7 @@ export default function NutritionDetailScreen() {
           <View
             style={[
               styles.warningContainer,
-              { backgroundColor: theme.warning + "20" },
+              { backgroundColor: withOpacity(theme.warning, 0.12) },
             ]}
           >
             <Feather name="alert-triangle" size={20} color={theme.warning} />
@@ -393,7 +393,7 @@ export default function NutritionDetailScreen() {
           <View
             style={[
               styles.infoContainer,
-              { backgroundColor: theme.info + "15" },
+              { backgroundColor: withOpacity(theme.info, 0.08) },
             ]}
           >
             <Feather name="info" size={16} color={theme.info} />
@@ -496,7 +496,7 @@ export default function NutritionDetailScreen() {
               style={[styles.addButton, { backgroundColor: theme.success }]}
             >
               {addToLogMutation.isPending ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ActivityIndicator color={theme.buttonText} size="small" />
               ) : (
                 "Add to Today"
               )}

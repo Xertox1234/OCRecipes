@@ -15,7 +15,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useDeleteSavedItem } from "@/hooks/useSavedItems";
-import { BorderRadius, Spacing } from "@/constants/theme";
+import { BorderRadius, Spacing, withOpacity } from "@/constants/theme";
 import type { SavedItem } from "@shared/schema";
 
 interface SavedItemCardProps {
@@ -165,7 +165,7 @@ export function SavedItemCard({ item, onPress }: SavedItemCardProps) {
           hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
           style={({ pressed }) => [
             styles.actionButton,
-            { backgroundColor: theme.error + "20" },
+            { backgroundColor: withOpacity(theme.error, 0.12) },
             pressed && { opacity: 0.7 },
           ]}
         >

@@ -20,8 +20,7 @@ import { TextInput } from "@/components/TextInput";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
-import { Spacing, BorderRadius } from "@/constants/theme";
-import { withOpacity } from "@/lib/colors";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
 
@@ -29,7 +28,7 @@ type Mode = "login" | "register";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
   const haptics = useHaptics();
   const { login, register } = useAuthContext();
 
@@ -92,8 +91,8 @@ export default function LoginScreen() {
         <LinearGradient
           colors={[
             "transparent",
-            isDark ? "rgba(33,40,50,0.6)" : "rgba(255,255,255,0.6)",
-            isDark ? "#212832" : "#FFFFFF",
+            withOpacity(theme.backgroundRoot, 0.6),
+            theme.backgroundRoot,
           ]}
           locations={[0, 0.5, 1]}
           style={styles.heroGradient}
@@ -169,7 +168,7 @@ export default function LoginScreen() {
             <View
               style={[
                 styles.errorContainer,
-                { backgroundColor: withOpacity(theme.error, 6) },
+                { backgroundColor: withOpacity(theme.error, 0.06) },
               ]}
             >
               <Feather name="alert-circle" size={16} color={theme.error} />
@@ -197,7 +196,7 @@ export default function LoginScreen() {
             style={styles.button}
           >
             {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <ActivityIndicator color={theme.buttonText} size="small" />
             ) : mode === "login" ? (
               "Sign In"
             ) : (

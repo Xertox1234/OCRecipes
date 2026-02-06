@@ -879,7 +879,10 @@ export default function PhotoAnalysisScreen() {
                     ]}
                   >
                     {isConfirming ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
+                      <ActivityIndicator
+                        color={theme.buttonText}
+                        size="small"
+                      />
                     ) : (
                       `Log ${selectedItems.size} Item${selectedItems.size !== 1 ? "s" : ""} to Today`
                     )}

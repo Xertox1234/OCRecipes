@@ -7,7 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const CUISINES = [
   { id: "american", name: "American" },
@@ -96,7 +96,7 @@ export default function PreferencesScreen() {
           <View
             style={[
               styles.stepIndicator,
-              { backgroundColor: theme.success + "15" },
+              { backgroundColor: withOpacity(theme.success, 0.08) },
             ]}
           >
             <ThemedText
@@ -145,7 +145,7 @@ export default function PreferencesScreen() {
                   <ThemedText
                     type="small"
                     style={{
-                      color: selected ? "#FFF" : theme.text,
+                      color: selected ? theme.buttonText : theme.text,
                       fontWeight: selected ? "600" : "400",
                     }}
                   >
@@ -175,7 +175,7 @@ export default function PreferencesScreen() {
                     styles.optionItem,
                     {
                       backgroundColor: selected
-                        ? theme.success + "15"
+                        ? withOpacity(theme.success, 0.08)
                         : theme.backgroundDefault,
                       borderColor: selected ? theme.success : theme.border,
                     },
@@ -230,7 +230,7 @@ export default function PreferencesScreen() {
                     styles.optionItem,
                     {
                       backgroundColor: selected
-                        ? theme.success + "15"
+                        ? withOpacity(theme.success, 0.08)
                         : theme.backgroundDefault,
                       borderColor: selected ? theme.success : theme.border,
                     },

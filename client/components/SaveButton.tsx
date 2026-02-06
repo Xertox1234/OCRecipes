@@ -100,7 +100,7 @@ export function SaveButton({ item, style, onSaved }: SaveButtonProps) {
     switch (saveState) {
       case "saved":
       case "error":
-        return "#FFFFFF";
+        return theme.buttonText;
       default:
         return theme.text;
     }

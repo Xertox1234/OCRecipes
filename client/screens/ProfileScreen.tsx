@@ -25,9 +25,8 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { useSavedItemCount } from "@/hooks/useSavedItems";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
-import { withOpacity } from "@/lib/colors";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
@@ -120,7 +119,7 @@ function SettingsItem({
           styles.settingsIcon,
           {
             backgroundColor: danger
-              ? withOpacity(theme.error, 12)
+              ? withOpacity(theme.error, 0.12)
               : theme.backgroundSecondary,
           },
         ]}
@@ -323,7 +322,7 @@ export default function ProfileScreen() {
           style={({ pressed }) => [
             styles.avatar,
             {
-              backgroundColor: withOpacity(theme.success, 12),
+              backgroundColor: withOpacity(theme.success, 0.12),
               opacity: pressed ? 0.8 : 1,
             },
           ]}
@@ -551,7 +550,7 @@ export default function ProfileScreen() {
             style={({ pressed }) => [
               styles.setupGoalsButton,
               {
-                backgroundColor: withOpacity(theme.success, 12),
+                backgroundColor: withOpacity(theme.success, 0.12),
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
@@ -760,7 +759,7 @@ export default function ProfileScreen() {
             style={({ pressed }) => [
               styles.setupGoalsButton,
               {
-                backgroundColor: withOpacity(theme.success, 12),
+                backgroundColor: withOpacity(theme.success, 0.12),
                 opacity: pressed ? 0.7 : 1,
               },
             ]}
@@ -780,7 +779,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: withOpacity(theme.error, 12) },
+                      { backgroundColor: withOpacity(theme.error, 0.12) },
                     ]}
                   >
                     <Feather
@@ -805,9 +804,9 @@ export default function ProfileScreen() {
                             {
                               backgroundColor:
                                 a.severity === "severe"
-                                  ? withOpacity(theme.error, 12)
+                                  ? withOpacity(theme.error, 0.12)
                                   : a.severity === "moderate"
-                                    ? withOpacity(theme.warning, 12)
+                                    ? withOpacity(theme.warning, 0.12)
                                     : theme.backgroundSecondary,
                             },
                           ]}
@@ -838,7 +837,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: withOpacity(theme.info, 12) },
+                      { backgroundColor: withOpacity(theme.info, 0.12) },
                     ]}
                   >
                     <Feather name="heart" size={16} color={theme.info} />
@@ -864,7 +863,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: withOpacity(theme.success, 12) },
+                      { backgroundColor: withOpacity(theme.success, 0.12) },
                     ]}
                   >
                     <Feather name="target" size={16} color={theme.success} />
@@ -889,7 +888,9 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: withOpacity(theme.calorieAccent, 12) },
+                      {
+                        backgroundColor: withOpacity(theme.calorieAccent, 0.12),
+                      },
                     ]}
                   >
                     <Feather
@@ -918,7 +919,9 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: withOpacity(theme.proteinAccent, 12) },
+                      {
+                        backgroundColor: withOpacity(theme.proteinAccent, 0.12),
+                      },
                     ]}
                   >
                     <Feather
@@ -948,7 +951,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: withOpacity(theme.carbsAccent, 12) },
+                      { backgroundColor: withOpacity(theme.carbsAccent, 0.12) },
                     ]}
                   >
                     <Feather name="globe" size={16} color={theme.carbsAccent} />
@@ -972,7 +975,7 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.dietaryIcon,
-                      { backgroundColor: withOpacity(theme.fatAccent, 12) },
+                      { backgroundColor: withOpacity(theme.fatAccent, 0.12) },
                     ]}
                   >
                     <Feather name="award" size={16} color={theme.fatAccent} />
@@ -1094,7 +1097,7 @@ export default function ProfileScreen() {
             <View
               style={[
                 styles.libraryIcon,
-                { backgroundColor: withOpacity(theme.link, 12) },
+                { backgroundColor: withOpacity(theme.link, 0.12) },
               ]}
             >
               <Feather name="bookmark" size={24} color={theme.link} />

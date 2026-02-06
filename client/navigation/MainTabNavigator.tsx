@@ -92,7 +92,7 @@ export default function MainTabNavigator() {
               <Feather
                 name="camera"
                 size={24}
-                color={focused ? "#FFFFFF" : color}
+                color={focused ? theme.buttonText : color}
               />
             </View>
           ),

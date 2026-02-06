@@ -7,7 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 export default function WelcomeScreen() {
   const { theme } = useTheme();
@@ -23,7 +23,7 @@ export default function WelcomeScreen() {
           <View
             style={[
               styles.iconCircle,
-              { backgroundColor: theme.success + "15" },
+              { backgroundColor: withOpacity(theme.success, 0.08) },
             ]}
           >
             <Feather name="heart" size={48} color={theme.success} />
@@ -33,7 +33,7 @@ export default function WelcomeScreen() {
         <View
           style={[
             styles.stepIndicator,
-            { backgroundColor: theme.success + "15" },
+            { backgroundColor: withOpacity(theme.success, 0.08) },
           ]}
         >
           <ThemedText
@@ -121,7 +121,10 @@ function FeatureItem({
   return (
     <View style={styles.featureItem}>
       <View
-        style={[styles.featureIcon, { backgroundColor: theme.success + "15" }]}
+        style={[
+          styles.featureIcon,
+          { backgroundColor: withOpacity(theme.success, 0.08) },
+        ]}
       >
         <Feather name={icon} size={20} color={theme.success} />
       </View>

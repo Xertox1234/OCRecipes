@@ -227,11 +227,11 @@ export function CommunityRecipesSection({
               accessibilityLabel="Generate a recipe"
               accessibilityRole="button"
             >
-              <Feather name="plus" size={16} color="#FFFFFF" />
+              <Feather name="plus" size={16} color={theme.buttonText} />
               <ThemedText
                 type="small"
                 style={{
-                  color: "#FFFFFF",
+                  color: theme.buttonText,
                   marginLeft: Spacing.xs,
                   fontWeight: "600",
                 }}

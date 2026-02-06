@@ -29,7 +29,7 @@ These are non-critical code quality improvements for consistency with the new pa
 - [x] All hardcoded `#FFFFFF` replaced with theme values
 - [x] Verify opacity values match Figma design intent (note: `"20"` hex = ~12.5%, `0.2` = 20%)
 - [x] No lint or TypeScript errors introduced
-- [ ] Visual appearance verified (opacity changes may be noticeable)
+- [x] Visual appearance verified (opacity changes may be noticeable)
 
 ## Implementation Notes
 

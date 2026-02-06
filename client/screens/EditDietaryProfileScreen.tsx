@@ -17,7 +17,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { apiRequest } from "@/lib/query-client";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
   COMMON_ALLERGENS,
   SEVERITY_OPTIONS,
@@ -198,10 +198,10 @@ export default function EditDietaryProfileScreen() {
                     {
                       backgroundColor: selected
                         ? allergy?.severity === "severe"
-                          ? theme.error + "20"
+                          ? withOpacity(theme.error, 0.12)
                           : allergy?.severity === "moderate"
-                            ? theme.warning + "20"
-                            : theme.success + "20"
+                            ? withOpacity(theme.warning, 0.12)
+                            : withOpacity(theme.success, 0.12)
                         : theme.backgroundDefault,
                       borderColor: selected
                         ? allergy?.severity === "severe"
@@ -235,7 +235,7 @@ export default function EditDietaryProfileScreen() {
                     >
                       <ThemedText
                         type="caption"
-                        style={{ color: "#FFF", fontSize: 10 }}
+                        style={{ color: theme.buttonText, fontSize: 10 }}
                       >
                         {allergy.severity.charAt(0).toUpperCase()}
                       </ThemedText>
@@ -268,10 +268,10 @@ export default function EditDietaryProfileScreen() {
                       {
                         backgroundColor:
                           option.value === "severe"
-                            ? theme.error + "15"
+                            ? withOpacity(theme.error, 0.08)
                             : option.value === "moderate"
-                              ? theme.warning + "15"
-                              : theme.success + "15",
+                              ? withOpacity(theme.warning, 0.08)
+                              : withOpacity(theme.success, 0.08),
                         borderColor:
                           option.value === "severe"
                             ? theme.error
@@ -310,7 +310,7 @@ export default function EditDietaryProfileScreen() {
                     styles.listItem,
                     {
                       backgroundColor: selected
-                        ? theme.success + "15"
+                        ? withOpacity(theme.success, 0.08)
                         : theme.backgroundDefault,
                       borderColor: selected ? theme.success : theme.border,
                     },
@@ -378,7 +378,7 @@ export default function EditDietaryProfileScreen() {
                   <ThemedText
                     type="small"
                     style={{
-                      color: selected ? "#FFF" : theme.text,
+                      color: selected ? theme.buttonText : theme.text,
                       fontWeight: selected ? "600" : "400",
                     }}
                   >
@@ -465,7 +465,7 @@ export default function EditDietaryProfileScreen() {
                     styles.listItem,
                     {
                       backgroundColor: selected
-                        ? theme.success + "15"
+                        ? withOpacity(theme.success, 0.08)
                         : theme.backgroundDefault,
                       borderColor: selected ? theme.success : theme.border,
                     },
@@ -530,7 +530,7 @@ export default function EditDietaryProfileScreen() {
                   <ThemedText
                     type="small"
                     style={{
-                      color: selected ? "#FFF" : theme.text,
+                      color: selected ? theme.buttonText : theme.text,
                       fontWeight: selected ? "600" : "400",
                     }}
                   >
@@ -566,7 +566,7 @@ export default function EditDietaryProfileScreen() {
                     styles.listItem,
                     {
                       backgroundColor: selected
-                        ? theme.success + "15"
+                        ? withOpacity(theme.success, 0.08)
                         : theme.backgroundDefault,
                       borderColor: selected ? theme.success : theme.border,
                     },
@@ -627,7 +627,7 @@ export default function EditDietaryProfileScreen() {
                     styles.listItem,
                     {
                       backgroundColor: selected
-                        ? theme.success + "15"
+                        ? withOpacity(theme.success, 0.08)
                         : theme.backgroundDefault,
                       borderColor: selected ? theme.success : theme.border,
                     },
@@ -682,7 +682,7 @@ export default function EditDietaryProfileScreen() {
           style={{ backgroundColor: theme.success }}
         >
           {isSaving ? (
-            <ActivityIndicator color="#FFFFFF" size="small" />
+            <ActivityIndicator color={theme.buttonText} size="small" />
           ) : (
             "Save Changes"
           )}

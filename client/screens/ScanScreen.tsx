@@ -334,7 +334,7 @@ export default function ScanScreen() {
             <Feather
               name={torch ? "zap" : "zap-off"}
               size={24}
-              color="#FFFFFF"
+              color={theme.buttonText}
             />
           </Pressable>
           <Pressable
@@ -346,7 +346,7 @@ export default function ScanScreen() {
               { backgroundColor: "rgba(0,0,0,0.4)" },
             ]}
           >
-            <Feather name="x" size={24} color="#FFFFFF" />
+            <Feather name="x" size={24} color={theme.buttonText} />
           </Pressable>
         </View>
 
@@ -418,7 +418,7 @@ export default function ScanScreen() {
             accessibilityRole="button"
             style={styles.galleryButton}
           >
-            <Feather name="image" size={28} color="#FFFFFF" />
+            <Feather name="image" size={28} color={theme.buttonText} />
           </Pressable>
 
           <AnimatedView style={pulseStyle}>

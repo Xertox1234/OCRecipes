@@ -7,7 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const GOALS = [
   {
@@ -90,7 +90,7 @@ export default function GoalsScreen() {
           <View
             style={[
               styles.stepIndicator,
-              { backgroundColor: theme.success + "15" },
+              { backgroundColor: withOpacity(theme.success, 0.08) },
             ]}
           >
             <ThemedText
@@ -130,7 +130,7 @@ export default function GoalsScreen() {
                     styles.goalItem,
                     {
                       backgroundColor: selected
-                        ? goal.color + "15"
+                        ? withOpacity(goal.color, 0.08)
                         : theme.backgroundDefault,
                       borderColor: selected ? goal.color : theme.border,
                     },
@@ -139,7 +139,7 @@ export default function GoalsScreen() {
                   <View
                     style={[
                       styles.goalIcon,
-                      { backgroundColor: goal.color + "20" },
+                      { backgroundColor: withOpacity(goal.color, 0.12) },
                     ]}
                   >
                     <Feather
@@ -181,7 +181,7 @@ export default function GoalsScreen() {
                     styles.activityItem,
                     {
                       backgroundColor: selected
-                        ? theme.success + "15"
+                        ? withOpacity(theme.success, 0.08)
                         : theme.backgroundDefault,
                       borderColor: selected ? theme.success : theme.border,
                     },

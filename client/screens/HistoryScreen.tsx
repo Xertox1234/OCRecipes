@@ -34,7 +34,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
@@ -320,18 +320,18 @@ const DashboardHeader = React.memo(function DashboardHeader({
           >
             <ThemedText
               type="caption"
-              style={{ color: "rgba(255,255,255,0.8)" }}
+              style={{ color: withOpacity(theme.buttonText, 0.8) }}
             >
               TODAY&apos;S CALORIES
             </ThemedText>
             <View style={styles.statValueRow}>
-              <ThemedText type="h2" style={{ color: "#FFFFFF" }}>
+              <ThemedText type="h2" style={{ color: theme.buttonText }}>
                 {currentCalories.toLocaleString()}
               </ThemedText>
               <ThemedText
                 type="body"
                 style={{
-                  color: "rgba(255,255,255,0.8)",
+                  color: withOpacity(theme.buttonText, 0.8),
                   marginLeft: Spacing.xs,
                 }}
               >
@@ -353,11 +353,11 @@ const DashboardHeader = React.memo(function DashboardHeader({
           >
             <ThemedText
               type="caption"
-              style={{ color: "rgba(255,255,255,0.8)" }}
+              style={{ color: withOpacity(theme.buttonText, 0.8) }}
             >
               ITEMS SCANNED
             </ThemedText>
-            <ThemedText type="h2" style={{ color: "#FFFFFF" }}>
+            <ThemedText type="h2" style={{ color: theme.buttonText }}>
               {itemCount}
             </ThemedText>
           </View>

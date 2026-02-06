@@ -7,7 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const COMMON_ALLERGENS = [
   { id: "peanuts", name: "Peanuts", icon: "alert-circle" },
@@ -78,7 +78,7 @@ export default function AllergiesScreen() {
           <View
             style={[
               styles.stepIndicator,
-              { backgroundColor: theme.success + "15" },
+              { backgroundColor: withOpacity(theme.success, 0.08) },
             ]}
           >
             <ThemedText
@@ -115,7 +115,7 @@ export default function AllergiesScreen() {
                   styles.allergenItem,
                   {
                     backgroundColor: selected
-                      ? theme.success + "15"
+                      ? withOpacity(theme.success, 0.08)
                       : theme.backgroundDefault,
                     borderColor: selected ? theme.success : theme.border,
                   },
@@ -143,7 +143,7 @@ export default function AllergiesScreen() {
                   >
                     <ThemedText
                       type="caption"
-                      style={{ color: "#FFF", fontWeight: "600" }}
+                      style={{ color: theme.buttonText, fontWeight: "600" }}
                     >
                       {severity.charAt(0).toUpperCase() + severity.slice(1)}
                     </ThemedText>
@@ -183,10 +183,10 @@ export default function AllergiesScreen() {
                     {
                       backgroundColor:
                         option.value === "severe"
-                          ? theme.error + "15"
+                          ? withOpacity(theme.error, 0.08)
                           : option.value === "moderate"
-                            ? theme.warning + "15"
-                            : theme.success + "15",
+                            ? withOpacity(theme.warning, 0.08)
+                            : withOpacity(theme.success, 0.08),
                       borderColor:
                         option.value === "severe"
                           ? theme.error

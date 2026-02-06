@@ -7,7 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const HEALTH_CONDITIONS = [
   {
@@ -106,7 +106,7 @@ export default function HealthConditionsScreen() {
           <View
             style={[
               styles.stepIndicator,
-              { backgroundColor: theme.success + "15" },
+              { backgroundColor: withOpacity(theme.success, 0.08) },
             ]}
           >
             <ThemedText
@@ -142,7 +142,7 @@ export default function HealthConditionsScreen() {
                   styles.conditionItem,
                   {
                     backgroundColor: selected
-                      ? theme.success + "15"
+                      ? withOpacity(theme.success, 0.08)
                       : theme.backgroundDefault,
                     borderColor: selected ? theme.success : theme.border,
                   },
@@ -154,7 +154,7 @@ export default function HealthConditionsScreen() {
                       styles.conditionIcon,
                       {
                         backgroundColor: selected
-                          ? theme.success + "20"
+                          ? withOpacity(theme.success, 0.12)
                           : theme.backgroundSecondary,
                       },
                     ]}

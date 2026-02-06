@@ -24,7 +24,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { apiRequest } from "@/lib/query-client";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -142,7 +142,7 @@ function SelectableChip({
         styles.chip,
         {
           backgroundColor: selected
-            ? theme.success + "20"
+            ? withOpacity(theme.success, 0.12)
             : theme.backgroundSecondary,
           borderColor: selected ? theme.success : "transparent",
         },
@@ -455,7 +455,7 @@ export default function GoalSetupScreen() {
               ]}
             >
               {calculateMutation.isPending ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ActivityIndicator color={theme.buttonText} size="small" />
               ) : (
                 "Calculate My Goals"
               )}
@@ -584,7 +584,7 @@ export default function GoalSetupScreen() {
                 style={[styles.saveButton, { backgroundColor: theme.success }]}
               >
                 {saveMutation.isPending ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color={theme.buttonText} size="small" />
                 ) : (
                   "Save My Goals"
                 )}
