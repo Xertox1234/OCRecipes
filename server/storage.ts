@@ -9,6 +9,8 @@ import {
   type InsertUserProfile,
   type SavedItem,
   type SuggestionData,
+  type CommunityRecipe,
+  type InsertCommunityRecipe,
   users,
   scannedItems,
   dailyLogs,
@@ -16,10 +18,12 @@ import {
   savedItems,
   suggestionCache,
   instructionCache,
+  communityRecipes,
+  recipeGenerationLog,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import { db } from "./db";
-import { eq, desc, and, gte, lt, gt, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lt, gt, sql, or, ilike } from "drizzle-orm";
 import {
   subscriptionTierSchema,
   type SubscriptionTier,
@@ -113,6 +117,25 @@ export interface IStorage {
 
   // Invalidation
   invalidateSuggestionCacheForUser(userId: string): Promise<number>;
+
+  // Community recipes
+  getDailyRecipeGenerationCount(userId: string, date: Date): Promise<number>;
+  logRecipeGeneration(userId: string, recipeId: number): Promise<void>;
+  getCommunityRecipes(
+    barcode: string | null,
+    normalizedProductName: string,
+  ): Promise<CommunityRecipe[]>;
+  createCommunityRecipe(
+    data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
+  ): Promise<CommunityRecipe>;
+  updateRecipePublicStatus(
+    recipeId: number,
+    authorId: string,
+    isPublic: boolean,
+  ): Promise<CommunityRecipe | undefined>;
+  getCommunityRecipe(id: number): Promise<CommunityRecipe | undefined>;
+  deleteCommunityRecipe(recipeId: number, authorId: string): Promise<boolean>;
+  getUserRecipes(userId: string): Promise<CommunityRecipe[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -483,6 +506,136 @@ export class DatabaseStorage implements IStorage {
       .where(eq(suggestionCache.userId, userId))
       .returning({ id: suggestionCache.id });
     return result.length;
+  }
+
+  // Community recipes methods
+
+  async getDailyRecipeGenerationCount(
+    userId: string,
+    date: Date,
+  ): Promise<number> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(recipeGenerationLog)
+      .where(
+        and(
+          eq(recipeGenerationLog.userId, userId),
+          gte(recipeGenerationLog.generatedAt, startOfDay),
+          lt(recipeGenerationLog.generatedAt, endOfDay),
+        ),
+      );
+
+    return Number(result[0]?.count ?? 0);
+  }
+
+  async logRecipeGeneration(userId: string, recipeId: number): Promise<void> {
+    await db.insert(recipeGenerationLog).values({
+      userId,
+      recipeId,
+    });
+  }
+
+  async getCommunityRecipes(
+    barcode: string | null,
+    normalizedProductName: string,
+  ): Promise<CommunityRecipe[]> {
+    // Try exact barcode match first, then fall back to fuzzy name match
+    const conditions = [eq(communityRecipes.isPublic, true)];
+
+    if (barcode) {
+      // With barcode: match by barcode OR similar product name
+      conditions.push(
+        or(
+          eq(communityRecipes.barcode, barcode),
+          ilike(
+            communityRecipes.normalizedProductName,
+            `%${normalizedProductName}%`,
+          ),
+        )!,
+      );
+    } else {
+      // Without barcode: fuzzy match on product name only
+      conditions.push(
+        ilike(
+          communityRecipes.normalizedProductName,
+          `%${normalizedProductName}%`,
+        ),
+      );
+    }
+
+    return db
+      .select()
+      .from(communityRecipes)
+      .where(and(...conditions))
+      .orderBy(
+        desc(communityRecipes.likeCount),
+        desc(communityRecipes.createdAt),
+      )
+      .limit(10);
+  }
+
+  async createCommunityRecipe(
+    data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
+  ): Promise<CommunityRecipe> {
+    const [recipe] = await db.insert(communityRecipes).values(data).returning();
+    return recipe;
+  }
+
+  async updateRecipePublicStatus(
+    recipeId: number,
+    authorId: string,
+    isPublic: boolean,
+  ): Promise<CommunityRecipe | undefined> {
+    const [recipe] = await db
+      .update(communityRecipes)
+      .set({ isPublic, updatedAt: new Date() })
+      .where(
+        and(
+          eq(communityRecipes.id, recipeId),
+          eq(communityRecipes.authorId, authorId),
+        ),
+      )
+      .returning();
+    return recipe || undefined;
+  }
+
+  async getCommunityRecipe(id: number): Promise<CommunityRecipe | undefined> {
+    const [recipe] = await db
+      .select()
+      .from(communityRecipes)
+      .where(eq(communityRecipes.id, id));
+    return recipe || undefined;
+  }
+
+  async deleteCommunityRecipe(
+    recipeId: number,
+    authorId: string,
+  ): Promise<boolean> {
+    // IDOR protection: only delete if owned by user
+    const result = await db
+      .delete(communityRecipes)
+      .where(
+        and(
+          eq(communityRecipes.id, recipeId),
+          eq(communityRecipes.authorId, authorId),
+        ),
+      )
+      .returning({ id: communityRecipes.id });
+
+    return result.length > 0;
+  }
+
+  async getUserRecipes(userId: string): Promise<CommunityRecipe[]> {
+    return db
+      .select()
+      .from(communityRecipes)
+      .where(eq(communityRecipes.authorId, userId))
+      .orderBy(desc(communityRecipes.createdAt));
   }
 }
 

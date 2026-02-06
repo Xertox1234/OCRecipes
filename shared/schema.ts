@@ -96,6 +96,10 @@ export const scannedItems = pgTable(
     sourceType: text("source_type").default("barcode"),
     photoUrl: text("photo_url"),
     aiConfidence: decimal("ai_confidence", { precision: 3, scale: 2 }),
+    preparationMethods: jsonb("preparation_methods").$type<
+      { name: string; method: string }[]
+    >(),
+    analysisIntent: text("analysis_intent"),
     scannedAt: timestamp("scanned_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -306,6 +310,89 @@ export const savedItemsRelations = relations(savedItems, ({ one }) => ({
   }),
 }));
 
+// Community recipes - shared recipes created by premium users
+export const communityRecipes = pgTable(
+  "community_recipes",
+  {
+    id: serial("id").primaryKey(),
+    authorId: varchar("author_id", { length: 255 }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    barcode: text("barcode"),
+    normalizedProductName: text("normalized_product_name").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    difficulty: text("difficulty"),
+    timeEstimate: text("time_estimate"),
+    servings: integer("servings").default(2),
+    dietTags: jsonb("diet_tags").$type<string[]>().default([]),
+    instructions: text("instructions").notNull(),
+    imageUrl: text("image_url"),
+    isPublic: boolean("is_public").default(true),
+    likeCount: integer("like_count").default(0),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    barcodeIdx: index("community_recipes_barcode_idx").on(table.barcode),
+    normalizedNameIdx: index("community_recipes_normalized_name_idx").on(
+      table.normalizedProductName,
+    ),
+    authorIdx: index("community_recipes_author_idx").on(table.authorId),
+  }),
+);
+
+// Recipe generation log - tracks daily generation limits
+export const recipeGenerationLog = pgTable(
+  "recipe_generation_log",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id", { length: 255 })
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    recipeId: integer("recipe_id").references(() => communityRecipes.id, {
+      onDelete: "set null",
+    }),
+    generatedAt: timestamp("generated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userGeneratedAtIdx: index("recipe_gen_log_user_date_idx").on(
+      table.userId,
+      table.generatedAt,
+    ),
+  }),
+);
+
+export const communityRecipesRelations = relations(
+  communityRecipes,
+  ({ one }) => ({
+    author: one(users, {
+      fields: [communityRecipes.authorId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const recipeGenerationLogRelations = relations(
+  recipeGenerationLog,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [recipeGenerationLog.userId],
+      references: [users.id],
+    }),
+    recipe: one(communityRecipes, {
+      fields: [recipeGenerationLog.recipeId],
+      references: [communityRecipes.id],
+    }),
+  }),
+);
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -340,3 +427,6 @@ export type SuggestionCache = typeof suggestionCache.$inferSelect;
 export type InstructionCache = typeof instructionCache.$inferSelect;
 export type SavedItem = typeof savedItems.$inferSelect;
 export type InsertSavedItem = typeof savedItems.$inferInsert;
+export type CommunityRecipe = typeof communityRecipes.$inferSelect;
+export type InsertCommunityRecipe = typeof communityRecipes.$inferInsert;
+export type RecipeGenerationLog = typeof recipeGenerationLog.$inferSelect;

@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import {
   StyleSheet,
   View,
@@ -28,10 +34,17 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
+import { PreparationPicker } from "@/components/PreparationPicker";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { RecipeGenerationModal } from "@/components/RecipeGenerationModal";
+import {
+  INTENT_CONFIG,
+  type PhotoIntent,
+  FoodCategory,
+} from "@shared/constants/preparation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
@@ -39,6 +52,7 @@ import {
   submitFollowUp,
   confirmPhotoAnalysis,
   calculateTotals,
+  lookupNutritionByPrep,
   type FoodItem,
   type PhotoAnalysisResponse,
 } from "@/lib/photo-upload";
@@ -50,6 +64,7 @@ type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
 
 type RouteParams = {
   imageUri: string;
+  intent: PhotoIntent;
 };
 
 /** Confidence threshold for showing follow-up questions */
@@ -74,7 +89,7 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
     <View
       style={[
         styles.confidenceBadge,
-        { backgroundColor: getConfidenceColor() + "20" },
+        { backgroundColor: withOpacity(getConfidenceColor(), 0.12) },
       ]}
     >
       <ThemedText type="small" style={{ color: getConfidenceColor() }}>
@@ -89,11 +104,27 @@ function FoodItemCard({
   index,
   onEdit,
   reducedMotion,
+  isSelected,
+  onToggleSelect,
+  showNutrition,
+  showCheckbox,
+  prepMethod,
+  onPrepChange,
+  isPrepLoading,
+  showPrepPicker,
 }: {
   food: FoodItem;
   index: number;
   onEdit: (index: number, field: "name" | "quantity", value: string) => void;
   reducedMotion: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  showNutrition: boolean;
+  showCheckbox: boolean;
+  prepMethod?: string;
+  onPrepChange?: (method: string) => void;
+  isPrepLoading?: boolean;
+  showPrepPicker: boolean;
 }) {
   const { theme } = useTheme();
   const [isEditing, setIsEditing] = useState(false);
@@ -112,8 +143,31 @@ function FoodItemCard({
         reducedMotion ? undefined : FadeInUp.delay(index * 100).duration(400)
       }
     >
-      <Card elevation={1} style={styles.foodItemCard}>
+      <Card
+        elevation={1}
+        style={[styles.foodItemCard, !isSelected && styles.foodItemUnselected]}
+      >
         <View style={styles.foodItemHeader}>
+          {/* Checkbox (only in log intent) */}
+          {showCheckbox && (
+            <Pressable
+              onPress={onToggleSelect}
+              accessibilityLabel={
+                isSelected ? `Unselect ${food.name}` : `Select ${food.name}`
+              }
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: isSelected }}
+              style={styles.checkboxButton}
+              hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
+            >
+              <Feather
+                name={isSelected ? "check-square" : "square"}
+                size={22}
+                color={isSelected ? theme.success : theme.textSecondary}
+              />
+            </Pressable>
+          )}
+
           {isEditing ? (
             <View style={styles.editFields}>
               <TextInput
@@ -171,7 +225,7 @@ function FoodItemCard({
           </Pressable>
         </View>
 
-        {food.nutrition && (
+        {showNutrition && food.nutrition && (
           <View style={[styles.nutritionRow, { borderTopColor: theme.border }]}>
             <View style={styles.nutritionItem}>
               <ThemedText type="h4" style={{ color: theme.calorieAccent }}>
@@ -212,7 +266,7 @@ function FoodItemCard({
           <View
             style={[
               styles.clarificationBanner,
-              { backgroundColor: theme.warning + "15" },
+              { backgroundColor: withOpacity(theme.warning, 0.15) },
             ]}
           >
             <Feather name="help-circle" size={14} color={theme.warning} />
@@ -220,6 +274,16 @@ function FoodItemCard({
               {food.clarificationQuestion}
             </ThemedText>
           </View>
+        )}
+
+        {/* Preparation Picker (log intent only) */}
+        {showPrepPicker && onPrepChange && (
+          <PreparationPicker
+            category={(food.category as FoodCategory) || "other"}
+            selectedMethod={prepMethod || "As Served"}
+            onMethodChange={onPrepChange}
+            isLoading={isPrepLoading}
+          />
         )}
       </Card>
     </Animated.View>
@@ -318,7 +382,8 @@ export default function PhotoAnalysisScreen() {
   const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
   const queryClient = useQueryClient();
 
-  const { imageUri } = route.params;
+  const { imageUri, intent } = route.params;
+  const intentConfig = INTENT_CONFIG[intent];
 
   const [analysisResult, setAnalysisResult] =
     useState<PhotoAnalysisResponse | null>(null);
@@ -328,6 +393,16 @@ export default function PhotoAnalysisScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpIndex, setFollowUpIndex] = useState(0);
+
+  // Track which items are selected for logging
+  const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+
+  // Preparation methods per food item (index → method string)
+  const [prepMethods, setPrepMethods] = useState<Record<number, string>>({});
+  const [prepLoading, setPrepLoading] = useState<Record<number, boolean>>({});
+
+  // Recipe modal visibility
+  const [showRecipeModal, setShowRecipeModal] = useState(false);
 
   // Refs for synchronous checks (from institutional learning: stale-closure-callback-refs)
   const isUploadingRef = useRef(false);
@@ -350,6 +425,20 @@ export default function PhotoAnalysisScreen() {
     }, [imageUri]),
   );
 
+  // Initialize all items as selected when foods array populates.
+  useEffect(() => {
+    if (foods.length > 0) {
+      setSelectedItems(new Set(foods.map((_, i) => i)));
+      // Initialize prep methods to "As Served" for each food
+      const initialPrep: Record<number, string> = {};
+      foods.forEach((_, i) => {
+        initialPrep[i] = "As Served";
+      });
+      setPrepMethods(initialPrep);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foods.length]);
+
   // Upload and analyze photo
   useEffect(() => {
     const analyzePhoto = async () => {
@@ -358,13 +447,17 @@ export default function PhotoAnalysisScreen() {
 
       try {
         abortControllerRef.current = new AbortController();
-        const result = await uploadPhotoForAnalysis(imageUri);
+        const result = await uploadPhotoForAnalysis(imageUri, intent);
 
         setAnalysisResult(result);
         setFoods(result.foods);
 
-        // Show follow-up questions if confidence is low
-        if (result.needsFollowUp && result.followUpQuestions.length > 0) {
+        // Show follow-up questions if confidence is low (only for log/calories)
+        if (
+          intentConfig.needsNutrition &&
+          result.needsFollowUp &&
+          result.followUpQuestions.length > 0
+        ) {
           setShowFollowUp(true);
         }
 
@@ -381,7 +474,7 @@ export default function PhotoAnalysisScreen() {
 
     analyzePhoto();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageUri]);
+  }, [imageUri, intent]);
 
   const handleEditFood = (
     index: number,
@@ -394,6 +487,50 @@ export default function PhotoAnalysisScreen() {
       return updated;
     });
   };
+
+  const toggleItemSelection = (index: number) => {
+    haptics.selection();
+    setSelectedItems((prev) => {
+      const updated = new Set(prev);
+      if (updated.has(index)) {
+        updated.delete(index);
+      } else {
+        updated.add(index);
+      }
+      return updated;
+    });
+  };
+
+  const handlePrepMethodChange = useCallback(
+    async (index: number, method: string) => {
+      setPrepMethods((prev) => ({ ...prev, [index]: method }));
+
+      // "As Served" means use the original nutrition — no re-lookup needed
+      if (method === "As Served") return;
+
+      const food = foods[index];
+      if (!food) return;
+
+      const query = `${method.toLowerCase()} ${food.quantity} ${food.name}`;
+
+      setPrepLoading((prev) => ({ ...prev, [index]: true }));
+      try {
+        const nutrition = await lookupNutritionByPrep(query);
+        if (nutrition) {
+          setFoods((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], nutrition };
+            return updated;
+          });
+        }
+      } catch {
+        // Keep previous nutrition on error
+      } finally {
+        setPrepLoading((prev) => ({ ...prev, [index]: false }));
+      }
+    },
+    [foods],
+  );
 
   const handleFollowUpAnswer = async (question: string, answer: string) => {
     if (!analysisResult) return;
@@ -428,14 +565,26 @@ export default function PhotoAnalysisScreen() {
     }
   };
 
-  const handleConfirm = async () => {
-    if (!analysisResult || foods.length === 0) return;
+  const handleLogSelected = async () => {
+    if (!analysisResult || selectedItems.size === 0) return;
+
+    // Filter to only selected items
+    const selectedFoods = foods.filter((_, index) => selectedItems.has(index));
+
+    // Build preparation methods array from selected items
+    const preparationMethodsArr = selectedFoods
+      .map((food, i) => {
+        const originalIndex = foods.indexOf(food);
+        const method = prepMethods[originalIndex] || "As Served";
+        return { name: food.name, method };
+      })
+      .filter((pm) => pm.method !== "As Served");
 
     setIsConfirming(true);
     try {
       await confirmPhotoAnalysis({
         sessionId: analysisResult.sessionId,
-        foods: foods.map((f) => ({
+        foods: selectedFoods.map((f) => ({
           name: f.name,
           quantity: f.quantity,
           calories: f.nutrition?.calories || 0,
@@ -443,6 +592,9 @@ export default function PhotoAnalysisScreen() {
           carbs: f.nutrition?.carbs || 0,
           fat: f.nutrition?.fat || 0,
         })),
+        preparationMethods:
+          preparationMethodsArr.length > 0 ? preparationMethodsArr : undefined,
+        analysisIntent: intent,
       });
 
       queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
@@ -459,7 +611,36 @@ export default function PhotoAnalysisScreen() {
     }
   };
 
-  const totals = calculateTotals(foods);
+  const handleDone = () => {
+    haptics.notification(Haptics.NotificationFeedbackType.Success);
+    navigation.goBack();
+  };
+
+  const handleGenerateRecipe = () => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    setShowRecipeModal(true);
+  };
+
+  // Calculate totals for only selected items (memoized to avoid recalculation on every render)
+  const { selectedFoods, totals } = useMemo(() => {
+    const selected = foods.filter((_, index) => selectedItems.has(index));
+    return {
+      selectedFoods: selected,
+      totals: calculateTotals(selected),
+    };
+  }, [foods, selectedItems]);
+
+  const showNutrition = intent === "log" || intent === "calories";
+  const showLogButton = intent === "log";
+  const showPrepPicker = intent === "log";
+
+  // Loading text varies by intent
+  const loadingText =
+    intent === "identify"
+      ? "Identifying foods..."
+      : intent === "recipe"
+        ? "Identifying ingredients..."
+        : "Analyzing your meal...";
 
   if (isAnalyzing) {
     return (
@@ -469,7 +650,7 @@ export default function PhotoAnalysisScreen() {
           type="body"
           style={[styles.loadingText, { color: theme.textSecondary }]}
         >
-          Analyzing your meal...
+          {loadingText}
         </ThemedText>
         <ThemedText
           type="small"
@@ -516,7 +697,7 @@ export default function PhotoAnalysisScreen() {
             <View
               style={[
                 styles.errorContainer,
-                { backgroundColor: theme.error + "20" },
+                { backgroundColor: withOpacity(theme.error, 0.12) },
               ]}
             >
               <Feather name="alert-circle" size={20} color={theme.error} />
@@ -539,33 +720,38 @@ export default function PhotoAnalysisScreen() {
           {analysisResult && (
             <>
               <View style={styles.resultsHeader}>
-                <ThemedText type="h3">Foods Detected</ThemedText>
-                <ConfidenceBadge
-                  confidence={analysisResult.overallConfidence}
-                />
+                <ThemedText type="h3">
+                  {intent === "recipe" ? "Ingredients Found" : "Foods Detected"}
+                </ThemedText>
+                {showNutrition && (
+                  <ConfidenceBadge
+                    confidence={analysisResult.overallConfidence}
+                  />
+                )}
               </View>
 
-              {analysisResult.overallConfidence < CONFIDENCE_THRESHOLD && (
-                <View
-                  style={[
-                    styles.warningBanner,
-                    { backgroundColor: theme.warning + "15" },
-                  ]}
-                >
-                  <Feather
-                    name="alert-triangle"
-                    size={16}
-                    color={theme.warning}
-                  />
-                  <ThemedText
-                    type="small"
-                    style={{ color: theme.warning, flex: 1 }}
+              {showNutrition &&
+                analysisResult.overallConfidence < CONFIDENCE_THRESHOLD && (
+                  <View
+                    style={[
+                      styles.warningBanner,
+                      { backgroundColor: withOpacity(theme.warning, 0.15) },
+                    ]}
                   >
-                    AI confidence is low. Please review and edit items as
-                    needed.
-                  </ThemedText>
-                </View>
-              )}
+                    <Feather
+                      name="alert-triangle"
+                      size={16}
+                      color={theme.warning}
+                    />
+                    <ThemedText
+                      type="small"
+                      style={{ color: theme.warning, flex: 1 }}
+                    >
+                      AI confidence is low. Please review and edit items as
+                      needed.
+                    </ThemedText>
+                  </View>
+                )}
 
               {/* Food Items */}
               {foods.map((food, index) => (
@@ -575,102 +761,160 @@ export default function PhotoAnalysisScreen() {
                   index={index}
                   onEdit={handleEditFood}
                   reducedMotion={reducedMotion}
+                  isSelected={selectedItems.has(index)}
+                  onToggleSelect={() => toggleItemSelection(index)}
+                  showNutrition={showNutrition}
+                  showCheckbox={showLogButton}
+                  showPrepPicker={showPrepPicker}
+                  prepMethod={prepMethods[index]}
+                  onPrepChange={(method) =>
+                    handlePrepMethodChange(index, method)
+                  }
+                  isPrepLoading={prepLoading[index]}
                 />
               ))}
 
-              {/* Totals Card */}
-              <Animated.View
-                entering={
-                  reducedMotion
-                    ? undefined
-                    : FadeInUp.delay(foods.length * 100 + 100).duration(400)
-                }
-              >
-                <Card
-                  elevation={2}
-                  style={[
-                    styles.totalsCard,
-                    { borderColor: theme.calorieAccent, borderWidth: 2 },
-                  ]}
+              {/* Totals Card (only for nutrition intents) */}
+              {showNutrition && (
+                <Animated.View
+                  entering={
+                    reducedMotion
+                      ? undefined
+                      : FadeInUp.delay(foods.length * 100 + 100).duration(400)
+                  }
                 >
-                  <ThemedText type="h4" style={styles.totalsTitle}>
-                    Meal Totals
-                  </ThemedText>
-                  <View style={styles.totalsGrid}>
-                    <View style={styles.totalItem}>
-                      <ThemedText
-                        type="h2"
-                        style={{ color: theme.calorieAccent }}
-                      >
-                        {Math.round(totals.calories)}
+                  <Card
+                    elevation={2}
+                    style={[
+                      styles.totalsCard,
+                      { borderColor: theme.calorieAccent, borderWidth: 2 },
+                    ]}
+                  >
+                    <View style={styles.totalsTitleRow}>
+                      <ThemedText type="h4">
+                        {showLogButton ? "Meal Totals" : "Nutrition Summary"}
                       </ThemedText>
-                      <ThemedText
-                        type="small"
-                        style={{ color: theme.textSecondary }}
-                      >
-                        calories
-                      </ThemedText>
+                      {showLogButton && (
+                        <ThemedText
+                          type="small"
+                          style={{ color: theme.textSecondary }}
+                        >
+                          ({selectedItems.size} of {foods.length} items)
+                        </ThemedText>
+                      )}
                     </View>
-                    <View style={styles.totalItem}>
-                      <ThemedText
-                        type="h4"
-                        style={{ color: theme.proteinAccent }}
-                      >
-                        {Math.round(totals.protein)}g
-                      </ThemedText>
-                      <ThemedText
-                        type="small"
-                        style={{ color: theme.textSecondary }}
-                      >
-                        protein
-                      </ThemedText>
+                    <View style={styles.totalsGrid}>
+                      <View style={styles.totalItem}>
+                        <ThemedText
+                          type="h2"
+                          style={{ color: theme.calorieAccent }}
+                        >
+                          {Math.round(totals.calories)}
+                        </ThemedText>
+                        <ThemedText
+                          type="small"
+                          style={{ color: theme.textSecondary }}
+                        >
+                          calories
+                        </ThemedText>
+                      </View>
+                      <View style={styles.totalItem}>
+                        <ThemedText
+                          type="h4"
+                          style={{ color: theme.proteinAccent }}
+                        >
+                          {Math.round(totals.protein)}g
+                        </ThemedText>
+                        <ThemedText
+                          type="small"
+                          style={{ color: theme.textSecondary }}
+                        >
+                          protein
+                        </ThemedText>
+                      </View>
+                      <View style={styles.totalItem}>
+                        <ThemedText
+                          type="h4"
+                          style={{ color: theme.carbsAccent }}
+                        >
+                          {Math.round(totals.carbs)}g
+                        </ThemedText>
+                        <ThemedText
+                          type="small"
+                          style={{ color: theme.textSecondary }}
+                        >
+                          carbs
+                        </ThemedText>
+                      </View>
+                      <View style={styles.totalItem}>
+                        <ThemedText
+                          type="h4"
+                          style={{ color: theme.fatAccent }}
+                        >
+                          {Math.round(totals.fat)}g
+                        </ThemedText>
+                        <ThemedText
+                          type="small"
+                          style={{ color: theme.textSecondary }}
+                        >
+                          fat
+                        </ThemedText>
+                      </View>
                     </View>
-                    <View style={styles.totalItem}>
-                      <ThemedText
-                        type="h4"
-                        style={{ color: theme.carbsAccent }}
-                      >
-                        {Math.round(totals.carbs)}g
-                      </ThemedText>
-                      <ThemedText
-                        type="small"
-                        style={{ color: theme.textSecondary }}
-                      >
-                        carbs
-                      </ThemedText>
-                    </View>
-                    <View style={styles.totalItem}>
-                      <ThemedText type="h4" style={{ color: theme.fatAccent }}>
-                        {Math.round(totals.fat)}g
-                      </ThemedText>
-                      <ThemedText
-                        type="small"
-                        style={{ color: theme.textSecondary }}
-                      >
-                        fat
-                      </ThemedText>
-                    </View>
-                  </View>
-                </Card>
-              </Animated.View>
+                  </Card>
+                </Animated.View>
+              )}
 
-              {/* Confirm Button */}
-              <View style={styles.buttonContainer}>
-                <Button
-                  onPress={handleConfirm}
-                  disabled={isConfirming || foods.length === 0}
-                  accessibilityLabel="Add meal to today's log"
-                  style={[
-                    styles.confirmButton,
-                    { backgroundColor: theme.success },
-                  ]}
-                >
-                  {isConfirming ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                  ) : (
-                    "Add to Today"
-                  )}
-                </Button>
+              {/* Action Bar */}
+              <View style={styles.actionBar}>
+                {/* Log intent: Log button */}
+                {showLogButton && (
+                  <Button
+                    onPress={handleLogSelected}
+                    disabled={isConfirming || selectedItems.size === 0}
+                    accessibilityLabel={`Log ${selectedItems.size} items to today`}
+                    style={[
+                      styles.primaryButton,
+                      { backgroundColor: theme.success },
+                    ]}
+                  >
+                    {isConfirming ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      `Log ${selectedItems.size} Item${selectedItems.size !== 1 ? "s" : ""} to Today`
+                    )}
+                  </Button>
+                )}
+
+                {/* Recipe intent: Generate Recipe button */}
+                {intent === "recipe" && (
+                  <Button
+                    onPress={handleGenerateRecipe}
+                    accessibilityLabel="Generate recipe from detected ingredients"
+                    style={[
+                      styles.primaryButton,
+                      { backgroundColor: theme.success },
+                    ]}
+                  >
+                    Generate Recipe
+                  </Button>
+                )}
+
+                {/* Non-logging intents: Done button */}
+                {!showLogButton && (
+                  <Button
+                    onPress={handleDone}
+                    accessibilityLabel="Done"
+                    style={[
+                      styles.primaryButton,
+                      {
+                        backgroundColor: theme.backgroundSecondary,
+                      },
+                    ]}
+                  >
+                    Done
+                  </Button>
+                )}
               </View>
             </>
           )}
@@ -686,6 +930,21 @@ export default function PhotoAnalysisScreen() {
           />
         )}
       </KeyboardAvoidingView>
+
+      {/* Recipe Generation Modal */}
+      <RecipeGenerationModal
+        visible={showRecipeModal}
+        onClose={() => setShowRecipeModal(false)}
+        onComplete={() => {
+          setShowRecipeModal(false);
+          haptics.notification(Haptics.NotificationFeedbackType.Success);
+        }}
+        productName={foods.map((f) => f.name).join(", ")}
+        foods={selectedFoods.map((f) => ({
+          name: f.name,
+          quantity: f.quantity,
+        }))}
+      />
     </ThemedView>
   );
 }
@@ -753,10 +1012,17 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     marginBottom: Spacing.md,
   },
+  foodItemUnselected: {
+    opacity: 0.6,
+  },
   foodItemHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+  },
+  checkboxButton: {
+    marginRight: Spacing.md,
+    paddingTop: 2,
   },
   foodItemInfo: {
     flex: 1,
@@ -806,8 +1072,10 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
     marginBottom: Spacing.lg,
   },
-  totalsTitle: {
-    textAlign: "center",
+  totalsTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: Spacing.lg,
   },
   totalsGrid: {
@@ -817,11 +1085,12 @@ const styles = StyleSheet.create({
   totalItem: {
     alignItems: "center",
   },
-  buttonContainer: {
-    marginTop: Spacing.lg,
+  actionBar: {
+    marginTop: Spacing.xl,
+    gap: Spacing.md,
   },
-  confirmButton: {
-    marginBottom: Spacing.md,
+  primaryButton: {
+    marginTop: Spacing.sm,
   },
   followUpModal: {
     position: "absolute",

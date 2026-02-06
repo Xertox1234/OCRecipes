@@ -58,6 +58,15 @@ export type NutritionDetailScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
+ * Navigation prop for PhotoIntentScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type PhotoIntentScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "PhotoIntent"
+>;
+
+/**
  * Navigation prop for PhotoAnalysisScreen
  * Can use goBack or navigate within RootStack
  */

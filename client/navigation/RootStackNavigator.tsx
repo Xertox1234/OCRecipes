@@ -5,6 +5,7 @@ import { ActivityIndicator, View, StyleSheet } from "react-native";
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import LoginScreen from "@/screens/LoginScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
+import PhotoIntentScreen from "@/screens/PhotoIntentScreen";
 import PhotoAnalysisScreen from "@/screens/PhotoAnalysisScreen";
 import GoalSetupScreen from "@/screens/GoalSetupScreen";
 import EditDietaryProfileScreen from "@/screens/EditDietaryProfileScreen";
@@ -13,6 +14,7 @@ import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
 import { Colors } from "@/constants/theme";
+import type { PhotoIntent } from "@shared/constants/preparation";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -23,8 +25,12 @@ export type RootStackParamList = {
     imageUri?: string;
     itemId?: number;
   };
+  PhotoIntent: {
+    imageUri: string;
+  };
   PhotoAnalysis: {
     imageUri: string;
+    intent: PhotoIntent;
   };
   GoalSetup: undefined;
   EditDietaryProfile: undefined;
@@ -73,6 +79,14 @@ export default function RootStackNavigator() {
             component={NutritionDetailScreen}
             options={{
               headerTitle: "Nutrition Facts",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="PhotoIntent"
+            component={PhotoIntentScreen}
+            options={{
+              headerTitle: "What would you like to do?",
               presentation: "modal",
             }}
           />

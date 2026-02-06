@@ -248,15 +248,27 @@ async function lookupUSDA(query: string): Promise<NutritionData | null> {
 /**
  * Lookup nutrition data for a single item
  */
-async function lookupNutrition(query: string): Promise<NutritionData | null> {
+export async function lookupNutrition(
+  query: string,
+): Promise<NutritionData | null> {
+  // Check cache first
+  const cached = await getCachedNutrition([query]);
+  const cachedResult = cached.get(query);
+  if (cachedResult) return cachedResult;
+
   // Try CalorieNinjas first
   const calorieNinjasResult = await lookupCalorieNinjas(query);
   if (calorieNinjasResult) {
+    await cacheNutrition(query, calorieNinjasResult);
     return calorieNinjasResult;
   }
 
   // Fallback to USDA
-  return lookupUSDA(query);
+  const usdaResult = await lookupUSDA(query);
+  if (usdaResult) {
+    await cacheNutrition(query, usdaResult);
+  }
+  return usdaResult;
 }
 
 /**

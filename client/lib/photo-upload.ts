@@ -2,6 +2,7 @@ import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 import { tokenStorage } from "./token-storage";
 import { getApiUrl } from "./query-client";
 import { compressImage, cleanupImage } from "./image-compression";
+import type { PhotoIntent, FoodCategory } from "@shared/constants/preparation";
 
 // Types matching server response
 export interface FoodItem {
@@ -11,6 +12,7 @@ export interface FoodItem {
   needsClarification: boolean;
   clarificationQuestion?: string;
   nutrition: NutritionData | null;
+  category?: FoodCategory;
 }
 
 export interface NutritionData {
@@ -28,6 +30,7 @@ export interface NutritionData {
 
 export interface PhotoAnalysisResponse {
   sessionId: string;
+  intent: PhotoIntent;
   foods: FoodItem[];
   overallConfidence: number;
   needsFollowUp: boolean;
@@ -45,6 +48,8 @@ export interface PhotoConfirmRequest {
     fat: number;
   }[];
   mealType?: string;
+  preparationMethods?: { name: string; method: string }[];
+  analysisIntent?: PhotoIntent;
 }
 
 /**
@@ -55,6 +60,7 @@ export interface PhotoConfirmRequest {
  */
 export async function uploadPhotoForAnalysis(
   uri: string,
+  intent: PhotoIntent = "log",
 ): Promise<PhotoAnalysisResponse> {
   const token = await tokenStorage.get();
   if (!token) {
@@ -72,6 +78,7 @@ export async function uploadPhotoForAnalysis(
         httpMethod: "POST",
         uploadType: FileSystemUploadType.MULTIPART,
         fieldName: "photo",
+        parameters: { intent },
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -95,6 +102,35 @@ export async function uploadPhotoForAnalysis(
     // Clean up compressed image
     await cleanupImage(compressed.uri);
   }
+}
+
+/**
+ * Look up nutrition for a single item by query string (e.g., "steamed broccoli 1 cup").
+ * Uses the existing GET /api/nutrition/lookup endpoint.
+ */
+export async function lookupNutritionByPrep(
+  query: string,
+): Promise<NutritionData | null> {
+  const token = await tokenStorage.get();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const response = await fetch(
+    `${getApiUrl()}/api/nutrition/lookup?name=${encodeURIComponent(query)}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    if (response.status === 404) return null;
+    throw new Error(`Nutrition lookup failed: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 /**

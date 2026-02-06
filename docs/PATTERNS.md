@@ -17,6 +17,9 @@ This document captures established patterns for the NutriScan codebase. Follow t
 - [Client State Patterns](#client-state-patterns)
   - [Business Logic Errors in Mutations](#business-logic-errors-in-mutations)
 - [React Native Patterns](#react-native-patterns)
+  - [Multi-Select Checkbox Pattern](#multi-select-checkbox-pattern)
+  - [Premium Feature Gating UI](#premium-feature-gating-ui)
+  - [Intentional useEffect Dependencies](#intentional-useeffect-dependencies)
   - [Route Params for Mode Toggling](#route-params-for-mode-toggling)
   - [CompositeNavigationProp for Cross-Stack Navigation](#compositenavigationprop-for-cross-stack-navigation)
   - [Coordinated Pull-to-Refresh](#coordinated-pull-to-refresh-for-multiple-queries)
@@ -33,6 +36,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
 - [Animation Patterns](#animation-patterns)
 - [Performance Patterns](#performance-patterns)
   - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
+  - [useMemo for Derived Filtering and Calculations](#usememo-for-derived-filtering-and-calculations)
 - [Design System Patterns](#design-system-patterns)
   - [Color Opacity Utility](#color-opacity-utility)
   - [Semantic Theme Values](#semantic-theme-values-over-hardcoded-colors)
@@ -1376,6 +1380,131 @@ export function useCreateSavedItem() {
 
 ## React Native Patterns
 
+### Multi-Select Checkbox Pattern
+
+For lists where users can select/deselect individual items, use `Set<number>` for O(1) lookup:
+
+```typescript
+// State: Track selected indices with Set for efficient lookup
+const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+
+// Initialize all items as selected when data arrives
+useEffect(() => {
+  if (items.length > 0) {
+    setSelectedItems(new Set(items.map((_, i) => i)));
+  }
+}, [items.length]); // See "Intentional useEffect Dependencies" pattern
+
+// Toggle with haptic feedback
+const toggleItemSelection = (index: number) => {
+  haptics.selection();
+  setSelectedItems((prev) => {
+    const updated = new Set(prev);
+    if (updated.has(index)) {
+      updated.delete(index);
+    } else {
+      updated.add(index);
+    }
+    return updated;
+  });
+};
+
+// In component - checkbox with accessibility
+<Pressable
+  onPress={() => toggleItemSelection(index)}
+  accessibilityRole="checkbox"
+  accessibilityState={{ checked: selectedItems.has(index) }}
+  hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} // 44x44 touch target
+>
+  <Feather
+    name={selectedItems.has(index) ? "check-square" : "square"}
+    size={22}
+    color={selectedItems.has(index) ? theme.success : theme.textSecondary}
+  />
+</Pressable>
+
+// Visual dimming for unselected items
+<Card style={[styles.card, !isSelected && { opacity: 0.6 }]}>
+```
+
+**When to use:** Photo analysis results, batch operations, shopping lists.
+
+### Premium Feature Gating UI
+
+When a feature requires premium, extract the condition and provide clear feedback:
+
+```typescript
+// Extract condition to avoid repetition
+const isFeatureAvailable = features.someFeature && canUseFeature;
+
+// Button with lock badge and accessibility hint
+<Pressable
+  onPress={handleFeature}
+  accessibilityLabel={
+    isFeatureAvailable
+      ? "Use premium feature"
+      : "Premium feature locked"
+  }
+  accessibilityHint={
+    isFeatureAvailable
+      ? undefined
+      : "Upgrade to premium to unlock this feature"
+  }
+>
+  <Feather name="star" color={isFeatureAvailable ? theme.text : theme.textSecondary} />
+  <ThemedText style={{ color: isFeatureAvailable ? theme.text : theme.textSecondary }}>
+    Feature
+  </ThemedText>
+  {!isFeatureAvailable && (
+    <View style={[styles.lockBadge, { backgroundColor: withOpacity(theme.warning, 0.15) }]}>
+      <Feather name="lock" size={12} color={theme.warning} />
+    </View>
+  )}
+</Pressable>
+
+// Handler with warning haptic for locked state
+const handleFeature = () => {
+  if (isFeatureAvailable) {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    // Proceed with feature
+  } else {
+    haptics.notification(Haptics.NotificationFeedbackType.Warning);
+    // Optionally show upgrade prompt
+  }
+};
+```
+
+### Intentional useEffect Dependencies
+
+When you deliberately use a derived value (like `array.length`) instead of the array itself in a useEffect dependency, document WHY to prevent "fixes" that break the intended behavior:
+
+```typescript
+// Good: Clear comment explaining the intentional choice
+// Initialize all items as selected when foods array populates.
+// We intentionally only track foods.length (not the foods array reference) because:
+// 1. handleEditFood creates new array references but preserves length
+// 2. We only want to reset selections when AI analysis returns NEW foods
+// 3. This avoids resetting user's selections when they edit food names
+useEffect(() => {
+  if (foods.length > 0) {
+    setSelectedItems(new Set(foods.map((_, i) => i)));
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [foods.length]);
+```
+
+```typescript
+// Bad: Suppressing lint without explanation invites "fixes"
+useEffect(() => {
+  if (foods.length > 0) {
+    setSelectedItems(new Set(foods.map((_, i) => i)));
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [foods.length]); // Future dev: "Why not [foods]? Let me fix this..."
+```
+
+**Rule:** If you suppress `react-hooks/exhaustive-deps`, always explain WHY in a comment above the useEffect.
+
 ### Conditional Pressable Rendering
 
 When building reusable wrapper components that may or may not be interactive, conditionally render as `View` or `Pressable` based on whether `onPress` is provided:
@@ -2571,6 +2700,43 @@ const ListHeader = useCallback(() => (
 - Typed props interface documents the component's data requirements
 - Named function provides better stack traces and React DevTools identification
 - Cleaner than `useCallback` with many dependencies
+
+### useMemo for Derived Filtering and Calculations
+
+When filtering an array and then calculating derived values (totals, counts), wrap both operations in a single `useMemo` to avoid redundant computation on every render:
+
+```typescript
+// Good: Single memoized computation for filter + calculation
+const { selectedFoods, totals } = useMemo(() => {
+  const selected = foods.filter((_, index) => selectedItems.has(index));
+  return {
+    selectedFoods: selected,
+    totals: calculateTotals(selected),
+  };
+}, [foods, selectedItems]);
+
+// Usage in render
+<ThemedText>({selectedFoods.length} items selected)</ThemedText>
+<ThemedText>Total: {totals.calories} cal</ThemedText>
+```
+
+```typescript
+// Bad: Recomputed on every render
+const selectedFoods = foods.filter((_, index) => selectedItems.has(index));
+const totals = calculateTotals(selectedFoods);
+```
+
+**When to use:**
+
+- Filtering arrays based on selection state
+- Computing totals/aggregates from filtered data
+- Any derived state used multiple times in render
+
+**When NOT to use:**
+
+- Simple property access (`user.name`)
+- Values used only once in render
+- Dependencies that change frequently (defeats memoization)
 
 ### Cleanup Side Effects in useEffect
 

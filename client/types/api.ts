@@ -13,6 +13,7 @@ export type ScannedItemResponse = {
   id: number;
   productName: string;
   brandName?: string | null;
+  barcode?: string | null;
   servingSize?: string | null;
   calories?: string | null;
   protein?: string | null;

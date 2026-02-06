@@ -1,6 +1,6 @@
 ---
 title: "Code review follow-up: withOpacity migration & hardcoded colors"
-status: backlog
+status: done
 priority: low
 created: 2026-02-05
 updated: 2026-02-05
@@ -25,10 +25,10 @@ These are non-critical code quality improvements for consistency with the new pa
 
 ## Acceptance Criteria
 
-- [ ] All opacity string concatenations migrated to `withOpacity()` utility
-- [ ] All hardcoded `#FFFFFF` replaced with theme values
-- [ ] Verify opacity values match Figma design intent (note: `"20"` hex = ~12.5%, `0.2` = 20%)
-- [ ] No lint or TypeScript errors introduced
+- [x] All opacity string concatenations migrated to `withOpacity()` utility
+- [x] All hardcoded `#FFFFFF` replaced with theme values
+- [x] Verify opacity values match Figma design intent (note: `"20"` hex = ~12.5%, `0.2` = 20%)
+- [x] No lint or TypeScript errors introduced
 - [ ] Visual appearance verified (opacity changes may be noticeable)
 
 ## Implementation Notes
@@ -82,3 +82,4 @@ backgroundColor: withOpacity(theme.link, 0.2),
 
 - Initial creation from code review of commit 2b8ca40
 - Identified remaining string concatenation patterns and hardcoded colors
+- **Resolved**: Migrated 18 opacity patterns and 1 hardcoded color in commit e74aeb3

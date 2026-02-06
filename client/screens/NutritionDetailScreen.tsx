@@ -124,28 +124,97 @@ export default function NutritionDetailScreen() {
         const product = data.product;
         const nutriments = product.nutriments || {};
 
-        // Prefer per-serving values, fall back to per-100g
-        // OpenFoodFacts provides both *_serving and *_100g fields
-        const hasServingData = nutriments["energy-kcal_serving"] !== undefined;
-        setIsPer100g(!hasServingData);
+        // Check multiple _serving fields to detect per-serving data availability.
+        // OpenFoodFacts is inconsistent — some products have energy-kcal_serving,
+        // others only have energy_serving (kJ), but still have _serving for macros.
+        const hasServingData =
+          nutriments["energy-kcal_serving"] !== undefined ||
+          nutriments.proteins_serving !== undefined ||
+          nutriments.fat_serving !== undefined ||
+          nutriments.carbohydrates_serving !== undefined;
 
-        // Use per-serving values with per-100g fallback for each field
-        const sodiumValue = nutriments.sodium_serving ?? nutriments.sodium_100g;
+        // When _serving fields are missing but serving_quantity exists, we can
+        // convert per-100g values to per-serving: value * (serving_grams / 100).
+        // This handles products where contributors only entered 100g data but
+        // the serving size is known (e.g., "1 cup (250ml)").
+        const servingGrams = parseFloat(product.serving_quantity);
+        const canConvertToServing =
+          !hasServingData && servingGrams > 0 && isFinite(servingGrams);
+        const scale = canConvertToServing ? servingGrams / 100 : 1;
+
+        const usesServingData = hasServingData || canConvertToServing;
+
+        // If we only have per-100g data, try CalorieNinjas/USDA as fallback
+        // using the product name — these APIs often have per-serving values.
+        if (!usesServingData && product.product_name) {
+          try {
+            const fallbackRes = await apiRequest(
+              "GET",
+              `/api/nutrition/lookup?name=${encodeURIComponent(product.product_name)}`,
+            );
+            if (fallbackRes.ok) {
+              const fallback = await fallbackRes.json();
+              setIsPer100g(false);
+              setNutrition({
+                productName: product.product_name || "Unknown Product",
+                brandName: product.brands,
+                servingSize:
+                  fallback.servingSize ||
+                  product.serving_size ||
+                  product.quantity ||
+                  "100g",
+                calories: fallback.calories,
+                protein: fallback.protein,
+                carbs: fallback.carbs,
+                fat: fallback.fat,
+                fiber: fallback.fiber,
+                sugar: fallback.sugar,
+                sodium: fallback.sodium,
+                imageUrl: product.image_url || product.image_front_url,
+                barcode: code,
+              });
+              return;
+            }
+          } catch (err) {
+            console.warn("Nutrition fallback API unavailable:", err);
+          }
+        }
+
+        setIsPer100g(!usesServingData);
+
+        // Helper to scale a per-100g value to per-serving
+        const scaleValue = (val: number | undefined) =>
+          val !== undefined ? val * scale : undefined;
+
+        // Resolve calories: prefer kcal_serving, then convert kJ_serving,
+        // then scale kcal_100g to per-serving if possible
+        const calories =
+          nutriments["energy-kcal_serving"] ??
+          (nutriments.energy_serving !== undefined
+            ? Math.round(nutriments.energy_serving / 4.184)
+            : undefined) ??
+          scaleValue(nutriments["energy-kcal_100g"]) ??
+          scaleValue(nutriments.energy_value);
+
+        // Use per-serving values with scaled per-100g fallback for each field
+        const sodiumRaw =
+          nutriments.sodium_serving ?? scaleValue(nutriments.sodium_100g);
 
         setNutrition({
           productName: product.product_name || "Unknown Product",
           brandName: product.brands,
           servingSize: product.serving_size || product.quantity || "100g",
-          calories: hasServingData
-            ? nutriments["energy-kcal_serving"]
-            : nutriments["energy-kcal_100g"] || nutriments.energy_value,
-          protein: nutriments.proteins_serving ?? nutriments.proteins_100g,
+          calories,
+          protein:
+            nutriments.proteins_serving ?? scaleValue(nutriments.proteins_100g),
           carbs:
-            nutriments.carbohydrates_serving ?? nutriments.carbohydrates_100g,
-          fat: nutriments.fat_serving ?? nutriments.fat_100g,
-          fiber: nutriments.fiber_serving ?? nutriments.fiber_100g,
-          sugar: nutriments.sugars_serving ?? nutriments.sugars_100g,
-          sodium: sodiumValue !== undefined ? sodiumValue * 1000 : undefined,
+            nutriments.carbohydrates_serving ??
+            scaleValue(nutriments.carbohydrates_100g),
+          fat: nutriments.fat_serving ?? scaleValue(nutriments.fat_100g),
+          fiber: nutriments.fiber_serving ?? scaleValue(nutriments.fiber_100g),
+          sugar:
+            nutriments.sugars_serving ?? scaleValue(nutriments.sugars_100g),
+          sodium: sodiumRaw !== undefined ? sodiumRaw * 1000 : undefined,
           imageUrl: product.image_url || product.image_front_url,
           barcode: code,
         });

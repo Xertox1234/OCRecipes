@@ -12,6 +12,8 @@ export interface PremiumFeatures {
   videoRecording: boolean;
   photoAnalysis: boolean;
   macroGoals: boolean;
+  recipeGeneration: boolean;
+  dailyRecipeGenerations: number;
 }
 
 export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
@@ -22,6 +24,8 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     videoRecording: false,
     photoAnalysis: true,
     macroGoals: false,
+    recipeGeneration: false,
+    dailyRecipeGenerations: 0,
   },
   premium: {
     maxDailyScans: Infinity,
@@ -30,6 +34,8 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     videoRecording: true,
     photoAnalysis: true,
     macroGoals: true,
+    recipeGeneration: true,
+    dailyRecipeGenerations: 5,
   },
 };
 

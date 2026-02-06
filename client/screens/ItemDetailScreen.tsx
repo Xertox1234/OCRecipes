@@ -4,7 +4,6 @@ import {
   View,
   ScrollView,
   Image,
-  Pressable,
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,22 +15,16 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
-import { SuggestionCard, type Suggestion } from "@/components/SuggestionCard";
+import { CommunityRecipesSection } from "@/components/CommunityRecipesSection";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { apiRequest } from "@/lib/query-client";
 import type { ScannedItemResponse } from "@/types/api";
 
 type ItemDetailRouteProp = RouteProp<
   { ItemDetail: { itemId: number } },
   "ItemDetail"
 >;
-
-interface SuggestionsResponse {
-  suggestions: Suggestion[];
-  cacheId?: number;
-}
 
 function NutritionRow({
   label,
@@ -78,28 +71,6 @@ export default function ItemDetailScreen() {
   } = useQuery<ScannedItemResponse>({
     queryKey: [`/api/scanned-items/${itemId}`],
   });
-
-  const {
-    data: suggestionsData,
-    isLoading: suggestionsLoading,
-    error: suggestionsError,
-    refetch: refetchSuggestions,
-  } = useQuery<SuggestionsResponse>({
-    queryKey: [`/api/items/${itemId}/suggestions`],
-    queryFn: async () => {
-      const response = await apiRequest(
-        "POST",
-        `/api/items/${itemId}/suggestions`,
-        { productName: item?.productName },
-      );
-      return response.json();
-    },
-    enabled: !!item,
-    staleTime: 10 * 60 * 1000, // Cache for 10 minutes
-  });
-
-  const suggestions = suggestionsData?.suggestions ?? [];
-  const cacheId = suggestionsData?.cacheId;
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -258,65 +229,17 @@ export default function ItemDetailScreen() {
         </Card>
       </Animated.View>
 
+      {/* Community Recipes Section */}
       <Animated.View
         entering={
-          reducedMotion ? undefined : FadeInDown.delay(200).duration(300)
+          reducedMotion ? undefined : FadeInDown.delay(300).duration(300)
         }
       >
-        <View style={styles.suggestionsHeader}>
-          <ThemedText type="h4" style={styles.sectionTitle}>
-            Ideas & Inspiration
-          </ThemedText>
-          {suggestionsError ? (
-            <Pressable
-              onPress={() => refetchSuggestions()}
-              style={styles.retryButton}
-              accessibilityLabel="Retry loading suggestions"
-              accessibilityRole="button"
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Feather name="refresh-cw" size={16} color={theme.success} />
-              <ThemedText type="small" style={{ color: theme.success }}>
-                Retry
-              </ThemedText>
-            </Pressable>
-          ) : null}
-        </View>
-
-        {suggestionsLoading ? (
-          <Card elevation={1} style={styles.suggestionsLoadingCard}>
-            <ActivityIndicator size="small" color={theme.success} />
-            <ThemedText
-              type="body"
-              style={{ color: theme.textSecondary, marginTop: Spacing.md }}
-            >
-              Finding creative ideas...
-            </ThemedText>
-          </Card>
-        ) : suggestionsError ? (
-          <Card elevation={1} style={styles.suggestionsErrorCard}>
-            <Feather name="cloud-off" size={24} color={theme.textSecondary} />
-            <ThemedText
-              type="body"
-              style={{ color: theme.textSecondary, marginTop: Spacing.sm }}
-            >
-              Unable to load suggestions. Please try again.
-            </ThemedText>
-          </Card>
-        ) : suggestions.length > 0 ? (
-          <View style={styles.suggestionsList}>
-            {suggestions.map((suggestion, index) => (
-              <SuggestionCard
-                key={`${suggestion.type}-${index}`}
-                suggestion={suggestion}
-                itemId={itemId}
-                suggestionIndex={index}
-                productName={item.productName}
-                cacheId={cacheId}
-              />
-            ))}
-          </View>
-        ) : null}
+        <CommunityRecipesSection
+          productName={item.productName}
+          barcode={item.barcode}
+          itemId={itemId}
+        />
       </Animated.View>
     </ScrollView>
   );
@@ -392,30 +315,5 @@ const styles = StyleSheet.create({
   },
   nutritionValue: {
     fontWeight: "600",
-  },
-  suggestionsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  retryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.xs,
-    padding: Spacing.xs,
-  },
-  suggestionsList: {
-    gap: Spacing.md,
-  },
-  suggestionsLoadingCard: {
-    padding: Spacing["2xl"],
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  suggestionsErrorCard: {
-    padding: Spacing.xl,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });

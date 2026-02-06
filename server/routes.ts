@@ -28,6 +28,12 @@ import {
   type SubscriptionStatus,
 } from "@shared/types/premium";
 import {
+  photoIntentSchema,
+  INTENT_CONFIG,
+  type PhotoIntent,
+  preparationMethodSchema,
+} from "@shared/constants/preparation";
+import {
   analyzePhoto,
   refineAnalysis,
   needsFollowUp,
@@ -36,6 +42,7 @@ import {
 } from "./services/photo-analysis";
 import {
   batchNutritionLookup,
+  lookupNutrition,
   type NutritionData,
 } from "./services/nutrition-lookup";
 import {
@@ -44,6 +51,10 @@ import {
   type CalculatedGoals,
 } from "./services/goal-calculator";
 import { calculateProfileHash } from "./utils/profile-hash";
+import {
+  generateFullRecipe,
+  normalizeProductName,
+} from "./services/recipe-generation";
 
 /**
  * Type guard to validate if a string is a valid subscription tier.
@@ -87,6 +98,15 @@ const instructionsRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 20, // 20 requests per minute per user
   message: { error: "Too many instruction requests. Please wait." },
+  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const nutritionLookupRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 15, // 15 requests per minute per user
+  message: { error: "Too many nutrition lookups. Please wait." },
   keyGenerator: (req) => req.userId || ipKeyGenerator(req),
   standardHeaders: true,
   legacyHeaders: false,
@@ -414,6 +434,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         console.error("Error updating dietary profile:", error);
         res.status(500).json({ error: "Failed to update dietary profile" });
+      }
+    },
+  );
+
+  // Nutrition lookup by product name — used as fallback when OpenFoodFacts
+  // returns only per-100g data without serving size information.
+  app.get(
+    "/api/nutrition/lookup",
+    requireAuth,
+    nutritionLookupRateLimit,
+    async (req: Request, res: Response) => {
+      const name = (req.query.name as string)?.trim();
+      if (!name || name.length > 200) {
+        res
+          .status(400)
+          .json({ error: "name query parameter is required (max 200 chars)" });
+        return;
+      }
+
+      try {
+        const result = await lookupNutrition(name);
+        if (!result) {
+          res.status(404).json({ error: "Nutrition data not found" });
+          return;
+        }
+        res.json(result);
+      } catch (error) {
+        console.error("Nutrition lookup error:", error);
+        res.status(500).json({ error: "Nutrition lookup failed" });
       }
     },
   );
@@ -1074,45 +1123,59 @@ Format as plain text with clear sections.`;
           return res.status(400).json({ error: "No photo provided" });
         }
 
+        // Parse intent from multipart form parameters (default: "log")
+        const intentRaw = (req.body?.intent as string) || "log";
+        const intentParsed = photoIntentSchema.safeParse(intentRaw);
+        const intent: PhotoIntent = intentParsed.success
+          ? intentParsed.data
+          : "log";
+        const intentConfig = INTENT_CONFIG[intent];
+
         // Convert buffer to base64
         const imageBase64 = req.file.buffer.toString("base64");
 
-        // Analyze photo with Vision API
-        const analysisResult = await analyzePhoto(imageBase64);
+        // Analyze photo with Vision API (intent-aware prompt)
+        const analysisResult = await analyzePhoto(imageBase64, intent);
 
-        // Look up nutrition data for identified foods
-        const foodNames = analysisResult.foods.map(
-          (f) => `${f.quantity} ${f.name}`,
-        );
-        const nutritionMap = await batchNutritionLookup(foodNames);
-
-        // Combine analysis with nutrition data
-        const foodsWithNutrition = analysisResult.foods.map((food, index) => {
-          const query = foodNames[index];
-          const nutrition = nutritionMap.get(query);
-          return {
+        // Conditionally look up nutrition data
+        let foodsWithNutrition;
+        if (intentConfig.needsNutrition) {
+          const foodNames = analysisResult.foods.map(
+            (f) => `${f.quantity} ${f.name}`,
+          );
+          const nutritionMap = await batchNutritionLookup(foodNames);
+          foodsWithNutrition = analysisResult.foods.map((food, index) => {
+            const query = foodNames[index];
+            const nutrition = nutritionMap.get(query);
+            return { ...food, nutrition: nutrition || null };
+          });
+        } else {
+          foodsWithNutrition = analysisResult.foods.map((food) => ({
             ...food,
-            nutrition: nutrition || null,
-          };
-        });
+            nutrition: null,
+          }));
+        }
 
-        // Generate session ID for follow-up
+        // Generate session ID (needed for follow-ups and confirm)
         const sessionId = crypto.randomUUID();
-        analysisSessionStore.set(sessionId, {
-          userId: req.userId!,
-          result: analysisResult,
-          imageBase64,
-        });
+        if (intentConfig.needsSession) {
+          analysisSessionStore.set(sessionId, {
+            userId: req.userId!,
+            result: analysisResult,
+            imageBase64,
+          });
 
-        // Clean up old sessions after timeout, tracking the timeout reference
-        const timeoutId = setTimeout(() => {
-          analysisSessionStore.delete(sessionId);
-          sessionTimeouts.delete(sessionId);
-        }, SESSION_TIMEOUT);
-        sessionTimeouts.set(sessionId, timeoutId);
+          // Clean up old sessions after timeout, tracking the timeout reference
+          const timeoutId = setTimeout(() => {
+            analysisSessionStore.delete(sessionId);
+            sessionTimeouts.delete(sessionId);
+          }, SESSION_TIMEOUT);
+          sessionTimeouts.set(sessionId, timeoutId);
+        }
 
         const response = {
           sessionId,
+          intent,
           foods: foodsWithNutrition,
           overallConfidence: analysisResult.overallConfidence,
           needsFollowUp: needsFollowUp(analysisResult),
@@ -1209,6 +1272,8 @@ Format as plain text with clear sections.`;
       }),
     ),
     mealType: z.string().optional(),
+    preparationMethods: z.array(preparationMethodSchema).optional(),
+    analysisIntent: photoIntentSchema.optional(),
   });
 
   app.post(
@@ -1252,6 +1317,8 @@ Format as plain text with clear sections.`;
               fat: totals.fat.toString(),
               sourceType: "photo",
               aiConfidence: confidence?.toString(),
+              preparationMethods: validated.preparationMethods || null,
+              analysisIntent: validated.analysisIntent || null,
             })
             .returning();
 
@@ -1485,6 +1552,310 @@ Format as plain text with clear sections.`;
       } catch (error) {
         console.error("Delete saved item error:", error);
         res.status(500).json({ error: "Failed to delete saved item" });
+      }
+    },
+  );
+
+  // ============================================================================
+  // COMMUNITY RECIPES ROUTES
+  // ============================================================================
+
+  // Rate limiter for recipe generation (separate from daily limit, for burst protection)
+  const recipeGenerationRateLimit = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 3, // 3 requests per minute
+    message: { error: "Too many recipe generation requests. Please wait." },
+    keyGenerator: (req) => req.userId || ipKeyGenerator(req),
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Zod schemas for recipe endpoints
+  const recipeGenerationSchema = z.object({
+    productName: z.string().min(1).max(200),
+    barcode: z.string().max(100).optional().nullable(),
+    servings: z.number().int().min(1).max(20).optional(),
+    dietPreferences: z.array(z.string().max(50)).max(10).optional(),
+    timeConstraint: z.string().max(50).optional(),
+  });
+
+  const recipeShareSchema = z.object({
+    isPublic: z.boolean(),
+  });
+
+  // GET /api/recipes/community - Get community recipes for a product
+  app.get(
+    "/api/recipes/community",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const barcode = (req.query.barcode as string) || null;
+        const productName = req.query.productName as string;
+
+        if (!productName) {
+          res.status(400).json({ error: "productName is required" });
+          return;
+        }
+
+        const normalizedName = normalizeProductName(productName);
+        const recipes = await storage.getCommunityRecipes(
+          barcode,
+          normalizedName,
+        );
+
+        res.json(recipes);
+      } catch (error) {
+        console.error("Get community recipes error:", error);
+        res.status(500).json({ error: "Failed to fetch recipes" });
+      }
+    },
+  );
+
+  // GET /api/recipes/generation-status - Get user's daily recipe generation count
+  app.get(
+    "/api/recipes/generation-status",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const subscriptionData = await storage.getSubscriptionStatus(
+          req.userId!,
+        );
+        const tierValue = subscriptionData?.tier || "free";
+        const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
+        const features = TIER_FEATURES[tier];
+
+        const generationsToday = await storage.getDailyRecipeGenerationCount(
+          req.userId!,
+          new Date(),
+        );
+
+        res.json({
+          generationsToday,
+          dailyLimit: features.dailyRecipeGenerations,
+          canGenerate:
+            features.recipeGeneration &&
+            generationsToday < features.dailyRecipeGenerations,
+        });
+      } catch (error) {
+        console.error("Get generation status error:", error);
+        res.status(500).json({ error: "Failed to fetch generation status" });
+      }
+    },
+  );
+
+  // POST /api/recipes/generate - Generate a new recipe (premium only)
+  app.post(
+    "/api/recipes/generate",
+    requireAuth,
+    recipeGenerationRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        // Check premium status
+        const subscriptionData = await storage.getSubscriptionStatus(
+          req.userId!,
+        );
+        const tierValue = subscriptionData?.tier || "free";
+        const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
+        const features = TIER_FEATURES[tier];
+
+        if (!features.recipeGeneration) {
+          res.status(403).json({
+            error: "PREMIUM_REQUIRED",
+            message: "Recipe generation requires a premium subscription",
+          });
+          return;
+        }
+
+        // Check daily limit
+        const generationsToday = await storage.getDailyRecipeGenerationCount(
+          req.userId!,
+          new Date(),
+        );
+
+        if (generationsToday >= features.dailyRecipeGenerations) {
+          res.status(429).json({
+            error: "DAILY_LIMIT_REACHED",
+            message: "Daily recipe generation limit reached",
+            generationsToday,
+            dailyLimit: features.dailyRecipeGenerations,
+          });
+          return;
+        }
+
+        // Validate input
+        const parsed = recipeGenerationSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: formatZodError(parsed.error) });
+          return;
+        }
+
+        const {
+          productName,
+          barcode,
+          servings,
+          dietPreferences,
+          timeConstraint,
+        } = parsed.data;
+
+        // Get user profile for dietary context
+        const userProfile = await storage.getUserProfile(req.userId!);
+
+        // Generate the recipe
+        const generatedRecipe = await generateFullRecipe({
+          productName,
+          barcode,
+          servings,
+          dietPreferences,
+          timeConstraint,
+          userProfile,
+        });
+
+        // Save to database (initially private - user must explicitly share)
+        const recipe = await storage.createCommunityRecipe({
+          authorId: req.userId!,
+          barcode: barcode || null,
+          normalizedProductName: normalizeProductName(productName),
+          title: generatedRecipe.title,
+          description: generatedRecipe.description,
+          difficulty: generatedRecipe.difficulty,
+          timeEstimate: generatedRecipe.timeEstimate,
+          servings: servings || 2,
+          dietTags: generatedRecipe.dietTags,
+          instructions: generatedRecipe.instructions,
+          imageUrl: generatedRecipe.imageUrl,
+          isPublic: false, // Private until user shares
+        });
+
+        // Log the generation for rate limiting
+        await storage.logRecipeGeneration(req.userId!, recipe.id);
+
+        res.status(201).json(recipe);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          res.status(400).json({ error: formatZodError(error) });
+          return;
+        }
+        console.error("Recipe generation error:", error);
+        res.status(500).json({ error: "Failed to generate recipe" });
+      }
+    },
+  );
+
+  // POST /api/recipes/:id/share - Share/unshare a recipe to community
+  app.post(
+    "/api/recipes/:id/share",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const recipeId = parseInt(req.params.id as string, 10);
+        if (isNaN(recipeId) || recipeId <= 0) {
+          res.status(400).json({ error: "Invalid recipe ID" });
+          return;
+        }
+
+        const parsed = recipeShareSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: formatZodError(parsed.error) });
+          return;
+        }
+
+        const recipe = await storage.updateRecipePublicStatus(
+          recipeId,
+          req.userId!,
+          parsed.data.isPublic,
+        );
+
+        if (!recipe) {
+          res
+            .status(404)
+            .json({ error: "Recipe not found or not owned by you" });
+          return;
+        }
+
+        res.json(recipe);
+      } catch (error) {
+        console.error("Recipe share error:", error);
+        res.status(500).json({ error: "Failed to update recipe sharing" });
+      }
+    },
+  );
+
+  // GET /api/recipes/mine - Get user's own recipes
+  app.get(
+    "/api/recipes/mine",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const recipes = await storage.getUserRecipes(req.userId!);
+        res.json(recipes);
+      } catch (error) {
+        console.error("Get user recipes error:", error);
+        res.status(500).json({ error: "Failed to fetch your recipes" });
+      }
+    },
+  );
+
+  // GET /api/recipes/:id - Get a specific recipe
+  app.get(
+    "/api/recipes/:id",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const recipeId = parseInt(req.params.id as string, 10);
+        if (isNaN(recipeId) || recipeId <= 0) {
+          res.status(400).json({ error: "Invalid recipe ID" });
+          return;
+        }
+
+        const recipe = await storage.getCommunityRecipe(recipeId);
+
+        if (!recipe) {
+          res.status(404).json({ error: "Recipe not found" });
+          return;
+        }
+
+        // Only show public recipes or recipes owned by the user
+        if (!recipe.isPublic && recipe.authorId !== req.userId) {
+          res.status(404).json({ error: "Recipe not found" });
+          return;
+        }
+
+        res.json(recipe);
+      } catch (error) {
+        console.error("Get recipe error:", error);
+        res.status(500).json({ error: "Failed to fetch recipe" });
+      }
+    },
+  );
+
+  // DELETE /api/recipes/:id - Delete a recipe (author only)
+  app.delete(
+    "/api/recipes/:id",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const recipeId = parseInt(req.params.id as string, 10);
+        if (isNaN(recipeId) || recipeId <= 0) {
+          res.status(400).json({ error: "Invalid recipe ID" });
+          return;
+        }
+
+        const deleted = await storage.deleteCommunityRecipe(
+          recipeId,
+          req.userId!,
+        );
+
+        if (!deleted) {
+          res
+            .status(404)
+            .json({ error: "Recipe not found or not owned by you" });
+          return;
+        }
+
+        res.status(204).send();
+      } catch (error) {
+        console.error("Delete recipe error:", error);
+        res.status(500).json({ error: "Failed to delete recipe" });
       }
     },
   );

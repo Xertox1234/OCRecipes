@@ -19,7 +19,7 @@ import Animated, {
   withTiming,
   withSequence,
 } from "react-native-reanimated";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useIsFocused } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -67,6 +67,7 @@ export default function ScanScreen() {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<ScanScreenNavigationProp>();
+  const isFocused = useIsFocused();
   const {
     permission,
     isLoading: permissionLoading,
@@ -168,7 +169,7 @@ export default function ScanScreen() {
     });
 
     if (!result.canceled && result.assets[0]) {
-      navigation.navigate("PhotoAnalysis", {
+      navigation.navigate("PhotoIntent", {
         imageUri: result.assets[0].uri,
       });
       refreshScanCount();
@@ -197,7 +198,7 @@ export default function ScanScreen() {
         });
 
         if (photo?.uri) {
-          navigation.navigate("PhotoAnalysis", { imageUri: photo.uri });
+          navigation.navigate("PhotoIntent", { imageUri: photo.uri });
           refreshScanCount();
         }
       } catch {
@@ -311,6 +312,7 @@ export default function ScanScreen() {
         onBarcodeScanned={onBarcodeScanned}
         enableTorch={torch}
         facing="back"
+        isActive={isFocused}
       />
 
       <View style={[styles.overlay, { paddingTop: insets.top + Spacing.md }]}>

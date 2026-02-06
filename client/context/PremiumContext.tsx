@@ -13,6 +13,12 @@ import {
 } from "@shared/types/premium";
 import { useAuthContext } from "./AuthContext";
 
+interface RecipeGenerationStatus {
+  generationsToday: number;
+  dailyLimit: number;
+  canGenerate: boolean;
+}
+
 interface PremiumContextType {
   tier: SubscriptionTier;
   features: PremiumFeatures;
@@ -22,8 +28,11 @@ interface PremiumContextType {
   error: Error | null;
   dailyScanCount: number;
   canScanToday: boolean;
+  recipeGenerationsToday: number;
+  canGenerateRecipe: boolean;
   refreshSubscription: () => Promise<void>;
   refreshScanCount: () => Promise<void>;
+  refreshRecipeGenerationStatus: () => Promise<void>;
   refetch: () => Promise<void>;
 }
 
@@ -60,11 +69,24 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     staleTime: 30 * 1000, // 30 seconds
   });
 
+  // Fetch recipe generation status (only for premium users)
+  const {
+    data: recipeGenData,
+    isLoading: isRecipeGenLoading,
+    refetch: refetchRecipeGenStatus,
+  } = useQuery<RecipeGenerationStatus>({
+    queryKey: ["/api/recipes/generation-status"],
+    enabled: isAuthenticated,
+    staleTime: 30 * 1000, // 30 seconds
+  });
+
   const tier = subscriptionData?.tier ?? "free";
   const features = subscriptionData?.features ?? DEFAULT_FEATURES;
   const isPremium = tier === "premium" && (subscriptionData?.isActive ?? false);
   const dailyScanCount = scanCountData?.count ?? 0;
   const canScanToday = isPremium || dailyScanCount < features.maxDailyScans;
+  const recipeGenerationsToday = recipeGenData?.generationsToday ?? 0;
+  const canGenerateRecipe = recipeGenData?.canGenerate ?? false;
 
   const refreshSubscription = useCallback(async () => {
     await refetchSubscription();
@@ -74,10 +96,18 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     await refetchScanCount();
   }, [refetchScanCount]);
 
-  // Combined refetch for both subscription and scan count
+  const refreshRecipeGenerationStatus = useCallback(async () => {
+    await refetchRecipeGenStatus();
+  }, [refetchRecipeGenStatus]);
+
+  // Combined refetch for all status queries
   const refetch = useCallback(async () => {
-    await Promise.all([refetchSubscription(), refetchScanCount()]);
-  }, [refetchSubscription, refetchScanCount]);
+    await Promise.all([
+      refetchSubscription(),
+      refetchScanCount(),
+      refetchRecipeGenStatus(),
+    ]);
+  }, [refetchSubscription, refetchScanCount, refetchRecipeGenStatus]);
 
   // Combine error states - prioritize subscription error as it's the primary query
   const isError = isSubscriptionError || isScanCountError;
@@ -89,13 +119,17 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         tier,
         features,
         isPremium,
-        isLoading: isSubscriptionLoading || isScanCountLoading,
+        isLoading:
+          isSubscriptionLoading || isScanCountLoading || isRecipeGenLoading,
         isError,
         error,
         dailyScanCount,
         canScanToday,
+        recipeGenerationsToday,
+        canGenerateRecipe,
         refreshSubscription,
         refreshScanCount,
+        refreshRecipeGenerationStatus,
         refetch,
       }}
     >
