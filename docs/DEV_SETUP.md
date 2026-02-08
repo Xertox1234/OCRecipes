@@ -42,8 +42,8 @@ Create a `.env` file in the project root:
 # Database
 DATABASE_URL=postgresql://username:password@localhost:5432/nutriscan
 
-# Session
-SESSION_SECRET=your-secure-random-string-here
+# JWT
+JWT_SECRET=your-secure-random-string-here
 
 # OpenAI
 AI_INTEGRATIONS_OPENAI_API_KEY=sk-...

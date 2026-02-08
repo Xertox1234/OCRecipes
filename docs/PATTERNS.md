@@ -11,6 +11,10 @@ This document captures established patterns for the NutriScan codebase. Follow t
 - [API Patterns](#api-patterns)
 - [External API Patterns](#external-api-patterns)
   - [External Resource Dedup on Save](#external-resource-dedup-on-save)
+  - [Multi-Source Nutrition Lookup Chain](#multi-source-nutrition-lookup-chain)
+  - [Barcode Padding Normalization](#barcode-padding-normalization)
+  - [Cross-Validation Between Data Sources](#cross-validation-between-data-sources)
+  - [Graceful 404 Handling with Raw Fetch](#graceful-404-handling-with-raw-fetch)
 - [Database Patterns](#database-patterns)
   - [Cache-First Pattern for Expensive Operations](#cache-first-pattern-for-expensive-operations)
   - [Fire-and-Forget for Non-Critical Background Operations](#fire-and-forget-for-non-critical-background-operations)
@@ -38,6 +42,14 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Bottom-Sheet Lifecycle State Machine](#bottom-sheet-lifecycle-state-machine)
   - [Keyboard-to-Sheet Sequencing](#keyboard-to-sheet-sequencing)
   - [Lazy Modal Mounting](#lazy-modal-mounting)
+  - [Module-Level Key Counters for Dynamic Lists](#module-level-key-counters-for-dynamic-lists)
+  - [Unsaved Changes Navigation Guard](#unsaved-changes-navigation-guard)
+  - [Form State Hook with Summaries and isDirty](#form-state-hook-with-summaries-and-isdirty)
+- [External API Parsing Patterns](#external-api-parsing-patterns)
+  - [ISO 8601 Duration Parsing](#iso-8601-duration-parsing)
+  - [Intent-Driven Config Object](#intent-driven-config-object)
+  - [Compress-Upload-Cleanup for Image Uploads](#compress-upload-cleanup-for-image-uploads)
+  - [Confidence-Based Follow-Up Refinement](#confidence-based-follow-up-refinement)
 - [Animation Patterns](#animation-patterns)
 - [Performance Patterns](#performance-patterns)
   - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
@@ -921,6 +933,136 @@ async findMealPlanRecipeByExternalId(
 
 **Reference:** `POST /api/meal-plan/catalog/:id/save` in `server/routes.ts`, `server/storage.ts`
 
+### Multi-Source Nutrition Lookup Chain
+
+When a single API cannot reliably provide accurate data, use a priority chain of
+sources with cross-validation:
+
+```typescript
+// server/services/nutrition-lookup.ts
+// Priority: CNF → USDA → API Ninjas
+export async function lookupNutrition(
+  query: string,
+): Promise<NutritionData | null> {
+  // 1. Try Canadian Nutrient File (bilingual, high accuracy)
+  const cnfResult = await lookupCNF(query);
+  if (cnfResult) return { ...cnfResult, source: "cnf" };
+
+  // 2. Try USDA FoodData Central
+  const usdaResult = await lookupUSDA(query);
+  if (usdaResult) return { ...usdaResult, source: "usda" };
+
+  // 3. Last resort: API Ninjas
+  const ninjasResult = await lookupAPINinjas(query);
+  if (ninjasResult) return { ...ninjasResult, source: "api-ninjas" };
+
+  return null;
+}
+```
+
+**When to use:** Any feature requiring reliable data from external sources where
+no single API has complete coverage (nutrition, product catalogs, geocoding, etc.).
+
+**Why:** Individual APIs have gaps. OFF may have French names that confuse USDA.
+CNF is authoritative for Canadian products. The chain ensures best available data.
+
+**Reference:** `server/services/nutrition-lookup.ts`
+
+### Barcode Padding Normalization
+
+Barcodes can be encoded in different formats (UPC-A 12-digit, EAN-13 13-digit).
+Generate all plausible variants and try each one:
+
+```typescript
+function barcodeVariants(raw: string): string[] {
+  const variants = new Set<string>();
+  variants.add(raw);
+
+  // Zero-pad to 12 or 13 digits
+  const padded12 = raw.padStart(12, "0");
+  const padded13 = raw.padStart(13, "0");
+  variants.add(padded12);
+  variants.add(padded13);
+
+  // Compute check digits for UPC-A and EAN-13
+  variants.add(computeUPCA(raw));
+  variants.add(computeEAN13(raw));
+
+  return [...variants].filter((v) => /^\d{8,14}$/.test(v));
+}
+```
+
+**When to use:** Any barcode lookup where the scanned code may differ in
+format from what the database stores (leading zeros, check digits, padding).
+
+**Why:** A scanner may return `"60731142363"` (11 digits) while the database
+stores `"060731142363"` (12-digit UPC-A with leading zero). Without
+normalization, valid products appear as "not found."
+
+**Reference:** `barcodeVariants()`, `computeUPCA()`, `computeEAN13()` in `server/services/nutrition-lookup.ts`
+
+### Cross-Validation Between Data Sources
+
+When primary data is suspect, compare against a secondary source and prefer
+the more plausible result:
+
+```typescript
+// If OFF reports >2× the calories of the secondary source, prefer secondary
+const offCalories = offData.calories;
+const secondaryCalories = secondaryData.calories;
+
+if (offCalories > secondaryCalories * 2) {
+  // OFF likely has a full-box serving size; prefer secondary
+  return { ...secondaryData, productName: offData.productName };
+}
+
+// Sources agree: use OFF but fill gaps from secondary
+return {
+  ...offData,
+  fiber: offData.fiber ?? secondaryData.fiber,
+  sugar: offData.sugar ?? secondaryData.sugar,
+};
+```
+
+**When to use:** Any integration where the primary source may have inaccurate
+data (e.g., community-contributed databases like Open Food Facts).
+
+**Why:** OFF sometimes reports nutrition for the full box instead of one serving
+(e.g., 944 kcal for a Keurig pod box instead of 60 kcal for one pod).
+Cross-validation catches these errors automatically.
+
+**Reference:** Cross-validation logic in `lookupBarcode()`, `server/services/nutrition-lookup.ts`
+
+### Graceful 404 Handling with Raw Fetch
+
+When a 404 is an expected outcome (not an error), bypass `apiRequest()` and use
+raw `fetch` to inspect the response body:
+
+```typescript
+// apiRequest() calls throwIfResNotOk() which throws on 404
+// For barcode lookup, 404 means "product not in database" — not an error
+
+const baseUrl = getApiUrl();
+const token = await tokenStorage.getToken();
+const response = await fetch(`${baseUrl}/api/nutrition/barcode/${barcode}`, {
+  headers: token ? { Authorization: `Bearer ${token}` } : {},
+});
+const data = await response.json();
+
+if (data.notInDatabase) {
+  setShowManualSearch(true); // Expected path, not an error
+}
+```
+
+**When to use:** Any endpoint where specific non-2xx status codes represent valid
+application states rather than errors (404 = "not found, try manual search",
+409 = "already exists", etc.).
+
+**Why:** A shared `apiRequest()` helper that throws on all non-2xx responses is
+a good default, but it prevents handling expected non-2xx responses gracefully.
+
+**Reference:** `fetchBarcodeData()` in `client/screens/NutritionDetailScreen.tsx`
+
 ---
 
 ## Database Patterns
@@ -1550,6 +1692,109 @@ const handleFeature = () => {
   }
 };
 ```
+
+**Prefer `usePremiumFeature(key)` over raw context access** for checking a single feature flag in a component:
+
+```typescript
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+
+// Good: one-liner, boolean result
+const canShowMacros = usePremiumFeature("macroGoals");
+
+// Avoid: pulling the full context just to check one flag
+const { features } = usePremiumContext();
+const canShowMacros = features.macroGoals;
+```
+
+Use `usePremiumCamera()` only in camera screens where you need the combined bundle (barcode types, scan limits, quality, etc.).
+
+**Section-level gating — replace content with a lock row:**
+
+When an entire section is premium-only, show the content for premium users and replace it with a compact `Pressable` lock row for free users. The lock row should have full accessibility props and be tappable for a future upgrade modal.
+
+```typescript
+// ProfileScreen — NutritionGoalsSection
+const canShowMacros = usePremiumFeature("macroGoals");
+
+{canShowMacros ? (
+  <>
+    <View style={styles.macroGoalRow}>
+      {/* Protein progress bar */}
+    </View>
+    <View style={styles.macroGoalRow}>
+      {/* Carbs progress bar */}
+    </View>
+    <View style={[styles.macroGoalRow, styles.macroGoalRowLast]}>
+      {/* Fat progress bar */}
+    </View>
+  </>
+) : (
+  <Pressable
+    accessible
+    accessibilityRole="button"
+    accessibilityLabel="Detailed macro tracking requires Premium subscription"
+    accessibilityHint="Upgrade to premium to unlock macro goals"
+    onPress={() => {
+      // TODO: Show upgrade modal
+    }}
+    style={[styles.macroGoalRow, styles.macroGoalRowLast, styles.premiumLockRow]}
+  >
+    <Feather name="lock" size={16} color={theme.textSecondary} />
+    <ThemedText type="small" style={{ color: theme.textSecondary, flex: 1 }}>
+      Detailed macro tracking available with Premium
+    </ThemedText>
+  </Pressable>
+)}
+```
+
+**Key rules for section-level gating:**
+
+- Lock row uses `Pressable`, not `View` — keeps it tappable for upgrade prompts
+- Always set `accessible`, `accessibilityRole`, `accessibilityLabel`, and `accessibilityHint`
+- Use `theme.textSecondary` for lock icon and text (muted, not attention-grabbing)
+- Extract lock row layout into a named style (`premiumLockRow`) instead of inline
+
+**Disabled input gating — visible but non-editable:**
+
+When free users should _see_ calculated values but not _edit_ them, render the inputs as disabled with a lock icon overlay. This preserves layout and lets free users understand what premium offers.
+
+```typescript
+// GoalSetupScreen — macro goal inputs
+const canSetMacros = usePremiumFeature("macroGoals");
+
+<View style={[styles.goalItem, !canSetMacros && { opacity: 0.4 }]}>
+  <View>
+    <TextInput
+      style={[styles.goalInput, { backgroundColor: theme.backgroundSecondary, color: theme.proteinAccent }]}
+      value={manualProtein}
+      onChangeText={setManualProtein}
+      keyboardType="numeric"
+      editable={canSetMacros}
+      accessibilityLabel={
+        canSetMacros
+          ? "Daily protein target"
+          : "Daily protein target (Premium required)"
+      }
+    />
+    {!canSetMacros && (
+      <View style={styles.goalLockIcon}>
+        <Feather name="lock" size={12} color={theme.textSecondary} />
+      </View>
+    )}
+  </View>
+  <ThemedText type="small" style={{ color: theme.textSecondary }}>
+    Protein (g)
+  </ThemedText>
+</View>
+```
+
+**Key rules for disabled input gating:**
+
+- Set `editable={false}` on `TextInput` — prevents keyboard from opening
+- Apply `opacity: 0.4` to the wrapper — visually signals "unavailable"
+- Position a lock icon absolutely within the input area (`position: "absolute"`, top-right)
+- Append "(Premium required)" to `accessibilityLabel` so screen readers announce the restriction
+- The calculated server values still save normally — free users get defaults, premium users can override
 
 ### Intentional useEffect Dependencies
 
@@ -3150,6 +3395,342 @@ const openSheet = (section: SheetSection) => {
   </BottomSheetModal>
 )}
 ```
+
+### Module-Level Key Counters for Dynamic Lists
+
+Use module-level counters to generate stable, globally unique keys for dynamic form list items (ingredients, steps, etc.). Avoids React's index-as-key anti-pattern, timestamp collisions, and key reuse across component re-mounts.
+
+**When to use:** Any form with a dynamic list where items can be added, removed, or reordered — especially when items contain `TextInput` that would lose focus on re-key.
+
+**When NOT to use:** Static lists or lists with server-assigned IDs.
+
+```typescript
+// client/hooks/useRecipeForm.ts
+
+// Module-level — persists across mounts, ensures globally unique keys
+let ingredientKeyCounter = 0;
+function nextIngredientKey() {
+  return `ing_${++ingredientKeyCounter}`;
+}
+
+// Usage in hook
+const addIngredient = useCallback(() => {
+  setIngredients((prev) => [...prev, { key: nextIngredientKey(), text: "" }]);
+}, []);
+
+// Prefill also uses the counter to avoid collisions
+function buildIngredientsFromPrefill(
+  prefill?: ImportedRecipeData,
+): IngredientRow[] {
+  if (prefill?.ingredients?.length) {
+    return prefill.ingredients.map((ing) => ({
+      key: nextIngredientKey(),
+      text: [ing.quantity, ing.unit, ing.name].filter(Boolean).join(" "),
+    }));
+  }
+  return [{ key: nextIngredientKey(), text: "" }];
+}
+```
+
+### Unsaved Changes Navigation Guard
+
+Use React Navigation's `beforeRemove` listener to block navigation when a form has unsaved changes. Also block navigation while a save mutation is in flight to prevent double-submits or data loss.
+
+**When to use:** Any form screen with a save/submit action where accidental back-navigation would lose user input.
+
+**When NOT to use:** Read-only screens or screens where state is already synced to the server in real time.
+
+```typescript
+// client/screens/meal-plan/RecipeCreateScreen.tsx
+
+useEffect(() => {
+  const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+    // Block navigation during save
+    if (createMutation.isPending) {
+      e.preventDefault();
+      return;
+    }
+
+    // Allow navigation if form is clean
+    if (!form.isDirty) return;
+
+    // Prompt for unsaved changes
+    e.preventDefault();
+    Alert.alert("Discard changes?", "You have unsaved changes.", [
+      { text: "Keep editing", style: "cancel" },
+      {
+        text: "Discard",
+        style: "destructive",
+        onPress: () => navigation.dispatch(e.data.action),
+      },
+    ]);
+  });
+
+  return unsubscribe;
+}, [navigation, form.isDirty, createMutation.isPending]);
+```
+
+**Key details:**
+
+- `isPending` check prevents back-swipe during save, avoiding partial writes
+- `isDirty` comes from the form hook (see below), not manual tracking
+- Both values must be in the dependency array so the listener re-binds when they change
+
+### Form State Hook with Summaries and isDirty
+
+Extract multi-section form state into a custom hook that provides: state + setters, CRUD actions for dynamic lists, `useMemo`-derived summaries for display, a single `isDirty` flag, and a `formToPayload()` serializer. This keeps the screen component focused on layout and navigation.
+
+**When to use:** Forms with 3+ distinct sections, especially with dynamic lists and a summary/preview UI.
+
+**When NOT to use:** Simple single-field forms or forms where TanStack Form or React Hook Form is already in use.
+
+```typescript
+// client/hooks/useRecipeForm.ts
+
+export function useRecipeForm(prefill?: ImportedRecipeData) {
+  const [title, setTitle] = useState(prefill?.title || "");
+  const [ingredients, setIngredients] = useState<IngredientRow[]>(() =>
+    buildIngredientsFromPrefill(prefill),
+  );
+  // ... more sections
+
+  // Computed summary for section row display
+  const ingredientsSummary = useMemo(() => {
+    const filled = ingredients.filter((i) => i.text.trim());
+    return filled.length > 0
+      ? `${filled.length} ingredient${filled.length !== 1 ? "s" : ""}`
+      : undefined;
+  }, [ingredients]);
+
+  // Single dirty flag across all sections
+  const isDirty = useMemo(() => {
+    if (title.trim()) return true;
+    if (ingredients.some((i) => i.text.trim())) return true;
+    // ... check all sections
+    return false;
+  }, [title, ingredients /* ... all sections */]);
+
+  // Serialize to API payload — filters empty rows, parses text to structured data
+  const formToPayload = useCallback(() => {
+    const validIngredients = ingredients
+      .filter((i) => i.text.trim())
+      .map((i) => {
+        const parsed = parseIngredientText(i.text.trim());
+        return {
+          name: parsed.name,
+          quantity: parsed.quantity,
+          unit: parsed.unit,
+        };
+      });
+
+    return {
+      title: title.trim(),
+      ingredients: validIngredients,
+      instructions:
+        serializeSteps(steps.filter((s) => s.text.trim()).map((s) => s.text)) ||
+        null,
+      // ... other fields
+    };
+  }, [title, ingredients, steps /* ... */]);
+
+  return {
+    title,
+    setTitle,
+    ingredients,
+    addIngredient,
+    removeIngredient,
+    updateIngredient,
+    ingredientsSummary,
+    isDirty,
+    formToPayload,
+    // ... rest
+  };
+}
+```
+
+**Key details:**
+
+- Summaries update automatically via `useMemo` — no manual "refresh" needed
+- `isDirty` checks all sections, not just the one being edited
+- `formToPayload()` handles the text → structured data transformation (e.g., "200g chicken" → `{ name: "chicken", quantity: 200, unit: "g" }`)
+- Accepts optional `prefill` for hydrating from imports or edits
+
+---
+
+## External API Parsing Patterns
+
+### ISO 8601 Duration Parsing
+
+Parse ISO 8601 duration strings (from schema.org recipes, calendar events, etc.) into numeric minutes for storage and display. Return `null` for missing or unparseable values instead of throwing.
+
+**When to use:** Importing data from schema.org structured data, iCal/ICS feeds, or any external source using ISO 8601 durations (e.g., `PT1H30M`, `PT15M`).
+
+**When NOT to use:** Internal data that already stores durations as numbers.
+
+```typescript
+// server/services/recipe-import.ts
+
+export function parseIsoDuration(duration: string | undefined): number | null {
+  if (!duration) return null;
+  const match = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  if (!match) return null;
+  const hours = parseInt(match[1] || "0", 10);
+  const minutes = parseInt(match[2] || "0", 10);
+  return hours * 60 + minutes;
+}
+
+// Usage
+parseIsoDuration("PT1H30M"); // → 90
+parseIsoDuration("PT15M"); // → 15
+parseIsoDuration("PT2H"); // → 120
+parseIsoDuration(undefined); // → null
+parseIsoDuration("invalid"); // → null
+```
+
+**Key details:**
+
+- Case-insensitive (`/i` flag) to handle mixed-case from external sources
+- Seconds component is parsed but not added to the result (recipes don't need second-level precision)
+- Returns `null` (not 0 or throws) for graceful handling in optional fields
+
+### Intent-Driven Config Object
+
+Place a shared config record in `shared/constants/` keyed by intent/mode union type. Both client and server import the same object to drive branching behavior:
+
+```typescript
+// shared/constants/preparation.ts
+export const INTENT_CONFIG: Record<
+  PhotoIntent,
+  {
+    needsNutrition: boolean;
+    needsSession: boolean;
+    canLog: boolean;
+    label: string;
+  }
+> = {
+  log: { needsNutrition: true, needsSession: true, canLog: true, label: "Log this meal" },
+  identify: { needsNutrition: false, needsSession: false, canLog: false, label: "Just identify" },
+  // ...
+};
+
+// Server usage — drives which steps to execute
+const intentConfig = INTENT_CONFIG[intent];
+if (intentConfig.needsNutrition) {
+  foods = await batchNutritionLookup(result.foods);
+}
+if (intentConfig.needsSession) {
+  sessionStore.set(sessionId, { userId, result, createdAt: new Date() });
+}
+
+// Client usage — drives which UI to render
+const config = INTENT_CONFIG[intent];
+{config.canLog && <LogButton onPress={handleConfirm} />}
+```
+
+**When to use:** Multiple code paths share the same feature with mode-dependent behavior (photo intents, notification types, export formats).
+
+**When NOT to use:** Only 2 simple modes with a boolean flag — a simple `if` is clearer.
+
+**Why:** Eliminates scattered `if (intent === "log")` checks across client and server. Adding a new intent means adding one config entry instead of hunting for conditionals.
+
+### Compress-Upload-Cleanup for Image Uploads
+
+When uploading user images, always compress before upload and clean up the temporary file afterward using `try/finally`:
+
+```typescript
+// client/lib/photo-upload.ts
+import { compressImage, cleanupImage } from "./image-compression";
+import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
+
+export async function uploadPhotoForAnalysis(
+  uri: string,
+  intent: PhotoIntent = "log",
+): Promise<PhotoAnalysisResponse> {
+  const compressed = await compressImage(uri);
+
+  try {
+    const uploadResult = await uploadAsync(
+      `${getApiUrl()}/api/photos/analyze`,
+      compressed.uri,
+      {
+        httpMethod: "POST",
+        uploadType: FileSystemUploadType.MULTIPART,
+        fieldName: "photo",
+        parameters: { intent },
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    return JSON.parse(uploadResult.body) as PhotoAnalysisResponse;
+  } finally {
+    await cleanupImage(compressed.uri); // Always runs, even on error
+  }
+}
+```
+
+The compression step (`client/lib/image-compression.ts`) uses adaptive quality reduction — if the first pass exceeds the target size, it recalculates quality proportionally:
+
+```typescript
+if (sizeKB > targetSizeKB && quality > 0.3) {
+  const newQuality = Math.max(0.3, quality * (targetSizeKB / sizeKB));
+  result = await manipulateAsync(uri, [{ resize }], { compress: newQuality });
+}
+```
+
+**When to use:** Any image upload from the client (photo analysis, profile avatars).
+
+**When NOT to use:** Small files like icons or thumbnails that don't need compression.
+
+**Why:** Reduces upload payload (1024px max, JPEG quality 0.7, <1MB target), prevents temp file buildup on device, and `finally` guarantees cleanup even if the upload fails.
+
+### Confidence-Based Follow-Up Refinement
+
+When AI analysis produces low-confidence results, prompt the user for clarification and re-analyze with the additional context:
+
+```typescript
+// Server: check if follow-up is needed
+const CONFIDENCE_THRESHOLD = 0.7;
+
+export function needsFollowUp(result: AnalysisResult): boolean {
+  return (
+    result.overallConfidence < CONFIDENCE_THRESHOLD ||
+    result.followUpQuestions.length > 0 ||
+    result.foods.some((f) => f.needsClarification)
+  );
+}
+
+// Server: refine with user's answer (text-only, no image re-send)
+export async function refineAnalysis(
+  previousResult: AnalysisResult,
+  question: string,
+  answer: string,
+): Promise<AnalysisResult> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      {
+        role: "system",
+        content: `Previous analysis: ${JSON.stringify(previousResult)}\nRefine based on user answer.`,
+      },
+      { role: "user", content: `Q: ${question}\nA: ${answer}` },
+    ],
+    response_format: { type: "json_object" },
+  });
+  return analysisResultSchema.parse(
+    JSON.parse(response.choices[0]?.message?.content || "{}"),
+  );
+}
+
+// Client: show follow-up UI conditionally
+if (analysisResult.needsFollowUp) {
+  setShowFollowUp(true); // Renders question + answer input
+}
+```
+
+**When to use:** Any AI analysis where confidence scoring is available and user clarification can improve accuracy.
+
+**When NOT to use:** Deterministic lookups (barcode scans, database queries) where results are either correct or not found.
+
+**Why:** Low-confidence results displayed without refinement erode user trust. The follow-up is text-only (no image re-send), so it's cheap and fast. The threshold (0.7) is tunable — lower values reduce prompts but risk showing inaccurate data.
 
 ---
 

@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   StyleSheet,
   View,
   ScrollView,
   ActivityIndicator,
   Image,
+  TouchableOpacity,
+  TextInput as RNTextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -22,9 +24,18 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { tokenStorage } from "@/lib/token-storage";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
+import {
+  validateAndNormalizeNutrition,
+  scaleNutrition,
+  getServingSizeOptions,
+  type ValidatedNutrition,
+  type NutritionPer100g,
+  type ServingSizeInfo,
+} from "@/lib/serving-size-utils";
 
 type RouteParams = {
   barcode?: string;
@@ -107,6 +118,87 @@ export default function NutritionDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPer100g, setIsPer100g] = useState(false);
+  const [servingQuantity, setServingQuantity] = useState(1);
+  const [servingSizeGrams, setServingSizeGrams] = useState<number | null>(null);
+  const [customGramsInput, setCustomGramsInput] = useState("");
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [validatedData, setValidatedData] = useState<ValidatedNutrition | null>(
+    null,
+  );
+  const [correctionNotice, setCorrectionNotice] = useState<string | null>(null);
+  const [showManualSearch, setShowManualSearch] = useState(false);
+  const [manualSearchQuery, setManualSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Derive per-100g values: prefer validatedData when available,
+  // otherwise back-calculate from whatever nutrition state we have
+  // (e.g. when the USDA/API Ninjas fallback was used).
+  const effectivePer100g = useMemo((): NutritionPer100g | null => {
+    if (validatedData) return validatedData.per100g;
+    if (!nutrition || nutrition.calories === undefined) return null;
+    const grams = servingSizeGrams || 100;
+    const factor = 100 / grams;
+    return {
+      calories:
+        nutrition.calories !== undefined
+          ? nutrition.calories * factor
+          : undefined,
+      protein:
+        nutrition.protein !== undefined
+          ? nutrition.protein * factor
+          : undefined,
+      carbs:
+        nutrition.carbs !== undefined ? nutrition.carbs * factor : undefined,
+      fat: nutrition.fat !== undefined ? nutrition.fat * factor : undefined,
+      fiber:
+        nutrition.fiber !== undefined ? nutrition.fiber * factor : undefined,
+      sugar:
+        nutrition.sugar !== undefined ? nutrition.sugar * factor : undefined,
+      sodium:
+        nutrition.sodium !== undefined ? nutrition.sodium * factor : undefined,
+    };
+  }, [validatedData, nutrition, servingSizeGrams]);
+
+  // Build serving size options — works with or without validatedData
+  const servingOptions = useMemo(() => {
+    const info: ServingSizeInfo = validatedData?.servingInfo ?? {
+      displayLabel: nutrition?.servingSize || "100g",
+      grams: servingSizeGrams || 100,
+      wasCorrected: false,
+    };
+    return getServingSizeOptions(info, nutrition?.productName || "");
+  }, [
+    validatedData,
+    nutrition?.productName,
+    nutrition?.servingSize,
+    servingSizeGrams,
+  ]);
+
+  // Recalculate displayed nutrition from per-100g whenever serving
+  // size or quantity changes
+  const recalculateNutrition = useCallback(
+    (grams: number, quantity: number) => {
+      if (!effectivePer100g) return;
+      const factor = (grams / 100) * quantity;
+      const scaled = scaleNutrition(effectivePer100g, factor);
+      setNutrition((prev) =>
+        prev
+          ? {
+              ...prev,
+              calories: scaled.calories,
+              protein: scaled.protein,
+              carbs: scaled.carbs,
+              fat: scaled.fat,
+              fiber: scaled.fiber,
+              sugar: scaled.sugar,
+              sodium: scaled.sodium,
+              servingSize: `${grams}g`,
+            }
+          : prev,
+      );
+    },
+    [effectivePer100g],
+  );
 
   const { data: existingItem } = useQuery<NutritionData>({
     queryKey: ["/api/scanned-items", itemId],
@@ -115,6 +207,81 @@ export default function NutritionDetailScreen() {
 
   const fetchBarcodeData = useCallback(async (code: string) => {
     try {
+      // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
+      // Use raw fetch (not apiRequest) so we can inspect 404 responses
+      // without them being thrown as errors.
+      try {
+        const baseUrl = getApiUrl();
+        const url = new URL(`/api/nutrition/barcode/${code}`, baseUrl);
+        const token = await tokenStorage.get();
+        const headers: Record<string, string> = {};
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const serverRes = await fetch(url, { headers });
+
+        if (serverRes.ok) {
+          const data = await serverRes.json();
+
+          // Map server response into ValidatedNutrition for serving controls
+          const validated: ValidatedNutrition = {
+            perServing: data.perServing,
+            per100g: data.per100g,
+            servingInfo: data.servingInfo,
+            isServingDataTrusted: data.isServingDataTrusted,
+          };
+
+          setValidatedData(validated);
+          setServingSizeGrams(data.servingInfo.grams);
+          setIsPer100g(
+            !data.isServingDataTrusted && !data.servingInfo.wasCorrected,
+          );
+
+          if (
+            data.servingInfo.wasCorrected &&
+            data.servingInfo.correctionReason
+          ) {
+            setCorrectionNotice(data.servingInfo.correctionReason);
+          }
+
+          setNutrition({
+            productName: data.productName,
+            brandName: data.brandName,
+            servingSize: data.servingInfo.displayLabel,
+            calories: data.perServing.calories,
+            protein: data.perServing.protein,
+            carbs: data.perServing.carbs,
+            fat: data.perServing.fat,
+            fiber: data.perServing.fiber,
+            sugar: data.perServing.sugar,
+            sodium: data.perServing.sodium,
+            imageUrl: data.imageUrl,
+            barcode: code,
+          });
+          return;
+        }
+
+        // Server returned an error — check if it's a definitive "not in database"
+        if (serverRes.status === 404) {
+          try {
+            const errData = await serverRes.json();
+            if (errData.notInDatabase) {
+              // Product barcode not found in any database — show manual search
+              setShowManualSearch(true);
+              setNutrition({ productName: "Product Not Found", barcode: code });
+              return;
+            }
+          } catch {
+            // Couldn't parse error body — fall through to OFF
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "Server barcode lookup unavailable, falling back to OFF:",
+          err,
+        );
+      }
+
+      // ── Fallback: direct Open Food Facts (when server is unreachable) ──
       const response = await fetch(
         `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
       );
@@ -122,119 +289,114 @@ export default function NutritionDetailScreen() {
 
       if (data.status === 1 && data.product) {
         const product = data.product;
-        const nutriments = product.nutriments || {};
+        const validated = validateAndNormalizeNutrition(product, code);
 
-        // Check multiple _serving fields to detect per-serving data availability.
-        // OpenFoodFacts is inconsistent — some products have energy-kcal_serving,
-        // others only have energy_serving (kJ), but still have _serving for macros.
-        const hasServingData =
-          nutriments["energy-kcal_serving"] !== undefined ||
-          nutriments.proteins_serving !== undefined ||
-          nutriments.fat_serving !== undefined ||
-          nutriments.carbohydrates_serving !== undefined;
+        setValidatedData(validated);
+        setServingSizeGrams(validated.servingInfo.grams ?? 100);
+        setIsPer100g(
+          !validated.isServingDataTrusted &&
+            !validated.servingInfo.wasCorrected,
+        );
 
-        // When _serving fields are missing but serving_quantity exists, we can
-        // convert per-100g values to per-serving: value * (serving_grams / 100).
-        // This handles products where contributors only entered 100g data but
-        // the serving size is known (e.g., "1 cup (250ml)").
-        const servingGrams = parseFloat(product.serving_quantity);
-        const canConvertToServing =
-          !hasServingData && servingGrams > 0 && isFinite(servingGrams);
-        const scale = canConvertToServing ? servingGrams / 100 : 1;
-
-        const usesServingData = hasServingData || canConvertToServing;
-
-        // If we only have per-100g data, try CalorieNinjas/USDA as fallback
-        // using the product name — these APIs often have per-serving values.
-        if (!usesServingData && product.product_name) {
-          try {
-            const fallbackRes = await apiRequest(
-              "GET",
-              `/api/nutrition/lookup?name=${encodeURIComponent(product.product_name)}`,
-            );
-            if (fallbackRes.ok) {
-              const fallback = await fallbackRes.json();
-              setIsPer100g(false);
-              setNutrition({
-                productName: product.product_name || "Unknown Product",
-                brandName: product.brands,
-                servingSize:
-                  fallback.servingSize ||
-                  product.serving_size ||
-                  product.quantity ||
-                  "100g",
-                calories: fallback.calories,
-                protein: fallback.protein,
-                carbs: fallback.carbs,
-                fat: fallback.fat,
-                fiber: fallback.fiber,
-                sugar: fallback.sugar,
-                sodium: fallback.sodium,
-                imageUrl: product.image_url || product.image_front_url,
-                barcode: code,
-              });
-              return;
-            }
-          } catch (err) {
-            console.warn("Nutrition fallback API unavailable:", err);
-          }
+        if (
+          validated.servingInfo.wasCorrected &&
+          validated.servingInfo.correctionReason
+        ) {
+          setCorrectionNotice(validated.servingInfo.correctionReason);
         }
 
-        setIsPer100g(!usesServingData);
-
-        // Helper to scale a per-100g value to per-serving
-        const scaleValue = (val: number | undefined) =>
-          val !== undefined ? val * scale : undefined;
-
-        // Resolve calories: prefer kcal_serving, then convert kJ_serving,
-        // then scale kcal_100g to per-serving if possible
-        const calories =
-          nutriments["energy-kcal_serving"] ??
-          (nutriments.energy_serving !== undefined
-            ? Math.round(nutriments.energy_serving / 4.184)
-            : undefined) ??
-          scaleValue(nutriments["energy-kcal_100g"]) ??
-          scaleValue(nutriments.energy_value);
-
-        // Use per-serving values with scaled per-100g fallback for each field
-        const sodiumRaw =
-          nutriments.sodium_serving ?? scaleValue(nutriments.sodium_100g);
-
+        const perServing = validated.perServing;
         setNutrition({
           productName: product.product_name || "Unknown Product",
           brandName: product.brands,
-          servingSize: product.serving_size || product.quantity || "100g",
-          calories,
-          protein:
-            nutriments.proteins_serving ?? scaleValue(nutriments.proteins_100g),
-          carbs:
-            nutriments.carbohydrates_serving ??
-            scaleValue(nutriments.carbohydrates_100g),
-          fat: nutriments.fat_serving ?? scaleValue(nutriments.fat_100g),
-          fiber: nutriments.fiber_serving ?? scaleValue(nutriments.fiber_100g),
-          sugar:
-            nutriments.sugars_serving ?? scaleValue(nutriments.sugars_100g),
-          sodium: sodiumRaw !== undefined ? sodiumRaw * 1000 : undefined,
+          servingSize: validated.servingInfo.displayLabel,
+          calories: perServing.calories,
+          protein: perServing.protein,
+          carbs: perServing.carbs,
+          fat: perServing.fat,
+          fiber: perServing.fiber,
+          sugar: perServing.sugar,
+          sodium: perServing.sodium,
           imageUrl: product.image_url || product.image_front_url,
           barcode: code,
         });
       } else {
         setError("Product not found in database");
-        setNutrition({
-          productName: "Unknown Product",
-          barcode: code,
-        });
+        setNutrition({ productName: "Unknown Product", barcode: code });
       }
     } catch {
       setError("Failed to fetch product data");
-      setNutrition({
-        productName: "Unknown Product",
-        barcode: code,
-      });
+      setNutrition({ productName: "Unknown Product", barcode: code });
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+  // Manual product name search — when barcode isn't in any database,
+  // let the user type what the product is (e.g. "coffee whitener")
+  const handleManualSearch = useCallback(
+    async (query: string) => {
+      if (!query.trim()) return;
+
+      setIsSearching(true);
+      setError(null);
+
+      try {
+        const res = await apiRequest(
+          "GET",
+          `/api/nutrition/lookup?name=${encodeURIComponent(query.trim())}`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+
+          setShowManualSearch(false);
+          setServingSizeGrams(100);
+          setIsPer100g(true);
+
+          setNutrition({
+            productName: data.name || query.trim(),
+            servingSize: data.servingSize || "100g",
+            calories: data.calories,
+            protein: data.protein,
+            carbs: data.carbs,
+            fat: data.fat,
+            fiber: data.fiber,
+            sugar: data.sugar,
+            sodium: data.sodium,
+            barcode: barcode || undefined,
+          });
+
+          // Set up per100g validated data for serving controls
+          const per100g: NutritionPer100g = {
+            calories: data.calories,
+            protein: data.protein,
+            carbs: data.carbs,
+            fat: data.fat,
+            fiber: data.fiber,
+            sugar: data.sugar,
+            sodium: data.sodium,
+          };
+          setValidatedData({
+            per100g,
+            perServing: per100g,
+            servingInfo: {
+              displayLabel: "100g",
+              grams: 100,
+              wasCorrected: false,
+            },
+            isServingDataTrusted: false,
+          });
+        } else {
+          setError(`No results found for "${query.trim()}"`);
+        }
+      } catch {
+        setError("Search failed. Please try again.");
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [barcode],
+  );
 
   useEffect(() => {
     if (existingItem) {
@@ -263,6 +425,7 @@ export default function NutritionDetailScreen() {
 
       const response = await apiRequest("POST", "/api/scanned-items", {
         ...nutrition,
+        servings: servingQuantity,
         userId: user?.id,
       });
       return response.json();
@@ -348,6 +511,214 @@ export default function NutritionDetailScreen() {
           ) : null}
         </Animated.View>
 
+        {correctionNotice && !itemId ? (
+          <View
+            style={[
+              styles.correctionContainer,
+              { backgroundColor: withOpacity(theme.warning, 0.1) },
+            ]}
+          >
+            <Feather name="zap" size={16} color={theme.warning} />
+            <View style={{ flex: 1 }}>
+              <ThemedText
+                type="small"
+                style={{ color: theme.warning, fontWeight: "600" }}
+              >
+                Serving size adjusted
+              </ThemedText>
+              <ThemedText type="small" style={{ color: theme.warning }}>
+                {correctionNotice}
+              </ThemedText>
+            </View>
+          </View>
+        ) : null}
+
+        {/* ── Serving size & quantity controls ── */}
+        {!itemId && barcode && nutrition?.calories !== undefined ? (
+          <Card elevation={1} style={styles.servingCard}>
+            {/* Serving Size */}
+            <View style={styles.servingSection}>
+              <ThemedText
+                type="small"
+                style={[
+                  styles.servingSectionLabel,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                Serving Size
+              </ThemedText>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.servingChips}
+              >
+                {servingOptions.map((opt) => {
+                  const isActive =
+                    !showCustomInput &&
+                    servingSizeGrams !== null &&
+                    Math.abs(servingSizeGrams - opt.grams) < 0.1;
+                  return (
+                    <TouchableOpacity
+                      key={opt.grams}
+                      style={[
+                        styles.servingChip,
+                        {
+                          backgroundColor: isActive
+                            ? theme.link
+                            : withOpacity(theme.text, 0.06),
+                        },
+                      ]}
+                      onPress={() => {
+                        setShowCustomInput(false);
+                        setServingSizeGrams(opt.grams);
+                        recalculateNutrition(opt.grams, servingQuantity);
+                        haptics.selection();
+                      }}
+                      accessibilityLabel={`Set serving to ${opt.label}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isActive }}
+                    >
+                      <ThemedText
+                        type="small"
+                        style={{
+                          color: isActive ? theme.buttonText : theme.text,
+                          fontWeight: isActive ? "600" : "400",
+                        }}
+                      >
+                        {opt.label}
+                      </ThemedText>
+                    </TouchableOpacity>
+                  );
+                })}
+                {/* Custom option */}
+                <TouchableOpacity
+                  style={[
+                    styles.servingChip,
+                    {
+                      backgroundColor: showCustomInput
+                        ? theme.link
+                        : withOpacity(theme.text, 0.06),
+                    },
+                  ]}
+                  onPress={() => {
+                    setShowCustomInput(true);
+                    haptics.selection();
+                  }}
+                  accessibilityLabel="Enter custom serving size"
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: showCustomInput }}
+                >
+                  <ThemedText
+                    type="small"
+                    style={{
+                      color: showCustomInput ? theme.buttonText : theme.text,
+                      fontWeight: showCustomInput ? "600" : "400",
+                    }}
+                  >
+                    Custom
+                  </ThemedText>
+                </TouchableOpacity>
+              </ScrollView>
+
+              {showCustomInput ? (
+                <View style={styles.customInputRow}>
+                  <RNTextInput
+                    style={[
+                      styles.customInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: withOpacity(theme.text, 0.06),
+                        borderColor: theme.border,
+                      },
+                    ]}
+                    value={customGramsInput}
+                    onChangeText={setCustomGramsInput}
+                    onEndEditing={() => {
+                      const parsed = parseFloat(customGramsInput);
+                      if (parsed > 0 && isFinite(parsed)) {
+                        setServingSizeGrams(parsed);
+                        recalculateNutrition(parsed, servingQuantity);
+                      }
+                    }}
+                    placeholder="grams"
+                    placeholderTextColor={theme.textSecondary}
+                    keyboardType="decimal-pad"
+                    returnKeyType="done"
+                    accessibilityLabel="Custom serving size in grams"
+                  />
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    g
+                  </ThemedText>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Divider */}
+            <View
+              style={[styles.servingDivider, { backgroundColor: theme.border }]}
+            />
+
+            {/* Servings quantity */}
+            <View style={styles.quantityRow}>
+              <ThemedText
+                type="small"
+                style={[
+                  styles.servingSectionLabel,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                Servings
+              </ThemedText>
+              <View style={styles.quantityStepper}>
+                <TouchableOpacity
+                  style={[
+                    styles.stepperButton,
+                    { backgroundColor: withOpacity(theme.text, 0.08) },
+                  ]}
+                  onPress={() => {
+                    const next = Math.max(0.5, servingQuantity - 0.5);
+                    setServingQuantity(next);
+                    if (servingSizeGrams) {
+                      recalculateNutrition(servingSizeGrams, next);
+                    }
+                    haptics.selection();
+                  }}
+                  accessibilityLabel="Decrease serving quantity"
+                  accessibilityRole="button"
+                >
+                  <Feather name="minus" size={18} color={theme.text} />
+                </TouchableOpacity>
+                <ThemedText type="h4" style={styles.quantityValue}>
+                  {servingQuantity % 1 === 0
+                    ? servingQuantity
+                    : servingQuantity.toFixed(1)}
+                </ThemedText>
+                <TouchableOpacity
+                  style={[
+                    styles.stepperButton,
+                    { backgroundColor: withOpacity(theme.text, 0.08) },
+                  ]}
+                  onPress={() => {
+                    const next = servingQuantity + 0.5;
+                    setServingQuantity(next);
+                    if (servingSizeGrams) {
+                      recalculateNutrition(servingSizeGrams, next);
+                    }
+                    haptics.selection();
+                  }}
+                  accessibilityLabel="Increase serving quantity"
+                  accessibilityRole="button"
+                >
+                  <Feather name="plus" size={18} color={theme.text} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Card>
+        ) : null}
+
         {error ? (
           <View
             style={[
@@ -360,6 +731,68 @@ export default function NutritionDetailScreen() {
               {error}
             </ThemedText>
           </View>
+        ) : null}
+
+        {showManualSearch ? (
+          <Card elevation={1} style={styles.manualSearchCard}>
+            <View style={styles.manualSearchHeader}>
+              <Feather name="search" size={20} color={theme.link} />
+              <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                <ThemedText
+                  type="body"
+                  style={{ fontWeight: "600", marginBottom: 2 }}
+                >
+                  Barcode not recognized
+                </ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  Type the product name to look up nutrition info
+                </ThemedText>
+              </View>
+            </View>
+            <View style={styles.manualSearchRow}>
+              <RNTextInput
+                style={[
+                  styles.manualSearchInput,
+                  {
+                    color: theme.text,
+                    borderColor: withOpacity(theme.text, 0.2),
+                    backgroundColor: withOpacity(theme.text, 0.04),
+                  },
+                ]}
+                placeholder="e.g. coffee whitener, granola bar..."
+                placeholderTextColor={withOpacity(theme.text, 0.4)}
+                value={manualSearchQuery}
+                onChangeText={setManualSearchQuery}
+                onSubmitEditing={() => handleManualSearch(manualSearchQuery)}
+                returnKeyType="search"
+                autoFocus
+                editable={!isSearching}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.manualSearchButton,
+                  {
+                    backgroundColor: theme.link,
+                    opacity: isSearching || !manualSearchQuery.trim() ? 0.5 : 1,
+                  },
+                ]}
+                onPress={() => handleManualSearch(manualSearchQuery)}
+                disabled={isSearching || !manualSearchQuery.trim()}
+                accessibilityLabel="Search for product"
+                accessibilityRole="button"
+              >
+                {isSearching ? (
+                  <ActivityIndicator size="small" color={theme.buttonText} />
+                ) : (
+                  <Feather
+                    name="arrow-right"
+                    size={20}
+                    color={theme.buttonText}
+                  />
+                )}
+              </TouchableOpacity>
+            </View>
+          </Card>
         ) : null}
 
         <Animated.View
@@ -624,5 +1057,102 @@ const styles = StyleSheet.create({
   },
   addButton: {
     marginBottom: Spacing.md,
+  },
+  correctionContainer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.xs,
+    marginBottom: Spacing.lg,
+  },
+  servingCard: {
+    padding: Spacing.md,
+    marginBottom: Spacing["2xl"],
+  },
+  servingSection: {
+    marginBottom: Spacing.sm,
+  },
+  servingSectionLabel: {
+    fontWeight: "500",
+    marginBottom: Spacing.sm,
+  },
+  servingChips: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    paddingRight: Spacing.sm,
+  },
+  servingChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.xl,
+  },
+  customInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  customInput: {
+    flex: 1,
+    height: 40,
+    borderRadius: BorderRadius.xs,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.md,
+    fontSize: 16,
+  },
+  servingDivider: {
+    height: 1,
+    marginVertical: Spacing.sm,
+  },
+  quantityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  quantityStepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  stepperButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quantityValue: {
+    minWidth: 32,
+    textAlign: "center",
+  },
+  manualSearchCard: {
+    padding: Spacing.lg,
+    marginBottom: Spacing["2xl"],
+  },
+  manualSearchHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: Spacing.md,
+  },
+  manualSearchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  manualSearchInput: {
+    flex: 1,
+    height: 44,
+    borderRadius: BorderRadius.xs,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.md,
+    fontSize: 16,
+  },
+  manualSearchButton: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.xs,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

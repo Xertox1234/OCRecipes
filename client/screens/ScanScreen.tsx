@@ -81,8 +81,13 @@ export default function ScanScreen() {
   const resetTimeoutRef = useRef<TimeoutRef>(null);
 
   // Premium features
-  const { availableBarcodeTypes, canScan, remainingScans, isPremium } =
-    usePremiumCamera();
+  const {
+    availableBarcodeTypes,
+    canScan,
+    remainingScans,
+    isPremium,
+    highQualityCapture,
+  } = usePremiumCamera();
   const { refreshScanCount } = usePremiumContext();
 
   // Camera hook with debouncing
@@ -193,9 +198,8 @@ export default function ScanScreen() {
     // Take a photo using the camera ref
     if (cameraRef.current) {
       try {
-        const photo = await cameraRef.current.takePicture({
-          quality: 1,
-        });
+        // Quality is controlled by the photoQuality prop on <CameraView>
+        const photo = await cameraRef.current.takePicture();
 
         if (photo?.uri) {
           navigation.navigate("PhotoIntent", { imageUri: photo.uri });
@@ -307,6 +311,7 @@ export default function ScanScreen() {
         enableTorch={torch}
         facing="back"
         isActive={isFocused}
+        photoQuality={highQualityCapture ? 0.9 : 0.5}
       />
 
       <View style={[styles.overlay, { paddingTop: insets.top + Spacing.md }]}>
@@ -440,7 +445,7 @@ export default function ScanScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: "#000", // hardcoded — camera background must be black
   },
   permissionContainer: {
     justifyContent: "center",
@@ -466,7 +471,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   permissionButtonText: {
-    color: "#FFFFFF",
+    color: "#FFFFFF", // hardcoded — white text on colored button
     fontWeight: "600",
   },
   webNote: {
@@ -539,14 +544,14 @@ const styles = StyleSheet.create({
     borderRadius: 50,
   },
   reticleText: {
-    color: "#FFFFFF",
+    color: "#FFFFFF", // hardcoded — white text over camera feed
     marginTop: Spacing["2xl"],
     textShadowColor: "rgba(0,0,0,0.5)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
   scanLimitText: {
-    color: "#FFFFFF",
+    color: "#FFFFFF", // hardcoded — white text over camera feed
     marginTop: Spacing.sm,
     opacity: 0.8,
     textShadowColor: "rgba(0,0,0,0.5)",
@@ -573,7 +578,7 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.shutterButtonSize / 2,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000",
+    shadowColor: "#000", // hardcoded — shadow color is always black
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
@@ -583,7 +588,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FFFFFF", // hardcoded — shutter button is always white
   },
   spacer: {
     width: 56,

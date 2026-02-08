@@ -49,6 +49,7 @@ A brief introduction to NutriScan's features.
 ### Step 2: Allergies
 
 Add any food allergies you have:
+
 1. Tap **"Add Allergy"**
 2. Enter the allergy name (e.g., "peanuts", "shellfish")
 3. Select severity:
@@ -62,6 +63,7 @@ Add any food allergies you have:
 ### Step 3: Health Conditions
 
 Select any health conditions that affect your diet:
+
 - Diabetes
 - High Blood Pressure
 - Heart Disease
@@ -74,6 +76,7 @@ Tap conditions to select/deselect, then **"Continue"**.
 ### Step 4: Diet Type
 
 Choose your primary diet:
+
 - **Omnivore** - Eats all foods
 - **Vegetarian** - No meat
 - **Vegan** - No animal products
@@ -85,6 +88,7 @@ Choose your primary diet:
 ### Step 5: Goals
 
 Select your primary health goal:
+
 - **Lose Weight** - Calorie deficit
 - **Gain Muscle** - Protein focus
 - **Maintain Weight** - Balanced intake
@@ -95,6 +99,7 @@ Select your primary health goal:
 Configure your lifestyle preferences:
 
 **Activity Level:**
+
 - Sedentary (little to no exercise)
 - Light (1-3 days/week)
 - Moderate (3-5 days/week)
@@ -102,11 +107,13 @@ Configure your lifestyle preferences:
 - Athlete (intense training)
 
 **Cooking Skill:**
+
 - Beginner
 - Intermediate
 - Advanced
 
 **Cooking Time:**
+
 - Quick (< 15 min)
 - Moderate (15-30 min)
 - Extended (30-60 min)
@@ -126,10 +133,10 @@ Tap **"Complete Setup"** to finish.
 
 The app has three main tabs at the bottom:
 
-| Icon | Tab | Function |
-|------|-----|----------|
-| Clock | History | View scanned items |
-| Camera | Scan | Scan new products |
+| Icon   | Tab     | Function                |
+| ------ | ------- | ----------------------- |
+| Clock  | History | View scanned items      |
+| Camera | Scan    | Scan new products       |
 | Person | Profile | View stats and settings |
 
 ---
@@ -143,6 +150,27 @@ The app has three main tabs at the bottom:
 3. Hold steady - the app will automatically detect barcodes
 4. Once scanned, you'll see the nutrition details
 
+The app looks up barcode data from multiple sources (Open Food Facts,
+Canadian Nutrient File, USDA, and API Ninjas) to find the most accurate
+nutrition information. Results are cross-validated between sources.
+
+### What Happens When a Barcode Is Found
+
+If the barcode is recognized, you'll see:
+
+- Product name and brand
+- Nutrition facts (calories, protein, carbs, fat, etc.)
+- Serving size controls to adjust for your portion
+
+### What Happens When a Barcode Is NOT Found
+
+Some products aren't in any database. When this happens:
+
+1. You'll see a message: "Product not found in database"
+2. A **search box** appears so you can type the product name
+3. Type the generic name (e.g., "coffee whitener") and tap **Search**
+4. The app searches by name and shows the best nutritional match
+
 ### Supported Barcodes
 
 - EAN-13 (standard groceries)
@@ -151,9 +179,13 @@ The app has three main tabs at the bottom:
 - UPC-E (compact UPC)
 - QR Codes
 
+The app automatically handles barcode padding and format differences
+(e.g., converting between UPC-A and EAN-13 formats).
+
 ### Taking Photos
 
 For products without barcodes:
+
 1. Tap the **shutter button** (white circle)
 2. Frame the nutrition label
 3. Take the photo
@@ -174,16 +206,33 @@ Tap the **gallery icon** to select an image from your photo library.
 After scanning or selecting a product, you'll see:
 
 ### Product Information
+
 - Product name and brand
 - Product image (if available)
 - When you scanned it
 
 ### Nutrition Facts
+
 - **Calories** - Highlighted prominently
 - **Protein** - Grams per serving
 - **Carbs** - Grams per serving
 - **Fat** - Grams per serving
 - Additional: Fiber, Sugar, Sodium
+
+### Serving Size Controls
+
+For barcode-scanned items, you can adjust the serving size to match what
+you actually consumed:
+
+1. **Quick-select chips**: Choose from common sizes
+   - **tsp** (5g), **tbsp** (15g), **cup** (240g), **100g**, **Custom**
+2. **Custom input**: When "Custom" is selected, type the weight in grams
+3. **Quantity stepper**: Use **+** / **−** to adjust how many servings
+
+The nutrition values update automatically as you change the serving size.
+
+> **Note:** Nutrition data is normalized to per-100g values behind the scenes
+> to ensure accuracy regardless of what the original source reported.
 
 ### AI Suggestions
 
@@ -218,6 +267,7 @@ Based on the scanned item and your dietary preferences, you'll get 4 personalize
 ### Item Details
 
 Tap any item to see:
+
 - Full nutrition breakdown
 - AI suggestions
 - When you scanned it
@@ -233,6 +283,7 @@ Pull down on the list to refresh and sync latest data.
 ### Daily Progress
 
 View your nutritional intake for today:
+
 - **Calorie bar** - Progress toward your goal
 - **Macros breakdown** - Protein, carbs, fat
 
@@ -245,6 +296,7 @@ View your nutritional intake for today:
 ### Dietary Preferences
 
 View your saved preferences:
+
 - Allergies with severity badges
 - Diet type
 - Health goals
@@ -299,6 +351,15 @@ View your saved preferences:
 4. Try different angles
 5. Make sure barcode isn't damaged
 
+### Product Not Found After Scanning
+
+If the barcode scans but the product isn't recognized:
+
+1. Use the **manual search** that appears automatically
+2. Type a generic name (e.g., "iced tea" instead of the brand name)
+3. The app will find the closest nutritional match
+4. You can then adjust the serving size for accuracy
+
 ### App Won't Load
 
 1. Check internet connection
@@ -351,6 +412,7 @@ View your saved preferences:
 ## Contact & Support
 
 For issues or feedback:
+
 - Report bugs through the app
 - Check documentation for updates
 - Contact support for account issues

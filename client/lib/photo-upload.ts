@@ -25,7 +25,7 @@ export interface NutritionData {
   sugar: number;
   sodium: number;
   servingSize: string;
-  source: "calorieninjas" | "usda" | "cache";
+  source: "api-ninjas" | "usda" | "cache";
 }
 
 export interface PhotoAnalysisResponse {

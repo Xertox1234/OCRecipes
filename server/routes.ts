@@ -43,6 +43,7 @@ import {
 import {
   batchNutritionLookup,
   lookupNutrition,
+  lookupBarcode,
 } from "./services/nutrition-lookup";
 import {
   calculateGoals,
@@ -470,6 +471,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } catch (error) {
         console.error("Nutrition lookup error:", error);
         res.status(500).json({ error: "Nutrition lookup failed" });
+      }
+    },
+  );
+
+  // Barcode nutrition lookup — fetches Open Food Facts product data and
+  // cross-validates per-100g values with USDA FoodData Central.
+  // This catches bad OFF data (e.g. sugar showing 50 kcal/100g when USDA says 375).
+  app.get(
+    "/api/nutrition/barcode/:code",
+    requireAuth,
+    nutritionLookupRateLimit,
+    async (req: Request, res: Response) => {
+      const code = req.params.code?.trim();
+      if (!code || code.length > 50 || !/^\d+$/.test(code)) {
+        res.status(400).json({ error: "Invalid barcode" });
+        return;
+      }
+
+      try {
+        const result = await lookupBarcode(code);
+        if (!result) {
+          res
+            .status(404)
+            .json({ error: "Product not found", notInDatabase: true });
+          return;
+        }
+        res.json(result);
+      } catch (error) {
+        console.error("Barcode lookup error:", error);
+        res.status(500).json({ error: "Barcode lookup failed" });
       }
     },
   );

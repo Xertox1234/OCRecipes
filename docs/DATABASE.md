@@ -18,19 +18,23 @@ CREATE TABLE users (
   display_name TEXT,
   daily_calorie_goal INTEGER DEFAULT 2000,
   onboarding_completed BOOLEAN DEFAULT FALSE,
+  subscription_tier TEXT DEFAULT 'free',
+  subscription_expires_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 ```
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | VARCHAR | PK, auto-generated UUID | Unique identifier |
-| username | TEXT | NOT NULL, UNIQUE | Login username |
-| password | TEXT | NOT NULL | Bcrypt-hashed password |
-| display_name | TEXT | nullable | User's display name |
-| daily_calorie_goal | INTEGER | DEFAULT 2000 | Target daily calories |
-| onboarding_completed | BOOLEAN | DEFAULT FALSE | Onboarding status |
-| created_at | TIMESTAMP | NOT NULL, auto | Account creation time |
+| Column                  | Type      | Constraints             | Description                       |
+| ----------------------- | --------- | ----------------------- | --------------------------------- |
+| id                      | VARCHAR   | PK, auto-generated UUID | Unique identifier                 |
+| username                | TEXT      | NOT NULL, UNIQUE        | Login username                    |
+| password                | TEXT      | NOT NULL                | Bcrypt-hashed password            |
+| display_name            | TEXT      | nullable                | User's display name               |
+| daily_calorie_goal      | INTEGER   | DEFAULT 2000            | Target daily calories             |
+| onboarding_completed    | BOOLEAN   | DEFAULT FALSE           | Onboarding status                 |
+| subscription_tier       | TEXT      | DEFAULT 'free'          | `"free"` or `"premium"`           |
+| subscription_expires_at | TIMESTAMP | nullable                | Premium expiry (null = no expiry) |
+| created_at              | TIMESTAMP | NOT NULL, auto          | Account creation time             |
 
 ### User Profiles Table
 
@@ -55,22 +59,22 @@ CREATE TABLE user_profiles (
 );
 ```
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | SERIAL | PK | Auto-incrementing ID |
-| user_id | VARCHAR | FK → users, UNIQUE | User reference |
-| allergies | JSONB | DEFAULT '[]' | Array of {name, severity} objects |
-| health_conditions | JSONB | DEFAULT '[]' | Array of condition strings |
-| diet_type | TEXT | nullable | Diet preference |
-| food_dislikes | JSONB | DEFAULT '[]' | Foods to avoid |
-| primary_goal | TEXT | nullable | Health/fitness goal |
-| activity_level | TEXT | nullable | Exercise frequency |
-| household_size | INTEGER | DEFAULT 1 | Number in household |
-| cuisine_preferences | JSONB | DEFAULT '[]' | Preferred cuisines |
-| cooking_skill_level | TEXT | nullable | Cooking experience |
-| cooking_time_available | TEXT | nullable | Time for cooking |
-| created_at | TIMESTAMP | NOT NULL | Profile creation time |
-| updated_at | TIMESTAMP | NOT NULL | Last update time |
+| Column                 | Type      | Constraints        | Description                       |
+| ---------------------- | --------- | ------------------ | --------------------------------- |
+| id                     | SERIAL    | PK                 | Auto-incrementing ID              |
+| user_id                | VARCHAR   | FK → users, UNIQUE | User reference                    |
+| allergies              | JSONB     | DEFAULT '[]'       | Array of {name, severity} objects |
+| health_conditions      | JSONB     | DEFAULT '[]'       | Array of condition strings        |
+| diet_type              | TEXT      | nullable           | Diet preference                   |
+| food_dislikes          | JSONB     | DEFAULT '[]'       | Foods to avoid                    |
+| primary_goal           | TEXT      | nullable           | Health/fitness goal               |
+| activity_level         | TEXT      | nullable           | Exercise frequency                |
+| household_size         | INTEGER   | DEFAULT 1          | Number in household               |
+| cuisine_preferences    | JSONB     | DEFAULT '[]'       | Preferred cuisines                |
+| cooking_skill_level    | TEXT      | nullable           | Cooking experience                |
+| cooking_time_available | TEXT      | nullable           | Time for cooking                  |
+| created_at             | TIMESTAMP | NOT NULL           | Profile creation time             |
+| updated_at             | TIMESTAMP | NOT NULL           | Last update time                  |
 
 #### Allergy Schema
 
@@ -82,6 +86,7 @@ interface Allergy {
 ```
 
 Example:
+
 ```json
 [
   { "name": "peanuts", "severity": "severe" },
@@ -92,6 +97,7 @@ Example:
 #### Enum Values
 
 **diet_type**:
+
 - `omnivore`
 - `vegetarian`
 - `vegan`
@@ -101,12 +107,14 @@ Example:
 - `gluten_free`
 
 **primary_goal**:
+
 - `lose_weight`
 - `gain_muscle`
 - `maintain`
 - `eat_healthier`
 
 **activity_level**:
+
 - `sedentary`
 - `light`
 - `moderate`
@@ -114,11 +122,13 @@ Example:
 - `athlete`
 
 **cooking_skill_level**:
+
 - `beginner`
 - `intermediate`
 - `advanced`
 
 **cooking_time_available**:
+
 - `quick` (< 15 min)
 - `moderate` (15-30 min)
 - `extended` (30-60 min)
@@ -144,27 +154,37 @@ CREATE TABLE scanned_items (
   sugar DECIMAL(10, 2),
   sodium DECIMAL(10, 2),
   image_url TEXT,
+  source_type TEXT DEFAULT 'barcode',
+  photo_url TEXT,
+  ai_confidence DECIMAL(3, 2),
+  preparation_methods JSONB,
+  analysis_intent TEXT,
   scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 ```
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | SERIAL | PK | Auto-incrementing ID |
-| user_id | VARCHAR | FK → users | User who scanned |
-| barcode | TEXT | nullable | Product barcode (EAN/UPC) |
-| product_name | TEXT | NOT NULL | Product name |
-| brand_name | TEXT | nullable | Manufacturer/brand |
-| serving_size | TEXT | nullable | Serving description |
-| calories | DECIMAL(10,2) | nullable | Calories per serving |
-| protein | DECIMAL(10,2) | nullable | Protein in grams |
-| carbs | DECIMAL(10,2) | nullable | Carbohydrates in grams |
-| fat | DECIMAL(10,2) | nullable | Fat in grams |
-| fiber | DECIMAL(10,2) | nullable | Fiber in grams |
-| sugar | DECIMAL(10,2) | nullable | Sugar in grams |
-| sodium | DECIMAL(10,2) | nullable | Sodium in mg |
-| image_url | TEXT | nullable | Product image URL |
-| scanned_at | TIMESTAMP | NOT NULL | When item was scanned |
+| Column              | Type          | Constraints       | Description                                                   |
+| ------------------- | ------------- | ----------------- | ------------------------------------------------------------- |
+| id                  | SERIAL        | PK                | Auto-incrementing ID                                          |
+| user_id             | VARCHAR       | FK → users        | User who scanned                                              |
+| barcode             | TEXT          | nullable          | Product barcode (EAN/UPC)                                     |
+| product_name        | TEXT          | NOT NULL          | Product name                                                  |
+| brand_name          | TEXT          | nullable          | Manufacturer/brand                                            |
+| serving_size        | TEXT          | nullable          | Serving description                                           |
+| calories            | DECIMAL(10,2) | nullable          | Calories per serving                                          |
+| protein             | DECIMAL(10,2) | nullable          | Protein in grams                                              |
+| carbs               | DECIMAL(10,2) | nullable          | Carbohydrates in grams                                        |
+| fat                 | DECIMAL(10,2) | nullable          | Fat in grams                                                  |
+| fiber               | DECIMAL(10,2) | nullable          | Fiber in grams                                                |
+| sugar               | DECIMAL(10,2) | nullable          | Sugar in grams                                                |
+| sodium              | DECIMAL(10,2) | nullable          | Sodium in mg                                                  |
+| image_url           | TEXT          | nullable          | Product image URL (barcode source)                            |
+| source_type         | TEXT          | DEFAULT 'barcode' | `"barcode"` or `"photo"`                                      |
+| photo_url           | TEXT          | nullable          | User's uploaded photo URL (reserved for future use)           |
+| ai_confidence       | DECIMAL(3,2)  | nullable          | Vision AI confidence score 0.00–1.00                          |
+| preparation_methods | JSONB         | nullable          | Per-food prep methods: `[{ name, method }]`                   |
+| analysis_intent     | TEXT          | nullable          | Photo intent: `"log"`, `"calories"`, `"recipe"`, `"identify"` |
+| scanned_at          | TIMESTAMP     | NOT NULL          | When item was scanned                                         |
 
 ### Daily Logs Table
 
@@ -181,14 +201,38 @@ CREATE TABLE daily_logs (
 );
 ```
 
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | SERIAL | PK | Auto-incrementing ID |
-| user_id | VARCHAR | FK → users | User who logged |
-| scanned_item_id | INTEGER | FK → scanned_items | Reference to food |
-| servings | DECIMAL(5,2) | DEFAULT '1' | Number of servings |
-| meal_type | TEXT | nullable | Meal category |
-| logged_at | TIMESTAMP | NOT NULL | When food was logged |
+| Column          | Type         | Constraints        | Description          |
+| --------------- | ------------ | ------------------ | -------------------- |
+| id              | SERIAL       | PK                 | Auto-incrementing ID |
+| user_id         | VARCHAR      | FK → users         | User who logged      |
+| scanned_item_id | INTEGER      | FK → scanned_items | Reference to food    |
+| servings        | DECIMAL(5,2) | DEFAULT '1'        | Number of servings   |
+| meal_type       | TEXT         | nullable           | Meal category        |
+| logged_at       | TIMESTAMP    | NOT NULL           | When food was logged |
+
+### Recipe Generation Log Table
+
+Tracks daily AI recipe generation usage per user for premium limit enforcement.
+
+```sql
+CREATE TABLE recipe_generation_log (
+  id SERIAL PRIMARY KEY,
+  user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  recipe_id INTEGER REFERENCES community_recipes(id) ON DELETE SET NULL,
+  generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX recipe_gen_log_user_date_idx ON recipe_generation_log (user_id, generated_at);
+```
+
+| Column       | Type      | Constraints               | Description                   |
+| ------------ | --------- | ------------------------- | ----------------------------- |
+| id           | SERIAL    | PK                        | Auto-incrementing ID          |
+| user_id      | VARCHAR   | FK → users, NOT NULL      | User who generated the recipe |
+| recipe_id    | INTEGER   | FK → community_recipes    | Generated recipe (nullable)   |
+| generated_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | When generation occurred      |
+
+The compound index on `(user_id, generated_at)` supports the daily counting query used by `GET /api/recipes/generation-status`.
 
 ---
 
@@ -216,13 +260,16 @@ export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
 }));
 
 // ScannedItem → User (N:1), ScannedItem → DailyLogs (1:N)
-export const scannedItemsRelations = relations(scannedItems, ({ one, many }) => ({
-  user: one(users, {
-    fields: [scannedItems.userId],
-    references: [users.id],
+export const scannedItemsRelations = relations(
+  scannedItems,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [scannedItems.userId],
+      references: [users.id],
+    }),
+    dailyLogs: many(dailyLogs),
   }),
-  dailyLogs: many(dailyLogs),
-}));
+);
 
 // DailyLog → User (N:1), DailyLog → ScannedItem (N:1)
 export const dailyLogsRelations = relations(dailyLogs, ({ one }) => ({
@@ -240,6 +287,7 @@ export const dailyLogsRelations = relations(dailyLogs, ({ one }) => ({
 ### Cascade Deletes
 
 All foreign keys use `ON DELETE CASCADE`:
+
 - Deleting a user removes all their profiles, scanned items, and daily logs
 - Deleting a scanned item removes all related daily logs
 
@@ -356,8 +404,8 @@ const summary = await db
     and(
       eq(dailyLogs.userId, userId),
       gte(dailyLogs.loggedAt, startOfDay),
-      lt(dailyLogs.loggedAt, endOfDay)
-    )
+      lt(dailyLogs.loggedAt, endOfDay),
+    ),
   );
 ```
 
@@ -376,6 +424,7 @@ This uses Drizzle Kit to synchronize the schema with PostgreSQL.
 ### Configuration
 
 `drizzle.config.ts`:
+
 ```typescript
 export default {
   schema: "./shared/schema.ts",

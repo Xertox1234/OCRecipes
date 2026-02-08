@@ -28,6 +28,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { useSavedItemCount } from "@/hooks/useSavedItems";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { getApiUrl } from "@/lib/query-client";
@@ -440,6 +441,7 @@ const NutritionGoalsSection = React.memo(function NutritionGoalsSection({
   onSetup: () => void;
 }) {
   const { theme } = useTheme();
+  const canShowMacros = usePremiumFeature("macroGoals");
 
   return (
     <>
@@ -484,53 +486,80 @@ const NutritionGoalsSection = React.memo(function NutritionGoalsSection({
               />
             </View>
 
-            <View style={styles.macroGoalRow}>
-              <View style={styles.macroGoalInfo}>
-                <ThemedText type="body">Protein</ThemedText>
-                <ThemedText type="small" style={styles.goalValueText}>
-                  {todaySummary ? Math.round(todaySummary.totalProtein) : 0}g /{" "}
-                  {userGoals.dailyProteinGoal}g
-                </ThemedText>
-              </View>
-              <ProgressBar
-                value={todaySummary?.totalProtein || 0}
-                max={userGoals.dailyProteinGoal}
-                color={theme.proteinAccent}
-                accessibilityLabel="Protein goal progress"
-              />
-            </View>
+            {canShowMacros ? (
+              <>
+                <View style={styles.macroGoalRow}>
+                  <View style={styles.macroGoalInfo}>
+                    <ThemedText type="body">Protein</ThemedText>
+                    <ThemedText type="small" style={styles.goalValueText}>
+                      {todaySummary ? Math.round(todaySummary.totalProtein) : 0}
+                      g / {userGoals.dailyProteinGoal}g
+                    </ThemedText>
+                  </View>
+                  <ProgressBar
+                    value={todaySummary?.totalProtein || 0}
+                    max={userGoals.dailyProteinGoal}
+                    color={theme.proteinAccent}
+                    accessibilityLabel="Protein goal progress"
+                  />
+                </View>
 
-            <View style={styles.macroGoalRow}>
-              <View style={styles.macroGoalInfo}>
-                <ThemedText type="body">Carbs</ThemedText>
-                <ThemedText type="small" style={styles.goalValueText}>
-                  {todaySummary ? Math.round(todaySummary.totalCarbs) : 0}g /{" "}
-                  {userGoals.dailyCarbsGoal}g
-                </ThemedText>
-              </View>
-              <ProgressBar
-                value={todaySummary?.totalCarbs || 0}
-                max={userGoals.dailyCarbsGoal || 1}
-                color={theme.carbsAccent}
-                accessibilityLabel="Carbs goal progress"
-              />
-            </View>
+                <View style={styles.macroGoalRow}>
+                  <View style={styles.macroGoalInfo}>
+                    <ThemedText type="body">Carbs</ThemedText>
+                    <ThemedText type="small" style={styles.goalValueText}>
+                      {todaySummary ? Math.round(todaySummary.totalCarbs) : 0}g
+                      / {userGoals.dailyCarbsGoal}g
+                    </ThemedText>
+                  </View>
+                  <ProgressBar
+                    value={todaySummary?.totalCarbs || 0}
+                    max={userGoals.dailyCarbsGoal || 1}
+                    color={theme.carbsAccent}
+                    accessibilityLabel="Carbs goal progress"
+                  />
+                </View>
 
-            <View style={[styles.macroGoalRow, styles.macroGoalRowLast]}>
-              <View style={styles.macroGoalInfo}>
-                <ThemedText type="body">Fat</ThemedText>
-                <ThemedText type="small" style={styles.goalValueText}>
-                  {todaySummary ? Math.round(todaySummary.totalFat) : 0}g /{" "}
-                  {userGoals.dailyFatGoal}g
+                <View style={[styles.macroGoalRow, styles.macroGoalRowLast]}>
+                  <View style={styles.macroGoalInfo}>
+                    <ThemedText type="body">Fat</ThemedText>
+                    <ThemedText type="small" style={styles.goalValueText}>
+                      {todaySummary ? Math.round(todaySummary.totalFat) : 0}g /{" "}
+                      {userGoals.dailyFatGoal}g
+                    </ThemedText>
+                  </View>
+                  <ProgressBar
+                    value={todaySummary?.totalFat || 0}
+                    max={userGoals.dailyFatGoal || 1}
+                    color={theme.fatAccent}
+                    accessibilityLabel="Fat goal progress"
+                  />
+                </View>
+              </>
+            ) : (
+              <Pressable
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel="Detailed macro tracking requires Premium subscription"
+                accessibilityHint="Upgrade to premium to unlock macro goals"
+                onPress={() => {
+                  // TODO: Show upgrade modal
+                }}
+                style={[
+                  styles.macroGoalRow,
+                  styles.macroGoalRowLast,
+                  styles.premiumLockRow,
+                ]}
+              >
+                <Feather name="lock" size={16} color={theme.textSecondary} />
+                <ThemedText
+                  type="small"
+                  style={{ color: theme.textSecondary, flex: 1 }}
+                >
+                  Detailed macro tracking available with Premium
                 </ThemedText>
-              </View>
-              <ProgressBar
-                value={todaySummary?.totalFat || 0}
-                max={userGoals.dailyFatGoal || 1}
-                color={theme.fatAccent}
-                accessibilityLabel="Fat goal progress"
-              />
-            </View>
+              </Pressable>
+            )}
           </>
         ) : (
           <View style={styles.noGoalsContainer}>
@@ -1522,6 +1551,11 @@ const styles = StyleSheet.create({
   },
   macroGoalRowLast: {
     marginBottom: 0,
+  },
+  premiumLockRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
   },
   macroGoalInfo: {
     flexDirection: "row",

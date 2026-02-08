@@ -7,7 +7,7 @@ import type {
 const SPOONACULAR_BASE = "https://api.spoonacular.com";
 
 const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
-if (!SPOONACULAR_API_KEY) {
+if (!SPOONACULAR_API_KEY && process.env.NODE_ENV !== "test") {
   console.warn(
     "SPOONACULAR_API_KEY is not set. Catalog search will be disabled.",
   );

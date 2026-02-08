@@ -22,6 +22,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { apiRequest } from "@/lib/query-client";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -215,6 +216,7 @@ export default function GoalSetupScreen() {
   const navigation = useNavigation<GoalSetupScreenNavigationProp>();
   const queryClient = useQueryClient();
   const { updateUser } = useAuthContext();
+  const canSetMacros = usePremiumFeature("macroGoals");
 
   // Form state - these will be entered by the user
   const [age, setAge] = useState("");
@@ -506,20 +508,38 @@ export default function GoalSetupScreen() {
                   </ThemedText>
                 </View>
 
-                <View style={styles.goalItem}>
-                  <TextInput
-                    style={[
-                      styles.goalInput,
-                      {
-                        backgroundColor: theme.backgroundSecondary,
-                        color: theme.proteinAccent,
-                      },
-                    ]}
-                    value={manualProtein}
-                    onChangeText={setManualProtein}
-                    keyboardType="numeric"
-                    accessibilityLabel="Daily protein target"
-                  />
+                <View
+                  style={[styles.goalItem, !canSetMacros && { opacity: 0.4 }]}
+                >
+                  <View>
+                    <TextInput
+                      style={[
+                        styles.goalInput,
+                        {
+                          backgroundColor: theme.backgroundSecondary,
+                          color: theme.proteinAccent,
+                        },
+                      ]}
+                      value={manualProtein}
+                      onChangeText={setManualProtein}
+                      keyboardType="numeric"
+                      editable={canSetMacros}
+                      accessibilityLabel={
+                        canSetMacros
+                          ? "Daily protein target"
+                          : "Daily protein target (Premium required)"
+                      }
+                    />
+                    {!canSetMacros && (
+                      <View style={styles.goalLockIcon}>
+                        <Feather
+                          name="lock"
+                          size={12}
+                          color={theme.textSecondary}
+                        />
+                      </View>
+                    )}
+                  </View>
                   <ThemedText
                     type="small"
                     style={{ color: theme.textSecondary }}
@@ -528,20 +548,38 @@ export default function GoalSetupScreen() {
                   </ThemedText>
                 </View>
 
-                <View style={styles.goalItem}>
-                  <TextInput
-                    style={[
-                      styles.goalInput,
-                      {
-                        backgroundColor: theme.backgroundSecondary,
-                        color: theme.carbsAccent,
-                      },
-                    ]}
-                    value={manualCarbs}
-                    onChangeText={setManualCarbs}
-                    keyboardType="numeric"
-                    accessibilityLabel="Daily carbs target"
-                  />
+                <View
+                  style={[styles.goalItem, !canSetMacros && { opacity: 0.4 }]}
+                >
+                  <View>
+                    <TextInput
+                      style={[
+                        styles.goalInput,
+                        {
+                          backgroundColor: theme.backgroundSecondary,
+                          color: theme.carbsAccent,
+                        },
+                      ]}
+                      value={manualCarbs}
+                      onChangeText={setManualCarbs}
+                      keyboardType="numeric"
+                      editable={canSetMacros}
+                      accessibilityLabel={
+                        canSetMacros
+                          ? "Daily carbs target"
+                          : "Daily carbs target (Premium required)"
+                      }
+                    />
+                    {!canSetMacros && (
+                      <View style={styles.goalLockIcon}>
+                        <Feather
+                          name="lock"
+                          size={12}
+                          color={theme.textSecondary}
+                        />
+                      </View>
+                    )}
+                  </View>
                   <ThemedText
                     type="small"
                     style={{ color: theme.textSecondary }}
@@ -550,20 +588,38 @@ export default function GoalSetupScreen() {
                   </ThemedText>
                 </View>
 
-                <View style={styles.goalItem}>
-                  <TextInput
-                    style={[
-                      styles.goalInput,
-                      {
-                        backgroundColor: theme.backgroundSecondary,
-                        color: theme.fatAccent,
-                      },
-                    ]}
-                    value={manualFat}
-                    onChangeText={setManualFat}
-                    keyboardType="numeric"
-                    accessibilityLabel="Daily fat target"
-                  />
+                <View
+                  style={[styles.goalItem, !canSetMacros && { opacity: 0.4 }]}
+                >
+                  <View>
+                    <TextInput
+                      style={[
+                        styles.goalInput,
+                        {
+                          backgroundColor: theme.backgroundSecondary,
+                          color: theme.fatAccent,
+                        },
+                      ]}
+                      value={manualFat}
+                      onChangeText={setManualFat}
+                      keyboardType="numeric"
+                      editable={canSetMacros}
+                      accessibilityLabel={
+                        canSetMacros
+                          ? "Daily fat target"
+                          : "Daily fat target (Premium required)"
+                      }
+                    />
+                    {!canSetMacros && (
+                      <View style={styles.goalLockIcon}>
+                        <Feather
+                          name="lock"
+                          size={12}
+                          color={theme.textSecondary}
+                        />
+                      </View>
+                    )}
+                  </View>
                   <ThemedText
                     type="small"
                     style={{ color: theme.textSecondary }}
@@ -699,6 +755,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "center",
     marginBottom: Spacing.xs,
+  },
+  goalLockIcon: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
   },
   saveButton: {
     marginTop: Spacing.md,

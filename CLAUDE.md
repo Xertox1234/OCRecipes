@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-NutriScan is a mobile nutrition tracking app built with Expo/React Native (frontend) and Express.js (backend). Users scan food barcodes/labels with their camera, track nutritional intake, and receive AI-powered nutrition advice via chat.
+NutriScan is a mobile nutrition tracking app built with Expo/React Native (frontend) and Express.js (backend). Users scan food barcodes/labels with their camera, track nutritional intake, plan meals with recipes, and receive AI-powered nutrition advice via chat.
 
 ## Development Commands
 
@@ -61,24 +61,26 @@ npm run expo:static:build  # Build static Expo bundle
 
 - **Express.js 5** with TypeScript
 - **Drizzle ORM** with PostgreSQL
-- **Session-based auth** with bcrypt
+- **JWT auth** with bcrypt (Bearer tokens via Authorization header)
 
 ### Navigation Flow
 
-1. **Login** → 2. **Onboarding** (6 screens) → 3. **Main App** (3 tabs: History, Scan, Profile)
+1. **Login** → 2. **Onboarding** (6 screens) → 3. **Main App** (4 tabs: History, Plan, Scan, Profile)
 
-Modal screens: NutritionDetailScreen, ItemDetailScreen
+Modal screens: NutritionDetailScreen, PhotoIntentScreen, PhotoAnalysisScreen, GoalSetupScreen, EditDietaryProfileScreen
 
 ### Database Schema (`shared/schema.ts`)
 
-Key tables: `users`, `userProfiles` (dietary preferences), `scannedItems`, `dailyLogs`, `conversations`/`messages`
+Key tables: `users`, `userProfiles`, `scannedItems`, `dailyLogs`, `nutritionCache`, `suggestionCache`, `instructionCache`, `savedItems`, `communityRecipes`, `recipeGenerationLog`, `mealPlanRecipes`, `recipeIngredients`, `mealPlanItems`
 
-### AI Integration (`server/`)
+### AI Integration & Services (`server/services/`)
 
-- `chat/` - OpenAI nutrition assistant with user dietary context
-- `audio/` - Speech-to-text, text-to-speech
-- `image/` - Image generation
-- `batch/` - Rate-limited LLM batch processing
+- `nutrition-lookup.ts` - Multi-source nutrition pipeline (CNF → USDA → API Ninjas)
+- `photo-analysis.ts` - OpenAI Vision food photo analysis (4 intents: log/calories/recipe/identify, confidence scoring, follow-up refinement when confidence < 0.7)
+- `goal-calculator.ts` - Calculates nutritional goals from user profiles
+- `recipe-generation.ts` - AI recipe generation (premium)
+- `recipe-catalog.ts` - Spoonacular recipe catalog integration
+- `recipe-import.ts` - Import recipes from URLs
 
 ## Key Patterns
 
@@ -92,7 +94,7 @@ Key tables: `users`, `userProfiles` (dietary preferences), `scannedItems`, `dail
   - Client state patterns (in-memory caching, Authorization headers, 401 handling)
   - Performance patterns (storage optimization, batching)
   - React Native patterns (safe areas, haptics, platform-specific code)
-  - Camera patterns (expo-camera, scan debouncing, permissions)
+  - Camera patterns (react-native-vision-camera, scan debouncing, permissions)
   - Documentation patterns (todos, design decisions)
 
 **Before implementing:** Check if a pattern exists. **After implementing:** Consider if your solution should become a pattern.
@@ -141,9 +143,10 @@ If tests fail or linting errors occur, the commit is blocked.
 ## Environment Variables
 
 - `DATABASE_URL` - PostgreSQL connection
-- `SESSION_SECRET` - Express session key
+- `JWT_SECRET` - JWT signing secret
 - `AI_INTEGRATIONS_OPENAI_API_KEY` - OpenAI API
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` - Custom OpenAI endpoint
+- `SPOONACULAR_API_KEY` - Spoonacular recipe catalog API
 - `EXPO_PUBLIC_DOMAIN` - Public API domain for mobile client
 
 ## iOS Simulator Setup
