@@ -1,17 +1,1 @@
-{
-  "review_id": "entire_ui_20260201_comprehensive",
-  "target": "client/",
-  "focus_areas": ["visual", "usability", "code", "performance"],
-  "context": "Camera-based nutrition tracking app with barcode scanning",
-  "platform": "mobile",
-  "status": "complete",
-  "started_at": "2026-02-01T12:00:00Z",
-  "completed_at": "2026-02-01T12:30:00Z",
-  "issues_found": 18,
-  "severity_counts": {
-    "critical": 2,
-    "major": 5,
-    "minor": 7,
-    "suggestion": 4
-  }
-}
+{}

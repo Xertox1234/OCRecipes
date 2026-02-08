@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -8,6 +8,7 @@ import {
   Image,
   ActivityIndicator,
   ScrollView,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -54,6 +55,21 @@ const DASHBOARD_ITEM_LIMIT = 5;
 const ITEM_HEIGHT = Spacing.lg * 2 + 56; // 88px
 const SEPARATOR_HEIGHT = Spacing.md; // 12px
 
+/** Cap staggered animation index to avoid slow entrance on long lists */
+const MAX_ANIMATED_INDEX = 10;
+
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+  if (diffHours < 1) return "Just now";
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffHours < 48) return "Yesterday";
+  return date.toLocaleDateString();
+}
+
 const HistoryItem = React.memo(function HistoryItem({
   item,
   index,
@@ -84,26 +100,15 @@ const HistoryItem = React.memo(function HistoryItem({
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-
-    if (diffHours < 1) return "Just now";
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffHours < 48) return "Yesterday";
-    return date.toLocaleDateString();
-  };
-
   const calorieText = item.calories
     ? `${Math.round(parseFloat(item.calories))} calories`
     : "calories unknown";
 
   // Skip entrance animation when reduced motion is preferred
+  // Cap delay index so items past page 1 appear promptly
   const enteringAnimation = reducedMotion
     ? undefined
-    : FadeInDown.delay(index * 50).duration(300);
+    : FadeInDown.delay(Math.min(index, MAX_ANIMATED_INDEX) * 50).duration(300);
 
   return (
     <Animated.View entering={enteringAnimation}>
@@ -325,7 +330,11 @@ const DashboardHeader = React.memo(function DashboardHeader({
               TODAY&apos;S CALORIES
             </ThemedText>
             <View style={styles.statValueRow}>
-              <ThemedText type="h2" style={{ color: theme.buttonText }}>
+              <ThemedText
+                type="h2"
+                style={{ color: theme.buttonText }}
+                maxFontSizeMultiplier={1.3}
+              >
                 {currentCalories.toLocaleString()}
               </ThemedText>
               <ThemedText
@@ -357,7 +366,11 @@ const DashboardHeader = React.memo(function DashboardHeader({
             >
               ITEMS SCANNED
             </ThemedText>
-            <ThemedText type="h2" style={{ color: theme.buttonText }}>
+            <ThemedText
+              type="h2"
+              style={{ color: theme.buttonText }}
+              maxFontSizeMultiplier={1.3}
+            >
               {itemCount}
             </ThemedText>
           </View>
@@ -371,9 +384,12 @@ const DashboardHeader = React.memo(function DashboardHeader({
         }
       >
         <Pressable
-          style={[
+          style={({ pressed }) => [
             styles.scanCTA,
-            { backgroundColor: theme.backgroundSecondary },
+            {
+              backgroundColor: theme.backgroundSecondary,
+              opacity: pressed ? 0.8 : 1,
+            },
           ]}
           onPress={onScanPress}
           accessibilityRole="button"
@@ -644,6 +660,24 @@ export default function HistoryScreen() {
   const calorieProgress = Math.min((currentCalories / calorieGoal) * 100, 100);
   const userName = user?.displayName || user?.username || "there";
   const itemCount = todaySummary?.itemCount || 0;
+
+  // Announce calorie summary for screen readers once on dashboard load
+  const hasAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!showAll && !isLoading && todaySummary && !hasAnnouncedRef.current) {
+      hasAnnouncedRef.current = true;
+      AccessibilityInfo.announceForAccessibility(
+        `Today: ${currentCalories} of ${calorieGoal} calories, ${itemCount} items scanned`,
+      );
+    }
+  }, [
+    showAll,
+    isLoading,
+    todaySummary,
+    currentCalories,
+    calorieGoal,
+    itemCount,
+  ]);
 
   // Render loading state for dashboard
   if (!showAll && isLoading) {

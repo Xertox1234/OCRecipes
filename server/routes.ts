@@ -53,6 +53,14 @@ import {
   generateFullRecipe,
   normalizeProductName,
 } from "./services/recipe-generation";
+import {
+  searchCatalogRecipes,
+  getCatalogRecipeDetail,
+  CatalogQuotaError,
+} from "./services/recipe-catalog";
+import { importRecipeFromUrl } from "./services/recipe-import";
+
+import { isValidCalendarDate } from "./utils/date-validation";
 
 /**
  * Type guard to validate if a string is a valid subscription tier.
@@ -61,6 +69,7 @@ import {
 function isValidSubscriptionTier(tier: string): tier is SubscriptionTier {
   return (subscriptionTiers as readonly string[]).includes(tier);
 }
+export { isValidCalendarDate };
 
 /** Extract IP address for rate limiting fallback when user is not authenticated */
 function ipKeyGenerator(req: Request): string {
@@ -1924,20 +1933,6 @@ Format as plain text with clear sections.`;
     scannedItemId: z.number().int().positive().optional().nullable(),
     plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
-    displayOrder: z.number().int().min(0).optional(),
-    servings: z
-      .union([z.string(), z.number()])
-      .optional()
-      .transform((v) => v?.toString()),
-  });
-
-  const updateMealPlanItemSchema = z.object({
-    plannedDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional(),
-    mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
-    displayOrder: z.number().int().min(0).optional(),
     servings: z
       .union([z.string(), z.number()])
       .optional()
@@ -2023,6 +2018,7 @@ Format as plain text with clear sections.`;
   app.put(
     "/api/meal-plan/recipes/:id",
     requireAuth,
+    mealPlanRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
         const id = parseInt(req.params.id as string, 10);
@@ -2066,6 +2062,7 @@ Format as plain text with clear sections.`;
   app.delete(
     "/api/meal-plan/recipes/:id",
     requireAuth,
+    mealPlanRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
         const id = parseInt(req.params.id as string, 10);
@@ -2105,6 +2102,33 @@ Format as plain text with clear sections.`;
         ) {
           res.status(400).json({
             error: "start and end query parameters required (YYYY-MM-DD)",
+          });
+          return;
+        }
+
+        // Validate that the strings represent real calendar dates
+        if (!isValidCalendarDate(start) || !isValidCalendarDate(end)) {
+          res.status(400).json({
+            error: "Invalid calendar date",
+          });
+          return;
+        }
+
+        // Validate start <= end
+        if (start > end) {
+          res.status(400).json({
+            error: "start must be on or before end",
+          });
+          return;
+        }
+
+        // Validate max range of 90 days
+        const startMs = new Date(start + "T00:00:00Z").getTime();
+        const endMs = new Date(end + "T00:00:00Z").getTime();
+        const diffDays = (endMs - startMs) / (1000 * 60 * 60 * 24);
+        if (diffDays > 90) {
+          res.status(400).json({
+            error: "Date range must not exceed 90 days",
           });
           return;
         }
@@ -2171,46 +2195,6 @@ Format as plain text with clear sections.`;
     },
   );
 
-  // PUT /api/meal-plan/items/:id - Update a meal plan item
-  app.put(
-    "/api/meal-plan/items/:id",
-    requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
-      try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
-          res.status(400).json({ error: "Invalid item ID" });
-          return;
-        }
-
-        const parsed = updateMealPlanItemSchema.safeParse(req.body);
-        if (!parsed.success) {
-          res.status(400).json({ error: formatZodError(parsed.error) });
-          return;
-        }
-
-        const item = await storage.updateMealPlanItem(
-          id,
-          req.userId!,
-          parsed.data,
-        );
-        if (!item) {
-          res.status(404).json({ error: "Item not found" });
-          return;
-        }
-
-        res.json(item);
-      } catch (error) {
-        if (error instanceof ZodError) {
-          res.status(400).json({ error: formatZodError(error) });
-          return;
-        }
-        console.error("Update meal plan item error:", error);
-        res.status(500).json({ error: "Failed to update item" });
-      }
-    },
-  );
-
   // DELETE /api/meal-plan/items/:id - Remove item from meal plan
   app.delete(
     "/api/meal-plan/items/:id",
@@ -2233,6 +2217,214 @@ Format as plain text with clear sections.`;
       } catch (error) {
         console.error("Remove meal plan item error:", error);
         res.status(500).json({ error: "Failed to remove item" });
+      }
+    },
+  );
+
+  // ============================================================================
+  // RECIPE CATALOG & URL IMPORT ROUTES
+  // ============================================================================
+
+  const urlImportRateLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    message: { error: "Too many import requests. Please wait." },
+    keyGenerator: (req) => req.userId || ipKeyGenerator(req),
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const catalogSearchSchema = z.object({
+    query: z.string().min(1).max(200),
+    cuisine: z.string().max(100).optional(),
+    diet: z.string().max(100).optional(),
+    type: z.string().max(100).optional(),
+    maxReadyTime: z.coerce.number().int().min(1).max(1440).optional(),
+    offset: z.coerce.number().int().min(0).optional(),
+    number: z.coerce.number().int().min(1).max(50).optional(),
+  });
+
+  const importUrlSchema = z.object({
+    url: z.string().url().max(2000),
+  });
+
+  // GET /api/meal-plan/catalog/search — Spoonacular search
+  app.get(
+    "/api/meal-plan/catalog/search",
+    requireAuth,
+    mealPlanRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const parsed = catalogSearchSchema.safeParse(req.query);
+        if (!parsed.success) {
+          res.status(400).json({ error: formatZodError(parsed.error) });
+          return;
+        }
+
+        const results = await searchCatalogRecipes(parsed.data);
+        res.json(results);
+      } catch (error) {
+        if (error instanceof CatalogQuotaError) {
+          res
+            .status(402)
+            .json({ error: "CATALOG_QUOTA_EXCEEDED", message: error.message });
+          return;
+        }
+        console.error("Catalog search error:", error);
+        res.status(500).json({ error: "Failed to search recipes" });
+      }
+    },
+  );
+
+  // GET /api/meal-plan/catalog/:id — Spoonacular recipe detail (preview)
+  app.get(
+    "/api/meal-plan/catalog/:id",
+    requireAuth,
+    mealPlanRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id) || id <= 0) {
+          res.status(400).json({ error: "Invalid catalog ID" });
+          return;
+        }
+
+        const detail = await getCatalogRecipeDetail(id);
+        if (!detail) {
+          res.status(404).json({ error: "Recipe not found in catalog" });
+          return;
+        }
+
+        res.json(detail);
+      } catch (error) {
+        if (error instanceof CatalogQuotaError) {
+          res
+            .status(402)
+            .json({ error: "CATALOG_QUOTA_EXCEEDED", message: error.message });
+          return;
+        }
+        console.error("Catalog detail error:", error);
+        res.status(500).json({ error: "Failed to fetch recipe detail" });
+      }
+    },
+  );
+
+  // POST /api/meal-plan/catalog/:id/save — Save catalog recipe to DB
+  app.post(
+    "/api/meal-plan/catalog/:id/save",
+    requireAuth,
+    mealPlanRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id) || id <= 0) {
+          res.status(400).json({ error: "Invalid catalog ID" });
+          return;
+        }
+
+        // Dedup: check if already saved
+        const existing = await storage.findMealPlanRecipeByExternalId(
+          req.userId!,
+          String(id),
+        );
+        if (existing) {
+          res.json(existing);
+          return;
+        }
+
+        // Fetch from Spoonacular
+        const detail = await getCatalogRecipeDetail(id);
+        if (!detail) {
+          res.status(404).json({ error: "Recipe not found in catalog" });
+          return;
+        }
+
+        // Set the userId and save
+        detail.recipe.userId = req.userId!;
+        const saved = await storage.createMealPlanRecipe(
+          detail.recipe,
+          detail.ingredients,
+        );
+
+        res.status(201).json(saved);
+      } catch (error) {
+        if (error instanceof CatalogQuotaError) {
+          res
+            .status(402)
+            .json({ error: "CATALOG_QUOTA_EXCEEDED", message: error.message });
+          return;
+        }
+        console.error("Catalog save error:", error);
+        res.status(500).json({ error: "Failed to save catalog recipe" });
+      }
+    },
+  );
+
+  // POST /api/meal-plan/recipes/import-url — Import recipe from URL
+  app.post(
+    "/api/meal-plan/recipes/import-url",
+    requireAuth,
+    urlImportRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const parsed = importUrlSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: formatZodError(parsed.error) });
+          return;
+        }
+
+        const result = await importRecipeFromUrl(parsed.data.url);
+
+        if (!result.success) {
+          const messages: Record<string, string> = {
+            FETCH_FAILED: "Could not fetch the URL",
+            NO_RECIPE_DATA: "No recipe data found on this page",
+            PARSE_ERROR: "Could not parse recipe data from this page",
+            TIMEOUT: "The request timed out while fetching the URL",
+            RESPONSE_TOO_LARGE: "The page is too large to import (max 5 MB)",
+          };
+          res.status(422).json({
+            error: result.error,
+            message: messages[result.error] || "Import failed",
+          });
+          return;
+        }
+
+        // Save to DB
+        const { data } = result;
+        const recipe = await storage.createMealPlanRecipe(
+          {
+            userId: req.userId!,
+            title: data.title,
+            description: data.description,
+            sourceType: "url_import",
+            sourceUrl: data.sourceUrl,
+            cuisine: data.cuisine,
+            servings: data.servings || 2,
+            prepTimeMinutes: data.prepTimeMinutes,
+            cookTimeMinutes: data.cookTimeMinutes,
+            imageUrl: data.imageUrl,
+            instructions: data.instructions,
+            dietTags: data.dietTags,
+            caloriesPerServing: data.caloriesPerServing,
+            proteinPerServing: data.proteinPerServing,
+            carbsPerServing: data.carbsPerServing,
+            fatPerServing: data.fatPerServing,
+          },
+          data.ingredients.map((ing, idx) => ({
+            recipeId: 0,
+            name: ing.name,
+            quantity: ing.quantity,
+            unit: ing.unit,
+            category: "other",
+            displayOrder: idx,
+          })),
+        );
+
+        res.status(201).json(recipe);
+      } catch (error) {
+        console.error("URL import error:", error);
+        res.status(500).json({ error: "Failed to import recipe" });
       }
     },
   );

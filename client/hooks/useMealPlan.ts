@@ -1,11 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
-import type { MealPlanItem, MealPlanRecipe, ScannedItem } from "@shared/schema";
+import type { MealPlanItem } from "@shared/schema";
+import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
-type MealPlanItemWithRelations = MealPlanItem & {
-  recipe: MealPlanRecipe | null;
-  scannedItem: ScannedItem | null;
-};
+/** Invalidate only meal-plan item queries, not recipes/catalog queries.
+ *  Item queries use key ["/api/meal-plan", startDate, endDate] while recipe
+ *  queries use ["/api/meal-plan/recipes", ...] so an exact match on the first
+ *  element is sufficient to distinguish them. */
+export function invalidateMealPlanItems(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  queryClient.invalidateQueries({
+    predicate: (query) => {
+      const key = query.queryKey;
+      return Array.isArray(key) && key[0] === "/api/meal-plan";
+    },
+  });
+}
 
 export function useMealPlanItems(startDate: string, endDate: string) {
   return useQuery<MealPlanItemWithRelations[]>({
@@ -31,7 +42,6 @@ export function useAddMealPlanItem() {
       scannedItemId?: number | null;
       plannedDate: string;
       mealType: string;
-      displayOrder?: number;
       servings?: string | number;
     }) => {
       const res = await apiRequest("POST", "/api/meal-plan/items", item);
@@ -42,38 +52,7 @@ export function useAddMealPlanItem() {
       return res.json() as Promise<MealPlanItem>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
-    },
-  });
-}
-
-export function useUpdateMealPlanItem() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      id,
-      ...updates
-    }: {
-      id: number;
-      plannedDate?: string;
-      mealType?: string;
-      displayOrder?: number;
-      servings?: string | number;
-    }) => {
-      const res = await apiRequest(
-        "PUT",
-        `/api/meal-plan/items/${id}`,
-        updates,
-      );
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
-      return res.json() as Promise<MealPlanItem>;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
+      invalidateMealPlanItems(queryClient);
     },
   });
 }
@@ -90,7 +69,7 @@ export function useRemoveMealPlanItem() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
+      invalidateMealPlanItems(queryClient);
     },
   });
 }

@@ -109,6 +109,7 @@ export default function MainTabNavigator() {
             </View>
           ),
           tabBarLabel: () => null,
+          tabBarAccessibilityLabel: "Scan food barcode or nutrition label",
         }}
       />
       <Tab.Screen

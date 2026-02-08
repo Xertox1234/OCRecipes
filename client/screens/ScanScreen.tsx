@@ -268,10 +268,7 @@ export default function ScanScreen() {
               }}
               accessibilityLabel="Open device settings to enable camera"
               accessibilityRole="button"
-              style={[
-                styles.permissionButton,
-                { backgroundColor: theme.success },
-              ]}
+              style={[styles.permissionButton, { backgroundColor: theme.link }]}
             >
               <ThemedText type="body" style={styles.permissionButtonText}>
                 Open Settings
@@ -290,10 +287,7 @@ export default function ScanScreen() {
             onPress={requestPermission}
             accessibilityLabel="Enable camera access"
             accessibilityRole="button"
-            style={[
-              styles.permissionButton,
-              { backgroundColor: theme.success },
-            ]}
+            style={[styles.permissionButton, { backgroundColor: theme.link }]}
           >
             <ThemedText type="body" style={styles.permissionButtonText}>
               Enable Camera
@@ -390,7 +384,11 @@ export default function ScanScreen() {
             ]}
           />
 
-          <ThemedText type="body" style={styles.reticleText}>
+          <ThemedText
+            type="body"
+            style={styles.reticleText}
+            maxFontSizeMultiplier={1.3}
+          >
             {isScanning
               ? "Scanning..."
               : "Scan barcode or tap shutter for food photo"}

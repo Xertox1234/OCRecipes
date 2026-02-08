@@ -36,7 +36,7 @@ interface Badge {
 }
 
 interface CardProps {
-  /** Elevation level (1-3) affects background color */
+  /** Semantic elevation level (1-3). Controls background color tier, not Android shadow. */
   elevation?: number;
   /** Card title */
   title?: string;

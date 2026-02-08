@@ -3,7 +3,6 @@ import {
   StyleSheet,
   View,
   ScrollView,
-  ActivityIndicator,
   TextInput,
   Pressable,
 } from "react-native";
@@ -447,18 +446,15 @@ export default function GoalSetupScreen() {
           >
             <Button
               onPress={handleCalculate}
-              disabled={!isFormComplete || calculateMutation.isPending}
+              disabled={!isFormComplete}
+              loading={calculateMutation.isPending}
               accessibilityLabel="Calculate my goals"
               style={[
                 styles.calculateButton,
                 { backgroundColor: theme.success },
               ]}
             >
-              {calculateMutation.isPending ? (
-                <ActivityIndicator color={theme.buttonText} size="small" />
-              ) : (
-                "Calculate My Goals"
-              )}
+              Calculate My Goals
             </Button>
           </Animated.View>
         )}
@@ -579,15 +575,11 @@ export default function GoalSetupScreen() {
 
               <Button
                 onPress={handleSave}
-                disabled={saveMutation.isPending}
+                loading={saveMutation.isPending}
                 accessibilityLabel="Save my goals"
                 style={[styles.saveButton, { backgroundColor: theme.success }]}
               >
-                {saveMutation.isPending ? (
-                  <ActivityIndicator color={theme.buttonText} size="small" />
-                ) : (
-                  "Save My Goals"
-                )}
+                Save My Goals
               </Button>
             </Card>
           </Animated.View>

@@ -677,15 +677,11 @@ export default function EditDietaryProfileScreen() {
       >
         <Button
           onPress={handleSave}
-          disabled={isSaving}
+          loading={isSaving}
           accessibilityLabel={isSaving ? "Saving changes" : "Save Changes"}
           style={{ backgroundColor: theme.success }}
         >
-          {isSaving ? (
-            <ActivityIndicator color={theme.buttonText} size="small" />
-          ) : (
-            "Save Changes"
-          )}
+          Save Changes
         </Button>
       </View>
     </View>

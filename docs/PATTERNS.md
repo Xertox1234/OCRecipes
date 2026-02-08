@@ -5,10 +5,12 @@ This document captures established patterns for the NutriScan codebase. Follow t
 ## Table of Contents
 
 - [Security Patterns](#security-patterns)
+  - [SSRF Protection for Server-Side URL Fetching](#ssrf-protection-for-server-side-url-fetching)
 - [TypeScript Patterns](#typescript-patterns)
   - [Shared Client API Types](#shared-client-api-types-exception-pattern)
 - [API Patterns](#api-patterns)
 - [External API Patterns](#external-api-patterns)
+  - [External Resource Dedup on Save](#external-resource-dedup-on-save)
 - [Database Patterns](#database-patterns)
   - [Cache-First Pattern for Expensive Operations](#cache-first-pattern-for-expensive-operations)
   - [Fire-and-Forget for Non-Critical Background Operations](#fire-and-forget-for-non-critical-background-operations)
@@ -33,6 +35,9 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Skeleton Loader Pattern](#skeleton-loader-pattern)
   - [Dynamic Loading State Labels](#dynamic-loading-state-labels)
   - [Query Error Retry Pattern](#query-error-retry-pattern)
+  - [Bottom-Sheet Lifecycle State Machine](#bottom-sheet-lifecycle-state-machine)
+  - [Keyboard-to-Sheet Sequencing](#keyboard-to-sheet-sequencing)
+  - [Lazy Modal Mounting](#lazy-modal-mounting)
 - [Animation Patterns](#animation-patterns)
 - [Performance Patterns](#performance-patterns)
   - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
@@ -84,6 +89,33 @@ app.get(
   },
 );
 ```
+
+### SSRF Protection for Server-Side URL Fetching
+
+When the server fetches a user-provided URL (e.g., recipe import, link previews), use the hardened `safeFetch` implementation in `server/services/recipe-import.ts`. It provides:
+
+- **URL blocklist** (`isBlockedUrl`): Blocks localhost, private IPs (IPv4 and IPv6), link-local, hex-encoded IPs, and non-HTTP(S) protocols.
+- **DNS rebinding prevention** (`resolveAndValidateHost`): Resolves hostnames via `dns.promises.lookup` and validates the resolved IP against the same blocklist, preventing attackers from using DNS that initially resolves to a public IP then rebinds to a private one.
+- **Redirect validation**: Follows redirects manually (`redirect: "manual"`) up to `MAX_REDIRECTS`, re-validating each redirect target against the blocklist and DNS check.
+- **Response size limits**: Enforces `MAX_RESPONSE_BYTES` via both `Content-Length` header check and streaming byte count.
+- **Timeout**: Uses `AbortSignal.timeout()` to cap total fetch duration.
+
+```typescript
+// For URL validation without fetching:
+import { isBlockedUrl } from "./services/recipe-import";
+if (isBlockedUrl(url)) {
+  return { success: false, error: "FETCH_FAILED" };
+}
+
+// For full protected fetch, use importRecipeFromUrl which calls safeFetch internally.
+// See server/services/recipe-import.ts for the full implementation.
+```
+
+**When to use:** Any endpoint where the server fetches a URL supplied by the user (import flows, link previews, webhook callbacks).
+
+**Why:** Without validation, attackers can use the server as a proxy to reach internal services (localhost, AWS metadata at 169.254.169.254, private network hosts). Zod's `z.string().url()` only validates URL syntax, not the target.
+
+**Reference:** `server/services/recipe-import.ts`
 
 ### CORS with Pattern Matching
 
@@ -843,6 +875,51 @@ setIsPer100g(!hasServingData);
 ```
 
 **Why:** Prevents user confusion when displayed values don't match package labels.
+
+### External Resource Dedup on Save
+
+When saving resources from external catalogs or imports, check for an existing record by `externalId + userId` before fetching full details and inserting. This prevents duplicate DB entries and unnecessary API calls:
+
+```typescript
+// In route handler — check for existing record before expensive API call
+const existing = await storage.findMealPlanRecipeByExternalId(
+  req.userId!,
+  externalId,
+);
+if (existing) {
+  return res.json(existing); // Already saved, return existing
+}
+
+// Only now fetch full details from external API
+const detail = await getCatalogRecipeDetail(externalId);
+const saved = await storage.createMealPlanRecipe(detail);
+res.status(201).json(saved);
+```
+
+```typescript
+// In storage layer — composite lookup by userId + externalId
+async findMealPlanRecipeByExternalId(
+  userId: number,
+  externalId: string,
+): Promise<MealPlanRecipe | undefined> {
+  const [recipe] = await db
+    .select()
+    .from(mealPlanRecipes)
+    .where(
+      and(
+        eq(mealPlanRecipes.userId, userId),
+        eq(mealPlanRecipes.externalId, externalId),
+      ),
+    );
+  return recipe;
+}
+```
+
+**When to use:** Any feature that saves external resources into local DB (catalog imports, bookmark/save flows, third-party sync).
+
+**Why:** Users may tap "save" multiple times or revisit a catalog item. Without dedup, you get duplicate rows and wasted API quota. The userId scope ensures different users can independently save the same external resource.
+
+**Reference:** `POST /api/meal-plan/catalog/:id/save` in `server/routes.ts`, `server/storage.ts`
 
 ---
 
@@ -2985,6 +3062,94 @@ Include copy-paste ready code examples in todos for complex changes. This ensure
 - Consistent implementation
 - Faster development
 - Built-in code review
+
+### Bottom-Sheet Lifecycle State Machine
+
+Use a ref-based state machine to prevent race conditions when a screen has bottom sheets and async save operations. The ref (not state) is correct here since transitions are synchronous guards, not rendering triggers.
+
+**When to use:** Any screen with `BottomSheetModal` that also has save/submit actions.
+
+**When NOT to use:** Simple modals with no async operations.
+
+```typescript
+import { useRef } from "react";
+import type { SheetLifecycleState } from "@/components/recipe-builder/types";
+
+// "IDLE" = no sheet open, can open or save
+// "SHEET_OPEN" = sheet is presented, block save and other sheets
+// "SAVING" = mutation in flight, block everything
+const sheetState = useRef<SheetLifecycleState>("IDLE");
+
+const openSheet = (section: SheetSection) => {
+  if (sheetState.current !== "IDLE") return; // gate
+  sheetState.current = "SHEET_OPEN";
+  // ... present sheet
+};
+
+const handleSheetDismiss = () => {
+  sheetState.current = "IDLE";
+};
+
+const handleSave = async () => {
+  if (sheetState.current !== "IDLE") return; // gate
+  sheetState.current = "SAVING";
+  try {
+    await mutation.mutateAsync(payload);
+  } catch {
+    sheetState.current = "IDLE"; // reset on failure
+  }
+};
+```
+
+### Keyboard-to-Sheet Sequencing
+
+Dismiss the keyboard and wait for animations to settle before presenting a bottom sheet. Without this, the keyboard dismiss and sheet present animations collide on iOS, causing visual glitches or the sheet opening behind the keyboard.
+
+**When to use:** Any screen where a `TextInput` might have focus when the user taps to open a `BottomSheetModal`.
+
+**When NOT to use:** Sheets that don't coexist with text inputs.
+
+```typescript
+import { Keyboard, InteractionManager } from "react-native";
+
+const openSheet = (section: SheetSection) => {
+  Keyboard.dismiss();
+  InteractionManager.runAfterInteractions(() => {
+    sheetRefs[section].current?.present();
+  });
+};
+```
+
+### Lazy Modal Mounting
+
+Defer mounting heavy modal/sheet components until the user first opens them. Use a `Set` in state to track which modals have been requested, then conditionally render.
+
+**When to use:** Screens with 3+ `BottomSheetModal` or heavy modal components that most users won't all open.
+
+**When NOT to use:** Single-modal screens or modals that must be ready immediately.
+
+```typescript
+const [mountedSheets, setMountedSheets] = React.useState<Set<SheetSection>>(
+  new Set(),
+);
+
+const openSheet = (section: SheetSection) => {
+  setMountedSheets((prev) => {
+    if (prev.has(section)) return prev; // avoid unnecessary re-render
+    const next = new Set(prev);
+    next.add(section);
+    return next;
+  });
+  // ... then present
+};
+
+// In JSX — sheet only enters tree on first open, stays mounted after
+{mountedSheets.has("ingredients") && (
+  <BottomSheetModal ref={ingredientsRef} ...>
+    <IngredientsSheet />
+  </BottomSheetModal>
+)}
+```
 
 ---
 

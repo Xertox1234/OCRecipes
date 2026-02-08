@@ -14,15 +14,10 @@ export interface PremiumFeatures {
   macroGoals: boolean;
   recipeGeneration: boolean;
   dailyRecipeGenerations: number;
-  // Meal planning features
-  mealPlanning: boolean;
-  aiMealSuggestions: boolean;
-  extendedPlanRange: boolean;
-  pantryTracking: boolean;
-  mealConfirmation: boolean;
-  dailyAiSuggestions: number;
-  maxPlanDays: number;
 }
+
+/** Represents effectively unlimited scans (JSON-safe alternative to Infinity). */
+export const UNLIMITED_SCANS = 999999;
 
 export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
   free: {
@@ -34,16 +29,9 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     macroGoals: false,
     recipeGeneration: false,
     dailyRecipeGenerations: 0,
-    mealPlanning: true,
-    aiMealSuggestions: false,
-    extendedPlanRange: false,
-    pantryTracking: false,
-    mealConfirmation: false,
-    dailyAiSuggestions: 0,
-    maxPlanDays: 7,
   },
   premium: {
-    maxDailyScans: Infinity,
+    maxDailyScans: UNLIMITED_SCANS,
     advancedBarcodes: true,
     highQualityCapture: true,
     videoRecording: true,
@@ -51,13 +39,6 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     macroGoals: true,
     recipeGeneration: true,
     dailyRecipeGenerations: 5,
-    mealPlanning: true,
-    aiMealSuggestions: true,
-    extendedPlanRange: true,
-    pantryTracking: true,
-    mealConfirmation: true,
-    dailyAiSuggestions: 10,
-    maxPlanDays: 90,
   },
 };
 

@@ -17,7 +17,7 @@ import {
 } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
 
-type ChipVariant = "outline" | "filled";
+type ChipVariant = "outline" | "filled" | "tab" | "filter";
 
 interface ChipProps {
   /** Chip label text */
@@ -32,6 +32,8 @@ interface ChipProps {
   style?: StyleProp<ViewStyle>;
   /** Accessibility label */
   accessibilityLabel?: string;
+  /** Override the default accessibility role (defaults to "button") */
+  accessibilityRole?: "button" | "tab";
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -66,6 +68,26 @@ export function Chip({
 
   // Variant-specific styles
   const getVariantStyles = () => {
+    if (variant === "tab") {
+      return {
+        backgroundColor: selected ? theme.link : withOpacity(theme.text, 0.06),
+        borderWidth: 0,
+        borderColor: "transparent",
+        textColor: selected ? theme.buttonText : theme.text,
+      };
+    }
+
+    if (variant === "filter") {
+      return {
+        backgroundColor: selected
+          ? withOpacity(theme.link, 0.15)
+          : withOpacity(theme.text, 0.04),
+        borderWidth: 1,
+        borderColor: selected ? theme.link : withOpacity(theme.text, 0.1),
+        textColor: selected ? theme.link : theme.textSecondary,
+      };
+    }
+
     if (variant === "filled") {
       return {
         backgroundColor: selected
@@ -88,9 +110,23 @@ export function Chip({
 
   const variantStyles = getVariantStyles();
 
+  const getChipSizeStyle = () => {
+    if (variant === "filled") return styles.chipFilled;
+    if (variant === "tab") return styles.chipTab;
+    if (variant === "filter") return styles.chipFilter;
+    return styles.chipOutline;
+  };
+
+  const getTextSizeStyle = () => {
+    if (variant === "filled") return styles.textFilled;
+    if (variant === "tab") return styles.textTab;
+    if (variant === "filter") return styles.textFilter;
+    return styles.textOutline;
+  };
+
   const chipStyles = [
     styles.chip,
-    variant === "filled" ? styles.chipFilled : styles.chipOutline,
+    getChipSizeStyle(),
     {
       backgroundColor: variantStyles.backgroundColor,
       borderWidth: variantStyles.borderWidth,
@@ -99,10 +135,7 @@ export function Chip({
     style,
   ];
 
-  const textStyles = [
-    variant === "filled" ? styles.textFilled : styles.textOutline,
-    { color: variantStyles.textColor },
-  ];
+  const textStyles = [getTextSizeStyle(), { color: variantStyles.textColor }];
 
   if (onPress) {
     return (
@@ -110,7 +143,7 @@ export function Chip({
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        accessibilityRole="button"
+        accessibilityRole={variant === "tab" ? "tab" : "button"}
         accessibilityLabel={accessibilityLabel || label}
         accessibilityState={{ selected }}
         style={[chipStyles, animatedStyle]}
@@ -142,6 +175,16 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.chipFilled,
   },
+  chipTab: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.chip,
+  },
+  chipFilter: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.chip,
+  },
   textOutline: {
     fontFamily: FontFamily.medium,
     fontSize: 12,
@@ -149,8 +192,16 @@ const styles = StyleSheet.create({
   },
   textFilled: {
     fontFamily: FontFamily.semiBold,
-    fontSize: 10,
+    fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 1,
+  },
+  textTab: {
+    fontFamily: FontFamily.semiBold,
+    fontSize: 13,
+  },
+  textFilter: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
   },
 });

@@ -103,3 +103,30 @@ export type RecipeDetailScreenNavigationProp = NativeStackNavigationProp<
   MealPlanStackParamList,
   "RecipeDetail"
 >;
+
+/**
+ * Navigation prop for RecipeBrowserScreen
+ * Can navigate within meal plan stack
+ */
+export type RecipeBrowserScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList,
+  "RecipeBrowser"
+>;
+
+/**
+ * Navigation prop for RecipeCreateScreen
+ * Can navigate within meal plan stack
+ */
+export type RecipeCreateScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList,
+  "RecipeCreate"
+>;
+
+/**
+ * Navigation prop for RecipeImportScreen
+ * Can navigate within meal plan stack
+ */
+export type RecipeImportScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList,
+  "RecipeImport"
+>;

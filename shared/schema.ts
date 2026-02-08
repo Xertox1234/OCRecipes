@@ -10,6 +10,7 @@ import {
   boolean,
   jsonb,
   index,
+  uniqueIndex,
   date,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -264,6 +265,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   scannedItems: many(scannedItems),
   dailyLogs: many(dailyLogs),
   savedItems: many(savedItems),
+  mealPlanRecipes: many(mealPlanRecipes),
+  mealPlanItems: many(mealPlanItems),
   profile: one(userProfiles, {
     fields: [users.id],
     references: [userProfiles.userId],
@@ -402,9 +405,11 @@ export const mealPlanRecipes = pgTable(
   "meal_plan_recipes",
   {
     id: serial("id").primaryKey(),
-    userId: varchar("user_id").references(() => users.id, {
-      onDelete: "cascade",
-    }),
+    userId: varchar("user_id")
+      .notNull()
+      .references(() => users.id, {
+        onDelete: "cascade",
+      }),
     title: text("title").notNull(),
     description: text("description"),
     sourceType: text("source_type").notNull().default("user_created"),
@@ -452,6 +457,10 @@ export const mealPlanRecipes = pgTable(
   },
   (table) => ({
     userIdIdx: index("meal_plan_recipes_user_id_idx").on(table.userId),
+    userExternalIdIdx: uniqueIndex("meal_plan_recipes_user_external_id_idx").on(
+      table.userId,
+      table.externalId,
+    ),
   }),
 );
 
@@ -481,17 +490,15 @@ export const mealPlanItems = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     recipeId: integer("recipe_id").references(() => mealPlanRecipes.id, {
-      onDelete: "cascade",
+      onDelete: "set null",
     }),
     scannedItemId: integer("scanned_item_id").references(
       () => scannedItems.id,
-      { onDelete: "cascade" },
+      { onDelete: "set null" },
     ),
     plannedDate: date("planned_date").notNull(),
     mealType: text("meal_type").notNull(),
-    displayOrder: integer("display_order").default(0),
     servings: decimal("servings", { precision: 5, scale: 2 }).default("1"),
-    source: text("source").default("manual"),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -500,11 +507,6 @@ export const mealPlanItems = pgTable(
     userDateIdx: index("meal_plan_items_user_date_idx").on(
       table.userId,
       table.plannedDate,
-    ),
-    userDateMealIdx: index("meal_plan_items_user_date_meal_idx").on(
-      table.userId,
-      table.plannedDate,
-      table.mealType,
     ),
   }),
 );

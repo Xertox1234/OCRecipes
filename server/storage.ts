@@ -32,11 +32,16 @@ import {
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import { db } from "./db";
-import { eq, desc, and, gte, lt, gt, sql, or, ilike } from "drizzle-orm";
+import { eq, desc, and, gte, lte, lt, gt, sql, or, ilike } from "drizzle-orm";
 import {
   subscriptionTierSchema,
   type SubscriptionTier,
 } from "@shared/types/premium";
+
+/** Escape ILIKE metacharacters so user input is treated as literal text. */
+export function escapeLike(str: string): string {
+  return str.replace(/[%_\\]/g, "\\$&");
+}
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
@@ -144,16 +149,28 @@ export interface IStorage {
   ): Promise<CommunityRecipe | undefined>;
   getCommunityRecipe(id: number): Promise<CommunityRecipe | undefined>;
   deleteCommunityRecipe(recipeId: number, authorId: string): Promise<boolean>;
-  getUserRecipes(userId: string): Promise<CommunityRecipe[]>;
+  getUserRecipes(
+    userId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<{ items: CommunityRecipe[]; total: number }>;
 
   // Meal plan recipes
+  findMealPlanRecipeByExternalId(
+    userId: string,
+    externalId: string,
+  ): Promise<MealPlanRecipe | undefined>;
   getMealPlanRecipe(id: number): Promise<MealPlanRecipe | undefined>;
   getMealPlanRecipeWithIngredients(
     id: number,
   ): Promise<
     (MealPlanRecipe & { ingredients: RecipeIngredient[] }) | undefined
   >;
-  getUserMealPlanRecipes(userId: string): Promise<MealPlanRecipe[]>;
+  getUserMealPlanRecipes(
+    userId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<{ items: MealPlanRecipe[]; total: number }>;
   createMealPlanRecipe(
     recipe: InsertMealPlanRecipe,
     ingredients?: InsertRecipeIngredient[],
@@ -177,11 +194,6 @@ export interface IStorage {
     })[]
   >;
   addMealPlanItem(item: InsertMealPlanItem): Promise<MealPlanItem>;
-  updateMealPlanItem(
-    id: number,
-    userId: string,
-    updates: Partial<InsertMealPlanItem>,
-  ): Promise<MealPlanItem | undefined>;
   removeMealPlanItem(id: number, userId: string): Promise<boolean>;
 }
 
@@ -601,7 +613,7 @@ export class DatabaseStorage implements IStorage {
           eq(communityRecipes.barcode, barcode),
           ilike(
             communityRecipes.normalizedProductName,
-            `%${normalizedProductName}%`,
+            `%${escapeLike(normalizedProductName)}%`,
           ),
         )!,
       );
@@ -610,7 +622,7 @@ export class DatabaseStorage implements IStorage {
       conditions.push(
         ilike(
           communityRecipes.normalizedProductName,
-          `%${normalizedProductName}%`,
+          `%${escapeLike(normalizedProductName)}%`,
         ),
       );
     }
@@ -677,17 +689,46 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
-  async getUserRecipes(userId: string): Promise<CommunityRecipe[]> {
-    return db
-      .select()
-      .from(communityRecipes)
-      .where(eq(communityRecipes.authorId, userId))
-      .orderBy(desc(communityRecipes.createdAt));
+  async getUserRecipes(
+    userId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<{ items: CommunityRecipe[]; total: number }> {
+    const [items, countResult] = await Promise.all([
+      db
+        .select()
+        .from(communityRecipes)
+        .where(eq(communityRecipes.authorId, userId))
+        .orderBy(desc(communityRecipes.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(communityRecipes)
+        .where(eq(communityRecipes.authorId, userId)),
+    ]);
+    return { items, total: Number(countResult[0]?.count ?? 0) };
   }
 
   // ============================================================================
   // MEAL PLAN RECIPES
   // ============================================================================
+
+  async findMealPlanRecipeByExternalId(
+    userId: string,
+    externalId: string,
+  ): Promise<MealPlanRecipe | undefined> {
+    const [recipe] = await db
+      .select()
+      .from(mealPlanRecipes)
+      .where(
+        and(
+          eq(mealPlanRecipes.userId, userId),
+          eq(mealPlanRecipes.externalId, externalId),
+        ),
+      );
+    return recipe || undefined;
+  }
 
   async getMealPlanRecipe(id: number): Promise<MealPlanRecipe | undefined> {
     const [recipe] = await db
@@ -702,24 +743,39 @@ export class DatabaseStorage implements IStorage {
   ): Promise<
     (MealPlanRecipe & { ingredients: RecipeIngredient[] }) | undefined
   > {
-    const recipe = await this.getMealPlanRecipe(id);
-    if (!recipe) return undefined;
+    const [recipe, ingredients] = await Promise.all([
+      this.getMealPlanRecipe(id),
+      db
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, id))
+        .orderBy(recipeIngredients.displayOrder),
+    ]);
 
-    const ingredients = await db
-      .select()
-      .from(recipeIngredients)
-      .where(eq(recipeIngredients.recipeId, id))
-      .orderBy(recipeIngredients.displayOrder);
+    if (!recipe) return undefined;
 
     return { ...recipe, ingredients };
   }
 
-  async getUserMealPlanRecipes(userId: string): Promise<MealPlanRecipe[]> {
-    return db
-      .select()
-      .from(mealPlanRecipes)
-      .where(eq(mealPlanRecipes.userId, userId))
-      .orderBy(desc(mealPlanRecipes.createdAt));
+  async getUserMealPlanRecipes(
+    userId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<{ items: MealPlanRecipe[]; total: number }> {
+    const [items, countResult] = await Promise.all([
+      db
+        .select()
+        .from(mealPlanRecipes)
+        .where(eq(mealPlanRecipes.userId, userId))
+        .orderBy(desc(mealPlanRecipes.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(mealPlanRecipes)
+        .where(eq(mealPlanRecipes.userId, userId)),
+    ]);
+    return { items, total: Number(countResult[0]?.count ?? 0) };
   }
 
   async createMealPlanRecipe(
@@ -796,16 +852,10 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(mealPlanItems.userId, userId),
           gte(mealPlanItems.plannedDate, startDate),
-          lt(
-            mealPlanItems.plannedDate,
-            // Add one day to endDate to include it in range
-            new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000)
-              .toISOString()
-              .split("T")[0],
-          ),
+          lte(mealPlanItems.plannedDate, endDate),
         ),
       )
-      .orderBy(mealPlanItems.plannedDate, mealPlanItems.displayOrder);
+      .orderBy(mealPlanItems.plannedDate, mealPlanItems.createdAt);
 
     // Batch-fetch related recipes and scanned items
     const recipeIds = [
@@ -858,19 +908,6 @@ export class DatabaseStorage implements IStorage {
   async addMealPlanItem(item: InsertMealPlanItem): Promise<MealPlanItem> {
     const [created] = await db.insert(mealPlanItems).values(item).returning();
     return created;
-  }
-
-  async updateMealPlanItem(
-    id: number,
-    userId: string,
-    updates: Partial<InsertMealPlanItem>,
-  ): Promise<MealPlanItem | undefined> {
-    const [item] = await db
-      .update(mealPlanItems)
-      .set(updates)
-      .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
-      .returning();
-    return item || undefined;
   }
 
   async removeMealPlanItem(id: number, userId: string): Promise<boolean> {

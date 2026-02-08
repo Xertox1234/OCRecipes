@@ -1,4 +1,8 @@
-import { TIER_FEATURES, type SubscriptionTier } from "@shared/types/premium";
+import {
+  TIER_FEATURES,
+  UNLIMITED_SCANS,
+  type SubscriptionTier,
+} from "@shared/types/premium";
 import {
   FREE_BARCODE_TYPES,
   PREMIUM_BARCODE_TYPES,
@@ -55,7 +59,7 @@ describe("usePremiumFeatures", () => {
       expect(usePremiumFeature("maxDailyScans")).toBe(true);
     });
 
-    it("should return true for Infinity maxDailyScans (premium)", () => {
+    it("should return true for unlimited maxDailyScans (premium)", () => {
       mockUsePremiumContext.mockReturnValue({
         features: TIER_FEATURES.premium,
       });
@@ -180,7 +184,7 @@ describe("usePremiumFeatures", () => {
 
       expect(result.canScan).toBe(true);
       expect(result.remainingScans).toBeNull();
-      expect(result.dailyLimit).toBe(Infinity);
+      expect(result.dailyLimit).toBe(UNLIMITED_SCANS);
     });
   });
 
@@ -274,7 +278,7 @@ describe("TIER_FEATURES configuration", () => {
   });
 
   it("should have correct premium tier features", () => {
-    expect(TIER_FEATURES.premium.maxDailyScans).toBe(Infinity);
+    expect(TIER_FEATURES.premium.maxDailyScans).toBe(UNLIMITED_SCANS);
     expect(TIER_FEATURES.premium.advancedBarcodes).toBe(true);
     expect(TIER_FEATURES.premium.highQualityCapture).toBe(true);
     expect(TIER_FEATURES.premium.videoRecording).toBe(true);

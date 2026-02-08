@@ -17,6 +17,9 @@ import {
 } from "@/constants/theme";
 import type { CommunityRecipe } from "@shared/schema";
 
+/** Cap staggered animation index to avoid slow entrance on long lists */
+const MAX_ANIMATED_INDEX = 10;
+
 interface RecipeCardProps {
   recipe: CommunityRecipe;
   index?: number;
@@ -33,10 +36,10 @@ export function RecipeCard({ recipe, index = 0, onPress }: RecipeCardProps) {
     onPress?.(recipe);
   };
 
-  // Use staggered animation for list items
+  // Use staggered animation for list items, capped to avoid slow entrance
   const enteringAnimation = reducedMotion
     ? undefined
-    : FadeInDown.delay(index * 100).duration(300);
+    : FadeInDown.delay(Math.min(index, MAX_ANIMATED_INDEX) * 100).duration(300);
 
   // Purple accent for tags (matching Figma design)
   const tagColor = "#9372F1";

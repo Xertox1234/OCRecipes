@@ -22,12 +22,16 @@ interface TextInputProps extends Omit<RNTextInputProps, "style"> {
   rightIcon?: FeatherIconName;
   /** Callback when right icon is pressed */
   onRightIconPress?: () => void;
+  /** Accessibility label for the right icon button (e.g. "Toggle password visibility") */
+  rightIconAccessibilityLabel?: string;
   /** Container style */
   containerStyle?: StyleProp<ViewStyle>;
   /** Input style */
   style?: StyleProp<ViewStyle>;
   /** Error state */
   error?: boolean;
+  /** Error message announced by screen readers when error is true */
+  errorMessage?: string;
 }
 
 export const TextInput = forwardRef<RNTextInput, TextInputProps>(
@@ -36,9 +40,11 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
       leftIcon,
       rightIcon,
       onRightIconPress,
+      rightIconAccessibilityLabel,
       containerStyle,
       style,
       error,
+      errorMessage,
       ...props
     },
     ref,
@@ -81,6 +87,9 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
         <RNTextInput
           ref={ref}
           placeholderTextColor={placeholderColor}
+          accessibilityHint={
+            error && errorMessage ? errorMessage : props.accessibilityHint
+          }
           style={[
             styles.input,
             {
@@ -97,7 +106,9 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
               onPress={onRightIconPress}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityRole="button"
-              accessibilityLabel="Toggle visibility"
+              accessibilityLabel={
+                rightIconAccessibilityLabel ?? "Toggle visibility"
+              }
               style={styles.rightIcon}
             >
               <Feather name={rightIcon} size={20} color={theme.textSecondary} />

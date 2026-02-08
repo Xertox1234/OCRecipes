@@ -1,12 +1,5 @@
 import React, { useState } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  Image,
-  ActivityIndicator,
-  Dimensions,
-} from "react-native";
+import { StyleSheet, View, Pressable, Image, Dimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
@@ -183,7 +176,7 @@ export default function LoginScreen() {
 
           <Button
             onPress={handleSubmit}
-            disabled={isLoading}
+            loading={isLoading}
             accessibilityLabel={
               isLoading
                 ? mode === "login"
@@ -195,13 +188,7 @@ export default function LoginScreen() {
             }
             style={styles.button}
           >
-            {isLoading ? (
-              <ActivityIndicator color={theme.buttonText} size="small" />
-            ) : mode === "login" ? (
-              "Sign In"
-            ) : (
-              "Create Account"
-            )}
+            {mode === "login" ? "Sign In" : "Create Account"}
           </Button>
         </View>
 

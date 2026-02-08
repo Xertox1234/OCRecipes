@@ -180,7 +180,7 @@ export async function analyzePhoto(
       };
     }
 
-    console.log(
+    console.warn(
       `Vision analysis (${intent}) completed in ${Date.now() - startTime}ms`,
     );
     return parsed.data;

@@ -23,6 +23,9 @@ import type { SavedItem } from "@shared/schema";
 
 const ITEM_SEPARATOR_HEIGHT = Spacing.md;
 
+/** Cap staggered animation index to avoid slow entrance on long lists */
+const MAX_ANIMATED_INDEX = 10;
+
 export default function SavedItemsScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -45,7 +48,11 @@ export default function SavedItemsScreen() {
     ({ item, index }: { item: SavedItem; index: number }) => (
       <Animated.View
         entering={
-          reducedMotion ? undefined : FadeInDown.delay(index * 50).duration(300)
+          reducedMotion
+            ? undefined
+            : FadeInDown.delay(
+                Math.min(index, MAX_ANIMATED_INDEX) * 50,
+              ).duration(300)
         }
       >
         <SavedItemCard item={item} />

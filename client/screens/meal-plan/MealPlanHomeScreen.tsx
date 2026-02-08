@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 
@@ -24,16 +24,17 @@ import {
 } from "@/constants/theme";
 import { useMealPlanItems, useRemoveMealPlanItem } from "@/hooks/useMealPlan";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
-import type { MealPlanItem, MealPlanRecipe, ScannedItem } from "@shared/schema";
+import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
-const MEAL_ICONS: Record<string, string> = {
+type MealType = (typeof MEAL_TYPES)[number];
+const MEAL_ICONS: Record<MealType, string> = {
   breakfast: "sunrise",
   lunch: "sun",
   dinner: "moon",
   snack: "coffee",
 };
-const MEAL_LABELS: Record<string, string> = {
+const MEAL_LABELS: Record<MealType, string> = {
   breakfast: "Breakfast",
   lunch: "Lunch",
   dinner: "Dinner",
@@ -67,11 +68,6 @@ function getDayLabel(date: Date): string {
     day: "numeric",
   });
 }
-
-type MealPlanItemWithRelations = MealPlanItem & {
-  recipe: MealPlanRecipe | null;
-  scannedItem: ScannedItem | null;
-};
 
 // ── Date Strip Item ──────────────────────────────────────────────────
 
@@ -142,10 +138,14 @@ const MealSlotItem = React.memo(function MealSlotItem({
   onRemove: (id: number) => void;
 }) {
   const { theme } = useTheme();
-  const name =
-    item.recipe?.title || item.scannedItem?.productName || "Unknown item";
-  const calories =
-    item.recipe?.caloriesPerServing || item.scannedItem?.calories || null;
+  const isOrphaned =
+    !item.recipe && !item.scannedItem && !item.recipeId && !item.scannedItemId;
+  const name = isOrphaned
+    ? "Item removed"
+    : item.recipe?.title || item.scannedItem?.productName || "Unknown item";
+  const calories = isOrphaned
+    ? null
+    : item.recipe?.caloriesPerServing || item.scannedItem?.calories || null;
   const servings = parseFloat(item.servings || "1");
   const totalCal = calories
     ? Math.round(parseFloat(calories) * servings)
@@ -153,16 +153,26 @@ const MealSlotItem = React.memo(function MealSlotItem({
 
   return (
     <Pressable
-      onPress={() => onPress(item)}
+      onPress={() => !isOrphaned && onPress(item)}
       style={[
         styles.mealSlotItem,
-        { backgroundColor: withOpacity(theme.text, 0.04) },
+        {
+          backgroundColor: isOrphaned
+            ? withOpacity(theme.text, 0.02)
+            : withOpacity(theme.text, 0.04),
+        },
       ]}
       accessibilityRole="button"
       accessibilityLabel={`${name}${totalCal ? `, ${totalCal} calories` : ""}`}
     >
       <View style={styles.mealSlotContent}>
-        <ThemedText style={styles.mealSlotName} numberOfLines={1}>
+        <ThemedText
+          style={[
+            styles.mealSlotName,
+            isOrphaned && { color: theme.textSecondary, fontStyle: "italic" },
+          ]}
+          numberOfLines={1}
+        >
           {name}
         </ThemedText>
         {totalCal !== null && (
@@ -187,18 +197,18 @@ const MealSlotItem = React.memo(function MealSlotItem({
 
 // ── Meal Slot Section ────────────────────────────────────────────────
 
-function MealSlotSection({
+const MealSlotSection = React.memo(function MealSlotSection({
   mealType,
   items,
   onItemPress,
   onRemoveItem,
   onAddItem,
 }: {
-  mealType: string;
+  mealType: MealType;
   items: MealPlanItemWithRelations[];
   onItemPress: (item: MealPlanItemWithRelations) => void;
   onRemoveItem: (id: number) => void;
-  onAddItem: (mealType: string) => void;
+  onAddItem: (mealType: MealType) => void;
 }) {
   const { theme } = useTheme();
   const iconName = MEAL_ICONS[mealType] || "circle";
@@ -238,11 +248,15 @@ function MealSlotSection({
       </Pressable>
     </View>
   );
-}
+});
 
 // ── Daily Totals ─────────────────────────────────────────────────────
 
-function DailyTotals({ items }: { items: MealPlanItemWithRelations[] }) {
+const DailyTotals = React.memo(function DailyTotals({
+  items,
+}: {
+  items: MealPlanItemWithRelations[];
+}) {
   const { theme } = useTheme();
 
   const totals = useMemo(() => {
@@ -339,7 +353,7 @@ function DailyTotals({ items }: { items: MealPlanItemWithRelations[] }) {
       </View>
     </View>
   );
-}
+});
 
 // ── Empty State ──────────────────────────────────────────────────────
 
@@ -371,11 +385,22 @@ export default function MealPlanHomeScreen() {
   const haptics = useHaptics();
   const queryClient = useQueryClient();
 
-  const today = useMemo(() => {
+  const [today, setToday] = useState(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
-  }, []);
+  });
+
+  // Update 'today' when screen comes into focus (handles midnight crossing)
+  useFocusEffect(
+    useCallback(() => {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      if (d.getTime() !== today.getTime()) {
+        setToday(d);
+      }
+    }, [today]),
+  );
 
   const [selectedDate, setSelectedDate] = useState(today);
 
@@ -462,12 +487,14 @@ export default function MealPlanHomeScreen() {
   );
 
   const handleAddItem = useCallback(
-    (_mealType: string) => {
+    (mealType: MealType) => {
       haptics.selection();
-      // TODO: Phase 2 will add RecipeBrowser navigation
-      // For now, users can create recipes via the API
+      navigation.navigate("RecipeBrowser", {
+        mealType,
+        plannedDate: selectedDateStr,
+      });
     },
-    [haptics],
+    [haptics, navigation, selectedDateStr],
   );
 
   const handleRefresh = useCallback(() => {

@@ -2,6 +2,7 @@ import {
   subscriptionTiers,
   subscriptionTierSchema,
   TIER_FEATURES,
+  UNLIMITED_SCANS,
 } from "../types/premium";
 
 describe("Premium Types", () => {
@@ -37,7 +38,7 @@ describe("Premium Types", () => {
 
     it("should have features for premium tier", () => {
       const premiumFeatures = TIER_FEATURES.premium;
-      expect(premiumFeatures.maxDailyScans).toBe(Infinity);
+      expect(premiumFeatures.maxDailyScans).toBe(UNLIMITED_SCANS);
       expect(premiumFeatures.advancedBarcodes).toBe(true);
       expect(premiumFeatures.highQualityCapture).toBe(true);
       expect(premiumFeatures.videoRecording).toBe(true);

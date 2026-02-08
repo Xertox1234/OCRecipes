@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidCalendarDate } from "../utils/date-validation";
 
 // Test the validation schemas used in routes
 const registerSchema = z.object({
@@ -331,5 +332,139 @@ describe("Item ID Validation", () => {
 
   it("handles decimal strings (truncates)", () => {
     expect(parseItemId("5.7")).toBe(5);
+  });
+});
+
+describe("isValidCalendarDate", () => {
+  it("accepts valid dates", () => {
+    expect(isValidCalendarDate("2024-01-01")).toBe(true);
+    expect(isValidCalendarDate("2024-12-31")).toBe(true);
+    expect(isValidCalendarDate("2024-02-29")).toBe(true); // leap year
+    expect(isValidCalendarDate("2025-06-15")).toBe(true);
+  });
+
+  it("rejects invalid month", () => {
+    expect(isValidCalendarDate("2024-13-01")).toBe(false);
+    expect(isValidCalendarDate("2024-00-01")).toBe(false);
+  });
+
+  it("rejects invalid day", () => {
+    expect(isValidCalendarDate("2024-01-32")).toBe(false);
+    expect(isValidCalendarDate("2024-13-45")).toBe(false);
+    expect(isValidCalendarDate("2024-04-31")).toBe(false); // April has 30 days
+    expect(isValidCalendarDate("2024-02-30")).toBe(false); // Feb never has 30
+  });
+
+  it("rejects Feb 29 on non-leap year", () => {
+    expect(isValidCalendarDate("2023-02-29")).toBe(false);
+    expect(isValidCalendarDate("2025-02-29")).toBe(false);
+  });
+
+  it("accepts Feb 28 on non-leap year", () => {
+    expect(isValidCalendarDate("2023-02-28")).toBe(true);
+  });
+
+  it("rejects day zero", () => {
+    expect(isValidCalendarDate("2024-01-00")).toBe(false);
+  });
+});
+
+describe("Meal Plan Date Range Validation", () => {
+  // Replicate the validation logic from the route handler for unit testing
+  const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
+  const MAX_RANGE_DAYS = 90;
+
+  function validateDateRange(
+    start: string | undefined,
+    end: string | undefined,
+  ): { valid: true } | { valid: false; error: string } {
+    if (!start || !end || !DATE_FORMAT.test(start) || !DATE_FORMAT.test(end)) {
+      return {
+        valid: false,
+        error: "start and end query parameters required (YYYY-MM-DD)",
+      };
+    }
+
+    if (!isValidCalendarDate(start) || !isValidCalendarDate(end)) {
+      return { valid: false, error: "Invalid calendar date" };
+    }
+
+    if (start > end) {
+      return { valid: false, error: "start must be on or before end" };
+    }
+
+    const startMs = new Date(start + "T00:00:00Z").getTime();
+    const endMs = new Date(end + "T00:00:00Z").getTime();
+    const diffDays = (endMs - startMs) / (1000 * 60 * 60 * 24);
+    if (diffDays > MAX_RANGE_DAYS) {
+      return { valid: false, error: "Date range must not exceed 90 days" };
+    }
+
+    return { valid: true };
+  }
+
+  it("accepts a valid single-day range", () => {
+    expect(validateDateRange("2024-06-01", "2024-06-01")).toEqual({
+      valid: true,
+    });
+  });
+
+  it("accepts a valid multi-day range", () => {
+    expect(validateDateRange("2024-06-01", "2024-06-30")).toEqual({
+      valid: true,
+    });
+  });
+
+  it("accepts exactly 90-day range", () => {
+    expect(validateDateRange("2024-01-01", "2024-03-31")).toEqual({
+      valid: true,
+    });
+  });
+
+  it("rejects missing start", () => {
+    const result = validateDateRange(undefined, "2024-06-30");
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects missing end", () => {
+    const result = validateDateRange("2024-06-01", undefined);
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects bad format", () => {
+    const result = validateDateRange("06/01/2024", "06/30/2024");
+    expect(result.valid).toBe(false);
+  });
+
+  it("rejects invalid calendar dates", () => {
+    const result = validateDateRange("2024-13-45", "2024-14-50");
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe("Invalid calendar date");
+    }
+  });
+
+  it("rejects start after end", () => {
+    const result = validateDateRange("2024-06-30", "2024-06-01");
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe("start must be on or before end");
+    }
+  });
+
+  it("rejects range exceeding 90 days", () => {
+    const result = validateDateRange("2024-01-01", "2024-07-01");
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe("Date range must not exceed 90 days");
+    }
+  });
+
+  it("rejects Feb 30 as invalid calendar date", () => {
+    const result = validateDateRange("2024-02-30", "2024-03-01");
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe("Invalid calendar date");
+    }
   });
 });

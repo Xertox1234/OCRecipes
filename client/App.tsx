@@ -15,6 +15,7 @@ import {
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 
 import RootStackNavigator from "@/navigation/RootStackNavigator";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -29,9 +30,11 @@ function AppContent() {
     <SafeAreaProvider>
       <GestureHandlerRootView style={styles.root}>
         <KeyboardProvider>
-          <NavigationContainer>
-            <RootStackNavigator />
-          </NavigationContainer>
+          <BottomSheetModalProvider>
+            <NavigationContainer>
+              <RootStackNavigator />
+            </NavigationContainer>
+          </BottomSheetModalProvider>
           <StatusBar style={isDark ? "light" : "dark"} />
         </KeyboardProvider>
       </GestureHandlerRootView>

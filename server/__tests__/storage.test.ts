@@ -1,3 +1,5 @@
+import { escapeLike } from "../storage";
+
 // Test the IStorage interface contract and edge cases
 describe("Storage Interface Contract", () => {
   describe("getUser", () => {
@@ -572,5 +574,39 @@ describe("Saved Items", () => {
       const result = await mockDeleteSavedItem(1, "different-user");
       expect(result).toBe(false);
     });
+  });
+});
+
+describe("escapeLike", () => {
+  it("should return plain strings unchanged", () => {
+    expect(escapeLike("hello world")).toBe("hello world");
+  });
+
+  it("should escape percent signs", () => {
+    expect(escapeLike("100%")).toBe("100\\%");
+  });
+
+  it("should escape underscores", () => {
+    expect(escapeLike("my_product")).toBe("my\\_product");
+  });
+
+  it("should escape backslashes", () => {
+    expect(escapeLike("path\\to")).toBe("path\\\\to");
+  });
+
+  it("should escape multiple metacharacters in one string", () => {
+    expect(escapeLike("50% off_sale\\now")).toBe("50\\% off\\_sale\\\\now");
+  });
+
+  it("should handle empty string", () => {
+    expect(escapeLike("")).toBe("");
+  });
+
+  it("should handle strings with only metacharacters", () => {
+    expect(escapeLike("%_%")).toBe("\\%\\_\\%");
+  });
+
+  it("should not escape other special regex or SQL characters", () => {
+    expect(escapeLike("it's a [test] (value)")).toBe("it's a [test] (value)");
   });
 });

@@ -490,16 +490,12 @@ export default function NutritionDetailScreen() {
           <View style={styles.buttonContainer}>
             <Button
               onPress={handleAddToLog}
-              disabled={addToLogMutation.isPending}
+              loading={addToLogMutation.isPending}
               accessibilityLabel={`Add ${nutrition?.productName || "item"} to today's food log`}
               accessibilityHint="Saves this item to your daily nutrition tracking"
               style={[styles.addButton, { backgroundColor: theme.success }]}
             >
-              {addToLogMutation.isPending ? (
-                <ActivityIndicator color={theme.buttonText} size="small" />
-              ) : (
-                "Add to Today"
-              )}
+              Add to Today
             </Button>
           </View>
         ) : null}

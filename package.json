@@ -27,6 +27,7 @@
     "@expo-google-fonts/nunito": "^0.4.2",
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/vector-icons": "^15.0.2",
+    "@gorhom/bottom-sheet": "^5",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
@@ -37,6 +38,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
     "bcrypt": "^6.0.0",
+    "cheerio": "^1.2.0",
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.39.3",
     "drizzle-zod": "^0.7.1",
@@ -109,7 +111,8 @@
       "prettier --write"
     ],
     "client/**/*.tsx": [
-      "node scripts/check-accessibility.js"
+      "node scripts/check-accessibility.js",
+      "node scripts/check-hardcoded-colors.js"
     ],
     "*.{js,json,md}": [
       "prettier --write"

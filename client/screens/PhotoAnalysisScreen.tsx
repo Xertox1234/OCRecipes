@@ -871,21 +871,15 @@ export default function PhotoAnalysisScreen() {
                 {showLogButton && (
                   <Button
                     onPress={handleLogSelected}
-                    disabled={isConfirming || selectedItems.size === 0}
+                    disabled={selectedItems.size === 0}
+                    loading={isConfirming}
                     accessibilityLabel={`Log ${selectedItems.size} items to today`}
                     style={[
                       styles.primaryButton,
                       { backgroundColor: theme.success },
                     ]}
                   >
-                    {isConfirming ? (
-                      <ActivityIndicator
-                        color={theme.buttonText}
-                        size="small"
-                      />
-                    ) : (
-                      `Log ${selectedItems.size} Item${selectedItems.size !== 1 ? "s" : ""} to Today`
-                    )}
+                    {`Log ${selectedItems.size} Item${selectedItems.size !== 1 ? "s" : ""} to Today`}
                   </Button>
                 )}
 

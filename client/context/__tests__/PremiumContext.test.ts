@@ -1,4 +1,8 @@
-import { TIER_FEATURES, type SubscriptionStatus } from "@shared/types/premium";
+import {
+  TIER_FEATURES,
+  UNLIMITED_SCANS,
+  type SubscriptionStatus,
+} from "@shared/types/premium";
 
 // Test the PremiumContext logic directly without React
 describe("PremiumContext", () => {
@@ -63,7 +67,7 @@ describe("PremiumContext", () => {
       const features = subscriptionData?.features ?? TIER_FEATURES.free;
 
       expect(features).toEqual(TIER_FEATURES.premium);
-      expect(features.maxDailyScans).toBe(Infinity);
+      expect(features.maxDailyScans).toBe(UNLIMITED_SCANS);
       expect(features.advancedBarcodes).toBe(true);
       expect(features.highQualityCapture).toBe(true);
       expect(features.videoRecording).toBe(true);
