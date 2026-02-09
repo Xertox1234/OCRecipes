@@ -19,6 +19,11 @@ import {
   type InsertMealPlanItem,
   type Transaction,
   type InsertTransaction,
+  type GroceryList,
+  type InsertGroceryList,
+  type GroceryListItem,
+  type InsertGroceryListItem,
+  type MealSuggestionCacheEntry,
   users,
   scannedItems,
   dailyLogs,
@@ -32,6 +37,9 @@ import {
   recipeIngredients,
   mealPlanItems,
   transactions,
+  groceryLists,
+  groceryListItems,
+  mealSuggestionCache,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import { db } from "./db";
@@ -202,6 +210,42 @@ export interface IStorage {
   >;
   addMealPlanItem(item: InsertMealPlanItem): Promise<MealPlanItem>;
   removeMealPlanItem(id: number, userId: string): Promise<boolean>;
+
+  // Grocery lists
+  createGroceryList(list: InsertGroceryList): Promise<GroceryList>;
+  getGroceryLists(userId: string): Promise<GroceryList[]>;
+  getGroceryListWithItems(
+    id: number,
+    userId: string,
+  ): Promise<(GroceryList & { items: GroceryListItem[] }) | undefined>;
+  deleteGroceryList(id: number, userId: string): Promise<boolean>;
+  addGroceryListItem(item: InsertGroceryListItem): Promise<GroceryListItem>;
+  updateGroceryListItemChecked(
+    id: number,
+    groceryListId: number,
+    isChecked: boolean,
+  ): Promise<GroceryListItem | undefined>;
+  deleteGroceryListItem(id: number, groceryListId: number): Promise<boolean>;
+
+  // Meal suggestion cache
+  getMealSuggestionCache(
+    cacheKey: string,
+  ): Promise<MealSuggestionCacheEntry | undefined>;
+  createMealSuggestionCache(
+    cacheKey: string,
+    userId: string,
+    suggestions: unknown,
+    expiresAt: Date,
+  ): Promise<MealSuggestionCacheEntry>;
+  incrementMealSuggestionCacheHit(id: number): Promise<void>;
+  getDailyMealSuggestionCount(userId: string, date: Date): Promise<number>;
+
+  // Aggregation
+  getMealPlanIngredientsForDateRange(
+    userId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<RecipeIngredient[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -942,6 +986,198 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)))
       .returning({ id: mealPlanItems.id });
     return result.length > 0;
+  }
+
+  // ============================================================================
+  // GROCERY LISTS
+  // ============================================================================
+
+  async createGroceryList(list: InsertGroceryList): Promise<GroceryList> {
+    const [created] = await db.insert(groceryLists).values(list).returning();
+    return created;
+  }
+
+  async getGroceryLists(userId: string): Promise<GroceryList[]> {
+    return db
+      .select()
+      .from(groceryLists)
+      .where(eq(groceryLists.userId, userId))
+      .orderBy(desc(groceryLists.createdAt));
+  }
+
+  async getGroceryListWithItems(
+    id: number,
+    userId: string,
+  ): Promise<(GroceryList & { items: GroceryListItem[] }) | undefined> {
+    const [list] = await db
+      .select()
+      .from(groceryLists)
+      .where(and(eq(groceryLists.id, id), eq(groceryLists.userId, userId)));
+    if (!list) return undefined;
+
+    const items = await db
+      .select()
+      .from(groceryListItems)
+      .where(eq(groceryListItems.groceryListId, id))
+      .orderBy(groceryListItems.category, groceryListItems.name);
+
+    return { ...list, items };
+  }
+
+  async deleteGroceryList(id: number, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(groceryLists)
+      .where(and(eq(groceryLists.id, id), eq(groceryLists.userId, userId)))
+      .returning({ id: groceryLists.id });
+    return result.length > 0;
+  }
+
+  async addGroceryListItem(
+    item: InsertGroceryListItem,
+  ): Promise<GroceryListItem> {
+    const [created] = await db
+      .insert(groceryListItems)
+      .values(item)
+      .returning();
+    return created;
+  }
+
+  async updateGroceryListItemChecked(
+    id: number,
+    groceryListId: number,
+    isChecked: boolean,
+  ): Promise<GroceryListItem | undefined> {
+    const [updated] = await db
+      .update(groceryListItems)
+      .set({
+        isChecked,
+        checkedAt: isChecked ? new Date() : null,
+      })
+      .where(
+        and(
+          eq(groceryListItems.id, id),
+          eq(groceryListItems.groceryListId, groceryListId),
+        ),
+      )
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteGroceryListItem(
+    id: number,
+    groceryListId: number,
+  ): Promise<boolean> {
+    const result = await db
+      .delete(groceryListItems)
+      .where(
+        and(
+          eq(groceryListItems.id, id),
+          eq(groceryListItems.groceryListId, groceryListId),
+        ),
+      )
+      .returning({ id: groceryListItems.id });
+    return result.length > 0;
+  }
+
+  // ============================================================================
+  // MEAL SUGGESTION CACHE
+  // ============================================================================
+
+  async getMealSuggestionCache(
+    cacheKey: string,
+  ): Promise<MealSuggestionCacheEntry | undefined> {
+    const [cached] = await db
+      .select()
+      .from(mealSuggestionCache)
+      .where(
+        and(
+          eq(mealSuggestionCache.cacheKey, cacheKey),
+          gt(mealSuggestionCache.expiresAt, new Date()),
+        ),
+      );
+    return cached || undefined;
+  }
+
+  async createMealSuggestionCache(
+    cacheKey: string,
+    userId: string,
+    suggestions: unknown,
+    expiresAt: Date,
+  ): Promise<MealSuggestionCacheEntry> {
+    const [created] = await db
+      .insert(mealSuggestionCache)
+      .values({ cacheKey, userId, suggestions, expiresAt })
+      .returning();
+    return created;
+  }
+
+  async incrementMealSuggestionCacheHit(id: number): Promise<void> {
+    await db
+      .update(mealSuggestionCache)
+      .set({ hitCount: sql`${mealSuggestionCache.hitCount} + 1` })
+      .where(eq(mealSuggestionCache.id, id));
+  }
+
+  async getDailyMealSuggestionCount(
+    userId: string,
+    date: Date,
+  ): Promise<number> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(mealSuggestionCache)
+      .where(
+        and(
+          eq(mealSuggestionCache.userId, userId),
+          gte(mealSuggestionCache.createdAt, startOfDay),
+          lt(mealSuggestionCache.createdAt, endOfDay),
+        ),
+      );
+
+    return Number(result[0]?.count ?? 0);
+  }
+
+  // ============================================================================
+  // AGGREGATION
+  // ============================================================================
+
+  async getMealPlanIngredientsForDateRange(
+    userId: string,
+    startDate: string,
+    endDate: string,
+  ): Promise<RecipeIngredient[]> {
+    // Get all recipe IDs from meal plan items in the date range
+    const items = await db
+      .select({ recipeId: mealPlanItems.recipeId })
+      .from(mealPlanItems)
+      .where(
+        and(
+          eq(mealPlanItems.userId, userId),
+          gte(mealPlanItems.plannedDate, startDate),
+          lte(mealPlanItems.plannedDate, endDate),
+          sql`${mealPlanItems.recipeId} IS NOT NULL`,
+        ),
+      );
+
+    const recipeIds = [
+      ...new Set(items.filter((i) => i.recipeId).map((i) => i.recipeId!)),
+    ];
+
+    if (recipeIds.length === 0) return [];
+
+    return db
+      .select()
+      .from(recipeIngredients)
+      .where(
+        sql`${recipeIngredients.recipeId} IN (${sql.join(
+          recipeIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`,
+      );
   }
 }
 

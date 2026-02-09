@@ -11,20 +11,31 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
+import { UpgradeModal } from "@/components/UpgradeModal";
+import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
   BorderRadius,
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import { useMealPlanItems, useRemoveMealPlanItem } from "@/hooks/useMealPlan";
+import {
+  useMealPlanItems,
+  useRemoveMealPlanItem,
+  invalidateMealPlanItems,
+  useAddMealPlanItem,
+} from "@/hooks/useMealPlan";
+import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
+import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 type MealType = (typeof MEAL_TYPES)[number];
@@ -106,7 +117,7 @@ const DateStripItem = React.memo(function DateStripItem({
       <ThemedText
         style={[
           styles.dateStripDayName,
-          { color: isSelected ? "#FFFFFF" : theme.textSecondary },
+          { color: isSelected ? theme.buttonText : theme.textSecondary },
         ]}
       >
         {dayName}
@@ -114,7 +125,7 @@ const DateStripItem = React.memo(function DateStripItem({
       <ThemedText
         style={[
           styles.dateStripDayNum,
-          { color: isSelected ? "#FFFFFF" : theme.text },
+          { color: isSelected ? theme.buttonText : theme.text },
         ]}
       >
         {dayNum}
@@ -203,12 +214,16 @@ const MealSlotSection = React.memo(function MealSlotSection({
   onItemPress,
   onRemoveItem,
   onAddItem,
+  onSuggest,
+  canSuggest,
 }: {
   mealType: MealType;
   items: MealPlanItemWithRelations[];
   onItemPress: (item: MealPlanItemWithRelations) => void;
   onRemoveItem: (id: number) => void;
   onAddItem: (mealType: MealType) => void;
+  onSuggest: (mealType: MealType) => void;
+  canSuggest: boolean;
 }) {
   const { theme } = useTheme();
   const iconName = MEAL_ICONS[mealType] || "circle";
@@ -222,7 +237,43 @@ const MealSlotSection = React.memo(function MealSlotSection({
           size={16}
           color={theme.link}
         />
-        <ThemedText style={styles.mealSlotLabel}>{label}</ThemedText>
+        <ThemedText style={[styles.mealSlotLabel, { flex: 1 }]}>
+          {label}
+        </ThemedText>
+        <Pressable
+          onPress={() => onSuggest(mealType)}
+          hitSlop={8}
+          style={[
+            styles.suggestChip,
+            {
+              backgroundColor: canSuggest
+                ? withOpacity(theme.link, 0.1)
+                : withOpacity(theme.text, 0.05),
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={
+            canSuggest
+              ? `AI suggest ${label.toLowerCase()}`
+              : `Upgrade to suggest ${label.toLowerCase()}`
+          }
+        >
+          <Feather
+            name={canSuggest ? "zap" : "lock"}
+            size={12}
+            color={canSuggest ? theme.link : theme.textSecondary}
+          />
+          <ThemedText
+            style={[
+              styles.suggestChipText,
+              {
+                color: canSuggest ? theme.link : theme.textSecondary,
+              },
+            ]}
+          >
+            Suggest
+          </ThemedText>
+        </Pressable>
       </View>
       {items.map((item) => (
         <MealSlotItem
@@ -377,6 +428,10 @@ function EmptyState() {
 
 // ── Main Screen ──────────────────────────────────────────────────────
 
+// Free: 7 days forward, Premium: 90 days forward
+const FREE_MAX_DAYS_FORWARD = 7;
+const PREMIUM_MAX_DAYS_FORWARD = 90;
+
 export default function MealPlanHomeScreen() {
   const navigation = useNavigation<MealPlanHomeScreenNavigationProp>();
   const headerHeight = useHeaderHeight();
@@ -384,6 +439,7 @@ export default function MealPlanHomeScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const queryClient = useQueryClient();
+  const { features, isPremium } = usePremiumContext();
 
   const [today, setToday] = useState(() => {
     const d = new Date();
@@ -403,6 +459,16 @@ export default function MealPlanHomeScreen() {
   );
 
   const [selectedDate, setSelectedDate] = useState(today);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [suggestModalVisible, setSuggestModalVisible] = useState(false);
+  const [suggestMealType, setSuggestMealType] = useState<MealType>("breakfast");
+
+  const createRecipeMutation = useCreateMealPlanRecipe();
+  const addItemMutation = useAddMealPlanItem();
+
+  const maxDaysForward = isPremium
+    ? PREMIUM_MAX_DAYS_FORWARD
+    : FREE_MAX_DAYS_FORWARD;
 
   // Generate 7-day date range centered on selected week
   const weekDates = useMemo(() => {
@@ -465,9 +531,18 @@ export default function MealPlanHomeScreen() {
   }, [haptics]);
 
   const handleNextWeek = useCallback(() => {
+    const nextWeek = addDays(selectedDate, 7);
+    const daysForward = Math.round(
+      (nextWeek.getTime() - today.getTime()) / (24 * 60 * 60 * 1000),
+    );
+    if (daysForward > maxDaysForward) {
+      haptics.notification(Haptics.NotificationFeedbackType.Warning);
+      setShowUpgradeModal(true);
+      return;
+    }
     haptics.selection();
-    setSelectedDate((prev) => addDays(prev, 7));
-  }, [haptics]);
+    setSelectedDate(nextWeek);
+  }, [haptics, selectedDate, today, maxDaysForward]);
 
   const handleItemPress = useCallback(
     (item: MealPlanItemWithRelations) => {
@@ -496,6 +571,71 @@ export default function MealPlanHomeScreen() {
     },
     [haptics, navigation, selectedDateStr],
   );
+
+  const handleSuggest = useCallback(
+    (mealType: MealType) => {
+      if (!features.aiMealSuggestions) {
+        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+        setShowUpgradeModal(true);
+        return;
+      }
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      setSuggestMealType(mealType);
+      setSuggestModalVisible(true);
+    },
+    [features.aiMealSuggestions, haptics],
+  );
+
+  const handleSelectSuggestion = useCallback(
+    async (suggestion: MealSuggestion) => {
+      try {
+        // Create recipe from suggestion
+        const recipe = await createRecipeMutation.mutateAsync({
+          title: suggestion.title,
+          description: suggestion.description,
+          difficulty: suggestion.difficulty,
+          prepTimeMinutes: suggestion.prepTimeMinutes,
+          instructions: suggestion.instructions,
+          dietTags: suggestion.dietTags,
+          caloriesPerServing: suggestion.calories,
+          proteinPerServing: suggestion.protein,
+          carbsPerServing: suggestion.carbs,
+          fatPerServing: suggestion.fat,
+          ingredients: suggestion.ingredients.map((ing) => ({
+            name: ing.name,
+            quantity: ing.quantity,
+            unit: ing.unit,
+          })),
+        });
+
+        // Add to meal plan
+        await addItemMutation.mutateAsync({
+          recipeId: recipe.id,
+          plannedDate: selectedDateStr,
+          mealType: suggestMealType,
+        });
+
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        setSuggestModalVisible(false);
+        invalidateMealPlanItems(queryClient);
+      } catch {
+        // Mutation errors handled by React Query
+      }
+    },
+    [
+      createRecipeMutation,
+      addItemMutation,
+      selectedDateStr,
+      suggestMealType,
+      haptics,
+      queryClient,
+    ],
+  );
+
+  const handleGroceryLists = useCallback(() => {
+    haptics.selection();
+    navigation.navigate("GroceryLists");
+  }, [haptics, navigation]);
 
   const handleRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
@@ -552,6 +692,27 @@ export default function MealPlanHomeScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
+        {/* Grocery List Entry Point */}
+        <View style={styles.topActions}>
+          <Pressable
+            onPress={handleGroceryLists}
+            hitSlop={8}
+            style={[
+              styles.groceryButton,
+              { backgroundColor: withOpacity(theme.link, 0.1) },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Grocery Lists"
+          >
+            <Feather name="shopping-cart" size={16} color={theme.link} />
+            <ThemedText
+              style={[styles.groceryButtonText, { color: theme.link }]}
+            >
+              Grocery Lists
+            </ThemedText>
+          </Pressable>
+        </View>
+
         {/* Month/Year Header with arrows */}
         <View style={styles.monthHeader}>
           <Pressable
@@ -605,12 +766,27 @@ export default function MealPlanHomeScreen() {
             onItemPress={handleItemPress}
             onRemoveItem={handleRemoveItem}
             onAddItem={handleAddItem}
+            onSuggest={handleSuggest}
+            canSuggest={features.aiMealSuggestions}
           />
         ))}
 
         {/* Daily Totals */}
         <DailyTotals items={selectedDayItems} />
       </ScrollView>
+
+      {/* Modals */}
+      <MealSuggestionsModal
+        visible={suggestModalVisible}
+        date={selectedDateStr}
+        mealType={suggestMealType}
+        onClose={() => setSuggestModalVisible(false)}
+        onSelectSuggestion={handleSelectSuggestion}
+      />
+      <UpgradeModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </View>
   );
 }
@@ -756,5 +932,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
+  },
+  topActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+  },
+  groceryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  groceryButtonText: {
+    fontSize: 13,
+    fontFamily: FontFamily.medium,
+  },
+  suggestChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+  },
+  suggestChipText: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
   },
 });

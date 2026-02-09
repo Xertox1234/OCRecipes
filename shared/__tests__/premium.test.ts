@@ -34,6 +34,9 @@ describe("Premium Types", () => {
       expect(freeFeatures.advancedBarcodes).toBe(true);
       expect(freeFeatures.highQualityCapture).toBe(false);
       expect(freeFeatures.videoRecording).toBe(false);
+      expect(freeFeatures.aiMealSuggestions).toBe(false);
+      expect(freeFeatures.extendedPlanRange).toBe(false);
+      expect(freeFeatures.dailyAiSuggestions).toBe(0);
     });
 
     it("should have features for premium tier", () => {
@@ -42,6 +45,9 @@ describe("Premium Types", () => {
       expect(premiumFeatures.advancedBarcodes).toBe(true);
       expect(premiumFeatures.highQualityCapture).toBe(true);
       expect(premiumFeatures.videoRecording).toBe(true);
+      expect(premiumFeatures.aiMealSuggestions).toBe(true);
+      expect(premiumFeatures.extendedPlanRange).toBe(true);
+      expect(premiumFeatures.dailyAiSuggestions).toBe(10);
     });
 
     it("should have all tiers covered", () => {

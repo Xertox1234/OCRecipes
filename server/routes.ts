@@ -66,6 +66,12 @@ import {
   RestoreRequestSchema,
 } from "@shared/schemas/subscription";
 import { sendError } from "./lib/api-errors";
+import {
+  generateMealSuggestions,
+  buildSuggestionCacheKey,
+} from "./services/meal-suggestions";
+import { generateGroceryItems } from "./services/grocery-generation";
+import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
 import { isValidCalendarDate } from "./utils/date-validation";
 
@@ -2377,6 +2383,427 @@ Format as plain text with clear sections.`;
       } catch (error) {
         console.error("Remove meal plan item error:", error);
         res.status(500).json({ error: "Failed to remove item" });
+      }
+    },
+  );
+
+  // ============================================================================
+  // AI MEAL SUGGESTIONS & GROCERY LISTS
+  // ============================================================================
+
+  const mealSuggestionRateLimit = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    message: { error: "Too many suggestion requests. Please wait." },
+    keyGenerator: (req) => req.userId || ipKeyGenerator(req),
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const suggestMealSchema = z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+  });
+
+  const generateGroceryListSchema = z.object({
+    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    title: z.string().min(1).max(200).optional(),
+  });
+
+  const addManualGroceryItemSchema = z.object({
+    name: z.string().min(1).max(200),
+    quantity: z
+      .union([z.string(), z.number()])
+      .optional()
+      .nullable()
+      .transform((v) => v?.toString() ?? null),
+    unit: z.string().max(50).optional().nullable(),
+    category: z.string().max(50).optional().default("other"),
+  });
+
+  // POST /api/meal-plan/suggest — Generate 3 AI meal suggestions (premium)
+  app.post(
+    "/api/meal-plan/suggest",
+    requireAuth,
+    mealSuggestionRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const parsed = suggestMealSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: formatZodError(parsed.error) });
+          return;
+        }
+
+        // Premium check
+        const subscription = await storage.getSubscriptionStatus(req.userId!);
+        const tier = subscription?.tier || "free";
+        const features = TIER_FEATURES[tier];
+
+        if (!features.aiMealSuggestions) {
+          res.status(403).json({
+            error: "AI meal suggestions require a premium subscription",
+            code: "PREMIUM_REQUIRED",
+          });
+          return;
+        }
+
+        // Daily limit check
+        const dailyCount = await storage.getDailyMealSuggestionCount(
+          req.userId!,
+          new Date(),
+        );
+        if (dailyCount >= features.dailyAiSuggestions) {
+          res.status(429).json({
+            error: "Daily AI suggestion limit reached",
+            code: "DAILY_LIMIT_REACHED",
+            remainingToday: 0,
+          });
+          return;
+        }
+
+        // Build cache key
+        const userProfile = await storage.getUserProfile(req.userId!);
+        const user = await storage.getUser(req.userId!);
+        const profileHash = userProfile
+          ? calculateProfileHash(userProfile)
+          : "no-profile";
+
+        // Get existing meals for context
+        const existingItems = await storage.getMealPlanItems(
+          req.userId!,
+          parsed.data.date,
+          parsed.data.date,
+        );
+        const existingMeals = existingItems.map((item) => ({
+          title:
+            item.recipe?.title || item.scannedItem?.productName || "Unknown",
+          calories: parseFloat(
+            item.recipe?.caloriesPerServing ||
+              item.scannedItem?.calories ||
+              "0",
+          ),
+          mealType: item.mealType,
+        }));
+
+        const planHash = JSON.stringify(
+          existingMeals.map((m) => m.title).sort(),
+        );
+        const cacheKey = buildSuggestionCacheKey(
+          req.userId!,
+          parsed.data.date,
+          parsed.data.mealType,
+          profileHash,
+          planHash,
+        );
+
+        // Cache check
+        const cached = await storage.getMealSuggestionCache(cacheKey);
+        if (cached) {
+          await storage.incrementMealSuggestionCacheHit(cached.id);
+          const remaining = features.dailyAiSuggestions - dailyCount;
+          res.json({
+            suggestions: cached.suggestions as MealSuggestion[],
+            remainingToday: remaining,
+          });
+          return;
+        }
+
+        // Calculate remaining budget
+        const dailyTargets = {
+          calories: user?.dailyCalorieGoal || 2000,
+          protein: user?.dailyProteinGoal || 100,
+          carbs: user?.dailyCarbsGoal || 250,
+          fat: user?.dailyFatGoal || 65,
+        };
+
+        let consumedCalories = 0;
+        let consumedProtein = 0;
+        let consumedCarbs = 0;
+        let consumedFat = 0;
+        for (const meal of existingMeals) {
+          consumedCalories += meal.calories;
+        }
+        for (const item of existingItems) {
+          const servings = parseFloat(item.servings || "1");
+          if (item.recipe) {
+            consumedProtein +=
+              parseFloat(item.recipe.proteinPerServing || "0") * servings;
+            consumedCarbs +=
+              parseFloat(item.recipe.carbsPerServing || "0") * servings;
+            consumedFat +=
+              parseFloat(item.recipe.fatPerServing || "0") * servings;
+          } else if (item.scannedItem) {
+            consumedProtein +=
+              parseFloat(item.scannedItem.protein || "0") * servings;
+            consumedCarbs +=
+              parseFloat(item.scannedItem.carbs || "0") * servings;
+            consumedFat += parseFloat(item.scannedItem.fat || "0") * servings;
+          }
+        }
+
+        const remainingBudget = {
+          calories: Math.max(0, dailyTargets.calories - consumedCalories),
+          protein: Math.max(0, dailyTargets.protein - consumedProtein),
+          carbs: Math.max(0, dailyTargets.carbs - consumedCarbs),
+          fat: Math.max(0, dailyTargets.fat - consumedFat),
+        };
+
+        const suggestions = await generateMealSuggestions({
+          userId: req.userId!,
+          date: parsed.data.date,
+          mealType: parsed.data.mealType,
+          userProfile: userProfile || null,
+          dailyTargets,
+          existingMeals,
+          remainingBudget,
+        });
+
+        // Cache result (expires in 6 hours)
+        const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
+        await storage.createMealSuggestionCache(
+          cacheKey,
+          req.userId!,
+          suggestions,
+          expiresAt,
+        );
+
+        const remaining = features.dailyAiSuggestions - dailyCount - 1;
+        res.json({ suggestions, remainingToday: Math.max(0, remaining) });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          res.status(400).json({ error: formatZodError(error) });
+          return;
+        }
+        console.error("Meal suggestion error:", error);
+        res.status(500).json({ error: "Failed to generate suggestions" });
+      }
+    },
+  );
+
+  // POST /api/meal-plan/grocery-lists — Generate grocery list from date range
+  app.post(
+    "/api/meal-plan/grocery-lists",
+    requireAuth,
+    mealPlanRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const parsed = generateGroceryListSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: formatZodError(parsed.error) });
+          return;
+        }
+
+        if (
+          !isValidCalendarDate(parsed.data.startDate) ||
+          !isValidCalendarDate(parsed.data.endDate)
+        ) {
+          res.status(400).json({ error: "Invalid date format" });
+          return;
+        }
+
+        if (parsed.data.startDate > parsed.data.endDate) {
+          res.status(400).json({ error: "Start date must be before end date" });
+          return;
+        }
+
+        // Fetch ingredients from planned meals
+        const ingredients = await storage.getMealPlanIngredientsForDateRange(
+          req.userId!,
+          parsed.data.startDate,
+          parsed.data.endDate,
+        );
+
+        // Aggregate
+        const aggregated = generateGroceryItems(ingredients);
+
+        // Default title
+        const title =
+          parsed.data.title ||
+          `Grocery List ${parsed.data.startDate} to ${parsed.data.endDate}`;
+
+        // Create list
+        const list = await storage.createGroceryList({
+          userId: req.userId!,
+          title,
+          dateRangeStart: parsed.data.startDate,
+          dateRangeEnd: parsed.data.endDate,
+        });
+
+        // Create items
+        const items = [];
+        for (const agg of aggregated) {
+          const item = await storage.addGroceryListItem({
+            groceryListId: list.id,
+            name: agg.name,
+            quantity: agg.quantity?.toString() || null,
+            unit: agg.unit,
+            category: agg.category,
+          });
+          items.push(item);
+        }
+
+        res.status(201).json({ ...list, items });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          res.status(400).json({ error: formatZodError(error) });
+          return;
+        }
+        console.error("Generate grocery list error:", error);
+        res.status(500).json({ error: "Failed to generate grocery list" });
+      }
+    },
+  );
+
+  // GET /api/meal-plan/grocery-lists — List user's grocery lists
+  app.get(
+    "/api/meal-plan/grocery-lists",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const lists = await storage.getGroceryLists(req.userId!);
+        res.json(lists);
+      } catch (error) {
+        console.error("Get grocery lists error:", error);
+        res.status(500).json({ error: "Failed to fetch grocery lists" });
+      }
+    },
+  );
+
+  // GET /api/meal-plan/grocery-lists/:id — Get list with items
+  app.get(
+    "/api/meal-plan/grocery-lists/:id",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id) || id <= 0) {
+          res.status(400).json({ error: "Invalid list ID" });
+          return;
+        }
+
+        const list = await storage.getGroceryListWithItems(id, req.userId!);
+        if (!list) {
+          res.status(404).json({ error: "Grocery list not found" });
+          return;
+        }
+
+        res.json(list);
+      } catch (error) {
+        console.error("Get grocery list error:", error);
+        res.status(500).json({ error: "Failed to fetch grocery list" });
+      }
+    },
+  );
+
+  // PUT /api/meal-plan/grocery-lists/:id/items/:itemId — Toggle item checked
+  app.put(
+    "/api/meal-plan/grocery-lists/:id/items/:itemId",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const listId = parseInt(req.params.id as string, 10);
+        const itemId = parseInt(req.params.itemId as string, 10);
+        if (isNaN(listId) || listId <= 0 || isNaN(itemId) || itemId <= 0) {
+          res.status(400).json({ error: "Invalid ID" });
+          return;
+        }
+
+        // IDOR: verify list belongs to user
+        const list = await storage.getGroceryListWithItems(listId, req.userId!);
+        if (!list) {
+          res.status(404).json({ error: "Grocery list not found" });
+          return;
+        }
+
+        const isChecked =
+          typeof req.body.isChecked === "boolean" ? req.body.isChecked : true;
+        const updated = await storage.updateGroceryListItemChecked(
+          itemId,
+          listId,
+          isChecked,
+        );
+        if (!updated) {
+          res.status(404).json({ error: "Item not found" });
+          return;
+        }
+
+        res.json(updated);
+      } catch (error) {
+        console.error("Toggle grocery item error:", error);
+        res.status(500).json({ error: "Failed to update item" });
+      }
+    },
+  );
+
+  // POST /api/meal-plan/grocery-lists/:id/items — Add manual item
+  app.post(
+    "/api/meal-plan/grocery-lists/:id/items",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const listId = parseInt(req.params.id as string, 10);
+        if (isNaN(listId) || listId <= 0) {
+          res.status(400).json({ error: "Invalid list ID" });
+          return;
+        }
+
+        // IDOR: verify list belongs to user
+        const list = await storage.getGroceryListWithItems(listId, req.userId!);
+        if (!list) {
+          res.status(404).json({ error: "Grocery list not found" });
+          return;
+        }
+
+        const parsed = addManualGroceryItemSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json({ error: formatZodError(parsed.error) });
+          return;
+        }
+
+        const item = await storage.addGroceryListItem({
+          groceryListId: listId,
+          name: parsed.data.name,
+          quantity: parsed.data.quantity,
+          unit: parsed.data.unit || null,
+          category: parsed.data.category || "other",
+          isManual: true,
+        });
+
+        res.status(201).json(item);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          res.status(400).json({ error: formatZodError(error) });
+          return;
+        }
+        console.error("Add grocery item error:", error);
+        res.status(500).json({ error: "Failed to add item" });
+      }
+    },
+  );
+
+  // DELETE /api/meal-plan/grocery-lists/:id — Delete grocery list
+  app.delete(
+    "/api/meal-plan/grocery-lists/:id",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id) || id <= 0) {
+          res.status(400).json({ error: "Invalid list ID" });
+          return;
+        }
+
+        const deleted = await storage.deleteGroceryList(id, req.userId!);
+        if (!deleted) {
+          res.status(404).json({ error: "Grocery list not found" });
+          return;
+        }
+
+        res.status(204).send();
+      } catch (error) {
+        console.error("Delete grocery list error:", error);
+        res.status(500).json({ error: "Failed to delete grocery list" });
       }
     },
   );

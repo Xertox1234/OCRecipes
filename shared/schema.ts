@@ -268,6 +268,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   mealPlanRecipes: many(mealPlanRecipes),
   mealPlanItems: many(mealPlanItems),
   transactions: many(transactions),
+  groceryLists: many(groceryLists),
   profile: one(userProfiles, {
     fields: [users.id],
     references: [userProfiles.userId],
@@ -627,7 +628,133 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = typeof transactions.$inferInsert;
 
+// ============================================================================
+// GROCERY LISTS
+// ============================================================================
+
+export const groceryLists = pgTable(
+  "grocery_lists",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    title: text("title").notNull(),
+    dateRangeStart: date("date_range_start").notNull(),
+    dateRangeEnd: date("date_range_end").notNull(),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userDateIdx: index("grocery_lists_user_date_idx").on(
+      table.userId,
+      table.dateRangeStart,
+    ),
+  }),
+);
+
+export const groceryListItems = pgTable(
+  "grocery_list_items",
+  {
+    id: serial("id").primaryKey(),
+    groceryListId: integer("grocery_list_id")
+      .references(() => groceryLists.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    quantity: decimal("quantity", { precision: 10, scale: 2 }),
+    unit: text("unit"),
+    category: text("category").default("other"),
+    isChecked: boolean("is_checked").default(false),
+    isManual: boolean("is_manual").default(false),
+    checkedAt: timestamp("checked_at"),
+  },
+  (table) => ({
+    groceryListIdIdx: index("grocery_list_items_list_id_idx").on(
+      table.groceryListId,
+    ),
+  }),
+);
+
+export const groceryListsRelations = relations(
+  groceryLists,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [groceryLists.userId],
+      references: [users.id],
+    }),
+    items: many(groceryListItems),
+  }),
+);
+
+export const groceryListItemsRelations = relations(
+  groceryListItems,
+  ({ one }) => ({
+    groceryList: one(groceryLists, {
+      fields: [groceryListItems.groceryListId],
+      references: [groceryLists.id],
+    }),
+  }),
+);
+
+// ============================================================================
+// MEAL SUGGESTION CACHE
+// ============================================================================
+
+export const mealSuggestionCache = pgTable(
+  "meal_suggestion_cache",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    cacheKey: varchar("cache_key", { length: 255 }).notNull().unique(),
+    suggestions: jsonb("suggestions").notNull(),
+    hitCount: integer("hit_count").default(0),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => ({
+    cacheKeyIdx: index("meal_suggestion_cache_key_idx").on(table.cacheKey),
+    expiresAtIdx: index("meal_suggestion_cache_expires_idx").on(
+      table.expiresAt,
+    ),
+  }),
+);
+
+export const mealSuggestionCacheRelations = relations(
+  mealSuggestionCache,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [mealSuggestionCache.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
 // Meal planning types
+export const insertGroceryListSchema = createInsertSchema(groceryLists).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertGroceryListItemSchema = createInsertSchema(
+  groceryListItems,
+).omit({
+  id: true,
+});
+
+export type GroceryList = typeof groceryLists.$inferSelect;
+export type InsertGroceryList = z.infer<typeof insertGroceryListSchema>;
+export type GroceryListItem = typeof groceryListItems.$inferSelect;
+export type InsertGroceryListItem = z.infer<typeof insertGroceryListItemSchema>;
+export type MealSuggestionCacheEntry = typeof mealSuggestionCache.$inferSelect;
+
 export const insertMealPlanRecipeSchema = createInsertSchema(
   mealPlanRecipes,
 ).omit({
