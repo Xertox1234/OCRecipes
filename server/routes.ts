@@ -23,7 +23,7 @@ import { createSavedItemSchema } from "@shared/schemas/saved-items";
 import { eq } from "drizzle-orm";
 import {
   TIER_FEATURES,
-  subscriptionTiers,
+  isValidSubscriptionTier,
   type SubscriptionTier,
   type SubscriptionStatus,
   type PremiumFeatures,
@@ -77,13 +77,6 @@ import type { MealSuggestion } from "@shared/types/meal-suggestions";
 
 import { isValidCalendarDate } from "./utils/date-validation";
 
-/**
- * Type guard to validate if a string is a valid subscription tier.
- * Prevents unsafe type assertions that could cause runtime errors.
- */
-function isValidSubscriptionTier(tier: string): tier is SubscriptionTier {
-  return (subscriptionTiers as readonly string[]).includes(tier);
-}
 export { isValidCalendarDate };
 
 /**

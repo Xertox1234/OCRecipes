@@ -5,8 +5,8 @@ import {
   PlatformSchema,
 } from "@shared/schemas/subscription";
 import {
-  subscriptionTiers,
   TIER_FEATURES,
+  isValidSubscriptionTier,
   type SubscriptionTier,
   type SubscriptionStatus,
 } from "@shared/types/premium";
@@ -160,11 +160,6 @@ describe("PlatformSchema", () => {
 // ─── Subscription status logic tests ────────────────────────────────────────
 
 describe("Subscription status logic", () => {
-  // Replicate the route logic for unit testing
-  function isValidSubscriptionTier(tier: string): tier is SubscriptionTier {
-    return (subscriptionTiers as readonly string[]).includes(tier);
-  }
-
   function computeSubscriptionStatus(data: {
     tier: string;
     expiresAt: Date | null;

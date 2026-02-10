@@ -31,7 +31,7 @@ export default function SavedItemsScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
-  const { isPremium } = usePremiumContext();
+  const { isPremium, features } = usePremiumContext();
 
   const {
     data: savedItems,
@@ -42,7 +42,7 @@ export default function SavedItemsScreen() {
   const { data: countData } = useSavedItemCount();
 
   const itemCount = countData?.count ?? 0;
-  const limit = isPremium ? null : 6;
+  const limit = isPremium ? null : features.maxSavedItems;
 
   const renderItem = useCallback(
     ({ item, index }: { item: SavedItem; index: number }) => (
@@ -98,7 +98,7 @@ export default function SavedItemsScreen() {
           </ThemedText>
         )}
       </View>
-      {!isPremium && itemCount >= 6 ? (
+      {!isPremium && itemCount >= features.maxSavedItems ? (
         <View
           style={[
             styles.limitBanner,

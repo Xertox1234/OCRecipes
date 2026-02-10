@@ -724,6 +724,22 @@ export function sendError(
 
 ---
 
+### Hardcoded Tier Limits Silently Drift from Centralized Config
+
+**Problem:** The saved items limit was hardcoded as `6` in `storage.ts`, `SavedItemsScreen.tsx`, and `SaveButton.tsx`, while `TIER_FEATURES` in `shared/types/premium.ts` was the intended single source of truth for all tier-dependent limits.
+
+**How it happened:** When the saved items feature was first built, `TIER_FEATURES` didn't have a `maxSavedItems` property yet. The developer used a literal `6` as a quick implementation. Later, `TIER_FEATURES` became the canonical config for tier limits (scans, suggestions, recipes), but the saved items limit was never migrated. The hardcoded `6` continued to work correctly — it just wasn't connected to the config system.
+
+**Why it's dangerous:** If someone later changed the free tier's saved items limit in `TIER_FEATURES`, the config change would have no effect because the actual enforcement was hardcoded elsewhere. The code would appear to respect the config (since `TIER_FEATURES` existed) but silently ignore it.
+
+**Fix:** Added `maxSavedItems` to the `PremiumFeatures` interface and `TIER_FEATURES` config, then replaced all hardcoded `6` references with `features.maxSavedItems` (server) and `features.maxSavedItems` via `usePremiumContext()` (client).
+
+**Lesson:** When adding a new tier-dependent limit, always follow the full path: add to `PremiumFeatures` interface -> set per-tier value in `TIER_FEATURES` -> consume via `features.X`. Never use a magic number as a "temporary" solution — it becomes permanent the moment someone else reads the code and assumes the config is authoritative. Grep for literal numbers when reviewing tier-related code.
+
+**Pattern Reference:** See "Tier-Gated Route Guards" in PATTERNS.md (key element #5)
+
+---
+
 ## Data Processing Gotchas
 
 ### Longest-Keyword-Match Prevents False Category Assignment

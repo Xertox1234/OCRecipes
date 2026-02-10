@@ -13,6 +13,7 @@ import * as Haptics from "expo-haptics";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useCreateSavedItem } from "@/hooks/useSavedItems";
+import { usePremiumContext } from "@/context/PremiumContext";
 import { BorderRadius } from "@/constants/theme";
 import type { CreateSavedItemInput } from "@shared/schemas/saved-items";
 
@@ -27,6 +28,7 @@ interface SaveButtonProps {
 export function SaveButton({ item, style, onSaved }: SaveButtonProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { features } = usePremiumContext();
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const createSavedItem = useCreateSavedItem();
   const resetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -54,7 +56,7 @@ export function SaveButton({ item, style, onSaved }: SaveButtonProps) {
         haptics.notification(Haptics.NotificationFeedbackType.Warning);
         Alert.alert(
           "Library Full",
-          "You've reached the limit of 6 saved items. Upgrade to Premium for unlimited saves, or delete some items to make room.",
+          `You've reached the limit of ${features.maxSavedItems} saved items. Upgrade to Premium for unlimited saves, or delete some items to make room.`,
           [{ text: "OK", style: "default" }],
         );
         return;

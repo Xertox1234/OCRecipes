@@ -5,8 +5,16 @@ export type SubscriptionTier = (typeof subscriptionTiers)[number];
 
 export const subscriptionTierSchema = z.enum(subscriptionTiers);
 
+/** Type guard to validate if a string is a valid subscription tier. */
+export function isValidSubscriptionTier(
+  tier: string,
+): tier is SubscriptionTier {
+  return (subscriptionTiers as readonly string[]).includes(tier);
+}
+
 export interface PremiumFeatures {
   maxDailyScans: number;
+  maxSavedItems: number;
   advancedBarcodes: boolean;
   highQualityCapture: boolean;
   videoRecording: boolean;
@@ -27,6 +35,7 @@ export const UNLIMITED_SCANS = 999999;
 export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
   free: {
     maxDailyScans: 3,
+    maxSavedItems: 6,
     advancedBarcodes: true,
     highQualityCapture: false,
     videoRecording: false,
@@ -42,6 +51,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
   },
   premium: {
     maxDailyScans: UNLIMITED_SCANS,
+    maxSavedItems: UNLIMITED_SCANS,
     advancedBarcodes: true,
     highQualityCapture: true,
     videoRecording: true,

@@ -465,6 +465,8 @@ const features = TIER_FEATURES[tier];
 
 **Why:** Validates against the actual source of truth, not a duplicated list. If you add a new tier to `subscriptionTiers`, the type guard automatically accepts it.
 
+**Colocation rule:** Define the type guard in the same file as the source array it validates. `isValidSubscriptionTier()` lives in `shared/types/premium.ts` next to `subscriptionTiers` — not in a consumer like `routes.ts` or `storage.ts`. This prevents duplication and ensures all consumers import from one canonical location.
+
 **When to use:** Validating enum-like values from database, API responses, or user input against a defined set.
 
 ### Union Types for Record Keys
@@ -1024,6 +1026,7 @@ if (daysDiff > maxDays) {
 2. **Return typed `code`** strings that the client `ApiError` class can match on (see Client State Patterns > Typed ApiError Class)
 3. **Use 403 for feature locks**, 429 for usage limits, 400 for hard resource ceilings
 4. **Default to `"free"`** when subscription data is missing — never grant premium by default
+5. **All numeric limits must come from `TIER_FEATURES`** — never hardcode a number (like `6` for max saved items). Hardcoded values silently drift from the config when tier limits change. The flow is: add to `PremiumFeatures` interface -> set in `TIER_FEATURES` per tier -> read via `features.X` at the call site
 
 **When to use:**
 
@@ -1039,7 +1042,7 @@ if (daysDiff > maxDays) {
 **References:**
 
 - `server/routes.ts` — meal suggestion, grocery list creation routes
-- `shared/types/subscription.ts` — `TIER_FEATURES` config object
+- `shared/types/premium.ts` — `TIER_FEATURES` config object, `PremiumFeatures` interface
 - Client-side: see "Typed ApiError Class" and "Premium Feature Gating UI" patterns
 
 ### checkPremiumFeature Helper for Tier Gates
@@ -4701,8 +4704,7 @@ const features = TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
 
 **References:**
 
-- `server/routes.ts` — `isValidSubscriptionTier()` type guard
-- `shared/types/premium.ts` — `subscriptionTiers` tuple and `SubscriptionTier` type
+- `shared/types/premium.ts` — `isValidSubscriptionTier()` type guard, `subscriptionTiers` tuple, and `SubscriptionTier` type (type guard is colocated with the source array it validates)
 - Related learning: "Unsafe `as` Casts Hide Runtime Bugs" in LEARNINGS.md
 
 ---

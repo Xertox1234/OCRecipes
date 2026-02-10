@@ -46,6 +46,7 @@ import {
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
+import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, lt, gt, sql, or, ilike } from "drizzle-orm";
 import {
@@ -553,12 +554,11 @@ export class DatabaseStorage implements IStorage {
     userId: string,
     itemData: CreateSavedItemInput,
   ): Promise<SavedItem | null> {
-    // Simple count check - sufficient for single-user mobile app
-    // Worst case race condition: user gets 7 items instead of 6. Not catastrophic.
     const count = await this.getSavedItemCount(userId);
     const subscription = await this.getSubscriptionStatus(userId);
-    const isPremium = subscription?.tier === "premium";
-    const limit = isPremium ? Infinity : 6;
+    const tierValue = subscription?.tier || "free";
+    const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
+    const limit = TIER_FEATURES[tier].maxSavedItems;
 
     if (count >= limit) {
       return null; // Signal limit reached
