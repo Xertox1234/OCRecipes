@@ -22,7 +22,7 @@ export default function ProfileStackNavigator() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          headerTitle: () => <HeaderTitle title="Profile" />,
+          headerShown: false,
         }}
       />
       <Stack.Screen
