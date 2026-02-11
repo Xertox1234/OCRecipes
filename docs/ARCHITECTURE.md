@@ -696,6 +696,34 @@ interface IStorage {
 
 **Note:** `nutritionCache` is accessed directly via Drizzle in `server/services/nutrition-lookup.ts`, not through the `IStorage` interface, since it's a service-internal concern with its own upsert logic.
 
+### Goal Calculator (`server/services/goal-calculator.ts`)
+
+Calculates daily nutrition targets from a user's physical profile.
+
+**Algorithm:**
+
+1. **BMR** — Mifflin-St Jeor formula: `10 × weight(kg) + 6.25 × height(cm) − 5 × age + gender_offset` (male: +5, female/other: −161)
+2. **TDEE** — BMR × activity multiplier (sedentary 1.2 → athlete 1.9)
+3. **Goal modifier** — Calorie adjustment per primary goal (lose weight: −500, gain muscle: +300, maintain/healthier/condition: 0)
+4. **Safety floor** — Minimum 1200 kcal/day
+5. **Macro split** — Goal-specific protein/carbs/fat ratios applied to daily calories, converted to grams (protein & carbs: 4 cal/g, fat: 9 cal/g)
+
+**Macro splits by goal:**
+
+| Goal             | Protein | Carbs | Fat |
+| ---------------- | ------- | ----- | --- |
+| lose_weight      | 40%     | 30%   | 30% |
+| gain_muscle      | 35%     | 40%   | 25% |
+| maintain         | 30%     | 40%   | 30% |
+| eat_healthier    | 30%     | 45%   | 25% |
+| manage_condition | 30%     | 40%   | 30% |
+
+**Key function**: `calculateGoals(profile: UserPhysicalProfile): CalculatedGoals`
+
+**Data flow**: GoalSetupScreen → `POST /api/goals/calculate` → `calculateGoals()` → saves to `users` table (goals + physical profile) and `userProfiles` table (activity level, primary goal) → returns calculated targets → user can adjust → `PUT /api/goals` persists final values.
+
+---
+
 ### Meal Planning Services
 
 #### Recipe Catalog (`server/services/recipe-catalog.ts`)

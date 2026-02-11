@@ -753,6 +753,33 @@ Features:
 - Calorie goal editing
 - Sign out button
 
+### GoalSetupScreen
+
+Opened as a modal from ProfileScreen. Collects physical profile data and calculates personalized nutrition targets using the Mifflin-St Jeor formula.
+
+**Flow:**
+
+1. User enters physical profile (age, weight, height, gender)
+2. Selects activity level (sedentary → athlete)
+3. Selects primary goal (lose weight, build muscle, maintain, eat healthier, manage condition)
+4. Taps "Calculate My Goals" → `POST /api/goals/calculate`
+5. Server returns calculated targets (calories, protein, carbs, fat)
+6. Results shown in editable fields — user can adjust values
+7. Macro inputs (protein, carbs, fat) are premium-gated via `usePremiumFeature("macroGoals")`
+8. Taps "Save My Goals" → `PUT /api/goals`
+
+**Key patterns:**
+
+- Two-step mutation: `calculateMutation` (server-side calculation) then `saveMutation` (persist final values)
+- Calorie input is always editable; macro inputs show lock icon and are disabled for free users
+- Staggered `FadeInUp` entrance animations (respects `reducedMotion`)
+- Uses `SelectableChip` component for gender, activity level, and goal selection
+
+```typescript
+// File: client/screens/GoalSetupScreen.tsx
+// Navigation: RootStackNavigator → "GoalSetup" (modal)
+```
+
 ---
 
 ## Meal Planning

@@ -543,6 +543,103 @@ POST /api/items/:id/suggestions
 
 ---
 
+### Goals
+
+#### Get Goals
+
+Returns the current user's daily nutrition targets.
+
+```http
+GET /api/goals
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "dailyCalorieGoal": 2000,
+  "dailyProteinGoal": 150,
+  "dailyCarbsGoal": 200,
+  "dailyFatGoal": 67,
+  "goalsCalculatedAt": "2026-02-10T12:00:00.000Z"
+}
+```
+
+#### Calculate Goals
+
+Calculates personalized daily nutrition targets from a physical profile using the Mifflin-St Jeor formula. Saves the profile and calculated goals to the user record.
+
+```http
+POST /api/goals/calculate
+```
+
+**Request Body**
+
+| Field         | Type   | Required | Description                                                                                |
+| ------------- | ------ | -------- | ------------------------------------------------------------------------------------------ |
+| weight        | number | yes      | Weight in kg (20–500)                                                                      |
+| height        | number | yes      | Height in cm (50–300)                                                                      |
+| age           | number | yes      | Age in years (13–120)                                                                      |
+| gender        | string | yes      | `"male"`, `"female"`, or `"other"`                                                         |
+| activityLevel | string | yes      | `"sedentary"`, `"light"`, `"moderate"`, `"active"`, or `"athlete"`                         |
+| primaryGoal   | string | yes      | `"lose_weight"`, `"gain_muscle"`, `"maintain"`, `"eat_healthier"`, or `"manage_condition"` |
+
+**Response** `200 OK`
+
+```json
+{
+  "dailyCalories": 2100,
+  "dailyProtein": 158,
+  "dailyCarbs": 210,
+  "dailyFat": 70,
+  "profile": {
+    "weight": 75,
+    "height": 180,
+    "age": 30,
+    "gender": "male",
+    "activityLevel": "moderate",
+    "primaryGoal": "maintain"
+  }
+}
+```
+
+**Errors**
+
+| Status | Message                   |
+| ------ | ------------------------- |
+| 400    | Zod validation error      |
+| 500    | Failed to calculate goals |
+
+#### Update Goals
+
+Manually update daily nutrition targets. All fields are optional — only provided fields are updated.
+
+```http
+PUT /api/goals
+```
+
+**Request Body**
+
+| Field            | Type   | Required | Description           |
+| ---------------- | ------ | -------- | --------------------- |
+| dailyCalorieGoal | number | no       | Calories (500–10000)  |
+| dailyProteinGoal | number | no       | Protein grams (0–500) |
+| dailyCarbsGoal   | number | no       | Carbs grams (0–1000)  |
+| dailyFatGoal     | number | no       | Fat grams (0–500)     |
+
+**Response** `200 OK`
+
+```json
+{
+  "dailyCalorieGoal": 2200,
+  "dailyProteinGoal": 165,
+  "dailyCarbsGoal": 220,
+  "dailyFatGoal": 73
+}
+```
+
+---
+
 ### Photo Analysis
 
 #### Analyze Photo

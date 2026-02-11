@@ -24,17 +24,25 @@ CREATE TABLE users (
 );
 ```
 
-| Column                  | Type      | Constraints             | Description                       |
-| ----------------------- | --------- | ----------------------- | --------------------------------- |
-| id                      | VARCHAR   | PK, auto-generated UUID | Unique identifier                 |
-| username                | TEXT      | NOT NULL, UNIQUE        | Login username                    |
-| password                | TEXT      | NOT NULL                | Bcrypt-hashed password            |
-| display_name            | TEXT      | nullable                | User's display name               |
-| daily_calorie_goal      | INTEGER   | DEFAULT 2000            | Target daily calories             |
-| onboarding_completed    | BOOLEAN   | DEFAULT FALSE           | Onboarding status                 |
-| subscription_tier       | TEXT      | DEFAULT 'free'          | `"free"` or `"premium"`           |
-| subscription_expires_at | TIMESTAMP | nullable                | Premium expiry (null = no expiry) |
-| created_at              | TIMESTAMP | NOT NULL, auto          | Account creation time             |
+| Column                  | Type      | Constraints             | Description                          |
+| ----------------------- | --------- | ----------------------- | ------------------------------------ |
+| id                      | VARCHAR   | PK, auto-generated UUID | Unique identifier                    |
+| username                | TEXT      | NOT NULL, UNIQUE        | Login username                       |
+| password                | TEXT      | NOT NULL                | Bcrypt-hashed password               |
+| display_name            | TEXT      | nullable                | User's display name                  |
+| daily_calorie_goal      | INTEGER   | DEFAULT 2000            | Target daily calories                |
+| daily_protein_goal      | INTEGER   | nullable                | Target daily protein (grams)         |
+| daily_carbs_goal        | INTEGER   | nullable                | Target daily carbs (grams)           |
+| daily_fat_goal          | INTEGER   | nullable                | Target daily fat (grams)             |
+| weight                  | DECIMAL   | nullable, precision 5,2 | User weight in kg                    |
+| height                  | DECIMAL   | nullable, precision 5,2 | User height in cm                    |
+| age                     | INTEGER   | nullable                | User age in years                    |
+| gender                  | TEXT      | nullable                | `"male"`, `"female"`, or `"other"`   |
+| goals_calculated_at     | TIMESTAMP | nullable                | When goals were last auto-calculated |
+| onboarding_completed    | BOOLEAN   | DEFAULT FALSE           | Onboarding status                    |
+| subscription_tier       | TEXT      | DEFAULT 'free'          | `"free"` or `"premium"`              |
+| subscription_expires_at | TIMESTAMP | nullable                | Premium expiry (null = no expiry)    |
+| created_at              | TIMESTAMP | NOT NULL, auto          | Account creation time                |
 
 ### User Profiles Table
 

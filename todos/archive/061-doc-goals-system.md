@@ -1,9 +1,9 @@
 ---
 title: "Document goals calculation system in project docs"
-status: backlog
+status: done
 priority: low
 created: 2026-02-08
-updated: 2026-02-08
+updated: 2026-02-10
 assignee:
 labels: [documentation, goals]
 ---
@@ -20,10 +20,10 @@ Users can set physical profile data (weight, height, age, gender) and have calor
 
 ## Acceptance Criteria
 
-- [ ] Document GoalSetupScreen in FRONTEND.md
-- [ ] Document /api/goals/\* endpoints in API.md
-- [ ] Document server/services/goal-calculator.ts in ARCHITECTURE.md
-- [ ] Document users table physical profile columns (weight, height, age, gender, macro goals, goalsCalculatedAt) in DATABASE.md
+- [x] Document GoalSetupScreen in FRONTEND.md
+- [x] Document /api/goals/\* endpoints in API.md
+- [x] Document server/services/goal-calculator.ts in ARCHITECTURE.md
+- [x] Document users table physical profile columns (weight, height, age, gender, macro goals, goalsCalculatedAt) in DATABASE.md
 
 ## Implementation Notes
 
