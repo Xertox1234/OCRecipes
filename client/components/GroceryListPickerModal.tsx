@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -54,6 +55,15 @@ export function GroceryListPickerModal({
 
   const isAdding = addItem.isPending;
 
+  // Reset local state when modal is dismissed
+  useEffect(() => {
+    if (!visible) {
+      setShowNewListInput(false);
+      setNewListTitle("");
+      setAddingToListId(null);
+    }
+  }, [visible]);
+
   const handleAddToList = useCallback(
     (listId: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -67,7 +77,12 @@ export function GroceryListPickerModal({
             onClose();
           },
           onError: () => {
+            haptics.notification(Haptics.NotificationFeedbackType.Error);
             setAddingToListId(null);
+            Alert.alert(
+              "Error",
+              "Failed to add item to list. Please try again.",
+            );
           },
         },
       );
@@ -90,6 +105,10 @@ export function GroceryListPickerModal({
           setShowNewListInput(false);
           setNewListTitle("");
           handleAddToList(list.id);
+        },
+        onError: () => {
+          haptics.notification(Haptics.NotificationFeedbackType.Error);
+          Alert.alert("Error", "Failed to create list. Please try again.");
         },
       },
     );

@@ -257,7 +257,7 @@ const HistoryItem = React.memo(function HistoryItem({
                 ) : null}
                 {item.protein || item.carbs || item.fat ? (
                   <View style={styles.macroRow}>
-                    {item.protein ? (
+                    {item.protein && !isNaN(parseFloat(item.protein)) ? (
                       <ThemedText
                         type="caption"
                         style={{ color: theme.proteinAccent }}
@@ -265,7 +265,7 @@ const HistoryItem = React.memo(function HistoryItem({
                         P {Math.round(parseFloat(item.protein))}g
                       </ThemedText>
                     ) : null}
-                    {item.carbs ? (
+                    {item.carbs && !isNaN(parseFloat(item.carbs)) ? (
                       <ThemedText
                         type="caption"
                         style={{ color: theme.carbsAccent }}
@@ -273,7 +273,7 @@ const HistoryItem = React.memo(function HistoryItem({
                         C {Math.round(parseFloat(item.carbs))}g
                       </ThemedText>
                     ) : null}
-                    {item.fat ? (
+                    {item.fat && !isNaN(parseFloat(item.fat)) ? (
                       <ThemedText
                         type="caption"
                         style={{ color: theme.fatAccent }}
