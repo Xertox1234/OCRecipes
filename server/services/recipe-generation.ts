@@ -19,7 +19,10 @@ const recipeContentSchema = z.object({
   description: z.string().min(1).max(500),
   difficulty: z.enum(["Easy", "Medium", "Hard"]),
   timeEstimate: z.string().min(1).max(50),
-  instructions: z.string().min(1),
+  instructions: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v.join("\n") : v))
+    .pipe(z.string().min(1)),
   dietTags: z.array(z.string()).default([]),
 });
 

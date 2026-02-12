@@ -1,0 +1,342 @@
+import React from "react";
+import {
+  StyleSheet,
+  View,
+  ScrollView,
+  Image,
+  Pressable,
+  ActivityIndicator,
+  useWindowDimensions,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRoute, useNavigation } from "@react-navigation/native";
+import { useQuery } from "@tanstack/react-query";
+import { Feather } from "@expo/vector-icons";
+import type { RouteProp } from "@react-navigation/native";
+
+import { ThemedText } from "@/components/ThemedText";
+import { Card } from "@/components/Card";
+import { useTheme } from "@/hooks/useTheme";
+import { getApiUrl } from "@/lib/query-client";
+import {
+  Spacing,
+  BorderRadius,
+  FontFamily,
+  withOpacity,
+} from "@/constants/theme";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+
+type FeaturedRecipeDetailRouteProp = RouteProp<
+  RootStackParamList,
+  "FeaturedRecipeDetail"
+>;
+
+interface CommunityRecipe {
+  id: number;
+  title: string;
+  description: string | null;
+  difficulty: string | null;
+  timeEstimate: string | null;
+  servings: number | null;
+  dietTags: string[];
+  instructions: string;
+  imageUrl: string | null;
+  likeCount: number | null;
+}
+
+function InfoChip({ icon, text }: { icon: string; text: string }) {
+  const { theme } = useTheme();
+  return (
+    <View style={[styles.chip, { backgroundColor: theme.backgroundSecondary }]}>
+      <Feather name={icon as any} size={14} color={theme.textSecondary} />
+      <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>
+        {text}
+      </ThemedText>
+    </View>
+  );
+}
+
+export default function FeaturedRecipeDetailScreen() {
+  const route = useRoute<FeaturedRecipeDetailRouteProp>();
+  const navigation = useNavigation();
+  const { recipeId } = route.params;
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const { theme } = useTheme();
+
+  const sheetHeight = windowHeight * 0.85;
+
+  const {
+    data: recipe,
+    isLoading,
+    error,
+  } = useQuery<CommunityRecipe>({
+    queryKey: [`/api/recipes/${recipeId}`],
+  });
+
+  const dismiss = () => navigation.goBack();
+
+  const imageUri = recipe?.imageUrl ? `${getApiUrl()}${recipe.imageUrl}` : null;
+
+  return (
+    <View style={styles.container}>
+      {/* Tappable backdrop */}
+      <Pressable
+        style={styles.backdrop}
+        onPress={dismiss}
+        accessibilityLabel="Close recipe"
+        accessibilityRole="button"
+      />
+
+      {/* Sheet */}
+      <View
+        style={[
+          styles.sheet,
+          {
+            height: sheetHeight,
+            backgroundColor: theme.backgroundRoot,
+          },
+        ]}
+      >
+        {/* Grabber + close button */}
+        <View style={styles.sheetHeader}>
+          <View style={styles.grabberSpacer} />
+          <View
+            style={[
+              styles.grabber,
+              { backgroundColor: "rgba(255,255,255,0.5)" },
+            ]}
+          />
+          <Pressable
+            onPress={dismiss}
+            hitSlop={8}
+            accessibilityLabel="Close"
+            accessibilityRole="button"
+            style={styles.closeButton}
+          >
+            <Feather name="chevron-down" size={22} color={theme.text} />
+          </Pressable>
+        </View>
+
+        {isLoading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={theme.link} />
+          </View>
+        ) : error || !recipe ? (
+          <View style={styles.center}>
+            <Feather
+              name="alert-circle"
+              size={32}
+              color={theme.textSecondary}
+            />
+            <ThemedText
+              style={{ marginTop: Spacing.sm, color: theme.textSecondary }}
+            >
+              Recipe not found
+            </ThemedText>
+          </View>
+        ) : (
+          <ScrollView
+            contentContainerStyle={{
+              paddingBottom: insets.bottom + Spacing.xl,
+            }}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Hero image */}
+            {imageUri ? (
+              <Image
+                source={{ uri: imageUri }}
+                style={styles.heroImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View
+                style={[
+                  styles.heroPlaceholder,
+                  { backgroundColor: theme.backgroundSecondary },
+                ]}
+              >
+                <Feather name="image" size={48} color={theme.textSecondary} />
+              </View>
+            )}
+
+            <View style={styles.content}>
+              {/* Title */}
+              <ThemedText type="h3" style={styles.title}>
+                {recipe.title}
+              </ThemedText>
+
+              {/* Description */}
+              {recipe.description ? (
+                <ThemedText
+                  style={[styles.description, { color: theme.textSecondary }]}
+                >
+                  {recipe.description}
+                </ThemedText>
+              ) : null}
+
+              {/* Info chips */}
+              <View style={styles.chipRow}>
+                {recipe.difficulty ? (
+                  <InfoChip icon="bar-chart-2" text={recipe.difficulty} />
+                ) : null}
+                {recipe.timeEstimate ? (
+                  <InfoChip icon="clock" text={recipe.timeEstimate} />
+                ) : null}
+                {recipe.servings ? (
+                  <InfoChip icon="users" text={`${recipe.servings} servings`} />
+                ) : null}
+              </View>
+
+              {/* Diet tags */}
+              {recipe.dietTags && recipe.dietTags.length > 0 ? (
+                <View style={styles.tagRow}>
+                  {recipe.dietTags.map((tag) => (
+                    <View
+                      key={tag}
+                      style={[
+                        styles.tag,
+                        {
+                          backgroundColor: withOpacity(theme.link, 0.1),
+                        },
+                      ]}
+                    >
+                      <ThemedText
+                        style={[styles.tagText, { color: theme.link }]}
+                      >
+                        {tag}
+                      </ThemedText>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {/* Instructions */}
+              <Card elevation={1} style={styles.instructionsCard}>
+                <ThemedText type="h4" style={styles.sectionTitle}>
+                  Instructions
+                </ThemedText>
+                <ThemedText style={styles.instructions}>
+                  {recipe.instructions}
+                </ThemedText>
+              </Card>
+            </View>
+          </ScrollView>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  sheet: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: "hidden",
+  },
+  sheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  grabberSpacer: {
+    width: 22,
+  },
+  grabber: {
+    flex: 1,
+    alignSelf: "center",
+    width: 36,
+    maxWidth: 36,
+    height: 4,
+    borderRadius: 2,
+    marginHorizontal: "auto",
+  },
+  closeButton: {
+    width: 22,
+    alignItems: "center",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  heroImage: {
+    width: "100%",
+    height: 250,
+  },
+  heroPlaceholder: {
+    width: "100%",
+    height: 200,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  content: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+  },
+  title: {
+    marginBottom: Spacing.xs,
+  },
+  description: {
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: Spacing.md,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.xs,
+  },
+  chipText: {
+    fontSize: 13,
+    fontFamily: FontFamily.medium,
+  },
+  tagRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.xs,
+    marginBottom: Spacing.lg,
+  },
+  tag: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.xs,
+  },
+  tagText: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
+  },
+  sectionTitle: {
+    marginBottom: Spacing.md,
+  },
+  instructionsCard: {
+    padding: Spacing.lg,
+  },
+  instructions: {
+    fontSize: 15,
+    lineHeight: 24,
+  },
+});

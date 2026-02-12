@@ -21,7 +21,8 @@
     "test:coverage": "vitest run --coverage",
     "prepare": "husky",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "seed:recipes": "tsx server/scripts/seed-recipes.ts"
   },
   "dependencies": {
     "@expo-google-fonts/nunito": "^0.4.2",

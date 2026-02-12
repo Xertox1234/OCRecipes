@@ -164,6 +164,10 @@ export interface IStorage {
     isPublic: boolean,
   ): Promise<CommunityRecipe | undefined>;
   getCommunityRecipe(id: number): Promise<CommunityRecipe | undefined>;
+  getFeaturedRecipes(
+    limit?: number,
+    offset?: number,
+  ): Promise<CommunityRecipe[]>;
   deleteCommunityRecipe(recipeId: number, authorId: string): Promise<boolean>;
   getUserRecipes(
     userId: string,
@@ -783,6 +787,16 @@ export class DatabaseStorage implements IStorage {
       .from(communityRecipes)
       .where(eq(communityRecipes.id, id));
     return recipe || undefined;
+  }
+
+  async getFeaturedRecipes(limit = 12, offset = 0): Promise<CommunityRecipe[]> {
+    return db
+      .select()
+      .from(communityRecipes)
+      .where(eq(communityRecipes.isPublic, true))
+      .orderBy(desc(communityRecipes.createdAt))
+      .limit(limit)
+      .offset(offset);
   }
 
   async deleteCommunityRecipe(

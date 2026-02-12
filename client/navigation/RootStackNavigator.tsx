@@ -9,6 +9,7 @@ import PhotoIntentScreen from "@/screens/PhotoIntentScreen";
 import PhotoAnalysisScreen from "@/screens/PhotoAnalysisScreen";
 import GoalSetupScreen from "@/screens/GoalSetupScreen";
 import EditDietaryProfileScreen from "@/screens/EditDietaryProfileScreen";
+import FeaturedRecipeDetailScreen from "@/screens/FeaturedRecipeDetailScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
@@ -34,6 +35,7 @@ export type RootStackParamList = {
   };
   GoalSetup: undefined;
   EditDietaryProfile: undefined;
+  FeaturedRecipeDetail: { recipeId: number };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -112,6 +114,15 @@ export default function RootStackNavigator() {
             options={{
               headerTitle: "Edit Preferences",
               presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="FeaturedRecipeDetail"
+            component={FeaturedRecipeDetailScreen}
+            options={{
+              headerShown: false,
+              presentation: "containedTransparentModal",
+              animation: "slide_from_bottom",
             }}
           />
         </>

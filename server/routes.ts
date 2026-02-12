@@ -1805,6 +1805,23 @@ Format as plain text with clear sections.`;
     isPublic: z.boolean(),
   });
 
+  // GET /api/recipes/featured - Get featured public recipes
+  app.get(
+    "/api/recipes/featured",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const limit = Math.min(Number(req.query.limit) || 12, 50);
+        const offset = Number(req.query.offset) || 0;
+        const recipes = await storage.getFeaturedRecipes(limit, offset);
+        res.json(recipes);
+      } catch (error) {
+        console.error("Get featured recipes error:", error);
+        res.status(500).json({ error: "Failed to fetch featured recipes" });
+      }
+    },
+  );
+
   // GET /api/recipes/community - Get community recipes for a product
   app.get(
     "/api/recipes/community",

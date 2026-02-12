@@ -81,15 +81,12 @@ function useGridItemWidth() {
   return (width - Spacing.lg * 2 - GRID_GAP) / 2;
 }
 
-// Mock data for photo grid
-const MOCK_FOOD_GRID = [
-  { id: "1", name: "Avocado Toast", emoji: "🥑" },
-  { id: "2", name: "Greek Salad", emoji: "🥗" },
-  { id: "3", name: "Grilled Salmon", emoji: "🐟" },
-  { id: "4", name: "Açaí Bowl", emoji: "🫐" },
-  { id: "5", name: "Chicken Wrap", emoji: "🌯" },
-  { id: "6", name: "Smoothie", emoji: "🥤" },
-];
+interface FeaturedRecipe {
+  id: number;
+  title: string;
+  imageUrl: string | null;
+  dietTags: string[];
+}
 
 // ---------- Sub-components ----------
 
@@ -291,40 +288,71 @@ const ActionButtonsRow = React.memo(function ActionButtonsRow({
 const PhotoGridItem = React.memo(function PhotoGridItem({
   item,
   itemWidth,
+  onPress,
 }: {
-  item: { id: string; name: string; emoji: string };
+  item: FeaturedRecipe;
   itemWidth: number;
+  onPress: () => void;
 }) {
   const { theme } = useTheme();
+  const imageUri = item.imageUrl ? `${getApiUrl()}${item.imageUrl}` : null;
 
   return (
-    <View
-      accessibilityLabel={item.name}
-      style={[
+    <Pressable
+      onPress={onPress}
+      accessibilityLabel={item.title}
+      accessibilityRole="button"
+      accessibilityHint="View recipe details"
+      style={({ pressed }) => [
         styles.gridItem,
-        { backgroundColor: theme.backgroundSecondary, width: itemWidth },
+        {
+          backgroundColor: theme.backgroundSecondary,
+          width: itemWidth,
+          opacity: pressed ? 0.85 : 1,
+        },
       ]}
     >
-      <View style={styles.gridItemContent}>
-        <ThemedText style={styles.gridItemEmoji}>{item.emoji}</ThemedText>
-      </View>
+      {imageUri ? (
+        <Image
+          source={{ uri: imageUri }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.gridItemContent}>
+          <Feather name="image" size={32} color={theme.textSecondary} />
+        </View>
+      )}
       <LinearGradient
         colors={["transparent", withOpacity("#000000", 0.6)]} // hardcoded — dark overlay for white text
         style={styles.gridItemGradient}
       />
       {/* Always white over dark gradient overlay, intentionally not theme-dependent */}
-      <ThemedText style={styles.gridItemName}>{item.name}</ThemedText>
-    </View>
+      <ThemedText style={styles.gridItemName}>{item.title}</ThemedText>
+    </Pressable>
   );
 });
 
-const PhotoGrid = React.memo(function PhotoGrid() {
+const PhotoGrid = React.memo(function PhotoGrid({
+  recipes,
+  onRecipePress,
+}: {
+  recipes: FeaturedRecipe[];
+  onRecipePress: (recipeId: number) => void;
+}) {
   const gridItemWidth = useGridItemWidth();
+
+  if (recipes.length === 0) return null;
 
   return (
     <View style={styles.photoGrid}>
-      {MOCK_FOOD_GRID.map((item) => (
-        <PhotoGridItem key={item.id} item={item} itemWidth={gridItemWidth} />
+      {recipes.slice(0, 6).map((item) => (
+        <PhotoGridItem
+          key={item.id}
+          item={item}
+          itemWidth={gridItemWidth}
+          onPress={() => onRecipePress(item.id)}
+        />
       ))}
     </View>
   );
@@ -548,6 +576,11 @@ export default function ProfileScreen() {
       enabled: !!user,
     });
 
+  const { data: featuredRecipes } = useQuery<FeaturedRecipe[]>({
+    queryKey: ["/api/recipes/featured"],
+    enabled: !!user,
+  });
+
   const isInitialLoading = summaryLoading;
   const hasAnnouncedProfileRef = useRef(false);
   useEffect(() => {
@@ -711,7 +744,13 @@ export default function ProfileScreen() {
           reducedMotion ? undefined : FadeInDown.delay(300).duration(400)
         }
       >
-        <PhotoGrid />
+        <PhotoGrid
+          recipes={featuredRecipes ?? []}
+          onRecipePress={(recipeId) => {
+            haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+            navigation.navigate("FeaturedRecipeDetail", { recipeId });
+          }}
+        />
       </Animated.View>
 
       {/* Settings */}
@@ -909,10 +948,6 @@ const styles = StyleSheet.create({
   gridItemContent: {
     alignItems: "center",
     justifyContent: "center",
-  },
-  gridItemEmoji: {
-    fontSize: 48,
-    lineHeight: 64,
   },
   gridItemGradient: {
     position: "absolute",
