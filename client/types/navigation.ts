@@ -87,6 +87,13 @@ export type GoalSetupScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
+ * Navigation prop for FeaturedRecipeDetailScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type FeaturedRecipeDetailScreenNavigationProp =
+  NativeStackNavigationProp<RootStackParamList, "FeaturedRecipeDetail">;
+
+/**
  * Navigation prop for MealPlanHomeScreen
  * Can navigate within meal plan stack and to other tabs
  */

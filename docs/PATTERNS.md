@@ -42,6 +42,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Intentional useEffect Dependencies](#intentional-useeffect-dependencies)
   - [Route Params for Mode Toggling](#route-params-for-mode-toggling)
   - [CompositeNavigationProp for Cross-Stack Navigation](#compositenavigationprop-for-cross-stack-navigation)
+  - [Custom Bottom Sheet with fullScreenModal](#custom-bottom-sheet-with-fullscreenmodal)
   - [Coordinated Pull-to-Refresh](#coordinated-pull-to-refresh-for-multiple-queries)
   - [Accessibility Props Pattern](#accessibility-props-pattern)
   - [Touch Target Size Pattern](#touch-target-size-pattern)
@@ -65,6 +66,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Intent-Driven Config Object](#intent-driven-config-object)
   - [Compress-Upload-Cleanup for Image Uploads](#compress-upload-cleanup-for-image-uploads)
   - [Confidence-Based Follow-Up Refinement](#confidence-based-follow-up-refinement)
+  - [Zod Union + Transform for LLM Output Flexibility](#zod-union--transform-for-llm-output-flexibility)
 - [Animation Patterns](#animation-patterns)
 - [Performance Patterns](#performance-patterns)
   - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
@@ -2768,6 +2770,97 @@ export default function HistoryScreen() {
 
 **Why:** Standard `NativeStackNavigationProp` only knows about screens in its own stack. `CompositeNavigationProp` combines the stack navigator's type with the tab navigator's type, enabling type-safe navigation across both.
 
+### Custom Bottom Sheet with fullScreenModal
+
+Use `presentation: "fullScreenModal"` with a transparent background to build a fully custom bottom sheet modal. This avoids native iOS sheet chrome (grabber handles, detents, corner radius) that `modal`, `formSheet`, `containedTransparentModal`, and `transparentModal` add on iOS.
+
+**Navigator config:**
+
+```typescript
+// RootStackNavigator.tsx
+<Stack.Screen
+  name="RecipeDetail"
+  component={RecipeDetailScreen}
+  options={{
+    headerShown: false,
+    presentation: "fullScreenModal",
+    animation: "slide_from_bottom",
+    contentStyle: { backgroundColor: "transparent" },
+  }}
+/>
+```
+
+**Screen component:**
+
+```typescript
+// RecipeDetailScreen.tsx
+export default function RecipeDetailScreen() {
+  const { height: windowHeight } = useWindowDimensions();
+  const { theme } = useTheme();
+  const navigation = useNavigation();
+  const dismiss = useCallback(() => navigation.goBack(), [navigation]);
+
+  return (
+    <View style={styles.container}>
+      {/* Tappable backdrop for dismiss */}
+      <Pressable
+        style={styles.backdrop}
+        onPress={dismiss}
+        accessibilityLabel="Close"
+        accessibilityRole="button"
+      />
+      {/* Custom sheet */}
+      <View
+        style={[
+          styles.sheet,
+          {
+            height: windowHeight * 0.85,
+            backgroundColor: theme.backgroundRoot,
+          },
+        ]}
+      >
+        {/* Close button header */}
+        <View style={[styles.header, { backgroundColor: theme.backgroundRoot }]}>
+          <Pressable onPress={dismiss} hitSlop={8}>
+            <Feather name="chevron-down" size={22} color={theme.text} />
+          </Pressable>
+        </View>
+        <ScrollView>{/* Content */}</ScrollView>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: "flex-end" },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  sheet: {
+    borderTopLeftRadius: BorderRadius.card,
+    borderTopRightRadius: BorderRadius.card,
+    overflow: "hidden",
+  },
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    alignItems: "flex-end",
+  },
+});
+```
+
+**When to use:** Detail views, recipe cards, or any modal that needs a custom bottom-sheet appearance without native iOS sheet behavior.
+
+**When NOT to use:** Standard modals that benefit from native iOS sheet gestures (drag-to-dismiss detents). Use `presentation: "modal"` or `formSheet` for those.
+
+**Why:** iOS native sheet presentations (`modal`, `formSheet`, `containedTransparentModal`, `transparentModal`) all add platform-specific chrome that cannot be fully disabled — grabber handles, forced corner radius, or detent behavior. `fullScreenModal` with `contentStyle: { backgroundColor: "transparent" }` gives a blank canvas where you control every visual element. The tradeoff is you must implement your own dismiss gestures (backdrop tap, close button).
+
 ### Coordinated Pull-to-Refresh for Multiple Queries
 
 When a screen fetches data from multiple endpoints, coordinate refresh with `Promise.all`:
@@ -4592,6 +4685,45 @@ if (analysisResult.needsFollowUp) {
 **When NOT to use:** Deterministic lookups (barcode scans, database queries) where results are either correct or not found.
 
 **Why:** Low-confidence results displayed without refinement erode user trust. The follow-up is text-only (no image re-send), so it's cheap and fast. The threshold (0.7) is tunable — lower values reduce prompts but risk showing inaccurate data.
+
+### Zod Union + Transform for LLM Output Flexibility
+
+LLMs may return a field as either a string or an array of strings depending on prompt interpretation. Use `z.union` with `.transform` to normalize the shape, then `.pipe` to validate the final type.
+
+```typescript
+// server/services/recipe-generation.ts
+
+const recipeContentSchema = z.object({
+  title: z.string().min(1).max(200),
+  description: z.string().min(1).max(500),
+  difficulty: z.enum(["Easy", "Medium", "Hard"]),
+  timeEstimate: z.string().min(1).max(50),
+  // LLMs sometimes return instructions as ["Step 1...", "Step 2..."]
+  // instead of a single string. Accept both, normalize to string.
+  instructions: z
+    .union([z.string(), z.array(z.string())])
+    .transform((v) => (Array.isArray(v) ? v.join("\n") : v))
+    .pipe(z.string().min(1)),
+  dietTags: z.array(z.string()).default([]),
+});
+
+// Usage with safeParse
+const content = response.choices[0]?.message?.content || "{}";
+const parsed = recipeContentSchema.safeParse(JSON.parse(content));
+
+if (!parsed.success) {
+  console.error("Recipe generation validation failed:", parsed.error);
+  throw new Error("Failed to generate valid recipe content");
+}
+
+return parsed.data; // instructions is always a string
+```
+
+**When to use:** Parsing LLM JSON responses where the prompt asks for a specific type but the model sometimes returns a different-but-coercible type (string vs array, number vs string-encoded number).
+
+**When NOT to use:** Deterministic APIs with stable schemas. Use plain Zod schemas or `z.coerce` for simple type coercion (e.g., `z.coerce.number()` for string-to-number).
+
+**Why:** LLM output is inherently unpredictable — even with `response_format: { type: "json_object" }`, the structure of individual fields can vary between calls. The `union` + `transform` + `pipe` chain handles this at the validation layer without requiring prompt engineering workarounds. The `.pipe()` step ensures the transformed value still passes final validation (e.g., `min(1)` catches empty arrays that would transform to `""`).
 
 ---
 

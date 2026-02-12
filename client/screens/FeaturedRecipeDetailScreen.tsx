@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   StyleSheet,
   View,
@@ -25,30 +25,20 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { CommunityRecipe } from "@shared/schema";
 
 type FeaturedRecipeDetailRouteProp = RouteProp<
   RootStackParamList,
   "FeaturedRecipeDetail"
 >;
 
-interface CommunityRecipe {
-  id: number;
-  title: string;
-  description: string | null;
-  difficulty: string | null;
-  timeEstimate: string | null;
-  servings: number | null;
-  dietTags: string[];
-  instructions: string;
-  imageUrl: string | null;
-  likeCount: number | null;
-}
+type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
 
-function InfoChip({ icon, text }: { icon: string; text: string }) {
+function InfoChip({ icon, text }: { icon: FeatherIconName; text: string }) {
   const { theme } = useTheme();
   return (
     <View style={[styles.chip, { backgroundColor: theme.backgroundSecondary }]}>
-      <Feather name={icon as any} size={14} color={theme.textSecondary} />
+      <Feather name={icon} size={14} color={theme.textSecondary} />
       <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>
         {text}
       </ThemedText>
@@ -74,9 +64,17 @@ export default function FeaturedRecipeDetailScreen() {
     queryKey: [`/api/recipes/${recipeId}`],
   });
 
-  const dismiss = () => navigation.goBack();
+  const dismiss = useCallback(() => navigation.goBack(), [navigation]);
 
-  const imageUri = recipe?.imageUrl ? `${getApiUrl()}${recipe.imageUrl}` : null;
+  const imageUri = useMemo(
+    () => (recipe?.imageUrl ? `${getApiUrl()}${recipe.imageUrl}` : null),
+    [recipe?.imageUrl],
+  );
+
+  const uniqueTags = useMemo(
+    () => [...new Set(recipe?.dietTags ?? [])],
+    [recipe?.dietTags],
+  );
 
   return (
     <View style={styles.container}>
@@ -98,15 +96,15 @@ export default function FeaturedRecipeDetailScreen() {
           },
         ]}
       >
-        {/* Grabber + close button */}
-        <View style={styles.sheetHeader}>
+        {/* Close button */}
+        <View
+          style={[
+            styles.sheetHeader,
+            { backgroundColor: theme.backgroundRoot },
+          ]}
+        >
           <View style={styles.grabberSpacer} />
-          <View
-            style={[
-              styles.grabber,
-              { backgroundColor: "rgba(255,255,255,0.5)" },
-            ]}
-          />
+          <View style={styles.grabber} />
           <Pressable
             onPress={dismiss}
             hitSlop={8}
@@ -189,9 +187,9 @@ export default function FeaturedRecipeDetailScreen() {
               </View>
 
               {/* Diet tags */}
-              {recipe.dietTags && recipe.dietTags.length > 0 ? (
+              {uniqueTags.length > 0 ? (
                 <View style={styles.tagRow}>
-                  {recipe.dietTags.map((tag) => (
+                  {uniqueTags.map((tag) => (
                     <View
                       key={tag}
                       style={[
@@ -238,8 +236,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.4)",
   },
   sheet: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: BorderRadius.card,
+    borderTopRightRadius: BorderRadius.card,
     overflow: "hidden",
   },
   sheetHeader: {
@@ -258,12 +256,6 @@ const styles = StyleSheet.create({
   },
   grabber: {
     flex: 1,
-    alignSelf: "center",
-    width: 36,
-    maxWidth: 36,
-    height: 4,
-    borderRadius: 2,
-    marginHorizontal: "auto",
   },
   closeButton: {
     width: 22,
@@ -305,9 +297,9 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.xs,
   },
   chipText: {
@@ -321,8 +313,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   tag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.xs,
   },
   tagText: {
