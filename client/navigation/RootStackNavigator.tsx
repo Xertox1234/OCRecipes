@@ -121,9 +121,8 @@ export default function RootStackNavigator() {
             component={FeaturedRecipeDetailScreen}
             options={{
               headerShown: false,
-              presentation: "fullScreenModal",
+              presentation: "transparentModal",
               animation: "slide_from_bottom",
-              contentStyle: { backgroundColor: "transparent" },
             }}
           />
         </>
