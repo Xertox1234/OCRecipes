@@ -42,6 +42,7 @@ import { Card } from "@/components/Card";
 import { SkeletonList, SkeletonBox } from "@/components/SkeletonLoader";
 import { HistoryItemActions } from "@/components/HistoryItemActions";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { GroceryListPickerModal } from "@/components/GroceryListPickerModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -80,18 +81,6 @@ const ACTION_ROW_HEIGHT = 90;
 
 /** Cap staggered animation index to avoid slow entrance on long lists */
 const MAX_ANIMATED_INDEX = 10;
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-
-  if (diffHours < 1) return "Just now";
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffHours < 48) return "Yesterday";
-  return date.toLocaleDateString();
-}
 
 const HistoryItem = React.memo(function HistoryItem({
   item,
@@ -255,12 +244,45 @@ const HistoryItem = React.memo(function HistoryItem({
                     {item.brandName}
                   </ThemedText>
                 ) : null}
-                <ThemedText
-                  type="caption"
-                  style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-                >
-                  {formatDate(item.scannedAt)}
-                </ThemedText>
+                {item.servingSize ? (
+                  <ThemedText
+                    type="caption"
+                    style={{
+                      color: theme.textSecondary,
+                      marginTop: Spacing.xs,
+                    }}
+                  >
+                    Serving: {item.servingSize}
+                  </ThemedText>
+                ) : null}
+                {item.protein || item.carbs || item.fat ? (
+                  <View style={styles.macroRow}>
+                    {item.protein ? (
+                      <ThemedText
+                        type="caption"
+                        style={{ color: theme.proteinAccent }}
+                      >
+                        P {Math.round(parseFloat(item.protein))}g
+                      </ThemedText>
+                    ) : null}
+                    {item.carbs ? (
+                      <ThemedText
+                        type="caption"
+                        style={{ color: theme.carbsAccent }}
+                      >
+                        C {Math.round(parseFloat(item.carbs))}g
+                      </ThemedText>
+                    ) : null}
+                    {item.fat ? (
+                      <ThemedText
+                        type="caption"
+                        style={{ color: theme.fatAccent }}
+                      >
+                        F {Math.round(parseFloat(item.fat))}g
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
 
               <View style={styles.itemCalories}>
@@ -635,6 +657,8 @@ export default function HistoryScreen() {
   // Expanded accordion state
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false);
+  const [groceryPickerVisible, setGroceryPickerVisible] = useState(false);
+  const [groceryItemName, setGroceryItemName] = useState("");
 
   // Determine if we're showing dashboard or full history
   const showAll = route.params?.showAll ?? false;
@@ -767,11 +791,8 @@ export default function HistoryScreen() {
   const handleGroceryList = useCallback(
     (item: ScannedItemResponse) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      // TODO: Integrate with grocery list when available
-      Alert.alert(
-        "Add to Grocery List",
-        `"${item.productName}" will be added to your grocery list. This feature is coming soon.`,
-      );
+      setGroceryItemName(item.productName);
+      setGroceryPickerVisible(true);
     },
     [haptics],
   );
@@ -1005,6 +1026,11 @@ export default function HistoryScreen() {
         visible={upgradeModalVisible}
         onClose={() => setUpgradeModalVisible(false)}
       />
+      <GroceryListPickerModal
+        visible={groceryPickerVisible}
+        onClose={() => setGroceryPickerVisible(false)}
+        itemName={groceryItemName}
+      />
     </>
   );
 }
@@ -1072,13 +1098,14 @@ const styles = StyleSheet.create({
   },
   itemContent: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: Spacing.md,
   },
   itemImage: {
     width: 56,
     height: 56,
     borderRadius: BorderRadius.xs,
+    alignSelf: "center",
   },
   itemPlaceholder: {
     width: 56,
@@ -1086,12 +1113,19 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xs,
     justifyContent: "center",
     alignItems: "center",
+    alignSelf: "center",
   },
   itemInfo: {
     flex: 1,
   },
   itemName: {
     fontWeight: "600",
+  },
+  macroRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
   },
   itemCalories: {
     alignItems: "flex-end",
