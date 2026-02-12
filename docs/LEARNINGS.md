@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [History Item Actions Learnings (2026-02-12)](#history-item-actions-learnings-2026-02-12)
 - [Architecture Decisions](#architecture-decisions)
 - [React Native / Expo Go Gotchas](#react-native--expo-go-gotchas)
 - [Security Learnings](#security-learnings)
@@ -15,6 +16,188 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## History Item Actions Learnings (2026-02-12)
+
+### Soft Delete Breaks Aggregation Queries Silently
+
+**Category:** Bug Post-Mortem
+
+**Context:** Added a soft delete feature (discard) to scanned items using a `discardedAt` timestamp column instead of hard deleting rows.
+
+**Problem:** After implementing discard, the daily summary dashboard continued to include calories from discarded items in the totals. The bug was invisible because the aggregation still returned a valid number — it was just wrong (inflated).
+
+**Root Cause:** The `getDailySummary()` method joins `dailyLogs` with `scannedItems` via LEFT JOIN. The WHERE clause did not filter out rows where `scannedItems.discardedAt` is not null. Since daily logs reference scanned items, discarding an item left the daily log intact, and the aggregation happily summed the discarded item's calories.
+
+The fix required a compound condition because `dailyLogs.scannedItemId` is nullable (meal plan confirmations have `scannedItemId = null`):
+
+```typescript
+// Simple filter would also exclude meal plan logs (where scannedItemId IS NULL):
+// where(isNull(scannedItems.discardedAt))  // ← WRONG: drops meal plan rows too
+
+// Correct: exclude discarded scanned items but keep null-FK rows
+sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`;
+```
+
+**Lesson:** When adding soft delete to a table, grep for every query that reads from or joins against that table. Aggregation queries are the most dangerous because they return plausible-looking numbers rather than obviously wrong results. Create a checklist of affected queries before merging.
+
+**Pattern Reference:** See "Soft Delete with Aggregation Guard" in PATTERNS.md
+
+**File:** `server/storage.ts` — `getDailySummary()`
+
+---
+
+### Toggle Favourite Race Condition
+
+**Category:** Bug Post-Mortem
+
+**Context:** Implemented a toggle favourite endpoint that checks if a favourite row exists, then inserts or deletes accordingly.
+
+**Problem:** Without a transaction, two rapid taps could both see "no existing favourite" and both insert, creating a duplicate row. Even with a unique constraint, the second request would fail with a database error rather than toggling gracefully.
+
+**Solution:** Wrapped the check-then-write in `db.transaction()`:
+
+```typescript
+return db.transaction(async (tx) => {
+  const [existing] = await tx
+    .select()
+    .from(favouriteScannedItems)
+    .where(
+      and(
+        eq(favouriteScannedItems.scannedItemId, scannedItemId),
+        eq(favouriteScannedItems.userId, userId),
+      ),
+    );
+
+  if (existing) {
+    await tx
+      .delete(favouriteScannedItems)
+      .where(eq(favouriteScannedItems.id, existing.id));
+    return false;
+  }
+
+  await tx.insert(favouriteScannedItems).values({ userId, scannedItemId });
+  return true;
+});
+```
+
+**Lesson:** Any check-then-write operation on a join table must be wrapped in a transaction. This applies to all toggle patterns: follow/unfollow, like/unlike, bookmark/unbookmark. The unique constraint is defense-in-depth, not a substitute for proper serialization.
+
+**Pattern Reference:** See "Toggle via Transaction to Prevent Duplicate Inserts" in PATTERNS.md
+
+**File:** `server/storage.ts` — `toggleFavouriteScannedItem()`
+
+---
+
+### Inline Arrow Functions in renderItem Defeat React.memo
+
+**Category:** Performance
+
+**Context:** The HistoryScreen renders a FlatList with memoized `HistoryItem` components. Each item has five action callbacks (favourite, grocery, recipe, share, discard).
+
+**Problem:** The initial implementation passed inline arrow functions to each list item in `renderItem`:
+
+```typescript
+// Each render of renderItem creates 5 new arrow functions per item
+const renderItem = useCallback(
+  ({ item }) => (
+    <HistoryItem
+      onFavourite={() => toggleFavourite.mutate(item.id)}  // new ref every time
+      onDiscard={() => discardItem.mutate(item.id)}        // new ref every time
+      // ...3 more
+    />
+  ),
+  [toggleFavourite, discardItem],
+);
+```
+
+Even though `HistoryItem` was wrapped in `React.memo`, every item re-rendered on every parent render because the arrow function props were always new references.
+
+**Solution:** Refactored callbacks to accept an ID parameter in the parent, passing the stable callback reference to all items:
+
+```typescript
+const handleFavourite = useCallback(
+  (itemId: number) => toggleFavourite.mutate(itemId),
+  [toggleFavourite],
+);
+
+// renderItem now passes the stable reference
+<HistoryItem onFavourite={handleFavourite} />
+// Child calls: onFavourite(item.id)
+```
+
+**Lesson:** When a `React.memo` component receives callbacks, define them in the parent with an ID/key parameter rather than creating closures per item. The number of callbacks multiplied by the number of items makes this a significant source of unnecessary re-renders. Profile with React DevTools "Highlight updates" to verify memoization is working.
+
+**Pattern Reference:** See "Parameterized ID Callbacks for Memoized List Items" in PATTERNS.md
+
+**File:** `client/screens/HistoryScreen.tsx`
+
+---
+
+### Optimistic Total Must Target Correct Page
+
+**Category:** Bug Post-Mortem
+
+**Context:** Implemented optimistic removal (discard) on a `useInfiniteQuery`-powered list. The optimistic update filters the item out and decrements `page.total`.
+
+**Problem:** The initial implementation decremented `total` on every page, not just the page containing the discarded item:
+
+```typescript
+// Bug: decrements total on ALL pages
+pages: old.pages.map((page) => ({
+  ...page,
+  items: page.items.filter((item) => item.id !== itemId),
+  total: page.total - 1, // Wrong: decrements even if this page didn't have the item
+}));
+```
+
+This caused pagination to request incorrect offsets on subsequent page fetches, resulting in skipped or duplicate items.
+
+**Solution:** Only decrement `total` on the page that actually contained the removed item:
+
+```typescript
+pages: old.pages.map((page) => {
+  const filtered = page.items.filter((item) => item.id !== itemId);
+  return {
+    ...page,
+    items: filtered,
+    total: filtered.length < page.items.length ? page.total - 1 : page.total,
+  };
+});
+```
+
+**Lesson:** When optimistically removing items from infinite query pages, the `total` count is shared across all pages (it represents the server's total, not the page size). Decrementing it on every page corrupts pagination offsets. Always compare `filtered.length < page.items.length` to detect which page contained the item.
+
+**Pattern Reference:** See "Optimistic Mutation on Infinite Query Pages" in PATTERNS.md
+
+**File:** `client/hooks/useDiscardItem.ts`
+
+---
+
+### Favourite Icon Needs Visual State Differentiation
+
+**Category:** Gotcha
+
+**Context:** The favourite action button uses a heart icon that toggles between favourited and unfavourited states.
+
+**Problem:** The initial implementation used the same icon (`heart`) with the same color for both states. Users could not tell at a glance whether an item was already favourited.
+
+**Solution:** Used distinct visual signals for each state:
+
+```typescript
+<ActionButton
+  icon="heart"
+  label={isFavourited ? "Saved" : "Favourite"}
+  color={isFavourited ? theme.error : theme.textSecondary}  // Red when active, muted when inactive
+  accessibilityHint={isFavourited ? "Remove from favourites" : "Add to favourites"}
+/>
+```
+
+**Lesson:** Toggle actions must have clearly distinct visual states. For icon buttons, change at least TWO of: icon name, color, label, or fill style. A single change (like opacity) is insufficient for accessibility and quick scanning. Always include different `accessibilityHint` text for each state so screen reader users also get the distinction.
+
+**File:** `client/components/HistoryItemActions.tsx`
 
 ---
 
@@ -1233,6 +1416,11 @@ const token = parsed.data.access_token; // Guaranteed to be a string
 15. **Fetch Timeouts:** Always add `AbortSignal.timeout()` to outbound `fetch()` calls. Node.js fetch has no default timeout; hung connections consume server resources indefinitely.
 16. **URL Encoding:** Always `encodeURIComponent()` user-supplied values interpolated into URL paths. Template literals make unencoded interpolation feel safe, but it enables URL injection.
 17. **Static Imports:** Use static `import` for Node.js built-ins and lightweight dependencies. Dynamic `import()` in hot-path functions adds per-call overhead for no benefit.
+18. **Soft Delete:** When adding soft delete, audit ALL queries that read from or join against the table. Aggregation queries are the most dangerous because they return plausible-looking but inflated numbers.
+19. **Toggle Transactions:** Check-then-write operations on join tables (favourite, follow, like) must be wrapped in `db.transaction()`. Unique constraints are defense-in-depth, not a substitute for serialization.
+20. **Memoized Callbacks:** Inline arrow functions in `renderItem` defeat `React.memo`. Use parameterized ID callbacks `(itemId: number) => void` defined in the parent so the reference is stable.
+21. **Optimistic Pagination:** When optimistically removing items from infinite query pages, only decrement `total` on the page that actually contained the item. Decrementing all pages corrupts pagination offsets.
+22. **Toggle Icon States:** Toggle action icons must have clearly distinct visual states — change at least color AND label to be accessible.
 
 ---
 

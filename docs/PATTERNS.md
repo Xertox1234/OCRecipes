@@ -31,11 +31,14 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Parent-Child Cache with Cascade Delete](#parent-child-cache-with-cascade-delete)
   - [LEFT JOIN with COALESCE for Nullable Foreign Keys](#left-join-with-coalesce-for-nullable-foreign-keys)
   - [Pre-Fetched IDs to Avoid Redundant Queries](#pre-fetched-ids-to-avoid-redundant-queries)
+  - [Soft Delete with Aggregation Guard](#soft-delete-with-aggregation-guard)
+  - [Toggle via Transaction to Prevent Duplicate Inserts](#toggle-via-transaction-to-prevent-duplicate-inserts)
 - [Client State Patterns](#client-state-patterns)
   - [Business Logic Errors in Mutations](#business-logic-errors-in-mutations)
   - [Typed ApiError Class for Client-Side Error Differentiation](#typed-apierror-class-for-client-side-error-differentiation)
   - [useQuery Over useState+useEffect for Server Data](#usequery-over-usestateuseeffect-for-server-data)
   - [`enabled` Parameter for Premium-Gated Queries](#enabled-parameter-for-premium-gated-queries)
+  - [Optimistic Mutation on Infinite Query Pages](#optimistic-mutation-on-infinite-query-pages)
 - [React Native Patterns](#react-native-patterns)
   - [Multi-Select Checkbox Pattern](#multi-select-checkbox-pattern)
   - [Premium Feature Gating UI](#premium-feature-gating-ui)
@@ -44,6 +47,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [CompositeNavigationProp for Cross-Stack Navigation](#compositenavigationprop-for-cross-stack-navigation)
   - [Full-Screen Detail with transparentModal](#full-screen-detail-with-transparentmodal)
   - [fullScreenModal Exception for Camera](#fullscreenmodal-exception-for-camera)
+  - [Two-Tap Expand-then-Navigate for List Items](#two-tap-expand-then-navigate-for-list-items)
   - [FAB Overlay with Tab Bar Clearance](#fab-overlay-with-tab-bar-clearance)
   - [Coordinated Pull-to-Refresh](#coordinated-pull-to-refresh-for-multiple-queries)
   - [Accessibility Props Pattern](#accessibility-props-pattern)
@@ -72,6 +76,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
 - [Animation Patterns](#animation-patterns)
 - [Performance Patterns](#performance-patterns)
   - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
+  - [Parameterized ID Callbacks for Memoized List Items](#parameterized-id-callbacks-for-memoized-list-items)
   - [useMemo for Derived Filtering and Calculations](#usememo-for-derived-filtering-and-calculations)
 - [Design System Patterns](#design-system-patterns)
   - [Color Opacity Utility](#color-opacity-utility)
@@ -2068,6 +2073,131 @@ async getPlannedNutritionSummary(
 - `server/routes.ts` — daily-summary endpoint
 - `server/storage.ts` — `getPlannedNutritionSummary(userId, date, confirmedIds?)`
 
+### Soft Delete with Aggregation Guard
+
+When implementing soft delete (setting a `discardedAt` timestamp instead of removing rows), every aggregation query that joins against the soft-deleted table must explicitly exclude discarded rows. This is especially dangerous when the join is through a nullable foreign key.
+
+**Implementation:**
+
+```typescript
+// Schema: Add discardedAt column (nullable = not discarded)
+export const scannedItems = pgTable("scanned_items", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  calories: text("calories"),
+  discardedAt: timestamp("discarded_at"), // null = active
+});
+
+// Storage: Soft delete sets the timestamp, verifies ownership
+async softDeleteScannedItem(id: number, userId: string): Promise<boolean> {
+  const [updated] = await db
+    .update(scannedItems)
+    .set({ discardedAt: new Date() })
+    .where(
+      and(
+        eq(scannedItems.id, id),
+        eq(scannedItems.userId, userId),
+        isNull(scannedItems.discardedAt), // Prevent double-delete
+      ),
+    )
+    .returning({ id: scannedItems.id });
+  return !!updated;
+}
+
+// CRITICAL: Aggregation must filter discarded items even through LEFT JOIN
+async getDailySummary(userId: string, date: Date) {
+  return db
+    .select({ totalCalories: sql`COALESCE(SUM(...), 0)` })
+    .from(dailyLogs)
+    .leftJoin(scannedItems, eq(dailyLogs.scannedItemId, scannedItems.id))
+    .where(
+      and(
+        eq(dailyLogs.userId, userId),
+        // This compound condition is essential:
+        // - Exclude logs whose scanned item was discarded
+        // - But keep logs with NULL scannedItemId (e.g., meal plan confirmations)
+        sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`,
+      ),
+    );
+}
+```
+
+**When to use:**
+
+- Any table where users can "remove" items that are referenced by other tables (daily logs, favourites, grocery lists)
+- When hard delete would violate foreign key constraints or lose audit history
+
+**When NOT to use:**
+
+- Tables with no foreign key references (hard delete is simpler)
+- High-volume tables where soft-deleted rows would bloat queries (consider periodic hard-delete cleanup)
+
+**Key pitfalls:**
+
+1. **Every query that reads from the table must add `isNull(discardedAt)`** — missing this in list queries shows "deleted" items; missing this in aggregation queries inflates totals
+2. **LEFT JOIN + soft delete needs a compound WHERE** — `discardedAt IS NULL` alone would also exclude rows where the LEFT JOIN produced NULL (because the FK itself is NULL, not because the item was discarded). Use `(discardedAt IS NULL OR FK IS NULL)`.
+3. **Related features must respect soft delete** — e.g., favouriting a discarded item should return 404
+
+**References:**
+
+- `shared/schema.ts` — `discardedAt` column on `scannedItems`
+- `server/storage.ts` — `softDeleteScannedItem()`, `getDailySummary()`, `getScannedItems()`
+- Related learning: "Soft Delete Breaks Aggregation Queries Silently" in LEARNINGS.md
+
+### Toggle via Transaction to Prevent Duplicate Inserts
+
+When implementing a toggle operation on a join table (favourite/unfavourite, follow/unfollow, like/unlike), wrap the check-then-write in a `db.transaction()` to prevent race conditions from concurrent requests creating duplicate rows.
+
+**Implementation:**
+
+```typescript
+async toggleFavouriteScannedItem(
+  scannedItemId: number,
+  userId: string,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    // Check and write are atomic within the transaction
+    const [existing] = await tx
+      .select()
+      .from(favouriteScannedItems)
+      .where(
+        and(
+          eq(favouriteScannedItems.scannedItemId, scannedItemId),
+          eq(favouriteScannedItems.userId, userId),
+        ),
+      );
+
+    if (existing) {
+      await tx
+        .delete(favouriteScannedItems)
+        .where(eq(favouriteScannedItems.id, existing.id));
+      return false; // un-favourited
+    }
+
+    await tx.insert(favouriteScannedItems).values({ userId, scannedItemId });
+    return true; // favourited
+  });
+}
+```
+
+**When to use:**
+
+- Toggle operations on join/association tables (favourites, likes, bookmarks, follows)
+- Any check-then-write where concurrent requests could both see "not exists" and both insert
+
+**When NOT to use:**
+
+- Idempotent operations where duplicates are harmless
+- Single-row updates that don't depend on a prior read (e.g., `UPDATE SET discardedAt = NOW()`)
+
+**Defense in depth:** Combine with a unique constraint on the join table (`unique().on(table.userId, table.scannedItemId)`) so that even if the transaction isolation level allows a race, the database rejects the duplicate.
+
+**References:**
+
+- `server/storage.ts` — `toggleFavouriteScannedItem()`
+- `shared/schema.ts` — `favouriteScannedItems` table with `uniqueUserItem` constraint
+- Related learning: "Toggle Favourite Race Condition" in LEARNINGS.md
+
 ---
 
 ## Client State Patterns
@@ -2405,6 +2535,128 @@ const { data: expiringItems } = useExpiringPantryItems(features.pantryTracking);
 
 - `client/hooks/usePantry.ts` — `useExpiringPantryItems(enabled)`
 - `client/screens/meal-plan/MealPlanHomeScreen.tsx` — passes `features.pantryTracking`
+
+### Optimistic Mutation on Infinite Query Pages
+
+When mutating an item displayed in a `useInfiniteQuery`-powered list (toggle, remove, update), update the cache optimistically by mapping over all pages. For removal mutations, decrement `total` only on the page that actually contained the removed item.
+
+**Implementation (toggle example):**
+
+```typescript
+export function useToggleFavourite() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (itemId: number) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/scanned-items/${itemId}/favourite`,
+      );
+      return res.json() as Promise<{ isFavourited: boolean }>;
+    },
+    onMutate: async (itemId: number) => {
+      // 1. Cancel any in-flight refetches to avoid overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: ["/api/scanned-items"] });
+
+      // 2. Snapshot previous data for rollback
+      const previousData = queryClient.getQueryData(["/api/scanned-items"]);
+
+      // 3. Optimistically update the item across all pages
+      queryClient.setQueryData(
+        ["/api/scanned-items"],
+        (
+          old:
+            | {
+                pages: PaginatedResponse<ScannedItemResponse>[];
+                pageParams: unknown[];
+              }
+            | undefined,
+        ) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.map((item) =>
+                item.id === itemId
+                  ? { ...item, isFavourited: !item.isFavourited }
+                  : item,
+              ),
+            })),
+          };
+        },
+      );
+
+      return { previousData };
+    },
+    onError: (_err, _itemId, context) => {
+      // 4. Rollback on failure
+      if (context?.previousData) {
+        queryClient.setQueryData(["/api/scanned-items"], context.previousData);
+      }
+    },
+    onSettled: () => {
+      // 5. Refetch to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
+    },
+  });
+}
+```
+
+**Implementation (removal with per-page total correction):**
+
+```typescript
+// For removal: decrement total ONLY on the page that contained the item
+queryClient.setQueryData(
+  ["/api/scanned-items"],
+  (
+    old:
+      | {
+          pages: PaginatedResponse<ScannedItemResponse>[];
+          pageParams: unknown[];
+        }
+      | undefined,
+  ) => {
+    if (!old) return old;
+    return {
+      ...old,
+      pages: old.pages.map((page) => {
+        const filtered = page.items.filter((item) => item.id !== itemId);
+        return {
+          ...page,
+          items: filtered,
+          // Only decrement total if this page actually contained the item
+          total:
+            filtered.length < page.items.length ? page.total - 1 : page.total,
+        };
+      }),
+    };
+  },
+);
+```
+
+**When to use:**
+
+- Toggle mutations (favourite, bookmark, pin) on items in infinite lists
+- Remove mutations (discard, archive, delete) on items in infinite lists
+- Any mutation that changes a property displayed in the list item
+
+**When NOT to use:**
+
+- Mutations that add new items (append to list requires different logic)
+- Mutations where the optimistic state is ambiguous (server decides the outcome)
+
+**Key pitfalls:**
+
+1. **Must cancel in-flight queries first** — without `cancelQueries()`, a pending refetch can overwrite your optimistic update
+2. **Per-page total correction** — decrementing `total` on ALL pages causes pagination to break (requesting wrong offsets). Only decrement on the page that contained the removed item.
+3. **Invalidate related queries in `onSettled`** — if the mutation affects aggregation queries (e.g., daily summary), invalidate those too
+
+**References:**
+
+- `client/hooks/useFavourites.ts` — toggle optimistic update
+- `client/hooks/useDiscardItem.ts` — removal with per-page total correction
+- Related learning: "Optimistic Total Must Target Correct Page" in LEARNINGS.md
 
 ---
 
@@ -2889,6 +3141,85 @@ Use `presentation: "fullScreenModal"` instead of `transparentModal` for camera/s
 **When NOT to use:** Detail views or overlays where the previous screen should remain visible underneath. Use `transparentModal` for those.
 
 **Why:** `transparentModal` is the default recommendation for full-screen overlays, but it has rendering issues that cause visual artifacts on some iOS versions. Camera screens don't benefit from transparency anyway since the camera feed is opaque, so `fullScreenModal` is the better choice.
+
+### Two-Tap Expand-then-Navigate for List Items
+
+When list items have both a detail view and contextual actions (favourite, share, delete), use a two-tap interaction: first tap expands an action row, second tap navigates to detail. This avoids swipe gestures (which conflict with horizontal scrolling) and long-press (which has poor discoverability).
+
+**Implementation:**
+
+```typescript
+// Parent: track which item is expanded (single-selection accordion)
+const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+
+const handleToggleExpand = useCallback(
+  (itemId: number) => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    setExpandedItemId((prev) => (prev === itemId ? null : itemId));
+  },
+  [haptics],
+);
+
+const handleNavigateToDetail = useCallback(
+  (itemId: number) => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate("ItemDetail", { itemId });
+  },
+  [navigation, haptics],
+);
+
+// List item: branch on expanded state
+const handlePress = () => {
+  if (isExpanded) {
+    onNavigateToDetail(item.id);  // Second tap → navigate
+  } else {
+    onToggleExpand(item.id);      // First tap → expand actions
+  }
+};
+
+// Animated expansion area
+const expandHeight = useSharedValue(0);
+useEffect(() => {
+  if (isExpanded) {
+    expandHeight.value = withTiming(ACTION_ROW_HEIGHT, expandTimingConfig);
+  } else {
+    expandHeight.value = withTiming(0, collapseTimingConfig);
+  }
+}, [isExpanded]);
+
+// Render actions in expanded area
+<Animated.View style={{ height: expandHeight, overflow: "hidden" }}>
+  <HistoryItemActions
+    onFavourite={() => onFavourite(item.id)}
+    onShare={() => onShare(item)}
+    onDiscard={() => onDiscard(item)}
+  />
+</Animated.View>
+```
+
+**When to use:**
+
+- List items with 3+ contextual actions that don't fit in the row
+- FlatList items where swipe gestures would conflict with scroll
+- Items that also navigate to a detail screen on tap
+
+**When NOT to use:**
+
+- Items with only 1-2 actions (show inline, no expand needed)
+- Items where navigation is the only interaction (single tap should navigate directly)
+
+**Key elements:**
+
+1. **Single-selection accordion** — only one item expanded at a time (`expandedItemId` is a single number, not a Set)
+2. **Collapse on refresh** — `setExpandedItemId(null)` in `handleRefresh` to reset UI state on pull-to-refresh
+3. **FlatList `extraData`** — pass `expandedItemId` to `extraData` so FlatList knows to re-render when expansion state changes
+4. **Chevron rotation** — animate a chevron indicator (0° → 90°) to signal the expanded state visually
+
+**References:**
+
+- `client/screens/HistoryScreen.tsx` — `HistoryItem` component, `handleToggleExpand`, `handleNavigateToDetail`
+- `client/components/HistoryItemActions.tsx` — action button row
+- `client/constants/animations.ts` — `expandTimingConfig`, `collapseTimingConfig`
 
 ### FAB Overlay with Tab Bar Clearance
 
@@ -3998,6 +4329,88 @@ const ListHeader = useCallback(() => (
 - Typed props interface documents the component's data requirements
 - Named function provides better stack traces and React DevTools identification
 - Cleaner than `useCallback` with many dependencies
+
+### Parameterized ID Callbacks for Memoized List Items
+
+When a `React.memo` list item component needs multiple action callbacks (favourite, share, delete, navigate), define each callback in the parent with an ID parameter `(itemId: number) => void` instead of passing item-specific closures. This prevents `renderItem` from creating new arrow functions per item, which defeats `React.memo`.
+
+**Implementation:**
+
+```typescript
+// Good: Parent defines stable callbacks with ID parameter
+const handleFavourite = useCallback(
+  (itemId: number) => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    toggleFavourite.mutate(itemId);
+  },
+  [haptics, toggleFavourite],
+);
+
+const handleNavigateToDetail = useCallback(
+  (itemId: number) => {
+    navigation.navigate("ItemDetail", { itemId });
+  },
+  [navigation],
+);
+
+// Child component receives the stable callback
+const HistoryItem = React.memo(function HistoryItem({
+  item,
+  onFavourite,      // (itemId: number) => void — stable reference
+  onNavigateToDetail, // (itemId: number) => void — stable reference
+}: Props) {
+  // Call with the item's own ID
+  const handlePress = () => onNavigateToDetail(item.id);
+  const handleFav = () => onFavourite(item.id);
+  // ...
+});
+
+// renderItem passes the same callback reference to all items
+const renderItem = useCallback(
+  ({ item, index }: { item: ScannedItemResponse; index: number }) => (
+    <HistoryItem
+      item={item}
+      index={index}
+      onFavourite={handleFavourite}
+      onNavigateToDetail={handleNavigateToDetail}
+    />
+  ),
+  [handleFavourite, handleNavigateToDetail],
+);
+```
+
+```typescript
+// Bad: Creating new closures per item in renderItem defeats React.memo
+const renderItem = useCallback(
+  ({ item, index }: { item: ScannedItemResponse; index: number }) => (
+    <HistoryItem
+      item={item}
+      index={index}
+      onFavourite={() => toggleFavourite.mutate(item.id)}    // New function per render!
+      onNavigateToDetail={() => navigation.navigate("ItemDetail", { itemId: item.id })} // New function!
+    />
+  ),
+  [toggleFavourite, navigation],
+);
+```
+
+**When to use:**
+
+- `React.memo` list items with 2+ action callbacks
+- FlatList/SectionList items where re-render cost is noticeable (images, animations)
+- Any memoized child where callbacks are the most common source of prop changes
+
+**When NOT to use:**
+
+- Non-memoized components (closures are fine, no memoization to defeat)
+- Components with only one callback (less benefit for the complexity)
+
+**Key insight:** `React.memo` does shallow comparison on all props. If even one prop is a new reference, the entire component re-renders. Callbacks are the most common source of new references because arrow functions are new objects every render. By using `(id: number) => void` callbacks defined in the parent, the callback reference stays stable across renders.
+
+**References:**
+
+- `client/screens/HistoryScreen.tsx` — `handleFavourite`, `handleNavigateToDetail`, `handleToggleExpand`, `handleDiscard` all use `(itemId: number) => void` or `(item: ScannedItemResponse) => void` pattern
+- Related learning: "Inline Arrow Functions in renderItem Defeat React.memo" in LEARNINGS.md
 
 ### useMemo for Derived Filtering and Calculations
 
