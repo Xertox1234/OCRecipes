@@ -587,6 +587,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // Get favourite scanned items (must be before /:id to avoid route conflict)
+  app.get(
+    "/api/scanned-items/favourites",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const limit = Math.min(
+          Math.max(parseInt(req.query.limit as string) || 50, 1),
+          100,
+        );
+        const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+        const result = await storage.getFavouriteScannedItems(
+          req.userId!,
+          limit,
+          offset,
+        );
+        res.json(result);
+      } catch (error) {
+        console.error("Error fetching favourite items:", error);
+        res.status(500).json({ error: "Failed to fetch favourites" });
+      }
+    },
+  );
+
   app.get(
     "/api/scanned-items/:id",
     requireAuth,
@@ -597,7 +622,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ error: "Invalid item ID" });
         }
 
-        const item = await storage.getScannedItem(id);
+        const item = await storage.getScannedItemWithFavourite(id, req.userId!);
 
         if (!item || item.userId !== req.userId) {
           return res.status(404).json({ error: "Item not found" });
@@ -695,6 +720,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         console.error("Error creating scanned item:", error);
         res.status(500).json({ error: "Failed to save item" });
+      }
+    },
+  );
+
+  // Toggle favourite on a scanned item
+  app.post(
+    "/api/scanned-items/:id/favourite",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id) || id <= 0) {
+          return res.status(400).json({ error: "Invalid item ID" });
+        }
+
+        // IDOR: verify ownership
+        const item = await storage.getScannedItem(id);
+        if (!item || item.userId !== req.userId) {
+          return res.status(404).json({ error: "Item not found" });
+        }
+
+        const isFavourited = await storage.toggleFavouriteScannedItem(
+          id,
+          req.userId!,
+        );
+        res.json({ isFavourited });
+      } catch (error) {
+        console.error("Error toggling favourite:", error);
+        res.status(500).json({ error: "Failed to toggle favourite" });
+      }
+    },
+  );
+
+  // Soft delete (discard) a scanned item
+  app.delete(
+    "/api/scanned-items/:id",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const id = parseInt(req.params.id as string, 10);
+        if (isNaN(id) || id <= 0) {
+          return res.status(400).json({ error: "Invalid item ID" });
+        }
+
+        const deleted = await storage.softDeleteScannedItem(id, req.userId!);
+        if (!deleted) {
+          return res.status(404).json({ error: "Item not found" });
+        }
+
+        res.status(204).send();
+      } catch (error) {
+        console.error("Error discarding scanned item:", error);
+        res.status(500).json({ error: "Failed to discard item" });
       }
     },
   );

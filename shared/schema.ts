@@ -11,6 +11,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  unique,
   date,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -105,6 +106,7 @@ export const scannedItems = pgTable(
     scannedAt: timestamp("scanned_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
+    discardedAt: timestamp("discarded_at"),
   },
   (table) => ({
     userIdIdx: index("scanned_items_user_id_idx").on(table.userId),
@@ -272,6 +274,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   scannedItems: many(scannedItems),
   dailyLogs: many(dailyLogs),
   savedItems: many(savedItems),
+  favouriteScannedItems: many(favouriteScannedItems),
   mealPlanRecipes: many(mealPlanRecipes),
   mealPlanItems: many(mealPlanItems),
   transactions: many(transactions),
@@ -299,6 +302,7 @@ export const scannedItemsRelations = relations(
     }),
     dailyLogs: many(dailyLogs),
     savedItems: many(savedItems),
+    favourites: many(favouriteScannedItems),
   }),
 );
 
@@ -331,6 +335,41 @@ export const savedItemsRelations = relations(savedItems, ({ one }) => ({
     references: [scannedItems.id],
   }),
 }));
+
+// Favourite scanned items - bookmarked foods for quick access
+export const favouriteScannedItems = pgTable(
+  "favourite_scanned_items",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    scannedItemId: integer("scanned_item_id")
+      .references(() => scannedItems.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    uniqueUserItem: unique().on(table.userId, table.scannedItemId),
+    userIdIdx: index("favourite_scanned_items_user_id_idx").on(table.userId),
+  }),
+);
+
+export const favouriteScannedItemsRelations = relations(
+  favouriteScannedItems,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [favouriteScannedItems.userId],
+      references: [users.id],
+    }),
+    scannedItem: one(scannedItems, {
+      fields: [favouriteScannedItems.scannedItemId],
+      references: [scannedItems.id],
+    }),
+  }),
+);
 
 // Community recipes - shared recipes created by premium users
 export const communityRecipes = pgTable(
@@ -845,3 +884,5 @@ export const insertPantryItemSchema = createInsertSchema(pantryItems).omit({
 
 export type PantryItem = typeof pantryItems.$inferSelect;
 export type InsertPantryItem = z.infer<typeof insertPantryItemSchema>;
+
+export type FavouriteScannedItem = typeof favouriteScannedItems.$inferSelect;

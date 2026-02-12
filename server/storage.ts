@@ -43,12 +43,25 @@ import {
   groceryListItems,
   pantryItems,
   mealSuggestionCache,
+  favouriteScannedItems,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, lt, gt, sql, or, ilike } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  and,
+  gte,
+  lte,
+  lt,
+  gt,
+  sql,
+  or,
+  ilike,
+  isNull,
+} from "drizzle-orm";
 import {
   subscriptionTierSchema,
   type SubscriptionTier,
@@ -76,9 +89,29 @@ export interface IStorage {
     userId: string,
     limit?: number,
     offset?: number,
-  ): Promise<{ items: ScannedItem[]; total: number }>;
+  ): Promise<{
+    items: (ScannedItem & { isFavourited: boolean })[];
+    total: number;
+  }>;
   getScannedItem(id: number): Promise<ScannedItem | undefined>;
+  getScannedItemWithFavourite(
+    id: number,
+    userId: string,
+  ): Promise<(ScannedItem & { isFavourited: boolean }) | undefined>;
   createScannedItem(item: InsertScannedItem): Promise<ScannedItem>;
+  softDeleteScannedItem(id: number, userId: string): Promise<boolean>;
+  toggleFavouriteScannedItem(
+    scannedItemId: number,
+    userId: string,
+  ): Promise<boolean>;
+  getFavouriteScannedItems(
+    userId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<{
+    items: (ScannedItem & { isFavourited: boolean })[];
+    total: number;
+  }>;
 
   getDailyLogs(userId: string, date: Date): Promise<DailyLog[]>;
   createDailyLog(log: InsertDailyLog): Promise<DailyLog>;
@@ -366,20 +399,44 @@ export class DatabaseStorage implements IStorage {
     userId: string,
     limit = 50,
     offset = 0,
-  ): Promise<{ items: ScannedItem[]; total: number }> {
-    const [items, countResult] = await Promise.all([
+  ): Promise<{
+    items: (ScannedItem & { isFavourited: boolean })[];
+    total: number;
+  }> {
+    const activeFilter = and(
+      eq(scannedItems.userId, userId),
+      isNull(scannedItems.discardedAt),
+    );
+
+    const [rows, countResult] = await Promise.all([
       db
-        .select()
+        .select({
+          item: scannedItems,
+          favouriteId: favouriteScannedItems.id,
+        })
         .from(scannedItems)
-        .where(eq(scannedItems.userId, userId))
+        .leftJoin(
+          favouriteScannedItems,
+          and(
+            eq(favouriteScannedItems.scannedItemId, scannedItems.id),
+            eq(favouriteScannedItems.userId, userId),
+          ),
+        )
+        .where(activeFilter)
         .orderBy(desc(scannedItems.scannedAt))
         .limit(limit)
         .offset(offset),
       db
         .select({ count: sql<number>`count(*)` })
         .from(scannedItems)
-        .where(eq(scannedItems.userId, userId)),
+        .where(activeFilter),
     ]);
+
+    const items = rows.map((row) => ({
+      ...row.item,
+      isFavourited: row.favouriteId !== null,
+    }));
+
     return { items, total: Number(countResult[0]?.count ?? 0) };
   }
 
@@ -387,8 +444,31 @@ export class DatabaseStorage implements IStorage {
     const [item] = await db
       .select()
       .from(scannedItems)
-      .where(eq(scannedItems.id, id));
+      .where(and(eq(scannedItems.id, id), isNull(scannedItems.discardedAt)));
     return item || undefined;
+  }
+
+  async getScannedItemWithFavourite(
+    id: number,
+    userId: string,
+  ): Promise<(ScannedItem & { isFavourited: boolean }) | undefined> {
+    const [row] = await db
+      .select({
+        item: scannedItems,
+        favouriteId: favouriteScannedItems.id,
+      })
+      .from(scannedItems)
+      .leftJoin(
+        favouriteScannedItems,
+        and(
+          eq(favouriteScannedItems.scannedItemId, scannedItems.id),
+          eq(favouriteScannedItems.userId, userId),
+        ),
+      )
+      .where(and(eq(scannedItems.id, id), isNull(scannedItems.discardedAt)));
+
+    if (!row) return undefined;
+    return { ...row.item, isFavourited: row.favouriteId !== null };
   }
 
   async createScannedItem(item: InsertScannedItem): Promise<ScannedItem> {
@@ -397,6 +477,98 @@ export class DatabaseStorage implements IStorage {
       .values(item)
       .returning();
     return scannedItem;
+  }
+
+  async softDeleteScannedItem(id: number, userId: string): Promise<boolean> {
+    const [updated] = await db
+      .update(scannedItems)
+      .set({ discardedAt: new Date() })
+      .where(
+        and(
+          eq(scannedItems.id, id),
+          eq(scannedItems.userId, userId),
+          isNull(scannedItems.discardedAt),
+        ),
+      )
+      .returning({ id: scannedItems.id });
+    return !!updated;
+  }
+
+  async toggleFavouriteScannedItem(
+    scannedItemId: number,
+    userId: string,
+  ): Promise<boolean> {
+    // Check if already favourited
+    const [existing] = await db
+      .select()
+      .from(favouriteScannedItems)
+      .where(
+        and(
+          eq(favouriteScannedItems.scannedItemId, scannedItemId),
+          eq(favouriteScannedItems.userId, userId),
+        ),
+      );
+
+    if (existing) {
+      await db
+        .delete(favouriteScannedItems)
+        .where(eq(favouriteScannedItems.id, existing.id));
+      return false; // un-favourited
+    }
+
+    await db.insert(favouriteScannedItems).values({ userId, scannedItemId });
+    return true; // favourited
+  }
+
+  async getFavouriteScannedItems(
+    userId: string,
+    limit = 50,
+    offset = 0,
+  ): Promise<{
+    items: (ScannedItem & { isFavourited: boolean })[];
+    total: number;
+  }> {
+    const [rows, countResult] = await Promise.all([
+      db
+        .select({
+          item: scannedItems,
+          favouriteId: favouriteScannedItems.id,
+        })
+        .from(favouriteScannedItems)
+        .innerJoin(
+          scannedItems,
+          eq(favouriteScannedItems.scannedItemId, scannedItems.id),
+        )
+        .where(
+          and(
+            eq(favouriteScannedItems.userId, userId),
+            isNull(scannedItems.discardedAt),
+          ),
+        )
+        .orderBy(desc(favouriteScannedItems.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(favouriteScannedItems)
+        .innerJoin(
+          scannedItems,
+          eq(favouriteScannedItems.scannedItemId, scannedItems.id),
+        )
+        .where(
+          and(
+            eq(favouriteScannedItems.userId, userId),
+            isNull(scannedItems.discardedAt),
+          ),
+        ),
+    ]);
+
+    const items = rows.map((row) => ({
+      ...row.item,
+      isFavourited: true,
+    }));
+
+    return { items, total: Number(countResult[0]?.count ?? 0) };
   }
 
   async getDailyLogs(userId: string, date: Date): Promise<DailyLog[]> {
