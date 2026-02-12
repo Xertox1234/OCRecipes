@@ -35,7 +35,12 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import {
+  Spacing,
+  BorderRadius,
+  withOpacity,
+  FAB_CLEARANCE,
+} from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
@@ -700,7 +705,7 @@ export default function HistoryScreen() {
         style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.xl,
-          paddingBottom: tabBarHeight + Spacing.xl,
+          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
           paddingHorizontal: Spacing.lg,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
@@ -717,7 +722,7 @@ export default function HistoryScreen() {
         styles.listContent,
         {
           paddingTop: headerHeight + Spacing.xl,
-          paddingBottom: tabBarHeight + Spacing.xl,
+          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
         },
         displayItems.length === 0 && !isLoading && styles.emptyListContent,
       ]}

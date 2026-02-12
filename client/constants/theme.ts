@@ -7,7 +7,7 @@ export const Colors = {
     textSecondary: "#878787",
     buttonText: "#FFFFFF",
     // Navigation
-    tabIconDefault: "#878787",
+    tabIconDefault: "#6B6B6B",
     tabIconSelected: "#9372F1",
     // Links - purple accent
     link: "#9372F1",
@@ -60,6 +60,15 @@ export const Colors = {
     fatAccent: "#FFD54F",
   },
 };
+
+/** Height of the bottom tab bar (must match MainTabNavigator screenOptions) */
+export const TAB_BAR_HEIGHT = Platform.select({ ios: 88, android: 72 }) ?? 88;
+
+/** Size of the floating action button */
+export const FAB_SIZE = 56;
+
+/** Extra bottom padding for screens with the FAB (FAB height + margin) */
+export const FAB_CLEARANCE = FAB_SIZE + 16; // FAB size + gap
 
 export const Spacing = {
   xs: 4,

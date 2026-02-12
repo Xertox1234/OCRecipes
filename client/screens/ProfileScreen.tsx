@@ -36,6 +36,7 @@ import {
   BorderRadius,
   FontFamily,
   withOpacity,
+  FAB_CLEARANCE,
 } from "@/constants/theme";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { getApiUrl } from "@/lib/query-client";
@@ -673,7 +674,7 @@ export default function ProfileScreen() {
       <ScrollView
         style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
         contentContainerStyle={{
-          paddingBottom: tabBarHeight + Spacing.xl,
+          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
         }}
       >
         <ProfileSkeleton topInset={insets.top} />
@@ -686,7 +687,7 @@ export default function ProfileScreen() {
       ref={scrollRef}
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
       contentContainerStyle={{
-        paddingBottom: tabBarHeight + Spacing.xl,
+        paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
       }}
       scrollIndicatorInsets={{ bottom: insets.bottom }}
     >

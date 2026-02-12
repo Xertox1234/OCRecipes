@@ -43,6 +43,8 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Route Params for Mode Toggling](#route-params-for-mode-toggling)
   - [CompositeNavigationProp for Cross-Stack Navigation](#compositenavigationprop-for-cross-stack-navigation)
   - [Full-Screen Detail with transparentModal](#full-screen-detail-with-transparentmodal)
+  - [fullScreenModal Exception for Camera](#fullscreenmodal-exception-for-camera)
+  - [FAB Overlay with Tab Bar Clearance](#fab-overlay-with-tab-bar-clearance)
   - [Coordinated Pull-to-Refresh](#coordinated-pull-to-refresh-for-multiple-queries)
   - [Accessibility Props Pattern](#accessibility-props-pattern)
   - [Touch Target Size Pattern](#touch-target-size-pattern)
@@ -2864,6 +2866,76 @@ const styles = StyleSheet.create({
 **When NOT to use:** Standard modals that benefit from native iOS sheet gestures (drag-to-dismiss detents). Use `presentation: "modal"` or `formSheet` for those.
 
 **Why:** `transparentModal` is the only native-stack presentation that both keeps the previous screen visible (no black/grey background flash) and adds no native chrome (no grabber bars or forced corner radius). The tradeoff is you must handle your own close button and cannot use native swipe-to-dismiss.
+
+### fullScreenModal Exception for Camera
+
+Use `presentation: "fullScreenModal"` instead of `transparentModal` for camera/scan screens. `transparentModal` has rendering issues on iOS that cause visual artifacts, and `fullScreenModal`'s black background is acceptable because the camera feed fills the screen immediately.
+
+```typescript
+<Stack.Screen
+  name="Scan"
+  component={ScanScreen}
+  options={{
+    headerShown: false,
+    // fullScreenModal intentional — transparentModal had rendering issues
+    presentation: "fullScreenModal",
+    animation: "slide_from_bottom",
+  }}
+/>
+```
+
+**When to use:** Camera screens, barcode scanners, or any full-screen view where the content fills the screen with a dark/opaque background.
+
+**When NOT to use:** Detail views or overlays where the previous screen should remain visible underneath. Use `transparentModal` for those.
+
+**Why:** `transparentModal` is the default recommendation for full-screen overlays, but it has rendering issues that cause visual artifacts on some iOS versions. Camera screens don't benefit from transparency anyway since the camera feed is opaque, so `fullScreenModal` is the better choice.
+
+### FAB Overlay with Tab Bar Clearance
+
+When adding a Floating Action Button (FAB) as a sibling to `Tab.Navigator`, use static layout constants instead of `useBottomTabBarHeight()`. The hook requires Tab.Navigator context and crashes when called from a sibling component.
+
+**Layout constants** (defined in `client/constants/theme.ts`):
+
+```typescript
+export const TAB_BAR_HEIGHT = Platform.select({ ios: 88, android: 72 }) ?? 88;
+export const FAB_SIZE = 56;
+export const FAB_CLEARANCE = FAB_SIZE + 16; // FAB size + gap
+```
+
+**FAB positioning** (sibling to Tab.Navigator, not a child):
+
+```typescript
+// MainTabNavigator.tsx
+<View style={{ flex: 1 }}>
+  <Tab.Navigator>{/* tabs */}</Tab.Navigator>
+  <ScanFAB />  {/* sibling — cannot use useBottomTabBarHeight() here */}
+</View>
+```
+
+```typescript
+// ScanFAB.tsx — position relative to static tab bar height
+<AnimatedPressable
+  style={[styles.fab, { bottom: TAB_BAR_HEIGHT + Spacing.lg }]}
+>
+```
+
+**Content clearance** — every tab screen must add `FAB_CLEARANCE` to its bottom padding so scrollable content isn't obscured:
+
+```typescript
+import { FAB_CLEARANCE } from "@/constants/theme";
+
+<ScrollView
+  contentContainerStyle={{
+    paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+  }}
+/>
+```
+
+**Critical gotcha:** `useBottomTabBarHeight()` from `@react-navigation/bottom-tabs` only works inside components rendered as children of `Tab.Navigator` (tab screens). A FAB rendered as a sibling will crash with "No safe area value available" because the hook depends on Tab.Navigator context that doesn't exist at the sibling level.
+
+**When to use:** Any persistent overlay (FAB, mini-player, banner) positioned above the tab bar but outside the tab navigator's component tree.
+
+**Why:** Static constants are reliable across all component positions. The values must be kept in sync with `Tab.Navigator`'s `tabBarStyle.height` — both reference `TAB_BAR_HEIGHT` from `theme.ts` to ensure a single source of truth.
 
 ### Coordinated Pull-to-Refresh for Multiple Queries
 

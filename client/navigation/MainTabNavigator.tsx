@@ -9,7 +9,7 @@ import MealPlanStackNavigator from "@/navigation/MealPlanStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { ScanFAB } from "@/components/ScanFAB";
 import { useTheme } from "@/hooks/useTheme";
-import { FontFamily } from "@/constants/theme";
+import { FontFamily, TAB_BAR_HEIGHT } from "@/constants/theme";
 
 export type MainTabParamList = {
   HistoryTab: undefined;
@@ -37,10 +37,7 @@ export default function MainTabNavigator() {
             }),
             borderTopWidth: 0,
             elevation: 0,
-            height: Platform.select({
-              ios: 88,
-              android: 72,
-            }),
+            height: TAB_BAR_HEIGHT,
             // Shadow for elevated appearance (Figma design)
             shadowColor: "#000", // hardcoded — shadow color is always black
             shadowOffset: { width: 0, height: -2 },

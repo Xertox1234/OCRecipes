@@ -1,16 +1,16 @@
 {
-  "review_id": "profile_screen_20260211",
-  "target": "client/screens/ProfileScreen.tsx",
+  "review_id": "fab_migration_20260212",
+  "target": "Recent commit: feat: move scan button from tab bar to floating action button",
   "focus_areas": ["visual", "usability", "code", "performance"],
-  "context": "Social-media-style profile redesign",
+  "context": "Navigation refactor — scan action moved from tab to FAB",
   "platform": "mobile",
   "status": "complete",
-  "started_at": "2026-02-11T18:00:00Z",
-  "issues_found": 12,
+  "started_at": "2026-02-12T11:35:00Z",
+  "issues_found": 7,
   "severity_counts": {
-    "critical": 1,
-    "major": 4,
-    "minor": 4,
-    "suggestion": 3
+    "critical": 0,
+    "major": 2,
+    "minor": 3,
+    "suggestion": 2
   }
 }

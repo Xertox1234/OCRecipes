@@ -83,6 +83,7 @@ export default function RootStackNavigator() {
             component={ScanScreen}
             options={{
               headerShown: false,
+              // fullScreenModal intentional — transparentModal had rendering issues
               presentation: "fullScreenModal",
               animation: "slide_from_bottom",
             }}

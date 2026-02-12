@@ -25,6 +25,7 @@ import {
   BorderRadius,
   FontFamily,
   withOpacity,
+  FAB_CLEARANCE,
 } from "@/constants/theme";
 import {
   useMealPlanItems,
@@ -731,7 +732,7 @@ export default function MealPlanHomeScreen() {
           styles.container,
           {
             paddingTop: headerHeight,
-            paddingBottom: tabBarHeight,
+            paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
             backgroundColor: theme.backgroundRoot,
           },
         ]}
@@ -758,7 +759,7 @@ export default function MealPlanHomeScreen() {
       <ScrollView
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.sm,
-          paddingBottom: tabBarHeight + Spacing.xl,
+          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
         }}
         refreshControl={
           <RefreshControl
