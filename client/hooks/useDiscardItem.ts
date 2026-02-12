@@ -31,11 +31,17 @@ export function useDiscardItem() {
           if (!old) return old;
           return {
             ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              items: page.items.filter((item) => item.id !== itemId),
-              total: page.total - 1,
-            })),
+            pages: old.pages.map((page) => {
+              const filtered = page.items.filter((item) => item.id !== itemId);
+              return {
+                ...page,
+                items: filtered,
+                total:
+                  filtered.length < page.items.length
+                    ? page.total - 1
+                    : page.total,
+              };
+            }),
           };
         },
       );

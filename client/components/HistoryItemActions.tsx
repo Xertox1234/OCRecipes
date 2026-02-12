@@ -75,7 +75,6 @@ function ActionButton({
 interface HistoryItemActionsProps {
   isFavourited: boolean;
   isPremium: boolean;
-  canGenerateRecipe: boolean;
   isFavouriteLoading?: boolean;
   isDiscardLoading?: boolean;
   onFavourite: () => void;
@@ -88,7 +87,6 @@ interface HistoryItemActionsProps {
 export function HistoryItemActions({
   isFavourited,
   isPremium,
-  canGenerateRecipe,
   isFavouriteLoading,
   isDiscardLoading,
   onFavourite,
@@ -106,12 +104,14 @@ export function HistoryItemActions({
       accessibilityLabel="Item actions"
     >
       <ActionButton
-        icon={isFavourited ? "heart" : "heart"}
+        icon="heart"
         label={isFavourited ? "Saved" : "Favourite"}
         onPress={onFavourite}
-        color={isFavourited ? theme.error : theme.text}
+        color={isFavourited ? theme.error : theme.textSecondary}
         isLoading={isFavouriteLoading}
-        accessibilityHint="Toggle favourite status"
+        accessibilityHint={
+          isFavourited ? "Remove from favourites" : "Add to favourites"
+        }
       />
       <ActionButton
         icon="shopping-cart"

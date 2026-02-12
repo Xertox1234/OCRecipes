@@ -100,7 +100,6 @@ const HistoryItem = React.memo(function HistoryItem({
   onToggleExpand,
   onNavigateToDetail,
   isPremium,
-  canGenerateRecipe,
   onFavourite,
   onGroceryList,
   onGenerateRecipe,
@@ -113,15 +112,14 @@ const HistoryItem = React.memo(function HistoryItem({
   item: ScannedItemResponse;
   index: number;
   isExpanded: boolean;
-  onToggleExpand: () => void;
-  onNavigateToDetail: () => void;
+  onToggleExpand: (itemId: number) => void;
+  onNavigateToDetail: (itemId: number) => void;
   isPremium: boolean;
-  canGenerateRecipe: boolean;
-  onFavourite: () => void;
-  onGroceryList: () => void;
-  onGenerateRecipe: () => void;
-  onShare: () => void;
-  onDiscard: () => void;
+  onFavourite: (itemId: number) => void;
+  onGroceryList: (item: ScannedItemResponse) => void;
+  onGenerateRecipe: (item: ScannedItemResponse) => void;
+  onShare: (item: ScannedItemResponse) => void;
+  onDiscard: (item: ScannedItemResponse) => void;
   isFavouriteLoading: boolean;
   isDiscardLoading: boolean;
   reducedMotion: boolean;
@@ -194,9 +192,9 @@ const HistoryItem = React.memo(function HistoryItem({
 
   const handlePress = () => {
     if (isExpanded) {
-      onNavigateToDetail();
+      onNavigateToDetail(item.id);
     } else {
-      onToggleExpand();
+      onToggleExpand(item.id);
     }
   };
 
@@ -293,14 +291,13 @@ const HistoryItem = React.memo(function HistoryItem({
               <HistoryItemActions
                 isFavourited={item.isFavourited ?? false}
                 isPremium={isPremium}
-                canGenerateRecipe={canGenerateRecipe}
                 isFavouriteLoading={isFavouriteLoading}
                 isDiscardLoading={isDiscardLoading}
-                onFavourite={onFavourite}
-                onGroceryList={onGroceryList}
-                onGenerateRecipe={onGenerateRecipe}
-                onShare={onShare}
-                onDiscard={onDiscard}
+                onFavourite={() => onFavourite(item.id)}
+                onGroceryList={() => onGroceryList(item)}
+                onGenerateRecipe={() => onGenerateRecipe(item)}
+                onShare={() => onShare(item)}
+                onDiscard={() => onDiscard(item)}
               />
             </Animated.View>
           </Animated.View>
@@ -631,7 +628,7 @@ export default function HistoryScreen() {
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const queryClient = useQueryClient();
-  const { isPremium, canGenerateRecipe } = usePremiumContext();
+  const { isPremium } = usePremiumContext();
   const toggleFavourite = useToggleFavourite();
   const discardItem = useDiscardItem();
 
@@ -854,15 +851,14 @@ export default function HistoryScreen() {
         item={item}
         index={index}
         isExpanded={expandedItemId === item.id}
-        onToggleExpand={() => handleToggleExpand(item.id)}
-        onNavigateToDetail={() => handleNavigateToDetail(item.id)}
+        onToggleExpand={handleToggleExpand}
+        onNavigateToDetail={handleNavigateToDetail}
         isPremium={isPremium}
-        canGenerateRecipe={canGenerateRecipe}
-        onFavourite={() => handleFavourite(item.id)}
-        onGroceryList={() => handleGroceryList(item)}
-        onGenerateRecipe={() => handleGenerateRecipe(item)}
-        onShare={() => handleShare(item)}
-        onDiscard={() => handleDiscard(item)}
+        onFavourite={handleFavourite}
+        onGroceryList={handleGroceryList}
+        onGenerateRecipe={handleGenerateRecipe}
+        onShare={handleShare}
+        onDiscard={handleDiscard}
         isFavouriteLoading={
           toggleFavourite.isPending && toggleFavourite.variables === item.id
         }
@@ -877,7 +873,6 @@ export default function HistoryScreen() {
       handleToggleExpand,
       handleNavigateToDetail,
       isPremium,
-      canGenerateRecipe,
       handleFavourite,
       handleGroceryList,
       handleGenerateRecipe,

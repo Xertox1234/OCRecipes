@@ -498,26 +498,27 @@ export class DatabaseStorage implements IStorage {
     scannedItemId: number,
     userId: string,
   ): Promise<boolean> {
-    // Check if already favourited
-    const [existing] = await db
-      .select()
-      .from(favouriteScannedItems)
-      .where(
-        and(
-          eq(favouriteScannedItems.scannedItemId, scannedItemId),
-          eq(favouriteScannedItems.userId, userId),
-        ),
-      );
+    return db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(favouriteScannedItems)
+        .where(
+          and(
+            eq(favouriteScannedItems.scannedItemId, scannedItemId),
+            eq(favouriteScannedItems.userId, userId),
+          ),
+        );
 
-    if (existing) {
-      await db
-        .delete(favouriteScannedItems)
-        .where(eq(favouriteScannedItems.id, existing.id));
-      return false; // un-favourited
-    }
+      if (existing) {
+        await tx
+          .delete(favouriteScannedItems)
+          .where(eq(favouriteScannedItems.id, existing.id));
+        return false; // un-favourited
+      }
 
-    await db.insert(favouriteScannedItems).values({ userId, scannedItemId });
-    return true; // favourited
+      await tx.insert(favouriteScannedItems).values({ userId, scannedItemId });
+      return true; // favourited
+    });
   }
 
   async getFavouriteScannedItems(
@@ -638,6 +639,8 @@ export class DatabaseStorage implements IStorage {
           eq(dailyLogs.userId, userId),
           gte(dailyLogs.loggedAt, startOfDay),
           lt(dailyLogs.loggedAt, endOfDay),
+          // Exclude discarded scanned items from daily totals
+          sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`,
         ),
       );
 

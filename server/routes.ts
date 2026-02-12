@@ -607,7 +607,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(result);
       } catch (error) {
         console.error("Error fetching favourite items:", error);
-        res.status(500).json({ error: "Failed to fetch favourites" });
+        res.status(500).json({
+          error: "Failed to fetch favourites",
+          code: "FETCH_FAVOURITES_FAILED",
+        });
       }
     },
   );
@@ -732,13 +735,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id) || id <= 0) {
-          return res.status(400).json({ error: "Invalid item ID" });
+          return res
+            .status(400)
+            .json({ error: "Invalid item ID", code: "INVALID_ITEM_ID" });
         }
 
-        // IDOR: verify ownership
+        // IDOR: verify ownership (getScannedItem filters discarded items,
+        // so favouriting a discarded item returns 404 — intentional)
         const item = await storage.getScannedItem(id);
         if (!item || item.userId !== req.userId) {
-          return res.status(404).json({ error: "Item not found" });
+          return res
+            .status(404)
+            .json({ error: "Item not found", code: "ITEM_NOT_FOUND" });
         }
 
         const isFavourited = await storage.toggleFavouriteScannedItem(
@@ -748,7 +756,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ isFavourited });
       } catch (error) {
         console.error("Error toggling favourite:", error);
-        res.status(500).json({ error: "Failed to toggle favourite" });
+        res.status(500).json({
+          error: "Failed to toggle favourite",
+          code: "TOGGLE_FAVOURITE_FAILED",
+        });
       }
     },
   );
@@ -761,18 +772,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id) || id <= 0) {
-          return res.status(400).json({ error: "Invalid item ID" });
+          return res
+            .status(400)
+            .json({ error: "Invalid item ID", code: "INVALID_ITEM_ID" });
         }
 
         const deleted = await storage.softDeleteScannedItem(id, req.userId!);
         if (!deleted) {
-          return res.status(404).json({ error: "Item not found" });
+          return res
+            .status(404)
+            .json({ error: "Item not found", code: "ITEM_NOT_FOUND" });
         }
 
         res.status(204).send();
       } catch (error) {
         console.error("Error discarding scanned item:", error);
-        res.status(500).json({ error: "Failed to discard item" });
+        res.status(500).json({
+          error: "Failed to discard item",
+          code: "DISCARD_ITEM_FAILED",
+        });
       }
     },
   );
