@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useEffect, useRef } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   StyleSheet,
   View,
@@ -9,6 +15,8 @@ import {
   ActivityIndicator,
   ScrollView,
   AccessibilityInfo,
+  Alert,
+  Share,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -26,22 +34,33 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { SkeletonList, SkeletonBox } from "@/components/SkeletonLoader";
+import { HistoryItemActions } from "@/components/HistoryItemActions";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
+import { usePremiumContext } from "@/context/PremiumContext";
+import { useToggleFavourite } from "@/hooks/useFavourites";
+import { useDiscardItem } from "@/hooks/useDiscardItem";
 import {
   Spacing,
   BorderRadius,
   withOpacity,
   FAB_CLEARANCE,
 } from "@/constants/theme";
-import { pressSpringConfig } from "@/constants/animations";
+import {
+  pressSpringConfig,
+  expandTimingConfig,
+  collapseTimingConfig,
+  contentRevealTimingConfig,
+} from "@/constants/animations";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import type { TodayDashboardNavigationProp } from "@/types/navigation";
@@ -56,9 +75,8 @@ import type { RouteProp } from "@react-navigation/native";
 const PAGE_SIZE = 50;
 const DASHBOARD_ITEM_LIMIT = 5;
 
-/** Item height for getItemLayout optimization (padding + content + padding) */
-const ITEM_HEIGHT = Spacing.lg * 2 + 56; // 88px
-const SEPARATOR_HEIGHT = Spacing.md; // 12px
+/** Height of the expanded action row */
+const ACTION_ROW_HEIGHT = 90;
 
 /** Cap staggered animation index to avoid slow entrance on long lists */
 const MAX_ANIMATED_INDEX = 10;
@@ -78,19 +96,88 @@ function formatDate(dateStr: string): string {
 const HistoryItem = React.memo(function HistoryItem({
   item,
   index,
-  onPress,
+  isExpanded,
+  onToggleExpand,
+  onNavigateToDetail,
+  isPremium,
+  canGenerateRecipe,
+  onFavourite,
+  onGroceryList,
+  onGenerateRecipe,
+  onShare,
+  onDiscard,
+  isFavouriteLoading,
+  isDiscardLoading,
   reducedMotion,
 }: {
   item: ScannedItemResponse;
   index: number;
-  onPress: (item: ScannedItemResponse) => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onNavigateToDetail: () => void;
+  isPremium: boolean;
+  canGenerateRecipe: boolean;
+  onFavourite: () => void;
+  onGroceryList: () => void;
+  onGenerateRecipe: () => void;
+  onShare: () => void;
+  onDiscard: () => void;
+  isFavouriteLoading: boolean;
+  isDiscardLoading: boolean;
   reducedMotion: boolean;
 }) {
   const { theme } = useTheme();
   const scale = useSharedValue(1);
+  const expandHeight = useSharedValue(0);
+  const contentOpacity = useSharedValue(0);
+  const chevronRotation = useSharedValue(0);
 
-  const animatedStyle = useAnimatedStyle(() => ({
+  // Track previous expanded state to determine direction
+  const prevExpandedRef = useRef(isExpanded);
+
+  useEffect(() => {
+    if (isExpanded === prevExpandedRef.current) return;
+    prevExpandedRef.current = isExpanded;
+
+    if (reducedMotion) {
+      expandHeight.value = isExpanded ? ACTION_ROW_HEIGHT : 0;
+      contentOpacity.value = isExpanded ? 1 : 0;
+      chevronRotation.value = isExpanded ? 90 : 0;
+      return;
+    }
+
+    if (isExpanded) {
+      expandHeight.value = withTiming(ACTION_ROW_HEIGHT, expandTimingConfig);
+      contentOpacity.value = withTiming(1, contentRevealTimingConfig);
+      chevronRotation.value = withTiming(90, expandTimingConfig);
+    } else {
+      contentOpacity.value = withTiming(0, collapseTimingConfig);
+      expandHeight.value = withTiming(0, collapseTimingConfig);
+      chevronRotation.value = withTiming(0, collapseTimingConfig);
+    }
+  }, [
+    isExpanded,
+    expandHeight,
+    contentOpacity,
+    chevronRotation,
+    reducedMotion,
+  ]);
+
+  const animatedScale = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
+  }));
+
+  const animatedExpand = useAnimatedStyle(() => ({
+    height: expandHeight.value,
+    overflow: "hidden" as const,
+  }));
+
+  const animatedContent = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+  }));
+
+  const animatedChevron = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevronRotation.value}deg` }],
   }));
 
   const handlePressIn = () => {
@@ -105,27 +192,33 @@ const HistoryItem = React.memo(function HistoryItem({
     }
   };
 
+  const handlePress = () => {
+    if (isExpanded) {
+      onNavigateToDetail();
+    } else {
+      onToggleExpand();
+    }
+  };
+
   const calorieText = item.calories
     ? `${Math.round(parseFloat(item.calories))} calories`
     : "calories unknown";
 
-  // Skip entrance animation when reduced motion is preferred
-  // Cap delay index so items past page 1 appear promptly
   const enteringAnimation = reducedMotion
     ? undefined
     : FadeInDown.delay(Math.min(index, MAX_ANIMATED_INDEX) * 50).duration(300);
 
   return (
     <Animated.View entering={enteringAnimation}>
-      <Animated.View style={animatedStyle}>
-        <Pressable
-          onPress={() => onPress(item)}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          accessibilityLabel={`${item.productName}${item.brandName ? ` by ${item.brandName}` : ""}, ${calorieText}. Tap to view details.`}
-          accessibilityRole="button"
-        >
-          <Card elevation={1} style={styles.itemCard}>
+      <Animated.View style={animatedScale}>
+        <Card elevation={1} style={styles.itemCard}>
+          <Pressable
+            onPress={handlePress}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            accessibilityLabel={`${item.productName}${item.brandName ? ` by ${item.brandName}` : ""}, ${calorieText}. ${isExpanded ? "Tap to view details." : "Tap to show actions."}`}
+            accessibilityRole="button"
+          >
             <View style={styles.itemContent}>
               {item.imageUrl ? (
                 <Image
@@ -184,14 +277,34 @@ const HistoryItem = React.memo(function HistoryItem({
                 </ThemedText>
               </View>
 
-              <Feather
-                name="chevron-right"
-                size={20}
-                color={theme.textSecondary}
-              />
+              <Animated.View style={animatedChevron}>
+                <Feather
+                  name="chevron-right"
+                  size={20}
+                  color={theme.textSecondary}
+                />
+              </Animated.View>
             </View>
-          </Card>
-        </Pressable>
+          </Pressable>
+
+          {/* Expandable actions area */}
+          <Animated.View style={animatedExpand}>
+            <Animated.View style={animatedContent}>
+              <HistoryItemActions
+                isFavourited={item.isFavourited ?? false}
+                isPremium={isPremium}
+                canGenerateRecipe={canGenerateRecipe}
+                isFavouriteLoading={isFavouriteLoading}
+                isDiscardLoading={isDiscardLoading}
+                onFavourite={onFavourite}
+                onGroceryList={onGroceryList}
+                onGenerateRecipe={onGenerateRecipe}
+                onShare={onShare}
+                onDiscard={onDiscard}
+              />
+            </Animated.View>
+          </Animated.View>
+        </Card>
       </Animated.View>
     </Animated.View>
   );
@@ -518,6 +631,13 @@ export default function HistoryScreen() {
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const queryClient = useQueryClient();
+  const { isPremium, canGenerateRecipe } = usePremiumContext();
+  const toggleFavourite = useToggleFavourite();
+  const discardItem = useDiscardItem();
+
+  // Expanded accordion state
+  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+  const [upgradeModalVisible, setUpgradeModalVisible] = useState(false);
 
   // Determine if we're showing dashboard or full history
   const showAll = route.params?.showAll ?? false;
@@ -612,6 +732,7 @@ export default function HistoryScreen() {
 
   // Coordinated pull-to-refresh for dashboard
   const handleRefresh = useCallback(async () => {
+    setExpandedItemId(null);
     if (!showAll) {
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ["/api/daily-summary"] }),
@@ -622,12 +743,94 @@ export default function HistoryScreen() {
     }
   }, [showAll, queryClient, refetch]);
 
-  const handleItemPress = useCallback(
-    (item: ScannedItemResponse) => {
+  const handleToggleExpand = useCallback(
+    (itemId: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      navigation.navigate("ItemDetail", { itemId: item.id });
+      setExpandedItemId((prev) => (prev === itemId ? null : itemId));
+    },
+    [haptics],
+  );
+
+  const handleNavigateToDetail = useCallback(
+    (itemId: number) => {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      navigation.navigate("ItemDetail", { itemId });
     },
     [navigation, haptics],
+  );
+
+  const handleFavourite = useCallback(
+    (itemId: number) => {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      toggleFavourite.mutate(itemId);
+    },
+    [haptics, toggleFavourite],
+  );
+
+  const handleGroceryList = useCallback(
+    (item: ScannedItemResponse) => {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      // TODO: Integrate with grocery list when available
+      Alert.alert(
+        "Add to Grocery List",
+        `"${item.productName}" will be added to your grocery list. This feature is coming soon.`,
+      );
+    },
+    [haptics],
+  );
+
+  const handleGenerateRecipe = useCallback(
+    (item: ScannedItemResponse) => {
+      if (!isPremium) {
+        haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+        setUpgradeModalVisible(true);
+        return;
+      }
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      navigation.navigate("MealPlanTab");
+    },
+    [isPremium, haptics, navigation],
+  );
+
+  const handleShare = useCallback(
+    async (item: ScannedItemResponse) => {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      const calories = item.calories
+        ? `${Math.round(parseFloat(item.calories))} kcal`
+        : "";
+      const content = [item.productName, item.brandName, calories]
+        .filter(Boolean)
+        .join(" - ");
+
+      try {
+        await Share.share({ message: content, title: item.productName });
+      } catch {
+        // User cancelled
+      }
+    },
+    [haptics],
+  );
+
+  const handleDiscard = useCallback(
+    (item: ScannedItemResponse) => {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+      Alert.alert(
+        "Discard Item",
+        `Remove "${item.productName}" from your history?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Discard",
+            style: "destructive",
+            onPress: () => {
+              setExpandedItemId(null);
+              discardItem.mutate(item.id);
+            },
+          },
+        ],
+      );
+    },
+    [haptics, discardItem],
   );
 
   const handleScanPress = useCallback(() => {
@@ -650,11 +853,42 @@ export default function HistoryScreen() {
       <HistoryItem
         item={item}
         index={index}
-        onPress={handleItemPress}
+        isExpanded={expandedItemId === item.id}
+        onToggleExpand={() => handleToggleExpand(item.id)}
+        onNavigateToDetail={() => handleNavigateToDetail(item.id)}
+        isPremium={isPremium}
+        canGenerateRecipe={canGenerateRecipe}
+        onFavourite={() => handleFavourite(item.id)}
+        onGroceryList={() => handleGroceryList(item)}
+        onGenerateRecipe={() => handleGenerateRecipe(item)}
+        onShare={() => handleShare(item)}
+        onDiscard={() => handleDiscard(item)}
+        isFavouriteLoading={
+          toggleFavourite.isPending && toggleFavourite.variables === item.id
+        }
+        isDiscardLoading={
+          discardItem.isPending && discardItem.variables === item.id
+        }
         reducedMotion={reducedMotion}
       />
     ),
-    [handleItemPress, reducedMotion],
+    [
+      expandedItemId,
+      handleToggleExpand,
+      handleNavigateToDetail,
+      isPremium,
+      canGenerateRecipe,
+      handleFavourite,
+      handleGroceryList,
+      handleGenerateRecipe,
+      handleShare,
+      handleDiscard,
+      toggleFavourite.isPending,
+      toggleFavourite.variables,
+      discardItem.isPending,
+      discardItem.variables,
+      reducedMotion,
+    ],
   );
 
   const handleEndReached = useCallback(() => {
@@ -662,15 +896,6 @@ export default function HistoryScreen() {
       fetchNextPage();
     }
   }, [showAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  const getItemLayout = useCallback(
-    (_: unknown, index: number) => ({
-      length: ITEM_HEIGHT,
-      offset: (ITEM_HEIGHT + SEPARATOR_HEIGHT) * index,
-      index,
-    }),
-    [],
-  );
 
   // Calculate calorie progress
   const calorieGoal = user?.dailyCalorieGoal || 2000;
@@ -716,70 +941,76 @@ export default function HistoryScreen() {
   }
 
   return (
-    <FlatList
-      style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
-      contentContainerStyle={[
-        styles.listContent,
-        {
-          paddingTop: headerHeight + Spacing.xl,
-          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
-        },
-        displayItems.length === 0 && !isLoading && styles.emptyListContent,
-      ]}
-      scrollIndicatorInsets={{ bottom: insets.bottom }}
-      data={isLoading ? [] : displayItems}
-      renderItem={renderItem}
-      keyExtractor={(item) => item.id.toString()}
-      ListHeaderComponent={
-        showAll ? (
-          <FullHistoryHeader onBackPress={handleBackToDashboard} />
-        ) : (
-          <DashboardHeader
-            userName={userName}
-            currentCalories={currentCalories}
-            calorieGoal={calorieGoal}
-            calorieProgress={calorieProgress}
-            itemCount={itemCount}
-            plannedCalories={plannedCalories}
-            reducedMotion={reducedMotion}
-            onScanPress={handleScanPress}
-          />
-        )
-      }
-      ListEmptyComponent={
-        isLoading ? (
-          <View accessibilityElementsHidden>
-            <SkeletonList count={5} />
-          </View>
-        ) : (
-          <EmptyState />
-        )
-      }
-      ListFooterComponent={
-        showAll ? (
-          isFetchingNextPage ? (
-            <LoadingFooter />
+    <>
+      <FlatList
+        style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
+        contentContainerStyle={[
+          styles.listContent,
+          {
+            paddingTop: headerHeight + Spacing.xl,
+            paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+          },
+          displayItems.length === 0 && !isLoading && styles.emptyListContent,
+        ]}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
+        data={isLoading ? [] : displayItems}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id.toString()}
+        extraData={expandedItemId}
+        ListHeaderComponent={
+          showAll ? (
+            <FullHistoryHeader onBackPress={handleBackToDashboard} />
+          ) : (
+            <DashboardHeader
+              userName={userName}
+              currentCalories={currentCalories}
+              calorieGoal={calorieGoal}
+              calorieProgress={calorieProgress}
+              itemCount={itemCount}
+              plannedCalories={plannedCalories}
+              reducedMotion={reducedMotion}
+              onScanPress={handleScanPress}
+            />
+          )
+        }
+        ListEmptyComponent={
+          isLoading ? (
+            <View accessibilityElementsHidden>
+              <SkeletonList count={5} />
+            </View>
+          ) : (
+            <EmptyState />
+          )
+        }
+        ListFooterComponent={
+          showAll ? (
+            isFetchingNextPage ? (
+              <LoadingFooter />
+            ) : null
+          ) : displayItems.length > 0 ? (
+            <ViewAllFooter onViewAllPress={handleViewAllPress} />
           ) : null
-        ) : displayItems.length > 0 ? (
-          <ViewAllFooter onViewAllPress={handleViewAllPress} />
-        ) : null
-      }
-      refreshControl={
-        <RefreshControl
-          refreshing={showAll ? isRefetching : isRefreshingDashboard}
-          onRefresh={handleRefresh}
-          tintColor={theme.success}
-        />
-      }
-      ItemSeparatorComponent={ItemSeparator}
-      getItemLayout={showAll ? getItemLayout : undefined}
-      onEndReached={handleEndReached}
-      onEndReachedThreshold={0.5}
-      accessibilityLabel={
-        showAll ? "Full scan history list" : "Today dashboard"
-      }
-      accessibilityRole="list"
-    />
+        }
+        refreshControl={
+          <RefreshControl
+            refreshing={showAll ? isRefetching : isRefreshingDashboard}
+            onRefresh={handleRefresh}
+            tintColor={theme.success}
+          />
+        }
+        ItemSeparatorComponent={ItemSeparator}
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.5}
+        accessibilityLabel={
+          showAll ? "Full scan history list" : "Today dashboard"
+        }
+        accessibilityRole="list"
+      />
+      <UpgradeModal
+        visible={upgradeModalVisible}
+        onClose={() => setUpgradeModalVisible(false)}
+      />
+    </>
   );
 }
 

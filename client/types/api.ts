@@ -24,6 +24,7 @@ export type ScannedItemResponse = {
   sodium?: string | null;
   imageUrl?: string | null;
   scannedAt: string; // ISO string
+  isFavourited?: boolean;
 };
 
 /**

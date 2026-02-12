@@ -15,7 +15,6 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
-import { CommunityRecipesSection } from "@/components/CommunityRecipesSection";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -227,19 +226,6 @@ export default function ItemDetailScreen() {
             <NutritionRow label="Sodium" value={item.sodium} unit="mg" />
           ) : null}
         </Card>
-      </Animated.View>
-
-      {/* Community Recipes Section */}
-      <Animated.View
-        entering={
-          reducedMotion ? undefined : FadeInDown.delay(300).duration(300)
-        }
-      >
-        <CommunityRecipesSection
-          productName={item.productName}
-          barcode={item.barcode}
-          itemId={itemId}
-        />
       </Animated.View>
     </ScrollView>
   );
