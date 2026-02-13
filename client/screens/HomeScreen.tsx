@@ -87,6 +87,9 @@ function EmptyRecipes() {
   );
 }
 
+const INITIAL_RECIPE_COUNT = 3;
+const EXPANDED_RECIPE_COUNT = 6;
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
@@ -107,6 +110,7 @@ export default function HomeScreen() {
   });
 
   const [searchText, setSearchText] = useState("");
+  const [showMore, setShowMore] = useState(false);
 
   const handleSearchSubmit = useCallback(() => {
     const query = searchText.trim();
@@ -144,6 +148,19 @@ export default function HomeScreen() {
     },
     [haptics],
   );
+
+  const handleSeeMore = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    setShowMore(true);
+  }, [haptics]);
+
+  const handleBrowseCatalog = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate("MealPlanTab", {
+      screen: "RecipeBrowser",
+      params: {},
+    });
+  }, [haptics, navigation]);
 
   const displayName = user?.displayName || user?.username || "there";
 
@@ -263,15 +280,54 @@ export default function HomeScreen() {
           </Animated.View>
 
           {recipes && recipes.length > 0 ? (
-            recipes.map((recipe, index) => (
-              <HomeRecipeCard
-                key={recipe.id}
-                recipe={recipe}
-                index={index}
-                onPress={handleRecipePress}
-                onFavourite={handleFavourite}
-              />
-            ))
+            <>
+              {recipes
+                .slice(
+                  0,
+                  showMore ? EXPANDED_RECIPE_COUNT : INITIAL_RECIPE_COUNT,
+                )
+                .map((recipe, index) => (
+                  <HomeRecipeCard
+                    key={recipe.id}
+                    recipe={recipe}
+                    index={index}
+                    onPress={handleRecipePress}
+                    onFavourite={handleFavourite}
+                  />
+                ))}
+
+              {!showMore && recipes.length > INITIAL_RECIPE_COUNT ? (
+                <Pressable
+                  onPress={handleSeeMore}
+                  style={styles.linkButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="See more recipes"
+                >
+                  <ThemedText
+                    type="body"
+                    style={[styles.linkText, { color: theme.link }]}
+                  >
+                    See More
+                  </ThemedText>
+                  <Feather name="chevron-down" size={16} color={theme.link} />
+                </Pressable>
+              ) : (
+                <Pressable
+                  onPress={handleBrowseCatalog}
+                  style={styles.linkButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Browse recipe catalog"
+                >
+                  <ThemedText
+                    type="body"
+                    style={[styles.linkText, { color: theme.link }]}
+                  >
+                    Browse Recipe Catalog
+                  </ThemedText>
+                  <Feather name="chevron-right" size={16} color={theme.link} />
+                </Pressable>
+              )}
+            </>
           ) : (
             <EmptyRecipes />
           )}
@@ -362,5 +418,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: Spacing.sm,
     marginBottom: Spacing["2xl"],
+  },
+  linkButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.lg,
+    gap: Spacing.xs,
+  },
+  linkText: {
+    fontFamily: FontFamily.semiBold,
+    fontSize: 15,
   },
 });
