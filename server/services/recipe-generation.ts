@@ -20,8 +20,21 @@ const recipeContentSchema = z.object({
   difficulty: z.enum(["Easy", "Medium", "Hard"]),
   timeEstimate: z.string().min(1).max(50),
   instructions: z
-    .union([z.string(), z.array(z.string())])
-    .transform((v) => (Array.isArray(v) ? v.join("\n") : v))
+    .union([z.string(), z.array(z.any())])
+    .transform((v) => {
+      if (!Array.isArray(v)) return v;
+      // Handle both string[] and object[] (e.g. [{step: 1, text: "..."}])
+      return v
+        .map((item) =>
+          typeof item === "string"
+            ? item
+            : (item.text ??
+              item.instruction ??
+              item.description ??
+              JSON.stringify(item)),
+        )
+        .join("\n");
+    })
     .pipe(z.string().min(1)),
   dietTags: z.array(z.string()).default([]),
 });

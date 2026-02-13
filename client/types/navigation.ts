@@ -127,11 +127,17 @@ export type RecipeDetailScreenNavigationProp = NativeStackNavigationProp<
 
 /**
  * Navigation prop for RecipeBrowserScreen
- * Can navigate within meal plan stack
+ * Uses CompositeNavigationProp to navigate across stacks:
+ * - Navigate within MealPlanStack (RecipeDetail, RecipeCreate, etc.)
+ * - Navigate to other tabs (MainTab)
+ * - Navigate to RootStack screens (FeaturedRecipeDetail modal)
  */
-export type RecipeBrowserScreenNavigationProp = NativeStackNavigationProp<
-  MealPlanStackParamList,
-  "RecipeBrowser"
+export type RecipeBrowserScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<MealPlanStackParamList, "RecipeBrowser">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
 >;
 
 /**

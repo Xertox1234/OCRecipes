@@ -705,6 +705,11 @@ export default function MealPlanHomeScreen() {
     [confirmMutation, haptics],
   );
 
+  const handleBrowseRecipes = useCallback(() => {
+    haptics.selection();
+    navigation.navigate("RecipeBrowser", {});
+  }, [haptics, navigation]);
+
   const handleGroceryLists = useCallback(() => {
     haptics.selection();
     navigation.navigate("GroceryLists");
@@ -772,6 +777,23 @@ export default function MealPlanHomeScreen() {
       >
         {/* Top Action Buttons */}
         <View style={styles.topActions}>
+          <Pressable
+            onPress={handleBrowseRecipes}
+            hitSlop={8}
+            style={[
+              styles.groceryButton,
+              { backgroundColor: withOpacity(theme.link, 0.1) },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Browse Recipes"
+          >
+            <Feather name="book-open" size={16} color={theme.link} />
+            <ThemedText
+              style={[styles.groceryButtonText, { color: theme.link }]}
+            >
+              Recipes
+            </ThemedText>
+          </Pressable>
           <Pressable
             onPress={handlePantry}
             hitSlop={8}

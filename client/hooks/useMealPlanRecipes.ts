@@ -1,6 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
-import type { MealPlanRecipe, RecipeIngredient } from "@shared/schema";
+import type {
+  MealPlanRecipe,
+  RecipeIngredient,
+  CommunityRecipe,
+} from "@shared/schema";
 
 type RecipeWithIngredients = MealPlanRecipe & {
   ingredients: RecipeIngredient[];
@@ -30,14 +34,31 @@ export type CatalogSearchParams = {
   number?: number;
 };
 
-export function useUserMealPlanRecipes() {
-  return useQuery<MealPlanRecipe[]>({
-    queryKey: ["/api/meal-plan/recipes"],
+type UnifiedRecipesResponse = {
+  community: CommunityRecipe[];
+  personal: MealPlanRecipe[];
+};
+
+export function useUnifiedRecipes(params?: {
+  query?: string;
+  cuisine?: string;
+  diet?: string;
+}) {
+  const qs = params
+    ? new URLSearchParams(
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== "")
+          .map(([k, v]) => [k, String(v)]),
+      ).toString()
+    : "";
+
+  return useQuery<UnifiedRecipesResponse>({
+    queryKey: ["/api/recipes/browse", params ?? {}],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/meal-plan/recipes");
+      const url = qs ? `/api/recipes/browse?${qs}` : "/api/recipes/browse";
+      const res = await apiRequest("GET", url);
       if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
-      return data.items ?? data;
+      return res.json();
     },
   });
 }
@@ -88,6 +109,7 @@ export function useCreateMealPlanRecipe() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/meal-plan/recipes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
   });
 }
@@ -132,6 +154,7 @@ export function useSaveCatalogRecipe() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/meal-plan/recipes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
   });
 }
@@ -156,6 +179,7 @@ export function useImportRecipeFromUrl() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/meal-plan/recipes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
   });
 }

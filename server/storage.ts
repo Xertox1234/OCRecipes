@@ -238,6 +238,12 @@ export interface IStorage {
     updates: Partial<InsertMealPlanRecipe>,
   ): Promise<MealPlanRecipe | undefined>;
   deleteMealPlanRecipe(id: number, userId: string): Promise<boolean>;
+  getUnifiedRecipes(params: {
+    userId: string;
+    query?: string;
+    cuisine?: string;
+    diet?: string;
+  }): Promise<{ community: CommunityRecipe[]; personal: MealPlanRecipe[] }>;
 
   // Meal plan items
   getMealPlanItems(
@@ -1151,6 +1157,70 @@ export class DatabaseStorage implements IStorage {
       )
       .returning({ id: mealPlanRecipes.id });
     return result.length > 0;
+  }
+
+  async getUnifiedRecipes(params: {
+    userId: string;
+    query?: string;
+    cuisine?: string;
+    diet?: string;
+  }): Promise<{ community: CommunityRecipe[]; personal: MealPlanRecipe[] }> {
+    const { userId, query, cuisine, diet } = params;
+
+    const communityConditions = [eq(communityRecipes.isPublic, true)];
+    const personalConditions = [eq(mealPlanRecipes.userId, userId)];
+
+    if (query) {
+      const pattern = `%${escapeLike(query)}%`;
+      communityConditions.push(
+        or(
+          ilike(communityRecipes.title, pattern),
+          ilike(communityRecipes.description, pattern),
+        )!,
+      );
+      personalConditions.push(
+        or(
+          ilike(mealPlanRecipes.title, pattern),
+          ilike(mealPlanRecipes.description, pattern),
+        )!,
+      );
+    }
+
+    if (cuisine) {
+      // Community recipes have no cuisine column — filter by dietTags which
+      // contain the lowercase cuisine name (e.g. "italian", "mexican").
+      communityConditions.push(
+        sql`${communityRecipes.dietTags}::jsonb @> ${JSON.stringify([cuisine.toLowerCase()])}::jsonb`,
+      );
+      personalConditions.push(
+        ilike(mealPlanRecipes.cuisine, `%${escapeLike(cuisine)}%`),
+      );
+    }
+
+    if (diet) {
+      const dietLower = diet.toLowerCase();
+      communityConditions.push(
+        sql`${communityRecipes.dietTags}::jsonb @> ${JSON.stringify([dietLower])}::jsonb`,
+      );
+      personalConditions.push(
+        sql`${mealPlanRecipes.dietTags}::jsonb @> ${JSON.stringify([dietLower])}::jsonb`,
+      );
+    }
+
+    const [community, personal] = await Promise.all([
+      db
+        .select()
+        .from(communityRecipes)
+        .where(and(...communityConditions))
+        .orderBy(desc(communityRecipes.createdAt)),
+      db
+        .select()
+        .from(mealPlanRecipes)
+        .where(and(...personalConditions))
+        .orderBy(desc(mealPlanRecipes.createdAt)),
+    ]);
+
+    return { community, personal };
   }
 
   // ============================================================================

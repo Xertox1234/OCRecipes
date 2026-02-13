@@ -7,6 +7,7 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,19 +29,28 @@ import {
 import {
   useCatalogSearch,
   useSaveCatalogRecipe,
-  useUserMealPlanRecipes,
+  useUnifiedRecipes,
   type CatalogSearchResult,
   type CatalogSearchParams,
 } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import { getApiUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
-import type { MealPlanRecipe } from "@shared/schema";
+import type { MealPlanRecipe, CommunityRecipe } from "@shared/schema";
+
+const SPOONACULAR_PAGE_SIZE = 20;
 
 type RecipeBrowserRouteProp = RouteProp<
   MealPlanStackParamList,
   "RecipeBrowser"
 >;
+
+// ── Tagged union for merged list ────────────────────────────────────
+
+type TaggedCommunity = CommunityRecipe & { source: "community" };
+type TaggedPersonal = MealPlanRecipe & { source: "personal" };
+type UnifiedRecipeItem = TaggedCommunity | TaggedPersonal;
 
 // ── Item Separator ──────────────────────────────────────────────────
 
@@ -58,7 +68,191 @@ const CUISINE_PRESETS = [
 ];
 const DIET_PRESETS = ["Vegetarian", "Vegan", "Gluten Free", "Keto", "Paleo"];
 
-// ── Catalog Card ─────────────────────────────────────────────────────
+// ── Unified Recipe Card ─────────────────────────────────────────────
+
+const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
+  item,
+  onPress,
+  adding,
+  browseOnly,
+}: {
+  item: UnifiedRecipeItem;
+  onPress: (item: UnifiedRecipeItem) => void;
+  adding: boolean;
+  browseOnly: boolean;
+}) {
+  const { theme } = useTheme();
+
+  const isCommunity = item.source === "community";
+
+  // Time display
+  let timeText: string | null = null;
+  if (isCommunity) {
+    if (item.timeEstimate) timeText = item.timeEstimate;
+  } else {
+    const total = (item.prepTimeMinutes || 0) + (item.cookTimeMinutes || 0);
+    if (total > 0) timeText = `${total} min`;
+  }
+
+  // Calories (personal only)
+  const caloriesText =
+    !isCommunity && item.caloriesPerServing
+      ? `${Math.round(parseFloat(item.caloriesPerServing))} cal`
+      : null;
+
+  // Button icon: community always browse, personal depends on mode
+  const iconName = isCommunity || browseOnly ? "chevron-right" : "plus";
+
+  const imageUri = item.imageUrl
+    ? item.imageUrl.startsWith("http")
+      ? item.imageUrl
+      : `${getApiUrl()}${item.imageUrl}`
+    : null;
+
+  return (
+    <Pressable
+      onPress={() => onPress(item)}
+      disabled={adding}
+      style={[
+        styles.recipeCard,
+        { backgroundColor: withOpacity(theme.text, 0.04) },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={
+        isCommunity || browseOnly
+          ? `View ${item.title}`
+          : `Add ${item.title} to meal plan`
+      }
+    >
+      {imageUri ? (
+        <Image source={{ uri: imageUri }} style={styles.recipeCardThumbnail} />
+      ) : (
+        <View
+          style={[
+            styles.recipeCardThumbnail,
+            { backgroundColor: withOpacity(theme.text, 0.08) },
+          ]}
+        >
+          <Feather name="image" size={20} color={theme.textSecondary} />
+        </View>
+      )}
+      <View style={styles.recipeCardContent}>
+        <ThemedText style={styles.recipeCardTitle} numberOfLines={2}>
+          {item.title}
+        </ThemedText>
+        <View style={styles.recipeCardMeta}>
+          {timeText && (
+            <>
+              <Feather name="clock" size={12} color={theme.textSecondary} />
+              <ThemedText
+                style={[
+                  styles.recipeCardMetaText,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                {timeText}
+              </ThemedText>
+            </>
+          )}
+          {caloriesText && (
+            <ThemedText
+              style={[
+                styles.recipeCardMetaText,
+                {
+                  color: theme.textSecondary,
+                  marginLeft: timeText ? Spacing.sm : 0,
+                },
+              ]}
+            >
+              {caloriesText}
+            </ThemedText>
+          )}
+          {isCommunity && (
+            <ThemedText
+              style={[
+                styles.recipeCardMetaText,
+                {
+                  color: theme.link,
+                  marginLeft: timeText ? Spacing.sm : 0,
+                },
+              ]}
+            >
+              Community
+            </ThemedText>
+          )}
+        </View>
+      </View>
+      <View style={[styles.addButton, { backgroundColor: theme.link }]}>
+        {adding ? (
+          <ActivityIndicator size="small" color={theme.buttonText} />
+        ) : (
+          <Feather name={iconName} size={18} color={theme.buttonText} />
+        )}
+      </View>
+    </Pressable>
+  );
+});
+
+// ── Spoonacular Results (shared between footer and empty state) ──────
+
+const SpoonacularResults = React.memo(function SpoonacularResults({
+  loading,
+  data: spData,
+  onAdd,
+  addingId,
+  browseOnly,
+}: {
+  loading: boolean;
+  data: { results: CatalogSearchResult[] } | undefined;
+  onAdd: (item: CatalogSearchResult) => void;
+  addingId: string | null;
+  browseOnly: boolean;
+}) {
+  const { theme } = useTheme();
+
+  if (loading) {
+    return (
+      <View style={styles.footerLoading}>
+        <SkeletonBox width="100%" height={64} borderRadius={12} />
+        <View style={{ height: Spacing.sm }} />
+        <SkeletonBox width="100%" height={64} borderRadius={12} />
+      </View>
+    );
+  }
+
+  if (spData && spData.results.length > 0) {
+    return (
+      <View>
+        <ThemedText
+          style={[styles.sectionHeader, { color: theme.textSecondary }]}
+        >
+          Online Results
+        </ThemedText>
+        {spData.results.map((item) => (
+          <View key={`spoon-${item.id}`}>
+            <CatalogCard
+              item={item}
+              onAdd={onAdd}
+              adding={addingId === `catalog-${item.id}`}
+              browseOnly={browseOnly}
+            />
+            <View style={{ height: Spacing.sm }} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  return (
+    <ThemedText
+      style={[styles.footerNoResults, { color: theme.textSecondary }]}
+    >
+      No online results found
+    </ThemedText>
+  );
+});
+
+// ── Catalog Card (kept for Spoonacular fallback) ────────────────────
 
 const CatalogCard = React.memo(function CatalogCard({
   item,
@@ -106,91 +300,13 @@ const CatalogCard = React.memo(function CatalogCard({
       </View>
       <View style={[styles.addButton, { backgroundColor: theme.link }]}>
         {adding ? (
-          <ActivityIndicator size="small" color="#FFFFFF" /> // hardcoded — always white on accent button
+          <ActivityIndicator size="small" color={theme.buttonText} />
         ) : (
           <Feather
             name={browseOnly ? "chevron-right" : "plus"}
             size={18}
-            color="#FFFFFF"
-          /> // hardcoded — always white on accent button
-        )}
-      </View>
-    </Pressable>
-  );
-});
-
-// ── My Recipe Card ───────────────────────────────────────────────────
-
-const MyRecipeCard = React.memo(function MyRecipeCard({
-  recipe,
-  onAdd,
-  adding,
-  browseOnly,
-}: {
-  recipe: MealPlanRecipe;
-  onAdd: (recipe: MealPlanRecipe) => void;
-  adding: boolean;
-  browseOnly?: boolean;
-}) {
-  const { theme } = useTheme();
-  const totalTime =
-    (recipe.prepTimeMinutes || 0) + (recipe.cookTimeMinutes || 0);
-
-  return (
-    <Pressable
-      onPress={() => onAdd(recipe)}
-      disabled={adding}
-      style={[
-        styles.recipeCard,
-        { backgroundColor: withOpacity(theme.text, 0.04) },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={
-        browseOnly ? `View ${recipe.title}` : `Add ${recipe.title} to meal plan`
-      }
-    >
-      <View style={styles.recipeCardContent}>
-        <ThemedText style={styles.recipeCardTitle} numberOfLines={2}>
-          {recipe.title}
-        </ThemedText>
-        <View style={styles.recipeCardMeta}>
-          {totalTime > 0 && (
-            <>
-              <Feather name="clock" size={12} color={theme.textSecondary} />
-              <ThemedText
-                style={[
-                  styles.recipeCardMetaText,
-                  { color: theme.textSecondary },
-                ]}
-              >
-                {totalTime} min
-              </ThemedText>
-            </>
-          )}
-          {recipe.caloriesPerServing && (
-            <ThemedText
-              style={[
-                styles.recipeCardMetaText,
-                {
-                  color: theme.textSecondary,
-                  marginLeft: totalTime > 0 ? Spacing.sm : 0,
-                },
-              ]}
-            >
-              {Math.round(parseFloat(recipe.caloriesPerServing))} cal
-            </ThemedText>
-          )}
-        </View>
-      </View>
-      <View style={[styles.addButton, { backgroundColor: theme.link }]}>
-        {adding ? (
-          <ActivityIndicator size="small" color="#FFFFFF" /> // hardcoded — always white on accent button
-        ) : (
-          <Feather
-            name={browseOnly ? "chevron-right" : "plus"}
-            size={18}
-            color="#FFFFFF"
-          /> // hardcoded — always white on accent button
+            color={theme.buttonText}
+          />
         )}
       </View>
     </Pressable>
@@ -209,11 +325,11 @@ export default function RecipeBrowserScreen() {
 
   const { mealType, plannedDate, searchQuery } = route.params || {};
 
-  const [tab, setTab] = useState<"catalog" | "my">("catalog");
   const [searchText, setSearchText] = useState(searchQuery || "");
   const [activeCuisine, setActiveCuisine] = useState<string | undefined>();
   const [activeDiet, setActiveDiet] = useState<string | undefined>();
-  const [addingId, setAddingId] = useState<number | null>(null);
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [showSpoonacular, setShowSpoonacular] = useState(false);
 
   // Debounce search
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery || "");
@@ -221,6 +337,7 @@ export default function RecipeBrowserScreen() {
 
   const handleSearchChange = useCallback((text: string) => {
     setSearchText(text);
+    setShowSpoonacular(false);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
       setDebouncedQuery(text.trim());
@@ -234,39 +351,91 @@ export default function RecipeBrowserScreen() {
     };
   }, []);
 
-  const searchParams: CatalogSearchParams | null = useMemo(() => {
-    if (!debouncedQuery) return null;
+  // Unified local data
+  const browseParams = useMemo(
+    () => ({
+      query: debouncedQuery || undefined,
+      cuisine: activeCuisine,
+      diet: activeDiet,
+    }),
+    [debouncedQuery, activeCuisine, activeDiet],
+  );
+
+  const { data, isLoading } = useUnifiedRecipes(browseParams);
+
+  // Spoonacular fallback (only when user explicitly triggers it)
+  const spoonacularParams: CatalogSearchParams | null = useMemo(() => {
+    if (!showSpoonacular || !debouncedQuery) return null;
     return {
       query: debouncedQuery,
       cuisine: activeCuisine,
       diet: activeDiet,
-      number: 20,
+      number: SPOONACULAR_PAGE_SIZE,
     };
-  }, [debouncedQuery, activeCuisine, activeDiet]);
+  }, [showSpoonacular, debouncedQuery, activeCuisine, activeDiet]);
 
-  const { data: catalogData, isLoading: catalogLoading } = useCatalogSearch(
-    tab === "catalog" ? searchParams : null,
-  );
-
-  const { data: myRecipes, isLoading: myRecipesLoading } =
-    useUserMealPlanRecipes();
+  const { data: spoonacularData, isLoading: spoonacularLoading } =
+    useCatalogSearch(spoonacularParams);
 
   const saveCatalogMutation = useSaveCatalogRecipe();
   const addItemMutation = useAddMealPlanItem();
 
-  const filteredMyRecipes = useMemo(() => {
-    if (!myRecipes) return [];
-    if (!searchText.trim()) return myRecipes;
-    const q = searchText.toLowerCase();
-    return myRecipes.filter((r) => r.title.toLowerCase().includes(q));
-  }, [myRecipes, searchText]);
-
   const isBrowseOnly = !plannedDate || !mealType;
+
+  // Merge and sort community + personal recipes
+  const allRecipes = useMemo(() => {
+    const tagged: UnifiedRecipeItem[] = [
+      ...(data?.community || []).map((r) => ({
+        ...r,
+        source: "community" as const,
+      })),
+      ...(data?.personal || []).map((r) => ({
+        ...r,
+        source: "personal" as const,
+      })),
+    ];
+    return tagged.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  }, [data]);
+
+  const handleRecipePress = useCallback(
+    async (item: UnifiedRecipeItem) => {
+      haptics.selection();
+
+      if (item.source === "community") {
+        navigation.navigate("FeaturedRecipeDetail", { recipeId: item.id });
+        return;
+      }
+
+      // Personal recipe
+      if (isBrowseOnly) {
+        navigation.navigate("RecipeDetail", { recipeId: item.id });
+        return;
+      }
+
+      setAddingId(`personal-${item.id}`);
+      try {
+        await addItemMutation.mutateAsync({
+          recipeId: item.id,
+          plannedDate,
+          mealType,
+        });
+        navigation.goBack();
+      } catch {
+        // Error handled by mutation
+      } finally {
+        setAddingId(null);
+      }
+    },
+    [haptics, navigation, isBrowseOnly, addItemMutation, plannedDate, mealType],
+  );
 
   const handleAddCatalogRecipe = useCallback(
     async (item: CatalogSearchResult) => {
       haptics.selection();
-      setAddingId(item.id);
+      setAddingId(`catalog-${item.id}`);
       try {
         const saved = await saveCatalogMutation.mutateAsync(item.id);
         if (isBrowseOnly) {
@@ -296,31 +465,6 @@ export default function RecipeBrowserScreen() {
     ],
   );
 
-  const handleAddMyRecipe = useCallback(
-    async (recipe: MealPlanRecipe) => {
-      if (isBrowseOnly) {
-        haptics.selection();
-        navigation.navigate("RecipeDetail", { recipeId: recipe.id });
-        return;
-      }
-      haptics.selection();
-      setAddingId(recipe.id);
-      try {
-        await addItemMutation.mutateAsync({
-          recipeId: recipe.id,
-          plannedDate,
-          mealType,
-        });
-        navigation.goBack();
-      } catch {
-        // Error handled by mutation
-      } finally {
-        setAddingId(null);
-      }
-    },
-    [haptics, addItemMutation, plannedDate, mealType, navigation, isBrowseOnly],
-  );
-
   const handleToggleCuisine = useCallback(
     (cuisine: string) => {
       haptics.selection();
@@ -337,38 +481,67 @@ export default function RecipeBrowserScreen() {
     [haptics],
   );
 
-  const renderCatalogItem = useCallback(
-    ({ item }: { item: CatalogSearchResult }) => (
-      <CatalogCard
+  const renderItem = useCallback(
+    ({ item }: { item: UnifiedRecipeItem }) => (
+      <UnifiedRecipeCard
         item={item}
-        onAdd={handleAddCatalogRecipe}
-        adding={addingId === item.id}
+        onPress={handleRecipePress}
+        adding={addingId === `${item.source}-${item.id}`}
         browseOnly={isBrowseOnly}
       />
     ),
-    [handleAddCatalogRecipe, addingId, isBrowseOnly],
+    [handleRecipePress, addingId, isBrowseOnly],
   );
 
-  const renderMyRecipeItem = useCallback(
-    ({ item }: { item: MealPlanRecipe }) => (
-      <MyRecipeCard
-        recipe={item}
-        onAdd={handleAddMyRecipe}
-        adding={addingId === item.id}
-        browseOnly={isBrowseOnly}
-      />
-    ),
-    [handleAddMyRecipe, addingId, isBrowseOnly],
+  const keyExtractor = useCallback(
+    (item: UnifiedRecipeItem) => `${item.source}-${item.id}`,
+    [],
   );
 
-  const catalogKeyExtractor = useCallback(
-    (item: CatalogSearchResult) => String(item.id),
-    [],
-  );
-  const myRecipeKeyExtractor = useCallback(
-    (item: MealPlanRecipe) => String(item.id),
-    [],
-  );
+  // Spoonacular fallback footer
+  const renderFooter = useCallback(() => {
+    if (!debouncedQuery) return null;
+
+    return (
+      <View style={styles.footerContainer}>
+        {!showSpoonacular ? (
+          <Pressable
+            onPress={() => setShowSpoonacular(true)}
+            style={[
+              styles.onlineSearchButton,
+              { borderColor: withOpacity(theme.text, 0.15) },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Search online for more recipes"
+          >
+            <Feather name="globe" size={16} color={theme.link} />
+            <ThemedText
+              style={[styles.onlineSearchText, { color: theme.link }]}
+            >
+              Search online
+            </ThemedText>
+          </Pressable>
+        ) : (
+          <SpoonacularResults
+            loading={spoonacularLoading}
+            data={spoonacularData}
+            onAdd={handleAddCatalogRecipe}
+            addingId={addingId}
+            browseOnly={isBrowseOnly}
+          />
+        )}
+      </View>
+    );
+  }, [
+    debouncedQuery,
+    showSpoonacular,
+    spoonacularLoading,
+    spoonacularData,
+    theme,
+    handleAddCatalogRecipe,
+    addingId,
+    isBrowseOnly,
+  ]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
@@ -399,6 +572,7 @@ export default function RecipeBrowserScreen() {
               onPress={() => {
                 setSearchText("");
                 setDebouncedQuery("");
+                setShowSpoonacular(false);
               }}
               hitSlop={8}
               accessibilityRole="button"
@@ -409,20 +583,8 @@ export default function RecipeBrowserScreen() {
           )}
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabRow}>
-          <Chip
-            label="Catalog"
-            variant="tab"
-            selected={tab === "catalog"}
-            onPress={() => setTab("catalog")}
-          />
-          <Chip
-            label="My Recipes"
-            variant="tab"
-            selected={tab === "my"}
-            onPress={() => setTab("my")}
-          />
+        {/* Action row (no tabs) */}
+        <View style={styles.actionRow}>
           <View style={{ flex: 1 }} />
           <Pressable
             onPress={() => navigation.navigate("RecipeCreate", {})}
@@ -461,124 +623,105 @@ export default function RecipeBrowserScreen() {
           </Pressable>
         </View>
 
-        {/* Filter chips (catalog only) */}
-        {tab === "catalog" && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            {CUISINE_PRESETS.map((c) => (
-              <Chip
-                key={c}
-                label={c}
-                variant="filter"
-                selected={activeCuisine === c}
-                onPress={() => handleToggleCuisine(c)}
-                accessibilityLabel={`Filter by ${c}`}
-              />
-            ))}
-            <View style={styles.filterDivider} />
-            {DIET_PRESETS.map((d) => (
-              <Chip
-                key={d}
-                label={d}
-                variant="filter"
-                selected={activeDiet === d}
-                onPress={() => handleToggleDiet(d)}
-                accessibilityLabel={`Filter by ${d}`}
-              />
-            ))}
-          </ScrollView>
-        )}
+        {/* Filter chips (always visible) */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {CUISINE_PRESETS.map((c) => (
+            <Chip
+              key={c}
+              label={c}
+              variant="filter"
+              selected={activeCuisine === c}
+              onPress={() => handleToggleCuisine(c)}
+              accessibilityLabel={`Filter by ${c}`}
+            />
+          ))}
+          <View style={styles.filterDivider} />
+          {DIET_PRESETS.map((d) => (
+            <Chip
+              key={d}
+              label={d}
+              variant="filter"
+              selected={activeDiet === d}
+              onPress={() => handleToggleDiet(d)}
+              accessibilityLabel={`Filter by ${d}`}
+            />
+          ))}
+        </ScrollView>
       </View>
 
       {/* Results */}
-      {tab === "catalog" ? (
-        <>
-          {catalogLoading && debouncedQuery ? (
-            <View style={styles.loadingContainer}>
-              <SkeletonBox width="100%" height={64} borderRadius={12} />
-              <View style={{ height: Spacing.sm }} />
-              <SkeletonBox width="100%" height={64} borderRadius={12} />
-              <View style={{ height: Spacing.sm }} />
-              <SkeletonBox width="100%" height={64} borderRadius={12} />
-            </View>
-          ) : !debouncedQuery ? (
-            <View style={styles.emptyContainer}>
-              <Feather
-                name="search"
-                size={40}
-                color={withOpacity(theme.text, 0.2)}
-              />
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <SkeletonBox width="100%" height={64} borderRadius={12} />
+          <View style={{ height: Spacing.sm }} />
+          <SkeletonBox width="100%" height={64} borderRadius={12} />
+          <View style={{ height: Spacing.sm }} />
+          <SkeletonBox width="100%" height={64} borderRadius={12} />
+        </View>
+      ) : allRecipes.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Feather
+            name={debouncedQuery ? "search" : "book-open"}
+            size={40}
+            color={withOpacity(theme.text, 0.2)}
+          />
+          <ThemedText
+            style={[styles.emptyText, { color: theme.textSecondary }]}
+          >
+            {debouncedQuery
+              ? "No matching recipes"
+              : "No recipes yet. Create or import one!"}
+          </ThemedText>
+          {debouncedQuery && (
+            <Pressable
+              onPress={() => setShowSpoonacular(true)}
+              style={[
+                styles.onlineSearchButton,
+                {
+                  borderColor: withOpacity(theme.text, 0.15),
+                  marginTop: Spacing.md,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Search online for more recipes"
+            >
+              <Feather name="globe" size={16} color={theme.link} />
               <ThemedText
-                style={[styles.emptyText, { color: theme.textSecondary }]}
+                style={[styles.onlineSearchText, { color: theme.link }]}
               >
-                Search for recipes to add to your meal plan
+                Search online
               </ThemedText>
-            </View>
-          ) : catalogData?.results.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Feather
-                name="inbox"
-                size={40}
-                color={withOpacity(theme.text, 0.2)}
-              />
-              <ThemedText
-                style={[styles.emptyText, { color: theme.textSecondary }]}
-              >
-                No recipes found
-              </ThemedText>
-            </View>
-          ) : (
-            <FlatList
-              data={catalogData?.results || []}
-              renderItem={renderCatalogItem}
-              keyExtractor={catalogKeyExtractor}
-              contentContainerStyle={{
-                paddingHorizontal: Spacing.lg,
-                paddingBottom: insets.bottom + Spacing.xl,
-              }}
-              ItemSeparatorComponent={ItemSeparator}
-            />
+            </Pressable>
           )}
-        </>
+          {/* Show spoonacular results inline in empty state */}
+          {showSpoonacular && debouncedQuery && (
+            <View style={styles.emptySpoonacular}>
+              <SpoonacularResults
+                loading={spoonacularLoading}
+                data={spoonacularData}
+                onAdd={handleAddCatalogRecipe}
+                addingId={addingId}
+                browseOnly={isBrowseOnly}
+              />
+            </View>
+          )}
+        </View>
       ) : (
-        <>
-          {myRecipesLoading ? (
-            <View style={styles.loadingContainer}>
-              <SkeletonBox width="100%" height={64} borderRadius={12} />
-              <View style={{ height: Spacing.sm }} />
-              <SkeletonBox width="100%" height={64} borderRadius={12} />
-            </View>
-          ) : filteredMyRecipes.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Feather
-                name="book-open"
-                size={40}
-                color={withOpacity(theme.text, 0.2)}
-              />
-              <ThemedText
-                style={[styles.emptyText, { color: theme.textSecondary }]}
-              >
-                {searchText
-                  ? "No matching recipes"
-                  : "No recipes yet. Create or import one!"}
-              </ThemedText>
-            </View>
-          ) : (
-            <FlatList
-              data={filteredMyRecipes}
-              renderItem={renderMyRecipeItem}
-              keyExtractor={myRecipeKeyExtractor}
-              contentContainerStyle={{
-                paddingHorizontal: Spacing.lg,
-                paddingBottom: insets.bottom + Spacing.xl,
-              }}
-              ItemSeparatorComponent={ItemSeparator}
-            />
-          )}
-        </>
+        <FlatList
+          data={allRecipes}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          contentContainerStyle={{
+            paddingHorizontal: Spacing.lg,
+            paddingBottom: insets.bottom + Spacing.xl,
+          }}
+          ItemSeparatorComponent={ItemSeparator}
+          ListFooterComponent={renderFooter}
+        />
       )}
     </View>
   );
@@ -607,7 +750,7 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
     padding: 0,
   },
-  tabRow: {
+  actionRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
@@ -640,6 +783,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: Spacing.md,
     borderRadius: BorderRadius.card,
+  },
+  recipeCardThumbnail: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.sm,
+    marginRight: Spacing.md,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
   },
   recipeCardContent: {
     flex: 1,
@@ -682,5 +834,42 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: Spacing.md,
     lineHeight: 20,
+  },
+  emptySpoonacular: {
+    width: "100%",
+    marginTop: Spacing.lg,
+  },
+  footerContainer: {
+    paddingTop: Spacing.lg,
+  },
+  onlineSearchButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.chip,
+    borderWidth: 1,
+    alignSelf: "center",
+  },
+  onlineSearchText: {
+    fontSize: 14,
+    fontFamily: FontFamily.medium,
+  },
+  sectionHeader: {
+    fontSize: 12,
+    fontFamily: FontFamily.medium,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: Spacing.sm,
+  },
+  footerLoading: {
+    paddingTop: Spacing.sm,
+  },
+  footerNoResults: {
+    fontSize: 14,
+    textAlign: "center",
+    paddingVertical: Spacing.md,
   },
 });

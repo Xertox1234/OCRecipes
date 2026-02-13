@@ -24,15 +24,16 @@ const dalleClient = new OpenAI({
 });
 
 const RECIPE_TARGETS = [
+  // ── Original 12 ──────────────────────────────────────────────────────
   {
     ingredient: "Chicken Breast",
     cuisine: "American",
-    dietTags: ["high-protein", "gluten-free"],
+    dietTags: ["high-protein", "gluten-free", "american"],
   },
   {
     ingredient: "Salmon Fillet",
     cuisine: "Japanese",
-    dietTags: ["pescatarian", "omega-3"],
+    dietTags: ["pescatarian", "omega-3", "asian"],
   },
   {
     ingredient: "Chickpeas",
@@ -47,12 +48,12 @@ const RECIPE_TARGETS = [
   {
     ingredient: "Ground Turkey",
     cuisine: "Mexican",
-    dietTags: ["high-protein", "low-fat"],
+    dietTags: ["high-protein", "low-fat", "mexican"],
   },
   {
     ingredient: "Avocado",
     cuisine: "American",
-    dietTags: ["vegetarian", "keto"],
+    dietTags: ["vegetarian", "keto", "american"],
   },
   {
     ingredient: "Quinoa",
@@ -62,12 +63,12 @@ const RECIPE_TARGETS = [
   {
     ingredient: "Shrimp",
     cuisine: "Italian",
-    dietTags: ["pescatarian", "low-carb"],
+    dietTags: ["pescatarian", "low-carb", "italian"],
   },
   {
     ingredient: "Sweet Potato",
     cuisine: "Korean",
-    dietTags: ["vegan", "paleo"],
+    dietTags: ["vegan", "paleo", "asian"],
   },
   {
     ingredient: "Eggs",
@@ -82,7 +83,82 @@ const RECIPE_TARGETS = [
   {
     ingredient: "Greek Yogurt",
     cuisine: "Greek",
-    dietTags: ["vegetarian", "high-protein"],
+    dietTags: ["vegetarian", "high-protein", "mediterranean"],
+  },
+
+  // ── Italian (3 more → 4 total) ──────────────────────────────────────
+  {
+    ingredient: "Pasta",
+    cuisine: "Italian",
+    dietTags: ["vegetarian", "italian"],
+  },
+  {
+    ingredient: "Chicken Thigh",
+    cuisine: "Italian",
+    dietTags: ["high-protein", "italian"],
+  },
+  {
+    ingredient: "Eggplant",
+    cuisine: "Italian",
+    dietTags: ["vegan", "italian", "mediterranean"],
+  },
+
+  // ── Mexican (3 more → 4 total) ─────────────────────────────────────
+  {
+    ingredient: "Black Beans",
+    cuisine: "Mexican",
+    dietTags: ["vegan", "high-fiber", "mexican"],
+  },
+  {
+    ingredient: "Corn Tortillas",
+    cuisine: "Mexican",
+    dietTags: ["vegetarian", "gluten-free", "mexican"],
+  },
+  {
+    ingredient: "Pork Shoulder",
+    cuisine: "Mexican",
+    dietTags: ["high-protein", "mexican"],
+  },
+
+  // ── Asian (2 more → 4 total with Japanese/Thai/Korean) ─────────────
+  {
+    ingredient: "Rice Noodles",
+    cuisine: "Vietnamese",
+    dietTags: ["gluten-free", "asian"],
+  },
+  {
+    ingredient: "Bok Choy",
+    cuisine: "Chinese",
+    dietTags: ["vegan", "low-carb", "asian"],
+  },
+
+  // ── Mediterranean (3 more → 4 total) ───────────────────────────────
+  {
+    ingredient: "Lamb",
+    cuisine: "Mediterranean",
+    dietTags: ["high-protein", "mediterranean"],
+  },
+  {
+    ingredient: "Feta Cheese",
+    cuisine: "Mediterranean",
+    dietTags: ["vegetarian", "mediterranean"],
+  },
+  {
+    ingredient: "Falafel",
+    cuisine: "Mediterranean",
+    dietTags: ["vegan", "high-fiber", "mediterranean"],
+  },
+
+  // ── American (2 more → 4 total) ────────────────────────────────────
+  {
+    ingredient: "Ground Beef",
+    cuisine: "American",
+    dietTags: ["high-protein", "american"],
+  },
+  {
+    ingredient: "Turkey Breast",
+    cuisine: "American",
+    dietTags: ["high-protein", "low-fat", "american"],
   },
 ] as const;
 
@@ -176,7 +252,7 @@ async function main() {
   const alreadySeeded = await getSeededIngredients();
   if (alreadySeeded.size >= RECIPE_TARGETS.length) {
     console.log(
-      "All 12 seed recipes already exist. Delete them manually to re-seed.",
+      `All ${RECIPE_TARGETS.length} seed recipes already exist. Delete them manually to re-seed.`,
     );
     await pool.end();
     return;

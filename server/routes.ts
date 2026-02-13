@@ -1918,6 +1918,30 @@ Format as plain text with clear sections.`;
     },
   );
 
+  // GET /api/recipes/browse - Unified recipe browse (community + personal)
+  app.get(
+    "/api/recipes/browse",
+    requireAuth,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const query = (req.query.query as string) || undefined;
+        const cuisine = (req.query.cuisine as string) || undefined;
+        const diet = (req.query.diet as string) || undefined;
+
+        const result = await storage.getUnifiedRecipes({
+          userId: req.userId!,
+          query,
+          cuisine,
+          diet,
+        });
+        res.json(result);
+      } catch (error) {
+        console.error("Browse recipes error:", error);
+        res.status(500).json({ error: "Failed to browse recipes" });
+      }
+    },
+  );
+
   // GET /api/recipes/community - Get community recipes for a product
   app.get(
     "/api/recipes/community",
