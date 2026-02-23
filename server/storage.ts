@@ -243,6 +243,7 @@ export interface IStorage {
     query?: string;
     cuisine?: string;
     diet?: string;
+    limit?: number;
   }): Promise<{ community: CommunityRecipe[]; personal: MealPlanRecipe[] }>;
 
   // Meal plan items
@@ -1164,8 +1165,10 @@ export class DatabaseStorage implements IStorage {
     query?: string;
     cuisine?: string;
     diet?: string;
+    limit?: number;
   }): Promise<{ community: CommunityRecipe[]; personal: MealPlanRecipe[] }> {
     const { userId, query, cuisine, diet } = params;
+    const resultLimit = Math.min(params.limit ?? 50, 100);
 
     const communityConditions = [eq(communityRecipes.isPublic, true)];
     const personalConditions = [eq(mealPlanRecipes.userId, userId)];
@@ -1212,12 +1215,14 @@ export class DatabaseStorage implements IStorage {
         .select()
         .from(communityRecipes)
         .where(and(...communityConditions))
-        .orderBy(desc(communityRecipes.createdAt)),
+        .orderBy(desc(communityRecipes.createdAt))
+        .limit(resultLimit),
       db
         .select()
         .from(mealPlanRecipes)
         .where(and(...personalConditions))
-        .orderBy(desc(mealPlanRecipes.createdAt)),
+        .orderBy(desc(mealPlanRecipes.createdAt))
+        .limit(resultLimit),
     ]);
 
     return { community, personal };

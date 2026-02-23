@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { StyleSheet, View, Image, Pressable } from "react-native";
+import { StyleSheet, View, Image } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
@@ -7,13 +7,8 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
-import { getApiUrl } from "@/lib/query-client";
+import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
+import { resolveImageUrl } from "@/lib/query-client";
 import type { CommunityRecipe } from "@shared/schema";
 
 const IMAGE_HEIGHT = 160;
@@ -23,14 +18,12 @@ interface HomeRecipeCardProps {
   recipe: CommunityRecipe;
   index?: number;
   onPress: (id: number) => void;
-  onFavourite: (id: number) => void;
 }
 
 export const HomeRecipeCard = React.memo(function HomeRecipeCard({
   recipe,
   index = 0,
   onPress,
-  onFavourite,
 }: HomeRecipeCardProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -39,12 +32,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
     () => onPress(recipe.id),
     [onPress, recipe.id],
   );
-  const handleFavourite = useCallback(
-    () => onFavourite(recipe.id),
-    [onFavourite, recipe.id],
-  );
-
-  const imageUri = recipe.imageUrl ? `${getApiUrl()}${recipe.imageUrl}` : null;
+  const imageUri = resolveImageUrl(recipe.imageUrl);
 
   const enteringAnimation = reducedMotion
     ? undefined
@@ -85,20 +73,6 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
               </ThemedText>
             </View>
           ) : null}
-
-          {/* Heart button */}
-          <Pressable
-            onPress={handleFavourite}
-            style={[
-              styles.heartButton,
-              { backgroundColor: withOpacity(theme.backgroundRoot, 0.8) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Save recipe"
-            hitSlop={8}
-          >
-            <Feather name="heart" size={18} color={theme.text} />
-          </Pressable>
         </View>
 
         {/* Content section */}
@@ -166,16 +140,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: FontFamily.semiBold,
     textTransform: "capitalize",
-  },
-  heartButton: {
-    position: "absolute",
-    top: Spacing.sm,
-    right: Spacing.sm,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
   },
   content: {
     padding: Spacing.lg,

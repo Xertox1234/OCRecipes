@@ -142,13 +142,6 @@ export default function HomeScreen() {
     [haptics, navigation],
   );
 
-  const handleFavourite = useCallback(
-    (_recipeId: number) => {
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    },
-    [haptics],
-  );
-
   const handleSeeMore = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     setShowMore(true);
@@ -292,7 +285,6 @@ export default function HomeScreen() {
                     recipe={recipe}
                     index={index}
                     onPress={handleRecipePress}
-                    onFavourite={handleFavourite}
                   />
                 ))}
 

@@ -16,7 +16,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
-import { getApiUrl } from "@/lib/query-client";
+import { resolveImageUrl } from "@/lib/query-client";
 import {
   Spacing,
   BorderRadius,
@@ -63,7 +63,7 @@ export default function FeaturedRecipeDetailScreen() {
   const dismiss = useCallback(() => navigation.goBack(), [navigation]);
 
   const imageUri = useMemo(
-    () => (recipe?.imageUrl ? `${getApiUrl()}${recipe.imageUrl}` : null),
+    () => resolveImageUrl(recipe?.imageUrl),
     [recipe?.imageUrl],
   );
 

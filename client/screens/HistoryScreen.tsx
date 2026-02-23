@@ -20,7 +20,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { BottomTabBarHeightContext } from "@react-navigation/bottom-tabs";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import {
   useInfiniteQuery,
@@ -64,8 +64,8 @@ import {
 } from "@/constants/animations";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
-import type { TodayDashboardNavigationProp } from "@/types/navigation";
-import type { HistoryStackParamList } from "@/navigation/HistoryStackNavigator";
+import type { ScanHistoryNavigationProp } from "@/types/navigation";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import type {
   ScannedItemResponse,
   PaginatedResponse,
@@ -642,10 +642,11 @@ const ViewAllFooter = React.memo(function ViewAllFooter({
 export default function HistoryScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const tabBarHeight = useBottomTabBarHeight();
+  // Safe fallback: returns 0 when not inside a bottom tab navigator (e.g. ProfileStack)
+  const tabBarHeight = React.useContext(BottomTabBarHeightContext) ?? 0;
   const { theme } = useTheme();
-  const navigation = useNavigation<TodayDashboardNavigationProp>();
-  const route = useRoute<RouteProp<HistoryStackParamList, "History">>();
+  const navigation = useNavigation<ScanHistoryNavigationProp>();
+  const route = useRoute<RouteProp<ProfileStackParamList, "ScanHistory">>();
   const { user } = useAuthContext();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();

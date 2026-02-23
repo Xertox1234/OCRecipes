@@ -5,35 +5,26 @@ import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 // Import the param lists for use in composite types
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { MainTabParamList } from "@/navigation/MainTabNavigator";
-import type { HistoryStackParamList } from "@/navigation/HistoryStackNavigator";
 import type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
 // Re-export types from navigation files for convenience
 export type { RootStackParamList } from "@/navigation/RootStackNavigator";
 export type { MainTabParamList } from "@/navigation/MainTabNavigator";
-export type { HistoryStackParamList } from "@/navigation/HistoryStackNavigator";
 export type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 export type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
+export type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
 /**
- * Navigation prop for HistoryScreen
- * Can navigate to ItemDetail within the history stack
- */
-export type HistoryScreenNavigationProp = NativeStackNavigationProp<
-  HistoryStackParamList,
-  "History"
->;
-
-/**
- * Navigation prop for HistoryScreen (Today dashboard).
+ * Navigation prop for HistoryScreen when hosted in ProfileStack as "ScanHistory".
  * Uses CompositeNavigationProp to navigate across stacks:
- * - Navigate within HistoryStack (ItemDetail)
- * - Navigate to other tabs (MainTab)
+ * - Navigate within ProfileStack (ItemDetail, back to Profile)
+ * - Navigate to other tabs (MealPlanTab)
  * - Navigate to RootStack screens (Scan modal)
  */
-export type TodayDashboardNavigationProp = CompositeNavigationProp<
-  NativeStackNavigationProp<HistoryStackParamList, "History">,
+export type ScanHistoryNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<ProfileStackParamList, "ScanHistory">,
   CompositeNavigationProp<
     BottomTabNavigationProp<MainTabParamList>,
     NativeStackNavigationProp<RootStackParamList>

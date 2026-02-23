@@ -9,8 +9,9 @@ export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
-    // Localtunnel URL for mobile device testing
-    return "https://tender-spoons-prove.loca.lt";
+    // Fallback for development — set EXPO_PUBLIC_DOMAIN in .env
+    console.warn("EXPO_PUBLIC_DOMAIN not set, falling back to localhost:3000");
+    return "http://localhost:3000";
   }
 
   // Check if host starts with http:// or https://
@@ -86,6 +87,18 @@ export const getQueryFn: <T>(options: {
     await throwIfResNotOk(res);
     return await res.json();
   };
+
+/**
+ * Resolves a recipe image URL to a fully-qualified URI.
+ * Handles both absolute URLs (http/https) and server-relative paths.
+ */
+export function resolveImageUrl(
+  imageUrl: string | null | undefined,
+): string | null {
+  if (!imageUrl) return null;
+  if (imageUrl.startsWith("http")) return imageUrl;
+  return `${getApiUrl()}${imageUrl}`;
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {

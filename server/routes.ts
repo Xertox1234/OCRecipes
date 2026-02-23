@@ -645,11 +645,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     async (req: Request, res: Response) => {
       try {
         // Extended schema for scanned items with string coercion for numeric fields
+        // Coerce literal "null" strings to actual null
+        const nullishString = z
+          .string()
+          .optional()
+          .nullable()
+          .transform((v) =>
+            v === "null" || v === "undefined" || v === "" ? null : v,
+          );
+
         const scannedItemInputSchema = insertScannedItemSchema.extend({
           productName: z
             .string()
             .min(1, "Product name is required")
             .default("Unknown Product"),
+          brandName: nullishString,
+          servingSize: nullishString,
           calories: z
             .union([z.string(), z.number()])
             .optional()
@@ -1901,6 +1912,13 @@ Format as plain text with clear sections.`;
     isPublic: z.boolean(),
   });
 
+  // Strip authorId from public-facing community recipe responses
+  function stripAuthorId<T extends { authorId?: unknown }>(
+    recipes: T[],
+  ): Omit<T, "authorId">[] {
+    return recipes.map(({ authorId: _, ...rest }) => rest);
+  }
+
   // GET /api/recipes/featured - Get featured public recipes
   app.get(
     "/api/recipes/featured",
@@ -1910,7 +1928,7 @@ Format as plain text with clear sections.`;
         const limit = Math.min(Number(req.query.limit) || 12, 50);
         const offset = Number(req.query.offset) || 0;
         const recipes = await storage.getFeaturedRecipes(limit, offset);
-        res.json(recipes);
+        res.json(stripAuthorId(recipes));
       } catch (error) {
         console.error("Get featured recipes error:", error);
         res.status(500).json({ error: "Failed to fetch featured recipes" });
@@ -1919,22 +1937,37 @@ Format as plain text with clear sections.`;
   );
 
   // GET /api/recipes/browse - Unified recipe browse (community + personal)
+  const browseQuerySchema = z.object({
+    query: z.string().max(200).optional(),
+    cuisine: z.string().max(50).optional(),
+    diet: z.string().max(50).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  });
+
   app.get(
     "/api/recipes/browse",
     requireAuth,
+    instructionsRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const query = (req.query.query as string) || undefined;
-        const cuisine = (req.query.cuisine as string) || undefined;
-        const diet = (req.query.diet as string) || undefined;
+        const parsed = browseQuerySchema.safeParse(req.query);
+        if (!parsed.success) {
+          res.status(400).json({ error: "Invalid query parameters" });
+          return;
+        }
+        const { query, cuisine, diet, limit } = parsed.data;
 
         const result = await storage.getUnifiedRecipes({
           userId: req.userId!,
-          query,
-          cuisine,
-          diet,
+          query: query || undefined,
+          cuisine: cuisine || undefined,
+          diet: diet || undefined,
+          limit,
         });
-        res.json(result);
+        res.json({
+          community: stripAuthorId(result.community),
+          personal: result.personal,
+        });
       } catch (error) {
         console.error("Browse recipes error:", error);
         res.status(500).json({ error: "Failed to browse recipes" });
@@ -1962,7 +1995,7 @@ Format as plain text with clear sections.`;
           normalizedName,
         );
 
-        res.json(recipes);
+        res.json(stripAuthorId(recipes));
       } catch (error) {
         console.error("Get community recipes error:", error);
         res.status(500).json({ error: "Failed to fetch recipes" });
@@ -2179,7 +2212,8 @@ Format as plain text with clear sections.`;
           return;
         }
 
-        res.json(recipe);
+        const { authorId: _, ...safeRecipe } = recipe;
+        res.json(safeRecipe);
       } catch (error) {
         console.error("Get recipe error:", error);
         res.status(500).json({ error: "Failed to fetch recipe" });

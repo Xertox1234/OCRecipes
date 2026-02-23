@@ -39,7 +39,7 @@ import {
   FAB_CLEARANCE,
 } from "@/constants/theme";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
-import { getApiUrl } from "@/lib/query-client";
+import { getApiUrl, resolveImageUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -296,7 +296,7 @@ const PhotoGridItem = React.memo(function PhotoGridItem({
   onPress: () => void;
 }) {
   const { theme } = useTheme();
-  const imageUri = item.imageUrl ? `${getApiUrl()}${item.imageUrl}` : null;
+  const imageUri = resolveImageUrl(item.imageUrl);
 
   return (
     <Pressable

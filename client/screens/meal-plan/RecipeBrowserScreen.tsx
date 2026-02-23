@@ -34,7 +34,7 @@ import {
   type CatalogSearchParams,
 } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
-import { getApiUrl } from "@/lib/query-client";
+import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanRecipe, CommunityRecipe } from "@shared/schema";
@@ -103,11 +103,7 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
   // Button icon: community always browse, personal depends on mode
   const iconName = isCommunity || browseOnly ? "chevron-right" : "plus";
 
-  const imageUri = item.imageUrl
-    ? item.imageUrl.startsWith("http")
-      ? item.imageUrl
-      : `${getApiUrl()}${item.imageUrl}`
-    : null;
+  const imageUri = resolveImageUrl(item.imageUrl);
 
   return (
     <Pressable
