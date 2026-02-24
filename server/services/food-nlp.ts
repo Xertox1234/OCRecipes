@@ -55,43 +55,35 @@ Return JSON: { "items": [{ "name": string, "quantity": number, "unit": string }]
   };
   if (!parsed.items || !Array.isArray(parsed.items)) return [];
 
-  // Look up nutrition for each parsed item
-  const results: ParsedFoodItem[] = [];
-  for (const item of parsed.items) {
-    const searchTerm = `${item.quantity} ${item.unit} ${item.name}`;
-    try {
-      const nutrition = await lookupNutrition(searchTerm);
-      results.push({
-        name: item.name,
-        quantity: item.quantity,
-        unit: item.unit,
-        calories: nutrition
-          ? parseFloat(String(nutrition.calories)) * item.quantity
-          : null,
-        protein: nutrition
-          ? parseFloat(String(nutrition.protein)) * item.quantity
-          : null,
-        carbs: nutrition
-          ? parseFloat(String(nutrition.carbs)) * item.quantity
-          : null,
-        fat: nutrition
-          ? parseFloat(String(nutrition.fat)) * item.quantity
-          : null,
-        servingSize: nutrition?.servingSize || `${item.quantity} ${item.unit}`,
-      });
-    } catch {
-      results.push({
-        name: item.name,
-        quantity: item.quantity,
-        unit: item.unit,
-        calories: null,
-        protein: null,
-        carbs: null,
-        fat: null,
-        servingSize: `${item.quantity} ${item.unit}`,
-      });
-    }
-  }
+  // Look up nutrition for all parsed items in parallel
+  const settled = await Promise.allSettled(
+    parsed.items.map((item) => {
+      const searchTerm = `${item.quantity} ${item.unit} ${item.name}`;
+      return lookupNutrition(searchTerm);
+    }),
+  );
+
+  const results: ParsedFoodItem[] = parsed.items.map((item, i) => {
+    const outcome = settled[i];
+    const nutrition = outcome.status === "fulfilled" ? outcome.value : null;
+
+    return {
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      calories: nutrition
+        ? parseFloat(String(nutrition.calories)) * item.quantity
+        : null,
+      protein: nutrition
+        ? parseFloat(String(nutrition.protein)) * item.quantity
+        : null,
+      carbs: nutrition
+        ? parseFloat(String(nutrition.carbs)) * item.quantity
+        : null,
+      fat: nutrition ? parseFloat(String(nutrition.fat)) * item.quantity : null,
+      servingSize: nutrition?.servingSize || `${item.quantity} ${item.unit}`,
+    };
+  });
 
   return results;
 }
