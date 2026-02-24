@@ -38,6 +38,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Upsert with onConflictDoUpdate](#upsert-with-onconflictdoupdate)
   - [Active Record Guard Before Insert](#active-record-guard-before-insert)
   - [Filter Object for Storage Query Methods](#filter-object-for-storage-query-methods)
+  - [Batch Fetch with `inArray` to Fix N+1 Queries](#batch-fetch-with-inarray-to-fix-n1-queries)
 - [Client State Patterns](#client-state-patterns)
   - [Business Logic Errors in Mutations](#business-logic-errors-in-mutations)
   - [Typed ApiError Class for Client-Side Error Differentiation](#typed-apierror-class-for-client-side-error-differentiation)
@@ -99,6 +100,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Static Lookup Map with Normalization](#static-lookup-map-with-normalization)
   - [Audio-to-Structured-Data Pipeline](#audio-to-structured-data-pipeline)
   - [MET-Based Calorie Burn Formula](#met-based-calorie-burn-formula)
+  - [Private Raw Function with Public Cached Wrapper](#private-raw-function-with-public-cached-wrapper)
 - [Client Hook Patterns](#client-hook-patterns)
   - [TanStack Query CRUD Hook Module](#tanstack-query-crud-hook-module)
   - [FormData Upload Mutation](#formdata-upload-mutation)
@@ -2452,6 +2454,92 @@ const all = await storage.getWeightLogs(userId); // no filters
 **References:**
 
 - `server/storage.ts` — `getWeightLogs()`, `getExerciseLogs()`, `getScannedItems()`, `getFastingLogs()`, `getMedicationLogs()`, `getChatMessages()`
+
+### Batch Fetch with `inArray` to Fix N+1 Queries
+
+When a route handler loops over a list of records and makes individual DB queries or API calls for each one, replace the loop with a single batch query using Drizzle's `inArray` operator. Deduplicate IDs before the batch to avoid redundant work.
+
+**Before (N+1 problem):**
+
+```typescript
+// Bad: N individual DB queries + N API calls inside a loop
+const logs = await storage.getDailyLogs(userId, date);
+const results = [];
+for (const log of logs) {
+  if (!log.scannedItemId) continue;
+  const item = await storage.getScannedItem(log.scannedItemId); // N queries
+  const nutrients = await lookupMicronutrients(item.productName); // N API calls
+  results.push(nutrients);
+}
+```
+
+**After (batch + deduplicate):**
+
+```typescript
+// Good: 1 DB query + M cached API calls (M = unique food names ≤ N)
+const logs = await storage.getDailyLogs(userId, date);
+
+// 1. Deduplicate IDs before batch query
+const scannedItemIds = [
+  ...new Set(
+    logs
+      .map((log) => log.scannedItemId)
+      .filter((id): id is number => id !== null),
+  ),
+];
+
+// 2. Single batch query with inArray
+const items = await storage.getScannedItemsByIds(scannedItemIds, userId);
+
+// 3. Parallel cached lookups for unique food names
+const foodNames = items.map((item) => item.productName);
+const nutrientArrays = await batchLookupMicronutrients(foodNames);
+```
+
+**Storage method using `inArray`:**
+
+```typescript
+async getScannedItemsByIds(
+  ids: number[],
+  userId?: string,
+): Promise<ScannedItem[]> {
+  if (ids.length === 0) return [];
+  const conditions = [
+    inArray(scannedItems.id, ids),
+    isNull(scannedItems.discardedAt),
+  ];
+  if (userId) conditions.push(eq(scannedItems.userId, userId));
+  return db
+    .select()
+    .from(scannedItems)
+    .where(and(...conditions));
+}
+```
+
+**When to use:**
+
+- Route handlers that iterate over a list and query individually per item
+- Any endpoint where you have a list of IDs and need the corresponding records
+- Aggregation endpoints that combine data from multiple related records
+
+**When NOT to use:**
+
+- Single-item lookups (just use `eq()`)
+- Cases where the list is always exactly 1 item
+- When you need different columns per item (batch queries return uniform shape)
+
+**Key elements:**
+
+1. **Deduplicate with `new Set()`** — IDs from logs may repeat; dedup before the query avoids fetching the same row twice and reduces result set size
+2. **Early return for empty array** — `if (ids.length === 0) return []` prevents Drizzle from generating an invalid `IN ()` clause
+3. **Optional `userId` for defense-in-depth** — batch methods on user-owned tables should accept optional userId to filter, following the [Storage-Layer Defense-in-Depth](#storage-layer-defense-in-depth) pattern
+4. **Type-narrowing filter** — `.filter((id): id is number => id !== null)` removes nulls and narrows the type in one step
+
+**References:**
+
+- `server/storage.ts` — `getScannedItemsByIds(ids, userId?)`
+- `server/routes/micronutrients.ts` — daily micronutrient endpoint
+- Related: [Pre-Fetched IDs to Avoid Redundant Queries](#pre-fetched-ids-to-avoid-redundant-queries) (for passing pre-fetched data to callees)
 
 ---
 
@@ -6135,6 +6223,73 @@ if (!caloriesBurned) {
 
 - `server/services/exercise-calorie.ts` — `calculateCaloriesBurned()`
 - `server/routes/exercises.ts` — `POST /api/exercises` (auto-calculation logic)
+
+### Private Raw Function with Public Cached Wrapper
+
+When adding caching to an existing service function, keep the raw (uncached) function private and export only the cached wrapper. This prevents callers from accidentally bypassing the cache.
+
+```typescript
+// server/services/micronutrient-lookup.ts
+
+/**
+ * Raw USDA lookup — private, no caching.
+ * Only called by the cached wrapper below.
+ */
+async function lookupMicronutrients(
+  foodName: string,
+): Promise<MicronutrientData[]> {
+  // ... external API call ...
+}
+
+/**
+ * Public cached wrapper — the only exported entry point for lookups.
+ */
+export async function lookupMicronutrientsWithCache(
+  foodName: string,
+): Promise<MicronutrientData[]> {
+  const key = cacheKey(foodName);
+  const cached = await storage.getMicronutrientCache(key);
+  if (cached) return cached as MicronutrientData[];
+
+  const result = await lookupMicronutrients(foodName);
+  if (result.length > 0) {
+    storage.setMicronutrientCache(key, result, TTL_MS).catch(console.error);
+  }
+  return result;
+}
+
+/**
+ * Batch wrapper — parallel cached lookups.
+ */
+export async function batchLookupMicronutrients(
+  foodNames: string[],
+): Promise<MicronutrientData[][]> {
+  return Promise.all(foodNames.map(lookupMicronutrientsWithCache));
+}
+```
+
+**When to use:**
+
+- Adding caching to an external API call that was previously called directly
+- The raw function is expensive (network, cost, latency) and should never be called without caching
+- Multiple callers exist (single-item lookup, batch lookup) that should all go through the cache
+
+**When NOT to use:**
+
+- The raw function is still needed without caching in some contexts (keep it exported, add a separate cached variant)
+- The function is already cheap and caching is optional
+
+**Key elements:**
+
+1. **Private raw function** — `async function lookupX()` without `export` prevents direct access from other modules
+2. **Public cached wrapper** — `export async function lookupXWithCache()` is the only exported entry point
+3. **Fire-and-forget cache write** — `.catch(console.error)` on the cache set so responses are not blocked (see [Fire-and-Forget](#fire-and-forget-for-non-critical-background-operations))
+4. **Batch wrapper delegates to cached wrapper** — `Promise.all(names.map(lookupXWithCache))` ensures every item benefits from the cache
+5. **Cache key normalization** — normalize inputs (trim, lowercase) before cache lookup to maximize hit rate
+
+**References:**
+
+- `server/services/micronutrient-lookup.ts` — `lookupMicronutrients` (private), `lookupMicronutrientsWithCache` (public), `batchLookupMicronutrients` (batch)
 
 ---
 

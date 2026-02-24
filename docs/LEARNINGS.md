@@ -1299,6 +1299,45 @@ const response = await fetch(url, {
 
 ---
 
+### N+1 Query in Aggregation Endpoints
+
+**Problem:** The `/api/micronutrients/daily` endpoint looped over daily log entries, executing one `getScannedItem()` DB query and one USDA API call per log entry. For a user with 10 logged items in a day, this meant 10 sequential DB queries + 10 sequential API calls, resulting in response times scaling linearly with item count.
+
+**Root Cause:** The endpoint was written as a straightforward loop — get logs, iterate, fetch each item, look up each item's nutrients. This is the classic N+1 pattern: 1 query for the list + N queries for related records.
+
+**Fix (three layers):**
+
+1. **Batch DB query** — replaced N individual `getScannedItem(id)` calls with a single `getScannedItemsByIds(ids, userId)` using Drizzle's `inArray()` operator. Deduplicated IDs with `new Set()` first to avoid fetching the same item twice when multiple logs reference it.
+
+2. **Cached API wrapper** — wrapped the USDA API call in `lookupMicronutrientsWithCache()` that checks a DB cache table before calling the external API. Made the uncached function private to prevent bypass.
+
+3. **Parallel execution** — used `Promise.all(foodNames.map(lookupMicronutrientsWithCache))` so cache hits and cache misses resolve concurrently instead of sequentially.
+
+**Before:** O(N) DB queries + O(N) sequential API calls
+**After:** 1 DB query + O(M) parallel cached lookups (M = unique food names, most served from cache)
+
+**Code Review Refinements:**
+
+- Hit count updates in cache reads were `await`ed unnecessarily — changed to fire-and-forget since hit counts are analytics, not critical path
+- Cache writes after USDA lookup were `await`ed — changed to fire-and-forget since the response data is already in memory
+- Added optional `userId` parameter to `getScannedItemsByIds()` for IDOR defense-in-depth
+
+**Lesson:** When writing aggregation endpoints, ask: "Am I querying inside a loop?" If yes, refactor to batch-fetch all related records first, then process in memory. The pattern is: get list, extract unique IDs, batch fetch by IDs, map results.
+
+**Pattern References:**
+
+- "Batch Fetch with `inArray` to Fix N+1 Queries" in PATTERNS.md
+- "Private Raw Function with Public Cached Wrapper" in PATTERNS.md
+- "Fire-and-Forget for Non-Critical Background Operations" in PATTERNS.md
+
+**Files:**
+
+- `server/routes/micronutrients.ts` — refactored daily endpoint
+- `server/storage.ts` — `getScannedItemsByIds()`
+- `server/services/micronutrient-lookup.ts` — cached wrapper + batch lookup
+
+---
+
 ## Caching Learnings
 
 ### PostgreSQL Caching for AI-Generated Content
