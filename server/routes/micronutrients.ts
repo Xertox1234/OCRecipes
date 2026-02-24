@@ -3,7 +3,8 @@ import { rateLimit } from "express-rate-limit";
 import { ipKeyGenerator, checkPremiumFeature } from "./_helpers";
 import { requireAuth } from "../middleware/auth";
 import {
-  lookupMicronutrients,
+  lookupMicronutrientsWithCache,
+  batchLookupMicronutrients,
   aggregateMicronutrients,
   getDailyValueReference,
 } from "../services/micronutrient-lookup";
@@ -43,7 +44,9 @@ export function register(app: Express): void {
         if (item.userId !== req.userId)
           return res.status(404).json({ error: "Item not found" });
 
-        const micronutrients = await lookupMicronutrients(item.productName);
+        const micronutrients = await lookupMicronutrientsWithCache(
+          item.productName,
+        );
         res.json({ itemId, productName: item.productName, micronutrients });
       } catch (error) {
         console.error("Get item micronutrients error:", error);
@@ -73,16 +76,22 @@ export function register(app: Express): void {
         // Get daily logs for the date
         const logs = await storage.getDailyLogs(req.userId!, date);
 
-        // Look up micronutrients for each logged item
-        const micronutrientArrays = await Promise.all(
-          logs
-            .filter((log) => log.scannedItemId)
-            .map(async (log) => {
-              const item = await storage.getScannedItem(log.scannedItemId!);
-              if (!item) return [];
-              return lookupMicronutrients(item.productName);
-            }),
+        // Batch-fetch all scanned items in a single query (fixes N+1)
+        const scannedItemIds = [
+          ...new Set(
+            logs
+              .map((log) => log.scannedItemId)
+              .filter((id): id is number => id !== null),
+          ),
+        ];
+        const items = await storage.getScannedItemsByIds(
+          scannedItemIds,
+          req.userId!,
         );
+        const foodNames = items.map((item) => item.productName);
+
+        // Batch lookup micronutrients with caching (parallel, cached)
+        const micronutrientArrays = await batchLookupMicronutrients(foodNames);
 
         const aggregated = aggregateMicronutrients(micronutrientArrays);
         res.json({

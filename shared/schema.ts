@@ -173,6 +173,26 @@ export const nutritionCache = pgTable(
   }),
 );
 
+export const micronutrientCache = pgTable(
+  "micronutrient_cache",
+  {
+    id: serial("id").primaryKey(),
+    queryKey: varchar("query_key", { length: 255 }).notNull().unique(),
+    data: jsonb("data").notNull(),
+    hitCount: integer("hit_count").default(0),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => ({
+    queryKeyIdx: index("micronutrient_cache_query_key_idx").on(table.queryKey),
+    expiresAtIdx: index("micronutrient_cache_expires_at_idx").on(
+      table.expiresAt,
+    ),
+  }),
+);
+
 // Type for suggestions JSONB
 export interface SuggestionData {
   type: "recipe" | "craft" | "pairing";
@@ -1045,6 +1065,7 @@ export type DailyLog = typeof dailyLogs.$inferSelect;
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type NutritionCache = typeof nutritionCache.$inferSelect;
+export type MicronutrientCache = typeof micronutrientCache.$inferSelect;
 export type SuggestionCache = typeof suggestionCache.$inferSelect;
 export type InstructionCache = typeof instructionCache.$inferSelect;
 export type SavedItem = typeof savedItems.$inferSelect;

@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { storage } from "../storage";
 
 const USDA_API_KEY = process.env.USDA_API_KEY || "DEMO_KEY";
 const USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
+const MICRONUTRIENT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Key micronutrients to track with their USDA nutrient IDs
 const TRACKED_NUTRIENTS: Record<
@@ -57,7 +59,7 @@ const usdaSearchSchema = z.object({
 /**
  * Look up micronutrient data for a food item from USDA.
  */
-export async function lookupMicronutrients(
+async function lookupMicronutrients(
   foodName: string,
 ): Promise<MicronutrientData[]> {
   try {
@@ -169,6 +171,38 @@ export function aggregateMicronutrients(
 
   result.sort((a, b) => b.percentDailyValue - a.percentDailyValue);
   return result;
+}
+
+function cacheKey(foodName: string): string {
+  return foodName.trim().toLowerCase();
+}
+
+/**
+ * Look up micronutrients with database caching. Only calls USDA on cache miss.
+ */
+export async function lookupMicronutrientsWithCache(
+  foodName: string,
+): Promise<MicronutrientData[]> {
+  const key = cacheKey(foodName);
+  const cached = await storage.getMicronutrientCache(key);
+  if (cached) return cached as MicronutrientData[];
+
+  const result = await lookupMicronutrients(foodName);
+  if (result.length > 0) {
+    storage
+      .setMicronutrientCache(key, result, MICRONUTRIENT_CACHE_TTL_MS)
+      .catch(console.error);
+  }
+  return result;
+}
+
+/**
+ * Batch lookup micronutrients for multiple food names in parallel with caching.
+ */
+export async function batchLookupMicronutrients(
+  foodNames: string[],
+): Promise<MicronutrientData[][]> {
+  return Promise.all(foodNames.map(lookupMicronutrientsWithCache));
 }
 
 export { TRACKED_NUTRIENTS };

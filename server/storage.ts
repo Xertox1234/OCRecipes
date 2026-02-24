@@ -74,6 +74,7 @@ import {
   exerciseLibrary,
   medicationLogs,
   goalAdjustmentLogs,
+  micronutrientCache,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
@@ -91,6 +92,7 @@ import {
   or,
   ilike,
   isNull,
+  inArray,
 } from "drizzle-orm";
 import {
   subscriptionTierSchema,
@@ -124,6 +126,7 @@ export interface IStorage {
     total: number;
   }>;
   getScannedItem(id: number): Promise<ScannedItem | undefined>;
+  getScannedItemsByIds(ids: number[], userId?: string): Promise<ScannedItem[]>;
   getScannedItemWithFavourite(
     id: number,
     userId: string,
@@ -493,6 +496,14 @@ export interface IStorage {
     completed: boolean,
     note?: string,
   ): Promise<FastingLog | undefined>;
+
+  // Micronutrient cache
+  getMicronutrientCache(queryKey: string): Promise<unknown[] | undefined>;
+  setMicronutrientCache(
+    queryKey: string,
+    data: unknown[],
+    ttlMs: number,
+  ): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -605,6 +616,22 @@ export class DatabaseStorage implements IStorage {
       .from(scannedItems)
       .where(and(eq(scannedItems.id, id), isNull(scannedItems.discardedAt)));
     return item || undefined;
+  }
+
+  async getScannedItemsByIds(
+    ids: number[],
+    userId?: string,
+  ): Promise<ScannedItem[]> {
+    if (ids.length === 0) return [];
+    const conditions = [
+      inArray(scannedItems.id, ids),
+      isNull(scannedItems.discardedAt),
+    ];
+    if (userId) conditions.push(eq(scannedItems.userId, userId));
+    return db
+      .select()
+      .from(scannedItems)
+      .where(and(...conditions));
   }
 
   async getScannedItemWithFavourite(
@@ -2380,6 +2407,41 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(fastingLogs.id, id), eq(fastingLogs.userId, userId)))
       .returning();
     return updated || undefined;
+  }
+
+  async getMicronutrientCache(
+    queryKey: string,
+  ): Promise<unknown[] | undefined> {
+    const [row] = await db
+      .select()
+      .from(micronutrientCache)
+      .where(
+        and(
+          eq(micronutrientCache.queryKey, queryKey),
+          gt(micronutrientCache.expiresAt, new Date()),
+        ),
+      );
+    if (!row) return undefined;
+    db.update(micronutrientCache)
+      .set({ hitCount: sql`${micronutrientCache.hitCount} + 1` })
+      .where(eq(micronutrientCache.id, row.id))
+      .catch(console.error);
+    return row.data as unknown[];
+  }
+
+  async setMicronutrientCache(
+    queryKey: string,
+    data: unknown[],
+    ttlMs: number,
+  ): Promise<void> {
+    const expiresAt = new Date(Date.now() + ttlMs);
+    await db
+      .insert(micronutrientCache)
+      .values({ queryKey, data, expiresAt })
+      .onConflictDoUpdate({
+        target: micronutrientCache.queryKey,
+        set: { data, expiresAt, hitCount: 0 },
+      });
   }
 }
 
