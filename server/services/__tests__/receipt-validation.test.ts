@@ -1,5 +1,34 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { decodeAppleJWS, resetGoogleTokenCache } from "../receipt-validation";
+import type { JWSTransactionDecodedPayload } from "@apple/app-store-server-library";
+import { VerificationStatus } from "@apple/app-store-server-library";
+
+// Mock @apple/app-store-server-library
+const mockVerifyAndDecodeTransaction = vi.fn();
+
+vi.mock("@apple/app-store-server-library", async () => {
+  const actual = await vi.importActual<
+    typeof import("@apple/app-store-server-library")
+  >("@apple/app-store-server-library");
+  return {
+    ...actual,
+    SignedDataVerifier: class MockSignedDataVerifier {
+      verifyAndDecodeTransaction = mockVerifyAndDecodeTransaction;
+    },
+  };
+});
+
+// Mock fs.readFileSync to avoid needing real cert files in tests
+vi.mock("fs", async () => {
+  const actual = await vi.importActual<typeof import("fs")>("fs");
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      readFileSync: vi.fn().mockReturnValue(Buffer.from("mock-cert")),
+    },
+    readFileSync: vi.fn().mockReturnValue(Buffer.from("mock-cert")),
+  };
+});
 
 // Mock crypto.createSign to avoid needing a real RSA key in tests.
 vi.mock("crypto", async () => {
@@ -21,16 +50,6 @@ vi.mock("crypto", async () => {
 });
 
 // --- Helpers ---
-
-/** Build a fake JWS (header.payload.signature) with the given payload. */
-function buildAppleJWS(payload: object): string {
-  const header = Buffer.from(JSON.stringify({ alg: "ES256" })).toString(
-    "base64url",
-  );
-  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  const signature = Buffer.from("fake-signature").toString("base64url");
-  return `${header}.${body}.${signature}`;
-}
 
 /** Future date (1 year from now) as epoch ms. */
 const FUTURE_EXPIRY = Date.now() + 365 * 24 * 60 * 60 * 1000;
@@ -74,41 +93,11 @@ describe("Receipt Validation", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    resetGoogleTokenCache();
+    mockVerifyAndDecodeTransaction.mockReset();
   });
 
   afterEach(() => {
     process.env = { ...originalEnv };
-  });
-
-  describe("decodeAppleJWS", () => {
-    it("decodes a valid JWS payload", () => {
-      const jws = buildAppleJWS({
-        bundleId: "com.test.app",
-        productId: "premium_monthly",
-      });
-      const result = decodeAppleJWS(jws);
-      expect(result).toEqual({
-        bundleId: "com.test.app",
-        productId: "premium_monthly",
-      });
-    });
-
-    it("returns null for invalid JWS", () => {
-      expect(decodeAppleJWS("not-a-jws")).toBeNull();
-      expect(decodeAppleJWS("a.b")).toBeNull();
-      expect(decodeAppleJWS("")).toBeNull();
-    });
-
-    it("returns null for malformed base64", () => {
-      expect(decodeAppleJWS("a.!!!invalid!!!.c")).toBeNull();
-    });
-
-    it("returns null when payload has wrong types", () => {
-      // bundleId should be a string, not a number
-      const jws = buildAppleJWS({ bundleId: 12345 });
-      expect(decodeAppleJWS(jws)).toBeNull();
-    });
   });
 
   describe("stub mode (no credentials)", () => {
@@ -120,8 +109,9 @@ describe("Receipt Validation", () => {
       delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
     });
 
-    it("auto-approves in development", async () => {
+    it("auto-approves in development when RECEIPT_VALIDATION_STUB=true", async () => {
       process.env.NODE_ENV = "development";
+      process.env.RECEIPT_VALIDATION_STUB = "true";
 
       vi.resetModules();
       const { validateReceipt: validate } = await import(
@@ -134,8 +124,23 @@ describe("Receipt Validation", () => {
       expect(result.expiresAt!.getTime()).toBeGreaterThan(Date.now());
     });
 
-    it("rejects in production", async () => {
+    it("does NOT auto-approve when RECEIPT_VALIDATION_STUB is not set", async () => {
+      process.env.NODE_ENV = "development";
+      delete process.env.RECEIPT_VALIDATION_STUB;
+
+      vi.resetModules();
+      const { validateReceipt: validate } = await import(
+        "../receipt-validation"
+      );
+
+      const result = await validate("fake-receipt", "ios");
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("PLATFORM_NOT_CONFIGURED");
+    });
+
+    it("rejects in production even with RECEIPT_VALIDATION_STUB=true", async () => {
       process.env.NODE_ENV = "production";
+      process.env.RECEIPT_VALIDATION_STUB = "true";
 
       vi.resetModules();
       const { validateReceipt: validate } = await import(
@@ -156,20 +161,20 @@ describe("Receipt Validation", () => {
       process.env.APPLE_BUNDLE_ID = "com.nutriscan.app";
     });
 
-    it("validates a valid JWS receipt with future expiry", async () => {
-      vi.resetModules();
-      const { validateReceipt: validate } = await import(
-        "../receipt-validation"
-      );
-
-      const receipt = buildAppleJWS({
-        bundleId: "com.nutriscan.app",
+    it("validates a verified receipt with future expiry", async () => {
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
         productId: "premium_monthly",
         expiresDate: FUTURE_EXPIRY,
         originalTransactionId: "txn-123",
-      });
+      } satisfies Partial<JWSTransactionDecodedPayload>);
 
-      const result = await validate(receipt, "ios");
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("signed-jws-receipt", "ios");
       expect(result.valid).toBe(true);
       expect(result.productId).toBe("premium_monthly");
       expect(result.originalTransactionId).toBe("txn-123");
@@ -177,98 +182,147 @@ describe("Receipt Validation", () => {
     });
 
     it("rejects expired receipt", async () => {
-      vi.resetModules();
-      const { validateReceipt: validate } = await import(
-        "../receipt-validation"
-      );
-
-      const receipt = buildAppleJWS({
-        bundleId: "com.nutriscan.app",
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
         productId: "premium_monthly",
         expiresDate: PAST_EXPIRY,
-      });
+      } satisfies Partial<JWSTransactionDecodedPayload>);
 
-      const result = await validate(receipt, "ios");
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("signed-jws-receipt", "ios");
       expect(result.valid).toBe(false);
       expect(result.errorCode).toBe("SUBSCRIPTION_EXPIRED");
     });
 
     it("rejects revoked receipt", async () => {
-      vi.resetModules();
-      const { validateReceipt: validate } = await import(
-        "../receipt-validation"
-      );
-
-      const receipt = buildAppleJWS({
-        bundleId: "com.nutriscan.app",
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
         productId: "premium_monthly",
         expiresDate: FUTURE_EXPIRY,
         revocationDate: Date.now(),
-      });
+      } satisfies Partial<JWSTransactionDecodedPayload>);
 
-      const result = await validate(receipt, "ios");
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("signed-jws-receipt", "ios");
       expect(result.valid).toBe(false);
       expect(result.errorCode).toBe("TRANSACTION_REVOKED");
     });
 
-    it("rejects bundle mismatch", async () => {
-      vi.resetModules();
-      const { validateReceipt: validate } = await import(
-        "../receipt-validation"
-      );
-
-      const receipt = buildAppleJWS({
-        bundleId: "com.other.app",
-        productId: "premium_monthly",
-        expiresDate: FUTURE_EXPIRY,
-      });
-
-      const result = await validate(receipt, "ios");
-      expect(result.valid).toBe(false);
-      expect(result.errorCode).toBe("BUNDLE_MISMATCH");
-    });
-
     it("rejects product mismatch when productId is provided", async () => {
-      vi.resetModules();
-      const { validateReceipt: validate } = await import(
-        "../receipt-validation"
-      );
-
-      const receipt = buildAppleJWS({
-        bundleId: "com.nutriscan.app",
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
         productId: "wrong_product",
         expiresDate: FUTURE_EXPIRY,
-      });
+      } satisfies Partial<JWSTransactionDecodedPayload>);
 
-      const result = await validate(receipt, "ios", "premium_monthly");
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate(
+        "signed-jws-receipt",
+        "ios",
+        "premium_monthly",
+      );
       expect(result.valid).toBe(false);
       expect(result.errorCode).toBe("PRODUCT_MISMATCH");
     });
 
-    it("rejects invalid JWS format", async () => {
-      vi.resetModules();
-      const { validateReceipt: validate } = await import(
-        "../receipt-validation"
+    it("rejects when signature verification fails (INVALID_CERTIFICATE)", async () => {
+      const { VerificationException } = await import(
+        "@apple/app-store-server-library"
+      );
+      mockVerifyAndDecodeTransaction.mockRejectedValue(
+        new VerificationException(VerificationStatus.INVALID_CERTIFICATE),
       );
 
-      const result = await validate("not-valid-jws", "ios");
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("forged-jws-receipt", "ios");
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("INVALID_CERTIFICATE");
+    });
+
+    it("rejects when environment mismatches (INVALID_ENVIRONMENT)", async () => {
+      const { VerificationException } = await import(
+        "@apple/app-store-server-library"
+      );
+      mockVerifyAndDecodeTransaction.mockRejectedValue(
+        new VerificationException(VerificationStatus.INVALID_ENVIRONMENT),
+      );
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("wrong-env-receipt", "ios");
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("INVALID_ENVIRONMENT");
+    });
+
+    it("rejects when app identifier mismatches (INVALID_APP_IDENTIFIER)", async () => {
+      const { VerificationException } = await import(
+        "@apple/app-store-server-library"
+      );
+      mockVerifyAndDecodeTransaction.mockRejectedValue(
+        new VerificationException(VerificationStatus.INVALID_APP_IDENTIFIER),
+      );
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("wrong-bundle-receipt", "ios");
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe("BUNDLE_MISMATCH");
+    });
+
+    it("returns INVALID_RECEIPT for non-VerificationException errors", async () => {
+      mockVerifyAndDecodeTransaction.mockRejectedValue(
+        new Error("Network timeout"),
+      );
+
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("bad-receipt", "ios");
       expect(result.valid).toBe(false);
       expect(result.errorCode).toBe("INVALID_RECEIPT");
     });
 
     it("accepts non-subscription purchase (no expiresDate)", async () => {
-      vi.resetModules();
-      const { validateReceipt: validate } = await import(
-        "../receipt-validation"
-      );
-
-      const receipt = buildAppleJWS({
-        bundleId: "com.nutriscan.app",
+      mockVerifyAndDecodeTransaction.mockResolvedValue({
         productId: "lifetime_premium",
         originalTransactionId: "txn-456",
-      });
+      } satisfies Partial<JWSTransactionDecodedPayload>);
 
-      const result = await validate(receipt, "ios");
+      vi.resetModules();
+      const { validateReceipt: validate, resetAppleVerifier } = await import(
+        "../receipt-validation"
+      );
+      resetAppleVerifier();
+
+      const result = await validate("signed-jws-receipt", "ios");
       expect(result.valid).toBe(true);
       expect(result.productId).toBe("lifetime_premium");
       expect(result.expiresAt).toBeUndefined();

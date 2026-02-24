@@ -1,5 +1,14 @@
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { z } from "zod";
+import {
+  SignedDataVerifier,
+  Environment,
+  VerificationException,
+  VerificationStatus,
+} from "@apple/app-store-server-library";
+import type { JWSTransactionDecodedPayload } from "@apple/app-store-server-library";
 import type { Platform } from "@shared/schemas/subscription";
 
 export interface ReceiptValidationResult {
@@ -24,10 +33,14 @@ const HAS_GOOGLE_CREDENTIALS = !!(
 );
 
 /**
- * Stub mode is active when neither platform's credentials are configured.
- * Stub mode auto-approves all receipts — must NEVER run in production.
+ * Stub mode requires explicit opt-in via RECEIPT_VALIDATION_STUB=true AND
+ * no platform credentials configured. This prevents accidental auto-approve
+ * in non-production environments.
  */
-const STUB_MODE = !HAS_APPLE_CREDENTIALS && !HAS_GOOGLE_CREDENTIALS;
+const STUB_MODE =
+  process.env.RECEIPT_VALIDATION_STUB === "true" &&
+  !HAS_APPLE_CREDENTIALS &&
+  !HAS_GOOGLE_CREDENTIALS;
 
 /** Timeout for outbound API requests to Google (10 seconds). */
 const FETCH_TIMEOUT_MS = 10_000;
@@ -75,46 +88,67 @@ export async function validateReceipt(
 
 // --- Apple App Store Server API v2 ---
 
-/**
- * Decode a base64url-encoded string to a UTF-8 string.
- */
-function base64urlDecode(input: string): string {
-  const padded = input + "=".repeat((4 - (input.length % 4)) % 4);
-  const base64 = padded.replace(/-/g, "+").replace(/_/g, "/");
-  return Buffer.from(base64, "base64").toString("utf-8");
+/** Load Apple root CA certificates from disk. */
+function loadAppleRootCAs(): Buffer[] {
+  const certDir =
+    process.env.APPLE_ROOT_CA_DIR || path.join(__dirname, "..", "certs");
+  const certFiles = [
+    "AppleRootCA-G2.cer",
+    "AppleRootCA-G3.cer",
+    "AppleIncRootCertificate.cer",
+  ];
+  return certFiles.map((file) => fs.readFileSync(path.join(certDir, file)));
 }
 
-const appleTransactionSchema = z.object({
-  bundleId: z.string().optional(),
-  productId: z.string().optional(),
-  expiresDate: z.number().optional(),
-  originalTransactionId: z.string().optional(),
-  revocationDate: z.number().optional(),
-});
+/** Lazy singleton for the Apple SignedDataVerifier. */
+let appleVerifier: SignedDataVerifier | null = null;
 
-type AppleTransactionPayload = z.infer<typeof appleTransactionSchema>;
+function getAppleVerifier(): SignedDataVerifier {
+  if (appleVerifier) return appleVerifier;
 
-/**
- * Decode the JWS (JSON Web Signature) signed transaction from Apple.
- * The receipt from expo-iap on iOS is a JWS with header.payload.signature format.
- *
- * SECURITY TODO: This decodes the JWS payload but does NOT verify the signature
- * against Apple's root certificate chain (Apple Root CA - G3). A future iteration
- * must verify the x5c certificate chain in the JWS header to prevent forged
- * receipts. Until then, pair this with server-side transaction lookups via the
- * App Store Server API for high-value purchases.
- * See: https://developer.apple.com/documentation/appstoreserverapi/jwstransaction
- */
-export function decodeAppleJWS(jws: string): AppleTransactionPayload | null {
-  try {
-    const parts = jws.split(".");
-    if (parts.length !== 3) return null;
-    const payloadJson = base64urlDecode(parts[1]);
-    const parsed = appleTransactionSchema.safeParse(JSON.parse(payloadJson));
-    if (!parsed.success) return null;
-    return parsed.data;
-  } catch {
-    return null;
+  const bundleId = process.env.APPLE_BUNDLE_ID;
+  if (!bundleId) {
+    throw new Error(
+      "APPLE_BUNDLE_ID is required when Apple credentials are configured",
+    );
+  }
+  const environment =
+    process.env.APPLE_ENVIRONMENT === "production"
+      ? Environment.PRODUCTION
+      : Environment.SANDBOX;
+  const rawAppId = process.env.APPLE_APP_ID;
+  const appAppleId = rawAppId ? Number(rawAppId) : undefined;
+  if (appAppleId !== undefined && Number.isNaN(appAppleId)) {
+    throw new Error("APPLE_APP_ID must be a numeric value");
+  }
+  const enableOnlineChecks = true;
+
+  appleVerifier = new SignedDataVerifier(
+    loadAppleRootCAs(),
+    enableOnlineChecks,
+    environment,
+    bundleId,
+    appAppleId,
+  );
+  return appleVerifier;
+}
+
+/** Reset the cached Apple verifier (exported for test isolation). */
+export function resetAppleVerifier(): void {
+  appleVerifier = null;
+}
+
+/** Map Apple VerificationStatus codes to our error codes. */
+function mapVerificationError(status: VerificationStatus): string {
+  switch (status) {
+    case VerificationStatus.INVALID_APP_IDENTIFIER:
+      return "BUNDLE_MISMATCH";
+    case VerificationStatus.INVALID_ENVIRONMENT:
+      return "INVALID_ENVIRONMENT";
+    case VerificationStatus.INVALID_CERTIFICATE:
+      return "INVALID_CERTIFICATE";
+    default:
+      return "INVALID_RECEIPT";
   }
 }
 
@@ -122,14 +156,19 @@ async function validateAppleReceipt(
   receipt: string,
   expectedProductId?: string,
 ): Promise<ReceiptValidationResult> {
-  const payload = decodeAppleJWS(receipt);
-  if (!payload) {
+  let payload: JWSTransactionDecodedPayload;
+  try {
+    payload = await getAppleVerifier().verifyAndDecodeTransaction(receipt);
+  } catch (err) {
+    if (err instanceof VerificationException) {
+      const errorCode = mapVerificationError(err.status);
+      console.error(
+        `Apple receipt verification failed: ${VerificationStatus[err.status]}`,
+      );
+      return { valid: false, errorCode };
+    }
+    console.error("Apple receipt verification error:", err);
     return { valid: false, errorCode: "INVALID_RECEIPT" };
-  }
-
-  const expectedBundleId = process.env.APPLE_BUNDLE_ID;
-  if (expectedBundleId && payload.bundleId !== expectedBundleId) {
-    return { valid: false, errorCode: "BUNDLE_MISMATCH" };
   }
 
   if (expectedProductId && payload.productId !== expectedProductId) {
@@ -271,10 +310,16 @@ async function validateGoogleReceipt(
 
   const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/subscriptionsv2/tokens/${encodeURIComponent(purchaseToken)}`;
 
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    console.error("Google Play subscription request failed:", err);
+    return { valid: false, errorCode: "STORE_API_ERROR" };
+  }
 
   if (!response.ok) {
     const text = await response.text();
