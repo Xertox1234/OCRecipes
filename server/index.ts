@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import helmet from "helmet";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import * as path from "path";
@@ -25,7 +26,7 @@ function setupCors(app: express.Application) {
 
   function isAllowedOrigin(origin: string | undefined): boolean {
     if (!origin) return true; // Allow requests with no origin (mobile apps, curl)
-    if (publicDomain && origin.includes(publicDomain)) return true;
+    if (publicDomain && origin === publicDomain) return true;
     return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
   }
 
@@ -120,6 +121,7 @@ function setupErrorHandler(app: express.Application) {
 
 (async () => {
   setupCors(app);
+  app.use(helmet());
   setupBodyParsing(app);
   setupRequestLogging(app);
 
