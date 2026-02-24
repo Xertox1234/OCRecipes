@@ -8,6 +8,7 @@ import {
   loginLimiter,
   avatarRateLimit,
   formatZodError,
+  loginSchema,
   registerSchema,
   profileUpdateSchema,
   upload,
@@ -63,20 +64,17 @@ export function register(app: Express): void {
     loginLimiter,
     async (req: Request, res: Response) => {
       try {
-        const { username, password } = req.body;
+        const validated = loginSchema.parse(req.body);
 
-        if (!username || !password) {
-          return res
-            .status(400)
-            .json({ error: "Username and password are required" });
-        }
-
-        const user = await storage.getUserByUsername(username);
+        const user = await storage.getUserByUsername(validated.username);
         if (!user) {
           return res.status(401).json({ error: "Invalid credentials" });
         }
 
-        const isValidPassword = await bcrypt.compare(password, user.password);
+        const isValidPassword = await bcrypt.compare(
+          validated.password,
+          user.password,
+        );
         if (!isValidPassword) {
           return res.status(401).json({ error: "Invalid credentials" });
         }
@@ -96,6 +94,9 @@ export function register(app: Express): void {
           token,
         });
       } catch (error) {
+        if (error instanceof ZodError) {
+          return res.status(400).json({ error: formatZodError(error) });
+        }
         console.error("Login error:", error);
         res.status(500).json({ error: "Failed to login" });
       }

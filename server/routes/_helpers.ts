@@ -205,6 +205,12 @@ export const upload = multer({
 // COMMON VALIDATION SCHEMAS
 // ============================================================================
 
+// Login validation schema - lighter than registration (no format rules, just bounds)
+export const loginSchema = z.object({
+  username: z.string().min(1, "Username is required").max(30),
+  password: z.string().min(1, "Password is required").max(200),
+});
+
 // Registration validation schema with username format and password strength
 export const registerSchema = z.object({
   username: z
@@ -215,7 +221,10 @@ export const registerSchema = z.object({
       /^[a-zA-Z0-9_]+$/,
       "Username can only contain letters, numbers, and underscores",
     ),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(200),
 });
 
 // Profile update validation schema
