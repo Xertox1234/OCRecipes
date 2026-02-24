@@ -15,6 +15,7 @@ export type { MainTabParamList } from "@/navigation/MainTabNavigator";
 export type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 export type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 export type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
+export type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 
 /**
  * Navigation prop for HistoryScreen when hosted in ProfileStack as "ScanHistory".

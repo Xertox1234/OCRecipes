@@ -26,6 +26,21 @@ import {
   type MealSuggestionCacheEntry,
   type PantryItem,
   type InsertPantryItem,
+  type WeightLog,
+  type InsertWeightLog,
+  type ExerciseLog,
+  type InsertExerciseLog,
+  type ExerciseLibraryEntry,
+  type InsertExerciseLibraryEntry,
+  type HealthKitSyncEntry,
+  type ChatConversation,
+  type ChatMessage,
+  type MedicationLog,
+  type InsertMedicationLog,
+  healthKitSync,
+  chatConversations,
+  chatMessages,
+  weightLogs,
   users,
   scannedItems,
   dailyLogs,
@@ -44,6 +59,9 @@ import {
   pantryItems,
   mealSuggestionCache,
   favouriteScannedItems,
+  exerciseLogs,
+  exerciseLibrary,
+  medicationLogs,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
@@ -341,6 +359,96 @@ export interface IStorage {
     startDate: string,
     endDate: string,
   ): Promise<RecipeIngredient[]>;
+
+  // Weight logs
+  getWeightLogs(
+    userId: string,
+    options?: { from?: Date; to?: Date; limit?: number },
+  ): Promise<WeightLog[]>;
+  createWeightLog(log: InsertWeightLog): Promise<WeightLog>;
+  deleteWeightLog(id: number, userId: string): Promise<boolean>;
+  getLatestWeight(userId: string): Promise<WeightLog | undefined>;
+
+  // Exercise logs
+  getExerciseLogs(
+    userId: string,
+    options?: { from?: Date; to?: Date; limit?: number },
+  ): Promise<ExerciseLog[]>;
+  createExerciseLog(log: InsertExerciseLog): Promise<ExerciseLog>;
+  updateExerciseLog(
+    id: number,
+    userId: string,
+    updates: Partial<InsertExerciseLog>,
+  ): Promise<ExerciseLog | undefined>;
+  deleteExerciseLog(id: number, userId: string): Promise<boolean>;
+  getExerciseDailySummary(
+    userId: string,
+    date: Date,
+  ): Promise<{
+    totalCaloriesBurned: number;
+    totalMinutes: number;
+    exerciseCount: number;
+  }>;
+
+  // Exercise library
+  searchExerciseLibrary(
+    query: string,
+    userId?: string,
+  ): Promise<ExerciseLibraryEntry[]>;
+  createExerciseLibraryEntry(
+    entry: InsertExerciseLibraryEntry,
+  ): Promise<ExerciseLibraryEntry>;
+
+  // Chat conversations
+  getChatConversation(
+    id: number,
+    userId: string,
+  ): Promise<ChatConversation | undefined>;
+  getChatConversations(userId: string): Promise<ChatConversation[]>;
+  createChatConversation(
+    userId: string,
+    title: string,
+  ): Promise<ChatConversation>;
+  getChatMessages(
+    conversationId: number,
+    limit?: number,
+  ): Promise<ChatMessage[]>;
+  createChatMessage(
+    conversationId: number,
+    role: string,
+    content: string,
+    metadata?: unknown,
+  ): Promise<ChatMessage>;
+  deleteChatConversation(id: number, userId: string): Promise<boolean>;
+  updateChatConversationTitle(
+    id: number,
+    userId: string,
+    title: string,
+  ): Promise<ChatConversation | undefined>;
+  getDailyChatMessageCount(userId: string, date: Date): Promise<number>;
+
+  // HealthKit sync
+  getHealthKitSyncSettings(userId: string): Promise<HealthKitSyncEntry[]>;
+  upsertHealthKitSyncSetting(
+    userId: string,
+    dataType: string,
+    enabled: boolean,
+    syncDirection?: string,
+  ): Promise<HealthKitSyncEntry>;
+  updateHealthKitLastSync(userId: string, dataType: string): Promise<void>;
+
+  // Medication logs (GLP-1)
+  getMedicationLogs(
+    userId: string,
+    options?: { from?: Date; to?: Date; limit?: number },
+  ): Promise<MedicationLog[]>;
+  createMedicationLog(log: InsertMedicationLog): Promise<MedicationLog>;
+  updateMedicationLog(
+    id: number,
+    userId: string,
+    updates: Partial<InsertMedicationLog>,
+  ): Promise<MedicationLog | undefined>;
+  deleteMedicationLog(id: number, userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1723,6 +1831,389 @@ export class DatabaseStorage implements IStorage {
           sql`, `,
         )})`,
       );
+  }
+  // ============================================================================
+  // WEIGHT LOGS
+  // ============================================================================
+
+  async getWeightLogs(
+    userId: string,
+    options?: { from?: Date; to?: Date; limit?: number },
+  ): Promise<WeightLog[]> {
+    const conditions = [eq(weightLogs.userId, userId)];
+    if (options?.from) {
+      conditions.push(gte(weightLogs.loggedAt, options.from));
+    }
+    if (options?.to) {
+      conditions.push(lte(weightLogs.loggedAt, options.to));
+    }
+    const query = db
+      .select()
+      .from(weightLogs)
+      .where(and(...conditions))
+      .orderBy(desc(weightLogs.loggedAt));
+    if (options?.limit) {
+      return query.limit(options.limit);
+    }
+    return query;
+  }
+
+  async createWeightLog(log: InsertWeightLog): Promise<WeightLog> {
+    const [created] = await db.insert(weightLogs).values(log).returning();
+    return created;
+  }
+
+  async deleteWeightLog(id: number, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(weightLogs)
+      .where(and(eq(weightLogs.id, id), eq(weightLogs.userId, userId)))
+      .returning({ id: weightLogs.id });
+    return result.length > 0;
+  }
+
+  async getLatestWeight(userId: string): Promise<WeightLog | undefined> {
+    const [latest] = await db
+      .select()
+      .from(weightLogs)
+      .where(eq(weightLogs.userId, userId))
+      .orderBy(desc(weightLogs.loggedAt))
+      .limit(1);
+    return latest;
+  }
+
+  // ============================================================================
+  // EXERCISE LOGS
+  // ============================================================================
+
+  async getExerciseLogs(
+    userId: string,
+    options?: { from?: Date; to?: Date; limit?: number },
+  ): Promise<ExerciseLog[]> {
+    const conditions = [eq(exerciseLogs.userId, userId)];
+    if (options?.from)
+      conditions.push(gte(exerciseLogs.loggedAt, options.from));
+    if (options?.to) conditions.push(lte(exerciseLogs.loggedAt, options.to));
+    const query = db
+      .select()
+      .from(exerciseLogs)
+      .where(and(...conditions))
+      .orderBy(desc(exerciseLogs.loggedAt));
+    if (options?.limit) return query.limit(options.limit);
+    return query;
+  }
+
+  async createExerciseLog(log: InsertExerciseLog): Promise<ExerciseLog> {
+    const [created] = await db.insert(exerciseLogs).values(log).returning();
+    return created;
+  }
+
+  async updateExerciseLog(
+    id: number,
+    userId: string,
+    updates: Partial<InsertExerciseLog>,
+  ): Promise<ExerciseLog | undefined> {
+    const [updated] = await db
+      .update(exerciseLogs)
+      .set(updates)
+      .where(and(eq(exerciseLogs.id, id), eq(exerciseLogs.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async deleteExerciseLog(id: number, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(exerciseLogs)
+      .where(and(eq(exerciseLogs.id, id), eq(exerciseLogs.userId, userId)))
+      .returning({ id: exerciseLogs.id });
+    return result.length > 0;
+  }
+
+  async getExerciseDailySummary(
+    userId: string,
+    date: Date,
+  ): Promise<{
+    totalCaloriesBurned: number;
+    totalMinutes: number;
+    exerciseCount: number;
+  }> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    const logs = await db
+      .select()
+      .from(exerciseLogs)
+      .where(
+        and(
+          eq(exerciseLogs.userId, userId),
+          gte(exerciseLogs.loggedAt, startOfDay),
+          lte(exerciseLogs.loggedAt, endOfDay),
+        ),
+      );
+    return {
+      totalCaloriesBurned: logs.reduce(
+        (sum, l) => sum + (l.caloriesBurned ? parseFloat(l.caloriesBurned) : 0),
+        0,
+      ),
+      totalMinutes: logs.reduce((sum, l) => sum + l.durationMinutes, 0),
+      exerciseCount: logs.length,
+    };
+  }
+
+  // ============================================================================
+  // EXERCISE LIBRARY
+  // ============================================================================
+
+  async searchExerciseLibrary(
+    query: string,
+    userId?: string,
+  ): Promise<ExerciseLibraryEntry[]> {
+    const searchTerm = `%${escapeLike(query)}%`;
+    return db
+      .select()
+      .from(exerciseLibrary)
+      .where(
+        and(
+          ilike(exerciseLibrary.name, searchTerm),
+          or(
+            eq(exerciseLibrary.isCustom, false),
+            userId ? eq(exerciseLibrary.userId, userId) : undefined,
+          ),
+        ),
+      )
+      .limit(20);
+  }
+
+  async createExerciseLibraryEntry(
+    entry: InsertExerciseLibraryEntry,
+  ): Promise<ExerciseLibraryEntry> {
+    const [created] = await db
+      .insert(exerciseLibrary)
+      .values(entry)
+      .returning();
+    return created;
+  }
+
+  // ============================================================================
+  // HEALTHKIT SYNC
+  // ============================================================================
+
+  async getHealthKitSyncSettings(
+    userId: string,
+  ): Promise<HealthKitSyncEntry[]> {
+    return db
+      .select()
+      .from(healthKitSync)
+      .where(eq(healthKitSync.userId, userId));
+  }
+
+  async upsertHealthKitSyncSetting(
+    userId: string,
+    dataType: string,
+    enabled: boolean,
+    syncDirection?: string,
+  ): Promise<HealthKitSyncEntry> {
+    const [result] = await db
+      .insert(healthKitSync)
+      .values({
+        userId,
+        dataType,
+        enabled,
+        syncDirection: syncDirection ?? "read",
+      })
+      .onConflictDoUpdate({
+        target: [healthKitSync.userId, healthKitSync.dataType],
+        set: {
+          enabled,
+          ...(syncDirection ? { syncDirection } : {}),
+        },
+      })
+      .returning();
+    return result;
+  }
+
+  async updateHealthKitLastSync(
+    userId: string,
+    dataType: string,
+  ): Promise<void> {
+    await db
+      .update(healthKitSync)
+      .set({ lastSyncAt: new Date() })
+      .where(
+        and(
+          eq(healthKitSync.userId, userId),
+          eq(healthKitSync.dataType, dataType),
+        ),
+      );
+  }
+
+  // ============================================================================
+  // MEDICATION LOGS (GLP-1)
+  // ============================================================================
+
+  async getMedicationLogs(
+    userId: string,
+    options?: { from?: Date; to?: Date; limit?: number },
+  ): Promise<MedicationLog[]> {
+    const conditions = [eq(medicationLogs.userId, userId)];
+    if (options?.from)
+      conditions.push(gte(medicationLogs.takenAt, options.from));
+    if (options?.to) conditions.push(lte(medicationLogs.takenAt, options.to));
+    return db
+      .select()
+      .from(medicationLogs)
+      .where(and(...conditions))
+      .orderBy(desc(medicationLogs.takenAt))
+      .limit(options?.limit || 50);
+  }
+
+  async createMedicationLog(log: InsertMedicationLog): Promise<MedicationLog> {
+    const [result] = await db.insert(medicationLogs).values(log).returning();
+    return result;
+  }
+
+  async updateMedicationLog(
+    id: number,
+    userId: string,
+    updates: Partial<InsertMedicationLog>,
+  ): Promise<MedicationLog | undefined> {
+    const [result] = await db
+      .update(medicationLogs)
+      .set(updates)
+      .where(and(eq(medicationLogs.id, id), eq(medicationLogs.userId, userId)))
+      .returning();
+    return result || undefined;
+  }
+
+  async deleteMedicationLog(id: number, userId: string): Promise<boolean> {
+    const [deleted] = await db
+      .delete(medicationLogs)
+      .where(and(eq(medicationLogs.id, id), eq(medicationLogs.userId, userId)))
+      .returning({ id: medicationLogs.id });
+    return !!deleted;
+  }
+
+  // ============================================================================
+  // CHAT CONVERSATIONS
+  // ============================================================================
+
+  async getChatConversation(
+    id: number,
+    userId: string,
+  ): Promise<ChatConversation | undefined> {
+    const [conversation] = await db
+      .select()
+      .from(chatConversations)
+      .where(
+        and(eq(chatConversations.id, id), eq(chatConversations.userId, userId)),
+      );
+    return conversation || undefined;
+  }
+
+  async getChatConversations(userId: string): Promise<ChatConversation[]> {
+    return db
+      .select()
+      .from(chatConversations)
+      .where(eq(chatConversations.userId, userId))
+      .orderBy(desc(chatConversations.updatedAt));
+  }
+
+  async createChatConversation(
+    userId: string,
+    title: string,
+  ): Promise<ChatConversation> {
+    const [conversation] = await db
+      .insert(chatConversations)
+      .values({ userId, title })
+      .returning();
+    return conversation;
+  }
+
+  async getChatMessages(
+    conversationId: number,
+    limit = 100,
+  ): Promise<ChatMessage[]> {
+    return db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.conversationId, conversationId))
+      .orderBy(chatMessages.createdAt)
+      .limit(limit);
+  }
+
+  async createChatMessage(
+    conversationId: number,
+    role: string,
+    content: string,
+    metadata?: unknown,
+  ): Promise<ChatMessage> {
+    const [message] = await db
+      .insert(chatMessages)
+      .values({
+        conversationId,
+        role,
+        content,
+        metadata: metadata ?? null,
+      })
+      .returning();
+
+    // Update conversation timestamp
+    await db
+      .update(chatConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(chatConversations.id, conversationId));
+
+    return message;
+  }
+
+  async deleteChatConversation(id: number, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(chatConversations)
+      .where(
+        and(eq(chatConversations.id, id), eq(chatConversations.userId, userId)),
+      )
+      .returning({ id: chatConversations.id });
+    return result.length > 0;
+  }
+
+  async updateChatConversationTitle(
+    id: number,
+    userId: string,
+    title: string,
+  ): Promise<ChatConversation | undefined> {
+    const [updated] = await db
+      .update(chatConversations)
+      .set({ title, updatedAt: new Date() })
+      .where(
+        and(eq(chatConversations.id, id), eq(chatConversations.userId, userId)),
+      )
+      .returning();
+    return updated || undefined;
+  }
+
+  async getDailyChatMessageCount(userId: string, date: Date): Promise<number> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(chatMessages)
+      .innerJoin(
+        chatConversations,
+        eq(chatMessages.conversationId, chatConversations.id),
+      )
+      .where(
+        and(
+          eq(chatConversations.userId, userId),
+          eq(chatMessages.role, "user"),
+          gte(chatMessages.createdAt, startOfDay),
+          lt(chatMessages.createdAt, endOfDay),
+        ),
+      );
+
+    return Number(result[0]?.count ?? 0);
   }
 }
 

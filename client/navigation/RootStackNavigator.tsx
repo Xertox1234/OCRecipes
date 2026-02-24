@@ -11,6 +11,7 @@ import PhotoAnalysisScreen from "@/screens/PhotoAnalysisScreen";
 import GoalSetupScreen from "@/screens/GoalSetupScreen";
 import EditDietaryProfileScreen from "@/screens/EditDietaryProfileScreen";
 import FeaturedRecipeDetailScreen from "@/screens/FeaturedRecipeDetailScreen";
+import QuickLogScreen from "@/screens/QuickLogScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
@@ -38,6 +39,7 @@ export type RootStackParamList = {
   GoalSetup: undefined;
   EditDietaryProfile: undefined;
   FeaturedRecipeDetail: { recipeId: number };
+  QuickLog: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -135,6 +137,14 @@ export default function RootStackNavigator() {
               headerShown: false,
               presentation: "transparentModal",
               animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="QuickLog"
+            component={QuickLogScreen}
+            options={{
+              headerTitle: "Quick Log",
+              presentation: "modal",
             }}
           />
         </>

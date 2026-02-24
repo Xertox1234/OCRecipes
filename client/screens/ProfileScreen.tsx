@@ -423,6 +423,8 @@ const SettingsItem = React.memo(function SettingsItem({
 
 const SettingsSection = React.memo(function SettingsSection({
   themePreference,
+  onWeightTracking,
+  onHealthKit,
   onDietaryProfile,
   onNutritionGoals,
   onLibrary,
@@ -432,6 +434,8 @@ const SettingsSection = React.memo(function SettingsSection({
   onLogout,
 }: {
   themePreference: ThemePreference;
+  onWeightTracking: () => void;
+  onHealthKit: () => void;
   onDietaryProfile: () => void;
   onNutritionGoals: () => void;
   onLibrary: () => void;
@@ -449,7 +453,15 @@ const SettingsSection = React.memo(function SettingsSection({
       </ThemedText>
       <Card elevation={1} style={styles.settingsCard}>
         <SettingsItem
-          icon="heart"
+          icon="trending-down"
+          label="Weight Tracking"
+          onPress={onWeightTracking}
+        />
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <SettingsItem icon="heart" label="Apple Health" onPress={onHealthKit} />
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <SettingsItem
+          icon="clipboard"
           label="Dietary Profile"
           onPress={onDietaryProfile}
         />
@@ -774,6 +786,8 @@ export default function ProfileScreen() {
       >
         <SettingsSection
           themePreference={themePreference}
+          onWeightTracking={() => navigation.navigate("WeightTracking")}
+          onHealthKit={() => navigation.navigate("HealthKitSettings")}
           onDietaryProfile={() => navigation.navigate("EditDietaryProfile")}
           onNutritionGoals={() => navigation.navigate("GoalSetup")}
           onLibrary={() => navigation.navigate("SavedItems")}

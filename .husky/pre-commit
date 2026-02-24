@@ -1,1 +1,1 @@
-npm run test:run && npx lint-staged
+npm run test:run && NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false

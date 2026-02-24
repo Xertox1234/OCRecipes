@@ -33,6 +33,7 @@ export const users = pgTable("users", {
   height: decimal("height", { precision: 5, scale: 2 }),
   age: integer("age"),
   gender: text("gender"),
+  goalWeight: decimal("goal_weight", { precision: 6, scale: 2 }),
   goalsCalculatedAt: timestamp("goals_calculated_at"),
   onboardingCompleted: boolean("onboarding_completed").default(false),
   subscriptionTier: text("subscription_tier").default("free"),
@@ -67,6 +68,9 @@ export const userProfiles = pgTable("user_profiles", {
     .default([]),
   cookingSkillLevel: text("cooking_skill_level"),
   cookingTimeAvailable: text("cooking_time_available"),
+  glp1Mode: boolean("glp1_mode").default(false),
+  glp1Medication: text("glp1_medication"),
+  glp1StartDate: timestamp("glp1_start_date"),
   createdAt: timestamp("created_at")
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
@@ -270,6 +274,81 @@ export const savedItems = pgTable(
   }),
 );
 
+// ============================================================================
+// EXERCISE TRACKING
+// ============================================================================
+
+export const exerciseLibrary = pgTable(
+  "exercise_library",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    type: text("type").notNull(),
+    metValue: decimal("met_value", { precision: 4, scale: 1 }).notNull(),
+    isCustom: boolean("is_custom").default(false),
+    userId: varchar("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    nameIdx: index("exercise_library_name_idx").on(table.name),
+    typeIdx: index("exercise_library_type_idx").on(table.type),
+  }),
+);
+
+export const exerciseLogs = pgTable(
+  "exercise_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    exerciseName: text("exercise_name").notNull(),
+    exerciseType: text("exercise_type").notNull(),
+    durationMinutes: integer("duration_minutes").notNull(),
+    caloriesBurned: decimal("calories_burned", {
+      precision: 10,
+      scale: 2,
+    }),
+    intensity: text("intensity"),
+    sets: integer("sets"),
+    reps: integer("reps"),
+    weightLifted: decimal("weight_lifted", { precision: 8, scale: 2 }),
+    distanceKm: decimal("distance_km", { precision: 8, scale: 2 }),
+    source: text("source").default("manual"),
+    notes: text("notes"),
+    loggedAt: timestamp("logged_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userDateIdx: index("exercise_logs_user_date_idx").on(
+      table.userId,
+      table.loggedAt,
+    ),
+  }),
+);
+
+export const exerciseLibraryRelations = relations(
+  exerciseLibrary,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [exerciseLibrary.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const exerciseLogsRelations = relations(exerciseLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [exerciseLogs.userId],
+    references: [users.id],
+  }),
+}));
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   scannedItems: many(scannedItems),
   dailyLogs: many(dailyLogs),
@@ -280,6 +359,13 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   transactions: many(transactions),
   groceryLists: many(groceryLists),
   pantryItems: many(pantryItems),
+  weightLogs: many(weightLogs),
+  exerciseLogs: many(exerciseLogs),
+  healthKitSync: many(healthKitSync),
+  chatConversations: many(chatConversations),
+  fastingSchedules: many(fastingSchedules),
+  fastingLogs: many(fastingLogs),
+  medicationLogs: many(medicationLogs),
   profile: one(userProfiles, {
     fields: [users.id],
     references: [userProfiles.userId],
@@ -606,6 +692,233 @@ export const mealPlanItemsRelations = relations(mealPlanItems, ({ one }) => ({
   }),
 }));
 
+// ============================================================================
+// WEIGHT LOGS
+// ============================================================================
+
+export const weightLogs = pgTable(
+  "weight_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    weight: decimal("weight", { precision: 6, scale: 2 }).notNull(),
+    source: text("source").default("manual"),
+    note: text("note"),
+    loggedAt: timestamp("logged_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userDateIdx: index("weight_logs_user_date_idx").on(
+      table.userId,
+      table.loggedAt,
+    ),
+  }),
+);
+
+export const weightLogsRelations = relations(weightLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [weightLogs.userId],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
+// HEALTHKIT SYNC
+// ============================================================================
+
+export const healthKitSync = pgTable(
+  "healthkit_sync",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    dataType: text("data_type").notNull(),
+    enabled: boolean("enabled").default(false),
+    lastSyncAt: timestamp("last_sync_at"),
+    syncDirection: text("sync_direction").default("read"),
+  },
+  (table) => ({
+    userTypeIdx: uniqueIndex("healthkit_sync_user_type_idx").on(
+      table.userId,
+      table.dataType,
+    ),
+  }),
+);
+
+export const healthKitSyncRelations = relations(healthKitSync, ({ one }) => ({
+  user: one(users, {
+    fields: [healthKitSync.userId],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
+// CHAT CONVERSATIONS
+// ============================================================================
+
+export const chatConversations = pgTable(
+  "chat_conversations",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    title: text("title").notNull(),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("chat_conversations_user_id_idx").on(table.userId),
+  }),
+);
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: serial("id").primaryKey(),
+    conversationId: integer("conversation_id")
+      .references(() => chatConversations.id, { onDelete: "cascade" })
+      .notNull(),
+    role: text("role").notNull(), // "user" | "assistant" | "system"
+    content: text("content").notNull(),
+    metadata: jsonb("metadata"),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    conversationIdIdx: index("chat_messages_conversation_id_idx").on(
+      table.conversationId,
+    ),
+  }),
+);
+
+export const chatConversationsRelations = relations(
+  chatConversations,
+  ({ one, many }) => ({
+    user: one(users, {
+      fields: [chatConversations.userId],
+      references: [users.id],
+    }),
+    messages: many(chatMessages),
+  }),
+);
+
+export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
+  conversation: one(chatConversations, {
+    fields: [chatMessages.conversationId],
+    references: [chatConversations.id],
+  }),
+}));
+
+// ============================================================================
+// FASTING
+// ============================================================================
+
+export const fastingSchedules = pgTable(
+  "fasting_schedules",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    protocol: text("protocol").notNull(), // "16:8", "18:6", "20:4", "5:2", "custom"
+    fastingHours: integer("fasting_hours").notNull(),
+    eatingHours: integer("eating_hours").notNull(),
+    eatingWindowStart: text("eating_window_start"), // "12:00"
+    eatingWindowEnd: text("eating_window_end"), // "20:00"
+    isActive: boolean("is_active").default(true),
+  },
+  (table) => ({
+    userIdx: uniqueIndex("fasting_schedules_user_idx").on(table.userId),
+  }),
+);
+
+export const fastingLogs = pgTable(
+  "fasting_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    startedAt: timestamp("started_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    endedAt: timestamp("ended_at"),
+    targetDurationHours: integer("target_duration_hours").notNull(),
+    actualDurationMinutes: integer("actual_duration_minutes"),
+    completed: boolean("completed"),
+    note: text("note"),
+  },
+  (table) => ({
+    userDateIdx: index("fasting_logs_user_date_idx").on(
+      table.userId,
+      table.startedAt,
+    ),
+  }),
+);
+
+export const fastingSchedulesRelations = relations(
+  fastingSchedules,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [fastingSchedules.userId],
+      references: [users.id],
+    }),
+  }),
+);
+
+export const fastingLogsRelations = relations(fastingLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [fastingLogs.userId],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
+// MEDICATION LOGS (GLP-1 Companion)
+// ============================================================================
+
+export const medicationLogs = pgTable(
+  "medication_logs",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    medicationName: text("medication_name").notNull(), // e.g., "semaglutide"
+    brandName: text("brand_name"), // e.g., "Ozempic", "Wegovy"
+    dosage: text("dosage").notNull(), // e.g., "0.25mg", "0.5mg"
+    takenAt: timestamp("taken_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    sideEffects: jsonb("side_effects").$type<string[]>().default([]),
+    appetiteLevel: integer("appetite_level"), // 1-5
+    notes: text("notes"),
+  },
+  (table) => ({
+    userDateIdx: index("medication_logs_user_date_idx").on(
+      table.userId,
+      table.takenAt,
+    ),
+  }),
+);
+
+export const medicationLogsRelations = relations(medicationLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [medicationLogs.userId],
+    references: [users.id],
+  }),
+}));
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -886,3 +1199,45 @@ export type PantryItem = typeof pantryItems.$inferSelect;
 export type InsertPantryItem = z.infer<typeof insertPantryItemSchema>;
 
 export type FavouriteScannedItem = typeof favouriteScannedItems.$inferSelect;
+
+export const insertWeightLogSchema = createInsertSchema(weightLogs).omit({
+  id: true,
+  loggedAt: true,
+});
+
+export type WeightLog = typeof weightLogs.$inferSelect;
+export type InsertWeightLog = z.infer<typeof insertWeightLogSchema>;
+
+export const insertExerciseLogSchema = createInsertSchema(exerciseLogs).omit({
+  id: true,
+  loggedAt: true,
+});
+export const insertExerciseLibrarySchema = createInsertSchema(
+  exerciseLibrary,
+).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type ExerciseLog = typeof exerciseLogs.$inferSelect;
+export type InsertExerciseLog = z.infer<typeof insertExerciseLogSchema>;
+export type ExerciseLibraryEntry = typeof exerciseLibrary.$inferSelect;
+export type InsertExerciseLibraryEntry = z.infer<
+  typeof insertExerciseLibrarySchema
+>;
+
+export type HealthKitSyncEntry = typeof healthKitSync.$inferSelect;
+export type InsertHealthKitSyncEntry = typeof healthKitSync.$inferInsert;
+
+export type ChatConversation = typeof chatConversations.$inferSelect;
+export type InsertChatConversation = typeof chatConversations.$inferInsert;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+export type FastingSchedule = typeof fastingSchedules.$inferSelect;
+export type InsertFastingSchedule = typeof fastingSchedules.$inferInsert;
+export type FastingLog = typeof fastingLogs.$inferSelect;
+export type InsertFastingLog = typeof fastingLogs.$inferInsert;
+
+export type MedicationLog = typeof medicationLogs.$inferSelect;
+export type InsertMedicationLog = typeof medicationLogs.$inferInsert;

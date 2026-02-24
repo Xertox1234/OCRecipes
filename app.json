@@ -11,8 +11,19 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.williamtower.nutriscan",
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": [
+          "HKQuantityTypeIdentifierBodyMass",
+          "HKQuantityTypeIdentifierStepCount",
+          "HKQuantityTypeIdentifierActiveEnergyBurned"
+        ]
+      },
       "infoPlist": {
-        "NSCameraUsageDescription": "NutriScan needs camera access to scan barcodes and nutrition labels."
+        "NSCameraUsageDescription": "NutriScan needs camera access to scan barcodes and nutrition labels.",
+        "NSMicrophoneUsageDescription": "NutriScan uses the microphone for voice food logging.",
+        "NSHealthShareUsageDescription": "NutriScan reads your health data to sync weight, steps, and workouts.",
+        "NSHealthUpdateUsageDescription": "NutriScan writes nutrition data to Apple Health."
       }
     },
     "android": {
@@ -25,7 +36,10 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.nutriscan.app",
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "single",

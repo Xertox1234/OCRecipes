@@ -1,0 +1,89 @@
+interface FastingLog {
+  id: number;
+  userId: string;
+  startedAt: Date | string;
+  endedAt: Date | string | null;
+  targetDurationHours: number;
+  actualDurationMinutes: number | null;
+  completed: boolean | null;
+  note: string | null;
+}
+
+export interface FastingStats {
+  totalFasts: number;
+  completedFasts: number;
+  completionRate: number;
+  currentStreak: number;
+  longestStreak: number;
+  averageDurationMinutes: number;
+}
+
+export function calculateFastingStats(logs: FastingLog[]): FastingStats {
+  const completedLogs = logs.filter((l) => l.completed);
+  const totalFasts = logs.length;
+  const completedFasts = completedLogs.length;
+  const completionRate = totalFasts > 0 ? completedFasts / totalFasts : 0;
+
+  // Average duration of completed fasts
+  const avgDuration =
+    completedLogs.length > 0
+      ? completedLogs.reduce(
+          (sum, l) => sum + (l.actualDurationMinutes || 0),
+          0,
+        ) / completedLogs.length
+      : 0;
+
+  // Calculate streaks (consecutive completed fasts by day)
+  const sortedCompleted = completedLogs
+    .map((l) => {
+      const date = new Date(l.startedAt);
+      return { date, dateStr: date.toISOString().split("T")[0] };
+    })
+    .sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  let currentStreak = 0;
+  let longestStreak = 0;
+  let streak = 0;
+  const uniqueDays = [...new Set(sortedCompleted.map((s) => s.dateStr))]
+    .sort()
+    .reverse();
+
+  for (let i = 0; i < uniqueDays.length; i++) {
+    if (i === 0) {
+      // Check if the most recent fast is today or yesterday
+      const today = new Date().toISOString().split("T")[0];
+      const yesterday = new Date(Date.now() - 86400000)
+        .toISOString()
+        .split("T")[0];
+      if (uniqueDays[0] !== today && uniqueDays[0] !== yesterday) {
+        currentStreak = 0;
+        break;
+      }
+      streak = 1;
+    } else {
+      const prevDate = new Date(uniqueDays[i - 1]);
+      const currDate = new Date(uniqueDays[i]);
+      const diffDays = (prevDate.getTime() - currDate.getTime()) / 86400000;
+      if (diffDays <= 1.5) {
+        streak++;
+      } else {
+        if (i <= uniqueDays.indexOf(uniqueDays[0]) + streak) {
+          currentStreak = streak;
+        }
+        longestStreak = Math.max(longestStreak, streak);
+        streak = 1;
+      }
+    }
+  }
+  currentStreak = currentStreak || streak;
+  longestStreak = Math.max(longestStreak, streak);
+
+  return {
+    totalFasts,
+    completedFasts,
+    completionRate,
+    currentStreak,
+    longestStreak,
+    averageDurationMinutes: Math.round(avgDuration),
+  };
+}

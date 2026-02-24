@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../db";
 import { nutritionCache } from "@shared/schema";
 import { and, gt, inArray } from "drizzle-orm";
+import { getStandardizedFoodName } from "./cultural-food-map";
 
 // Rate limiting for parallel requests
 const RATE_LIMIT = 5;
@@ -563,27 +564,32 @@ async function lookupUSDAByUPC(
 export async function lookupNutrition(
   query: string,
 ): Promise<NutritionData | null> {
-  // Check cache first
+  // Check cache first (using original query for cache hits on cultural names)
   const cached = await getCachedNutrition([query]);
   const cachedResult = cached.get(query);
   if (cachedResult) return cachedResult;
 
+  // Resolve cultural food names to standardized lookup terms
+  const standardizedQuery = getStandardizedFoodName(query);
+  const effectiveQuery =
+    standardizedQuery !== query ? standardizedQuery : query;
+
   // Primary: Canadian Nutrient File (bilingual, supports French product names)
-  const cnfResult = await lookupCNF(query);
+  const cnfResult = await lookupCNF(effectiveQuery);
   if (cnfResult && cnfResult.calories > 0) {
     await cacheNutrition(query, cnfResult);
     return cnfResult;
   }
 
   // Secondary: USDA FoodData Central (reliable government data)
-  const usdaResult = await lookupUSDA(query);
+  const usdaResult = await lookupUSDA(effectiveQuery);
   if (usdaResult) {
     await cacheNutrition(query, usdaResult);
     return usdaResult;
   }
 
   // Last-resort fallback: API Ninjas
-  const apiNinjasResult = await lookupAPINinjas(query);
+  const apiNinjasResult = await lookupAPINinjas(effectiveQuery);
   if (apiNinjasResult) {
     await cacheNutrition(query, apiNinjasResult);
   }
