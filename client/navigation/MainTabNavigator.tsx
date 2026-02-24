@@ -7,6 +7,8 @@ import type { NavigatorScreenParams } from "@react-navigation/native";
 
 import HomeStackNavigator from "@/navigation/HomeStackNavigator";
 import MealPlanStackNavigator from "@/navigation/MealPlanStackNavigator";
+import ActivityStackNavigator from "@/navigation/ActivityStackNavigator";
+import ChatStackNavigator from "@/navigation/ChatStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { ScanFAB } from "@/components/ScanFAB";
 import { useTheme } from "@/hooks/useTheme";
@@ -16,6 +18,8 @@ import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator
 export type MainTabParamList = {
   HomeTab: undefined;
   MealPlanTab: NavigatorScreenParams<MealPlanStackParamList> | undefined;
+  ActivityTab: undefined;
+  CoachTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -79,6 +83,26 @@ export default function MainTabNavigator() {
             title: "Plan",
             tabBarIcon: ({ color, size }) => (
               <Feather name="calendar" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tab.Screen
+          name="ActivityTab"
+          component={ActivityStackNavigator}
+          options={{
+            title: "Activity",
+            tabBarIcon: ({ color, size }) => (
+              <Feather name="activity" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tab.Screen
+          name="CoachTab"
+          component={ChatStackNavigator}
+          options={{
+            title: "Coach",
+            tabBarIcon: ({ color, size }) => (
+              <Feather name="message-circle" size={size} color={color} />
             ),
           }}
         />

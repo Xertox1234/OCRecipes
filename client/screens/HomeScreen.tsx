@@ -19,10 +19,12 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { TrendingTags } from "@/components/TrendingTags";
 import { HomeRecipeCard } from "@/components/HomeRecipeCard";
+import { AdaptiveGoalCard } from "@/components/AdaptiveGoalCard";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useAdaptiveGoals } from "@/hooks/useAdaptiveGoals";
 import { useAuthContext } from "@/context/AuthContext";
 import {
   Spacing,
@@ -108,6 +110,9 @@ export default function HomeScreen() {
     queryKey: ["/api/recipes/featured"],
     enabled: !!user,
   });
+
+  const isPremium = user?.subscriptionTier === "premium";
+  const { data: adaptiveGoalStatus } = useAdaptiveGoals(!!user && isPremium);
 
   const [searchText, setSearchText] = useState("");
   const [showMore, setShowMore] = useState(false);
@@ -262,6 +267,14 @@ export default function HomeScreen() {
               )}
             </View>
           </Animated.View>
+
+          {/* Adaptive goal recommendation */}
+          {adaptiveGoalStatus?.hasRecommendation &&
+            adaptiveGoalStatus.recommendation && (
+              <AdaptiveGoalCard
+                recommendation={adaptiveGoalStatus.recommendation}
+              />
+            )}
 
           {/* Trending tags */}
           <TrendingTags onTagPress={handleTagPress} />

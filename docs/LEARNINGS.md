@@ -4,6 +4,8 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Phase 0-7 Code Review Learnings (2026-02-24)](#phase-0-7-code-review-learnings-2026-02-24)
+- [Phase 8-11 Code Review Learnings (2026-02-24)](#phase-8-11-code-review-learnings-2026-02-24)
 - [History Item Actions Learnings (2026-02-12)](#history-item-actions-learnings-2026-02-12)
 - [Architecture Decisions](#architecture-decisions)
 - [React Native / Expo Go Gotchas](#react-native--expo-go-gotchas)
@@ -16,6 +18,401 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## Phase 0-7 Code Review Learnings (2026-02-24)
+
+### TDEE Back-Calculation: The Adaptive Goals Algorithm
+
+**Category:** Domain Knowledge / Algorithm
+
+**Context:** Phase 5 (Adaptive Goals) computes personalized calorie recommendations by reverse-engineering the user's actual Total Daily Energy Expenditure (TDEE) from their weight change and intake data over 2-4 weeks.
+
+**The Algorithm:**
+
+```
+actualTDEE = averageIntake - (weightChangeKg * 7700 / days)
+```
+
+Where:
+
+- `averageIntake` is the user's average daily caloric intake over the measurement period
+- `weightChangeKg` is `lastWeight - firstWeight` over the period
+- `7700` is the approximate calories in 1 kg of body weight (accepted exercise science constant)
+- `days` is the number of days in the measurement period
+
+**Implementation details from `server/services/adaptive-goals.ts`:**
+
+1. **Minimum data requirement:** At least 4 weight entries spanning at least 14 days. Less data produces unreliable TDEE estimates.
+2. **Significance threshold:** Only recommend changes when deviation exceeds 10% from current goals. Small adjustments cause user fatigue.
+3. **Safety bounds:** Clamp recommended calories to 1200-5000 kcal range regardless of calculation. Prevents dangerous recommendations.
+4. **Macro ratio preservation:** When adjusting calories, maintain the user's current protein/carbs/fat ratio rather than recalculating from scratch. This respects intentional macro splits.
+5. **Goal-aware adjustment:** Apply a fixed modifier after TDEE calculation based on user's primary goal:
+   - Lose weight: -500 kcal/day (~0.5 kg/week deficit)
+   - Gain weight/build muscle: +300 kcal/day (lean bulk surplus)
+   - Maintain: no adjustment
+
+**Why this matters:** The naive approach would be to use a static formula (Mifflin-St Jeor or Harris-Benedict) and never update. But metabolic rates vary widely between individuals and change over time due to metabolic adaptation, activity changes, and body composition shifts. The back-calculation approach uses the user's own data as ground truth, producing significantly better estimates after 2+ weeks of tracking.
+
+**Lesson:** When building adaptive systems, prefer empirical measurement over theoretical models. The Mifflin-St Jeor formula is accurate within ~10% for most people, but 10% of 2000 kcal is 200 kcal/day, which is the difference between losing and maintaining weight. The back-calculation eliminates this systematic error.
+
+**File:** `server/services/adaptive-goals.ts`
+
+---
+
+### Whisper Prompt Engineering for Domain-Specific Transcription
+
+**Category:** AI Integration
+
+**Context:** Phase 3 (Voice Food Logging) uses OpenAI's Whisper API to transcribe audio of users describing what they ate. Initial testing showed frequent misrecognitions of food-specific vocabulary.
+
+**Solution:** Pass a domain-specific `prompt` parameter to the Whisper transcription call:
+
+```typescript
+const transcription = await openai.audio.transcriptions.create({
+  file,
+  model: "whisper-1",
+  language: "en",
+  prompt: "Food and nutrition logging. The user is describing what they ate.",
+});
+```
+
+**Why the prompt helps:** Whisper's `prompt` parameter biases the model toward vocabulary and topics that match the prompt. For food logging, this means:
+
+- "quinoa" is transcribed correctly instead of "keenwa" or similar phonetic guesses
+- "acai" is recognized as a food item rather than being misheard
+- Measurement words ("tablespoon", "ounces", "grams") are preferred over phonetically similar non-food words
+- Common food compound words ("peanut butter", "greek yogurt") are kept together
+
+**Lesson:** When using Whisper for domain-specific applications, always provide a prompt that sets the topical context. The prompt does not need to be long or detailed -- a single sentence describing the domain is sufficient. Do NOT include the actual expected transcript (that would be cheating); instead describe the domain so the language model's word-choice priors are shifted appropriately.
+
+**File:** `server/services/voice-transcription.ts`
+
+---
+
+### Fixed Path Routes Must Be Registered Before Parameterized Routes
+
+**Category:** Express.js Gotcha
+
+**Context:** Phase 1 (Weight Tracking) and Phase 2 (Exercise Tracking) both have fixed-path routes (e.g., `/api/weight/trend`, `/api/exercises/summary`) alongside parameterized routes (e.g., `/api/weight/:id`, `/api/exercises/:id`).
+
+**Problem:** Express matches routes in registration order. If `/api/weight/:id` is registered before `/api/weight/trend`, then a GET request to `/api/weight/trend` matches `:id = "trend"`, which fails with "Invalid weight log ID" because `parseInt("trend")` returns `NaN`.
+
+**Solution:** Register fixed-path routes BEFORE parameterized routes within the same `register()` function:
+
+```typescript
+export function register(app: Express): void {
+  // Fixed path FIRST — must come before :id route
+  // NOTE: This must be registered BEFORE /api/weight/:id to avoid route conflict
+  app.get("/api/weight/trend", requireAuth, async (req, res) => {
+    /* ... */
+  });
+
+  // Parameterized route SECOND
+  app.delete("/api/weight/:id", requireAuth, async (req, res) => {
+    /* ... */
+  });
+}
+```
+
+The weight route file includes an explicit comment: `// NOTE: This must be registered BEFORE /api/weight/:id to avoid route conflict`.
+
+**Lesson:** In Express route modules, always register routes in this order:
+
+1. Collection routes (`GET /api/resource`)
+2. Fixed sub-path routes (`GET /api/resource/trend`, `GET /api/resource/summary`)
+3. Parameterized routes (`GET /api/resource/:id`, `DELETE /api/resource/:id`)
+
+This is especially easy to forget when using the route module pattern where routes are defined inside a `register()` function. Add a comment whenever a fixed path must come before a parameterized one.
+
+**Files:** `server/routes/weight.ts`, `server/routes/exercises.ts`
+
+---
+
+### Module-Level OpenAI Client in Voice and NLP Services
+
+**Category:** Testing / Architecture (Recurring)
+
+**Context:** Phase 3 added `food-nlp.ts` and `voice-transcription.ts`, both of which instantiate OpenAI at module scope:
+
+```typescript
+// server/services/food-nlp.ts — top-level initialization
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
+```
+
+**Why this keeps happening:** This is the fourth and fifth occurrence of the module-level OpenAI anti-pattern (previously documented for `meal-suggestions.ts`, `menu-analysis.ts`, and `nutrition-coach.ts`). The pattern recurs because:
+
+1. The OpenAI SDK examples all show top-level initialization
+2. It is the shortest/simplest code to write
+3. The developer does not think about testability when building a new service
+4. No automated check (lint rule, test) catches it
+
+**Current state of module-level OpenAI instances in the codebase:**
+
+| File                     | Module-Level | Lazy Singleton |
+| ------------------------ | ------------ | -------------- |
+| `food-nlp.ts`            | Yes          | No             |
+| `voice-transcription.ts` | Yes          | No             |
+| `nutrition-coach.ts`     | Yes          | No             |
+| `menu-analysis.ts`       | Yes          | No             |
+| `photo-analysis.ts`      | Yes          | No             |
+| `meal-suggestions.ts`    | No           | Yes (fixed)    |
+| `recipe-generation.ts`   | Yes          | No             |
+| `routes/_helpers.ts`     | Yes          | No             |
+
+**Recommendation:** Create an ESLint rule or a shared `getOpenAI()` lazy singleton in a utility file that all services import. The "document and hope" approach has failed 7 times; this needs a structural fix.
+
+**Related Learning:** "Module-Level Service Client Initialization Breaks Test Imports" in LEARNINGS.md
+
+**Files:** `server/services/food-nlp.ts`, `server/services/voice-transcription.ts`, `server/services/nutrition-coach.ts`, `server/routes/_helpers.ts`
+
+---
+
+### HealthKit Sync Deduplication by Time Window, Not Exact Timestamp
+
+**Category:** Data Integration Gotcha
+
+**Context:** Phase 4 (HealthKit Integration) syncs weight samples from Apple HealthKit to the app's database. The initial implementation checked for duplicates by exact timestamp match, but HealthKit timestamps have sub-second precision while our database stores timestamps with second precision.
+
+**Solution:** Use a time-window check (1 minute) instead of exact match:
+
+```typescript
+// server/services/healthkit-sync.ts
+const existing = await storage.getWeightLogs(userId, {
+  from: new Date(sample.date),
+  to: new Date(new Date(sample.date).getTime() + 60000), // 1 min window
+  limit: 1,
+});
+if (existing.length === 0) {
+  await storage.createWeightLog({
+    userId,
+    weight: sample.weight.toString(),
+    source: "healthkit",
+  });
+  weightsSynced++;
+}
+```
+
+**Why exact match fails:** HealthKit records timestamps with millisecond precision (e.g., `2026-02-24T10:15:23.456Z`). When stored in PostgreSQL as a `timestamp`, sub-second precision may be truncated or rounded depending on the column definition. A re-sync 5 minutes later would see a "different" timestamp and create a duplicate.
+
+**Lesson:** When deduplicating data from external health/fitness APIs, use a time window (30s - 2min) rather than exact timestamp matching. The window should be large enough to absorb precision differences but small enough that two genuinely separate measurements (e.g., two weight readings 5 minutes apart) are not collapsed.
+
+**File:** `server/services/healthkit-sync.ts`
+
+---
+
+## Phase 8-11 Code Review Learnings (2026-02-24)
+
+### IDOR in Micronutrients and Chat Routes: Missing Ownership Checks
+
+**Category:** Security Post-Mortem
+
+**Context:** Phases 10-11 added micronutrient tracking and AI coach chat routes. The micronutrients route had an endpoint `GET /api/micronutrients/item/:id` that looked up a scanned item by ID. The chat route had `GET /api/chat/conversations/:id/messages` that fetched messages for a conversation by ID.
+
+**Problem:** The initial micronutrients implementation fetched the item but did not verify that the requesting user owned it. Any authenticated user could look up any scanned item's micronutrient data by guessing item IDs.
+
+```typescript
+// Bug: IDOR — no ownership check
+app.get("/api/micronutrients/item/:id", requireAuth, async (req, res) => {
+  const item = await storage.getScannedItem(itemId);
+  if (!item) return res.status(404).json({ error: "Item not found" });
+  // Missing: item.userId !== req.userId check
+  const micronutrients = await lookupMicronutrients(item.productName);
+  res.json({ itemId, productName: item.productName, micronutrients });
+});
+```
+
+**Fix:** Added ownership verification after fetching the resource:
+
+```typescript
+// Fixed: Check ownership
+const item = await storage.getScannedItem(itemId);
+if (!item) return res.status(404).json({ error: "Item not found" });
+if (item.userId !== req.userId)
+  return res.status(404).json({ error: "Item not found" });
+```
+
+Similarly, the chat route was fixed to pass `req.userId!` to the storage method so it could verify conversation ownership at the query level.
+
+**Why it kept happening:** This is the third time an IDOR vulnerability was found in the codebase (previously in scanned-items and instruction-cache routes). The pattern recurs because:
+
+1. Routes that look up resources by ID feel complete after the "does it exist?" check
+2. Ownership verification is a second mental step that's easy to forget
+3. When building quickly across many route modules, the focus is on feature logic, not authorization
+
+**Prevention checklist for new routes:**
+
+- [ ] Every `req.params.id` endpoint has both existence AND ownership checks
+- [ ] Return 404 (not 403) to avoid information disclosure
+- [ ] For nested resources (conversations -> messages), verify ownership of the parent resource
+- [ ] Consider creating a shared `requireOwnership()` helper if the pattern recurs
+
+**Pattern Reference:** See "IDOR Protection: Auth + Ownership Check" in PATTERNS.md
+
+**Files:** `server/routes/micronutrients.ts`, `server/routes/chat.ts`
+
+---
+
+### requireAuth Middleware vs Manual Auth Checks: Consistency Matters
+
+**Category:** Consistency / Security
+
+**Context:** The chat routes were implemented using a manual `if (!req.userId)` check instead of the `requireAuth` middleware used everywhere else.
+
+**Problem:** The initial chat route implementation checked for authentication manually:
+
+```typescript
+// Bad: Manual auth check — inconsistent with other routes
+app.get("/api/chat/conversations", chatRateLimit, async (req, res) => {
+  if (!req.userId) return res.status(401).json({ error: "Unauthorized" });
+  const conversations = await storage.getChatConversations(req.userId);
+  res.json(conversations);
+});
+```
+
+While functionally equivalent, this deviates from the established pattern of using `requireAuth` middleware. The problems with the manual approach:
+
+1. **Easy to forget** — the check must be added to every handler individually
+2. **No early termination guarantee** — if the check is placed after other middleware, unauthenticated requests may trigger rate limiting or other side effects
+3. **Inconsistent error format** — the manual check might return a different error shape than `requireAuth`
+4. **Review burden** — reviewers must verify the auth check in every handler instead of trusting the middleware pipeline
+
+**Fix:** Replaced manual checks with `requireAuth` middleware:
+
+```typescript
+// Good: Middleware handles auth consistently
+app.get(
+  "/api/chat/conversations",
+  requireAuth,
+  chatRateLimit,
+  async (req, res) => {
+    const conversations = await storage.getChatConversations(req.userId!);
+    res.json(conversations);
+  },
+);
+```
+
+**Lesson:** Never implement authentication checks inline in route handlers when a middleware exists. The middleware is the single source of truth for "how does this app verify authentication." If you find yourself writing `if (!req.userId)`, you have likely forgotten `requireAuth`. The only exception is when an endpoint needs to behave differently for authenticated vs. unauthenticated users (e.g., a public endpoint that shows extra data for logged-in users).
+
+**Pattern Reference:** See "Route Module Registration Structure" in PATTERNS.md (step 4)
+
+**File:** `server/routes/chat.ts`
+
+---
+
+### Unsafe JSONB Cast: Always Guard with Array.isArray()
+
+**Category:** Type Safety / Runtime Bug
+
+**Context:** The GLP-1 insights service reads medication logs that have a `sideEffects` column stored as JSONB. The code needs to iterate over the side effects array and count occurrences.
+
+**Problem:** The initial implementation used a type assertion to treat the JSONB value as a string array:
+
+```typescript
+// Bug: JSONB column could be null, an object, a bare string, or an array
+const effects = log.sideEffects as string[];
+for (const effect of effects) {
+  sideEffectCounts.set(effect, (sideEffectCounts.get(effect) || 0) + 1);
+}
+```
+
+If `sideEffects` was `null` (legitimate for logs without side effects), this would throw `TypeError: Cannot read properties of null (reading 'Symbol(Symbol.iterator)')`. If it was an unexpected shape (e.g., a string instead of an array), it would iterate over characters.
+
+**Fix:** Added `Array.isArray()` guard and element-level type check:
+
+```typescript
+// Fixed: Guard JSONB data at both array and element level
+const effects = log.sideEffects;
+if (Array.isArray(effects)) {
+  for (const effect of effects) {
+    if (typeof effect === "string") {
+      sideEffectCounts.set(effect, (sideEffectCounts.get(effect) || 0) + 1);
+    }
+  }
+}
+```
+
+**Why Drizzle makes this easy to miss:** Drizzle ORM types JSONB columns as `unknown` in the select result. Developers often cast to the expected type (`as string[]`) to satisfy TypeScript, but this provides zero runtime protection. The `as` keyword is a compile-time-only assertion.
+
+**Lesson:** JSONB columns are the TypeScript equivalent of `any` from a runtime perspective. Always use `Array.isArray()` before iterating and `typeof` before accessing element properties. This is especially important for optional/nullable JSONB columns where `null` is a valid stored value.
+
+**Pattern Reference:** See "Safe JSONB Array Access with Array.isArray Guard" in PATTERNS.md
+
+**File:** `server/services/glp1-insights.ts`
+
+---
+
+### Module-Level OpenAI Client Initialization in menu-analysis.ts
+
+**Category:** Testing / Architecture
+
+**Context:** The `menu-analysis.ts` service creates an OpenAI client at module scope:
+
+```typescript
+// menu-analysis.ts — top-level initialization
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
+```
+
+**Problem:** This is the same module-level initialization anti-pattern previously documented for `meal-suggestions.ts`. If any test imports `menu-analysis.ts` (even to test a pure helper function), the OpenAI constructor runs immediately. Without the environment variable set, it either throws or creates a client that will fail on first use.
+
+**Current state:** As of Phase 10, `menu-analysis.ts` and `nutrition-coach.ts` still use module-level OpenAI initialization. The `meal-suggestions.ts` service was already fixed to use a lazy singleton pattern.
+
+**What should be done:**
+
+```typescript
+// Preferred: Lazy singleton (already used in meal-suggestions.ts)
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openai) {
+    _openai = new OpenAI({
+      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+    });
+  }
+  return _openai;
+}
+```
+
+**Lesson:** This is a recurring issue. Every time a new service file is created that uses an external client, the developer should check the "Module-Level Service Client Initialization Breaks Test Imports" learning (already documented) and use the lazy singleton pattern. The fact that this keeps appearing suggests the pattern needs to be enforced through code review checklists rather than just documentation.
+
+**Related Learning:** "Module-Level Service Client Initialization Breaks Test Imports" in LEARNINGS.md
+
+**Files:** `server/services/menu-analysis.ts`, `server/services/nutrition-coach.ts`
+
+---
+
+### Parallel Agent Development: Shared File Ownership Creates Merge Conflicts
+
+**Category:** Process / Architecture
+
+**Context:** Phases 8-11 were developed in parallel by multiple Claude Code agents, each working on a different feature. All four phases needed to modify shared files: `shared/schema.ts` (adding new tables), `server/storage.ts` (adding storage methods), `server/routes.ts` (registering route modules), and `shared/types/premium.ts` (adding feature flags).
+
+**Problem:** When multiple agents modify the same files simultaneously, git merge conflicts are inevitable. The conflicts were particularly painful in:
+
+1. **`shared/schema.ts`** — All four phases added new tables. Each agent added their tables at different positions, causing overlapping edits.
+2. **`server/storage.ts`** — Each phase added new storage methods. The interface definition and implementation both grew independently.
+3. **`shared/types/premium.ts`** — Each phase added feature flags (`glp1Companion`, `menuScanner`, `micronutrientTracking`, `culturalFoodRecognition`).
+
+**Mitigation strategies that worked:**
+
+1. **Additive-only changes** — Each agent appended to the end of files rather than inserting at arbitrary positions. This reduced three-way merge conflicts to mostly-resolvable additions.
+2. **Route module registration pattern** — Each phase's routes lived in their own file (`medication.ts`, `menu.ts`, `micronutrients.ts`), and only a single line was added to `server/routes.ts` to register each module. This minimized shared file edits for route logic.
+3. **Feature flag isolation** — While `TIER_FEATURES` needed concurrent edits, each feature flag was a new boolean property, so conflicts were shallow (two agents adding different fields to the same object).
+
+**What should be done differently next time:**
+
+1. **Schema changes first, in sequence** — Have one agent add all schema changes before others start, or use a schema migration file per feature
+2. **Storage interface generation** — Consider generating the storage interface from the schema to avoid manual dual-maintenance
+3. **Feature flags in separate files** — Instead of one `TIER_FEATURES` object, use a plugin-style registration where each feature module registers its own flags
+
+**Lesson:** When planning parallel agent work, identify shared files upfront and either (a) serialize edits to those files, (b) use additive-only patterns that minimize conflicts, or (c) restructure the code so each feature owns its own files entirely.
 
 ---
 
@@ -1421,6 +1818,15 @@ const token = parsed.data.access_token; // Guaranteed to be a string
 20. **Memoized Callbacks:** Inline arrow functions in `renderItem` defeat `React.memo`. Use parameterized ID callbacks `(itemId: number) => void` defined in the parent so the reference is stable.
 21. **Optimistic Pagination:** When optimistically removing items from infinite query pages, only decrement `total` on the page that actually contained the item. Decrementing all pages corrupts pagination offsets.
 22. **Toggle Icon States:** Toggle action icons must have clearly distinct visual states — change at least color AND label to be accessible.
+23. **IDOR Recurrence:** Ownership checks are forgotten more than any other security control. Every `:id` endpoint must verify `resource.userId === req.userId`. Consider a shared `requireOwnership()` helper.
+24. **Middleware Consistency:** Use `requireAuth` middleware, not manual `if (!req.userId)` checks. Manual checks are easy to forget, produce inconsistent error formats, and bypass middleware ordering guarantees.
+25. **JSONB Safety:** Always `Array.isArray()` before iterating JSONB data and `typeof` before accessing element properties. Drizzle types JSONB as `unknown`, and `as` casts give zero runtime protection.
+26. **Parallel Development:** When multiple agents modify shared files (`schema.ts`, `storage.ts`, `premium.ts`), serialize schema changes and use additive-only patterns to minimize merge conflicts.
+27. **Adaptive TDEE:** Back-calculate actual TDEE from intake + weight change (`actualTDEE = avgIntake - weightChangeKg * 7700 / days`) rather than relying on static formulas. Empirical measurement over 2+ weeks is significantly more accurate than Mifflin-St Jeor alone.
+28. **Whisper Domain Prompts:** Always provide a domain-context prompt to Whisper transcription calls. A single sentence about the topic (e.g., "Food and nutrition logging") dramatically improves accuracy for domain-specific vocabulary.
+29. **Express Route Ordering:** Register fixed-path routes (`/api/resource/trend`) before parameterized routes (`/api/resource/:id`) within the same route module. Express matches in registration order, and `:id` greedily captures "trend" as a parameter.
+30. **OpenAI Client Initialization Recurrence:** Module-level `new OpenAI()` keeps appearing in new service files (7 out of 8 services). "Document and hope" has failed; this needs a structural fix (shared lazy singleton or lint rule).
+31. **Time-Window Dedup for Health APIs:** When deduplicating data from external health/fitness APIs (HealthKit, Google Fit), use a time window (30s-2min) rather than exact timestamp matching. Precision differences between systems cause false negatives with exact matching.
 
 ---
 

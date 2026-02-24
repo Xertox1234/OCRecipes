@@ -33,6 +33,9 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Pre-Fetched IDs to Avoid Redundant Queries](#pre-fetched-ids-to-avoid-redundant-queries)
   - [Soft Delete with Aggregation Guard](#soft-delete-with-aggregation-guard)
   - [Toggle via Transaction to Prevent Duplicate Inserts](#toggle-via-transaction-to-prevent-duplicate-inserts)
+  - [Upsert with onConflictDoUpdate](#upsert-with-onconflictdoupdate)
+  - [Active Record Guard Before Insert](#active-record-guard-before-insert)
+  - [Filter Object for Storage Query Methods](#filter-object-for-storage-query-methods)
 - [Client State Patterns](#client-state-patterns)
   - [Business Logic Errors in Mutations](#business-logic-errors-in-mutations)
   - [Typed ApiError Class for Client-Side Error Differentiation](#typed-apierror-class-for-client-side-error-differentiation)
@@ -74,6 +77,8 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Confidence-Based Follow-Up Refinement](#confidence-based-follow-up-refinement)
   - [Zod Union + Transform for LLM Output Flexibility](#zod-union--transform-for-llm-output-flexibility)
 - [Animation Patterns](#animation-patterns)
+  - [Circular Progress with Animated SVG Arc](#circular-progress-with-animated-svg-arc)
+  - [Pulsing Animation for Active State Indicators](#pulsing-animation-for-active-state-indicators)
 - [Performance Patterns](#performance-patterns)
   - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
   - [Parameterized ID Callbacks for Memoized List Items](#parameterized-id-callbacks-for-memoized-list-items)
@@ -83,6 +88,22 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Semantic Theme Values](#semantic-theme-values-over-hardcoded-colors)
   - [Semantic BorderRadius Naming](#semantic-borderradius-naming)
 - [Documentation Patterns](#documentation-patterns)
+- [Route Module Patterns](#route-module-patterns)
+  - [Route Module Registration Structure](#route-module-registration-structure)
+  - [SSE Streaming for AI Responses](#sse-streaming-for-ai-responses)
+- [Service Patterns](#service-patterns)
+  - [Statistics Computation from Log Data](#statistics-computation-from-log-data)
+  - [GPT Vision Analysis with User Context Injection](#gpt-vision-analysis-with-user-context-injection)
+  - [Static Lookup Map with Normalization](#static-lookup-map-with-normalization)
+  - [Audio-to-Structured-Data Pipeline](#audio-to-structured-data-pipeline)
+  - [MET-Based Calorie Burn Formula](#met-based-calorie-burn-formula)
+- [Client Hook Patterns](#client-hook-patterns)
+  - [TanStack Query CRUD Hook Module](#tanstack-query-crud-hook-module)
+  - [FormData Upload Mutation](#formdata-upload-mutation)
+  - [SSE Client-Side Consumption with ReadableStream](#sse-client-side-consumption-with-readablestream)
+  - [refetchInterval for Live-Updating Queries](#refetchinterval-for-live-updating-queries)
+- [Database Safety Patterns](#database-safety-patterns)
+  - [Safe JSONB Array Access with Array.isArray Guard](#safe-jsonb-array-access-with-arrayisarray-guard)
 - [Testing Patterns](#testing-patterns)
   - [Pure Function Extraction for Vitest Testability](#pure-function-extraction-for-vitest-testability)
   - [Pure Function Extraction for Server Services](#pure-function-extraction-for-server-services)
@@ -2198,6 +2219,182 @@ async toggleFavouriteScannedItem(
 - `shared/schema.ts` — `favouriteScannedItems` table with `uniqueUserItem` constraint
 - Related learning: "Toggle Favourite Race Condition" in LEARNINGS.md
 
+### Upsert with onConflictDoUpdate
+
+When a resource should have exactly one row per user (or per unique key) and the client sends either a "create" or "update" without knowing which, use Drizzle's `onConflictDoUpdate` to atomically insert-or-update in a single query.
+
+```typescript
+// server/routes/fasting.ts — one schedule per user
+const [result] = await db
+  .insert(fastingSchedules)
+  .values({ userId: req.userId!, ...parsed.data })
+  .onConflictDoUpdate({
+    target: [fastingSchedules.userId], // unique constraint column(s)
+    set: parsed.data, // columns to update on conflict
+  })
+  .returning();
+res.json(result);
+```
+
+```typescript
+// server/storage.ts — one HealthKit sync setting per (userId, dataType)
+const [result] = await db
+  .insert(healthKitSync)
+  .values({ userId, dataType, enabled, syncDirection })
+  .onConflictDoUpdate({
+    target: [healthKitSync.userId, healthKitSync.dataType],
+    set: { enabled, ...(syncDirection ? { syncDirection } : {}) },
+  })
+  .returning();
+```
+
+**When to use:**
+
+- User settings or preferences with a unique constraint per user (fasting schedule, sync settings, notification preferences)
+- Cache tables where the cache key is unique and stale entries should be overwritten
+- Any "save" endpoint where the client does not distinguish between create and update
+
+**When NOT to use:**
+
+- Resources where multiple rows per user are expected (logs, messages, items)
+- Cases where you need to know whether the operation was an insert or update (use a transaction with explicit check instead)
+
+**Key elements:**
+
+1. **`target` must match the unique constraint** — Drizzle generates `ON CONFLICT (col1, col2) DO UPDATE SET ...`
+2. **`set` specifies only the columns to update** — do not include the conflict target columns in `set`
+3. **`.returning()`** — returns the final row regardless of whether it was inserted or updated
+4. **No transaction needed** — the upsert is atomic at the SQL level
+
+**Schema prerequisite:** The target columns must have a unique constraint:
+
+```typescript
+export const fastingSchedules = pgTable("fasting_schedules", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id")
+    .references(() => users.id)
+    .notNull()
+    .unique(), // unique per user
+  // ...
+});
+```
+
+**References:**
+
+- `server/routes/fasting.ts` — `PUT /api/fasting/schedule`
+- `server/storage.ts` — `upsertHealthKitSyncSetting()`
+- `server/services/nutrition-lookup.ts` — nutrition cache upsert
+
+### Active Record Guard Before Insert
+
+When a table tracks resources with a lifecycle (start -> active -> end), prevent duplicate active records by checking for an existing row where the "ended" column is NULL before inserting a new one. Return 409 Conflict if an active record already exists.
+
+```typescript
+// server/routes/fasting.ts — prevent starting a second fast
+app.post(
+  "/api/fasting/start",
+  requireAuth,
+  fastingRateLimit,
+  async (req, res) => {
+    // Check for active fast (endedAt IS NULL = still in progress)
+    const [active] = await db
+      .select()
+      .from(fastingLogs)
+      .where(
+        and(
+          eq(fastingLogs.userId, req.userId!),
+          isNull(fastingLogs.endedAt), // Only active (unfinished) records
+        ),
+      );
+
+    if (active) {
+      return res.status(409).json({ error: "A fast is already in progress" });
+    }
+
+    // Safe to insert new active record
+    const [log] = await db
+      .insert(fastingLogs)
+      .values({ userId: req.userId!, targetDurationHours: 16 })
+      .returning();
+    res.status(201).json(log);
+  },
+);
+```
+
+**When to use:**
+
+- Fasting timers (only one active fast at a time)
+- Workout sessions (only one in-progress workout)
+- Any resource where "active" means a nullable end timestamp is NULL
+
+**When NOT to use:**
+
+- Resources where multiple active records are valid (e.g., multiple active subscriptions on different products)
+- Simple CRUD where lifecycle tracking is not needed
+
+**Key elements:**
+
+1. **`isNull(endedAt)`** is the active record filter — not a boolean `isActive` column
+2. **Return 409 Conflict** — semantically correct for "resource already exists in this state"
+3. **No transaction needed** for the read-then-insert if the unique constraint enforces at most one NULL `endedAt` per user (though a transaction adds safety for concurrent requests)
+
+**References:**
+
+- `server/routes/fasting.ts` — `POST /api/fasting/start`
+
+### Filter Object for Storage Query Methods
+
+When a storage method supports optional filtering by date range, pagination, or other criteria, accept a single options object with optional fields instead of positional parameters. This avoids long parameter lists and makes call sites self-documenting.
+
+```typescript
+// server/storage.ts — shared filter pattern used by 6+ methods
+async getWeightLogs(
+  userId: string,
+  options?: { from?: Date; to?: Date; limit?: number },
+): Promise<WeightLog[]> {
+  const conditions = [eq(weightLogs.userId, userId)];
+  if (options?.from) conditions.push(gte(weightLogs.loggedAt, options.from));
+  if (options?.to) conditions.push(lt(weightLogs.loggedAt, options.to));
+
+  let query = db
+    .select()
+    .from(weightLogs)
+    .where(and(...conditions))
+    .orderBy(desc(weightLogs.loggedAt));
+
+  if (options?.limit) query = query.limit(options.limit);
+  return query;
+}
+
+// Call sites are self-documenting:
+const logs = await storage.getWeightLogs(userId, { from: fourWeeksAgo });
+const recent = await storage.getWeightLogs(userId, { limit: 7 });
+const range = await storage.getWeightLogs(userId, { from: start, to: end });
+const all = await storage.getWeightLogs(userId); // no filters
+```
+
+**When to use:**
+
+- Any storage method that accepts 2+ optional filter parameters
+- Date-range queries (weight logs, exercise logs, fasting logs, daily summaries)
+- List endpoints that support optional pagination and filtering
+
+**When NOT to use:**
+
+- Methods with a single required parameter beyond userId (use positional)
+- Methods where the filter is always the same shape (use dedicated parameters)
+
+**Key elements:**
+
+1. **Optional object parameter** — `options?: { from?: Date; to?: Date; limit?: number }` with `?` on every field
+2. **Build conditions array** — push to `conditions` array conditionally, then spread into `and()`
+3. **Consistent field names** — use `from`/`to`/`limit` across all methods for predictability
+4. **Default to no filter** — when options is undefined, return all records for the user
+
+**References:**
+
+- `server/storage.ts` — `getWeightLogs()`, `getExerciseLogs()`, `getScannedItems()`, `getFastingLogs()`, `getMedicationLogs()`, `getChatMessages()`
+
 ---
 
 ## Client State Patterns
@@ -4204,6 +4401,128 @@ function ExpandedContent({ isLoading, data, onLayout }: ExpandedContentProps) {
 
 **When to use:** Any component with conditional animation that wraps the same content in `Animated.View` vs regular `View`.
 
+### Circular Progress with Animated SVG Arc
+
+When building a circular timer or progress indicator, use `react-native-svg` for the circle geometry and Reanimated's `useAnimatedProps` to animate the `strokeDashoffset`. This avoids re-rendering the entire component on each progress tick.
+
+```typescript
+// client/components/FastingTimer.tsx
+import Svg, { Circle } from "react-native-svg";
+import Animated, { useSharedValue, useAnimatedProps, withTiming } from "react-native-reanimated";
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+
+export const FastingTimer = React.memo(function FastingTimer({
+  elapsedMinutes, targetHours, size = 240,
+}: FastingTimerProps) {
+  const { reducedMotion } = useAccessibility();
+
+  const targetMinutes = targetHours * 60;
+  const progress = Math.min(elapsedMinutes / targetMinutes, 1);
+  const strokeWidth = 12;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const center = size / 2;
+
+  const animatedProgress = useSharedValue(0);
+
+  useEffect(() => {
+    animatedProgress.value = reducedMotion
+      ? progress
+      : withTiming(progress, { duration: 800, easing: Easing.out(Easing.cubic) });
+  }, [progress, reducedMotion, animatedProgress]);
+
+  const animatedProps = useAnimatedProps(() => ({
+    strokeDashoffset: circumference * (1 - animatedProgress.value),
+  }));
+
+  return (
+    <View style={{ width: size, height: size }} accessibilityRole="timer">
+      <Svg width={size} height={size}>
+        {/* Background track */}
+        <Circle cx={center} cy={center} r={radius}
+          stroke={trackColor} strokeWidth={strokeWidth} fill="none" />
+        {/* Animated progress arc */}
+        <AnimatedCircle cx={center} cy={center} r={radius}
+          stroke={progressColor} strokeWidth={strokeWidth} fill="none"
+          strokeDasharray={circumference}
+          animatedProps={animatedProps}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${center} ${center})`} />
+      </Svg>
+      {/* Center text overlay with absoluteFill */}
+      <View style={StyleSheet.absoluteFillObject}>
+        <ThemedText>{timeDisplay}</ThemedText>
+      </View>
+    </View>
+  );
+});
+```
+
+**Key elements:**
+
+1. **`Animated.createAnimatedComponent(Circle)`** — wraps SVG Circle for Reanimated prop animation
+2. **`strokeDasharray` + `strokeDashoffset`** — the SVG technique for drawing partial arcs. Set `strokeDasharray` to the full circumference, then offset to hide the remaining portion
+3. **`transform: rotate(-90)`** — rotates the arc to start from 12 o'clock (SVG arcs start at 3 o'clock by default)
+4. **`accessibilityRole="timer"`** — tells screen readers this is a timer element
+5. **Respect `reducedMotion`** — skip animation and set progress directly when the user prefers reduced motion
+6. **Center overlay with `absoluteFillObject`** — time text is positioned absolutely over the SVG for centering
+
+**When to use:** Circular progress indicators, countdown timers, activity rings, score displays.
+
+**When NOT to use:** Linear progress bars (use `Animated.View` width instead) or simple percentage displays.
+
+**Reference:** `client/components/FastingTimer.tsx`
+
+### Pulsing Animation for Active State Indicators
+
+When a component has an "active" state that should be visually emphasized (recording, syncing, processing), use `withRepeat` + `withTiming` to create a pulsing scale animation. Cancel the animation cleanly when the state becomes inactive.
+
+```typescript
+// client/components/VoiceLogButton.tsx
+const scale = useSharedValue(1);
+
+React.useEffect(() => {
+  if (isRecording) {
+    // Pulse between 1.0 and 1.15 indefinitely, reversing each cycle
+    scale.value = withRepeat(withTiming(1.15, { duration: 600 }), -1, true);
+  } else {
+    // Stop pulsing and return to normal size
+    cancelAnimation(scale);
+    scale.value = withTiming(1, { duration: 200 });
+  }
+}, [isRecording, scale]);
+
+const animatedStyle = useAnimatedStyle(() => ({
+  transform: [{ scale: scale.value }],
+}));
+
+return (
+  <Animated.View style={animatedStyle}>
+    <Pressable style={{ backgroundColor: isRecording ? theme.error : theme.link }}>
+      <Feather name={isRecording ? "mic-off" : "mic"} />
+    </Pressable>
+  </Animated.View>
+);
+```
+
+**Key elements:**
+
+1. **`withRepeat(animation, -1, true)`** — `-1` for infinite repetition, `true` for reverse (ping-pong)
+2. **`cancelAnimation(scale)`** — stops the current animation before starting a new one to prevent conflicts
+3. **Quick settle on deactivation** — `withTiming(1, { duration: 200 })` returns to rest quickly (200ms) vs the slower pulse (600ms)
+4. **Combine with color change** — the button also changes color (link -> error) for a double visual signal
+
+**When to use:** Recording indicators, active sync status, processing states, "live" badges.
+
+**When NOT to use:** Loading spinners (use `ActivityIndicator` instead) or one-shot entrance animations (use `entering` prop).
+
+**References:**
+
+- `client/components/VoiceLogButton.tsx` — recording pulse
+- `client/components/ChatBubble.tsx` — typing indicator pulse
+- `client/screens/ScanScreen.tsx` — scan active pulse
+
 ---
 
 ## Performance Patterns
@@ -5213,6 +5532,898 @@ return parsed.data; // instructions is always a string
 **When NOT to use:** Deterministic APIs with stable schemas. Use plain Zod schemas or `z.coerce` for simple type coercion (e.g., `z.coerce.number()` for string-to-number).
 
 **Why:** LLM output is inherently unpredictable — even with `response_format: { type: "json_object" }`, the structure of individual fields can vary between calls. The `union` + `transform` + `pipe` chain handles this at the validation layer without requiring prompt engineering workarounds. The `.pipe()` step ensures the transformed value still passes final validation (e.g., `min(1)` catches empty arrays that would transform to `""`).
+
+---
+
+## Route Module Patterns
+
+### Route Module Registration Structure
+
+Every route file in the codebase follows a consistent structure: a named `register(app)` export, a module-scoped rate limiter, and a repeating handler pattern of `requireAuth` -> `checkPremiumFeature` (if premium) -> Zod validation -> business logic -> error response.
+
+```typescript
+// server/routes/medication.ts
+import type { Express, Request, Response } from "express";
+import { z } from "zod";
+import { rateLimit } from "express-rate-limit";
+import {
+  ipKeyGenerator,
+  formatZodError,
+  checkPremiumFeature,
+} from "./_helpers";
+import { storage } from "../storage";
+import { requireAuth } from "../middleware/auth";
+
+// 1. Module-scoped rate limiter (domain-specific window + max)
+const medicationRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: { error: "Too many medication requests. Please wait." },
+  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 2. Named register function — app.ts imports and calls register(app)
+export function register(app: Express): void {
+  // 3. Each handler follows: requireAuth → premium gate → validate → logic → respond
+  app.post(
+    "/api/medication/log",
+    requireAuth,
+    medicationRateLimit,
+    async (req: Request, res: Response) => {
+      try {
+        // Premium feature gate (returns null + sends 403 if not allowed)
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "glp1Companion",
+          "GLP-1 Companion",
+        );
+        if (!features) return;
+
+        // Zod validation with inline schema
+        const schema = z.object({
+          medicationName: z.string().max(100),
+          dosage: z.string().max(50),
+        });
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success)
+          return res.status(400).json({ error: formatZodError(parsed.error) });
+
+        // Business logic
+        const log = await storage.createMedicationLog({
+          userId: req.userId!,
+          ...parsed.data,
+        });
+        res.status(201).json(log);
+      } catch (error) {
+        console.error("Create medication log error:", error);
+        res.status(500).json({ error: "Failed to create medication log" });
+      }
+    },
+  );
+}
+```
+
+**Checklist for every new route module:**
+
+1. Import from `_helpers` (shared rate limiters, `formatZodError`, `checkPremiumFeature`)
+2. Define a domain-specific rate limiter at module scope with `keyGenerator: (req) => req.userId || ipKeyGenerator(req)`
+3. Export a `register(app: Express): void` function
+4. Use `requireAuth` middleware on every authenticated endpoint — never do manual `if (!req.userId)` checks
+5. Use `checkPremiumFeature()` early-return pattern for premium features
+6. Define Zod schemas inline in each handler (unless reused across handlers)
+7. Wrap handler body in `try/catch` with `console.error` + generic 500 response
+8. For single-resource endpoints (`:id`), include ownership verification: `if (item.userId !== req.userId) return 404`
+
+**When to use:** Every new route module.
+
+**When NOT to use:** This is a mandatory structural pattern, not optional.
+
+**Reference files:** `server/routes/medication.ts`, `server/routes/fasting.ts`, `server/routes/weight.ts`, `server/routes/micronutrients.ts`, `server/routes/menu.ts`, `server/routes/chat.ts`
+
+### SSE Streaming for AI Responses
+
+When an endpoint streams a response from an LLM (e.g., the nutrition coach chat), use Server-Sent Events (SSE) with a consistent event format. Accumulate the full response for persistence, then send a terminal `done` event.
+
+```typescript
+// Server: Stream AI response via SSE
+app.post(
+  "/api/chat/conversations/:id/messages",
+  requireAuth,
+  chatRateLimit,
+  async (req: Request, res: Response) => {
+    // ... validation, context building ...
+
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    let fullResponse = "";
+    try {
+      for await (const chunk of generateCoachResponse(
+        messageHistory,
+        context,
+      )) {
+        fullResponse += chunk;
+        res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+      }
+
+      // Persist the complete response
+      await storage.createChatMessage(id, "assistant", fullResponse);
+
+      // Terminal event
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    } catch {
+      res.write(
+        `data: ${JSON.stringify({ error: "Failed to generate response" })}\n\n`,
+      );
+    }
+    res.end();
+  },
+);
+```
+
+```typescript
+// Service: AsyncGenerator wrapping OpenAI streaming
+export async function* generateCoachResponse(
+  messages: { role: "user" | "assistant" | "system"; content: string }[],
+  context: CoachContext,
+): AsyncGenerator<string> {
+  const stream = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    stream: true,
+    messages: [
+      { role: "system", content: buildSystemPrompt(context) },
+      ...messages,
+    ],
+    max_tokens: 1000,
+    temperature: 0.7,
+  });
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (delta) yield delta;
+  }
+}
+```
+
+**Key elements:**
+
+1. **SSE headers:** `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`
+2. **`res.flushHeaders()`** — sends headers immediately so the client can start consuming
+3. **Accumulate `fullResponse`** — needed for persisting the complete message to the database
+4. **Terminal event:** `{ done: true }` tells the client the stream is complete
+5. **Error event:** `{ error: "..." }` signals a mid-stream failure
+6. **`res.end()`** — always close the connection after the stream ends
+
+**When to use:** Any endpoint that streams LLM output or other long-running async results to the client.
+
+**When NOT to use:** Short synchronous responses, batch operations, or endpoints where the entire response is available at once.
+
+**Reference:** `server/routes/chat.ts`, `server/services/nutrition-coach.ts`
+
+---
+
+## Service Patterns
+
+### Statistics Computation from Log Data
+
+When computing insights, trends, or statistics from user log entries (weight logs, fasting logs, medication logs), use a pure function that takes typed log arrays and returns a fully-typed result object with nullable fields for missing data.
+
+```typescript
+// server/services/weight-trend.ts
+export interface WeightTrendResult {
+  avg7Day: number | null;
+  avg30Day: number | null;
+  weeklyRateOfChange: number | null;
+  projectedGoalDate: string | null;
+  currentWeight: number | null;
+  entries: number;
+}
+
+export function calculateWeightTrend(
+  logs: WeightEntry[],
+  goalWeight?: number | null,
+): WeightTrendResult {
+  // Return empty result for no data (never throw)
+  if (logs.length === 0) {
+    return {
+      avg7Day: null,
+      avg30Day: null,
+      weeklyRateOfChange: null,
+      projectedGoalDate: null,
+      currentWeight: null,
+      entries: 0,
+    };
+  }
+
+  // Sort, compute, return
+  const sorted = [...logs].sort(
+    (a, b) => b.loggedAt.getTime() - a.loggedAt.getTime(),
+  );
+  const currentWeight = parseFloat(sorted[0].weight);
+  // ... compute averages, trends, projections
+  return {
+    avg7Day,
+    avg30Day,
+    weeklyRateOfChange,
+    projectedGoalDate,
+    currentWeight,
+    entries: sorted.length,
+  };
+}
+```
+
+**Key elements:**
+
+1. **Export a typed result interface** — all computed fields are named and typed, with `null` for missing/insufficient data
+2. **Pure function** — takes data in, returns result, no side effects (no database calls, no mutations)
+3. **Graceful empty handling** — return a null-filled result object for empty arrays, never throw
+4. **Sort defensively** — copy and sort the input (`[...logs].sort(...)`) rather than mutating the caller's array
+5. **Derive from multiple data sources** — use `Promise.all()` in the caller (route handler) to fetch data in parallel, then pass the resolved arrays to the pure function
+
+This pattern is used in:
+
+- `server/services/weight-trend.ts` — `calculateWeightTrend(logs, goalWeight)`
+- `server/services/fasting-stats.ts` — `calculateFastingStats(logs)`
+- `server/services/glp1-insights.ts` — `analyzeGlp1Insights(userId)` (note: this one fetches its own data, combining the `Promise.all` fetch and computation; the pure-function variant is preferred)
+
+**When to use:** Any feature that shows trends, streaks, averages, or summaries computed from time-series log data.
+
+**When NOT to use:** Simple CRUD operations that just read/write single records.
+
+### GPT Vision Analysis with User Context Injection
+
+When using GPT-4 Vision to analyze images (food photos, restaurant menus), inject the current user's profile and goals into the system prompt to get personalized results. Build user context separately and append it to the base prompt.
+
+```typescript
+// server/services/menu-analysis.ts
+export async function analyzeMenuPhoto(
+  imageBase64: string,
+  userId: string,
+): Promise<MenuAnalysisResult> {
+  // 1. Build user context (non-critical — proceed without it on error)
+  let userContext = "";
+  try {
+    const [user, profile] = await Promise.all([
+      storage.getUser(userId),
+      storage.getUserProfile(userId),
+    ]);
+    if (user) {
+      const parts: string[] = [];
+      if (user.dailyCalorieGoal)
+        parts.push(`Daily calorie goal: ${user.dailyCalorieGoal}`);
+      if (profile?.dietType) parts.push(`Diet type: ${profile.dietType}`);
+      // ... allergies, dislikes, etc.
+      if (parts.length > 0) {
+        userContext = `\n\nUser context for personalized recommendations:\n${parts.join("\n")}`;
+      }
+    }
+  } catch {
+    // Non-critical — proceed without personalization
+  }
+
+  // 2. Send image + system prompt (base + user context) to Vision API
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: BASE_PROMPT + userContext },
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:image/jpeg;base64,${imageBase64}`,
+              detail: "high",
+            },
+          },
+          { type: "text", text: "Analyze this restaurant menu..." },
+        ],
+      },
+    ],
+    response_format: { type: "json_object" },
+    max_tokens: 4096,
+    temperature: 0.3,
+  });
+
+  // 3. Validate response with Zod
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("No response from analysis");
+  const parsed = JSON.parse(content);
+  return menuAnalysisSchema.parse(parsed);
+}
+```
+
+**Key elements:**
+
+1. **User context is non-critical** — wrap in try/catch, proceed without personalization if profile fetch fails
+2. **Build context as string parts** — conditionally add only non-null profile fields
+3. **Append to system prompt** — `BASE_PROMPT + userContext`, not a separate message
+4. **Use `response_format: { type: "json_object" }`** — ensures structured output from GPT
+5. **Validate with Zod** — `menuAnalysisSchema.parse(parsed)` catches unexpected response shapes
+6. **Low temperature (0.3)** — for factual/analytical tasks, reduce randomness
+
+**When to use:** Any endpoint that sends images to GPT Vision with user-specific recommendations (menu analysis, food photo analysis, label scanning).
+
+**When NOT to use:** Generic image analysis without user personalization, or text-only AI interactions.
+
+**Reference files:** `server/services/menu-analysis.ts`, `server/services/photo-analysis.ts`
+
+### Static Lookup Map with Normalization
+
+When a domain requires mapping regional or cultural names to standardized terms (e.g., cultural food names to nutrition database terms), use a typed static array with a normalized string matching function. This avoids external API calls for common cases.
+
+```typescript
+// server/services/cultural-food-map.ts
+interface CulturalFoodEntry {
+  standardName: string;
+  aliases: string[];
+  cuisine: string;
+  typicalServing: string;
+  category:
+    | "protein"
+    | "vegetable"
+    | "grain"
+    | "fruit"
+    | "dairy"
+    | "beverage"
+    | "other";
+}
+
+const CULTURAL_FOOD_MAP: CulturalFoodEntry[] = [
+  {
+    standardName: "lentil curry",
+    aliases: ["dal", "daal", "dhal", "toor dal", "masoor dal"],
+    cuisine: "South Asian",
+    typicalServing: "1 cup",
+    category: "protein",
+  },
+  // ... more entries
+];
+
+// Normalized lookup with includes-based matching
+export function lookupCulturalFood(
+  query: string,
+): CulturalFoodEntry | undefined {
+  const normalized = query.toLowerCase().trim();
+  return CULTURAL_FOOD_MAP.find(
+    (entry) =>
+      entry.standardName === normalized ||
+      entry.aliases.some((alias) => normalized.includes(alias)),
+  );
+}
+
+// Higher-level convenience: resolve to standard name or pass through
+export function getStandardizedFoodName(query: string): string {
+  const entry = lookupCulturalFood(query);
+  return entry ? entry.standardName : query;
+}
+```
+
+**Key elements:**
+
+1. **Typed entry interface** — defines the shape of each mapping with union types for categories
+2. **Static array** — no database or API dependency, instant lookups, easily extensible
+3. **Normalized matching** — lowercase + trim before comparing
+4. **`includes()`-based alias matching** — allows partial matches ("pad thai" matches even in "pad thai with chicken")
+5. **Passthrough fallback** — `getStandardizedFoodName()` returns the original query if no mapping exists
+6. **Convenience functions** — export targeted helpers (`getCuisineForFood`, `getTypicalServing`) that wrap the core lookup
+
+**When to use:** Domain-specific name resolution where the mapping is finite, curated, and does not require real-time data. Examples: cultural food names, exercise name synonyms, unit conversions.
+
+**When NOT to use:** Mappings that need to be dynamically updated, user-contributed, or sourced from external APIs. Use a database table or external API instead.
+
+**Reference:** `server/services/cultural-food-map.ts`
+
+### Audio-to-Structured-Data Pipeline
+
+When a feature accepts voice input and needs to produce structured data (food items, exercise descriptions, notes), chain two services: (1) audio transcription via Whisper, and (2) text parsing via an LLM with JSON output mode. The route handler orchestrates both steps and returns the intermediate transcription alongside the parsed results.
+
+```typescript
+// server/routes/food.ts — voice food logging endpoint
+app.post(
+  "/api/food/transcribe",
+  requireAuth,
+  audioUpload.single("audio"),
+  async (req, res) => {
+    // Step 1: Audio -> Text (Whisper)
+    const transcription = await transcribeAudio(
+      req.file.buffer,
+      req.file.originalname,
+    );
+    if (!transcription.trim()) {
+      return res.status(400).json({ error: "Could not transcribe audio" });
+    }
+
+    // Step 2: Text -> Structured data (GPT with JSON mode)
+    const items = await parseNaturalLanguageFood(transcription);
+
+    // Return both the raw transcription and parsed items
+    res.json({ transcription, items });
+  },
+);
+```
+
+```typescript
+// server/services/voice-transcription.ts — Whisper wrapper
+export async function transcribeAudio(
+  buffer: Buffer,
+  filename: string,
+): Promise<string> {
+  const file = await toFile(buffer, filename, { type: "audio/m4a" });
+  const transcription = await openai.audio.transcriptions.create({
+    file,
+    model: "whisper-1",
+    language: "en",
+    prompt: "Food and nutrition logging. The user is describing what they ate.",
+    //       ^-- Domain-specific prompt improves transcription accuracy
+  });
+  return transcription.text;
+}
+```
+
+```typescript
+// server/services/food-nlp.ts — NLP structured output
+export async function parseNaturalLanguageFood(
+  text: string,
+): Promise<ParsedFoodItem[]> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.1, // Low temp for deterministic parsing
+    response_format: { type: "json_object" }, // Force JSON output
+    messages: [
+      {
+        role: "system",
+        content: `Parse food descriptions into structured items.
+        Return JSON: { "items": [{ "name": string, "quantity": number, "unit": string }] }`,
+      },
+      { role: "user", content: text },
+    ],
+  });
+
+  const parsed = JSON.parse(response.choices[0]?.message?.content || "{}");
+  if (!parsed.items || !Array.isArray(parsed.items)) return [];
+
+  // Step 3: Enrich each parsed item with nutrition data
+  const results: ParsedFoodItem[] = [];
+  for (const item of parsed.items) {
+    const nutrition = await lookupNutrition(
+      `${item.quantity} ${item.unit} ${item.name}`,
+    );
+    results.push({ ...item, calories: nutrition?.calories ?? null /* ... */ });
+  }
+  return results;
+}
+```
+
+**Key elements:**
+
+1. **Two-service chain** — Whisper handles speech-to-text, GPT handles text-to-structure. Each service has a single responsibility.
+2. **Domain-specific Whisper prompt** — improves transcription accuracy for food-related vocabulary
+3. **`response_format: { type: "json_object" }`** — forces the LLM to output valid JSON, preventing markdown or conversational responses
+4. **Low temperature (0.1)** — minimizes hallucination for parsing tasks
+5. **Return intermediate transcription** — client can show the raw transcript for user verification
+6. **Enrich after parsing** — nutrition lookup happens per-item after NLP extraction, not during
+7. **Graceful degradation** — if nutrition lookup fails for an item, return it with null calories rather than failing the whole request
+
+**When to use:** Any voice-input feature that produces structured data (food logging, exercise logging, dictated notes).
+
+**When NOT to use:** Direct voice-to-action features where the intermediate text is not useful (voice commands).
+
+**References:**
+
+- `server/routes/food.ts` — `POST /api/food/transcribe`
+- `server/services/voice-transcription.ts` — `transcribeAudio()`
+- `server/services/food-nlp.ts` — `parseNaturalLanguageFood()`
+
+### MET-Based Calorie Burn Formula
+
+When calculating calories burned from exercise, use the standard MET (Metabolic Equivalent of Task) formula as a pure function. This is a well-established exercise science formula that requires no external API calls.
+
+```typescript
+// server/services/exercise-calorie.ts
+/**
+ * MET-based calorie burn calculator.
+ * Formula: calories = MET * weight_kg * duration_hours
+ */
+export function calculateCaloriesBurned(
+  metValue: number,
+  weightKg: number,
+  durationMinutes: number,
+): number {
+  const durationHours = durationMinutes / 60;
+  return Math.round(metValue * weightKg * durationHours);
+}
+```
+
+```typescript
+// Usage in route handler — auto-calculate when client omits caloriesBurned
+let caloriesBurned = validated.caloriesBurned;
+if (!caloriesBurned) {
+  const exercises = await storage.searchExerciseLibrary(
+    validated.exerciseName,
+    req.userId!,
+  );
+  const match = exercises.find(
+    (e) => e.name.toLowerCase() === validated.exerciseName.toLowerCase(),
+  );
+  if (match) {
+    const user = await storage.getUser(req.userId!);
+    const weightKg = user?.weight ? parseFloat(user.weight) : 70; // Default 70kg
+    caloriesBurned = calculateCaloriesBurned(
+      parseFloat(match.metValue),
+      weightKg,
+      validated.durationMinutes,
+    );
+  }
+}
+```
+
+**Key elements:**
+
+1. **Pure function** — no side effects, no database calls, trivially testable
+2. **Default weight fallback** — when user weight is unknown, use 70kg (WHO average)
+3. **MET values from exercise library** — stored in database, not hardcoded, allowing user-contributed exercises
+4. **Auto-calculate only when not provided** — client can override with a manually entered value
+
+**When to use:** Any exercise tracking feature that needs calorie estimates from activity type + duration + body weight.
+
+**References:**
+
+- `server/services/exercise-calorie.ts` — `calculateCaloriesBurned()`
+- `server/routes/exercises.ts` — `POST /api/exercises` (auto-calculation logic)
+
+---
+
+## Client Hook Patterns
+
+### TanStack Query CRUD Hook Module
+
+When building client-side data access for a resource, export a cohesive module of TanStack Query hooks from a single file: one `useQuery` per read operation and one `useMutation` per write operation. Mutations invalidate related query keys on success.
+
+```typescript
+// client/hooks/useMedication.ts
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/query-client";
+
+// Response types defined inline
+interface MedicationLog {
+  id: number;
+  userId: string;
+  medicationName: string;
+  dosage: string;
+  takenAt: string;
+  sideEffects: string[];
+}
+
+interface MedicationInsights {
+  totalDoses: number;
+  averageAppetiteLevel: number | null;
+  appetiteTrend: "decreasing" | "stable" | "increasing" | null;
+  commonSideEffects: { name: string; count: number }[];
+}
+
+// READ hooks — use API path as queryKey
+export function useMedicationLogs() {
+  return useQuery<MedicationLog[]>({
+    queryKey: ["/api/medication/logs"],
+  });
+}
+
+export function useMedicationInsights() {
+  return useQuery<MedicationInsights>({
+    queryKey: ["/api/medication/insights"],
+  });
+}
+
+// WRITE hooks — invalidate related queries on success
+export function useLogMedication() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { medicationName: string; dosage: string }) => {
+      const res = await apiRequest("POST", "/api/medication/log", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/medication/logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medication/insights"] });
+    },
+  });
+}
+
+export function useUpdateMedicationLog() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...data
+    }: { id: number } & Partial<{
+      medicationName: string;
+      dosage: string;
+    }>) => {
+      const res = await apiRequest("PUT", `/api/medication/log/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/medication/logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medication/insights"] });
+    },
+  });
+}
+
+export function useDeleteMedicationLog() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/medication/log/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/medication/logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/medication/insights"] });
+    },
+  });
+}
+```
+
+**Key elements:**
+
+1. **One file per resource** — `useMedication.ts`, `useWeightLogs.ts`, `useFasting.ts`, `useMicronutrients.ts`
+2. **API path as queryKey** — `["/api/medication/logs"]` matches the actual endpoint, making cache invalidation intuitive
+3. **Cross-invalidation** — mutations that modify data also invalidate derived queries (e.g., creating a medication log invalidates both the logs list AND the insights endpoint)
+4. **`apiRequest()` for mutations** — uses the centralized request helper for consistent auth headers and error handling
+5. **Response types inline** — defined at the top of the hook file, not shared (see Inline Response Types pattern)
+6. **Naming convention:** `use{Resource}{Action}` — `useMedicationLogs`, `useLogMedication`, `useUpdateMedicationLog`, `useDeleteMedicationLog`
+
+**When to use:** Any resource with standard CRUD operations that the client needs to read and write.
+
+**When NOT to use:** One-off API calls that don't need caching or cache invalidation. Use `apiRequest()` directly in event handlers instead.
+
+**Reference files:** `client/hooks/useMedication.ts`, `client/hooks/useMicronutrients.ts`, `client/hooks/useMenuScan.ts`
+
+### FormData Upload Mutation
+
+When a mutation needs to upload a file (image) from the device, use `FormData` with a raw `fetch` call instead of `apiRequest()`. This is necessary because `apiRequest()` sets `Content-Type: application/json`, which conflicts with multipart form data.
+
+```typescript
+// client/hooks/useMenuScan.ts
+import { useMutation } from "@tanstack/react-query";
+import { getApiUrl } from "@/lib/query-client";
+import { tokenStorage } from "@/lib/token-storage";
+
+export function useMenuScan() {
+  return useMutation<MenuAnalysisResult, Error, string>({
+    mutationFn: async (photoUri: string) => {
+      // Get token manually (can't use apiRequest for FormData)
+      const token = await tokenStorage.get();
+
+      const formData = new FormData();
+      formData.append("photo", {
+        uri: photoUri,
+        type: "image/jpeg",
+        name: "menu.jpg",
+      } as unknown as Blob);
+
+      const response = await fetch(`${getApiUrl()}/api/menu/scan`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // Do NOT set Content-Type — fetch sets it automatically with the boundary
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`${response.status}: ${text}`);
+      }
+
+      return response.json();
+    },
+  });
+}
+```
+
+**Key elements:**
+
+1. **Get token from `tokenStorage` manually** — since we bypass `apiRequest()`
+2. **React Native FormData** — the `{ uri, type, name }` object is React Native's file format, cast to `Blob` for TypeScript
+3. **Do NOT set `Content-Type` header** — `fetch` automatically sets `multipart/form-data` with the correct boundary when given a `FormData` body
+4. **Manual error handling** — check `response.ok` and throw with status + body text
+
+**When to use:** Any mutation that uploads files (photos, documents, avatars) from the device.
+
+**When NOT to use:** JSON-only mutations — use `apiRequest()` instead.
+
+**Reference:** `client/hooks/useMenuScan.ts`. See also `Compress-Upload-Cleanup for Image Uploads` pattern for the server-side handling.
+
+### SSE Client-Side Consumption with ReadableStream
+
+When the server streams responses via Server-Sent Events (see "SSE Streaming for AI Responses" in Route Module Patterns), the client must consume the stream using `ReadableStream`, parse `data:` lines, and accumulate content progressively. Use `useState` for streaming content display and `useCallback` for the send function.
+
+```typescript
+// client/hooks/useChat.ts — SSE client consumption
+export function useSendMessage(conversationId: number | null) {
+  const queryClient = useQueryClient();
+  const [streamingContent, setStreamingContent] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (!conversationId) return;
+      setIsStreaming(true);
+      setStreamingContent("");
+
+      try {
+        const baseUrl = getApiUrl();
+        const token = await tokenStorage.get();
+        const res = await fetch(
+          new URL(
+            `/api/chat/conversations/${conversationId}/messages`,
+            baseUrl,
+          ),
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+            body: JSON.stringify({ content }),
+          },
+        );
+
+        if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("No response body");
+        const decoder = new TextDecoder();
+        let accumulated = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value, { stream: true });
+          for (const line of text.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.content) {
+                accumulated += data.content;
+                setStreamingContent(accumulated);
+              }
+              if (data.done) {
+                queryClient.invalidateQueries({
+                  queryKey: [
+                    `/api/chat/conversations/${conversationId}/messages`,
+                  ],
+                });
+              }
+              if (data.error) throw new Error(data.error);
+            } catch (e) {
+              // Ignore JSON parse errors from incomplete chunks
+              if (e instanceof Error && !String(e).includes("JSON")) throw e;
+            }
+          }
+        }
+      } finally {
+        setIsStreaming(false);
+        setStreamingContent("");
+      }
+    },
+    [conversationId, queryClient],
+  );
+
+  return { sendMessage, streamingContent, isStreaming };
+}
+```
+
+**Key elements:**
+
+1. **`ReadableStream` reader** — use `res.body?.getReader()` to consume the stream incrementally
+2. **`TextDecoder` with `{ stream: true }`** — handles multi-byte characters split across chunks
+3. **Parse `data: ` prefix** — SSE lines are prefixed with `data: `, strip it before JSON.parse
+4. **Accumulate content** — track `accumulated` string and update state progressively for real-time display
+5. **Handle terminal events** — `{ done: true }` triggers query invalidation; `{ error: "..." }` throws
+6. **Ignore partial JSON** — incomplete chunks from chunked transfer can cause `JSON.parse` failures; swallow those specifically
+7. **`finally` cleanup** — always reset streaming state regardless of success/failure
+8. **Bypass `apiRequest()`** — SSE responses are not standard JSON, so use raw `fetch` with manual auth header
+
+**When to use:** Any client hook that consumes an SSE endpoint (chat, AI generation, real-time updates).
+
+**When NOT to use:** Standard JSON API responses — use `apiRequest()` + `useQuery`/`useMutation`.
+
+**References:**
+
+- `client/hooks/useChat.ts` — `useSendMessage()`
+- Server-side: see "SSE Streaming for AI Responses" in Route Module Patterns
+
+### refetchInterval for Live-Updating Queries
+
+When a query represents data that changes over time without user action (timers, active sessions, sync status), use TanStack Query's `refetchInterval` to poll at a regular cadence rather than implementing manual `setInterval` + `useState` patterns.
+
+```typescript
+// client/hooks/useFasting.ts — poll active fast every 60 seconds
+export function useCurrentFast() {
+  return useQuery<FastingLog | null>({
+    queryKey: ["/api/fasting/current"],
+    refetchInterval: 60000, // Refresh every minute for timer updates
+  });
+}
+```
+
+**When to use:**
+
+- Active timers (fasting, workout sessions) where the client needs fresh server data
+- Sync status indicators that should reflect background processing
+- Any "live" data where WebSocket/SSE is overkill
+
+**When NOT to use:**
+
+- Static data that only changes on user action (use manual `invalidateQueries` instead)
+- High-frequency updates (<5s) — consider WebSockets or SSE instead
+- Queries that are expensive on the server — polling amplifies cost linearly
+
+**Key elements:**
+
+1. **Set `refetchInterval` at the hook level** — not in the component, so all consumers get consistent polling
+2. **Choose interval wisely** — 60s for timers (good enough for minute-level display), 30s for sync status
+3. **TanStack handles cleanup** — polling stops automatically when the component unmounts or the query is disabled
+
+**References:**
+
+- `client/hooks/useFasting.ts` — `useCurrentFast()` with 60s polling
+
+---
+
+## Database Safety Patterns
+
+### Safe JSONB Array Access with Array.isArray Guard
+
+JSONB columns in PostgreSQL can contain any JSON value. When the application expects an array, always guard with `Array.isArray()` before iterating. Drizzle ORM types JSONB columns as `unknown`, so TypeScript provides no protection against non-array values.
+
+```typescript
+// Good: Guard before iterating JSONB data
+const effects = log.sideEffects; // JSONB column — could be null, object, string, array, etc.
+if (Array.isArray(effects)) {
+  for (const effect of effects) {
+    if (typeof effect === "string") {
+      sideEffectCounts.set(effect, (sideEffectCounts.get(effect) || 0) + 1);
+    }
+  }
+}
+```
+
+```typescript
+// Bad: Assume JSONB column is an array
+const effects = log.sideEffects as string[]; // Could be null, an object, or a bare string
+for (const effect of effects) {
+  // TypeError: effects is not iterable
+  sideEffectCounts.set(effect, (sideEffectCounts.get(effect) || 0) + 1);
+}
+```
+
+**Why this matters:**
+
+- JSONB columns can be `null`, `{}`, `"string"`, `42`, or `[]` — all valid JSON values
+- `as string[]` is a compile-time-only assertion that provides zero runtime safety
+- Database values may have been written by a different version of the code with a different schema
+- Manual database edits or migrations can leave unexpected shapes in JSONB columns
+
+**Two levels of defense:**
+
+1. `Array.isArray(value)` — confirms the value is actually an array
+2. `typeof element === "string"` (or similar) — validates each element's type
+
+**When to use:** Every time you read a JSONB column and iterate over its contents. This applies to arrays of strings, arrays of objects, or any nested structure.
+
+**When NOT to use:** When the JSONB value has already been validated by Zod `safeParse()` earlier in the request lifecycle.
+
+**Reference:** `server/services/glp1-insights.ts` — `sideEffects` JSONB column. Also applies to `allergies`, `foodDislikes`, and other JSONB array columns in `userProfiles`.
 
 ---
 

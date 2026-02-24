@@ -4,6 +4,7 @@ import {
   foodCategorySchema,
   type PhotoIntent,
 } from "@shared/constants/preparation";
+import { getCuisineForFood } from "./cultural-food-map";
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -19,6 +20,7 @@ const foodItemSchema = z.object({
   needsClarification: z.boolean(),
   clarificationQuestion: z.string().optional(),
   category: foodCategorySchema.optional().default("other"),
+  cuisine: z.string().optional(),
 });
 
 const analysisResultSchema = z.object({
@@ -42,6 +44,7 @@ const LOG_PROMPT = `You are a nutrition analysis assistant. Analyze food photos 
 4. If uncertain about anything, include a clarifying question
 5. Be specific with food names (e.g., "grilled chicken breast" not just "chicken")
 ${CATEGORY_INSTRUCTION}
+7. Cuisine classification: identify the cuisine origin if recognizable (e.g., "Japanese", "Mexican", "Indian", "Italian")
 
 Rules:
 - Use standard US portion sizes
@@ -57,7 +60,8 @@ Respond with JSON only matching this schema:
       "confidence": 0.85,
       "needsClarification": false,
       "clarificationQuestion": "optional question",
-      "category": "protein"
+      "category": "protein",
+      "cuisine": "optional cuisine"
     }
   ],
   "overallConfidence": 0.8,
@@ -178,6 +182,16 @@ export async function analyzePhoto(
         overallConfidence: 0,
         followUpQuestions: ["Could not analyze the image. Please try again."],
       };
+    }
+
+    // Enrich with cultural food data
+    for (const food of parsed.data.foods) {
+      if (!food.cuisine) {
+        const detectedCuisine = getCuisineForFood(food.name);
+        if (detectedCuisine) {
+          food.cuisine = detectedCuisine;
+        }
+      }
     }
 
     console.warn(
