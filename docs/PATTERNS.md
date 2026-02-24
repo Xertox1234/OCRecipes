@@ -991,27 +991,42 @@ const usdaApiKey = process.env.USDA_API_KEY || "DEMO_KEY";
 
 ### Stub Service with Production Safety Gate
 
-When integrating third-party services that require credentials not available in development (app store APIs, payment processors, push notification services), create a stub that auto-approves in dev but rejects in production:
+When integrating third-party services that require credentials not available in development (app store APIs, payment processors, push notification services), create a stub that auto-approves in dev but rejects in production. Use a **three-layer defense**: explicit opt-in env var + credential absence + NODE_ENV check.
 
 ```typescript
 // server/services/receipt-validation.ts
 
+const HAS_APPLE_CREDENTIALS = !!(
+  process.env.APPLE_ISSUER_ID &&
+  process.env.APPLE_KEY_ID &&
+  process.env.APPLE_PRIVATE_KEY
+);
+
+const HAS_GOOGLE_CREDENTIALS = !!(
+  process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+  process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+);
+
 /**
- * Stub mode activates when the required credential is missing.
- * Two-layer defense: environment variable presence + NODE_ENV check.
+ * Layer 1: Explicit opt-in via RECEIPT_VALIDATION_STUB=true
+ * Layer 2: No platform credentials configured
+ * Layer 3: NODE_ENV check inside the handler (reject in production)
  */
-const STUB_MODE = !process.env.APPLE_SHARED_SECRET;
+const STUB_MODE =
+  process.env.RECEIPT_VALIDATION_STUB === "true" &&
+  !HAS_APPLE_CREDENTIALS &&
+  !HAS_GOOGLE_CREDENTIALS;
 
 export async function validateReceipt(
   receipt: string,
   platform: Platform,
 ): Promise<ReceiptValidationResult> {
   if (STUB_MODE) {
-    // Layer 2: Even if STUB_MODE, reject in production
+    // Layer 3: Even if STUB_MODE, reject in production
     if (process.env.NODE_ENV === "production") {
       console.error(
         "Receipt validation is stubbed in production — rejecting. " +
-          "Set APPLE_SHARED_SECRET to enable.",
+          "Configure Apple/Google credentials to enable.",
       );
       return { valid: false, errorCode: "NOT_IMPLEMENTED" };
     }
@@ -1027,6 +1042,9 @@ export async function validateReceipt(
 ```
 
 ```typescript
+// Bad: Auto-activates from credential absence — silent auto-approve in dev
+const STUB_MODE = !process.env.APPLE_SHARED_SECRET;
+
 // Bad: Boolean flag with no production protection
 const USE_STUB = true; // Developer forgets to change before deploy
 export async function validateReceipt(...) {
@@ -1036,8 +1054,8 @@ export async function validateReceipt(...) {
 
 **Key elements:**
 
-1. **Derive stub mode from credential presence** (`!process.env.X`), not a manual boolean flag
-2. **Two-layer defense**: stub mode check + production NODE_ENV rejection
+1. **Require explicit opt-in** (`RECEIPT_VALIDATION_STUB=true`), not just credential absence — prevents accidental auto-approve when credentials are simply missing
+2. **Three-layer defense**: explicit env var + credential absence + production NODE_ENV rejection
 3. **Log loudly**: `console.error` in production, `console.warn` in dev
 4. **Return failure, not success** when stubbed in production
 
@@ -6684,6 +6702,9 @@ When a module evaluates environment variables at the top level (e.g., `const STU
 describe("stub mode (no credentials)", () => {
   beforeEach(() => {
     delete process.env.APPLE_ISSUER_ID;
+    delete process.env.APPLE_KEY_ID;
+    delete process.env.APPLE_PRIVATE_KEY;
+    delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     delete process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   });
 
@@ -6691,8 +6712,9 @@ describe("stub mode (no credentials)", () => {
     process.env = { ...originalEnv }; // Restore original env
   });
 
-  it("auto-approves in development", async () => {
+  it("auto-approves in development when RECEIPT_VALIDATION_STUB=true", async () => {
     process.env.NODE_ENV = "development";
+    process.env.RECEIPT_VALIDATION_STUB = "true";
 
     vi.resetModules(); // Clear Vitest's module cache
     const { validateReceipt } = await import("../receipt-validation"); // Fresh import
@@ -6701,14 +6723,16 @@ describe("stub mode (no credentials)", () => {
     expect(result.valid).toBe(true);
   });
 
-  it("rejects in production", async () => {
-    process.env.NODE_ENV = "production";
+  it("does NOT auto-approve when RECEIPT_VALIDATION_STUB is not set", async () => {
+    process.env.NODE_ENV = "development";
+    delete process.env.RECEIPT_VALIDATION_STUB;
 
     vi.resetModules();
     const { validateReceipt } = await import("../receipt-validation");
 
     const result = await validateReceipt("fake-receipt", "ios");
     expect(result.valid).toBe(false);
+    expect(result.errorCode).toBe("PLATFORM_NOT_CONFIGURED");
   });
 });
 ```
@@ -6771,6 +6795,62 @@ it("validates active subscription", async () => {
 
 - `server/services/__tests__/receipt-validation.test.ts` — `setupGoogleTest()` helper and stub mode tests
 - Related learning: "Module-Level Service Client Initialization Breaks Test Imports" in LEARNINGS.md
+
+### Mocking Class Constructors in vi.mock
+
+When mocking a module that exports a class instantiated with `new` (e.g., `new SignedDataVerifier(...)`), use a real `class` in the mock factory — not `vi.fn().mockImplementation(() => ...)`. Arrow functions cannot be called with `new`, causing `TypeError: ... is not a constructor`.
+
+```typescript
+// ✅ GOOD: Class mock — works with `new`
+const mockMethod = vi.fn();
+
+vi.mock("@apple/app-store-server-library", async () => {
+  const actual = await vi.importActual<
+    typeof import("@apple/app-store-server-library")
+  >("@apple/app-store-server-library");
+  return {
+    ...actual,
+    SignedDataVerifier: class MockSignedDataVerifier {
+      verifyAndDecodeTransaction = mockMethod;
+    },
+  };
+});
+```
+
+```typescript
+// ❌ BAD: Arrow function — throws "is not a constructor"
+vi.mock("@apple/app-store-server-library", async () => {
+  const actual = await vi.importActual<...>("@apple/app-store-server-library");
+  return {
+    ...actual,
+    SignedDataVerifier: vi.fn().mockImplementation(() => ({
+      verifyAndDecodeTransaction: mockMethod,
+    })),
+  };
+});
+```
+
+**Key elements:**
+
+1. **Declare `mockMethod` outside** the `vi.mock()` factory so tests can configure it per test case
+2. **Use `importActual`** and spread the real module to preserve non-mocked exports (enums, types, error classes)
+3. **Assign mock methods as instance properties** (`= mockMethod`) inside the class body
+4. **Reset the mock** in `beforeEach` with `mockMethod.mockReset()` to prevent state leakage
+5. **Reset singletons** — if the production code caches the instance (lazy singleton), export a `resetX()` function and call it after `vi.resetModules()`
+
+**When to use:**
+
+- Mocking SDK clients instantiated with `new` (Apple `SignedDataVerifier`, AWS `S3Client`, Stripe `Stripe`, etc.)
+- Any `vi.mock` where the mocked export is called as a constructor
+
+**When NOT to use:**
+
+- Mocking plain functions or objects (use `vi.fn()` directly)
+- Mocking modules where you don't need `new` (use `vi.fn().mockReturnValue()`)
+
+**References:**
+
+- `server/services/__tests__/receipt-validation.test.ts` — `MockSignedDataVerifier` class mock with `mockVerifyAndDecodeTransaction`
 
 ---
 
