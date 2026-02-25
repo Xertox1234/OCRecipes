@@ -1,13 +1,8 @@
-import OpenAI from "openai";
 import pLimit from "p-limit";
 import { lookupNutrition } from "./nutrition-lookup";
+import { openai } from "../lib/openai";
 
 const limit = pLimit(5);
-
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
 
 export interface ParsedFoodItem {
   name: string;

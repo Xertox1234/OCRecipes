@@ -2,7 +2,6 @@
  * Shared helpers, rate limiters, schemas, and utilities used across route modules.
  */
 import type { Request, Response } from "express";
-import OpenAI from "openai";
 import { rateLimit } from "express-rate-limit";
 import { z, ZodError } from "zod";
 import multer from "multer";
@@ -172,15 +171,6 @@ export const urlImportRateLimit = rateLimit({
   keyGenerator: (req) => req.userId || ipKeyGenerator(req),
   standardHeaders: true,
   legacyHeaders: false,
-});
-
-// ============================================================================
-// OPENAI INSTANCE
-// ============================================================================
-
-export const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
 // ============================================================================

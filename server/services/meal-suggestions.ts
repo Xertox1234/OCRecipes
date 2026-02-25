@@ -1,19 +1,8 @@
 import crypto from "crypto";
-import OpenAI from "openai";
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
-
-let _openai: OpenAI | null = null;
-function getOpenAI(): OpenAI {
-  if (!_openai) {
-    _openai = new OpenAI({
-      apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-    });
-  }
-  return _openai;
-}
+import { openai } from "../lib/openai";
 
 // Zod schema for validating AI response
 const ingredientSchema = z.object({
@@ -158,7 +147,7 @@ Each suggestion needs: title, description, reasoning (why this fits), calories, 
 
 Respond with JSON: { "suggestions": [...] }`;
 
-  const response = await getOpenAI().chat.completions.create({
+  const response = await openai.chat.completions.create({
     model: "gpt-4o",
     messages: [
       { role: "system", content: systemPrompt },

@@ -1,16 +1,10 @@
-import OpenAI from "openai";
 import { z } from "zod";
 import {
   foodCategorySchema,
   type PhotoIntent,
 } from "@shared/constants/preparation";
 import { getCuisineForFood } from "./cultural-food-map";
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+import { openai } from "../lib/openai";
 
 // Zod schemas for runtime validation (from institutional learning: unsafe-type-cast-zod-validation)
 const foodItemSchema = z.object({
