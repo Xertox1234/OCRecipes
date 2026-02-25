@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { createSavedItemSchema } from "@shared/schemas/saved-items";
-import { formatZodError } from "./_helpers";
+import { formatZodError, parsePositiveIntParam } from "./_helpers";
 
 export function register(app: Express): void {
   app.get(
@@ -63,8 +63,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid item ID" });
           return;
         }

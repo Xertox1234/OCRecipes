@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
-import { formatZodError } from "./_helpers";
+import { formatZodError, parsePositiveIntParam } from "./_helpers";
 import { calculateWeightTrend } from "../services/weight-trend";
 
 const createWeightLogSchema = z.object({
@@ -113,8 +113,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id)) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           return res.status(400).json({ error: "Invalid weight log ID" });
         }
         const deleted = await storage.deleteWeightLog(id, req.userId!);

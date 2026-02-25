@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
-import { formatZodError } from "./_helpers";
+import { formatZodError, parsePositiveIntParam } from "./_helpers";
 import { calculateCaloriesBurned } from "../services/exercise-calorie";
 
 const createExerciseLogSchema = z.object({
@@ -137,8 +137,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id))
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id)
           return res.status(400).json({ error: "Invalid exercise log ID" });
         const validated = updateExerciseLogSchema.parse(req.body);
         const updates: Record<string, unknown> = {};
@@ -176,8 +176,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id))
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id)
           return res.status(400).json({ error: "Invalid exercise log ID" });
         const deleted = await storage.deleteExerciseLog(id, req.userId!);
         if (!deleted)

@@ -11,6 +11,7 @@ import {
   pantryRateLimit,
   checkPremiumFeature,
   formatZodError,
+  parsePositiveIntParam,
 } from "./_helpers";
 
 const generateGroceryListSchema = z.object({
@@ -170,8 +171,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid list ID" });
           return;
         }
@@ -196,9 +197,9 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const listId = parseInt(req.params.id as string, 10);
-        const itemId = parseInt(req.params.itemId as string, 10);
-        if (isNaN(listId) || listId <= 0 || isNaN(itemId) || itemId <= 0) {
+        const listId = parsePositiveIntParam(req.params.id as string);
+        const itemId = parsePositiveIntParam(req.params.itemId as string);
+        if (!listId || !itemId) {
           res.status(400).json({ error: "Invalid ID" });
           return;
         }
@@ -275,9 +276,9 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const listId = parseInt(req.params.id as string, 10);
-        const itemId = parseInt(req.params.itemId as string, 10);
-        if (isNaN(listId) || listId <= 0 || isNaN(itemId) || itemId <= 0) {
+        const listId = parsePositiveIntParam(req.params.id as string);
+        const itemId = parsePositiveIntParam(req.params.itemId as string);
+        if (!listId || !itemId) {
           res.status(400).json({ error: "Invalid ID" });
           return;
         }
@@ -322,8 +323,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const listId = parseInt(req.params.id as string, 10);
-        if (isNaN(listId) || listId <= 0) {
+        const listId = parsePositiveIntParam(req.params.id as string);
+        if (!listId) {
           res.status(400).json({ error: "Invalid list ID" });
           return;
         }
@@ -368,8 +369,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid list ID" });
           return;
         }

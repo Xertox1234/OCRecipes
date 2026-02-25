@@ -4,7 +4,11 @@ import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { type Allergy } from "@shared/schema";
 import { calculateProfileHash } from "../utils/profile-hash";
-import { openai, instructionsRateLimit } from "./_helpers";
+import {
+  openai,
+  instructionsRateLimit,
+  parsePositiveIntParam,
+} from "./_helpers";
 
 // Zod schema for instructions request
 const instructionsRequestSchema = z.object({
@@ -19,8 +23,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const itemId = parseInt(req.params.id as string, 10);
-        if (isNaN(itemId) || itemId <= 0) {
+        const itemId = parsePositiveIntParam(req.params.id as string);
+        if (!itemId) {
           return res.status(400).json({ error: "Invalid item ID" });
         }
 
@@ -150,13 +154,13 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
     instructionsRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const itemId = parseInt(req.params.itemId as string, 10);
+        const itemId = parsePositiveIntParam(req.params.itemId as string);
         const suggestionIndex = parseInt(
           req.params.suggestionIndex as string,
           10,
         );
 
-        if (isNaN(itemId) || itemId <= 0) {
+        if (!itemId) {
           return res.status(400).json({ error: "Invalid item ID" });
         }
         if (isNaN(suggestionIndex) || suggestionIndex < 0) {

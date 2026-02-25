@@ -8,6 +8,7 @@ import {
   mealConfirmRateLimit,
   checkPremiumFeature,
   formatZodError,
+  parsePositiveIntParam,
 } from "./_helpers";
 
 // Zod schemas for meal plan endpoints
@@ -91,8 +92,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid recipe ID" });
           return;
         }
@@ -152,8 +153,8 @@ export function register(app: Express): void {
     mealPlanRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid recipe ID" });
           return;
         }
@@ -196,8 +197,8 @@ export function register(app: Express): void {
     mealPlanRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid recipe ID" });
           return;
         }
@@ -332,8 +333,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid item ID" });
           return;
         }
@@ -371,8 +372,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid meal plan item ID" });
           return;
         }

@@ -5,6 +5,7 @@ import {
   ipKeyGenerator,
   formatZodError,
   checkPremiumFeature,
+  parsePositiveIntParam,
 } from "./_helpers";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
@@ -109,8 +110,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id)) return res.status(400).json({ error: "Invalid log ID" });
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) return res.status(400).json({ error: "Invalid log ID" });
 
         const schema = z.object({
           medicationName: z.string().max(100).optional(),
@@ -154,8 +155,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id)) return res.status(400).json({ error: "Invalid log ID" });
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) return res.status(400).json({ error: "Invalid log ID" });
 
         const deleted = await storage.deleteMedicationLog(id, req.userId!);
         if (!deleted)
