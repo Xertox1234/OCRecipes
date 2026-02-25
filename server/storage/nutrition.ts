@@ -326,12 +326,13 @@ export async function getDailyScanCount(
 // SAVED ITEMS
 // ============================================================================
 
-export async function getSavedItems(userId: string): Promise<SavedItem[]> {
+export async function getSavedItems(userId: string, limit = 100): Promise<SavedItem[]> {
   return db
     .select()
     .from(savedItems)
     .where(eq(savedItems.userId, userId))
-    .orderBy(desc(savedItems.createdAt));
+    .orderBy(desc(savedItems.createdAt))
+    .limit(limit);
 }
 
 export async function getSavedItemCount(userId: string): Promise<number> {

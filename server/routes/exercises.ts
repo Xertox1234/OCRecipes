@@ -59,7 +59,7 @@ export function register(app: Express): void {
           : undefined;
         const to = req.query.to ? new Date(req.query.to as string) : undefined;
         const limit = req.query.limit
-          ? parseInt(req.query.limit as string, 10)
+          ? Math.min(parseInt(req.query.limit as string, 10) || 50, 100)
           : undefined;
         const logs = await storage.getExerciseLogs(req.userId!, {
           from,

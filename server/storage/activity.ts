@@ -30,15 +30,13 @@ export async function getWeightLogs(
   if (options?.to) {
     conditions.push(lte(weightLogs.loggedAt, options.to));
   }
-  const query = db
+  const effectiveLimit = options?.limit ?? 100;
+  return db
     .select()
     .from(weightLogs)
     .where(and(...conditions))
-    .orderBy(desc(weightLogs.loggedAt));
-  if (options?.limit) {
-    return query.limit(options.limit);
-  }
-  return query;
+    .orderBy(desc(weightLogs.loggedAt))
+    .limit(effectiveLimit);
 }
 
 export async function createWeightLog(
@@ -82,13 +80,13 @@ export async function getExerciseLogs(
   const conditions = [eq(exerciseLogs.userId, userId)];
   if (options?.from) conditions.push(gte(exerciseLogs.loggedAt, options.from));
   if (options?.to) conditions.push(lte(exerciseLogs.loggedAt, options.to));
-  const query = db
+  const effectiveLimit = options?.limit ?? 100;
+  return db
     .select()
     .from(exerciseLogs)
     .where(and(...conditions))
-    .orderBy(desc(exerciseLogs.loggedAt));
-  if (options?.limit) return query.limit(options.limit);
-  return query;
+    .orderBy(desc(exerciseLogs.loggedAt))
+    .limit(effectiveLimit);
 }
 
 export async function createExerciseLog(

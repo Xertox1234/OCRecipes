@@ -27,12 +27,14 @@ export async function getChatConversation(
 
 export async function getChatConversations(
   userId: string,
+  limit = 50,
 ): Promise<ChatConversation[]> {
   return db
     .select()
     .from(chatConversations)
     .where(eq(chatConversations.userId, userId))
-    .orderBy(desc(chatConversations.updatedAt));
+    .orderBy(desc(chatConversations.updatedAt))
+    .limit(limit);
 }
 
 export async function createChatConversation(
