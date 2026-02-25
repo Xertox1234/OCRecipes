@@ -1,12 +1,6 @@
-import OpenAI from "openai";
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
-import { openai } from "../lib/openai";
-
-// DALL-E client uses direct OpenAI API (custom endpoints may not support image generation)
-const dalleClient = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-});
+import { openai, dalleClient } from "../lib/openai";
 
 // Zod schemas for recipe generation
 const recipeContentSchema = z.object({

@@ -14,6 +14,7 @@ import {
   nutritionLookupRateLimit,
   formatZodError,
   parsePositiveIntParam,
+  parseQueryInt,
 } from "./_helpers";
 
 export function register(app: Express): void {
@@ -82,11 +83,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const limit = Math.min(
-          Math.max(parseInt(req.query.limit as string) || 50, 1),
-          100,
-        );
-        const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+        const limit = parseQueryInt(req.query.limit, { default: 50, min: 1, max: 100 });
+        const offset = parseQueryInt(req.query.offset, { default: 0, min: 0 });
 
         const result = await storage.getScannedItems(
           req.userId!,
@@ -107,11 +105,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const limit = Math.min(
-          Math.max(parseInt(req.query.limit as string) || 50, 1),
-          100,
-        );
-        const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+        const limit = parseQueryInt(req.query.limit, { default: 50, min: 1, max: 100 });
+        const offset = parseQueryInt(req.query.offset, { default: 0, min: 0 });
 
         const result = await storage.getFavouriteScannedItems(
           req.userId!,
@@ -136,7 +131,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           return sendError(res, 400, "Invalid item ID");
         }
@@ -260,7 +255,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           return res
             .status(400)
@@ -297,7 +292,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           return res
             .status(400)

@@ -270,7 +270,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const recipeId = parsePositiveIntParam(req.params.id as string);
+        const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
           sendError(res, 400, "Invalid recipe ID");
           return;
@@ -322,7 +322,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const recipeId = parsePositiveIntParam(req.params.id as string);
+        const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
           sendError(res, 400, "Invalid recipe ID");
           return;
@@ -356,7 +356,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const recipeId = parsePositiveIntParam(req.params.id as string);
+        const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
           sendError(res, 400, "Invalid recipe ID");
           return;
@@ -417,7 +417,7 @@ export function register(app: Express): void {
     mealPlanRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(res, 400, "Invalid catalog ID");
           return;
@@ -448,7 +448,7 @@ export function register(app: Express): void {
     mealPlanRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(res, 400, "Invalid catalog ID");
           return;

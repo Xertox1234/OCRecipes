@@ -3,7 +3,7 @@ import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { analyzeMenuPhoto } from "../services/menu-analysis";
-import { checkPremiumFeature, menuRateLimit, parsePositiveIntParam } from "./_helpers";
+import { checkPremiumFeature, menuRateLimit, parsePositiveIntParam, parseQueryInt } from "./_helpers";
 import multer from "multer";
 
 const menuUpload = multer({
@@ -73,7 +73,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+        const limit = parseQueryInt(req.query.limit, { default: 20, max: 50 });
         const scans = await storage.getMenuScans(req.userId!, limit);
         res.json(scans);
       } catch (error) {
@@ -89,7 +89,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) return sendError(res, 400, "Invalid scan ID");
 
         const deleted = await storage.deleteMenuScan(id, req.userId!);

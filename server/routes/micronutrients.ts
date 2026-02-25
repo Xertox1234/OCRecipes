@@ -26,7 +26,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const itemId = parsePositiveIntParam(req.params.id as string);
+        const itemId = parsePositiveIntParam(req.params.id);
         if (!itemId) return sendError(res, 400, "Invalid item ID");
 
         const item = await storage.getScannedItem(itemId);

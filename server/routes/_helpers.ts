@@ -46,11 +46,29 @@ export async function checkPremiumFeature(
 /**
  * Parse a route parameter as a positive integer. Returns the parsed number,
  * or null if the value is not a valid positive integer (rejects NaN, 0, and negatives).
+ * Accepts `string | string[]` to match Express 5's req.params type without requiring `as string` casts.
  */
-export function parsePositiveIntParam(value: string): number | null {
-  const num = parseInt(value, 10);
+export function parsePositiveIntParam(value: string | string[]): number | null {
+  const str = Array.isArray(value) ? value[0] : value;
+  if (!str) return null;
+  const num = parseInt(str, 10);
   if (isNaN(num) || num <= 0) return null;
   return num;
+}
+
+/**
+ * Parse a query string parameter as an integer with default, min, and max clamping.
+ * Handles the `as string` cast internally so callers don't need it.
+ */
+export function parseQueryInt(
+  value: unknown,
+  options: { default: number; min?: number; max?: number },
+): number {
+  const num = typeof value === "string" ? parseInt(value, 10) : NaN;
+  let result = isNaN(num) ? options.default : num;
+  if (options.min !== undefined) result = Math.max(result, options.min);
+  if (options.max !== undefined) result = Math.min(result, options.max);
+  return result;
 }
 
 /** Extract IP address for rate limiting fallback when user is not authenticated */

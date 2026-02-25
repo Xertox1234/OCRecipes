@@ -8,6 +8,7 @@ import {
   checkPremiumFeature,
   formatZodError,
   parsePositiveIntParam,
+  parseQueryInt,
 } from "./_helpers";
 
 const pantryItemSchema = z.object({
@@ -48,7 +49,7 @@ export function register(app: Express): void {
           "Pantry tracking",
         );
         if (!features) return;
-        const limit = Math.min(parseInt(req.query.limit as string) || 200, 200);
+        const limit = parseQueryInt(req.query.limit, { default: 200, max: 200 });
         const items = await storage.getPantryItems(req.userId!, limit);
         res.json(items);
       } catch (error) {
@@ -110,7 +111,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(res, 400, "Invalid pantry item ID");
           return;
@@ -154,7 +155,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(res, 400, "Invalid pantry item ID");
           return;

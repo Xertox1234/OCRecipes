@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { createSavedItemSchema } from "@shared/schemas/saved-items";
-import { formatZodError, parsePositiveIntParam } from "./_helpers";
+import { formatZodError, parsePositiveIntParam, parseQueryInt } from "./_helpers";
 
 export function register(app: Express): void {
   app.get(
@@ -11,7 +11,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const limit = Math.min(parseInt(req.query.limit as string) || 100, 100);
+        const limit = parseQueryInt(req.query.limit, { default: 100, max: 100 });
         const items = await storage.getSavedItems(req.userId!, limit);
         res.json(items);
       } catch (error) {
@@ -65,7 +65,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(res, 400, "Invalid item ID");
           return;

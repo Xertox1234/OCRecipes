@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import { checkPremiumFeature } from "./_helpers";
+import { checkPremiumFeature, parseQueryInt } from "./_helpers";
 import { computeAdaptiveGoals } from "../services/adaptive-goals";
 
 export function register(app: Express): void {
@@ -185,7 +185,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+        const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
         const logs = await storage.getGoalAdjustmentLogs(req.userId!, limit);
         res.json(logs);
       } catch (error) {

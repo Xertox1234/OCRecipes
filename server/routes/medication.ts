@@ -5,6 +5,7 @@ import {
   formatZodError,
   checkPremiumFeature,
   parsePositiveIntParam,
+  parseQueryInt,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { storage } from "../storage";
@@ -32,7 +33,7 @@ export function register(app: Express): void {
           ? new Date(req.query.from as string)
           : undefined;
         const to = req.query.to ? new Date(req.query.to as string) : undefined;
-        const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+        const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
 
         const logs = await storage.getMedicationLogs(req.userId!, {
           from,
@@ -101,7 +102,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) return sendError(res, 400, "Invalid log ID");
 
         const schema = z.object({
@@ -146,7 +147,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) return sendError(res, 400, "Invalid log ID");
 
         const deleted = await storage.deleteMedicationLog(id, req.userId!);

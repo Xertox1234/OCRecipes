@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import bcrypt from "bcrypt";
 import { ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth, generateToken } from "../middleware/auth";
+import { requireAuth, generateToken, invalidateTokenVersionCache } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import {
   registerLimiter,
@@ -118,6 +118,9 @@ export function register(app: Express): void {
         await storage.updateUser(req.userId!, {
           tokenVersion: user.tokenVersion + 1,
         });
+
+        // Immediately invalidate the in-memory cache so revocation takes effect
+        invalidateTokenVersionCache(req.userId!);
 
         res.json({ success: true });
       } catch (error) {

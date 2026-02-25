@@ -58,7 +58,7 @@ vi.mock("../middleware/auth", async () => {
         return;
       }
 
-      (req as any).userId = payload.sub;
+      req.userId = payload.sub;
       next();
     } catch (err) {
       if (err instanceof jwtModule.default.TokenExpiredError) {

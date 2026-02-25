@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { fastingRateLimit, formatZodError } from "./_helpers";
+import { fastingRateLimit, formatZodError, parseQueryInt } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
@@ -148,7 +148,7 @@ export function register(app: Express): void {
     fastingRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const limit = Math.min(parseInt(req.query.limit as string) || 30, 100);
+        const limit = parseQueryInt(req.query.limit, { default: 30, max: 100 });
 
         const logs = await storage.getFastingLogs(req.userId!, limit);
         const stats = calculateFastingStats(logs);

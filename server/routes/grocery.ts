@@ -13,6 +13,7 @@ import {
   checkPremiumFeature,
   formatZodError,
   parsePositiveIntParam,
+  parseQueryInt,
 } from "./_helpers";
 
 const generateGroceryListSchema = z.object({
@@ -160,7 +161,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+        const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
         const lists = await storage.getGroceryLists(req.userId!, limit);
         res.json(lists);
       } catch (error) {
@@ -176,7 +177,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(res, 400, "Invalid list ID");
           return;
@@ -202,8 +203,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const listId = parsePositiveIntParam(req.params.id as string);
-        const itemId = parsePositiveIntParam(req.params.itemId as string);
+        const listId = parsePositiveIntParam(req.params.id);
+        const itemId = parsePositiveIntParam(req.params.itemId);
         if (!listId || !itemId) {
           sendError(res, 400, "Invalid ID");
           return;
@@ -281,8 +282,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const listId = parsePositiveIntParam(req.params.id as string);
-        const itemId = parsePositiveIntParam(req.params.itemId as string);
+        const listId = parsePositiveIntParam(req.params.id);
+        const itemId = parsePositiveIntParam(req.params.itemId);
         if (!listId || !itemId) {
           sendError(res, 400, "Invalid ID");
           return;
@@ -328,7 +329,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const listId = parsePositiveIntParam(req.params.id as string);
+        const listId = parsePositiveIntParam(req.params.id);
         if (!listId) {
           sendError(res, 400, "Invalid list ID");
           return;
@@ -374,7 +375,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(res, 400, "Invalid list ID");
           return;

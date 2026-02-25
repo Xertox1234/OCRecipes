@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
-import { chatRateLimit, formatZodError, parsePositiveIntParam } from "./_helpers";
+import { chatRateLimit, formatZodError, parsePositiveIntParam, parseQueryInt } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import {
   generateCoachResponse,
@@ -17,7 +17,7 @@ export function register(app: Express): void {
     requireAuth,
     chatRateLimit,
     async (req: Request, res: Response) => {
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 50);
+      const limit = parseQueryInt(req.query.limit, { default: 50, max: 50 });
       const conversations = await storage.getChatConversations(
         req.userId!,
         limit,
@@ -51,7 +51,7 @@ export function register(app: Express): void {
     requireAuth,
     chatRateLimit,
     async (req: Request, res: Response) => {
-      const id = parsePositiveIntParam(req.params.id as string);
+      const id = parsePositiveIntParam(req.params.id);
       if (!id)
         return sendError(res, 400, "Invalid conversation ID");
 
@@ -70,7 +70,7 @@ export function register(app: Express): void {
     requireAuth,
     chatRateLimit,
     async (req: Request, res: Response) => {
-      const id = parsePositiveIntParam(req.params.id as string);
+      const id = parsePositiveIntParam(req.params.id);
       if (!id)
         return sendError(res, 400, "Invalid conversation ID");
 
@@ -203,7 +203,7 @@ export function register(app: Express): void {
     requireAuth,
     chatRateLimit,
     async (req: Request, res: Response) => {
-      const id = parsePositiveIntParam(req.params.id as string);
+      const id = parsePositiveIntParam(req.params.id);
       if (!id)
         return sendError(res, 400, "Invalid conversation ID");
 

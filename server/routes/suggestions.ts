@@ -21,7 +21,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const itemId = parsePositiveIntParam(req.params.id as string);
+        const itemId = parsePositiveIntParam(req.params.id);
         if (!itemId) {
           return sendError(res, 400, "Invalid item ID");
         }
@@ -152,9 +152,10 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
     instructionsRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const itemId = parsePositiveIntParam(req.params.itemId as string);
+        const itemId = parsePositiveIntParam(req.params.itemId);
+        const rawIndex = req.params.suggestionIndex;
         const suggestionIndex = parseInt(
-          req.params.suggestionIndex as string,
+          Array.isArray(rawIndex) ? rawIndex[0] : rawIndex,
           10,
         );
 

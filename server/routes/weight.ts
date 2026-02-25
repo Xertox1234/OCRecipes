@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
-import { formatZodError, parsePositiveIntParam } from "./_helpers";
+import { formatZodError, parsePositiveIntParam, parseQueryInt } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { calculateWeightTrend } from "../services/weight-trend";
 
@@ -26,7 +26,7 @@ export function register(app: Express): void {
         : undefined;
       const to = req.query.to ? new Date(req.query.to as string) : undefined;
       const limit = req.query.limit
-        ? Math.min(parseInt(req.query.limit as string, 10) || 50, 100)
+        ? parseQueryInt(req.query.limit, { default: 50, max: 100 })
         : undefined;
 
       // Free users: limit to last 7 entries
@@ -114,7 +114,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parsePositiveIntParam(req.params.id as string);
+        const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           return sendError(res, 400, "Invalid weight log ID");
         }
