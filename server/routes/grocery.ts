@@ -155,7 +155,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const lists = await storage.getGroceryLists(req.userId!);
+        const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+        const lists = await storage.getGroceryLists(req.userId!, limit);
         res.json(lists);
       } catch (error) {
         console.error("Get grocery lists error:", error);

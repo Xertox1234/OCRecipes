@@ -174,7 +174,7 @@ export interface IStorage {
   getDailyScanCount(userId: string, date: Date): Promise<number>;
 
   // Saved items
-  getSavedItems(userId: string): Promise<SavedItem[]>;
+  getSavedItems(userId: string, limit?: number): Promise<SavedItem[]>;
   getSavedItemCount(userId: string): Promise<number>;
   createSavedItem(
     userId: string,
@@ -305,7 +305,7 @@ export interface IStorage {
 
   // Grocery lists
   createGroceryList(list: InsertGroceryList): Promise<GroceryList>;
-  getGroceryLists(userId: string): Promise<GroceryList[]>;
+  getGroceryLists(userId: string, limit?: number): Promise<GroceryList[]>;
   getGroceryListWithItems(
     id: number,
     userId: string,
@@ -333,7 +333,7 @@ export interface IStorage {
   getDailyMealSuggestionCount(userId: string, date: Date): Promise<number>;
 
   // Pantry items
-  getPantryItems(userId: string): Promise<PantryItem[]>;
+  getPantryItems(userId: string, limit?: number): Promise<PantryItem[]>;
   getPantryItem(id: number, userId: string): Promise<PantryItem | undefined>;
   createPantryItem(item: InsertPantryItem): Promise<PantryItem>;
   updatePantryItem(
@@ -419,7 +419,10 @@ export interface IStorage {
     id: number,
     userId: string,
   ): Promise<ChatConversation | undefined>;
-  getChatConversations(userId: string): Promise<ChatConversation[]>;
+  getChatConversations(
+    userId: string,
+    limit?: number,
+  ): Promise<ChatConversation[]>;
   createChatConversation(
     userId: string,
     title: string,
@@ -899,12 +902,13 @@ export class DatabaseStorage implements IStorage {
     return Number(result[0]?.count ?? 0);
   }
 
-  async getSavedItems(userId: string): Promise<SavedItem[]> {
+  async getSavedItems(userId: string, limit = 100): Promise<SavedItem[]> {
     return db
       .select()
       .from(savedItems)
       .where(eq(savedItems.userId, userId))
-      .orderBy(desc(savedItems.createdAt));
+      .orderBy(desc(savedItems.createdAt))
+      .limit(limit);
   }
 
   async getSavedItemCount(userId: string): Promise<number> {
@@ -1542,12 +1546,13 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async getGroceryLists(userId: string): Promise<GroceryList[]> {
+  async getGroceryLists(userId: string, limit = 100): Promise<GroceryList[]> {
     return db
       .select()
       .from(groceryLists)
       .where(eq(groceryLists.userId, userId))
-      .orderBy(desc(groceryLists.createdAt));
+      .orderBy(desc(groceryLists.createdAt))
+      .limit(limit);
   }
 
   async getGroceryListWithItems(
@@ -1690,12 +1695,13 @@ export class DatabaseStorage implements IStorage {
   // PANTRY ITEMS
   // ============================================================================
 
-  async getPantryItems(userId: string): Promise<PantryItem[]> {
+  async getPantryItems(userId: string, limit = 200): Promise<PantryItem[]> {
     return db
       .select()
       .from(pantryItems)
       .where(eq(pantryItems.userId, userId))
-      .orderBy(pantryItems.category, pantryItems.name);
+      .orderBy(pantryItems.category, pantryItems.name)
+      .limit(limit);
   }
 
   async getPantryItem(
@@ -1918,15 +1924,13 @@ export class DatabaseStorage implements IStorage {
     if (options?.to) {
       conditions.push(lte(weightLogs.loggedAt, options.to));
     }
-    const query = db
+    const effectiveLimit = options?.limit ?? 100;
+    return db
       .select()
       .from(weightLogs)
       .where(and(...conditions))
-      .orderBy(desc(weightLogs.loggedAt));
-    if (options?.limit) {
-      return query.limit(options.limit);
-    }
-    return query;
+      .orderBy(desc(weightLogs.loggedAt))
+      .limit(effectiveLimit);
   }
 
   async createWeightLog(log: InsertWeightLog): Promise<WeightLog> {
@@ -1964,13 +1968,13 @@ export class DatabaseStorage implements IStorage {
     if (options?.from)
       conditions.push(gte(exerciseLogs.loggedAt, options.from));
     if (options?.to) conditions.push(lte(exerciseLogs.loggedAt, options.to));
-    const query = db
+    const effectiveLimit = options?.limit ?? 100;
+    return db
       .select()
       .from(exerciseLogs)
       .where(and(...conditions))
-      .orderBy(desc(exerciseLogs.loggedAt));
-    if (options?.limit) return query.limit(options.limit);
-    return query;
+      .orderBy(desc(exerciseLogs.loggedAt))
+      .limit(effectiveLimit);
   }
 
   async createExerciseLog(log: InsertExerciseLog): Promise<ExerciseLog> {
@@ -2181,12 +2185,16 @@ export class DatabaseStorage implements IStorage {
     return conversation || undefined;
   }
 
-  async getChatConversations(userId: string): Promise<ChatConversation[]> {
+  async getChatConversations(
+    userId: string,
+    limit = 50,
+  ): Promise<ChatConversation[]> {
     return db
       .select()
       .from(chatConversations)
       .where(eq(chatConversations.userId, userId))
-      .orderBy(desc(chatConversations.updatedAt));
+      .orderBy(desc(chatConversations.updatedAt))
+      .limit(limit);
   }
 
   async createChatConversation(
@@ -2303,17 +2311,14 @@ export class DatabaseStorage implements IStorage {
 
   async getGoalAdjustmentLogs(
     userId: string,
-    limit?: number,
+    limit = 100,
   ): Promise<GoalAdjustmentLog[]> {
-    const query = db
+    return db
       .select()
       .from(goalAdjustmentLogs)
       .where(eq(goalAdjustmentLogs.userId, userId))
-      .orderBy(desc(goalAdjustmentLogs.appliedAt));
-    if (limit) {
-      return query.limit(limit);
-    }
-    return query;
+      .orderBy(desc(goalAdjustmentLogs.appliedAt))
+      .limit(limit);
   }
 
   // ============================================================================

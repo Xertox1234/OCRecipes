@@ -26,7 +26,11 @@ export function register(app: Express): void {
     requireAuth,
     chatRateLimit,
     async (req: Request, res: Response) => {
-      const conversations = await storage.getChatConversations(req.userId!);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 50);
+      const conversations = await storage.getChatConversations(
+        req.userId!,
+        limit,
+      );
       res.json(conversations);
     },
   );

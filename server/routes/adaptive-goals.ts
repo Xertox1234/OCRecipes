@@ -184,9 +184,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const limit = req.query.limit
-          ? parseInt(req.query.limit as string, 10)
-          : undefined;
+        const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
         const logs = await storage.getGoalAdjustmentLogs(req.userId!, limit);
         res.json(logs);
       } catch (error) {

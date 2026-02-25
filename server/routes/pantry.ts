@@ -46,7 +46,8 @@ export function register(app: Express): void {
           "Pantry tracking",
         );
         if (!features) return;
-        const items = await storage.getPantryItems(req.userId!);
+        const limit = Math.min(parseInt(req.query.limit as string) || 200, 200);
+        const items = await storage.getPantryItems(req.userId!, limit);
         res.json(items);
       } catch (error) {
         console.error("Get pantry items error:", error);
