@@ -10,7 +10,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const items = await storage.getSavedItems(req.userId!);
+        const limit = Math.min(parseInt(req.query.limit as string) || 100, 100);
+        const items = await storage.getSavedItems(req.userId!, limit);
         res.json(items);
       } catch (error) {
         console.error("Get saved items error:", error);

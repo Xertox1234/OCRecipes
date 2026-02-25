@@ -72,15 +72,12 @@ export async function createGoalAdjustmentLog(
 
 export async function getGoalAdjustmentLogs(
   userId: string,
-  limit?: number,
+  limit = 100,
 ): Promise<GoalAdjustmentLog[]> {
-  const query = db
+  return db
     .select()
     .from(goalAdjustmentLogs)
     .where(eq(goalAdjustmentLogs.userId, userId))
-    .orderBy(desc(goalAdjustmentLogs.appliedAt));
-  if (limit) {
-    return query.limit(limit);
-  }
-  return query;
+    .orderBy(desc(goalAdjustmentLogs.appliedAt))
+    .limit(limit);
 }

@@ -354,12 +354,13 @@ export async function createGroceryList(
   return created;
 }
 
-export async function getGroceryLists(userId: string): Promise<GroceryList[]> {
+export async function getGroceryLists(userId: string, limit = 100): Promise<GroceryList[]> {
   return db
     .select()
     .from(groceryLists)
     .where(eq(groceryLists.userId, userId))
-    .orderBy(desc(groceryLists.createdAt));
+    .orderBy(desc(groceryLists.createdAt))
+    .limit(limit);
 }
 
 export async function getGroceryListWithItems(
@@ -458,12 +459,13 @@ export async function updateGroceryListItemPantryFlag(
 // PANTRY ITEMS
 // ============================================================================
 
-export async function getPantryItems(userId: string): Promise<PantryItem[]> {
+export async function getPantryItems(userId: string, limit = 200): Promise<PantryItem[]> {
   return db
     .select()
     .from(pantryItems)
     .where(eq(pantryItems.userId, userId))
-    .orderBy(pantryItems.category, pantryItems.name);
+    .orderBy(pantryItems.category, pantryItems.name)
+    .limit(limit);
 }
 
 export async function getPantryItem(
