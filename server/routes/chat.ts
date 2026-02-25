@@ -1,23 +1,13 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { rateLimit } from "express-rate-limit";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
-import { ipKeyGenerator, formatZodError } from "./_helpers";
+import { chatRateLimit, formatZodError } from "./_helpers";
 import {
   generateCoachResponse,
   type CoachContext,
 } from "../services/nutrition-coach";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
-
-const chatRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 20,
-  message: { error: "Too many chat requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 export function register(app: Express): void {
   // GET /api/chat/conversations - List conversations

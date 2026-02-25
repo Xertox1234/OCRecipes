@@ -2,18 +2,8 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { analyzeMenuPhoto } from "../services/menu-analysis";
-import { checkPremiumFeature, ipKeyGenerator } from "./_helpers";
-import { rateLimit } from "express-rate-limit";
+import { checkPremiumFeature, menuRateLimit } from "./_helpers";
 import multer from "multer";
-
-const menuRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5, // Menu analysis is expensive
-  message: { error: "Too many menu scan requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 const menuUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB for menu photos (larger than food photos)

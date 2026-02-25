@@ -1,19 +1,9 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { rateLimit } from "express-rate-limit";
-import { ipKeyGenerator, formatZodError } from "./_helpers";
+import { fastingRateLimit, formatZodError } from "./_helpers";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { calculateFastingStats } from "../services/fasting-stats";
-
-const fastingRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  message: { error: "Too many fasting requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 export function register(app: Express): void {
   // GET /api/fasting/schedule

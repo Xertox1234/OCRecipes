@@ -56,122 +56,153 @@ export function formatZodError(error: ZodError): string {
 }
 
 // ============================================================================
+// RATE LIMITER FACTORY
+// ============================================================================
+
+/**
+ * Factory for creating express-rate-limit middleware with consistent defaults.
+ * Uses userId (falling back to IP) as the key for authenticated routes,
+ * or default IP-based keying for unauthenticated routes.
+ */
+export function createRateLimiter(options: {
+  windowMs: number;
+  max: number;
+  message: string;
+  keyByUser?: boolean;
+}) {
+  return rateLimit({
+    windowMs: options.windowMs,
+    max: options.max,
+    message: { error: options.message },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...(options.keyByUser !== false && {
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
+  });
+}
+
+// ============================================================================
 // RATE LIMITERS
 // ============================================================================
 
-export const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per window
-  message: { error: "Too many login attempts, please try again later" },
-  standardHeaders: true,
-  legacyHeaders: false,
+// --- Auth (IP-keyed, no userId available) ---
+export const loginLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many login attempts, please try again later",
+  keyByUser: false,
 });
 
-export const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // 5 registrations per hour
-  message: { error: "Too many registration attempts, please try again later" },
-  standardHeaders: true,
-  legacyHeaders: false,
+export const registerLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: "Too many registration attempts, please try again later",
+  keyByUser: false,
 });
 
-export const photoRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 10, // 10 requests per minute
-  message: { error: "Too many photo uploads. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-export const instructionsRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 20, // 20 requests per minute per user
-  message: { error: "Too many instruction requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-export const nutritionLookupRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 15, // 15 requests per minute per user
-  message: { error: "Too many nutrition lookups. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-export const subscriptionRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per window
-  message: { error: "Too many subscription requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-export const pantryRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 requests per minute per user
-  message: { error: "Too many pantry requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-export const mealConfirmRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 20, // 20 confirmations per minute per user
-  message: { error: "Too many confirmation requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-export const mealPlanRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  message: { error: "Too many meal plan requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-export const mealSuggestionRateLimit = rateLimit({
+// --- User-keyed rate limiters ---
+export const photoRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 10,
-  message: { error: "Too many suggestion requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
+  message: "Too many photo uploads. Please wait.",
 });
 
-export const recipeGenerationRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 3, // 3 requests per minute
-  message: { error: "Too many recipe generation requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
+export const instructionsRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: "Too many instruction requests. Please wait.",
 });
 
-export const avatarRateLimit = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 5, // 5 uploads per minute
-  message: { error: "Too many avatar uploads. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
+export const nutritionLookupRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 15,
+  message: "Too many nutrition lookups. Please wait.",
 });
 
-export const urlImportRateLimit = rateLimit({
+export const subscriptionRateLimit = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many subscription requests. Please wait.",
+});
+
+export const pantryRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many pantry requests. Please wait.",
+});
+
+export const mealConfirmRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: "Too many confirmation requests. Please wait.",
+});
+
+export const mealPlanRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many meal plan requests. Please wait.",
+});
+
+export const mealSuggestionRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: "Too many suggestion requests. Please wait.",
+});
+
+export const recipeGenerationRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 3,
+  message: "Too many recipe generation requests. Please wait.",
+});
+
+export const avatarRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 5,
-  message: { error: "Too many import requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
+  message: "Too many avatar uploads. Please wait.",
+});
+
+export const urlImportRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: "Too many import requests. Please wait.",
+});
+
+// --- Route-specific rate limiters (consolidated from route files) ---
+export const fastingRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many fasting requests. Please wait.",
+});
+
+export const medicationRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many medication requests. Please wait.",
+});
+
+export const menuRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: "Too many menu scan requests. Please wait.",
+});
+
+export const chatRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: "Too many chat requests. Please wait.",
+});
+
+export const micronutrientRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: "Too many micronutrient requests. Please wait.",
+});
+
+export const foodParseRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: "Too many food parse requests. Please wait.",
 });
 
 // ============================================================================
