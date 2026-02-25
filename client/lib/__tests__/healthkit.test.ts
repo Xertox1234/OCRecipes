@@ -7,6 +7,10 @@ import {
 } from "../healthkit";
 
 describe("healthkit", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
   it("reports healthKitAvailable as true on iOS", () => {
     expect(healthKitAvailable).toBe(true);
   });

@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { useToggleGroceryItem } from "../useGroceryList";
+import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
@@ -12,21 +11,6 @@ const { mockApiRequest } = vi.hoisted(() => ({
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  return {
-    queryClient,
-    wrapper: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        children,
-      ),
-  };
-}
 
 const makeListData = (
   items: { id: number; name: string; isChecked: boolean }[],
@@ -46,7 +30,7 @@ describe("useToggleGroceryItem", () => {
   });
 
   it("optimistically toggles item checked state", async () => {
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
 
     const items = [
       { id: 10, name: "Milk", isChecked: false },
@@ -80,7 +64,7 @@ describe("useToggleGroceryItem", () => {
   });
 
   it("rolls back on API error", async () => {
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
 
     const items = [{ id: 10, name: "Milk", isChecked: false }];
     queryClient.setQueryData(
@@ -109,7 +93,7 @@ describe("useToggleGroceryItem", () => {
   });
 
   it("calls the correct API endpoint", async () => {
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
 
     queryClient.setQueryData(
       ["/api/meal-plan/grocery-lists", 5],
@@ -139,7 +123,7 @@ describe("useToggleGroceryItem", () => {
   });
 
   it("invalidates list query on settled", async () => {
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
 
     queryClient.setQueryData(
       ["/api/meal-plan/grocery-lists", 1],
