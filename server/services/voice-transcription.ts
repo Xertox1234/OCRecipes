@@ -1,9 +1,5 @@
-import OpenAI, { toFile } from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+import { toFile } from "openai";
+import { openai } from "../lib/openai";
 
 /**
  * Transcribes an audio buffer using OpenAI Whisper API.
