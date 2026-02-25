@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { isAccessTokenPayload } from "@shared/types/auth";
 import { storage } from "../storage";
+import { sendError } from "../lib/api-errors";
 
 // Extend Express Request type
 declare global {
@@ -23,8 +24,13 @@ const jwtSecret: string = JWT_SECRET;
 // In-memory cache for tokenVersion to avoid DB lookup on every request.
 // Short TTL (60s) balances performance with revocation responsiveness.
 // Cache is invalidated on logout via invalidateTokenVersionCache().
-const tokenVersionCache = new Map<string, { version: number; expiresAt: number }>();
+// WARNING: This cache is process-local. In a multi-instance deployment, replace with Redis or a shared cache.
+const tokenVersionCache = new Map<
+  string,
+  { version: number; expiresAt: number }
+>();
 const TOKEN_VERSION_CACHE_TTL_MS = 60_000; // 60 seconds
+const MAX_CACHE_SIZE = 10_000;
 
 function getCachedTokenVersion(userId: string): number | undefined {
   const entry = tokenVersionCache.get(userId);
@@ -37,11 +43,34 @@ function getCachedTokenVersion(userId: string): number | undefined {
 }
 
 function setCachedTokenVersion(userId: string, version: number): void {
+  // Evict oldest entry (first key in iteration order) when cache is full
+  if (tokenVersionCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = tokenVersionCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      tokenVersionCache.delete(oldestKey);
+    }
+  }
   tokenVersionCache.set(userId, {
     version,
     expiresAt: Date.now() + TOKEN_VERSION_CACHE_TTL_MS,
   });
 }
+
+// Periodic sweep to remove expired entries (every 5 minutes).
+// The cast to NodeJS.Timeout is needed because the shared tsconfig
+// resolves setInterval to the DOM overload (returns number).
+const sweepInterval = setInterval(
+  () => {
+    const now = Date.now();
+    for (const [key, entry] of tokenVersionCache) {
+      if (now > entry.expiresAt) {
+        tokenVersionCache.delete(key);
+      }
+    }
+  },
+  5 * 60 * 1000,
+) as unknown as NodeJS.Timeout;
+sweepInterval.unref();
 
 /** Call on logout to immediately invalidate cached tokenVersion */
 export function invalidateTokenVersionCache(userId: string): void {
@@ -56,7 +85,7 @@ export async function requireAuth(
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith("Bearer ")) {
-    res.status(401).json({ error: "No token provided", code: "NO_TOKEN" });
+    sendError(res, 401, "No token provided", "NO_TOKEN");
     return;
   }
 
@@ -66,9 +95,7 @@ export async function requireAuth(
     const payload = jwt.verify(token, jwtSecret);
 
     if (!isAccessTokenPayload(payload)) {
-      res
-        .status(401)
-        .json({ error: "Invalid token payload", code: "TOKEN_INVALID" });
+      sendError(res, 401, "Invalid token payload", "TOKEN_INVALID");
       return;
     }
 
@@ -76,27 +103,21 @@ export async function requireAuth(
     const cachedVersion = getCachedTokenVersion(payload.sub);
     if (cachedVersion !== undefined) {
       if (payload.tokenVersion !== cachedVersion) {
-        res
-          .status(401)
-          .json({ error: "Token has been revoked", code: "TOKEN_REVOKED" });
+        sendError(res, 401, "Token has been revoked", "TOKEN_REVOKED");
         return;
       }
     } else {
       // Cache miss — query DB
       const user = await storage.getUser(payload.sub);
       if (!user) {
-        res
-          .status(401)
-          .json({ error: "User not found", code: "TOKEN_INVALID" });
+        sendError(res, 401, "User not found", "TOKEN_INVALID");
         return;
       }
 
       setCachedTokenVersion(payload.sub, user.tokenVersion);
 
       if (payload.tokenVersion !== user.tokenVersion) {
-        res
-          .status(401)
-          .json({ error: "Token has been revoked", code: "TOKEN_REVOKED" });
+        sendError(res, 401, "Token has been revoked", "TOKEN_REVOKED");
         return;
       }
     }
@@ -105,17 +126,14 @@ export async function requireAuth(
     next();
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {
-      res.status(401).json({ error: "Token expired", code: "TOKEN_EXPIRED" });
+      sendError(res, 401, "Token expired", "TOKEN_EXPIRED");
       return;
     }
-    res.status(401).json({ error: "Invalid token", code: "TOKEN_INVALID" });
+    sendError(res, 401, "Invalid token", "TOKEN_INVALID");
   }
 }
 
-export function generateToken(
-  userId: string,
-  tokenVersion: number,
-): string {
+export function generateToken(userId: string, tokenVersion: number): string {
   return jwt.sign({ sub: userId, tokenVersion }, jwtSecret, {
     expiresIn: "7d",
   });

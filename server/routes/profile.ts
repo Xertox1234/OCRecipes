@@ -6,7 +6,11 @@ import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { userProfiles, users } from "@shared/schema";
-import { formatZodError, userProfileInputSchema } from "./_helpers";
+import {
+  formatZodError,
+  userProfileInputSchema,
+  crudRateLimit,
+} from "./_helpers";
 
 // Fields that affect AI-generated suggestions - if any change, invalidate cache
 const cacheAffectingFields = [
@@ -20,6 +24,7 @@ export function register(app: Express): void {
   app.get(
     "/api/user/dietary-profile",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const profile = await storage.getUserProfile(req.userId!);
@@ -34,6 +39,7 @@ export function register(app: Express): void {
   app.post(
     "/api/user/dietary-profile",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const validated = userProfileInputSchema.parse({
@@ -97,6 +103,7 @@ export function register(app: Express): void {
   app.put(
     "/api/user/dietary-profile",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         // For partial updates, make all fields optional

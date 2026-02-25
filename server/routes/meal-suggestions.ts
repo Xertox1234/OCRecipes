@@ -3,14 +3,17 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
-import { TIER_FEATURES } from "@shared/types/premium";
 import { calculateProfileHash } from "../utils/profile-hash";
 import {
   generateMealSuggestions,
   buildSuggestionCacheKey,
 } from "../services/meal-suggestions";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
-import { mealSuggestionRateLimit, formatZodError } from "./_helpers";
+import {
+  mealSuggestionRateLimit,
+  formatZodError,
+  checkPremiumFeature,
+} from "./_helpers";
 
 const suggestMealSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -32,19 +35,13 @@ export function register(app: Express): void {
         }
 
         // Premium check
-        const subscription = await storage.getSubscriptionStatus(req.userId!);
-        const tier = subscription?.tier || "free";
-        const features = TIER_FEATURES[tier];
-
-        if (!features.aiMealSuggestions) {
-          sendError(
-            res,
-            403,
-            "AI meal suggestions require a premium subscription",
-            "PREMIUM_REQUIRED",
-          );
-          return;
-        }
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "aiMealSuggestions",
+          "AI meal suggestions",
+        );
+        if (!features) return;
 
         // Daily limit check
         const dailyCount = await storage.getDailyMealSuggestionCount(

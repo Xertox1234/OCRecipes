@@ -2,7 +2,13 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
-import { formatZodError, parsePositiveIntParam, parseQueryInt } from "./_helpers";
+import {
+  formatZodError,
+  parsePositiveIntParam,
+  parseQueryInt,
+  parseQueryDate,
+  crudRateLimit,
+} from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { calculateWeightTrend } from "../services/weight-trend";
 
@@ -19,38 +25,42 @@ const weightGoalSchema = z.object({
 
 export function register(app: Express): void {
   // Get weight logs
-  app.get("/api/weight", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const from = req.query.from
-        ? new Date(req.query.from as string)
-        : undefined;
-      const to = req.query.to ? new Date(req.query.to as string) : undefined;
-      const limit = req.query.limit
-        ? parseQueryInt(req.query.limit, { default: 50, max: 100 })
-        : undefined;
+  app.get(
+    "/api/weight",
+    requireAuth,
+    crudRateLimit,
+    async (req: Request, res: Response) => {
+      try {
+        const from = parseQueryDate(req.query.from);
+        const to = parseQueryDate(req.query.to);
+        const limit = req.query.limit
+          ? parseQueryInt(req.query.limit, { default: 50, max: 100 })
+          : undefined;
 
-      // Free users: limit to last 7 entries
-      const subscription = await storage.getSubscriptionStatus(req.userId!);
-      const tier = subscription?.tier || "free";
-      const effectiveLimit = tier === "free" ? 7 : limit;
+        // Free users: limit to last 7 entries
+        const subscription = await storage.getSubscriptionStatus(req.userId!);
+        const tier = subscription?.tier || "free";
+        const effectiveLimit = tier === "free" ? 7 : limit;
 
-      const logs = await storage.getWeightLogs(req.userId!, {
-        from,
-        to,
-        limit: effectiveLimit,
-      });
-      res.json(logs);
-    } catch (error) {
-      console.error("Get weight logs error:", error);
-      sendError(res, 500, "Failed to get weight logs");
-    }
-  });
+        const logs = await storage.getWeightLogs(req.userId!, {
+          from,
+          to,
+          limit: effectiveLimit,
+        });
+        res.json(logs);
+      } catch (error) {
+        console.error("Get weight logs error:", error);
+        sendError(res, 500, "Failed to get weight logs");
+      }
+    },
+  );
 
   // Get weight trend (premium for full trend, free gets basic)
   // NOTE: This must be registered BEFORE /api/weight/:id to avoid route conflict
   app.get(
     "/api/weight/trend",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const user = await storage.getUser(req.userId!);
@@ -83,35 +93,41 @@ export function register(app: Express): void {
   );
 
   // Log weight entry
-  app.post("/api/weight", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const validated = createWeightLogSchema.parse(req.body);
-      const log = await storage.createWeightLog({
-        userId: req.userId!,
-        weight: validated.weight.toString(),
-        source: validated.source,
-        note: validated.note,
-      });
+  app.post(
+    "/api/weight",
+    requireAuth,
+    crudRateLimit,
+    async (req: Request, res: Response) => {
+      try {
+        const validated = createWeightLogSchema.parse(req.body);
+        const log = await storage.createWeightLog({
+          userId: req.userId!,
+          weight: validated.weight.toString(),
+          source: validated.source,
+          note: validated.note,
+        });
 
-      // Also update the user's weight field
-      await storage.updateUser(req.userId!, {
-        weight: validated.weight.toString(),
-      });
+        // Also update the user's weight field
+        await storage.updateUser(req.userId!, {
+          weight: validated.weight.toString(),
+        });
 
-      res.status(201).json(log);
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return sendError(res, 400, formatZodError(error));
+        res.status(201).json(log);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return sendError(res, 400, formatZodError(error));
+        }
+        console.error("Create weight log error:", error);
+        sendError(res, 500, "Failed to log weight");
       }
-      console.error("Create weight log error:", error);
-      sendError(res, 500, "Failed to log weight");
-    }
-  });
+    },
+  );
 
   // Delete weight entry
   app.delete(
     "/api/weight/:id",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -122,7 +138,7 @@ export function register(app: Express): void {
         if (!deleted) {
           return sendError(res, 404, "Weight log not found");
         }
-        res.json({ success: true });
+        res.status(204).send();
       } catch (error) {
         console.error("Delete weight log error:", error);
         sendError(res, 500, "Failed to delete weight log");
@@ -134,6 +150,7 @@ export function register(app: Express): void {
   app.put(
     "/api/goals/weight",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const validated = weightGoalSchema.parse(req.body);

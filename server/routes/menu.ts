@@ -3,7 +3,12 @@ import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { analyzeMenuPhoto } from "../services/menu-analysis";
-import { checkPremiumFeature, menuRateLimit, parsePositiveIntParam, parseQueryInt } from "./_helpers";
+import {
+  checkPremiumFeature,
+  menuRateLimit,
+  parsePositiveIntParam,
+  parseQueryInt,
+} from "./_helpers";
 import multer from "multer";
 
 const menuUpload = multer({
@@ -93,9 +98,8 @@ export function register(app: Express): void {
         if (!id) return sendError(res, 400, "Invalid scan ID");
 
         const deleted = await storage.deleteMenuScan(id, req.userId!);
-        if (!deleted)
-          return sendError(res, 404, "Menu scan not found");
-        res.json({ success: true });
+        if (!deleted) return sendError(res, 404, "Menu scan not found");
+        res.status(204).send();
       } catch (error) {
         console.error("Delete menu scan error:", error);
         sendError(res, 500, "Failed to delete menu scan");

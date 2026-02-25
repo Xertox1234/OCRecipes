@@ -6,6 +6,7 @@ import {
   checkPremiumFeature,
   parsePositiveIntParam,
   parseQueryInt,
+  parseQueryDate,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { storage } from "../storage";
@@ -29,10 +30,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const from = req.query.from
-          ? new Date(req.query.from as string)
-          : undefined;
-        const to = req.query.to ? new Date(req.query.to as string) : undefined;
+        const from = parseQueryDate(req.query.from);
+        const to = parseQueryDate(req.query.to);
         const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
 
         const logs = await storage.getMedicationLogs(req.userId!, {
@@ -122,8 +121,7 @@ export function register(app: Express): void {
           req.userId!,
           parsed.data,
         );
-        if (!updated)
-          return sendError(res, 404, "Medication log not found");
+        if (!updated) return sendError(res, 404, "Medication log not found");
         res.json(updated);
       } catch (error) {
         console.error("Update medication log error:", error);
@@ -151,9 +149,8 @@ export function register(app: Express): void {
         if (!id) return sendError(res, 400, "Invalid log ID");
 
         const deleted = await storage.deleteMedicationLog(id, req.userId!);
-        if (!deleted)
-          return sendError(res, 404, "Medication log not found");
-        res.json({ success: true });
+        if (!deleted) return sendError(res, 404, "Medication log not found");
+        res.status(204).send();
       } catch (error) {
         console.error("Delete medication log error:", error);
         sendError(res, 500, "Failed to delete medication log");
@@ -265,8 +262,7 @@ export function register(app: Express): void {
         }
 
         const profile = await storage.updateUserProfile(req.userId!, updates);
-        if (!profile)
-          return sendError(res, 404, "Profile not found");
+        if (!profile) return sendError(res, 404, "Profile not found");
         res.json(profile);
       } catch (error) {
         console.error("Update GLP-1 mode error:", error);

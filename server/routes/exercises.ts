@@ -2,7 +2,13 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
-import { formatZodError, parsePositiveIntParam, parseQueryInt } from "./_helpers";
+import {
+  formatZodError,
+  parsePositiveIntParam,
+  parseQueryInt,
+  parseQueryDate,
+  crudRateLimit,
+} from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { calculateCaloriesBurned } from "../services/exercise-calorie";
 
@@ -33,10 +39,10 @@ export function register(app: Express): void {
   app.get(
     "/api/exercises/summary",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const dateStr = req.query.date as string | undefined;
-        const date = dateStr ? new Date(dateStr) : new Date();
+        const date = parseQueryDate(req.query.date) ?? new Date();
         const summary = await storage.getExerciseDailySummary(
           req.userId!,
           date,
@@ -53,12 +59,11 @@ export function register(app: Express): void {
   app.get(
     "/api/exercises",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const from = req.query.from
-          ? new Date(req.query.from as string)
-          : undefined;
-        const to = req.query.to ? new Date(req.query.to as string) : undefined;
+        const from = parseQueryDate(req.query.from);
+        const to = parseQueryDate(req.query.to);
         const limit = req.query.limit
           ? parseQueryInt(req.query.limit, { default: 50, max: 100 })
           : undefined;
@@ -79,6 +84,7 @@ export function register(app: Express): void {
   app.post(
     "/api/exercises",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const validated = createExerciseLogSchema.parse(req.body);
@@ -136,11 +142,11 @@ export function register(app: Express): void {
   app.put(
     "/api/exercises/:id",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
-        if (!id)
-          return sendError(res, 400, "Invalid exercise log ID");
+        if (!id) return sendError(res, 400, "Invalid exercise log ID");
         const validated = updateExerciseLogSchema.parse(req.body);
         const updates: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(validated)) {
@@ -159,8 +165,7 @@ export function register(app: Express): void {
           req.userId!,
           updates,
         );
-        if (!updated)
-          return sendError(res, 404, "Exercise log not found");
+        if (!updated) return sendError(res, 404, "Exercise log not found");
         res.json(updated);
       } catch (error) {
         if (error instanceof ZodError)
@@ -175,15 +180,14 @@ export function register(app: Express): void {
   app.delete(
     "/api/exercises/:id",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
-        if (!id)
-          return sendError(res, 400, "Invalid exercise log ID");
+        if (!id) return sendError(res, 400, "Invalid exercise log ID");
         const deleted = await storage.deleteExerciseLog(id, req.userId!);
-        if (!deleted)
-          return sendError(res, 404, "Exercise log not found");
-        res.json({ success: true });
+        if (!deleted) return sendError(res, 404, "Exercise log not found");
+        res.status(204).send();
       } catch (error) {
         console.error("Delete exercise log error:", error);
         sendError(res, 500, "Failed to delete exercise log");
@@ -195,6 +199,7 @@ export function register(app: Express): void {
   app.get(
     "/api/exercise-library",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const query = (req.query.q as string) || "";
@@ -212,6 +217,7 @@ export function register(app: Express): void {
   app.post(
     "/api/exercise-library",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const schema = z.object({
@@ -247,10 +253,10 @@ export function register(app: Express): void {
   app.get(
     "/api/daily-budget",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const dateStr = req.query.date as string | undefined;
-        const date = dateStr ? new Date(dateStr) : new Date();
+        const date = parseQueryDate(req.query.date) ?? new Date();
         const user = await storage.getUser(req.userId!);
         if (!user) return sendError(res, 404, "User not found");
 

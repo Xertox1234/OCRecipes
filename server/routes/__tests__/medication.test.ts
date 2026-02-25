@@ -31,11 +31,21 @@ vi.mock("../../middleware/auth", () => ({
 }));
 
 vi.mock("express-rate-limit", () => ({
-  rateLimit: () =>
-    (_req: express.Request, _res: express.Response, next: express.NextFunction) =>
+  rateLimit:
+    () =>
+    (
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) =>
       next(),
-  default: () =>
-    (_req: express.Request, _res: express.Response, next: express.NextFunction) =>
+  default:
+    () =>
+    (
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) =>
       next(),
 }));
 
@@ -79,7 +89,9 @@ describe("Medication Routes", () => {
   describe("GET /api/medication/logs", () => {
     it("returns medication logs", async () => {
       mockPremium();
-      vi.mocked(storage.getMedicationLogs).mockResolvedValue([mockLog] as never);
+      vi.mocked(storage.getMedicationLogs).mockResolvedValue([
+        mockLog,
+      ] as never);
 
       const res = await request(app)
         .get("/api/medication/logs")
@@ -104,7 +116,9 @@ describe("Medication Routes", () => {
   describe("POST /api/medication/log", () => {
     it("creates a medication log", async () => {
       mockPremium();
-      vi.mocked(storage.createMedicationLog).mockResolvedValue(mockLog as never);
+      vi.mocked(storage.createMedicationLog).mockResolvedValue(
+        mockLog as never,
+      );
 
       const res = await request(app)
         .post("/api/medication/log")
@@ -177,8 +191,7 @@ describe("Medication Routes", () => {
         .delete("/api/medication/log/1")
         .set("Authorization", "Bearer token");
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+      expect(res.status).toBe(204);
     });
 
     it("returns 404 when not found", async () => {

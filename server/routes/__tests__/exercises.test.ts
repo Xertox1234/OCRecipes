@@ -28,11 +28,21 @@ vi.mock("../../middleware/auth", () => ({
 }));
 
 vi.mock("express-rate-limit", () => ({
-  rateLimit: () =>
-    (_req: express.Request, _res: express.Response, next: express.NextFunction) =>
+  rateLimit:
+    () =>
+    (
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) =>
       next(),
-  default: () =>
-    (_req: express.Request, _res: express.Response, next: express.NextFunction) =>
+  default:
+    () =>
+    (
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) =>
       next(),
 }));
 
@@ -74,7 +84,9 @@ describe("Exercise Routes", () => {
 
   describe("GET /api/exercises/summary", () => {
     it("returns daily exercise summary", async () => {
-      vi.mocked(storage.getExerciseDailySummary).mockResolvedValue(mockSummary as never);
+      vi.mocked(storage.getExerciseDailySummary).mockResolvedValue(
+        mockSummary as never,
+      );
 
       const res = await request(app)
         .get("/api/exercises/summary")
@@ -85,7 +97,9 @@ describe("Exercise Routes", () => {
     });
 
     it("accepts date parameter", async () => {
-      vi.mocked(storage.getExerciseDailySummary).mockResolvedValue(mockSummary as never);
+      vi.mocked(storage.getExerciseDailySummary).mockResolvedValue(
+        mockSummary as never,
+      );
 
       await request(app)
         .get("/api/exercises/summary?date=2024-01-15")
@@ -97,7 +111,9 @@ describe("Exercise Routes", () => {
 
   describe("GET /api/exercises", () => {
     it("returns exercise logs", async () => {
-      vi.mocked(storage.getExerciseLogs).mockResolvedValue([mockExerciseLog] as never);
+      vi.mocked(storage.getExerciseLogs).mockResolvedValue([
+        mockExerciseLog,
+      ] as never);
 
       const res = await request(app)
         .get("/api/exercises")
@@ -113,7 +129,9 @@ describe("Exercise Routes", () => {
     it("creates an exercise log", async () => {
       vi.mocked(storage.searchExerciseLibrary).mockResolvedValue([] as never);
       vi.mocked(storage.getUser).mockResolvedValue({ weight: "75" } as never);
-      vi.mocked(storage.createExerciseLog).mockResolvedValue(mockExerciseLog as never);
+      vi.mocked(storage.createExerciseLog).mockResolvedValue(
+        mockExerciseLog as never,
+      );
 
       const res = await request(app)
         .post("/api/exercises")
@@ -176,8 +194,7 @@ describe("Exercise Routes", () => {
         .delete("/api/exercises/1")
         .set("Authorization", "Bearer token");
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+      expect(res.status).toBe(204);
     });
 
     it("returns 404 for non-existent log", async () => {

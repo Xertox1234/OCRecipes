@@ -5,7 +5,11 @@ import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { type Allergy } from "@shared/schema";
 import { calculateProfileHash } from "../utils/profile-hash";
-import { instructionsRateLimit, parsePositiveIntParam } from "./_helpers";
+import {
+  instructionsRateLimit,
+  suggestionsRateLimit,
+  parsePositiveIntParam,
+} from "./_helpers";
 import { openai } from "../lib/openai";
 
 // Zod schema for instructions request
@@ -19,6 +23,7 @@ export function register(app: Express): void {
   app.post(
     "/api/items/:id/suggestions",
     requireAuth,
+    suggestionsRateLimit,
     async (req: Request, res: Response) => {
       try {
         const itemId = parsePositiveIntParam(req.params.id);

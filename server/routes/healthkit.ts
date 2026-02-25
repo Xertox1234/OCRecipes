@@ -3,7 +3,11 @@ import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import { formatZodError, checkPremiumFeature } from "./_helpers";
+import {
+  formatZodError,
+  checkPremiumFeature,
+  crudRateLimit,
+} from "./_helpers";
 import { syncHealthKitData } from "../services/healthkit-sync";
 
 const syncDataSchema = z.object({
@@ -59,6 +63,7 @@ export function register(app: Express): void {
   app.post(
     "/api/healthkit/sync",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -86,6 +91,7 @@ export function register(app: Express): void {
   app.get(
     "/api/healthkit/settings",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const settings = await storage.getHealthKitSyncSettings(req.userId!);
@@ -101,6 +107,7 @@ export function register(app: Express): void {
   app.put(
     "/api/healthkit/settings",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const features = await checkPremiumFeature(

@@ -7,7 +7,7 @@ import {
   calculateGoals,
   userPhysicalProfileSchema,
 } from "../services/goal-calculator";
-import { formatZodError } from "./_helpers";
+import { formatZodError, crudRateLimit } from "./_helpers";
 
 // Zod schema for manual goal update
 const updateGoalsSchema = z.object({
@@ -18,29 +18,35 @@ const updateGoalsSchema = z.object({
 });
 
 export function register(app: Express): void {
-  app.get("/api/goals", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = await storage.getUser(req.userId!);
-      if (!user) {
-        return sendError(res, 404, "User not found");
-      }
+  app.get(
+    "/api/goals",
+    requireAuth,
+    crudRateLimit,
+    async (req: Request, res: Response) => {
+      try {
+        const user = await storage.getUser(req.userId!);
+        if (!user) {
+          return sendError(res, 404, "User not found");
+        }
 
-      res.json({
-        dailyCalorieGoal: user.dailyCalorieGoal,
-        dailyProteinGoal: user.dailyProteinGoal,
-        dailyCarbsGoal: user.dailyCarbsGoal,
-        dailyFatGoal: user.dailyFatGoal,
-        goalsCalculatedAt: user.goalsCalculatedAt,
-      });
-    } catch (error) {
-      console.error("Get goals error:", error);
-      sendError(res, 500, "Failed to fetch goals");
-    }
-  });
+        res.json({
+          dailyCalorieGoal: user.dailyCalorieGoal,
+          dailyProteinGoal: user.dailyProteinGoal,
+          dailyCarbsGoal: user.dailyCarbsGoal,
+          dailyFatGoal: user.dailyFatGoal,
+          goalsCalculatedAt: user.goalsCalculatedAt,
+        });
+      } catch (error) {
+        console.error("Get goals error:", error);
+        sendError(res, 500, "Failed to fetch goals");
+      }
+    },
+  );
 
   app.post(
     "/api/goals/calculate",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const validated = userPhysicalProfileSchema.parse(req.body);
@@ -97,41 +103,46 @@ export function register(app: Express): void {
     },
   );
 
-  app.put("/api/goals", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const validated = updateGoalsSchema.parse(req.body);
+  app.put(
+    "/api/goals",
+    requireAuth,
+    crudRateLimit,
+    async (req: Request, res: Response) => {
+      try {
+        const validated = updateGoalsSchema.parse(req.body);
 
-      const updatedUser = await storage.updateUser(req.userId!, {
-        ...(validated.dailyCalorieGoal !== undefined && {
-          dailyCalorieGoal: validated.dailyCalorieGoal,
-        }),
-        ...(validated.dailyProteinGoal !== undefined && {
-          dailyProteinGoal: validated.dailyProteinGoal,
-        }),
-        ...(validated.dailyCarbsGoal !== undefined && {
-          dailyCarbsGoal: validated.dailyCarbsGoal,
-        }),
-        ...(validated.dailyFatGoal !== undefined && {
-          dailyFatGoal: validated.dailyFatGoal,
-        }),
-      });
+        const updatedUser = await storage.updateUser(req.userId!, {
+          ...(validated.dailyCalorieGoal !== undefined && {
+            dailyCalorieGoal: validated.dailyCalorieGoal,
+          }),
+          ...(validated.dailyProteinGoal !== undefined && {
+            dailyProteinGoal: validated.dailyProteinGoal,
+          }),
+          ...(validated.dailyCarbsGoal !== undefined && {
+            dailyCarbsGoal: validated.dailyCarbsGoal,
+          }),
+          ...(validated.dailyFatGoal !== undefined && {
+            dailyFatGoal: validated.dailyFatGoal,
+          }),
+        });
 
-      if (!updatedUser) {
-        return sendError(res, 404, "User not found");
+        if (!updatedUser) {
+          return sendError(res, 404, "User not found");
+        }
+
+        res.json({
+          dailyCalorieGoal: updatedUser.dailyCalorieGoal,
+          dailyProteinGoal: updatedUser.dailyProteinGoal,
+          dailyCarbsGoal: updatedUser.dailyCarbsGoal,
+          dailyFatGoal: updatedUser.dailyFatGoal,
+        });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return sendError(res, 400, formatZodError(error));
+        }
+        console.error("Update goals error:", error);
+        sendError(res, 500, "Failed to update goals");
       }
-
-      res.json({
-        dailyCalorieGoal: updatedUser.dailyCalorieGoal,
-        dailyProteinGoal: updatedUser.dailyProteinGoal,
-        dailyCarbsGoal: updatedUser.dailyCarbsGoal,
-        dailyFatGoal: updatedUser.dailyFatGoal,
-      });
-    } catch (error) {
-      if (error instanceof ZodError) {
-        return sendError(res, 400, formatZodError(error));
-      }
-      console.error("Update goals error:", error);
-      sendError(res, 500, "Failed to update goals");
-    }
-  });
+    },
+  );
 }

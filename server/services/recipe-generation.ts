@@ -3,13 +3,24 @@ import type { UserProfile } from "@shared/schema";
 import { openai, dalleClient } from "../lib/openai";
 
 // Zod schemas for recipe generation
+const instructionItemSchema = z.union([
+  z.string(),
+  z
+    .object({
+      text: z.string().optional(),
+      instruction: z.string().optional(),
+      description: z.string().optional(),
+    })
+    .passthrough(),
+]);
+
 const recipeContentSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().min(1).max(500),
   difficulty: z.enum(["Easy", "Medium", "Hard"]),
   timeEstimate: z.string().min(1).max(50),
   instructions: z
-    .union([z.string(), z.array(z.any())])
+    .union([z.string(), z.array(instructionItemSchema)])
     .transform((v) => {
       if (!Array.isArray(v)) return v;
       // Handle both string[] and object[] (e.g. [{step: 1, text: "..."}])
@@ -141,7 +152,15 @@ Respond with JSON only:
   });
 
   const content = response.choices[0]?.message?.content || "{}";
-  const parsed = recipeContentSchema.safeParse(JSON.parse(content));
+
+  let parsedJson;
+  try {
+    parsedJson = JSON.parse(content);
+  } catch {
+    throw new Error("AI returned invalid JSON for recipe");
+  }
+
+  const parsed = recipeContentSchema.safeParse(parsedJson);
 
   if (!parsed.success) {
     console.error("Recipe generation validation failed:", parsed.error);
