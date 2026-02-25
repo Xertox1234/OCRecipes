@@ -51,7 +51,12 @@ vi.mock("@/lib/query-client", () => ({
   getApiUrl: () => mockGetApiUrl(),
 }));
 
+const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch;
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+});
 
 const fakeUser = { id: 1, username: "testuser", createdAt: "2024-01-01" };
 
@@ -310,6 +315,50 @@ describe("useAuth", () => {
       });
 
       expect(mockApiRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("login error handling", () => {
+    it("propagates API errors to the caller", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockRejectedValue(new Error("Invalid credentials"));
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      await expect(
+        act(async () => {
+          await result.current.login("bad", "creds");
+        }),
+      ).rejects.toThrow("Invalid credentials");
+
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("register error handling", () => {
+    it("propagates API errors to the caller", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockRejectedValue(new Error("Username already exists"));
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      await expect(
+        act(async () => {
+          await result.current.register("taken", "password");
+        }),
+      ).rejects.toThrow("Username already exists");
+
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { useDiscardItem } from "../useDiscardItem";
+import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
@@ -12,21 +11,6 @@ const { mockApiRequest } = vi.hoisted(() => ({
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  return {
-    queryClient,
-    wrapper: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        children,
-      ),
-  };
-}
 
 const makePaginatedData = (items: { id: number; productName: string }[]) => ({
   pages: [{ items, total: items.length }],
@@ -39,7 +23,7 @@ describe("useDiscardItem", () => {
   });
 
   it("optimistically removes item from cache on mutate", async () => {
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
 
     const items = [
       { id: 1, productName: "Apple" },
@@ -68,7 +52,7 @@ describe("useDiscardItem", () => {
   });
 
   it("rolls back cache on API error", async () => {
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
 
     const items = [
       { id: 1, productName: "Apple" },
@@ -97,7 +81,7 @@ describe("useDiscardItem", () => {
   });
 
   it("invalidates related queries on settled", async () => {
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
 
     queryClient.setQueryData(
       ["/api/scanned-items"],
@@ -126,7 +110,7 @@ describe("useDiscardItem", () => {
   });
 
   it("handles mutate when cache is empty", async () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryWrapper();
 
     mockApiRequest.mockResolvedValue({});
 

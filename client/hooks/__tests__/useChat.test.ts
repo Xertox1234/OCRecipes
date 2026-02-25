@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
-import { renderHook, act, waitFor } from "@testing-library/react";
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { renderHook, act } from "@testing-library/react";
 
 import { useSendMessage } from "../useChat";
+import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest, mockGetApiUrl, mockTokenStorage, mockFetch } =
   vi.hoisted(() => ({
@@ -27,22 +26,12 @@ vi.mock("@/lib/token-storage", () => ({
   tokenStorage: mockTokenStorage,
 }));
 
+const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch;
 
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  return {
-    queryClient,
-    wrapper: ({ children }: { children: React.ReactNode }) =>
-      React.createElement(
-        QueryClientProvider,
-        { client: queryClient },
-        children,
-      ),
-  };
-}
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+});
 
 function createReadableStream(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -65,7 +54,7 @@ describe("useSendMessage", () => {
   });
 
   it("does nothing when conversationId is null", async () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryWrapper();
     const { result } = renderHook(() => useSendMessage(null), { wrapper });
 
     await act(async () => {
@@ -76,7 +65,7 @@ describe("useSendMessage", () => {
   });
 
   it("streams SSE content and accumulates messages", async () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryWrapper();
     mockTokenStorage.get.mockResolvedValue("test-token");
 
     const chunks = [
@@ -119,7 +108,7 @@ describe("useSendMessage", () => {
   });
 
   it("sends request without auth header when no token", async () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryWrapper();
     mockTokenStorage.get.mockResolvedValue(null);
 
     mockFetch.mockResolvedValue({
@@ -139,7 +128,7 @@ describe("useSendMessage", () => {
   });
 
   it("throws on non-ok response", async () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryWrapper();
     mockTokenStorage.get.mockResolvedValue("token");
 
     mockFetch.mockResolvedValue({
@@ -160,7 +149,7 @@ describe("useSendMessage", () => {
   });
 
   it("throws when response body is missing", async () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryWrapper();
     mockTokenStorage.get.mockResolvedValue("token");
 
     mockFetch.mockResolvedValue({
@@ -180,7 +169,7 @@ describe("useSendMessage", () => {
   });
 
   it("throws on application-level error from SSE stream", async () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryWrapper();
     mockTokenStorage.get.mockResolvedValue("token");
 
     const chunks = [
@@ -205,7 +194,7 @@ describe("useSendMessage", () => {
   });
 
   it("invalidates query cache when done signal received", async () => {
-    const { wrapper, queryClient } = createWrapper();
+    const { wrapper, queryClient } = createQueryWrapper();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     mockTokenStorage.get.mockResolvedValue("token");
 
@@ -231,7 +220,7 @@ describe("useSendMessage", () => {
   });
 
   it("silently ignores incomplete JSON chunks", async () => {
-    const { wrapper } = createWrapper();
+    const { wrapper } = createQueryWrapper();
     mockTokenStorage.get.mockResolvedValue("token");
 
     // Simulate a chunk that splits a JSON payload
