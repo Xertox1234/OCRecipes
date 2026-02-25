@@ -1,22 +1,7 @@
-interface FastingLog {
-  id: number;
-  userId: string;
-  startedAt: Date | string;
-  endedAt: Date | string | null;
-  targetDurationHours: number;
-  actualDurationMinutes: number | null;
-  completed: boolean | null;
-  note: string | null;
-}
+import type { FastingStats } from "@shared/types/fasting";
+import type { FastingLog } from "@shared/schema";
 
-export interface FastingStats {
-  totalFasts: number;
-  completedFasts: number;
-  completionRate: number;
-  currentStreak: number;
-  longestStreak: number;
-  averageDurationMinutes: number;
-}
+export type { FastingStats } from "@shared/types/fasting";
 
 export function calculateFastingStats(logs: FastingLog[]): FastingStats {
   const completedLogs = logs.filter((l) => l.completed);

@@ -1,30 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import type {
+  ApiExerciseLog,
+  ApiExerciseLibraryEntry,
+  ExerciseSummary,
+} from "@shared/types/exercise";
 
-export interface ExerciseLog {
-  id: number;
-  userId: string;
-  exerciseName: string;
-  exerciseType: string;
-  durationMinutes: number;
-  caloriesBurned: string | null;
-  intensity: string | null;
-  sets: number | null;
-  reps: number | null;
-  weightLifted: string | null;
-  distanceKm: string | null;
-  source: string;
-  notes: string | null;
-  loggedAt: string;
-}
-
-export interface ExerciseLibraryEntry {
-  id: number;
-  name: string;
-  type: string;
-  metValue: string;
-  isCustom: boolean;
-}
+export type {
+  ApiExerciseLog,
+  ApiExerciseLibraryEntry,
+  ExerciseSummary,
+} from "@shared/types/exercise";
 
 export function useExerciseLogs(options?: { from?: string; to?: string }) {
   const params = new URLSearchParams();
@@ -33,18 +19,14 @@ export function useExerciseLogs(options?: { from?: string; to?: string }) {
   const qs = params.toString();
   const url = qs ? `/api/exercises?${qs}` : "/api/exercises";
 
-  return useQuery<ExerciseLog[]>({
+  return useQuery<ApiExerciseLog[]>({
     queryKey: [url],
   });
 }
 
 export function useExerciseSummary(date?: string) {
   const params = date ? `?date=${date}` : "";
-  return useQuery<{
-    totalCaloriesBurned: number;
-    totalMinutes: number;
-    exerciseCount: number;
-  }>({
+  return useQuery<ExerciseSummary>({
     queryKey: [`/api/exercises/summary${params}`],
   });
 }
@@ -91,7 +73,7 @@ export function useDeleteExerciseLog() {
 }
 
 export function useSearchExerciseLibrary(query: string) {
-  return useQuery<ExerciseLibraryEntry[]>({
+  return useQuery<ApiExerciseLibraryEntry[]>({
     queryKey: [`/api/exercise-library?q=${encodeURIComponent(query)}`],
     enabled: query.length >= 1,
   });
