@@ -1,6 +1,6 @@
 import { escapeLike } from "../storage";
 
-// Test the IStorage interface contract and edge cases
+// Test the storage layer contract and edge cases
 describe("Storage Interface Contract", () => {
   describe("getUser", () => {
     it("should accept string id parameter", () => {
