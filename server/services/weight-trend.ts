@@ -1,11 +1,11 @@
-export interface WeightTrendResult {
-  avg7Day: number | null;
-  avg30Day: number | null;
-  weeklyRateOfChange: number | null;
-  projectedGoalDate: string | null;
-  currentWeight: number | null;
-  entries: number;
-}
+import type { WeightTrend } from "@shared/types/weight";
+
+/**
+ * WeightTrendResult is the server-side alias for the shared WeightTrend type.
+ * It omits `goalWeight` because that is added by the route handler, not the
+ * trend calculation function itself.
+ */
+export type WeightTrendResult = Omit<WeightTrend, "goalWeight">;
 
 interface WeightEntry {
   weight: string;
