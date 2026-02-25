@@ -5,20 +5,10 @@ import { requireAuth } from "../middleware/auth";
 import {
   formatZodError,
   checkPremiumFeature,
-  ipKeyGenerator,
+  foodParseRateLimit,
 } from "./_helpers";
 import { parseNaturalLanguageFood } from "../services/food-nlp";
 import { transcribeAudio } from "../services/voice-transcription";
-import { rateLimit } from "express-rate-limit";
-
-const foodParseRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 20,
-  message: { error: "Too many food parse requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 const audioUpload = multer({
   storage: multer.memoryStorage(),

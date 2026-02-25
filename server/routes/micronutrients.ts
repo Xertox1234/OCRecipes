@@ -1,6 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { rateLimit } from "express-rate-limit";
-import { ipKeyGenerator, checkPremiumFeature } from "./_helpers";
+import { micronutrientRateLimit, checkPremiumFeature } from "./_helpers";
 import { requireAuth } from "../middleware/auth";
 import {
   lookupMicronutrientsWithCache,
@@ -9,15 +8,6 @@ import {
   getDailyValueReference,
 } from "../services/micronutrient-lookup";
 import { storage } from "../storage";
-
-const micronutrientRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 20,
-  message: { error: "Too many micronutrient requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 export function register(app: Express): void {
   // GET /api/micronutrients/item/:id — Get micronutrients for a specific scanned item

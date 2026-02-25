@@ -1,8 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { rateLimit } from "express-rate-limit";
 import {
-  ipKeyGenerator,
+  medicationRateLimit,
   formatZodError,
   checkPremiumFeature,
 } from "./_helpers";
@@ -10,15 +9,6 @@ import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { analyzeGlp1Insights } from "../services/glp1-insights";
 import type { ProteinSuggestion } from "@shared/types/protein-suggestions";
-
-const medicationRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  message: { error: "Too many medication requests. Please wait." },
-  keyGenerator: (req) => req.userId || ipKeyGenerator(req),
-  standardHeaders: true,
-  legacyHeaders: false,
-});
 
 export function register(app: Express): void {
   // GET /api/medication/logs
