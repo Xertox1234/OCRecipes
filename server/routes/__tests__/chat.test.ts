@@ -37,11 +37,21 @@ vi.mock("../../middleware/auth", () => ({
 }));
 
 vi.mock("express-rate-limit", () => ({
-  rateLimit: () =>
-    (_req: express.Request, _res: express.Response, next: express.NextFunction) =>
+  rateLimit:
+    () =>
+    (
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) =>
       next(),
-  default: () =>
-    (_req: express.Request, _res: express.Response, next: express.NextFunction) =>
+  default:
+    () =>
+    (
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) =>
       next(),
 }));
 
@@ -66,7 +76,9 @@ describe("Chat Routes", () => {
   describe("GET /api/chat/conversations", () => {
     it("returns conversations list", async () => {
       const convos = [{ id: 1, title: "Chat 1" }];
-      vi.mocked(storage.getChatConversations).mockResolvedValue(convos as never);
+      vi.mocked(storage.getChatConversations).mockResolvedValue(
+        convos as never,
+      );
 
       const res = await request(app)
         .get("/api/chat/conversations")
@@ -80,7 +92,9 @@ describe("Chat Routes", () => {
   describe("POST /api/chat/conversations", () => {
     it("creates a new conversation", async () => {
       const convo = { id: 1, title: "New Chat" };
-      vi.mocked(storage.createChatConversation).mockResolvedValue(convo as never);
+      vi.mocked(storage.createChatConversation).mockResolvedValue(
+        convo as never,
+      );
 
       const res = await request(app)
         .post("/api/chat/conversations")
@@ -93,7 +107,9 @@ describe("Chat Routes", () => {
 
     it("uses default title", async () => {
       const convo = { id: 1, title: "New Chat" };
-      vi.mocked(storage.createChatConversation).mockResolvedValue(convo as never);
+      vi.mocked(storage.createChatConversation).mockResolvedValue(
+        convo as never,
+      );
 
       const res = await request(app)
         .post("/api/chat/conversations")
@@ -101,13 +117,18 @@ describe("Chat Routes", () => {
         .send({});
 
       expect(res.status).toBe(201);
-      expect(storage.createChatConversation).toHaveBeenCalledWith("1", "New Chat");
+      expect(storage.createChatConversation).toHaveBeenCalledWith(
+        "1",
+        "New Chat",
+      );
     });
   });
 
   describe("GET /api/chat/conversations/:id/messages", () => {
     it("returns messages for a conversation", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({ id: 1 } as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue({
+        id: 1,
+      } as never);
       const messages = [{ id: 1, role: "user", content: "Hello" }];
       vi.mocked(storage.getChatMessages).mockResolvedValue(messages as never);
 
@@ -151,7 +172,9 @@ describe("Chat Routes", () => {
     });
 
     it("returns 400 for empty content", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({ id: 1 } as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue({
+        id: 1,
+      } as never);
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -162,12 +185,16 @@ describe("Chat Routes", () => {
     });
 
     it("returns 429 when daily limit reached", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({ id: 1 } as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue({
+        id: 1,
+      } as never);
       vi.mocked(storage.getUser).mockResolvedValue({ id: "1" } as never);
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "free",
       } as never);
-      vi.mocked(storage.getDailyChatMessageCount).mockResolvedValue(100 as never);
+      vi.mocked(storage.getDailyChatMessageCount).mockResolvedValue(
+        100 as never,
+      );
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -180,18 +207,21 @@ describe("Chat Routes", () => {
 
   describe("DELETE /api/chat/conversations/:id", () => {
     it("deletes a conversation", async () => {
-      vi.mocked(storage.deleteChatConversation).mockResolvedValue(true as never);
+      vi.mocked(storage.deleteChatConversation).mockResolvedValue(
+        true as never,
+      );
 
       const res = await request(app)
         .delete("/api/chat/conversations/1")
         .set("Authorization", "Bearer token");
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+      expect(res.status).toBe(204);
     });
 
     it("returns 404 when not found", async () => {
-      vi.mocked(storage.deleteChatConversation).mockResolvedValue(false as never);
+      vi.mocked(storage.deleteChatConversation).mockResolvedValue(
+        false as never,
+      );
 
       const res = await request(app)
         .delete("/api/chat/conversations/999")

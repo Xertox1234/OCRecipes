@@ -3,15 +3,24 @@ import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { createSavedItemSchema } from "@shared/schemas/saved-items";
-import { formatZodError, parsePositiveIntParam, parseQueryInt } from "./_helpers";
+import {
+  formatZodError,
+  parsePositiveIntParam,
+  parseQueryInt,
+  crudRateLimit,
+} from "./_helpers";
 
 export function register(app: Express): void {
   app.get(
     "/api/saved-items",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const limit = parseQueryInt(req.query.limit, { default: 100, max: 100 });
+        const limit = parseQueryInt(req.query.limit, {
+          default: 100,
+          max: 100,
+        });
         const items = await storage.getSavedItems(req.userId!, limit);
         res.json(items);
       } catch (error) {
@@ -24,6 +33,7 @@ export function register(app: Express): void {
   app.get(
     "/api/saved-items/count",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
         const count = await storage.getSavedItemCount(req.userId!);
@@ -38,6 +48,7 @@ export function register(app: Express): void {
   app.post(
     "/api/saved-items",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
         const parsed = createSavedItemSchema.safeParse(req.body);
@@ -63,6 +74,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/saved-items/:id",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);

@@ -23,11 +23,21 @@ vi.mock("../../middleware/auth", () => ({
 }));
 
 vi.mock("express-rate-limit", () => ({
-  rateLimit: () =>
-    (_req: express.Request, _res: express.Response, next: express.NextFunction) =>
+  rateLimit:
+    () =>
+    (
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) =>
       next(),
-  default: () =>
-    (_req: express.Request, _res: express.Response, next: express.NextFunction) =>
+  default:
+    () =>
+    (
+      _req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) =>
       next(),
 }));
 
@@ -38,8 +48,13 @@ vi.mock("../../services/menu-analysis", () => ({
 // Mock multer to simulate file uploads without actual multipart parsing
 vi.mock("multer", () => {
   const multerMock = () => ({
-    single: () =>
-      (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+    single:
+      () =>
+      (
+        req: express.Request,
+        _res: express.Response,
+        next: express.NextFunction,
+      ) => {
         // Simulate file being present by default
         req.file = {
           buffer: Buffer.from("fake-image-data"),
@@ -88,7 +103,10 @@ describe("Menu Routes", () => {
         menuItems: [{ name: "Pasta", price: 12.99 }],
       };
       vi.mocked(analyzeMenuPhoto).mockResolvedValue(mockResult as never);
-      vi.mocked(storage.createMenuScan).mockResolvedValue({ id: 1, ...mockResult } as never);
+      vi.mocked(storage.createMenuScan).mockResolvedValue({
+        id: 1,
+        ...mockResult,
+      } as never);
 
       const res = await request(app)
         .post("/api/menu/scan")
@@ -159,8 +177,7 @@ describe("Menu Routes", () => {
         .delete("/api/menu/scans/1")
         .set("Authorization", "Bearer token");
 
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+      expect(res.status).toBe(204);
     });
 
     it("returns 404 when scan not found", async () => {

@@ -12,10 +12,57 @@ import {
 import { lookupNutrition, lookupBarcode } from "../services/nutrition-lookup";
 import {
   nutritionLookupRateLimit,
+  pantryRateLimit,
   formatZodError,
   parsePositiveIntParam,
   parseQueryInt,
+  parseQueryDate,
 } from "./_helpers";
+
+// Coerce literal "null" strings to actual null
+const nullishString = z
+  .string()
+  .optional()
+  .nullable()
+  .transform((v) => (v === "null" || v === "undefined" || v === "" ? null : v));
+
+// Extended schema for scanned items with string coercion for numeric fields
+const scannedItemInputSchema = insertScannedItemSchema.extend({
+  productName: z
+    .string()
+    .min(1, "Product name is required")
+    .default("Unknown Product"),
+  brandName: nullishString,
+  servingSize: nullishString,
+  calories: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => v?.toString()),
+  protein: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => v?.toString()),
+  carbs: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => v?.toString()),
+  fat: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => v?.toString()),
+  fiber: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => v?.toString()),
+  sugar: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => v?.toString()),
+  sodium: z
+    .union([z.string(), z.number()])
+    .optional()
+    .transform((v) => v?.toString()),
+});
 
 export function register(app: Express): void {
   // Nutrition lookup by product name — used as fallback when OpenFoodFacts
@@ -27,11 +74,7 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       const name = (req.query.name as string)?.trim();
       if (!name || name.length > 200) {
-        sendError(
-          res,
-          400,
-          "name query parameter is required (max 200 chars)",
-        );
+        sendError(res, 400, "name query parameter is required (max 200 chars)");
         return;
       }
 
@@ -81,9 +124,14 @@ export function register(app: Express): void {
   app.get(
     "/api/scanned-items",
     requireAuth,
+    pantryRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const limit = parseQueryInt(req.query.limit, { default: 50, min: 1, max: 100 });
+        const limit = parseQueryInt(req.query.limit, {
+          default: 50,
+          min: 1,
+          max: 100,
+        });
         const offset = parseQueryInt(req.query.offset, { default: 0, min: 0 });
 
         const result = await storage.getScannedItems(
@@ -103,9 +151,14 @@ export function register(app: Express): void {
   app.get(
     "/api/scanned-items/favourites",
     requireAuth,
+    pantryRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const limit = parseQueryInt(req.query.limit, { default: 50, min: 1, max: 100 });
+        const limit = parseQueryInt(req.query.limit, {
+          default: 50,
+          min: 1,
+          max: 100,
+        });
         const offset = parseQueryInt(req.query.offset, { default: 0, min: 0 });
 
         const result = await storage.getFavouriteScannedItems(
@@ -129,6 +182,7 @@ export function register(app: Express): void {
   app.get(
     "/api/scanned-items/:id",
     requireAuth,
+    pantryRateLimit,
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -153,55 +207,9 @@ export function register(app: Express): void {
   app.post(
     "/api/scanned-items",
     requireAuth,
+    pantryRateLimit,
     async (req: Request, res: Response) => {
       try {
-        // Extended schema for scanned items with string coercion for numeric fields
-        // Coerce literal "null" strings to actual null
-        const nullishString = z
-          .string()
-          .optional()
-          .nullable()
-          .transform((v) =>
-            v === "null" || v === "undefined" || v === "" ? null : v,
-          );
-
-        const scannedItemInputSchema = insertScannedItemSchema.extend({
-          productName: z
-            .string()
-            .min(1, "Product name is required")
-            .default("Unknown Product"),
-          brandName: nullishString,
-          servingSize: nullishString,
-          calories: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((v) => v?.toString()),
-          protein: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((v) => v?.toString()),
-          carbs: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((v) => v?.toString()),
-          fat: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((v) => v?.toString()),
-          fiber: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((v) => v?.toString()),
-          sugar: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((v) => v?.toString()),
-          sodium: z
-            .union([z.string(), z.number()])
-            .optional()
-            .transform((v) => v?.toString()),
-        });
-
         const validated = scannedItemInputSchema.parse({
           ...req.body,
           userId: req.userId!,
@@ -253,13 +261,12 @@ export function register(app: Express): void {
   app.post(
     "/api/scanned-items/:id/favourite",
     requireAuth,
+    pantryRateLimit,
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          return res
-            .status(400)
-            .json({ error: "Invalid item ID", code: "INVALID_ITEM_ID" });
+          return sendError(res, 400, "Invalid item ID", "INVALID_ITEM_ID");
         }
 
         // IDOR: verify ownership (getScannedItem filters discarded items,
@@ -290,13 +297,12 @@ export function register(app: Express): void {
   app.delete(
     "/api/scanned-items/:id",
     requireAuth,
+    pantryRateLimit,
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          return res
-            .status(400)
-            .json({ error: "Invalid item ID", code: "INVALID_ITEM_ID" });
+          return sendError(res, 400, "Invalid item ID", "INVALID_ITEM_ID");
         }
 
         const deleted = await storage.softDeleteScannedItem(id, req.userId!);
@@ -315,10 +321,10 @@ export function register(app: Express): void {
   app.get(
     "/api/daily-summary",
     requireAuth,
+    pantryRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const dateParam = req.query.date as string;
-        const date = dateParam ? new Date(dateParam) : new Date();
+        const date = parseQueryDate(req.query.date) ?? new Date();
 
         const [summary, confirmedIds] = await Promise.all([
           storage.getDailySummary(req.userId!, date),

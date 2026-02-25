@@ -6,7 +6,6 @@ import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { scannedItems, dailyLogs } from "@shared/schema";
-import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import {
   photoIntentSchema,
   INTENT_CONFIG,
@@ -21,7 +20,12 @@ import {
   type AnalysisResult,
 } from "../services/photo-analysis";
 import { batchNutritionLookup } from "../services/nutrition-lookup";
-import { photoRateLimit, formatZodError, upload } from "./_helpers";
+import {
+  photoRateLimit,
+  formatZodError,
+  upload,
+  getPremiumFeatures,
+} from "./_helpers";
 
 // In-memory store for analysis sessions
 // TODO: Replace with Redis for horizontal scaling in production
@@ -91,12 +95,7 @@ export function register(app: Express): void {
           req.userId!,
           new Date(),
         );
-        const subscriptionData = await storage.getSubscriptionStatus(
-          req.userId!,
-        );
-        const tierValue = subscriptionData?.tier || "free";
-        const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
-        const features = TIER_FEATURES[tier];
+        const features = await getPremiumFeatures(req);
 
         if (scanCount >= features.maxDailyScans) {
           return sendError(

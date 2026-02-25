@@ -1,5 +1,30 @@
 import { storage } from "../storage";
 
+/** Approximate kilocalories stored per kilogram of body weight. */
+export const KCAL_PER_KG = 7700;
+
+/** Daily calorie deficit for weight-loss goals. */
+export const WEIGHT_LOSS_DEFICIT = -500;
+
+/** Daily calorie surplus for weight-gain / muscle-building goals. */
+export const WEIGHT_GAIN_SURPLUS = 300;
+
+/** Minimum safe daily calorie target. */
+export const MIN_SAFE_CALORIES = 1200;
+
+/** Maximum safe daily calorie target. */
+export const MAX_SAFE_CALORIES = 5000;
+
+/** Default macro-calorie split ratios used when no existing ratio is available. */
+export const PROTEIN_RATIO = 0.3;
+export const CARBS_RATIO = 0.4;
+export const FAT_RATIO = 0.3;
+
+/** Calories per gram for each macronutrient. */
+export const KCAL_PER_GRAM_PROTEIN = 4;
+export const KCAL_PER_GRAM_CARBS = 4;
+export const KCAL_PER_GRAM_FAT = 9;
+
 export interface AdaptiveGoalRecommendation {
   previousCalories: number;
   newCalories: number;
@@ -23,14 +48,14 @@ export interface CurrentMacros {
 
 /**
  * Estimates actual TDEE from weight change over a period.
- * 1 kg of body weight ≈ 7700 kcal.
+ * 1 kg of body weight ≈ KCAL_PER_KG kcal.
  */
 export function estimateTDEE(
   currentCalories: number,
   weightChangeKg: number,
   daySpan: number,
 ): number {
-  const dailyCalorieFromWeightChange = (weightChangeKg * 7700) / daySpan;
+  const dailyCalorieFromWeightChange = (weightChangeKg * KCAL_PER_KG) / daySpan;
   return currentCalories - dailyCalorieFromWeightChange;
 }
 
@@ -40,16 +65,16 @@ export function estimateTDEE(
 export function getGoalAdjustment(
   goal: string,
 ): number {
-  if (goal === "lose_weight") return -500;
-  if (goal === "gain_weight" || goal === "build_muscle") return 300;
+  if (goal === "lose_weight") return WEIGHT_LOSS_DEFICIT;
+  if (goal === "gain_weight" || goal === "build_muscle") return WEIGHT_GAIN_SURPLUS;
   return 0;
 }
 
 /**
- * Clamps calories to safe bounds: min 1200, max 5000.
+ * Clamps calories to safe bounds: min MIN_SAFE_CALORIES, max MAX_SAFE_CALORIES.
  */
 export function clampCalories(calories: number): number {
-  return Math.max(1200, Math.min(5000, calories));
+  return Math.max(MIN_SAFE_CALORIES, Math.min(MAX_SAFE_CALORIES, calories));
 }
 
 /**
@@ -61,15 +86,29 @@ export function recomputeMacros(
   newCalories: number,
 ): { protein: number; carbs: number; fat: number } {
   const totalCurrentMacroCalories =
-    current.protein * 4 + current.carbs * 4 + current.fat * 9;
-  const proteinRatio = (current.protein * 4) / totalCurrentMacroCalories;
-  const carbsRatio = (current.carbs * 4) / totalCurrentMacroCalories;
-  const fatRatio = (current.fat * 9) / totalCurrentMacroCalories;
+    current.protein * KCAL_PER_GRAM_PROTEIN +
+    current.carbs * KCAL_PER_GRAM_CARBS +
+    current.fat * KCAL_PER_GRAM_FAT;
+
+  if (totalCurrentMacroCalories === 0) {
+    return {
+      protein: Math.round((newCalories * PROTEIN_RATIO) / KCAL_PER_GRAM_PROTEIN),
+      carbs: Math.round((newCalories * CARBS_RATIO) / KCAL_PER_GRAM_CARBS),
+      fat: Math.round((newCalories * FAT_RATIO) / KCAL_PER_GRAM_FAT),
+    };
+  }
+
+  const proteinRatio =
+    (current.protein * KCAL_PER_GRAM_PROTEIN) / totalCurrentMacroCalories;
+  const carbsRatio =
+    (current.carbs * KCAL_PER_GRAM_CARBS) / totalCurrentMacroCalories;
+  const fatRatio =
+    (current.fat * KCAL_PER_GRAM_FAT) / totalCurrentMacroCalories;
 
   return {
-    protein: Math.round((newCalories * proteinRatio) / 4),
-    carbs: Math.round((newCalories * carbsRatio) / 4),
-    fat: Math.round((newCalories * fatRatio) / 9),
+    protein: Math.round((newCalories * proteinRatio) / KCAL_PER_GRAM_PROTEIN),
+    carbs: Math.round((newCalories * carbsRatio) / KCAL_PER_GRAM_CARBS),
+    fat: Math.round((newCalories * fatRatio) / KCAL_PER_GRAM_FAT),
   };
 }
 
@@ -108,7 +147,7 @@ export function determineReason(
 
 /**
  * Computes an adaptive goal recommendation based on:
- * 1. Actual TDEE = avgIntake - (weightChangeKg * 7700 / days) over 2-4 weeks
+ * 1. Actual TDEE = avgIntake - (weightChangeKg * KCAL_PER_KG / days) over 2-4 weeks
  * 2. Compare to estimated TDEE from Mifflin-St Jeor
  * 3. If >10% deviation, recommend adjustment
  * 4. Apply user's goal modifier (lose/gain/maintain)

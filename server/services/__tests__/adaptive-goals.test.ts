@@ -6,6 +6,17 @@ import {
   recomputeMacros,
   determineReason,
   computeAdaptiveGoals,
+  KCAL_PER_KG,
+  WEIGHT_LOSS_DEFICIT,
+  WEIGHT_GAIN_SURPLUS,
+  MIN_SAFE_CALORIES,
+  MAX_SAFE_CALORIES,
+  PROTEIN_RATIO,
+  CARBS_RATIO,
+  FAT_RATIO,
+  KCAL_PER_GRAM_PROTEIN,
+  KCAL_PER_GRAM_CARBS,
+  KCAL_PER_GRAM_FAT,
 } from "../adaptive-goals";
 
 vi.mock("../../storage", () => ({
@@ -19,6 +30,29 @@ vi.mock("../../storage", () => ({
 import { storage } from "../../storage";
 
 describe("Adaptive Goals", () => {
+  describe("named constants", () => {
+    it("has expected nutritional constants", () => {
+      expect(KCAL_PER_KG).toBe(7700);
+      expect(WEIGHT_LOSS_DEFICIT).toBe(-500);
+      expect(WEIGHT_GAIN_SURPLUS).toBe(300);
+      expect(MIN_SAFE_CALORIES).toBe(1200);
+      expect(MAX_SAFE_CALORIES).toBe(5000);
+    });
+
+    it("has expected macro split ratios that sum to 1", () => {
+      expect(PROTEIN_RATIO).toBe(0.3);
+      expect(CARBS_RATIO).toBe(0.4);
+      expect(FAT_RATIO).toBe(0.3);
+      expect(PROTEIN_RATIO + CARBS_RATIO + FAT_RATIO).toBeCloseTo(1.0);
+    });
+
+    it("has expected kcal-per-gram values", () => {
+      expect(KCAL_PER_GRAM_PROTEIN).toBe(4);
+      expect(KCAL_PER_GRAM_CARBS).toBe(4);
+      expect(KCAL_PER_GRAM_FAT).toBe(9);
+    });
+  });
+
   describe("estimateTDEE", () => {
     it("returns current calories when weight is unchanged", () => {
       const tdee = estimateTDEE(2000, 0, 14);
@@ -157,6 +191,35 @@ describe("Adaptive Goals", () => {
       expect(result.protein).toBeCloseTo(150, -1);
       expect(result.carbs).toBeCloseTo(150, -1);
       expect(result.fat).toBeCloseTo(66, -1);
+    });
+
+    it("returns default macro split when all macros are zero (division-by-zero guard)", () => {
+      const current = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+      const result = recomputeMacros(current, 2000);
+
+      // Should use default ratios: 30% protein, 40% carbs, 30% fat
+      expect(result.protein).toBe(Math.round((2000 * PROTEIN_RATIO) / KCAL_PER_GRAM_PROTEIN)); // 150
+      expect(result.carbs).toBe(Math.round((2000 * CARBS_RATIO) / KCAL_PER_GRAM_CARBS)); // 200
+      expect(result.fat).toBe(Math.round((2000 * FAT_RATIO) / KCAL_PER_GRAM_FAT)); // 67
+
+      // Verify no NaN values
+      expect(Number.isNaN(result.protein)).toBe(false);
+      expect(Number.isNaN(result.carbs)).toBe(false);
+      expect(Number.isNaN(result.fat)).toBe(false);
+    });
+
+    it("returns default macro split for zero macros at various calorie targets", () => {
+      const zeroMacros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+
+      const at1200 = recomputeMacros(zeroMacros, 1200);
+      expect(at1200.protein).toBe(Math.round((1200 * 0.3) / 4)); // 90
+      expect(at1200.carbs).toBe(Math.round((1200 * 0.4) / 4)); // 120
+      expect(at1200.fat).toBe(Math.round((1200 * 0.3) / 9)); // 40
+
+      const at3000 = recomputeMacros(zeroMacros, 3000);
+      expect(at3000.protein).toBe(Math.round((3000 * 0.3) / 4)); // 225
+      expect(at3000.carbs).toBe(Math.round((3000 * 0.4) / 4)); // 300
+      expect(at3000.fat).toBe(Math.round((3000 * 0.3) / 9)); // 100
     });
   });
 

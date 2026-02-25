@@ -19,6 +19,19 @@ import { insertUserProfileSchema, allergySchema } from "@shared/schema";
 // ============================================================================
 
 /**
+ * Resolve the current user's premium features object.
+ * Looks up subscription status and safely validates the tier before indexing.
+ * Use this when you need the features object without gating on a specific boolean feature.
+ */
+export async function getPremiumFeatures(
+  req: Request,
+): Promise<PremiumFeatures> {
+  const subscription = await storage.getSubscriptionStatus(req.userId!);
+  const tier = subscription?.tier || "free";
+  return TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
+}
+
+/**
  * Check if the user has a premium feature. Returns the features object if granted,
  * or sends a 403 response and returns null if not.
  */
@@ -28,9 +41,7 @@ export async function checkPremiumFeature(
   featureKey: keyof PremiumFeatures,
   featureLabel: string,
 ): Promise<PremiumFeatures | null> {
-  const subscription = await storage.getSubscriptionStatus(req.userId!);
-  const tier = subscription?.tier || "free";
-  const features = TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
+  const features = await getPremiumFeatures(req);
   if (!features[featureKey]) {
     sendError(
       res,
@@ -71,6 +82,17 @@ export function parseQueryInt(
   return result;
 }
 
+/**
+ * Parse a query string parameter as a Date. Returns undefined if the value
+ * is missing or not a valid date string.
+ */
+export function parseQueryDate(value: unknown): Date | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return undefined;
+  return date;
+}
+
 /** Extract IP address for rate limiting fallback when user is not authenticated */
 export function ipKeyGenerator(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";
@@ -103,7 +125,7 @@ export function createRateLimiter(options: {
   return rateLimit({
     windowMs: options.windowMs,
     max: options.max,
-    message: { error: options.message },
+    message: { error: options.message, code: "RATE_LIMITED" },
     standardHeaders: true,
     legacyHeaders: false,
     ...(options.keyByUser !== false && {
@@ -136,6 +158,12 @@ export const photoRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 10,
   message: "Too many photo uploads. Please wait.",
+});
+
+export const suggestionsRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: "Too many suggestion requests. Please wait.",
 });
 
 export const instructionsRateLimit = createRateLimiter({
@@ -196,6 +224,13 @@ export const urlImportRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 5,
   message: "Too many import requests. Please wait.",
+});
+
+// --- General-purpose CRUD rate limiter (for routes without a domain-specific one) ---
+export const crudRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many requests. Please wait.",
 });
 
 // --- Route-specific rate limiters (consolidated from route files) ---

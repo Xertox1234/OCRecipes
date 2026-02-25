@@ -12,7 +12,7 @@ import {
   healthKitSync,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lte, or, ilike } from "drizzle-orm";
+import { eq, desc, and, gte, lte, or, ilike, sql } from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
 
 // ============================================================================
@@ -129,8 +129,12 @@ export async function getExerciseDailySummary(
   exerciseCount: number;
 }> {
   const { startOfDay, endOfDay } = getDayBounds(date);
-  const logs = await db
-    .select()
+  const [result] = await db
+    .select({
+      totalCaloriesBurned: sql<number>`COALESCE(SUM(${exerciseLogs.caloriesBurned}), 0)`,
+      totalMinutes: sql<number>`COALESCE(SUM(${exerciseLogs.durationMinutes}), 0)`,
+      exerciseCount: sql<number>`COUNT(${exerciseLogs.id})`,
+    })
     .from(exerciseLogs)
     .where(
       and(
@@ -140,12 +144,9 @@ export async function getExerciseDailySummary(
       ),
     );
   return {
-    totalCaloriesBurned: logs.reduce(
-      (sum, l) => sum + (l.caloriesBurned ? parseFloat(l.caloriesBurned) : 0),
-      0,
-    ),
-    totalMinutes: logs.reduce((sum, l) => sum + l.durationMinutes, 0),
-    exerciseCount: logs.length,
+    totalCaloriesBurned: Number(result.totalCaloriesBurned),
+    totalMinutes: Number(result.totalMinutes),
+    exerciseCount: Number(result.exerciseCount),
   };
 }
 

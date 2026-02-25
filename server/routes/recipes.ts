@@ -3,7 +3,6 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
-import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import {
   generateFullRecipe,
   normalizeProductName,
@@ -21,6 +20,8 @@ import {
   urlImportRateLimit,
   formatZodError,
   parsePositiveIntParam,
+  checkPremiumFeature,
+  getPremiumFeatures,
 } from "./_helpers";
 
 // Zod schemas for recipe endpoints
@@ -148,12 +149,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const subscriptionData = await storage.getSubscriptionStatus(
-          req.userId!,
-        );
-        const tierValue = subscriptionData?.tier || "free";
-        const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
-        const features = TIER_FEATURES[tier];
+        const features = await getPremiumFeatures(req);
 
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId!,
@@ -182,17 +178,13 @@ export function register(app: Express): void {
     async (req: Request, res: Response): Promise<void> => {
       try {
         // Check premium status
-        const subscriptionData = await storage.getSubscriptionStatus(
-          req.userId!,
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "recipeGeneration",
+          "Recipe generation",
         );
-        const tierValue = subscriptionData?.tier || "free";
-        const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
-        const features = TIER_FEATURES[tier];
-
-        if (!features.recipeGeneration) {
-          sendError(res, 403, "Recipe generation requires a premium subscription", "PREMIUM_REQUIRED");
-          return;
-        }
+        if (!features) return;
 
         // Check daily limit
         const generationsToday = await storage.getDailyRecipeGenerationCount(

@@ -2,7 +2,11 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import { checkPremiumFeature, parseQueryInt } from "./_helpers";
+import {
+  checkPremiumFeature,
+  parseQueryInt,
+  crudRateLimit,
+} from "./_helpers";
 import { computeAdaptiveGoals } from "../services/adaptive-goals";
 
 export function register(app: Express): void {
@@ -10,6 +14,7 @@ export function register(app: Express): void {
   app.get(
     "/api/goals/adaptive",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -38,6 +43,7 @@ export function register(app: Express): void {
   app.post(
     "/api/goals/adaptive/accept",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -98,6 +104,7 @@ export function register(app: Express): void {
   app.post(
     "/api/goals/adaptive/dismiss",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -144,6 +151,7 @@ export function register(app: Express): void {
   app.put(
     "/api/goals/adaptive/settings",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -175,6 +183,7 @@ export function register(app: Express): void {
   app.get(
     "/api/goals/adjustment-history",
     requireAuth,
+    crudRateLimit,
     async (req: Request, res: Response) => {
       try {
         const features = await checkPremiumFeature(

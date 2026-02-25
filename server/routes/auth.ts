@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth, generateToken, invalidateTokenVersionCache } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { detectImageMimeType } from "../lib/image-mime";
 import {
   registerLimiter,
   loginLimiter,
@@ -202,10 +203,19 @@ export function register(app: Express): void {
           return sendError(res, 400, "No image provided");
         }
 
-        // Convert to base64 data URL (stored directly in DB for simplicity)
+        // Validate actual file content via magic bytes (do not trust client header)
+        const detectedMime = detectImageMimeType(req.file.buffer);
+        if (!detectedMime) {
+          return sendError(
+            res,
+            400,
+            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+          );
+        }
+
+        // Convert to base64 data URL using the verified MIME type
         const base64 = req.file.buffer.toString("base64");
-        const mimeType = req.file.mimetype;
-        const dataUrl = `data:${mimeType};base64,${base64}`;
+        const dataUrl = `data:${detectedMime};base64,${base64}`;
 
         // Limit size check (already handled by multer, but double-check data URL)
         if (dataUrl.length > 1.5 * 1024 * 1024) {
