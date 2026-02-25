@@ -158,7 +158,7 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
           10,
         );
 
-        if (isNaN(itemId) || itemId <= 0) {
+        if (!itemId) {
           return sendError(res, 400, "Invalid item ID");
         }
         if (isNaN(suggestionIndex) || suggestionIndex < 0) {

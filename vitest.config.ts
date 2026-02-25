@@ -6,7 +6,7 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["**/*.test.ts", "**/*.test.tsx"],
-    exclude: ["node_modules", "server_dist", ".expo"],
+    exclude: ["node_modules", "server_dist", ".expo", ".claude/worktrees"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
