@@ -111,7 +111,7 @@ export function register(app: Express): void {
       try {
         const user = await storage.getUser(req.userId!);
         if (!user) {
-          return res.status(404).json({ error: "User not found" });
+          return sendError(res, 404, "User not found");
         }
 
         // Increment tokenVersion to invalidate all existing tokens
@@ -122,7 +122,7 @@ export function register(app: Express): void {
         res.json({ success: true });
       } catch (error) {
         console.error("Logout error:", error);
-        res.status(500).json({ error: "Failed to logout" });
+        sendError(res, 500, "Failed to logout");
       }
     },
   );
