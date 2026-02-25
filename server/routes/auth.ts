@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import { ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth, generateToken } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import {
   registerLimiter,
   loginLimiter,
@@ -26,7 +27,7 @@ export function register(app: Express): void {
           validated.username,
         );
         if (existingUser) {
-          return res.status(409).json({ error: "Username already exists" });
+          return sendError(res, 409, "Username already exists");
         }
 
         const hashedPassword = await bcrypt.hash(validated.password, 10);
@@ -51,10 +52,10 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Registration error:", error);
-        res.status(500).json({ error: "Failed to create account" });
+        sendError(res, 500, "Failed to create account");
       }
     },
   );
@@ -68,7 +69,7 @@ export function register(app: Express): void {
 
         const user = await storage.getUserByUsername(validated.username);
         if (!user) {
-          return res.status(401).json({ error: "Invalid credentials" });
+          return sendError(res, 401, "Invalid credentials");
         }
 
         const isValidPassword = await bcrypt.compare(
@@ -76,7 +77,7 @@ export function register(app: Express): void {
           user.password,
         );
         if (!isValidPassword) {
-          return res.status(401).json({ error: "Invalid credentials" });
+          return sendError(res, 401, "Invalid credentials");
         }
 
         const token = generateToken(user.id.toString());
@@ -95,10 +96,10 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Login error:", error);
-        res.status(500).json({ error: "Failed to login" });
+        sendError(res, 500, "Failed to login");
       }
     },
   );
@@ -111,7 +112,7 @@ export function register(app: Express): void {
   app.get("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
     const user = await storage.getUser(req.userId!);
     if (!user) {
-      return res.status(401).json({ error: "User not found" });
+      return sendError(res, 401, "User not found");
     }
 
     res.json({
@@ -140,13 +141,13 @@ export function register(app: Express): void {
           updates.onboardingCompleted = validated.onboardingCompleted;
 
         if (Object.keys(updates).length === 0) {
-          return res.status(400).json({ error: "No valid fields to update" });
+          return sendError(res, 400, "No valid fields to update");
         }
 
         const user = await storage.updateUser(req.userId!, updates);
 
         if (!user) {
-          return res.status(404).json({ error: "User not found" });
+          return sendError(res, 404, "User not found");
         }
 
         res.json({
@@ -160,10 +161,10 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Profile update error:", error);
-        res.status(500).json({ error: "Failed to update profile" });
+        sendError(res, 500, "Failed to update profile");
       }
     },
   );
@@ -177,7 +178,7 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         if (!req.file) {
-          return res.status(400).json({ error: "No image provided" });
+          return sendError(res, 400, "No image provided");
         }
 
         // Convert to base64 data URL (stored directly in DB for simplicity)
@@ -187,9 +188,7 @@ export function register(app: Express): void {
 
         // Limit size check (already handled by multer, but double-check data URL)
         if (dataUrl.length > 1.5 * 1024 * 1024) {
-          return res
-            .status(400)
-            .json({ error: "Image too large after encoding" });
+          return sendError(res, 400, "Image too large after encoding");
         }
 
         const user = await storage.updateUser(req.userId!, {
@@ -197,7 +196,7 @@ export function register(app: Express): void {
         });
 
         if (!user) {
-          return res.status(404).json({ error: "User not found" });
+          return sendError(res, 404, "User not found");
         }
 
         res.json({
@@ -205,7 +204,7 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Avatar upload error:", error);
-        res.status(500).json({ error: "Failed to upload avatar" });
+        sendError(res, 500, "Failed to upload avatar");
       }
     },
   );
@@ -221,13 +220,13 @@ export function register(app: Express): void {
         });
 
         if (!user) {
-          return res.status(404).json({ error: "User not found" });
+          return sendError(res, 404, "User not found");
         }
 
         res.json({ success: true });
       } catch (error) {
         console.error("Avatar delete error:", error);
-        res.status(500).json({ error: "Failed to delete avatar" });
+        sendError(res, 500, "Failed to delete avatar");
       }
     },
   );

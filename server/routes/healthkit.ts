@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
+import { sendError } from "../lib/api-errors";
 import { formatZodError, checkPremiumFeature } from "./_helpers";
 import { syncHealthKitData } from "../services/healthkit-sync";
 
@@ -73,10 +74,10 @@ export function register(app: Express): void {
         res.json(result);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("HealthKit sync error:", error);
-        res.status(500).json({ error: "Failed to sync HealthKit data" });
+        sendError(res, 500, "Failed to sync HealthKit data");
       }
     },
   );
@@ -91,7 +92,7 @@ export function register(app: Express): void {
         res.json(settings);
       } catch (error) {
         console.error("Get HealthKit settings error:", error);
-        res.status(500).json({ error: "Failed to get HealthKit settings" });
+        sendError(res, 500, "Failed to get HealthKit settings");
       }
     },
   );
@@ -124,10 +125,10 @@ export function register(app: Express): void {
         res.json(results);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Update HealthKit settings error:", error);
-        res.status(500).json({ error: "Failed to update HealthKit settings" });
+        sendError(res, 500, "Failed to update HealthKit settings");
       }
     },
   );

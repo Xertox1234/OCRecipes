@@ -7,6 +7,7 @@ import { rateLimit } from "express-rate-limit";
 import { z, ZodError } from "zod";
 import multer from "multer";
 import { storage } from "../storage";
+import { sendError } from "../lib/api-errors";
 import {
   TIER_FEATURES,
   isValidSubscriptionTier,
@@ -32,10 +33,12 @@ export async function checkPremiumFeature(
   const tier = subscription?.tier || "free";
   const features = TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
   if (!features[featureKey]) {
-    res.status(403).json({
-      error: `${featureLabel} requires a premium subscription`,
-      code: "PREMIUM_REQUIRED",
-    });
+    sendError(
+      res,
+      403,
+      `${featureLabel} requires a premium subscription`,
+      "PREMIUM_REQUIRED",
+    );
     return null;
   }
   return features;

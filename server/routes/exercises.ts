@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
+import { sendError } from "../lib/api-errors";
 import { formatZodError } from "./_helpers";
 import { calculateCaloriesBurned } from "../services/exercise-calorie";
 
@@ -43,7 +44,7 @@ export function register(app: Express): void {
         res.json(summary);
       } catch (error) {
         console.error("Get exercise summary error:", error);
-        res.status(500).json({ error: "Failed to get exercise summary" });
+        sendError(res, 500, "Failed to get exercise summary");
       }
     },
   );
@@ -69,7 +70,7 @@ export function register(app: Express): void {
         res.json(logs);
       } catch (error) {
         console.error("Get exercise logs error:", error);
-        res.status(500).json({ error: "Failed to get exercise logs" });
+        sendError(res, 500, "Failed to get exercise logs");
       }
     },
   );
@@ -123,10 +124,10 @@ export function register(app: Express): void {
         res.status(201).json(log);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Create exercise log error:", error);
-        res.status(500).json({ error: "Failed to log exercise" });
+        sendError(res, 500, "Failed to log exercise");
       }
     },
   );
@@ -139,7 +140,7 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id))
-          return res.status(400).json({ error: "Invalid exercise log ID" });
+          return sendError(res, 400, "Invalid exercise log ID");
         const validated = updateExerciseLogSchema.parse(req.body);
         const updates: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(validated)) {
@@ -159,13 +160,13 @@ export function register(app: Express): void {
           updates,
         );
         if (!updated)
-          return res.status(404).json({ error: "Exercise log not found" });
+          return sendError(res, 404, "Exercise log not found");
         res.json(updated);
       } catch (error) {
         if (error instanceof ZodError)
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         console.error("Update exercise log error:", error);
-        res.status(500).json({ error: "Failed to update exercise log" });
+        sendError(res, 500, "Failed to update exercise log");
       }
     },
   );
@@ -178,14 +179,14 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id))
-          return res.status(400).json({ error: "Invalid exercise log ID" });
+          return sendError(res, 400, "Invalid exercise log ID");
         const deleted = await storage.deleteExerciseLog(id, req.userId!);
         if (!deleted)
-          return res.status(404).json({ error: "Exercise log not found" });
+          return sendError(res, 404, "Exercise log not found");
         res.json({ success: true });
       } catch (error) {
         console.error("Delete exercise log error:", error);
-        res.status(500).json({ error: "Failed to delete exercise log" });
+        sendError(res, 500, "Failed to delete exercise log");
       }
     },
   );
@@ -202,7 +203,7 @@ export function register(app: Express): void {
         res.json(results);
       } catch (error) {
         console.error("Search exercise library error:", error);
-        res.status(500).json({ error: "Failed to search exercises" });
+        sendError(res, 500, "Failed to search exercises");
       }
     },
   );
@@ -235,9 +236,9 @@ export function register(app: Express): void {
         res.status(201).json(entry);
       } catch (error) {
         if (error instanceof ZodError)
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         console.error("Create exercise library entry error:", error);
-        res.status(500).json({ error: "Failed to create exercise" });
+        sendError(res, 500, "Failed to create exercise");
       }
     },
   );
@@ -251,7 +252,7 @@ export function register(app: Express): void {
         const dateStr = req.query.date as string | undefined;
         const date = dateStr ? new Date(dateStr) : new Date();
         const user = await storage.getUser(req.userId!);
-        if (!user) return res.status(404).json({ error: "User not found" });
+        if (!user) return sendError(res, 404, "User not found");
 
         const dailySummary = await storage.getDailySummary(req.userId!, date);
         const exerciseSummary = await storage.getExerciseDailySummary(
@@ -276,7 +277,7 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Get daily budget error:", error);
-        res.status(500).json({ error: "Failed to get daily budget" });
+        sendError(res, 500, "Failed to get daily budget");
       }
     },
   );

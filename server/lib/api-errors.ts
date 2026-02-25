@@ -1,18 +1,20 @@
 import type { Response } from "express";
 
-interface ErrorOptions {
-  code?: string;
-  details?: unknown;
-}
-
+/**
+ * Send a standardized error response.
+ *
+ * Standard shape: { error: string, code?: string }
+ *
+ * All API error responses must use this utility to ensure a consistent
+ * shape across the entire backend.
+ */
 export function sendError(
   res: Response,
   status: number,
   error: string,
-  options?: ErrorOptions,
+  code?: string,
 ): void {
   const body: Record<string, unknown> = { error };
-  if (options?.code) body.code = options.code;
-  if (options?.details) body.details = options.details;
+  if (code) body.code = code;
   res.status(status).json(body);
 }

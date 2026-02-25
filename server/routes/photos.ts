@@ -4,6 +4,7 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import { scannedItems, dailyLogs } from "@shared/schema";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import {
@@ -98,15 +99,16 @@ export function register(app: Express): void {
         const features = TIER_FEATURES[tier];
 
         if (scanCount >= features.maxDailyScans) {
-          return res.status(429).json({
-            error: "Daily scan limit reached",
-            scanCount,
-            limit: features.maxDailyScans,
-          });
+          return sendError(
+            res,
+            429,
+            "Daily scan limit reached",
+            "DAILY_LIMIT_REACHED",
+          );
         }
 
         if (!req.file) {
-          return res.status(400).json({ error: "No photo provided" });
+          return sendError(res, 400, "No photo provided");
         }
 
         // Parse intent from multipart form parameters (default: "log")
@@ -171,7 +173,7 @@ export function register(app: Express): void {
         res.json(response);
       } catch (error) {
         console.error("Photo analysis error:", error);
-        res.status(500).json({ error: "Failed to analyze photo" });
+        sendError(res, 500, "Failed to analyze photo");
       }
     },
   );
@@ -186,22 +188,18 @@ export function register(app: Express): void {
 
         const parsed = followUpSchema.safeParse(req.body);
         if (!parsed.success) {
-          return res
-            .status(400)
-            .json({ error: "Invalid input", details: parsed.error.flatten() });
+          return sendError(res, 400, "Invalid input");
         }
         const { question, answer } = parsed.data;
 
         const session = analysisSessionStore.get(sessionId);
         if (!session) {
-          return res
-            .status(404)
-            .json({ error: "Session not found or expired" });
+          return sendError(res, 404, "Session not found or expired");
         }
 
         // Verify session ownership
         if (session.userId !== req.userId!) {
-          return res.status(403).json({ error: "Not authorized" });
+          return sendError(res, 403, "Not authorized");
         }
 
         // Refine analysis based on follow-up
@@ -239,7 +237,7 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Follow-up error:", error);
-        res.status(500).json({ error: "Failed to process follow-up" });
+        sendError(res, 500, "Failed to process follow-up");
       }
     },
   );
@@ -267,7 +265,7 @@ export function register(app: Express): void {
 
         // Verify session ownership if session exists
         if (session && session.userId !== req.userId!) {
-          return res.status(403).json({ error: "Not authorized" });
+          return sendError(res, 403, "Not authorized");
         }
 
         const confidence = session?.result?.overallConfidence;
@@ -306,10 +304,10 @@ export function register(app: Express): void {
         res.status(201).json(scannedItem);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Confirm error:", error);
-        res.status(500).json({ error: "Failed to save meal" });
+        sendError(res, 500, "Failed to save meal");
       }
     },
   );
