@@ -9,7 +9,11 @@ import {
   dailyLogs,
 } from "@shared/schema";
 import { lookupNutrition, lookupBarcode } from "../services/nutrition-lookup";
-import { nutritionLookupRateLimit, formatZodError } from "./_helpers";
+import {
+  nutritionLookupRateLimit,
+  formatZodError,
+  parsePositiveIntParam,
+} from "./_helpers";
 
 export function register(app: Express): void {
   // Nutrition lookup by product name — used as fallback when OpenFoodFacts
@@ -129,8 +133,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           return res.status(400).json({ error: "Invalid item ID" });
         }
 
@@ -253,8 +257,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           return res
             .status(400)
             .json({ error: "Invalid item ID", code: "INVALID_ITEM_ID" });
@@ -290,8 +294,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           return res
             .status(400)
             .json({ error: "Invalid item ID", code: "INVALID_ITEM_ID" });

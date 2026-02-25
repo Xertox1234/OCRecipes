@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { analyzeMenuPhoto } from "../services/menu-analysis";
-import { checkPremiumFeature, menuRateLimit } from "./_helpers";
+import { checkPremiumFeature, menuRateLimit, parsePositiveIntParam } from "./_helpers";
 import multer from "multer";
 
 const menuUpload = multer({
@@ -88,9 +88,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id))
-          return res.status(400).json({ error: "Invalid scan ID" });
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) return res.status(400).json({ error: "Invalid scan ID" });
 
         const deleted = await storage.deleteMenuScan(id, req.userId!);
         if (!deleted)

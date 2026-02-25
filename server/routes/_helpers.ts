@@ -40,6 +40,16 @@ export async function checkPremiumFeature(
   return features;
 }
 
+/**
+ * Parse a route parameter as a positive integer. Returns the parsed number,
+ * or null if the value is not a valid positive integer (rejects NaN, 0, and negatives).
+ */
+export function parsePositiveIntParam(value: string): number | null {
+  const num = parseInt(value, 10);
+  if (isNaN(num) || num <= 0) return null;
+  return num;
+}
+
 /** Extract IP address for rate limiting fallback when user is not authenticated */
 export function ipKeyGenerator(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";

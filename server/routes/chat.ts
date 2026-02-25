@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
-import { chatRateLimit, formatZodError } from "./_helpers";
+import { chatRateLimit, formatZodError, parsePositiveIntParam } from "./_helpers";
 import {
   generateCoachResponse,
   type CoachContext,
@@ -46,8 +46,8 @@ export function register(app: Express): void {
     requireAuth,
     chatRateLimit,
     async (req: Request, res: Response) => {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id))
+      const id = parsePositiveIntParam(req.params.id as string);
+      if (!id)
         return res.status(400).json({ error: "Invalid conversation ID" });
 
       const conversation = await storage.getChatConversation(id, req.userId!);
@@ -65,8 +65,8 @@ export function register(app: Express): void {
     requireAuth,
     chatRateLimit,
     async (req: Request, res: Response) => {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id))
+      const id = parsePositiveIntParam(req.params.id as string);
+      if (!id)
         return res.status(400).json({ error: "Invalid conversation ID" });
 
       const conversation = await storage.getChatConversation(id, req.userId!);
@@ -197,8 +197,8 @@ export function register(app: Express): void {
     requireAuth,
     chatRateLimit,
     async (req: Request, res: Response) => {
-      const id = parseInt(req.params.id as string, 10);
-      if (isNaN(id))
+      const id = parsePositiveIntParam(req.params.id as string);
+      if (!id)
         return res.status(400).json({ error: "Invalid conversation ID" });
 
       const deleted = await storage.deleteChatConversation(id, req.userId!);

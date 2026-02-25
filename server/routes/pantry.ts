@@ -6,6 +6,7 @@ import {
   pantryRateLimit,
   checkPremiumFeature,
   formatZodError,
+  parsePositiveIntParam,
 } from "./_helpers";
 
 const pantryItemSchema = z.object({
@@ -107,8 +108,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid pantry item ID" });
           return;
         }
@@ -151,8 +152,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid pantry item ID" });
           return;
         }

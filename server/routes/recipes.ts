@@ -19,6 +19,7 @@ import {
   mealPlanRateLimit,
   urlImportRateLimit,
   formatZodError,
+  parsePositiveIntParam,
 } from "./_helpers";
 
 // Zod schemas for recipe endpoints
@@ -276,8 +277,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const recipeId = parseInt(req.params.id as string, 10);
-        if (isNaN(recipeId) || recipeId <= 0) {
+        const recipeId = parsePositiveIntParam(req.params.id as string);
+        if (!recipeId) {
           res.status(400).json({ error: "Invalid recipe ID" });
           return;
         }
@@ -330,8 +331,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const recipeId = parseInt(req.params.id as string, 10);
-        if (isNaN(recipeId) || recipeId <= 0) {
+        const recipeId = parsePositiveIntParam(req.params.id as string);
+        if (!recipeId) {
           res.status(400).json({ error: "Invalid recipe ID" });
           return;
         }
@@ -364,8 +365,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const recipeId = parseInt(req.params.id as string, 10);
-        if (isNaN(recipeId) || recipeId <= 0) {
+        const recipeId = parsePositiveIntParam(req.params.id as string);
+        if (!recipeId) {
           res.status(400).json({ error: "Invalid recipe ID" });
           return;
         }
@@ -429,8 +430,8 @@ export function register(app: Express): void {
     mealPlanRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid catalog ID" });
           return;
         }
@@ -462,8 +463,8 @@ export function register(app: Express): void {
     mealPlanRateLimit,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id) || id <= 0) {
+        const id = parsePositiveIntParam(req.params.id as string);
+        if (!id) {
           res.status(400).json({ error: "Invalid catalog ID" });
           return;
         }

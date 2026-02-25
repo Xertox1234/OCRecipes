@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { micronutrientRateLimit, checkPremiumFeature } from "./_helpers";
+import { micronutrientRateLimit, checkPremiumFeature, parsePositiveIntParam } from "./_helpers";
 import { requireAuth } from "../middleware/auth";
 import {
   lookupMicronutrientsWithCache,
@@ -25,9 +25,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const itemId = parseInt(req.params.id as string, 10);
-        if (isNaN(itemId) || itemId <= 0)
-          return res.status(400).json({ error: "Invalid item ID" });
+        const itemId = parsePositiveIntParam(req.params.id as string);
+        if (!itemId) return res.status(400).json({ error: "Invalid item ID" });
 
         const item = await storage.getScannedItem(itemId);
         if (!item) return res.status(404).json({ error: "Item not found" });
