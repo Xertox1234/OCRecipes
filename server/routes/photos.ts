@@ -24,7 +24,7 @@ import {
   photoRateLimit,
   formatZodError,
   upload,
-  getPremiumFeatures,
+  checkPremiumFeature,
 } from "./_helpers";
 
 // In-memory store for analysis sessions
@@ -90,12 +90,20 @@ export function register(app: Express): void {
     upload.single("photo"),
     async (req: Request, res: Response) => {
       try {
+        // Premium gate
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "photoAnalysis",
+          "Photo analysis",
+        );
+        if (!features) return;
+
         // Check scan limit
         const scanCount = await storage.getDailyScanCount(
           req.userId!,
           new Date(),
         );
-        const features = await getPremiumFeatures(req);
 
         if (scanCount >= features.maxDailyScans) {
           return sendError(

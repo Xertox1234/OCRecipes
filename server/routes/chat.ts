@@ -7,7 +7,7 @@ import {
   formatZodError,
   parsePositiveIntParam,
   parseQueryInt,
-  getPremiumFeatures,
+  checkPremiumFeature,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import {
@@ -100,11 +100,19 @@ export function register(app: Express): void {
         if (!parsed.success)
           return sendError(res, 400, formatZodError(parsed.error));
 
-        // Check daily message limit — fetch user, daily count, and features in parallel
-        const [user, dailyCount, features] = await Promise.all([
+        // Premium gate — fail fast before DB queries
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "aiCoach",
+          "AI Coach",
+        );
+        if (!features) return;
+
+        // Fetch user and daily count in parallel
+        const [user, dailyCount] = await Promise.all([
           storage.getUser(req.userId!),
           storage.getDailyChatMessageCount(req.userId!, new Date()),
-          getPremiumFeatures(req),
         ]);
         if (!user) return sendError(res, 401, "Unauthorized");
 
