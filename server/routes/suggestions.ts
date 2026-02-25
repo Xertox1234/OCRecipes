@@ -167,13 +167,8 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
         }
 
         const item = await storage.getScannedItem(itemId);
-        if (!item) {
+        if (!item || item.userId !== req.userId) {
           return sendError(res, 404, "Item not found");
-        }
-
-        // Validate user owns the item
-        if (item.userId !== req.userId) {
-          return sendError(res, 403, "Not authorized");
         }
 
         const parsed = instructionsRequestSchema.safeParse(req.body);
