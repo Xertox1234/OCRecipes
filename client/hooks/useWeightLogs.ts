@@ -1,24 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import type { ApiWeightLog, WeightTrend } from "@shared/types/weight";
 
-export interface WeightLog {
-  id: number;
-  userId: string;
-  weight: string;
-  source: string;
-  note: string | null;
-  loggedAt: string;
-}
-
-export interface WeightTrend {
-  avg7Day: number | null;
-  avg30Day: number | null;
-  weeklyRateOfChange: number | null;
-  projectedGoalDate: string | null;
-  currentWeight: number | null;
-  entries: number;
-  goalWeight: number | null;
-}
+export type { ApiWeightLog, WeightTrend } from "@shared/types/weight";
 
 export function useWeightLogs(options?: {
   from?: string;
@@ -31,7 +15,7 @@ export function useWeightLogs(options?: {
   if (options?.limit) params.set("limit", String(options.limit));
   const qs = params.toString();
 
-  return useQuery<WeightLog[]>({
+  return useQuery<ApiWeightLog[]>({
     queryKey: [qs ? `/api/weight?${qs}` : "/api/weight"],
   });
 }

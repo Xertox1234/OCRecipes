@@ -1,32 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import type { ApiMedicationLog, Glp1Insights } from "@shared/types/medication";
 import type { ProteinSuggestionsResponse } from "@shared/types/protein-suggestions";
 
-interface MedicationLog {
-  id: number;
-  userId: string;
-  medicationName: string;
-  brandName: string | null;
-  dosage: string;
-  takenAt: string;
-  sideEffects: string[];
-  appetiteLevel: number | null;
-  notes: string | null;
-}
-
-interface Glp1Insights {
-  totalDoses: number;
-  daysSinceStart: number | null;
-  averageAppetiteLevel: number | null;
-  appetiteTrend: "decreasing" | "stable" | "increasing" | null;
-  commonSideEffects: { name: string; count: number }[];
-  weightChangeSinceStart: number | null;
-  lastDoseAt: string | null;
-  nextDoseEstimate: string | null;
-}
+export type { ApiMedicationLog, Glp1Insights } from "@shared/types/medication";
 
 export function useMedicationLogs() {
-  return useQuery<MedicationLog[]>({
+  return useQuery<ApiMedicationLog[]>({
     queryKey: ["/api/medication/logs"],
   });
 }

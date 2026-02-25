@@ -1,15 +1,7 @@
 import { storage } from "../storage";
+import type { Glp1Insights } from "@shared/types/medication";
 
-export interface Glp1Insights {
-  totalDoses: number;
-  daysSinceStart: number | null;
-  averageAppetiteLevel: number | null;
-  appetiteTrend: "decreasing" | "stable" | "increasing" | null;
-  commonSideEffects: { name: string; count: number }[];
-  weightChangeSinceStart: number | null;
-  lastDoseAt: string | null;
-  nextDoseEstimate: string | null;
-}
+export type { Glp1Insights } from "@shared/types/medication";
 
 export async function analyzeGlp1Insights(
   userId: string,

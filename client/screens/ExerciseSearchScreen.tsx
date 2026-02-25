@@ -9,7 +9,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
   useSearchExerciseLibrary,
-  type ExerciseLibraryEntry,
+  type ApiExerciseLibraryEntry,
 } from "@/hooks/useExerciseLogs";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import type { ActivityStackParamList } from "@/navigation/ActivityStackNavigator";
@@ -25,7 +25,7 @@ export default function ExerciseSearchScreen({ navigation, route }: Props) {
   const { data: results = [], isLoading } = useSearchExerciseLibrary(query);
 
   const handleSelect = useCallback(
-    (exercise: ExerciseLibraryEntry) => {
+    (exercise: ApiExerciseLibraryEntry) => {
       haptics.selection();
       route.params?.onSelect?.({
         name: exercise.name,
@@ -38,7 +38,7 @@ export default function ExerciseSearchScreen({ navigation, route }: Props) {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: ExerciseLibraryEntry }) => (
+    ({ item }: { item: ApiExerciseLibraryEntry }) => (
       <Pressable
         onPress={() => handleSelect(item)}
         accessibilityLabel={`${item.name}, ${item.type}, MET ${item.metValue}`}
@@ -76,7 +76,7 @@ export default function ExerciseSearchScreen({ navigation, route }: Props) {
   );
 
   const keyExtractor = useCallback(
-    (item: ExerciseLibraryEntry) => String(item.id),
+    (item: ApiExerciseLibraryEntry) => String(item.id),
     [],
   );
 

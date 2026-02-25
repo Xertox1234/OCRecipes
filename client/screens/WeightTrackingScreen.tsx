@@ -24,7 +24,7 @@ import {
   useLogWeight,
   useDeleteWeightLog,
   useSetGoalWeight,
-  type WeightLog,
+  type ApiWeightLog,
 } from "@/hooks/useWeightLogs";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
@@ -71,7 +71,7 @@ export default function WeightTrackingScreen() {
   }, [weightInput, noteInput, haptics, logWeight]);
 
   const handleDeleteLog = useCallback(
-    (log: WeightLog) => {
+    (log: ApiWeightLog) => {
       Alert.alert("Delete Entry", `Remove ${formatWeight(log.weight)} entry?`, [
         { text: "Cancel", style: "cancel" },
         {

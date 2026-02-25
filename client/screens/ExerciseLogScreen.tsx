@@ -24,7 +24,7 @@ import {
   useExerciseLogs,
   useLogExercise,
   useDeleteExerciseLog,
-  type ExerciseLog,
+  type ApiExerciseLog,
 } from "@/hooks/useExerciseLogs";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
 import {
@@ -122,7 +122,7 @@ export default function ExerciseLogScreen() {
   }, [exerciseName, exerciseType, duration, notes, haptics, logExercise]);
 
   const handleDeleteLog = useCallback(
-    (log: ExerciseLog) => {
+    (log: ApiExerciseLog) => {
       Alert.alert("Delete Exercise", `Remove "${log.exerciseName}" entry?`, [
         { text: "Cancel", style: "cancel" },
         {
