@@ -8,6 +8,8 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [IDOR Protection: Auth + Ownership Check](#idor-protection-auth--ownership-check)
     - [Storage-Layer Defense-in-Depth](#storage-layer-defense-in-depth)
   - [SSRF Protection for Server-Side URL Fetching](#ssrf-protection-for-server-side-url-fetching)
+  - [Token Versioning for JWT Revocation](#token-versioning-for-jwt-revocation)
+  - [AI Input Sanitization Boundary](#ai-input-sanitization-boundary)
 - [TypeScript Patterns](#typescript-patterns)
   - [Zod Discriminated Union for Response Schemas](#zod-discriminated-union-for-response-schemas)
   - [Discriminated Union State with Named Predicates](#discriminated-union-state-with-named-predicates)
@@ -16,6 +18,10 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Stub Service with Production Safety Gate](#stub-service-with-production-safety-gate)
   - [Tier-Gated Route Guards](#tier-gated-route-guards)
   - [checkPremiumFeature Helper for Tier Gates](#checkpremiumfeature-helper-for-tier-gates)
+  - [`sendError` -- Standardized Error Response Helper](#senderror----standardized-error-response-helper)
+  - [`parseQueryInt` -- Typed Query Parameter Parsing](#parsequeryint----typed-query-parameter-parsing)
+  - [`parsePositiveIntParam` -- Express 5 Route Param Parsing](#parsepositiveintparam----express-5-route-param-parsing)
+  - [`createRateLimiter` -- Rate Limiter Factory](#createratelimiter----rate-limiter-factory)
   - [Atomic Server Endpoints Over Multi-Request Flows](#atomic-server-endpoints-over-multi-request-flows)
 - [External API Patterns](#external-api-patterns)
   - [External Resource Dedup on Save](#external-resource-dedup-on-save)
@@ -86,11 +92,14 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
   - [Parameterized ID Callbacks for Memoized List Items](#parameterized-id-callbacks-for-memoized-list-items)
   - [useMemo for Derived Filtering and Calculations](#usememo-for-derived-filtering-and-calculations)
+  - [In-Memory TTL Cache for Per-Request DB Avoidance](#in-memory-ttl-cache-for-per-request-db-avoidance)
 - [Design System Patterns](#design-system-patterns)
   - [Color Opacity Utility](#color-opacity-utility)
   - [Semantic Theme Values](#semantic-theme-values-over-hardcoded-colors)
   - [Semantic BorderRadius Naming](#semantic-borderradius-naming)
 - [Documentation Patterns](#documentation-patterns)
+- [Architecture Patterns](#architecture-patterns)
+  - [Domain-Driven Storage Module Decomposition](#domain-driven-storage-module-decomposition)
 - [Route Module Patterns](#route-module-patterns)
   - [Route Module Registration Structure](#route-module-registration-structure)
   - [SSE Streaming for AI Responses](#sse-streaming-for-ai-responses)
@@ -470,6 +479,125 @@ app.post("/api/auth/register", async (req, res) => {
 ```
 
 **Why:** Prevents injection attacks, ensures data integrity, provides clear error messages.
+
+### Token Versioning for JWT Revocation
+
+Embed a `tokenVersion` counter in JWT payloads. On logout (or password change), increment the counter in the database. The auth middleware compares the token's version against the DB value -- a mismatch means the token has been revoked. Combined with the in-memory TTL cache (see [In-Memory TTL Cache for Per-Request DB Avoidance](#in-memory-ttl-cache-for-per-request-db-avoidance) in Performance Patterns), this achieves near-instant revocation with minimal DB overhead.
+
+```typescript
+// shared/types/auth.ts — token payload shape
+export interface AccessTokenPayload {
+  sub: string;
+  tokenVersion: number;
+}
+
+// server/routes/auth.ts — generate token with version
+import { generateToken } from "../middleware/auth";
+
+const token = generateToken(user.id, user.tokenVersion);
+
+// server/routes/auth.ts — logout: bump version + invalidate cache
+app.post("/api/auth/logout", requireAuth, async (req, res) => {
+  await storage.updateUser(req.userId!, {
+    tokenVersion: sql`${users.tokenVersion} + 1`,
+  });
+  invalidateTokenVersionCache(req.userId!);
+  res.json({ message: "Logged out" });
+});
+
+// server/middleware/auth.ts — verify version on every request
+const payload = jwt.verify(token, jwtSecret);
+if (!isAccessTokenPayload(payload)) { /* 401 */ }
+
+const cachedVersion = getCachedTokenVersion(payload.sub);
+if (cachedVersion !== undefined) {
+  if (payload.tokenVersion !== cachedVersion) {
+    return res.status(401).json({ error: "Token has been revoked", code: "TOKEN_REVOKED" });
+  }
+} else {
+  const user = await storage.getUser(payload.sub);
+  setCachedTokenVersion(payload.sub, user.tokenVersion);
+  if (payload.tokenVersion !== user.tokenVersion) {
+    return res.status(401).json({ error: "Token has been revoked", code: "TOKEN_REVOKED" });
+  }
+}
+```
+
+**When to use:**
+
+- Any system using stateless JWTs that needs server-side revocation (logout, password reset, account compromise)
+- When you cannot rely on short token expiry alone for security
+
+**When NOT to use:**
+
+- Systems with session stores (revocation is already built in)
+- Short-lived tokens (< 5 minutes) where expiry is sufficient
+
+**Rationale:** JWTs are stateless by design, so there is no built-in "revoke" mechanism. Token versioning adds a lightweight state check that only hits the DB once per cache TTL window. The tradeoff is a maximum `CACHE_TTL_MS` delay between logout and token rejection on other devices.
+
+**References:**
+
+- `server/middleware/auth.ts` -- `requireAuth`, `invalidateTokenVersionCache`, in-memory cache
+- `server/routes/auth.ts` -- logout handler that bumps `tokenVersion`
+- `shared/types/auth.ts` -- `AccessTokenPayload` interface and `isAccessTokenPayload` type guard
+- `shared/schema.ts` -- `tokenVersion` column on the `users` table
+
+### AI Input Sanitization Boundary
+
+All user text that reaches an LLM passes through a three-layer safety boundary: input sanitization, system prompt boundary markers, and output validation.
+
+```typescript
+import {
+  sanitizeUserInput,
+  validateAiResponse,
+  SYSTEM_PROMPT_BOUNDARY,
+  containsDangerousDietaryAdvice,
+} from "../lib/ai-safety";
+
+// 1. Sanitize user input — strip control chars and injection patterns
+const cleanInput = sanitizeUserInput(userMessage);
+
+// 2. Mark system prompt boundary in the LLM call
+const systemPrompt = `You are a nutrition assistant. ${SYSTEM_PROMPT_BOUNDARY}`;
+
+// 3. Validate LLM output against expected schema
+const result = validateAiResponse(llmOutput, expectedSchema);
+if (!result) {
+  return fallbackResponse;
+}
+
+// 4. (Optional) Check for dangerous dietary advice in AI output
+if (containsDangerousDietaryAdvice(result.text)) {
+  return safeFallbackResponse;
+}
+```
+
+**Components:**
+
+| Function | Purpose |
+| --- | --- |
+| `sanitizeUserInput(text)` | Strips control characters, truncates to 2000 chars, replaces known injection patterns with `[filtered]` |
+| `SYSTEM_PROMPT_BOUNDARY` | Constant appended to system prompts instructing the LLM to ignore role-change requests |
+| `validateAiResponse(response, schema)` | Validates LLM JSON output with `zod.safeParse()`, returns `null` on failure |
+| `containsDangerousDietaryAdvice(text)` | Detects extreme calorie restriction, eating disorder promotion, dangerous supplement advice |
+
+**When to use:**
+
+- Every AI service that accepts user text (chat, food parsing, photo analysis)
+- Every AI service that returns structured data the app relies on
+
+**When NOT to use:**
+
+- Internal-only AI calls where user text is not part of the prompt
+- Non-AI text processing (use standard input validation instead)
+
+**Rationale:** LLMs are susceptible to prompt injection where user input can override system instructions. A dedicated sanitization module centralizes the defense so individual services do not need to reinvent it. Output validation with Zod prevents malformed LLM responses from crashing downstream code.
+
+**References:**
+
+- `server/lib/ai-safety.ts` -- all four exports
+- `server/lib/__tests__/ai-safety.test.ts` -- 28 test cases covering injection patterns and dietary advice detection
+- `server/services/food-nlp.ts`, `server/services/nutrition-coach.ts`, `server/services/photo-analysis.ts` -- consumers
 
 ---
 
@@ -1200,6 +1328,211 @@ app.get("/api/pantry", requireAuth, async (req, res) => {
 - `server/routes.ts` — pantry, grocery, meal confirmation routes all use this
 - See also: "Tier-Gated Route Guards" (above) for the inline pattern this replaces
 - See also: "Type Guard Over `as` Cast" in Testing Patterns
+
+### `sendError` -- Standardized Error Response Helper
+
+All API error responses must use the `sendError()` utility to ensure a consistent `{ error: string, code?: string }` shape across the entire backend. This complements the Error Response Structure pattern by providing a single function instead of manual `res.status().json()` calls.
+
+```typescript
+import { sendError } from "../lib/api-errors";
+
+// Simple error — no machine-readable code
+sendError(res, 404, "Item not found");
+
+// Error with code — client can match on `code` for branching logic
+sendError(res, 403, "Premium required", "PREMIUM_REQUIRED");
+sendError(res, 429, "Daily limit reached", "DAILY_LIMIT_REACHED");
+```
+
+**Implementation:**
+
+```typescript
+// server/lib/api-errors.ts
+export function sendError(
+  res: Response,
+  status: number,
+  error: string,
+  code?: string,
+): void {
+  const body: Record<string, unknown> = { error };
+  if (code) body.code = code;
+  res.status(status).json(body);
+}
+```
+
+**When to use:** Every error response in every route handler. No route should construct `res.status(N).json({ error: "..." })` manually.
+
+**When NOT to use:** Success responses (`res.json(data)`) and SSE streams (which use `res.write()`).
+
+**Rationale:** Before this helper, 23 route files each constructed error JSON inline with subtly different shapes -- some used `{ message }`, some `{ error }`, some included `code`, some did not. A single function eliminates drift and makes it easy to add fields (e.g., `requestId`) to all errors in one place.
+
+**References:**
+
+- `server/lib/api-errors.ts` -- implementation
+- All 24 route files under `server/routes/` -- consumers
+- See also: [Error Response Structure](#error-response-structure) for the shape definition
+
+### `parseQueryInt` -- Typed Query Parameter Parsing
+
+Replace boilerplate `Math.min(parseInt(req.query.limit as string) || default, max)` with a single call that handles Express 5's `unknown` query types, NaN fallback, and min/max clamping.
+
+```typescript
+import { parseQueryInt } from "./_helpers";
+
+// Before (repeated in 12+ routes):
+const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+const offset = parseInt(req.query.offset as string) || 0;
+
+// After:
+const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
+const offset = parseQueryInt(req.query.offset, { default: 0, min: 0 });
+```
+
+**Implementation:**
+
+```typescript
+// server/routes/_helpers.ts
+export function parseQueryInt(
+  value: unknown,
+  options: { default: number; min?: number; max?: number },
+): number {
+  const num = typeof value === "string" ? parseInt(value, 10) : NaN;
+  let result = isNaN(num) ? options.default : num;
+  if (options.min !== undefined) result = Math.max(result, options.min);
+  if (options.max !== undefined) result = Math.min(result, options.max);
+  return result;
+}
+```
+
+**When to use:**
+
+- Any route that reads `limit`, `offset`, `page`, `days`, or other numeric query parameters
+- Always pair with explicit `max` to prevent unbounded queries (e.g., `?limit=999999`)
+
+**When NOT to use:**
+
+- Route params (use `parsePositiveIntParam` instead)
+- Query params that are not integers (parse manually)
+
+**Rationale:** Express 5 types `req.query.*` as `unknown`, forcing every handler to cast and validate. This helper encapsulates the cast, NaN fallback, and clamping in one place. The `max` option prevents clients from requesting unbounded result sets that could overload the database.
+
+**References:**
+
+- `server/routes/_helpers.ts` -- implementation
+- 12 route files: `adaptive-goals`, `fasting`, `exercises`, `weight`, `pantry`, `chat`, `menu`, `saved-items`, `medication`, `grocery`, `nutrition` -- consumers
+
+### `parsePositiveIntParam` -- Express 5 Route Param Parsing
+
+Parse route parameters (`req.params.id`) as positive integers without `as string` casts. Accepts Express 5's `string | string[]` param type and returns `number | null`, rejecting NaN, zero, and negative values.
+
+```typescript
+import { parsePositiveIntParam } from "./_helpers";
+import { sendError } from "../lib/api-errors";
+
+// Before (repeated in 15+ routes, 35+ call sites):
+const id = parseInt(req.params.id as string, 10);
+if (isNaN(id) || id <= 0) {
+  return res.status(400).json({ error: "Invalid item ID" });
+}
+
+// After:
+const id = parsePositiveIntParam(req.params.id);
+if (!id) return sendError(res, 400, "Invalid item ID");
+```
+
+**Implementation:**
+
+```typescript
+// server/routes/_helpers.ts
+export function parsePositiveIntParam(value: string | string[]): number | null {
+  const str = Array.isArray(value) ? value[0] : value;
+  if (!str) return null;
+  const num = parseInt(str, 10);
+  if (isNaN(num) || num <= 0) return null;
+  return num;
+}
+```
+
+**When to use:**
+
+- Every route that reads a numeric `:id`, `:itemId`, `:logId`, etc. from `req.params`
+- Combine with `sendError` for the error response
+
+**When NOT to use:**
+
+- Query parameters (use `parseQueryInt` instead)
+- Params that can be zero or negative (parse manually)
+- String params like `:slug` or `:uuid` (no parsing needed)
+
+**Rationale:** Express 5 changed `req.params.*` from `string` to `string | string[]`. Every `as string` cast is a type lie that hides a potential runtime bug. This helper handles the union type correctly and rejects non-positive values in a single call, eliminating 35+ identical validation blocks across the codebase.
+
+**References:**
+
+- `server/routes/_helpers.ts` -- implementation
+- 14 route files: `suggestions`, `exercises`, `weight`, `pantry`, `chat`, `menu`, `saved-items`, `medication`, `grocery`, `nutrition`, `micronutrients`, `meal-plan`, `recipes` -- consumers
+
+### `createRateLimiter` -- Rate Limiter Factory
+
+Factory function that creates `express-rate-limit` middleware with consistent defaults. Eliminates the 6-line boilerplate that was previously duplicated in every rate limiter definition. Supports a `keyByUser` option (defaults to `true`) that uses `req.userId` for authenticated routes, falling back to IP.
+
+```typescript
+import { createRateLimiter } from "./_helpers";
+
+// Authenticated route — keyed by userId (default)
+export const photoRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: "Too many photo uploads. Please wait.",
+});
+
+// Unauthenticated route — keyed by IP
+export const loginLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many login attempts, please try again later",
+  keyByUser: false,
+});
+```
+
+**Implementation:**
+
+```typescript
+// server/routes/_helpers.ts
+export function createRateLimiter(options: {
+  windowMs: number;
+  max: number;
+  message: string;
+  keyByUser?: boolean;
+}) {
+  return rateLimit({
+    windowMs: options.windowMs,
+    max: options.max,
+    message: { error: options.message },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...(options.keyByUser !== false && {
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
+  });
+}
+```
+
+**When to use:**
+
+- Every new rate limiter in the project (all 19 existing rate limiters use this factory)
+- All rate limiters should be defined in `server/routes/_helpers.ts` so they are centralized and reusable across route modules
+
+**When NOT to use:**
+
+- Rate limiters that need custom `keyGenerator` logic beyond userId/IP (define those inline)
+- Third-party middleware that provides its own rate limiting
+
+**Rationale:** Before the factory, each rate limiter was 6+ lines of identical boilerplate (`standardHeaders: true`, `legacyHeaders: false`, `message: { error: ... }`, `keyGenerator: ...`). The factory ensures every limiter uses the correct error shape (`{ error: string }` matching `sendError`), always sends standard headers, and correctly falls back from `userId` to IP. Adding a new rate limiter is now a single function call.
+
+**References:**
+
+- `server/routes/_helpers.ts` -- factory implementation and all 19 limiter instances
+- See also: [Rate Limiting on Auth Endpoints](#rate-limiting-on-auth-endpoints) and [Rate Limiting on External API Endpoints](#rate-limiting-on-external-api-endpoints) for the policy rationale (the factory implements those patterns)
 
 ### Atomic Server Endpoints Over Multi-Request Flows
 
@@ -4958,6 +5291,79 @@ await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
 await AsyncStorage.setItem(TOKEN_KEY, token);
 ```
 
+### In-Memory TTL Cache for Per-Request DB Avoidance
+
+Use a `Map`-based cache with time-to-live expiry to avoid hitting the database on every authenticated request. The cache is explicitly invalidated on mutation (e.g., logout bumps `tokenVersion`), so stale data never persists beyond the TTL window.
+
+```typescript
+// server/middleware/auth.ts
+const cache = new Map<string, { value: number; expiresAt: number }>();
+const CACHE_TTL_MS = 60_000; // 60 seconds
+
+function getCached(key: string): number | undefined {
+  const entry = cache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    cache.delete(key);
+    return undefined;
+  }
+  return entry.value;
+}
+
+function setCache(key: string, value: number): void {
+  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+/** Call on mutation to immediately invalidate */
+export function invalidateCache(key: string): void {
+  cache.delete(key);
+}
+```
+
+**Usage pattern (auth middleware):**
+
+```typescript
+// Hot path: check cache first, fall back to DB
+const cachedVersion = getCachedTokenVersion(payload.sub);
+if (cachedVersion !== undefined) {
+  // Cache hit — no DB query
+  if (payload.tokenVersion !== cachedVersion) {
+    return res.status(401).json({ error: "Token revoked" });
+  }
+} else {
+  // Cache miss — query DB, populate cache
+  const user = await storage.getUser(payload.sub);
+  setCachedTokenVersion(payload.sub, user.tokenVersion);
+  if (payload.tokenVersion !== user.tokenVersion) {
+    return res.status(401).json({ error: "Token revoked" });
+  }
+}
+
+// Mutation path: invalidate immediately
+export function onLogout(userId: string): void {
+  invalidateTokenVersionCache(userId);
+}
+```
+
+**When to use:**
+
+- Values read on every request but written rarely (auth token versions, user tier, feature flags)
+- When the TTL-induced staleness is acceptable for the use case (60s delay before revocation is fine for most auth scenarios)
+
+**When NOT to use:**
+
+- Data that must be real-time consistent (account balances, inventory counts)
+- Data that changes frequently relative to the read rate (no benefit from caching)
+- Client-side caching (use TanStack Query or AsyncStorage instead)
+- Multi-instance deployments without shared cache (each instance has its own Map; use Redis if instances must share state)
+
+**Rationale:** The auth middleware runs on every authenticated request. Without caching, every request triggers a DB query for `tokenVersion`. A Map with 60s TTL reduces DB load to at most one query per user per minute while keeping revocation latency under one minute. Explicit `invalidateCache()` on logout provides instant revocation for the same server instance.
+
+**References:**
+
+- `server/middleware/auth.ts` -- `tokenVersionCache`, `getCachedTokenVersion`, `setCachedTokenVersion`, `invalidateTokenVersionCache`
+- See also: [Token Versioning for JWT Revocation](#token-versioning-for-jwt-revocation) in Security Patterns
+
 ---
 
 ## Design System Patterns
@@ -5678,6 +6084,99 @@ return parsed.data; // instructions is always a string
 **When NOT to use:** Deterministic APIs with stable schemas. Use plain Zod schemas or `z.coerce` for simple type coercion (e.g., `z.coerce.number()` for string-to-number).
 
 **Why:** LLM output is inherently unpredictable — even with `response_format: { type: "json_object" }`, the structure of individual fields can vary between calls. The `union` + `transform` + `pipe` chain handles this at the validation layer without requiring prompt engineering workarounds. The `.pipe()` step ensures the transformed value still passes final validation (e.g., `min(1)` catches empty arrays that would transform to `""`).
+
+---
+
+## Architecture Patterns
+
+### Domain-Driven Storage Module Decomposition
+
+When a storage layer (or any service layer) grows beyond ~500 lines, split it into domain-specific modules with shared helpers and a facade that preserves the original import path. The facade composes all modules into a single `storage` export so existing consumers do not need to change their imports.
+
+```
+server/storage/
+  index.ts          # Facade — composes all modules into `storage` object
+  helpers.ts        # Shared utilities (getDayBounds, escapeLike)
+  users.ts          # User accounts, profiles, subscriptions
+  nutrition.ts      # Scanned items, daily logs, saved items
+  meal-plans.ts     # Recipes, meal items, grocery lists, pantry
+  activity.ts       # Exercises, weight logs, health data
+  chat.ts           # Conversations, messages
+  cache.ts          # Nutrition cache, suggestion cache, instruction cache
+  community.ts      # Community recipes, social features
+  medication.ts     # Medication logs
+  fasting.ts        # Fasting logs
+  menu.ts           # Restaurant menu scans
+```
+
+**Facade pattern:**
+
+```typescript
+// server/storage/index.ts
+import * as users from "./users";
+import * as nutrition from "./nutrition";
+import * as mealPlans from "./meal-plans";
+// ... other domain modules
+
+export { escapeLike, getDayBounds } from "./helpers";
+
+export const storage = {
+  // Users & profiles
+  getUser: users.getUser,
+  getUserByUsername: users.getUserByUsername,
+  createUser: users.createUser,
+  // ... all other methods composed from domain modules
+
+  // Nutrition
+  getScannedItems: nutrition.getScannedItems,
+  createScannedItem: nutrition.createScannedItem,
+  // ...
+};
+```
+
+**Shared helpers:**
+
+```typescript
+// server/storage/helpers.ts
+/** Escape ILIKE metacharacters so user input is treated as literal text. */
+export function escapeLike(str: string): string {
+  return str.replace(/[%_\\]/g, "\\$&");
+}
+
+/** Returns start (00:00:00.000) and end (23:59:59.999) of the given day. */
+export function getDayBounds(date: Date): { startOfDay: Date; endOfDay: Date } {
+  const startOfDay = new Date(date);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(date);
+  endOfDay.setHours(23, 59, 59, 999);
+  return { startOfDay, endOfDay };
+}
+```
+
+**When to use:**
+
+- Any module exceeding ~500 lines where methods naturally cluster by domain
+- When multiple developers work on different features that touch the same module (reduces merge conflicts)
+
+**When NOT to use:**
+
+- Small modules (< 200 lines) where splitting adds overhead without benefit
+- Modules where all methods are tightly coupled and share internal state (splitting would require passing state between modules)
+
+**Key design choices:**
+
+1. **Facade preserves the import path** -- `import { storage } from "../storage"` works unchanged for all existing consumers
+2. **Domain modules are plain exported functions** -- not classes, not singletons. They import `db` directly and export named functions
+3. **Shared helpers live in `helpers.ts`** -- any utility used by 2+ domain modules (date bounds, string escaping) goes here
+4. **Helpers are re-exported from the facade** -- consumers that need `getDayBounds` or `escapeLike` import from `"../storage"`, not `"../storage/helpers"`
+
+**Rationale:** The original `storage.ts` was 2,400 lines with 100+ methods spanning 10 domains. Finding a method required searching through unrelated code. Merge conflicts were frequent when multiple features touched different domains. Splitting into domain modules with a backward-compatible facade eliminated both problems while requiring zero changes to the 40+ consumer files.
+
+**References:**
+
+- `server/storage/index.ts` -- facade with all method compositions
+- `server/storage/helpers.ts` -- `getDayBounds`, `escapeLike`
+- 12 domain modules: `users.ts`, `nutrition.ts`, `meal-plans.ts`, `activity.ts`, `chat.ts`, `cache.ts`, `community.ts`, `medication.ts`, `fasting.ts`, `menu.ts`
 
 ---
 
