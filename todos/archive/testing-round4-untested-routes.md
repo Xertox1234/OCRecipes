@@ -50,12 +50,17 @@ import express from "express";
 
 // 1. Mock storage layer
 vi.mock("../../storage", () => ({
-  storage: { /* mock methods used by this route */ },
+  storage: {
+    /* mock methods used by this route */
+  },
 }));
 
 // 2. Mock auth middleware (inject userId)
 vi.mock("../../middleware/auth", () => ({
-  requireAuth: (req, _res, next) => { req.userId = "1"; next(); },
+  requireAuth: (req, _res, next) => {
+    req.userId = "1";
+    next();
+  },
 }));
 
 // 3. Mock express-rate-limit to bypass rate limiting
@@ -103,5 +108,6 @@ registerXxxRoutes(app);
 ## Updates
 
 ### 2026-02-25
+
 - Initial creation after Round 3 audit
 - 14 untested route files identified totaling 3,694 lines

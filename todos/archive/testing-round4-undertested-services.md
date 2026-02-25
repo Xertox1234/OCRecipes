@@ -34,6 +34,7 @@ The server services layer is the best-tested category at 91% file coverage (22/2
 **Existing test file**: `server/services/__tests__/recipe-catalog.test.ts`
 
 Uncovered areas likely include:
+
 - Spoonacular API response parsing edge cases
 - Search parameter building/validation
 - Error handling for API failures
@@ -73,5 +74,6 @@ The `updateAdaptiveGoals` function appears untested — it's the main orchestrat
 ## Updates
 
 ### 2026-02-25
+
 - Initial creation after Round 3 audit
 - Identified 3 services with coverage below 40%
