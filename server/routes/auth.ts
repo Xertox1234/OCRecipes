@@ -35,7 +35,7 @@ export function register(app: Express): void {
           password: hashedPassword,
         });
 
-        const token = generateToken(user.id.toString());
+        const token = generateToken(user.id.toString(), user.tokenVersion);
 
         res.status(201).json({
           user: {
@@ -79,7 +79,7 @@ export function register(app: Express): void {
           return res.status(401).json({ error: "Invalid credentials" });
         }
 
-        const token = generateToken(user.id.toString());
+        const token = generateToken(user.id.toString(), user.tokenVersion);
 
         res.json({
           user: {
@@ -103,10 +103,28 @@ export function register(app: Express): void {
     },
   );
 
-  app.post("/api/auth/logout", (_req: Request, res: Response) => {
-    // Stateless JWT - no session to destroy
-    res.json({ success: true });
-  });
+  app.post(
+    "/api/auth/logout",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const user = await storage.getUser(req.userId!);
+        if (!user) {
+          return res.status(404).json({ error: "User not found" });
+        }
+
+        // Increment tokenVersion to invalidate all existing tokens
+        await storage.updateUser(req.userId!, {
+          tokenVersion: user.tokenVersion + 1,
+        });
+
+        res.json({ success: true });
+      } catch (error) {
+        console.error("Logout error:", error);
+        res.status(500).json({ error: "Failed to logout" });
+      }
+    },
+  );
 
   app.get("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
     const user = await storage.getUser(req.userId!);

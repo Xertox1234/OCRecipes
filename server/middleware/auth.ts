@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { isAccessTokenPayload } from "@shared/types/auth";
+import { storage } from "../storage";
 
 // Extend Express Request type
 declare global {
@@ -19,11 +20,11 @@ if (!JWT_SECRET) {
 // TypeScript now knows JWT_SECRET is defined after the check above
 const jwtSecret: string = JWT_SECRET;
 
-export function requireAuth(
+export async function requireAuth(
   req: Request,
   res: Response,
   next: NextFunction,
-): void {
+): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith("Bearer ")) {
@@ -43,6 +44,22 @@ export function requireAuth(
       return;
     }
 
+    // Verify tokenVersion against database
+    const user = await storage.getUser(payload.sub);
+    if (!user) {
+      res
+        .status(401)
+        .json({ error: "User not found", code: "TOKEN_INVALID" });
+      return;
+    }
+
+    if (payload.tokenVersion !== user.tokenVersion) {
+      res
+        .status(401)
+        .json({ error: "Token has been revoked", code: "TOKEN_REVOKED" });
+      return;
+    }
+
     req.userId = payload.sub;
     next();
   } catch (err) {
@@ -54,6 +71,11 @@ export function requireAuth(
   }
 }
 
-export function generateToken(userId: string): string {
-  return jwt.sign({ sub: userId }, jwtSecret, { expiresIn: "30d" });
+export function generateToken(
+  userId: string,
+  tokenVersion: number,
+): string {
+  return jwt.sign({ sub: userId, tokenVersion }, jwtSecret, {
+    expiresIn: "7d",
+  });
 }

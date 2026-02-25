@@ -38,6 +38,7 @@ export const users = pgTable("users", {
   adaptiveGoalsEnabled: boolean("adaptive_goals_enabled").default(false),
   lastGoalAdjustmentAt: timestamp("last_goal_adjustment_at"),
   onboardingCompleted: boolean("onboarding_completed").default(false),
+  tokenVersion: integer("token_version").default(0).notNull(),
   subscriptionTier: text("subscription_tier").default("free"),
   subscriptionExpiresAt: timestamp("subscription_expires_at"),
   createdAt: timestamp("created_at")
