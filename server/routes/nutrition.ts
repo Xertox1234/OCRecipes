@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import {
   insertScannedItemSchema,
   scannedItems,
@@ -21,22 +22,24 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       const name = (req.query.name as string)?.trim();
       if (!name || name.length > 200) {
-        res
-          .status(400)
-          .json({ error: "name query parameter is required (max 200 chars)" });
+        sendError(
+          res,
+          400,
+          "name query parameter is required (max 200 chars)",
+        );
         return;
       }
 
       try {
         const result = await lookupNutrition(name);
         if (!result) {
-          res.status(404).json({ error: "Nutrition data not found" });
+          sendError(res, 404, "Nutrition data not found");
           return;
         }
         res.json(result);
       } catch (error) {
         console.error("Nutrition lookup error:", error);
-        res.status(500).json({ error: "Nutrition lookup failed" });
+        sendError(res, 500, "Nutrition lookup failed");
       }
     },
   );
@@ -52,22 +55,20 @@ export function register(app: Express): void {
       const rawCode = req.params.code;
       const code = typeof rawCode === "string" ? rawCode.trim() : "";
       if (!code || code.length > 50 || !/^\d+$/.test(code)) {
-        res.status(400).json({ error: "Invalid barcode" });
+        sendError(res, 400, "Invalid barcode");
         return;
       }
 
       try {
         const result = await lookupBarcode(code);
         if (!result) {
-          res
-            .status(404)
-            .json({ error: "Product not found", notInDatabase: true });
+          sendError(res, 404, "Product not found", "NOT_IN_DATABASE");
           return;
         }
         res.json(result);
       } catch (error) {
         console.error("Barcode lookup error:", error);
-        res.status(500).json({ error: "Barcode lookup failed" });
+        sendError(res, 500, "Barcode lookup failed");
       }
     },
   );
@@ -91,7 +92,7 @@ export function register(app: Express): void {
         res.json(result);
       } catch (error) {
         console.error("Error fetching scanned items:", error);
-        res.status(500).json({ error: "Failed to fetch items" });
+        sendError(res, 500, "Failed to fetch items");
       }
     },
   );
@@ -116,10 +117,12 @@ export function register(app: Express): void {
         res.json(result);
       } catch (error) {
         console.error("Error fetching favourite items:", error);
-        res.status(500).json({
-          error: "Failed to fetch favourites",
-          code: "FETCH_FAVOURITES_FAILED",
-        });
+        sendError(
+          res,
+          500,
+          "Failed to fetch favourites",
+          "FETCH_FAVOURITES_FAILED",
+        );
       }
     },
   );
@@ -131,19 +134,19 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id) || id <= 0) {
-          return res.status(400).json({ error: "Invalid item ID" });
+          return sendError(res, 400, "Invalid item ID");
         }
 
         const item = await storage.getScannedItemWithFavourite(id, req.userId!);
 
         if (!item || item.userId !== req.userId) {
-          return res.status(404).json({ error: "Item not found" });
+          return sendError(res, 404, "Item not found");
         }
 
         res.json(item);
       } catch (error) {
         console.error("Error fetching scanned item:", error);
-        res.status(500).json({ error: "Failed to fetch item" });
+        sendError(res, 500, "Failed to fetch item");
       }
     },
   );
@@ -239,10 +242,10 @@ export function register(app: Express): void {
         res.status(201).json(item);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Error creating scanned item:", error);
-        res.status(500).json({ error: "Failed to save item" });
+        sendError(res, 500, "Failed to save item");
       }
     },
   );
@@ -255,18 +258,14 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id) || id <= 0) {
-          return res
-            .status(400)
-            .json({ error: "Invalid item ID", code: "INVALID_ITEM_ID" });
+          return sendError(res, 400, "Invalid item ID", "INVALID_ITEM_ID");
         }
 
         // IDOR: verify ownership (getScannedItem filters discarded items,
         // so favouriting a discarded item returns 404 — intentional)
         const item = await storage.getScannedItem(id);
         if (!item || item.userId !== req.userId) {
-          return res
-            .status(404)
-            .json({ error: "Item not found", code: "ITEM_NOT_FOUND" });
+          return sendError(res, 404, "Item not found", "ITEM_NOT_FOUND");
         }
 
         const isFavourited = await storage.toggleFavouriteScannedItem(
@@ -276,10 +275,12 @@ export function register(app: Express): void {
         res.json({ isFavourited });
       } catch (error) {
         console.error("Error toggling favourite:", error);
-        res.status(500).json({
-          error: "Failed to toggle favourite",
-          code: "TOGGLE_FAVOURITE_FAILED",
-        });
+        sendError(
+          res,
+          500,
+          "Failed to toggle favourite",
+          "TOGGLE_FAVOURITE_FAILED",
+        );
       }
     },
   );
@@ -292,25 +293,18 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id) || id <= 0) {
-          return res
-            .status(400)
-            .json({ error: "Invalid item ID", code: "INVALID_ITEM_ID" });
+          return sendError(res, 400, "Invalid item ID", "INVALID_ITEM_ID");
         }
 
         const deleted = await storage.softDeleteScannedItem(id, req.userId!);
         if (!deleted) {
-          return res
-            .status(404)
-            .json({ error: "Item not found", code: "ITEM_NOT_FOUND" });
+          return sendError(res, 404, "Item not found", "ITEM_NOT_FOUND");
         }
 
         res.status(204).send();
       } catch (error) {
         console.error("Error discarding scanned item:", error);
-        res.status(500).json({
-          error: "Failed to discard item",
-          code: "DISCARD_ITEM_FAILED",
-        });
+        sendError(res, 500, "Failed to discard item", "DISCARD_ITEM_FAILED");
       }
     },
   );
@@ -339,7 +333,7 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Error fetching daily summary:", error);
-        res.status(500).json({ error: "Failed to fetch summary" });
+        sendError(res, 500, "Failed to fetch summary");
       }
     },
   );

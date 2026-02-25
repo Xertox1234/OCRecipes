@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
+import { sendError } from "../lib/api-errors";
 import { checkPremiumFeature } from "./_helpers";
 import { computeAdaptiveGoals } from "../services/adaptive-goals";
 
@@ -28,7 +29,7 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Get adaptive goals error:", error);
-        res.status(500).json({ error: "Failed to get adaptive goals" });
+        sendError(res, 500, "Failed to get adaptive goals");
       }
     },
   );
@@ -49,7 +50,7 @@ export function register(app: Express): void {
 
         const recommendation = await computeAdaptiveGoals(req.userId!);
         if (!recommendation) {
-          return res.status(400).json({ error: "No pending recommendation" });
+          return sendError(res, 400, "No pending recommendation");
         }
 
         // Apply the new goals
@@ -88,7 +89,7 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Accept adaptive goal error:", error);
-        res.status(500).json({ error: "Failed to accept adaptive goal" });
+        sendError(res, 500, "Failed to accept adaptive goal");
       }
     },
   );
@@ -134,7 +135,7 @@ export function register(app: Express): void {
         res.json({ success: true });
       } catch (error) {
         console.error("Dismiss adaptive goal error:", error);
-        res.status(500).json({ error: "Failed to dismiss adaptive goal" });
+        sendError(res, 500, "Failed to dismiss adaptive goal");
       }
     },
   );
@@ -155,7 +156,7 @@ export function register(app: Express): void {
 
         const { enabled } = req.body;
         if (typeof enabled !== "boolean") {
-          return res.status(400).json({ error: "enabled must be a boolean" });
+          return sendError(res, 400, "enabled must be a boolean");
         }
 
         await storage.updateUser(req.userId!, {
@@ -165,7 +166,7 @@ export function register(app: Express): void {
         res.json({ success: true, enabled });
       } catch (error) {
         console.error("Update adaptive goals settings error:", error);
-        res.status(500).json({ error: "Failed to update settings" });
+        sendError(res, 500, "Failed to update settings");
       }
     },
   );
@@ -191,7 +192,7 @@ export function register(app: Express): void {
         res.json(logs);
       } catch (error) {
         console.error("Get adjustment history error:", error);
-        res.status(500).json({ error: "Failed to get adjustment history" });
+        sendError(res, 500, "Failed to get adjustment history");
       }
     },
   );

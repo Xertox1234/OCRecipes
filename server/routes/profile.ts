@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { storage } from "../storage";
 import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import { userProfiles, users } from "@shared/schema";
 import { formatZodError, userProfileInputSchema } from "./_helpers";
 
@@ -25,7 +26,7 @@ export function register(app: Express): void {
         res.json(profile || null);
       } catch (error) {
         console.error("Error fetching dietary profile:", error);
-        res.status(500).json({ error: "Failed to fetch dietary profile" });
+        sendError(res, 500, "Failed to fetch dietary profile");
       }
     },
   );
@@ -85,10 +86,10 @@ export function register(app: Express): void {
         res.status(201).json(profile);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Error saving dietary profile:", error);
-        res.status(500).json({ error: "Failed to save dietary profile" });
+        sendError(res, 500, "Failed to save dietary profile");
       }
     },
   );
@@ -107,7 +108,7 @@ export function register(app: Express): void {
         const profile = await storage.updateUserProfile(req.userId!, validated);
 
         if (!profile) {
-          return res.status(404).json({ error: "Profile not found" });
+          return sendError(res, 404, "Profile not found");
         }
 
         // Invalidate suggestion cache if dietary-affecting fields changed
@@ -124,10 +125,10 @@ export function register(app: Express): void {
         res.json(profile);
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Error updating dietary profile:", error);
-        res.status(500).json({ error: "Failed to update dietary profile" });
+        sendError(res, 500, "Failed to update dietary profile");
       }
     },
   );

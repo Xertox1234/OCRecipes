@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import { createSavedItemSchema } from "@shared/schemas/saved-items";
 import { formatZodError } from "./_helpers";
 
@@ -14,7 +15,7 @@ export function register(app: Express): void {
         res.json(items);
       } catch (error) {
         console.error("Get saved items error:", error);
-        res.status(500).json({ error: "Failed to get saved items" });
+        sendError(res, 500, "Failed to get saved items");
       }
     },
   );
@@ -28,7 +29,7 @@ export function register(app: Express): void {
         res.json({ count });
       } catch (error) {
         console.error("Get saved items count error:", error);
-        res.status(500).json({ error: "Failed to get saved items count" });
+        sendError(res, 500, "Failed to get saved items count");
       }
     },
   );
@@ -40,20 +41,20 @@ export function register(app: Express): void {
       try {
         const parsed = createSavedItemSchema.safeParse(req.body);
         if (!parsed.success) {
-          res.status(400).json({ error: formatZodError(parsed.error) });
+          sendError(res, 400, formatZodError(parsed.error));
           return;
         }
 
         const item = await storage.createSavedItem(req.userId!, parsed.data);
         if (!item) {
-          res.status(403).json({ error: "LIMIT_REACHED" });
+          sendError(res, 403, "Saved item limit reached", "LIMIT_REACHED");
           return;
         }
 
         res.status(201).json(item);
       } catch (error) {
         console.error("Create saved item error:", error);
-        res.status(500).json({ error: "Failed to create saved item" });
+        sendError(res, 500, "Failed to create saved item");
       }
     },
   );
@@ -65,21 +66,21 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id) || id <= 0) {
-          res.status(400).json({ error: "Invalid item ID" });
+          sendError(res, 400, "Invalid item ID");
           return;
         }
 
         // IDOR protection built into deleteSavedItem
         const deleted = await storage.deleteSavedItem(id, req.userId!);
         if (!deleted) {
-          res.status(404).json({ error: "Item not found" });
+          sendError(res, 404, "Item not found");
           return;
         }
 
         res.status(204).send();
       } catch (error) {
         console.error("Delete saved item error:", error);
-        res.status(500).json({ error: "Failed to delete saved item" });
+        sendError(res, 500, "Failed to delete saved item");
       }
     },
   );

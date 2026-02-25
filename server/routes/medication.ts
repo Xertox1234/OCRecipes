@@ -6,6 +6,7 @@ import {
   formatZodError,
   checkPremiumFeature,
 } from "./_helpers";
+import { sendError } from "../lib/api-errors";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { analyzeGlp1Insights } from "../services/glp1-insights";
@@ -50,7 +51,7 @@ export function register(app: Express): void {
         res.json(logs);
       } catch (error) {
         console.error("Get medication logs error:", error);
-        res.status(500).json({ error: "Failed to get medication logs" });
+        sendError(res, 500, "Failed to get medication logs");
       }
     },
   );
@@ -80,7 +81,7 @@ export function register(app: Express): void {
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
-          return res.status(400).json({ error: formatZodError(parsed.error) });
+          return sendError(res, 400, formatZodError(parsed.error));
 
         const log = await storage.createMedicationLog({
           userId: req.userId!,
@@ -89,7 +90,7 @@ export function register(app: Express): void {
         res.status(201).json(log);
       } catch (error) {
         console.error("Create medication log error:", error);
-        res.status(500).json({ error: "Failed to create medication log" });
+        sendError(res, 500, "Failed to create medication log");
       }
     },
   );
@@ -110,7 +111,7 @@ export function register(app: Express): void {
         if (!features) return;
 
         const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id)) return res.status(400).json({ error: "Invalid log ID" });
+        if (isNaN(id)) return sendError(res, 400, "Invalid log ID");
 
         const schema = z.object({
           medicationName: z.string().max(100).optional(),
@@ -122,7 +123,7 @@ export function register(app: Express): void {
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
-          return res.status(400).json({ error: formatZodError(parsed.error) });
+          return sendError(res, 400, formatZodError(parsed.error));
 
         const updated = await storage.updateMedicationLog(
           id,
@@ -130,11 +131,11 @@ export function register(app: Express): void {
           parsed.data,
         );
         if (!updated)
-          return res.status(404).json({ error: "Medication log not found" });
+          return sendError(res, 404, "Medication log not found");
         res.json(updated);
       } catch (error) {
         console.error("Update medication log error:", error);
-        res.status(500).json({ error: "Failed to update medication log" });
+        sendError(res, 500, "Failed to update medication log");
       }
     },
   );
@@ -155,15 +156,15 @@ export function register(app: Express): void {
         if (!features) return;
 
         const id = parseInt(req.params.id as string, 10);
-        if (isNaN(id)) return res.status(400).json({ error: "Invalid log ID" });
+        if (isNaN(id)) return sendError(res, 400, "Invalid log ID");
 
         const deleted = await storage.deleteMedicationLog(id, req.userId!);
         if (!deleted)
-          return res.status(404).json({ error: "Medication log not found" });
+          return sendError(res, 404, "Medication log not found");
         res.json({ success: true });
       } catch (error) {
         console.error("Delete medication log error:", error);
-        res.status(500).json({ error: "Failed to delete medication log" });
+        sendError(res, 500, "Failed to delete medication log");
       }
     },
   );
@@ -187,7 +188,7 @@ export function register(app: Express): void {
         res.json(insights);
       } catch (error) {
         console.error("Get medication insights error:", error);
-        res.status(500).json({ error: "Failed to get medication insights" });
+        sendError(res, 500, "Failed to get medication insights");
       }
     },
   );
@@ -233,7 +234,7 @@ export function register(app: Express): void {
         res.json({ suggestions, remainingProtein, proteinGoal });
       } catch (error) {
         console.error("Get protein suggestions error:", error);
-        res.status(500).json({ error: "Failed to get protein suggestions" });
+        sendError(res, 500, "Failed to get protein suggestions");
       }
     },
   );
@@ -259,7 +260,7 @@ export function register(app: Express): void {
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
-          return res.status(400).json({ error: formatZodError(parsed.error) });
+          return sendError(res, 400, formatZodError(parsed.error));
 
         const updates: Record<string, unknown> = {
           glp1Mode: parsed.data.glp1Mode,
@@ -273,11 +274,11 @@ export function register(app: Express): void {
 
         const profile = await storage.updateUserProfile(req.userId!, updates);
         if (!profile)
-          return res.status(404).json({ error: "Profile not found" });
+          return sendError(res, 404, "Profile not found");
         res.json(profile);
       } catch (error) {
         console.error("Update GLP-1 mode error:", error);
-        res.status(500).json({ error: "Failed to update GLP-1 mode" });
+        sendError(res, 500, "Failed to update GLP-1 mode");
       }
     },
   );

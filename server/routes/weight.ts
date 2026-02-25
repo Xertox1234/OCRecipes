@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
+import { sendError } from "../lib/api-errors";
 import { formatZodError } from "./_helpers";
 import { calculateWeightTrend } from "../services/weight-trend";
 
@@ -41,7 +42,7 @@ export function register(app: Express): void {
       res.json(logs);
     } catch (error) {
       console.error("Get weight logs error:", error);
-      res.status(500).json({ error: "Failed to get weight logs" });
+      sendError(res, 500, "Failed to get weight logs");
     }
   });
 
@@ -54,7 +55,7 @@ export function register(app: Express): void {
       try {
         const user = await storage.getUser(req.userId!);
         if (!user) {
-          return res.status(404).json({ error: "User not found" });
+          return sendError(res, 404, "User not found");
         }
 
         const logs = await storage.getWeightLogs(req.userId!);
@@ -76,7 +77,7 @@ export function register(app: Express): void {
         res.json({ ...trend, goalWeight });
       } catch (error) {
         console.error("Get weight trend error:", error);
-        res.status(500).json({ error: "Failed to get weight trend" });
+        sendError(res, 500, "Failed to get weight trend");
       }
     },
   );
@@ -100,10 +101,10 @@ export function register(app: Express): void {
       res.status(201).json(log);
     } catch (error) {
       if (error instanceof ZodError) {
-        return res.status(400).json({ error: formatZodError(error) });
+        return sendError(res, 400, formatZodError(error));
       }
       console.error("Create weight log error:", error);
-      res.status(500).json({ error: "Failed to log weight" });
+      sendError(res, 500, "Failed to log weight");
     }
   });
 
@@ -115,16 +116,16 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id)) {
-          return res.status(400).json({ error: "Invalid weight log ID" });
+          return sendError(res, 400, "Invalid weight log ID");
         }
         const deleted = await storage.deleteWeightLog(id, req.userId!);
         if (!deleted) {
-          return res.status(404).json({ error: "Weight log not found" });
+          return sendError(res, 404, "Weight log not found");
         }
         res.json({ success: true });
       } catch (error) {
         console.error("Delete weight log error:", error);
-        res.status(500).json({ error: "Failed to delete weight log" });
+        sendError(res, 500, "Failed to delete weight log");
       }
     },
   );
@@ -140,15 +141,15 @@ export function register(app: Express): void {
           goalWeight: validated.goalWeight?.toString() ?? null,
         });
         if (!user) {
-          return res.status(404).json({ error: "User not found" });
+          return sendError(res, 404, "User not found");
         }
         res.json({ goalWeight: user.goalWeight });
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Set goal weight error:", error);
-        res.status(500).json({ error: "Failed to set goal weight" });
+        sendError(res, 500, "Failed to set goal weight");
       }
     },
   );

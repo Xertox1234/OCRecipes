@@ -26,7 +26,7 @@ export function register(app: Express): void {
         );
 
         if (!subscriptionData) {
-          return res.status(404).json({ error: "User not found" });
+          return sendError(res, 404, "User not found");
         }
 
         const tier = isValidSubscriptionTier(subscriptionData.tier)
@@ -52,7 +52,7 @@ export function register(app: Express): void {
         res.json(response);
       } catch (error) {
         console.error("Error fetching subscription status:", error);
-        res.status(500).json({ error: "Failed to fetch subscription status" });
+        sendError(res, 500, "Failed to fetch subscription status");
       }
     },
   );
@@ -66,7 +66,7 @@ export function register(app: Express): void {
         res.json({ count });
       } catch (error) {
         console.error("Error fetching scan count:", error);
-        res.status(500).json({ error: "Failed to fetch scan count" });
+        sendError(res, 500, "Failed to fetch scan count");
       }
     },
   );
@@ -79,9 +79,7 @@ export function register(app: Express): void {
       try {
         const parsed = UpgradeRequestSchema.safeParse(req.body);
         if (!parsed.success) {
-          return sendError(res, 400, "Invalid request body", {
-            details: parsed.error.flatten(),
-          });
+          return sendError(res, 400, "Invalid request body");
         }
 
         const { receipt, platform, productId, transactionId } = parsed.data;
@@ -89,9 +87,12 @@ export function register(app: Express): void {
         // Check for duplicate transaction
         const existing = await storage.getTransaction(transactionId);
         if (existing) {
-          return sendError(res, 409, "Transaction already processed", {
-            code: "ALREADY_OWNED",
-          });
+          return sendError(
+            res,
+            409,
+            "Transaction already processed",
+            "ALREADY_OWNED",
+          );
         }
 
         // Validate receipt with platform store
@@ -145,9 +146,7 @@ export function register(app: Express): void {
       try {
         const parsed = RestoreRequestSchema.safeParse(req.body);
         if (!parsed.success) {
-          return sendError(res, 400, "Invalid request body", {
-            details: parsed.error.flatten(),
-          });
+          return sendError(res, 400, "Invalid request body");
         }
 
         const { receipt, platform } = parsed.data;

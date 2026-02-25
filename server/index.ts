@@ -115,7 +115,7 @@ function setupErrorHandler(app: express.Application) {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    return res.status(status).json({ error: message });
   });
 }
 

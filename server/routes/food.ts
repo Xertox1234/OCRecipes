@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import {
   formatZodError,
   checkPremiumFeature,
@@ -61,10 +62,10 @@ export function register(app: Express): void {
         res.json({ items });
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Food parse error:", error);
-        res.status(500).json({ error: "Failed to parse food text" });
+        sendError(res, 500, "Failed to parse food text");
       }
     },
   );
@@ -87,7 +88,7 @@ export function register(app: Express): void {
         if (!features) return;
 
         if (!req.file) {
-          return res.status(400).json({ error: "No audio file provided" });
+          return sendError(res, 400, "No audio file provided");
         }
 
         const transcription = await transcribeAudio(
@@ -96,7 +97,7 @@ export function register(app: Express): void {
         );
 
         if (!transcription.trim()) {
-          return res.status(400).json({ error: "Could not transcribe audio" });
+          return sendError(res, 400, "Could not transcribe audio");
         }
 
         const items = await parseNaturalLanguageFood(transcription);
@@ -107,7 +108,7 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Voice transcription error:", error);
-        res.status(500).json({ error: "Failed to transcribe and parse audio" });
+        sendError(res, 500, "Failed to transcribe and parse audio");
       }
     },
   );

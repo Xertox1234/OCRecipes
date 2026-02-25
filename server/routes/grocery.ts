@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { isValidCalendarDate } from "../utils/date-validation";
 import { generateGroceryItems } from "../services/grocery-generation";
@@ -41,7 +42,7 @@ export function register(app: Express): void {
       try {
         const parsed = generateGroceryListSchema.safeParse(req.body);
         if (!parsed.success) {
-          res.status(400).json({ error: formatZodError(parsed.error) });
+          sendError(res, 400, formatZodError(parsed.error));
           return;
         }
 
@@ -49,12 +50,12 @@ export function register(app: Express): void {
           !isValidCalendarDate(parsed.data.startDate) ||
           !isValidCalendarDate(parsed.data.endDate)
         ) {
-          res.status(400).json({ error: "Invalid date format" });
+          sendError(res, 400, "Invalid date format");
           return;
         }
 
         if (parsed.data.startDate > parsed.data.endDate) {
-          res.status(400).json({ error: "Start date must be before end date" });
+          sendError(res, 400, "Start date must be before end date");
           return;
         }
 
@@ -71,21 +72,24 @@ export function register(app: Express): void {
           (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24),
         );
         if (daysDiff > maxDays) {
-          res.status(403).json({
-            error: `Date range limited to ${maxDays} days on ${tier} plan`,
-            code: "DATE_RANGE_LIMIT",
-          });
+          sendError(
+            res,
+            403,
+            `Date range limited to ${maxDays} days on ${tier} plan`,
+            "DATE_RANGE_LIMIT",
+          );
           return;
         }
 
         // Enforce per-user grocery list limit (max 50)
         const existingLists = await storage.getGroceryLists(req.userId!);
         if (existingLists.length >= 50) {
-          res.status(400).json({
-            error:
-              "Maximum of 50 grocery lists reached. Delete old lists first.",
-            code: "LIST_LIMIT_REACHED",
-          });
+          sendError(
+            res,
+            400,
+            "Maximum of 50 grocery lists reached. Delete old lists first.",
+            "LIST_LIMIT_REACHED",
+          );
           return;
         }
 
@@ -140,11 +144,11 @@ export function register(app: Express): void {
         res.status(201).json({ ...list, items });
       } catch (error) {
         if (error instanceof ZodError) {
-          res.status(400).json({ error: formatZodError(error) });
+          sendError(res, 400, formatZodError(error));
           return;
         }
         console.error("Generate grocery list error:", error);
-        res.status(500).json({ error: "Failed to generate grocery list" });
+        sendError(res, 500, "Failed to generate grocery list");
       }
     },
   );
@@ -159,7 +163,7 @@ export function register(app: Express): void {
         res.json(lists);
       } catch (error) {
         console.error("Get grocery lists error:", error);
-        res.status(500).json({ error: "Failed to fetch grocery lists" });
+        sendError(res, 500, "Failed to fetch grocery lists");
       }
     },
   );
@@ -172,20 +176,20 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id) || id <= 0) {
-          res.status(400).json({ error: "Invalid list ID" });
+          sendError(res, 400, "Invalid list ID");
           return;
         }
 
         const list = await storage.getGroceryListWithItems(id, req.userId!);
         if (!list) {
-          res.status(404).json({ error: "Grocery list not found" });
+          sendError(res, 404, "Grocery list not found");
           return;
         }
 
         res.json(list);
       } catch (error) {
         console.error("Get grocery list error:", error);
-        res.status(500).json({ error: "Failed to fetch grocery list" });
+        sendError(res, 500, "Failed to fetch grocery list");
       }
     },
   );
@@ -199,14 +203,14 @@ export function register(app: Express): void {
         const listId = parseInt(req.params.id as string, 10);
         const itemId = parseInt(req.params.itemId as string, 10);
         if (isNaN(listId) || listId <= 0 || isNaN(itemId) || itemId <= 0) {
-          res.status(400).json({ error: "Invalid ID" });
+          sendError(res, 400, "Invalid ID");
           return;
         }
 
         // IDOR: verify list belongs to user
         const list = await storage.getGroceryListWithItems(listId, req.userId!);
         if (!list) {
-          res.status(404).json({ error: "Grocery list not found" });
+          sendError(res, 404, "Grocery list not found");
           return;
         }
 
@@ -218,7 +222,7 @@ export function register(app: Express): void {
             req.body.isChecked,
           );
           if (!updated) {
-            res.status(404).json({ error: "Item not found" });
+            sendError(res, 404, "Item not found");
             return;
           }
           // Also handle addedToPantry if provided in same request
@@ -245,22 +249,22 @@ export function register(app: Express): void {
             req.body.addedToPantry,
           );
           if (!updated) {
-            res.status(404).json({ error: "Item not found" });
+            sendError(res, 404, "Item not found");
             return;
           }
           res.json(updated);
           return;
         }
 
-        res.status(400).json({ error: "No update fields provided" });
+        sendError(res, 400, "No update fields provided");
       } catch (error) {
         console.error("Toggle grocery item error:", error);
-        res.status(500).json({ error: "Failed to update item" });
+        sendError(res, 500, "Failed to update item");
       }
     },
   );
 
-  // POST /api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry — Atomic grocery→pantry
+  // POST /api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry — Atomic grocery->pantry
   app.post(
     "/api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry",
     requireAuth,
@@ -278,20 +282,20 @@ export function register(app: Express): void {
         const listId = parseInt(req.params.id as string, 10);
         const itemId = parseInt(req.params.itemId as string, 10);
         if (isNaN(listId) || listId <= 0 || isNaN(itemId) || itemId <= 0) {
-          res.status(400).json({ error: "Invalid ID" });
+          sendError(res, 400, "Invalid ID");
           return;
         }
 
         // IDOR: verify list belongs to user
         const list = await storage.getGroceryListWithItems(listId, req.userId!);
         if (!list) {
-          res.status(404).json({ error: "Grocery list not found" });
+          sendError(res, 404, "Grocery list not found");
           return;
         }
 
         const groceryItem = list.items.find((i) => i.id === itemId);
         if (!groceryItem) {
-          res.status(404).json({ error: "Grocery item not found" });
+          sendError(res, 404, "Grocery item not found");
           return;
         }
 
@@ -311,7 +315,7 @@ export function register(app: Express): void {
         res.status(201).json(pantryItem);
       } catch (error) {
         console.error("Add grocery item to pantry error:", error);
-        res.status(500).json({ error: "Failed to add item to pantry" });
+        sendError(res, 500, "Failed to add item to pantry");
       }
     },
   );
@@ -324,20 +328,20 @@ export function register(app: Express): void {
       try {
         const listId = parseInt(req.params.id as string, 10);
         if (isNaN(listId) || listId <= 0) {
-          res.status(400).json({ error: "Invalid list ID" });
+          sendError(res, 400, "Invalid list ID");
           return;
         }
 
         // IDOR: verify list belongs to user
         const list = await storage.getGroceryListWithItems(listId, req.userId!);
         if (!list) {
-          res.status(404).json({ error: "Grocery list not found" });
+          sendError(res, 404, "Grocery list not found");
           return;
         }
 
         const parsed = addManualGroceryItemSchema.safeParse(req.body);
         if (!parsed.success) {
-          res.status(400).json({ error: formatZodError(parsed.error) });
+          sendError(res, 400, formatZodError(parsed.error));
           return;
         }
 
@@ -353,11 +357,11 @@ export function register(app: Express): void {
         res.status(201).json(item);
       } catch (error) {
         if (error instanceof ZodError) {
-          res.status(400).json({ error: formatZodError(error) });
+          sendError(res, 400, formatZodError(error));
           return;
         }
         console.error("Add grocery item error:", error);
-        res.status(500).json({ error: "Failed to add item" });
+        sendError(res, 500, "Failed to add item");
       }
     },
   );
@@ -370,20 +374,20 @@ export function register(app: Express): void {
       try {
         const id = parseInt(req.params.id as string, 10);
         if (isNaN(id) || id <= 0) {
-          res.status(400).json({ error: "Invalid list ID" });
+          sendError(res, 400, "Invalid list ID");
           return;
         }
 
         const deleted = await storage.deleteGroceryList(id, req.userId!);
         if (!deleted) {
-          res.status(404).json({ error: "Grocery list not found" });
+          sendError(res, 404, "Grocery list not found");
           return;
         }
 
         res.status(204).send();
       } catch (error) {
         console.error("Delete grocery list error:", error);
-        res.status(500).json({ error: "Failed to delete grocery list" });
+        sendError(res, 500, "Failed to delete grocery list");
       }
     },
   );

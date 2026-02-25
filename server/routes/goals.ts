@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import {
   calculateGoals,
   userPhysicalProfileSchema,
@@ -21,7 +22,7 @@ export function register(app: Express): void {
     try {
       const user = await storage.getUser(req.userId!);
       if (!user) {
-        return res.status(404).json({ error: "User not found" });
+        return sendError(res, 404, "User not found");
       }
 
       res.json({
@@ -33,7 +34,7 @@ export function register(app: Express): void {
       });
     } catch (error) {
       console.error("Get goals error:", error);
-      res.status(500).json({ error: "Failed to fetch goals" });
+      sendError(res, 500, "Failed to fetch goals");
     }
   });
 
@@ -88,10 +89,10 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return res.status(400).json({ error: formatZodError(error) });
+          return sendError(res, 400, formatZodError(error));
         }
         console.error("Calculate goals error:", error);
-        res.status(500).json({ error: "Failed to calculate goals" });
+        sendError(res, 500, "Failed to calculate goals");
       }
     },
   );
@@ -116,7 +117,7 @@ export function register(app: Express): void {
       });
 
       if (!updatedUser) {
-        return res.status(404).json({ error: "User not found" });
+        return sendError(res, 404, "User not found");
       }
 
       res.json({
@@ -127,10 +128,10 @@ export function register(app: Express): void {
       });
     } catch (error) {
       if (error instanceof ZodError) {
-        return res.status(400).json({ error: formatZodError(error) });
+        return sendError(res, 400, formatZodError(error));
       }
       console.error("Update goals error:", error);
-      res.status(500).json({ error: "Failed to update goals" });
+      sendError(res, 500, "Failed to update goals");
     }
   });
 }

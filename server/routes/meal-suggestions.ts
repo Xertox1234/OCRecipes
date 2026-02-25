@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
+import { sendError } from "../lib/api-errors";
 import { TIER_FEATURES } from "@shared/types/premium";
 import { calculateProfileHash } from "../utils/profile-hash";
 import {
@@ -26,7 +27,7 @@ export function register(app: Express): void {
       try {
         const parsed = suggestMealSchema.safeParse(req.body);
         if (!parsed.success) {
-          res.status(400).json({ error: formatZodError(parsed.error) });
+          sendError(res, 400, formatZodError(parsed.error));
           return;
         }
 
@@ -36,10 +37,12 @@ export function register(app: Express): void {
         const features = TIER_FEATURES[tier];
 
         if (!features.aiMealSuggestions) {
-          res.status(403).json({
-            error: "AI meal suggestions require a premium subscription",
-            code: "PREMIUM_REQUIRED",
-          });
+          sendError(
+            res,
+            403,
+            "AI meal suggestions require a premium subscription",
+            "PREMIUM_REQUIRED",
+          );
           return;
         }
 
@@ -49,11 +52,12 @@ export function register(app: Express): void {
           new Date(),
         );
         if (dailyCount >= features.dailyAiSuggestions) {
-          res.status(429).json({
-            error: "Daily AI suggestion limit reached",
-            code: "DAILY_LIMIT_REACHED",
-            remainingToday: 0,
-          });
+          sendError(
+            res,
+            429,
+            "Daily AI suggestion limit reached",
+            "DAILY_LIMIT_REACHED",
+          );
           return;
         }
 
@@ -176,11 +180,11 @@ export function register(app: Express): void {
         res.json({ suggestions, remainingToday: Math.max(0, remaining) });
       } catch (error) {
         if (error instanceof ZodError) {
-          res.status(400).json({ error: formatZodError(error) });
+          sendError(res, 400, formatZodError(error));
           return;
         }
         console.error("Meal suggestion error:", error);
-        res.status(500).json({ error: "Failed to generate suggestions" });
+        sendError(res, 500, "Failed to generate suggestions");
       }
     },
   );
