@@ -4,7 +4,8 @@ import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { type Allergy } from "@shared/schema";
 import { calculateProfileHash } from "../utils/profile-hash";
-import { openai, instructionsRateLimit } from "./_helpers";
+import { instructionsRateLimit } from "./_helpers";
+import { openai } from "../lib/openai";
 
 // Zod schema for instructions request
 const instructionsRequestSchema = z.object({

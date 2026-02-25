@@ -1,12 +1,7 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
-
-// Initialize OpenAI client for text generation (may use custom endpoint)
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+import { openai } from "../lib/openai";
 
 // DALL-E client uses direct OpenAI API (custom endpoints may not support image generation)
 const dalleClient = new OpenAI({
