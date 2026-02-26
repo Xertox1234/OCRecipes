@@ -37,32 +37,29 @@ tags:
 - assertVisible: "Go back"
 - tapOn: "Omnivore"
 
-# Screen 3: Allergies — continue without selecting
+# Screen 3: Allergies — skip without selecting
 - assertVisible:
     text: "Go back"
     timeout: 3000
-- tapOn: "Continue"
+- tapOn: "No Allergies"
   optional: true
-- tapOn: "Next"
+- tapOn: "Continue"
   optional: true
 
-# Screen 4: Health Conditions — continue without selecting
+# Screen 4: Health Conditions — skip without selecting
 - assertVisible:
     text: "Go back"
     timeout: 3000
-- tapOn: "Continue"
+- tapOn: "None of These"
   optional: true
-- tapOn: "Next"
+- tapOn: "Continue"
   optional: true
 
-# Screen 5: Goals — continue without selecting
+# Screen 5: Goals — continue
 - assertVisible:
     text: "Go back"
     timeout: 3000
 - tapOn: "Continue"
-  optional: true
-- tapOn: "Next"
-  optional: true
 
 # Screen 6: Preferences
 - assertVisible:
