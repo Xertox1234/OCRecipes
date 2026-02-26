@@ -3,6 +3,7 @@ import { View, StyleSheet } from "react-native";
 import Svg, { Path, Circle, Line, Text as SvgText } from "react-native-svg";
 import { useTheme } from "@/hooks/useTheme";
 import { ThemedText } from "@/components/ThemedText";
+import { calculateChartData } from "./weight-chart-utils";
 
 interface WeightChartProps {
   data: { weight: string; loggedAt: string }[];
@@ -17,57 +18,10 @@ export const WeightChart = React.memo(function WeightChart({
 }: WeightChartProps) {
   const { theme } = useTheme();
 
-  const chartData = useMemo(() => {
-    if (data.length === 0) return null;
-
-    const sorted = [...data]
-      .sort(
-        (a, b) =>
-          new Date(a.loggedAt).getTime() - new Date(b.loggedAt).getTime(),
-      )
-      .slice(-30); // Last 30 entries
-
-    const weights = sorted.map((d) => parseFloat(d.weight));
-    const allValues = goalWeight ? [...weights, goalWeight] : weights;
-    const minWeight = Math.min(...allValues) - 1;
-    const maxWeight = Math.max(...allValues) + 1;
-    const range = maxWeight - minWeight || 1;
-
-    const padding = { top: 20, right: 20, bottom: 30, left: 45 };
-    const chartWidth = 320 - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
-
-    const points = sorted.map((d, i) => ({
-      x: padding.left + (i / Math.max(sorted.length - 1, 1)) * chartWidth,
-      y:
-        padding.top +
-        chartHeight -
-        ((parseFloat(d.weight) - minWeight) / range) * chartHeight,
-      weight: parseFloat(d.weight),
-      date: new Date(d.loggedAt),
-    }));
-
-    const pathData = points
-      .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
-      .join(" ");
-
-    const goalY = goalWeight
-      ? padding.top +
-        chartHeight -
-        ((goalWeight - minWeight) / range) * chartHeight
-      : null;
-
-    return {
-      points,
-      pathData,
-      goalY,
-      minWeight,
-      maxWeight,
-      padding,
-      chartWidth,
-      chartHeight,
-    };
-  }, [data, goalWeight, height]);
+  const chartData = useMemo(
+    () => calculateChartData(data, goalWeight, height),
+    [data, goalWeight, height],
+  );
 
   if (!chartData || chartData.points.length === 0) {
     return (

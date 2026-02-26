@@ -5,6 +5,11 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, Typography } from "@/constants/theme";
 import MicronutrientBar from "./MicronutrientBar";
 import type { MicronutrientData } from "@/hooks/useMicronutrients";
+import {
+  classifyMicronutrients,
+  countMetGoal,
+  countLow,
+} from "./micronutrient-summary-utils";
 
 interface MicronutrientSummaryProps {
   micronutrients: MicronutrientData[];
@@ -12,20 +17,6 @@ interface MicronutrientSummaryProps {
   showAll?: boolean;
   onShowMore?: () => void;
 }
-
-const VITAMIN_NAMES = new Set([
-  "Vitamin A",
-  "Vitamin C",
-  "Vitamin D",
-  "Vitamin E",
-  "Vitamin K",
-  "Vitamin B1 (Thiamin)",
-  "Vitamin B2 (Riboflavin)",
-  "Vitamin B3 (Niacin)",
-  "Vitamin B6",
-  "Vitamin B12",
-  "Folate",
-]);
 
 export default function MicronutrientSummary({
   micronutrients,
@@ -35,14 +26,10 @@ export default function MicronutrientSummary({
 }: MicronutrientSummaryProps) {
   const { theme } = useTheme();
 
-  const { vitamins, minerals } = useMemo(() => {
-    return {
-      vitamins: micronutrients.filter((n) => VITAMIN_NAMES.has(n.nutrientName)),
-      minerals: micronutrients.filter(
-        (n) => !VITAMIN_NAMES.has(n.nutrientName),
-      ),
-    };
-  }, [micronutrients]);
+  const { vitamins, minerals } = useMemo(
+    () => classifyMicronutrients(micronutrients),
+    [micronutrients],
+  );
 
   const displayVitamins = showAll ? vitamins : vitamins.slice(0, 5);
   const displayMinerals = showAll ? minerals : minerals.slice(0, 5);
@@ -80,12 +67,8 @@ export default function MicronutrientSummary({
     );
   }
 
-  const metGoalCount = micronutrients.filter(
-    (n) => n.percentDailyValue >= 100,
-  ).length;
-  const lowCount = micronutrients.filter(
-    (n) => n.percentDailyValue < 25,
-  ).length;
+  const metGoalCount = countMetGoal(micronutrients);
+  const lowCount = countLow(micronutrients);
 
   return (
     <View

@@ -16,6 +16,12 @@ import { useCreateSavedItem } from "@/hooks/useSavedItems";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { BorderRadius } from "@/constants/theme";
 import type { CreateSavedItemInput } from "@shared/schemas/saved-items";
+import {
+  getSaveIconName,
+  getSaveBackgroundColorKey,
+  getSaveIconColorKey,
+  getSaveAccessibilityLabel,
+} from "./save-button-utils";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -74,58 +80,11 @@ export function SaveButton({ item, style, onSaved }: SaveButtonProps) {
     }
   };
 
-  const getIconName = (): keyof typeof Feather.glyphMap => {
-    switch (saveState) {
-      case "saving":
-        return "bookmark"; // Will show spinner instead
-      case "saved":
-        return "check";
-      case "error":
-        return "alert-circle";
-      default:
-        return "bookmark";
-    }
-  };
-
-  const getBackgroundColor = () => {
-    switch (saveState) {
-      case "saved":
-        return theme.success;
-      case "error":
-        return theme.error;
-      default:
-        return theme.backgroundSecondary;
-    }
-  };
-
-  const getIconColor = () => {
-    switch (saveState) {
-      case "saved":
-      case "error":
-        return theme.buttonText;
-      default:
-        return theme.text;
-    }
-  };
-
-  const getAccessibilityLabel = () => {
-    switch (saveState) {
-      case "saving":
-        return "Saving item";
-      case "saved":
-        return "Item saved";
-      case "error":
-        return "Failed to save, tap to retry";
-      default:
-        return `Save ${item.title}`;
-    }
-  };
-
   return (
     <Pressable
       onPress={handlePress}
       disabled={saveState === "saving" || saveState === "saved"}
-      accessibilityLabel={getAccessibilityLabel()}
+      accessibilityLabel={getSaveAccessibilityLabel(saveState, item.title)}
       accessibilityRole="button"
       accessibilityState={{
         disabled: saveState === "saving" || saveState === "saved",
@@ -133,7 +92,7 @@ export function SaveButton({ item, style, onSaved }: SaveButtonProps) {
       style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor: getBackgroundColor(),
+          backgroundColor: theme[getSaveBackgroundColorKey(saveState)],
           opacity: pressed && saveState === "idle" ? 0.7 : 1,
         },
         style,
@@ -142,7 +101,11 @@ export function SaveButton({ item, style, onSaved }: SaveButtonProps) {
       {saveState === "saving" ? (
         <ActivityIndicator size="small" color={theme.text} />
       ) : (
-        <Feather name={getIconName()} size={20} color={getIconColor()} />
+        <Feather
+          name={getSaveIconName(saveState)}
+          size={20}
+          color={theme[getSaveIconColorKey(saveState)]}
+        />
       )}
     </Pressable>
   );
