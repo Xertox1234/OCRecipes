@@ -1,0 +1,47 @@
+appId: com.nutriscan.app
+name: "Home - Navigate between tabs"
+tags:
+  - smoke
+  - navigation
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Verify Home tab (default after login)
+- assertVisible:
+    text: "Search recipes"
+    timeout: 10000
+
+# Navigate to History tab
+- tapOn: "History"
+- assertVisible:
+    text: "Today"
+    timeout: 5000
+
+# Navigate to Scan tab
+- tapOn: "Scan"
+- assertVisible:
+    text: "Enable camera access"
+    timeout: 5000
+  optional: true
+
+# Navigate to Profile tab
+- tapOn: "Profile"
+- assertVisible:
+    text: "Tap to change profile picture"
+    timeout: 5000
+  optional: true
+
+# Navigate back to Home
+- tapOn: "Home"
+- assertVisible:
+    text: "Search recipes"
+    timeout: 5000

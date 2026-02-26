@@ -1,0 +1,60 @@
+appId: com.nutriscan.app
+name: "Plan - Create a new recipe"
+tags:
+  - plan
+  - recipes
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to Plan tab
+- tapOn: "Plan"
+- assertVisible:
+    text: "Recipes"
+    timeout: 5000
+
+# Open recipe browser
+- tapOn: "Recipes"
+- assertVisible:
+    text: "Search recipes..."
+    timeout: 5000
+
+# Tap Create button
+- tapOn: "Create"
+- assertVisible:
+    text: "What are you making?"
+    timeout: 3000
+
+# Enter recipe title
+- tapOn: "What are you making?"
+- inputText: "Test Recipe"
+
+# Enter description
+- tapOn: "Brief description (optional)"
+- inputText: "A delicious test recipe"
+
+# Verify section rows are visible
+- assertVisible: "Ingredients"
+- assertVisible: "Instructions"
+- assertVisible: "Time & Servings"
+- assertVisible: "Nutrition"
+- assertVisible: "Tags & Cuisine"
+
+# Open Ingredients section
+- tapOn: "Ingredients"
+- assertVisible:
+    text: "Add ingredient"
+    timeout: 3000
+  optional: true
+
+# Go back
+- back
+  optional: true

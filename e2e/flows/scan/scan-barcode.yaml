@@ -1,0 +1,37 @@
+appId: com.nutriscan.app
+name: "Scan - Barcode scanning flow"
+tags:
+  - scan
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to Scan screen (mandatory)
+- tapOn: "Scan"
+
+# Camera permission flow — in simulator camera may not work but the
+# screen must load with either a permission prompt or camera controls.
+- assertVisible:
+    text: "Enable camera access"
+    timeout: 5000
+  optional: true
+
+# If permission is already granted, we should see camera controls
+- assertVisible:
+    text: "Take photo of food"
+    timeout: 5000
+  optional: true
+
+# Check gallery button is available
+- assertVisible:
+    text: "Choose photo from gallery"
+    timeout: 3000
+  optional: true

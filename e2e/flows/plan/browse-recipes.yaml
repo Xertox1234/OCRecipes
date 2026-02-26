@@ -1,0 +1,62 @@
+appId: com.nutriscan.app
+name: "Plan - Browse recipes and view detail"
+tags:
+  - plan
+  - recipes
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to Plan tab
+- tapOn: "Plan"
+- assertVisible:
+    text: "Recipes"
+    timeout: 5000
+
+# Open recipe browser
+- tapOn: "Recipes"
+- assertVisible:
+    text: "Search recipes..."
+    timeout: 5000
+
+# Verify filter chips are visible
+- assertVisible: "Italian"
+- assertVisible: "Mexican"
+
+# Search for a recipe
+- tapOn: "Search recipes..."
+- inputText: "chicken"
+- assertVisible:
+    text: "chicken"
+    timeout: 3000
+
+# Clear search
+- tapOn:
+    id: "clear-search"
+  optional: true
+
+# Tap a cuisine filter
+- tapOn: "Italian"
+
+# Tap a recipe card to open detail
+- tapOn:
+    index: 0
+    text: ".*"
+  optional: true
+
+# If recipe detail opened, verify sections
+- assertVisible:
+    text: "Ingredients"
+    timeout: 3000
+  optional: true
+- assertVisible:
+    text: "Instructions"
+  optional: true

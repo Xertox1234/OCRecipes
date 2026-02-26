@@ -1,0 +1,58 @@
+appId: com.nutriscan.app
+name: "Plan - View and manage grocery lists"
+tags:
+  - plan
+  - grocery
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to Plan tab
+- tapOn: "Plan"
+- assertVisible:
+    text: "Grocery Lists"
+    timeout: 5000
+
+# Open grocery lists
+- tapOn: "Grocery Lists"
+
+# May see empty state or existing lists
+- assertVisible:
+    text: "No Grocery Lists"
+    timeout: 3000
+  optional: true
+
+# Tap FAB to create a new list (if FAB exists)
+- tapOn:
+    id: "create-grocery-list"
+  optional: true
+
+# If date picker appears, fill in dates and generate
+- assertVisible:
+    text: "Generate"
+    timeout: 3000
+  optional: true
+
+- tapOn:
+    text: "Generate"
+  optional: true
+
+# If we have a list, verify items structure
+- assertVisible:
+    text: "items"
+    timeout: 3000
+  optional: true
+
+# Check add item input
+- assertVisible:
+    text: "Add item..."
+    timeout: 3000
+  optional: true

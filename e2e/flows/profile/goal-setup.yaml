@@ -1,0 +1,61 @@
+appId: com.nutriscan.app
+name: "Profile - Set nutrition goals"
+tags:
+  - profile
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to Profile tab
+- tapOn: "Profile"
+- assertVisible:
+    text: "Nutrition Goals"
+    timeout: 5000
+
+# Open Nutrition Goals
+- tapOn: "Nutrition Goals"
+- assertVisible:
+    text: "Set Your Goals"
+    timeout: 5000
+
+# Fill in physical profile
+- tapOn:
+    id: "input-age"
+  optional: true
+- inputText: "30"
+  optional: true
+
+- tapOn:
+    id: "input-weight"
+  optional: true
+- inputText: "75"
+  optional: true
+
+- tapOn:
+    id: "input-height"
+  optional: true
+- inputText: "175"
+  optional: true
+
+# Select gender
+- tapOn: "Male"
+  optional: true
+
+# Select activity level
+- tapOn: "Moderately Active"
+  optional: true
+
+# Select primary goal
+- tapOn: "Maintain"
+  optional: true
+
+# Verify calculate button
+- assertVisible: "Calculate My Goals"

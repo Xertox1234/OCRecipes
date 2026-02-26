@@ -1,0 +1,57 @@
+appId: com.nutriscan.app
+name: "Home - Log exercise activity"
+tags:
+  - home
+  - exercise
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to exercise log from home screen (mandatory navigation)
+- tapOn:
+    text: "Exercise"
+    timeout: 5000
+
+# Verify exercise type chips are visible (mandatory — proves screen loaded)
+- assertVisible:
+    text: "Cardio"
+    timeout: 5000
+- assertVisible: "Strength"
+
+# Select exercise type
+- tapOn: "Cardio"
+  optional: true
+
+# Tap search to find an exercise
+- tapOn:
+    id: "search-exercise"
+  optional: true
+
+# If search screen opens
+- assertVisible:
+    text: "Search exercises..."
+    timeout: 3000
+  optional: true
+
+- tapOn: "Search exercises..."
+  optional: true
+- inputText: "running"
+  optional: true
+
+# Wait for results
+- assertVisible:
+    text: "Running"
+    timeout: 5000
+  optional: true
+
+# Go back
+- back
+  optional: true

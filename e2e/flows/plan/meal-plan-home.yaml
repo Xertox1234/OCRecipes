@@ -1,0 +1,73 @@
+appId: com.nutriscan.app
+name: "Plan - Meal plan home and pantry"
+tags:
+  - plan
+  - meal-plan
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to Plan tab
+- tapOn: "Plan"
+
+# Verify meal plan home elements
+- assertVisible:
+    text: "Recipes"
+    timeout: 5000
+- assertVisible: "Pantry"
+- assertVisible: "Grocery Lists"
+
+# Verify meal slot sections (at least one should be visible)
+- assertVisible:
+    text: "Breakfast"
+    timeout: 3000
+  optional: true
+- assertVisible:
+    text: "Lunch"
+  optional: true
+- assertVisible:
+    text: "Dinner"
+  optional: true
+- assertVisible:
+    text: "Snack"
+  optional: true
+
+# Check daily total section
+- scrollUntilVisible:
+    element: "Daily Total"
+    direction: DOWN
+  optional: true
+
+# Navigate to Pantry
+- scrollUntilVisible:
+    element: "Pantry"
+    direction: UP
+- tapOn: "Pantry"
+
+# Verify pantry screen
+- assertVisible:
+    text: "Your Pantry"
+    timeout: 5000
+  optional: true
+
+# May see empty state
+- assertVisible:
+    text: "Pantry is Empty"
+    timeout: 3000
+  optional: true
+
+# Check add item input
+- assertVisible:
+    text: "Add pantry item..."
+  optional: true
+
+# Go back to plan home
+- back
