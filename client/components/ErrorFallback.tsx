@@ -15,6 +15,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius, Fonts } from "@/constants/theme";
+import { formatErrorDetails } from "./error-fallback-utils";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -34,14 +35,6 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
       console.error("Failed to restart app:", restartError);
       resetError();
     }
-  };
-
-  const formatErrorDetails = (): string => {
-    let details = `Error: ${error.message}\n\n`;
-    if (error.stack) {
-      details += `Stack Trace:\n${error.stack}`;
-    }
-    return details;
   };
 
   return (
@@ -144,7 +137,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
                     ]}
                     selectable
                   >
-                    {formatErrorDetails()}
+                    {formatErrorDetails(error)}
                   </Text>
                 </View>
               </ScrollView>
@@ -197,7 +190,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing["2xl"],
     minWidth: 200,
-    shadowColor: "#000",
+    shadowColor: "#000", // hardcoded
     shadowOffset: {
       width: 0,
       height: 2,
