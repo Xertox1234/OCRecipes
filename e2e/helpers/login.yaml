@@ -1,0 +1,17 @@
+appId: com.nutriscan.app
+
+# Reusable login helper — call with `runFlow` and provide env vars:
+#   USERNAME (default: testuser)
+#   PASSWORD (default: testpass123)
+---
+- assertVisible: "Sign In"
+- tapOn:
+    id: "input-username"
+- inputText: ${USERNAME}
+- tapOn:
+    id: "input-password"
+- inputText: ${PASSWORD}
+- tapOn: "Sign In"
+- assertNotVisible:
+    text: "Sign In"
+    timeout: 5000

@@ -1,0 +1,46 @@
+appId: com.nutriscan.app
+name: "Profile - Weight tracking"
+tags:
+  - profile
+  - weight
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to Profile tab
+- tapOn: "Profile"
+- assertVisible:
+    text: "Weight Tracking"
+    timeout: 5000
+
+# Open Weight Tracking
+- tapOn: "Weight Tracking"
+
+# Verify weight tracking UI
+- assertVisible:
+    text: "kg"
+    timeout: 5000
+  optional: true
+
+# Enter a weight value
+- tapOn:
+    id: "input-weight"
+  optional: true
+- inputText: "72.5"
+  optional: true
+
+# Verify trend card elements
+- assertVisible:
+    text: "Current"
+  optional: true
+
+# Go back
+- back

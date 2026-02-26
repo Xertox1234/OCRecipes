@@ -2,9 +2,14 @@ import { defineConfig } from "vitest/config";
 import path from "path";
 
 export default defineConfig({
+  esbuild: {
+    jsx: "automatic",
+    jsxImportSource: "react",
+  },
   test: {
     globals: true,
     environment: "node",
+    environmentMatchGlobs: [["client/components/**/*.test.tsx", "jsdom"]],
     include: ["**/*.test.ts", "**/*.test.tsx"],
     exclude: ["node_modules", "server_dist", ".expo", ".claude/worktrees"],
     coverage: {
@@ -19,6 +24,19 @@ export default defineConfig({
       "@shared": path.resolve(__dirname, "./shared"),
       "@": path.resolve(__dirname, "./client"),
       "react-native": path.resolve(__dirname, "./test/mocks/react-native.ts"),
+      "react-native-reanimated": path.resolve(
+        __dirname,
+        "./test/mocks/react-native-reanimated.ts",
+      ),
+      "@expo/vector-icons": path.resolve(
+        __dirname,
+        "./test/mocks/expo-vector-icons.ts",
+      ),
+      "@gorhom/bottom-sheet": path.resolve(
+        __dirname,
+        "./test/mocks/gorhom-bottom-sheet.ts",
+      ),
+      "expo-haptics": path.resolve(__dirname, "./test/mocks/expo-haptics.ts"),
     },
   },
 });

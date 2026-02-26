@@ -1,0 +1,27 @@
+appId: com.nutriscan.app
+name: "Home - View item detail from history"
+tags:
+  - history
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to History
+- tapOn: "History"
+- assertVisible:
+    text: "Today"
+    timeout: 5000
+
+# Verify the scan CTA is visible (shown when no items today)
+- assertVisible:
+    text: "Scan barcode"
+    timeout: 3000
+  optional: true

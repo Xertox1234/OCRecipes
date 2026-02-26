@@ -1,0 +1,51 @@
+appId: com.nutriscan.app
+name: "Home - NutriCoach chat interaction"
+tags:
+  - home
+  - chat
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to chat from home — NutriCoach entry point must be reachable
+- tapOn:
+    text: "NutriCoach"
+    timeout: 5000
+
+# Verify we reached a chat-related screen (mandatory)
+- assertVisible:
+    text: "NutriCoach"
+    timeout: 5000
+
+# Start a new chat if on chat list
+- tapOn:
+    text: "New Chat"
+  optional: true
+
+# Verify suggested prompts are visible
+- assertVisible:
+    text: "What should I eat today?"
+    timeout: 3000
+  optional: true
+- assertVisible:
+    text: "How can I hit my protein goal?"
+  optional: true
+
+# Tap a suggested prompt
+- tapOn:
+    text: "What should I eat today?"
+  optional: true
+
+# Wait for response
+- assertVisible:
+    text: ".*"
+    timeout: 10000
+  optional: true

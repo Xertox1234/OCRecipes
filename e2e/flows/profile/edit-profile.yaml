@@ -1,0 +1,41 @@
+appId: com.nutriscan.app
+name: "Profile - View and edit dietary profile"
+tags:
+  - profile
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
+---
+# Login first
+- launchApp
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}
+
+# Navigate to Profile tab
+- tapOn: "Profile"
+- assertVisible:
+    text: "Edit Profile"
+    timeout: 5000
+
+# Verify profile sections are visible
+- assertVisible: "Weight Tracking"
+- assertVisible: "Dietary Profile"
+- assertVisible: "Nutrition Goals"
+- assertVisible: "Sign Out"
+
+# Open Dietary Profile
+- tapOn: "Dietary Profile"
+- assertVisible:
+    text: "Save Changes"
+    timeout: 5000
+
+# Verify dietary profile sections exist
+- scrollUntilVisible:
+    element: "Save Changes"
+    direction: DOWN
+
+# Go back without saving
+- back

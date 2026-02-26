@@ -60,4 +60,5 @@ coverage/
 # Local planning docs
 docs/brainstorms/
 docs/plans/
+todos/
 .claude/worktrees/

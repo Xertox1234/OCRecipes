@@ -1,0 +1,49 @@
+appId: com.nutriscan.app
+name: "Auth - Login flow"
+tags:
+  - smoke
+  - auth
+---
+# Launch the app
+- launchApp
+
+# Verify login screen loads
+- assertVisible: "Sign In"
+
+# Verify input fields are visible
+- assertVisible:
+    id: "input-username"
+- assertVisible:
+    id: "input-password"
+
+# Enter credentials
+- tapOn:
+    id: "input-username"
+- inputText: ${USERNAME}
+- tapOn:
+    id: "input-password"
+- inputText: ${PASSWORD}
+
+# Submit login
+- tapOn: "Sign In"
+
+# Verify we navigate away from login
+- assertNotVisible:
+    text: "Sign In"
+    timeout: 10000
+
+# Toggle to register mode
+- launchApp:
+    clearState: true
+- assertVisible: "Sign In"
+- tapOn: "Switch to sign up"
+- assertVisible: "Create Account"
+
+# Verify confirm password field appears
+- assertVisible:
+    id: "input-confirm-password"
+
+# Toggle back to login
+- tapOn: "Switch to sign in"
+- assertVisible: "Sign In"
+- assertNotVisible: "input-confirm-password"

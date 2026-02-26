@@ -1,0 +1,76 @@
+appId: com.nutriscan.app
+name: "Onboarding - Register and complete onboarding"
+tags:
+  - smoke
+  - onboarding
+---
+# Launch fresh app
+- launchApp:
+    clearState: true
+
+# Switch to register mode
+- assertVisible: "Sign In"
+- tapOn: "Switch to sign up"
+- assertVisible: "Create Account"
+
+# Fill registration form
+- tapOn:
+    id: "input-username"
+- inputText: "e2etest_${TIMESTAMP}"
+- tapOn:
+    id: "input-password"
+- inputText: "TestPass123!"
+- tapOn:
+    id: "input-confirm-password"
+- inputText: "TestPass123!"
+- tapOn: "Create Account"
+
+# Wait for Welcome screen
+- assertVisible:
+    text: "Get Started"
+    timeout: 10000
+
+# Screen 1: Welcome
+- tapOn: "Get Started"
+
+# Screen 2: Diet Type
+- assertVisible: "Go back"
+- tapOn: "Omnivore"
+
+# Screen 3: Allergies — continue without selecting
+- assertVisible:
+    text: "Go back"
+    timeout: 3000
+- tapOn: "Continue"
+  optional: true
+- tapOn: "Next"
+  optional: true
+
+# Screen 4: Health Conditions — continue without selecting
+- assertVisible:
+    text: "Go back"
+    timeout: 3000
+- tapOn: "Continue"
+  optional: true
+- tapOn: "Next"
+  optional: true
+
+# Screen 5: Goals — continue without selecting
+- assertVisible:
+    text: "Go back"
+    timeout: 3000
+- tapOn: "Continue"
+  optional: true
+- tapOn: "Next"
+  optional: true
+
+# Screen 6: Preferences
+- assertVisible:
+    text: "Complete setup"
+    timeout: 5000
+- tapOn: "Complete setup"
+
+# Should land on home screen after onboarding
+- assertVisible:
+    text: "Search recipes"
+    timeout: 10000
