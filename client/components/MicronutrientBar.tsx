@@ -2,6 +2,10 @@ import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
+import {
+  getMicronutrientBarColor,
+  clampPercentage,
+} from "./progress-display-utils";
 
 interface MicronutrientBarProps {
   nutrientName: string;
@@ -18,14 +22,8 @@ export default function MicronutrientBar({
 }: MicronutrientBarProps) {
   const { theme } = useTheme();
 
-  const barColor =
-    percentDailyValue >= 100
-      ? "#2E7D32" // Met goal
-      : percentDailyValue >= 50
-        ? "#F57F17" // Halfway
-        : "#C62828"; // Low
-
-  const clampedPercent = Math.min(percentDailyValue, 100);
+  const barColor = getMicronutrientBarColor(percentDailyValue);
+  const clampedPercent = clampPercentage(percentDailyValue);
 
   return (
     <View

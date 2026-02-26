@@ -12,6 +12,10 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { FontFamily, Spacing, withOpacity } from "@/constants/theme";
+import {
+  calculateFastingProgress,
+  formatFastingTimeDisplay,
+} from "./fasting-display-utils";
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -36,7 +40,7 @@ export const FastingTimer = React.memo(function FastingTimer({
   const { reducedMotion } = useAccessibility();
 
   const targetMinutes = targetHours * 60;
-  const progress = Math.min(elapsedMinutes / targetMinutes, 1);
+  const progress = calculateFastingProgress(elapsedMinutes, targetMinutes);
   const isComplete = progress >= 1;
 
   const strokeWidth = 12;
@@ -63,25 +67,10 @@ export const FastingTimer = React.memo(function FastingTimer({
   }));
 
   // Format time display
-  const timeDisplay = useMemo(() => {
-    const remainingMinutes = Math.max(targetMinutes - elapsedMinutes, 0);
-    if (isComplete) {
-      // Show time elapsed past target
-      const overMinutes = elapsedMinutes - targetMinutes;
-      const overHours = Math.floor(overMinutes / 60);
-      const overMins = Math.floor(overMinutes % 60);
-      return {
-        main: `+${String(overHours).padStart(2, "0")}:${String(overMins).padStart(2, "0")}`,
-        label: "Past target",
-      };
-    }
-    const hours = Math.floor(remainingMinutes / 60);
-    const mins = Math.floor(remainingMinutes % 60);
-    return {
-      main: `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`,
-      label: "Remaining",
-    };
-  }, [elapsedMinutes, targetMinutes, isComplete]);
+  const timeDisplay = useMemo(
+    () => formatFastingTimeDisplay(elapsedMinutes, targetMinutes),
+    [elapsedMinutes, targetMinutes],
+  );
 
   const percentageText = `${Math.round(progress * 100)}%`;
 

@@ -8,6 +8,11 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import {
+  calculateAdjustedBudget,
+  calculateRemaining,
+  calculateProgress,
+} from "./calorie-budget-utils";
 
 interface CalorieBudgetBarProps {
   calorieGoal: number;
@@ -21,10 +26,9 @@ export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
   exerciseCalories,
 }: CalorieBudgetBarProps) {
   const { theme } = useTheme();
-  const adjustedBudget = calorieGoal + exerciseCalories;
-  const remaining = adjustedBudget - foodCalories;
-  const progress =
-    adjustedBudget > 0 ? Math.min(foodCalories / adjustedBudget, 1) : 0;
+  const adjustedBudget = calculateAdjustedBudget(calorieGoal, exerciseCalories);
+  const remaining = calculateRemaining(adjustedBudget, foodCalories);
+  const progress = calculateProgress(foodCalories, adjustedBudget);
 
   return (
     <View style={styles.container} accessibilityLabel="Calorie budget summary">

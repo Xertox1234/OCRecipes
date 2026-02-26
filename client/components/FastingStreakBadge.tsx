@@ -10,6 +10,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { isHighStreak, formatStreakLabel } from "./fasting-display-utils";
 
 interface FastingStreakBadgeProps {
   streak: number;
@@ -25,7 +26,7 @@ export const FastingStreakBadge = React.memo(function FastingStreakBadge({
 
   if (streak <= 0) return null;
 
-  const badgeColor = streak >= 7 ? theme.warning : theme.calorieAccent;
+  const badgeColor = isHighStreak(streak) ? theme.warning : theme.calorieAccent;
 
   if (compact) {
     return (
@@ -54,7 +55,7 @@ export const FastingStreakBadge = React.memo(function FastingStreakBadge({
       <Feather name="zap" size={18} color={badgeColor} />
       <View>
         <ThemedText style={[styles.streakCount, { color: badgeColor }]}>
-          {streak} day{streak !== 1 ? "s" : ""}
+          {formatStreakLabel(streak)}
         </ThemedText>
         <ThemedText type="caption" style={{ color: theme.textSecondary }}>
           Current streak

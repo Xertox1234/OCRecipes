@@ -2,6 +2,10 @@ import React from "react";
 import { StyleSheet, View, ViewStyle, StyleProp } from "react-native";
 
 import { useTheme } from "@/hooks/useTheme";
+import {
+  calculateProgressPercentage,
+  calculateBorderRadius,
+} from "./progress-display-utils";
 
 interface ProgressBarProps {
   /** Current value */
@@ -31,9 +35,8 @@ export function ProgressBar({
 }: ProgressBarProps) {
   const { theme } = useTheme();
 
-  const safeMax = max || 1;
-  const percentage = Math.min((value / safeMax) * 100, 100);
-  const borderRadius = height / 2;
+  const percentage = calculateProgressPercentage(value, max);
+  const borderRadius = calculateBorderRadius(height);
 
   return (
     <View

@@ -17,16 +17,9 @@ import Animated, {
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import {
-  Spacing,
-  BorderRadius,
-  Colors,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
-
-type Theme = (typeof Colors)["light"] | (typeof Colors)["dark"];
+import { getBackgroundColorForElevation, getBadgeColors } from "./card-utils";
 
 type BadgeVariant = "default" | "success" | "warning" | "error" | "info";
 
@@ -59,40 +52,6 @@ interface CardProps {
   /** Accessibility hint */
   accessibilityHint?: string;
 }
-
-const getBackgroundColorForElevation = (
-  elevation: number,
-  theme: Theme,
-): string => {
-  switch (elevation) {
-    case 1:
-      return theme.backgroundDefault;
-    case 2:
-      return theme.backgroundSecondary;
-    case 3:
-      return theme.backgroundTertiary;
-    default:
-      return theme.backgroundRoot;
-  }
-};
-
-const getBadgeColors = (
-  variant: BadgeVariant,
-  theme: Theme,
-): { bg: string; text: string } => {
-  switch (variant) {
-    case "success":
-      return { bg: withOpacity(theme.success, 0.2), text: theme.success };
-    case "warning":
-      return { bg: withOpacity(theme.warning, 0.2), text: theme.warning };
-    case "error":
-      return { bg: withOpacity(theme.error, 0.2), text: theme.error };
-    case "info":
-      return { bg: withOpacity(theme.info, 0.2), text: theme.info };
-    default:
-      return { bg: withOpacity(theme.link, 0.2), text: theme.link };
-  }
-};
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -134,7 +93,7 @@ export function Card({
   const shadowStyle = isDark
     ? {}
     : {
-        shadowColor: "#000",
+        shadowColor: "#000", // hardcoded
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.08,
         shadowRadius: 8,

@@ -29,6 +29,11 @@ import {
   contentRevealTimingConfig,
 } from "@/constants/animations";
 import type { CreateSavedItemInput } from "@shared/schemas/saved-items";
+import {
+  getSuggestionIconName,
+  getSuggestionTypeLabel,
+  mapSuggestionToSavedItemType,
+} from "./suggestion-card-utils";
 
 type Theme = (typeof Colors)["light"] | (typeof Colors)["dark"];
 
@@ -165,12 +170,7 @@ export function SuggestionCard({
     }
   }, [cardState, instructionsError]);
 
-  const iconName =
-    suggestion.type === "recipe"
-      ? "book-open"
-      : suggestion.type === "craft"
-        ? "scissors"
-        : "coffee";
+  const iconName = getSuggestionIconName(suggestion.type);
 
   const iconColor =
     suggestion.type === "recipe"
@@ -179,11 +179,10 @@ export function SuggestionCard({
         ? theme.proteinAccent
         : theme.fatAccent;
 
-  const typeLabel =
-    suggestion.type === "craft" ? "Kid Activity" : suggestion.type;
+  const typeLabel = getSuggestionTypeLabel(suggestion.type);
 
   // Map suggestion type to saved item type
-  const savedItemType = suggestion.type === "craft" ? "activity" : "recipe";
+  const savedItemType = mapSuggestionToSavedItemType(suggestion.type);
 
   const handlePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
