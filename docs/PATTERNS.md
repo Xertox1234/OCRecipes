@@ -30,6 +30,8 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Cross-Validation Between Data Sources](#cross-validation-between-data-sources)
   - [Graceful 404 Handling with Raw Fetch](#graceful-404-handling-with-raw-fetch)
   - [Fetch Timeout with AbortSignal for External APIs](#fetch-timeout-with-abortsignal-for-external-apis)
+  - [OpenAI SDK Timeout and Error Handling](#openai-sdk-timeout-and-error-handling)
+  - [Always Guard JSON.parse on LLM Output](#always-guard-jsonparse-on-llm-output)
   - [Zod safeParse for External API Responses](#zod-safeparse-for-external-api-responses)
 - [Database Patterns](#database-patterns)
   - [`text()` Over `pgEnum` for Enum-Like Columns](#text-over-pgenum-for-enum-like-columns)
@@ -2036,6 +2038,104 @@ const response = await fetch("https://api.example.com/data", {
 - `server/services/receipt-validation.ts` — Google OAuth and subscription API calls
 - `server/services/recipe-import.ts` — `safeFetch` already uses `AbortSignal.timeout()`
 - Related learning: "Fetch Without Timeout Hangs Indefinitely" in LEARNINGS.md
+
+### OpenAI SDK Timeout and Error Handling
+
+The OpenAI SDK uses a different timeout mechanism than `fetch()`. Instead of `AbortSignal.timeout()`, pass `{ timeout: ms }` as the second argument to API calls. Timeouts are tiered by call complexity, with named constants centralized in `server/lib/openai.ts`:
+
+```typescript
+// server/lib/openai.ts — centralized timeout constants
+const OPENAI_DEFAULT_TIMEOUT_MS = 45_000; // client-level default
+
+export const OPENAI_TIMEOUT_FAST_MS = 15_000; // simple text parsing (food-nlp)
+export const OPENAI_TIMEOUT_STREAM_MS = 30_000; // streaming chat (nutrition-coach)
+export const OPENAI_TIMEOUT_HEAVY_MS = 60_000; // large token budgets (recipes, meal suggestions)
+export const OPENAI_TIMEOUT_IMAGE_MS = 120_000; // DALL-E image generation
+
+export const openai = new OpenAI({
+  apiKey: apiKey ?? "",
+  timeout: OPENAI_DEFAULT_TIMEOUT_MS, // client-level default
+});
+```
+
+Per-request overrides use the second argument:
+
+```typescript
+import { openai, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
+
+const response = await openai.chat.completions.create(
+  { model: "gpt-4o-mini", messages, max_completion_tokens: 500 },
+  { timeout: OPENAI_TIMEOUT_FAST_MS }, // override client default
+);
+```
+
+**Error handling strategy varies by service role:**
+
+| Service role                               | Strategy                                       | Example                                                           |
+| ------------------------------------------ | ---------------------------------------------- | ----------------------------------------------------------------- |
+| Required data (recipe, menu, meals)        | `try/catch` → re-throw user-friendly message   | `throw new Error("Failed to generate recipe. Please try again.")` |
+| Optional/degradable data (food-nlp, photo) | `try/catch` → return fallback                  | `return []` or return previous result                             |
+| Streaming (coach)                          | `try/catch` → `yield` error message + `return` | `yield "Sorry, I'm having trouble responding right now."`         |
+
+```typescript
+// Required data — re-throw with user-friendly message
+let response;
+try {
+  response = await openai.chat.completions.create(params, { timeout });
+} catch (error) {
+  console.error("Recipe generation API error:", error);
+  throw new Error("Failed to generate recipe. Please try again.");
+}
+
+// Degradable data — return fallback
+try {
+  response = await openai.chat.completions.create(params, { timeout });
+} catch (error) {
+  console.error("Food NLP parsing error:", error);
+  return []; // caller can handle empty result
+}
+```
+
+**When to use:** Every `openai.chat.completions.create()` or `dalleClient.images.generate()` call.
+
+**References:**
+
+- `server/lib/openai.ts` — client configuration and timeout constants
+- `server/services/food-nlp.ts` — degradable fallback pattern
+- `server/services/nutrition-coach.ts` — streaming error handling pattern
+- `server/services/recipe-generation.ts` — required data + DALL-E timeout pattern
+
+### Always Guard JSON.parse on LLM Output
+
+LLM responses can contain malformed JSON (truncated output hitting token limits, hallucinated syntax, partial responses from timeouts). Every `JSON.parse()` on AI-returned content must be wrapped in try/catch, even when using `response_format: { type: "json_object" }`:
+
+```typescript
+// ❌ BAD — unguarded JSON.parse on LLM output
+const parsed = JSON.parse(response.choices[0]?.message?.content || "{}");
+
+// ✅ GOOD — guarded with appropriate fallback
+let parsed;
+try {
+  parsed = JSON.parse(content);
+} catch {
+  // For required data: throw user-friendly error
+  throw new Error("Menu analysis returned invalid data. Please try again.");
+  // For optional data: return fallback
+  // console.error("Food NLP: AI returned invalid JSON");
+  // return [];
+}
+```
+
+**Why this differs from traditional APIs:** External REST APIs return malformed JSON extremely rarely (usually only on server errors). LLMs produce malformed JSON more frequently because `response_format: { type: "json_object" }` only guarantees _attempted_ JSON — the output can still be truncated if it hits `max_completion_tokens`, or the model may produce syntactically broken JSON in edge cases.
+
+**When to use:** Every `JSON.parse()` on content from `response.choices[0]?.message?.content`. This applies even after checking `if (!content) return` — non-null content can still be invalid JSON.
+
+**References:**
+
+- `server/services/menu-analysis.ts` — guarded JSON.parse with user-friendly error
+- `server/services/food-nlp.ts` — guarded JSON.parse with empty-array fallback
+- `server/services/meal-suggestions.ts` — guarded JSON.parse (already correct before audit)
+- `server/services/recipe-generation.ts` — guarded JSON.parse (already correct before audit)
 
 ### Zod safeParse for External API Responses
 
