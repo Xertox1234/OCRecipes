@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
+import { db } from "../../db";
 import {
   lookupNutrition,
   lookupBarcode,
@@ -293,6 +294,59 @@ describe("Nutrition Routes", () => {
     });
   });
 
+  describe("POST /api/scanned-items", () => {
+    it("creates a scanned item with daily log via transaction", async () => {
+      const mockInsert = vi.fn().mockReturnValue({
+        values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([mockScannedItem]),
+        }),
+      });
+      vi.mocked(db.transaction).mockImplementation(async (fn) => {
+        return fn({
+          insert: mockInsert,
+        } as any);
+      });
+
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .send({
+          productName: "Greek Yogurt",
+          brandName: "Fage",
+          calories: 120,
+          protein: 18,
+          carbs: 6,
+          fat: 2,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.productName).toBe("Greek Yogurt");
+    });
+
+    it("returns 400 when Zod validation fails", async () => {
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .send({ productName: "" }); // min(1) requires non-empty
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 500 when transaction throws", async () => {
+      vi.mocked(db.transaction).mockRejectedValue(new Error("TX error"));
+
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .send({
+          productName: "Test Item",
+          calories: 100,
+        });
+
+      expect(res.status).toBe(500);
+    });
+  });
+
   describe("DELETE /api/scanned-items/:id", () => {
     it("soft deletes a scanned item", async () => {
       vi.mocked(storage.softDeleteScannedItem).mockResolvedValue(true as never);
@@ -322,6 +376,18 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(400);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.softDeleteScannedItem).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .delete("/api/scanned-items/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
     });
   });
 
@@ -367,6 +433,112 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.getDailySummary).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .get("/api/daily-summary")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+  });
+
+  describe("POST /api/scanned-items/:id/favourite — error paths", () => {
+    it("returns 400 for invalid ID", async () => {
+      const res = await request(app)
+        .post("/api/scanned-items/abc/favourite")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.getScannedItem).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .post("/api/scanned-items/1/favourite")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+  });
+
+  describe("GET /api/scanned-items/:id — not found", () => {
+    it("returns 404 when item is null", async () => {
+      vi.mocked(storage.getScannedItemWithFavourite).mockResolvedValue(
+        null as never,
+      );
+
+      const res = await request(app)
+        .get("/api/scanned-items/999")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe("Error catch blocks", () => {
+    it("GET /api/nutrition/lookup returns 500 on service error", async () => {
+      vi.mocked(lookupNutrition).mockRejectedValue(new Error("API down"));
+
+      const res = await request(app)
+        .get("/api/nutrition/lookup?name=chicken")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+
+    it("GET /api/nutrition/barcode/:code returns 500 on service error", async () => {
+      vi.mocked(lookupBarcode).mockRejectedValue(new Error("API down"));
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/1234567890")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+
+    it("GET /api/scanned-items returns 500 on storage error", async () => {
+      vi.mocked(storage.getScannedItems).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .get("/api/scanned-items")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+
+    it("GET /api/scanned-items/favourites returns 500 on storage error", async () => {
+      vi.mocked(storage.getFavouriteScannedItems).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .get("/api/scanned-items/favourites")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+  });
+
+  describe("GET /api/nutrition/barcode — edge cases", () => {
+    it("returns 400 for barcode exceeding 50 chars", async () => {
+      const longBarcode = "1".repeat(51);
+      const res = await request(app)
+        .get(`/api/nutrition/barcode/${longBarcode}`)
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe("Invalid barcode");
     });
   });
 });

@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
+import { detectImageMimeType } from "../../lib/image-mime";
 import { register } from "../auth";
 
 // Mock storage before importing routes
@@ -49,6 +50,10 @@ vi.mock("express-rate-limit", () => ({
       next(),
 }));
 
+vi.mock("../../lib/image-mime", () => ({
+  detectImageMimeType: vi.fn(),
+}));
+
 function createApp() {
   const app = express();
   app.use(express.json());
@@ -77,7 +82,7 @@ describe("Auth Routes", () => {
 
   describe("POST /api/auth/register", () => {
     it("creates a new user and returns token", async () => {
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(null as any);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(null as never);
       vi.mocked(storage.createUser).mockResolvedValue(mockUser as never);
 
       const res = await request(app).post("/api/auth/register").send({
@@ -164,7 +169,7 @@ describe("Auth Routes", () => {
     });
 
     it("returns 401 for non-existent user", async () => {
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(null as any);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(null as never);
 
       const res = await request(app).post("/api/auth/login").send({
         username: "noone",
@@ -311,6 +316,188 @@ describe("Auth Routes", () => {
         .send({ displayName: "Ghost" });
 
       expect(res.status).toBe(404);
+    });
+
+    it("updates onboardingCompleted field", async () => {
+      const updated = { ...mockUser, onboardingCompleted: true };
+      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+
+      const res = await request(app)
+        .put("/api/auth/profile")
+        .set("Authorization", "Bearer mock-token")
+        .send({ onboardingCompleted: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.onboardingCompleted).toBe(true);
+      expect(storage.updateUser).toHaveBeenCalledWith("1", {
+        onboardingCompleted: true,
+      });
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.updateUser).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app)
+        .put("/api/auth/profile")
+        .set("Authorization", "Bearer mock-token")
+        .send({ displayName: "Test" });
+
+      expect(res.status).toBe(500);
+    });
+  });
+
+  describe("Error paths", () => {
+    it("POST /api/auth/register returns 500 on storage error", async () => {
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(null as never);
+      vi.mocked(storage.createUser).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+      });
+
+      expect(res.status).toBe(500);
+    });
+
+    it("POST /api/auth/login returns 500 on storage error", async () => {
+      vi.mocked(storage.getUserByUsername).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app).post("/api/auth/login").send({
+        username: "testuser",
+        password: "password123",
+      });
+
+      expect(res.status).toBe(500);
+    });
+
+    it("POST /api/auth/logout returns 500 on storage error", async () => {
+      vi.mocked(storage.getUser).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app)
+        .post("/api/auth/logout")
+        .set("Authorization", "Bearer mock-token");
+
+      expect(res.status).toBe(500);
+    });
+  });
+
+  describe("POST /api/user/avatar", () => {
+    // JPEG magic bytes: FF D8 FF E0
+    const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+    it("uploads a valid JPEG avatar", async () => {
+      vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
+      const updated = { ...mockUser, avatarUrl: "data:image/jpeg;base64,/9j/" };
+      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+
+      const res = await request(app)
+        .post("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token")
+        .attach("avatar", jpegBuffer, {
+          filename: "photo.jpg",
+          contentType: "image/jpeg",
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty("avatarUrl");
+      expect(storage.updateUser).toHaveBeenCalledWith(
+        "1",
+        expect.objectContaining({
+          avatarUrl: expect.stringContaining("data:image/jpeg;base64,"),
+        }),
+      );
+    });
+
+    it("returns 400 when no file is attached", async () => {
+      const res = await request(app)
+        .post("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token");
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for invalid image content", async () => {
+      vi.mocked(detectImageMimeType).mockReturnValue(null);
+
+      const res = await request(app)
+        .post("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token")
+        .attach("avatar", Buffer.from([0x00, 0x00, 0x00]), {
+          filename: "bad.jpg",
+          contentType: "image/jpeg",
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Invalid image content");
+    });
+
+    it("returns 404 when user not found after update", async () => {
+      vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
+      vi.mocked(storage.updateUser).mockResolvedValue(null as never);
+
+      const res = await request(app)
+        .post("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token")
+        .attach("avatar", jpegBuffer, {
+          filename: "photo.jpg",
+          contentType: "image/jpeg",
+        });
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
+      vi.mocked(storage.updateUser).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app)
+        .post("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token")
+        .attach("avatar", jpegBuffer, {
+          filename: "photo.jpg",
+          contentType: "image/jpeg",
+        });
+
+      expect(res.status).toBe(500);
+    });
+  });
+
+  describe("DELETE /api/user/avatar", () => {
+    it("deletes avatar successfully", async () => {
+      const updated = { ...mockUser, avatarUrl: null };
+      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+
+      const res = await request(app)
+        .delete("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(storage.updateUser).toHaveBeenCalledWith("1", {
+        avatarUrl: null,
+      });
+    });
+
+    it("returns 404 when user not found", async () => {
+      vi.mocked(storage.updateUser).mockResolvedValue(null as never);
+
+      const res = await request(app)
+        .delete("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token");
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.updateUser).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app)
+        .delete("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token");
+
+      expect(res.status).toBe(500);
     });
   });
 });
