@@ -42,7 +42,10 @@ npm run expo:static:build  # Build static Expo bundle
 
 - `client/` - React Native/Expo frontend
 - `server/` - Express.js backend
-- `shared/` - Code shared between client/server (database schema, models)
+  - `server/routes/` - 23 modular route files (registered via `server/routes.ts`)
+  - `server/storage/` - 12 domain-split storage modules (composed via `server/storage/index.ts`)
+  - `server/services/` - 22 service files (nutrition, AI, recipes, health, etc.)
+- `shared/` - Code shared between client/server (database schema, models, constants, types)
 
 ### Path Aliases
 
@@ -65,22 +68,66 @@ npm run expo:static:build  # Build static Expo bundle
 
 ### Navigation Flow
 
-1. **Login** → 2. **Onboarding** (6 screens) → 3. **Main App** (4 tabs: History, Plan, Scan, Profile)
+1. **Login** → 2. **Onboarding** (6 screens) → 3. **Main App** (5 tabs + Scan FAB)
 
-Modal screens: NutritionDetailScreen, PhotoIntentScreen, PhotoAnalysisScreen, GoalSetupScreen, EditDietaryProfileScreen
+Main tabs: **Home**, **Plan**, **Activity**, **Coach**, **Profile** — Scan is a floating action button (FAB) that opens a fullScreenModal, not a tab.
+
+Navigator files: `HomeStackNavigator`, `MealPlanStackNavigator`, `ActivityStackNavigator`, `ChatStackNavigator`, `ProfileStackNavigator`
+
+Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, GoalSetup, EditDietaryProfile, FeaturedRecipeDetail, QuickLog, MenuScanResult
 
 ### Database Schema (`shared/schema.ts`)
 
-Key tables: `users`, `userProfiles`, `scannedItems`, `dailyLogs`, `nutritionCache`, `suggestionCache`, `instructionCache`, `savedItems`, `communityRecipes`, `recipeGenerationLog`, `mealPlanRecipes`, `recipeIngredients`, `mealPlanItems`
+31 tables organized by domain:
 
-### AI Integration & Services (`server/services/`)
+- **Core**: `users`, `userProfiles`, `scannedItems`, `dailyLogs`, `savedItems`, `favouriteScannedItems`
+- **Nutrition cache**: `nutritionCache`, `micronutrientCache`, `suggestionCache`, `instructionCache`, `mealSuggestionCache`
+- **Recipes & meal planning**: `communityRecipes`, `recipeGenerationLog`, `mealPlanRecipes`, `recipeIngredients`, `mealPlanItems`
+- **Grocery & pantry**: `groceryLists`, `groceryListItems`, `pantryItems`
+- **Exercise & activity**: `exerciseLibrary`, `exerciseLogs`
+- **Health tracking**: `weightLogs`, `healthKitSync`, `fastingSchedules`, `fastingLogs`, `medicationLogs`, `goalAdjustmentLogs`
+- **Chat**: `chatConversations`, `chatMessages`
+- **Menu scanning**: `menuScans`
+- **Subscriptions**: `transactions`
+
+### Services (`server/services/`)
+
+**Nutrition & food:**
 
 - `nutrition-lookup.ts` - Multi-source nutrition pipeline (CNF → USDA → API Ninjas)
+- `micronutrient-lookup.ts` - Micronutrient data lookup
+- `food-nlp.ts` - Natural language food parsing
+- `cultural-food-map.ts` - Cultural food name mapping
+
+**AI & vision:**
+
 - `photo-analysis.ts` - OpenAI Vision food photo analysis (4 intents: log/calories/recipe/identify, confidence scoring, follow-up refinement when confidence < 0.7)
-- `goal-calculator.ts` - Calculates nutritional goals from user profiles
+- `menu-analysis.ts` - Restaurant menu photo scanning & analysis
+- `voice-transcription.ts` - Voice-to-text for food logging
+- `nutrition-coach.ts` - AI nutrition coaching (chat)
+- `meal-suggestions.ts` - AI meal suggestions
+
+**Goals & health:**
+
+- `goal-calculator.ts` - Calculates nutritional goals from user profiles (Mifflin-St Jeor)
+- `adaptive-goals.ts` - Dynamic goal adjustment based on progress
+- `weight-trend.ts` - Weight trend analysis
+- `exercise-calorie.ts` - MET-based exercise calorie calculations
+- `fasting-stats.ts` - Intermittent fasting statistics
+- `glp1-insights.ts` - GLP-1 medication insights
+- `healthkit-sync.ts` - Apple HealthKit integration
+
+**Recipes & planning:**
+
 - `recipe-generation.ts` - AI recipe generation (premium)
 - `recipe-catalog.ts` - Spoonacular recipe catalog integration
-- `recipe-import.ts` - Import recipes from URLs
+- `recipe-import.ts` - Import recipes from URLs (schema.org LD+JSON)
+- `grocery-generation.ts` - Auto-generate grocery lists from meal plans
+- `pantry-deduction.ts` - Pantry item deduction logic
+
+**Payments:**
+
+- `receipt-validation.ts` - Apple/Google IAP receipt validation
 
 ## Key Patterns
 
@@ -127,16 +174,21 @@ Debounce barcode scans using ref tracking and `isScanning` state to prevent dupl
 
 ## Testing
 
-Unit tests use **Vitest** with tests co-located in `__tests__/` directories:
+Unit tests use **Vitest** (~1300+ tests across 80+ files) with tests co-located in `__tests__/` directories:
 
-- `server/__tests__/` - Auth middleware, route validation, storage interface
-- `client/lib/__tests__/` - Query client, token storage utilities
+- `server/__tests__/` - Auth middleware, storage interface tests
+- `server/routes/__tests__/` - Route-level tests for all 23 route modules
+- `server/services/__tests__/` - Service unit tests
+- `client/lib/__tests__/` - Query client, token storage, format utilities
+- `client/context/__tests__/` - AuthContext tests
+- `client/hooks/__tests__/` - Hook tests
+- `client/components/*-utils.ts` - Extracted pure functions tested via Vitest
 - `shared/__tests__/` - Zod schemas, type guards
 
 **Pre-commit hooks** (via Husky) automatically run on every commit:
 
 1. `npm run test:run` - All tests must pass
-2. `lint-staged` - ESLint + Prettier on staged files
+2. `lint-staged` - ESLint + Prettier on staged files (also runs accessibility & hardcoded color checks on `.tsx` files)
 
 If tests fail or linting errors occur, the commit is blocked.
 

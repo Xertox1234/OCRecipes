@@ -9,7 +9,15 @@ The NutriScan frontend is built with Expo SDK 54, React Native 0.81, and React 1
 ```
 client/
 ├── App.tsx                 # Root component with providers
-├── components/             # Reusable UI components
+├── camera/                 # Camera abstraction layer
+│   ├── index.ts            # Camera module exports
+│   ├── types.ts            # Camera type definitions
+│   ├── components/
+│   │   └── CameraView.tsx  # Camera view component
+│   └── hooks/
+│       ├── useCamera.ts        # Camera functionality
+│       └── useCameraPermissions.ts # Permission management
+├── components/             # Reusable UI components (50+)
 │   ├── Button.tsx
 │   ├── Card.tsx
 │   ├── Chip.tsx
@@ -19,72 +27,149 @@ client/
 │   ├── KeyboardAwareScrollViewCompat.tsx
 │   ├── PreparationPicker.tsx
 │   ├── ProgressBar.tsx
-│   ├── RecipeCard.tsx
 │   ├── RecipeGenerationModal.tsx
 │   ├── SaveButton.tsx
 │   ├── SavedItemCard.tsx
+│   ├── ScanFAB.tsx
 │   ├── SkeletonLoader.tsx
 │   ├── SuggestionCard.tsx
 │   ├── TextInput.tsx
 │   ├── ThemedText.tsx
 │   ├── ThemedView.tsx
-│   └── recipe-builder/
+│   ├── AdaptiveGoalCard.tsx
+│   ├── AppetiteTracker.tsx
+│   ├── CalorieBudgetBar.tsx
+│   ├── ChatBubble.tsx
+│   ├── CuisineTag.tsx
+│   ├── FastingSetupModal.tsx
+│   ├── FastingStreakBadge.tsx
+│   ├── FastingTimer.tsx
+│   ├── GroceryListPickerModal.tsx
+│   ├── HealthKitSyncIndicator.tsx
+│   ├── HighProteinSuggestions.tsx
+│   ├── HistoryItemActions.tsx
+│   ├── HomeRecipeCard.tsx
+│   ├── MealSuggestionsModal.tsx
+│   ├── MedicationLogCard.tsx
+│   ├── MicronutrientBar.tsx
+│   ├── MicronutrientSummary.tsx
+│   ├── ParsedFoodPreview.tsx
+│   ├── UpgradeModal.tsx
+│   ├── VoiceLogButton.tsx
+│   ├── WeightChart.tsx
+│   ├── *-utils.ts          # Co-located pure logic (tested via Vitest)
+│   └── recipe-builder/     # Bottom-sheet recipe builder (7 components)
 ├── constants/
 │   ├── animations.ts       # Shared animation configs
 │   ├── dietary-options.ts   # Diet/allergy option lists
 │   └── theme.ts             # Colors, spacing, typography
 ├── context/
-│   ├── AuthContext.tsx      # Authentication state
+│   ├── AuthContext.tsx      # Authentication state + useAuth() hook
 │   ├── OnboardingContext.tsx # Onboarding data
 │   ├── PremiumContext.tsx   # Premium features
 │   └── ThemeContext.tsx     # Light/dark theme
-├── hooks/
+├── hooks/                  # Custom React hooks (30+)
 │   ├── useAccessibility.ts  # Accessibility helpers
-│   ├── useAuth.ts           # Auth operations
+│   ├── useAdaptiveGoals.ts  # Adaptive goal suggestions
+│   ├── useChat.ts           # Chat conversations & messages
 │   ├── useColorScheme.ts    # System color scheme
+│   ├── useDailyBudget.ts    # Daily calorie budget (intake - exercise)
+│   ├── useDiscardItem.ts    # Item deletion with confirmation
+│   ├── useExerciseLogs.ts   # Exercise CRUD & exercise library
+│   ├── useFasting.ts        # Fasting schedule, start/end, history
+│   ├── useFavourites.ts     # Favourite scanned items
+│   ├── useFoodParse.ts      # Natural language food parsing
+│   ├── useGroceryList.ts    # Grocery list CRUD
 │   ├── useHaptics.ts        # Haptic feedback
-│   ├── useMealPlan.ts       # Meal planning
+│   ├── useHealthKit.ts      # HealthKit sync settings
+│   ├── useMealPlan.ts       # Meal plan items
+│   ├── useMealPlanRecipes.ts # Meal plan recipe CRUD
+│   ├── useMealSuggestions.ts # AI meal suggestions
+│   ├── useMedication.ts     # GLP-1 medication logs & insights
+│   ├── useMenuScan.ts       # Menu scanning & history
+│   ├── useMicronutrients.ts # Micronutrient data & daily summary
+│   ├── usePantry.ts         # Pantry item CRUD
 │   ├── usePremiumFeatures.ts # Premium feature checks
 │   ├── useRecipeForm.ts     # Recipe form state
 │   ├── useSavedItems.ts     # Saved items management
 │   ├── useScreenOptions.ts  # Navigation options
-│   └── useTheme.ts          # Theme hook
+│   ├── useSuggestionInstructions.ts # AI suggestion drill-down
+│   ├── useTheme.ts          # Theme hook
+│   ├── useVoiceRecording.ts # Voice recording for food logging
+│   └── useWeightLogs.ts     # Weight tracking & trends
 ├── lib/
+│   ├── api-error.ts         # API error handling utilities
+│   ├── format.ts            # Number/date formatting utilities
+│   ├── healthkit.ts         # HealthKit integration helpers
 │   ├── image-compression.ts # Image compression utils
 │   ├── ingredient-parser.ts # Ingredient text parsing
 │   ├── macro-colors.ts      # Macro nutrient color mapping
 │   ├── photo-upload.ts      # Photo upload helpers
 │   ├── query-client.ts      # TanStack Query setup, apiRequest, getApiUrl
 │   ├── serving-size-utils.ts # Serving size validation & normalization
-│   └── token-storage.ts     # Auth token persistence
+│   ├── token-storage.ts     # Auth token persistence
+│   ├── iap/                 # In-app purchase module
+│   │   ├── constants.ts     # IAP product IDs
+│   │   ├── index.ts         # IAP exports
+│   │   ├── mock-iap.ts      # Dev mock (auto-approves purchases)
+│   │   ├── purchase-utils.ts # Purchase flow helpers
+│   │   ├── types.ts         # IAP type definitions
+│   │   └── usePurchase.ts   # Purchase hook
+│   └── subscription/        # Subscription query helpers
+│       ├── query-keys.ts    # TanStack Query key constants
+│       └── type-guards.ts   # Subscription type guards
 ├── navigation/
 │   ├── RootStackNavigator.tsx
 │   ├── MainTabNavigator.tsx
 │   ├── OnboardingNavigator.tsx
-│   ├── HistoryStackNavigator.tsx
+│   ├── HomeStackNavigator.tsx
 │   ├── MealPlanStackNavigator.tsx
-│   ├── ScanStackNavigator.tsx
+│   ├── ActivityStackNavigator.tsx
+│   ├── ChatStackNavigator.tsx
 │   └── ProfileStackNavigator.tsx
-└── screens/
-    ├── LoginScreen.tsx
-    ├── HistoryScreen.tsx
-    ├── ScanScreen.tsx
-    ├── ProfileScreen.tsx
-    ├── ItemDetailScreen.tsx
-    ├── NutritionDetailScreen.tsx
-    ├── onboarding/
-    │   ├── WelcomeScreen.tsx
-    │   ├── AllergiesScreen.tsx
-    │   ├── HealthConditionsScreen.tsx
-    │   ├── DietTypeScreen.tsx
-    │   ├── GoalsScreen.tsx
-    │   └── PreferencesScreen.tsx
-    └── meal-plan/
-        ├── MealPlanHomeScreen.tsx
-        ├── RecipeDetailScreen.tsx
-        ├── RecipeBrowserScreen.tsx
-        ├── RecipeCreateScreen.tsx
-        └── RecipeImportScreen.tsx
+├── screens/
+│   ├── LoginScreen.tsx
+│   ├── HomeScreen.tsx
+│   ├── HistoryScreen.tsx
+│   ├── ScanScreen.tsx
+│   ├── ProfileScreen.tsx
+│   ├── ItemDetailScreen.tsx
+│   ├── NutritionDetailScreen.tsx
+│   ├── PhotoIntentScreen.tsx
+│   ├── PhotoAnalysisScreen.tsx
+│   ├── GoalSetupScreen.tsx
+│   ├── EditDietaryProfileScreen.tsx
+│   ├── SavedItemsScreen.tsx
+│   ├── ChatListScreen.tsx
+│   ├── ChatScreen.tsx
+│   ├── ExerciseLogScreen.tsx
+│   ├── ExerciseSearchScreen.tsx
+│   ├── FastingScreen.tsx
+│   ├── FeaturedRecipeDetailScreen.tsx
+│   ├── GLP1CompanionScreen.tsx
+│   ├── HealthKitSettingsScreen.tsx
+│   ├── MenuScanResultScreen.tsx
+│   ├── QuickLogScreen.tsx
+│   ├── WeightTrackingScreen.tsx
+│   ├── onboarding/
+│   │   ├── WelcomeScreen.tsx
+│   │   ├── AllergiesScreen.tsx
+│   │   ├── HealthConditionsScreen.tsx
+│   │   ├── DietTypeScreen.tsx
+│   │   ├── GoalsScreen.tsx
+│   │   └── PreferencesScreen.tsx
+│   └── meal-plan/
+│       ├── MealPlanHomeScreen.tsx
+│       ├── RecipeDetailScreen.tsx
+│       ├── RecipeBrowserScreen.tsx
+│       ├── RecipeCreateScreen.tsx
+│       ├── RecipeImportScreen.tsx
+│       ├── GroceryListsScreen.tsx
+│       ├── GroceryListScreen.tsx
+│       └── PantryScreen.tsx
+└── types/
+    ├── api.ts               # API response types
+    └── navigation.ts        # Navigation type re-exports
 ```
 
 ---
@@ -104,35 +189,55 @@ RootStackNavigator
 │   ├── GoalsScreen
 │   └── PreferencesScreen
 └── Main (authenticated)
-    ├── MainTabNavigator
-    │   ├── HistoryTab → HistoryStackNavigator
-    │   │   ├── HistoryScreen
-    │   │   └── ItemDetailScreen
+    ├── MainTabNavigator (5 tabs + ScanFAB)
+    │   ├── HomeTab → HomeStackNavigator
+    │   │   ├── HomeScreen (dashboard)
+    │   │   └── FastingScreen
     │   ├── MealPlanTab → MealPlanStackNavigator
     │   │   ├── MealPlanHomeScreen
     │   │   ├── RecipeDetailScreen
     │   │   ├── RecipeBrowserScreen
     │   │   ├── RecipeCreateScreen
-    │   │   └── RecipeImportScreen
-    │   ├── ScanTab → ScanStackNavigator
-    │   │   └── ScanScreen
+    │   │   ├── RecipeImportScreen
+    │   │   ├── GroceryListsScreen
+    │   │   ├── GroceryListScreen
+    │   │   └── PantryScreen
+    │   ├── ActivityTab → ActivityStackNavigator
+    │   │   ├── ExerciseLogScreen
+    │   │   └── ExerciseSearchScreen
+    │   ├── CoachTab → ChatStackNavigator
+    │   │   ├── ChatListScreen
+    │   │   └── ChatScreen
     │   └── ProfileTab → ProfileStackNavigator
-    │       └── ProfileScreen
+    │       ├── ProfileScreen
+    │       ├── SavedItemsScreen
+    │       ├── HistoryScreen (scan history)
+    │       ├── ItemDetailScreen
+    │       ├── WeightTrackingScreen
+    │       ├── HealthKitSettingsScreen
+    │       └── GLP1CompanionScreen
+    ├── ScanScreen (fullScreenModal, opened via ScanFAB)
     ├── NutritionDetailScreen (modal)
     ├── PhotoIntentScreen (modal)
     ├── PhotoAnalysisScreen (modal)
     ├── GoalSetupScreen (modal)
-    └── EditDietaryProfileScreen (modal)
+    ├── EditDietaryProfileScreen (modal)
+    ├── FeaturedRecipeDetailScreen (transparentModal)
+    ├── QuickLogScreen (modal)
+    └── MenuScanResultScreen (modal)
 ```
 
 ### Type-Safe Navigation
 
 ```typescript
+// client/types/navigation.ts (re-exports from navigator files)
+
 // client/navigation/RootStackNavigator.tsx
 export type RootStackParamList = {
   Login: undefined;
   Onboarding: undefined;
   Main: undefined;
+  Scan: undefined;
   NutritionDetail: {
     barcode?: string;
     imageUri?: string;
@@ -145,13 +250,23 @@ export type RootStackParamList = {
     imageUri: string;
     intent: PhotoIntent;
   };
+  GoalSetup: undefined;
+  EditDietaryProfile: undefined;
+  FeaturedRecipeDetail: { recipeId: number };
+  QuickLog: undefined;
+  MenuScanResult: {
+    items: MenuAnalysisItem[];
+    restaurantName?: string;
+    cuisine?: string;
+  };
 };
 
 // client/navigation/MainTabNavigator.tsx
 export type MainTabParamList = {
-  HistoryTab: undefined;
-  MealPlanTab: undefined;
-  ScanTab: undefined;
+  HomeTab: undefined;
+  MealPlanTab: NavigatorScreenParams<MealPlanStackParamList> | undefined;
+  ActivityTab: undefined;
+  CoachTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -159,9 +274,16 @@ export type MainTabParamList = {
 export type MealPlanStackParamList = {
   MealPlanHome: undefined;
   RecipeDetail: { recipeId: number };
-  RecipeBrowser: { mealType?: string; plannedDate?: string };
+  RecipeBrowser: {
+    mealType?: string;
+    plannedDate?: string;
+    searchQuery?: string;
+  };
   RecipeCreate: { prefill?: ImportedRecipeData };
   RecipeImport: undefined;
+  GroceryLists: undefined;
+  GroceryList: { listId: number };
+  Pantry: undefined;
 };
 
 // client/navigation/OnboardingNavigator.tsx
@@ -784,7 +906,7 @@ Opened as a modal from ProfileScreen. Collects physical profile data and calcula
 
 ## Meal Planning
 
-The meal planning feature is accessed via the "Plan" tab in the main tab navigator. It uses the `MealPlanStackNavigator` with 5 screens and a set of bottom-sheet recipe builder components.
+The meal planning feature is accessed via the "Plan" tab in the main tab navigator. It uses the `MealPlanStackNavigator` with 8 screens (5 recipe + GroceryLists, GroceryList, Pantry) and a set of bottom-sheet recipe builder components.
 
 ### MealPlanHomeScreen
 

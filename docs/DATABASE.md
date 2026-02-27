@@ -2,7 +2,7 @@
 
 ## Overview
 
-NutriScan uses PostgreSQL with Drizzle ORM for database operations. The schema is defined in `shared/schema.ts` and is shared between the frontend and backend.
+NutriScan uses PostgreSQL with Drizzle ORM for database operations. The schema is defined in `shared/schema.ts` (31 tables) and is shared between the frontend and backend.
 
 ## Schema Definition
 
@@ -16,33 +16,51 @@ CREATE TABLE users (
   username TEXT NOT NULL UNIQUE,
   password TEXT NOT NULL,
   display_name TEXT,
+  avatar_url TEXT,
   daily_calorie_goal INTEGER DEFAULT 2000,
+  daily_protein_goal INTEGER,
+  daily_carbs_goal INTEGER,
+  daily_fat_goal INTEGER,
+  weight DECIMAL(5,2),
+  height DECIMAL(5,2),
+  age INTEGER,
+  gender TEXT,
+  goal_weight DECIMAL(6,2),
+  goals_calculated_at TIMESTAMP,
+  adaptive_goals_enabled BOOLEAN DEFAULT FALSE,
+  last_goal_adjustment_at TIMESTAMP,
   onboarding_completed BOOLEAN DEFAULT FALSE,
   subscription_tier TEXT DEFAULT 'free',
   subscription_expires_at TIMESTAMP,
+  token_version INTEGER DEFAULT 0 NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 ```
 
-| Column                  | Type      | Constraints             | Description                          |
-| ----------------------- | --------- | ----------------------- | ------------------------------------ |
-| id                      | VARCHAR   | PK, auto-generated UUID | Unique identifier                    |
-| username                | TEXT      | NOT NULL, UNIQUE        | Login username                       |
-| password                | TEXT      | NOT NULL                | Bcrypt-hashed password               |
-| display_name            | TEXT      | nullable                | User's display name                  |
-| daily_calorie_goal      | INTEGER   | DEFAULT 2000            | Target daily calories                |
-| daily_protein_goal      | INTEGER   | nullable                | Target daily protein (grams)         |
-| daily_carbs_goal        | INTEGER   | nullable                | Target daily carbs (grams)           |
-| daily_fat_goal          | INTEGER   | nullable                | Target daily fat (grams)             |
-| weight                  | DECIMAL   | nullable, precision 5,2 | User weight in kg                    |
-| height                  | DECIMAL   | nullable, precision 5,2 | User height in cm                    |
-| age                     | INTEGER   | nullable                | User age in years                    |
-| gender                  | TEXT      | nullable                | `"male"`, `"female"`, or `"other"`   |
-| goals_calculated_at     | TIMESTAMP | nullable                | When goals were last auto-calculated |
-| onboarding_completed    | BOOLEAN   | DEFAULT FALSE           | Onboarding status                    |
-| subscription_tier       | TEXT      | DEFAULT 'free'          | `"free"` or `"premium"`              |
-| subscription_expires_at | TIMESTAMP | nullable                | Premium expiry (null = no expiry)    |
-| created_at              | TIMESTAMP | NOT NULL, auto          | Account creation time                |
+| Column                  | Type         | Constraints             | Description                                          |
+| ----------------------- | ------------ | ----------------------- | ---------------------------------------------------- |
+| id                      | VARCHAR      | PK, auto-generated UUID | Unique identifier                                    |
+| username                | TEXT         | NOT NULL, UNIQUE        | Login username                                       |
+| password                | TEXT         | NOT NULL                | Bcrypt-hashed password                               |
+| display_name            | TEXT         | nullable                | User's display name                                  |
+| avatar_url              | TEXT         | nullable                | User avatar image URL                                |
+| daily_calorie_goal      | INTEGER      | DEFAULT 2000            | Target daily calories                                |
+| daily_protein_goal      | INTEGER      | nullable                | Target daily protein (grams)                         |
+| daily_carbs_goal        | INTEGER      | nullable                | Target daily carbs (grams)                           |
+| daily_fat_goal          | INTEGER      | nullable                | Target daily fat (grams)                             |
+| weight                  | DECIMAL(5,2) | nullable                | User weight in kg                                    |
+| height                  | DECIMAL(5,2) | nullable                | User height in cm                                    |
+| age                     | INTEGER      | nullable                | User age in years                                    |
+| gender                  | TEXT         | nullable                | `"male"`, `"female"`, or `"other"`                   |
+| goal_weight             | DECIMAL(6,2) | nullable                | Target weight in kg                                  |
+| goals_calculated_at     | TIMESTAMP    | nullable                | When goals were last auto-calculated                 |
+| adaptive_goals_enabled  | BOOLEAN      | DEFAULT FALSE           | Whether adaptive goal adjustment is enabled          |
+| last_goal_adjustment_at | TIMESTAMP    | nullable                | When goals were last adjusted by the system          |
+| onboarding_completed    | BOOLEAN      | DEFAULT FALSE           | Onboarding status                                    |
+| subscription_tier       | TEXT         | DEFAULT 'free'          | `"free"` or `"premium"`                              |
+| subscription_expires_at | TIMESTAMP    | nullable                | Premium expiry (null = no expiry)                    |
+| token_version           | INTEGER      | DEFAULT 0, NOT NULL     | JWT invalidation counter (incremented on pwd change) |
+| created_at              | TIMESTAMP    | NOT NULL, auto          | Account creation time                                |
 
 ### User Profiles Table
 
@@ -62,27 +80,33 @@ CREATE TABLE user_profiles (
   cuisine_preferences JSONB DEFAULT '[]',
   cooking_skill_level TEXT,
   cooking_time_available TEXT,
+  glp1_mode BOOLEAN DEFAULT FALSE,
+  glp1_medication TEXT,
+  glp1_start_date TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 ```
 
-| Column                 | Type      | Constraints        | Description                       |
-| ---------------------- | --------- | ------------------ | --------------------------------- |
-| id                     | SERIAL    | PK                 | Auto-incrementing ID              |
-| user_id                | VARCHAR   | FK → users, UNIQUE | User reference                    |
-| allergies              | JSONB     | DEFAULT '[]'       | Array of {name, severity} objects |
-| health_conditions      | JSONB     | DEFAULT '[]'       | Array of condition strings        |
-| diet_type              | TEXT      | nullable           | Diet preference                   |
-| food_dislikes          | JSONB     | DEFAULT '[]'       | Foods to avoid                    |
-| primary_goal           | TEXT      | nullable           | Health/fitness goal               |
-| activity_level         | TEXT      | nullable           | Exercise frequency                |
-| household_size         | INTEGER   | DEFAULT 1          | Number in household               |
-| cuisine_preferences    | JSONB     | DEFAULT '[]'       | Preferred cuisines                |
-| cooking_skill_level    | TEXT      | nullable           | Cooking experience                |
-| cooking_time_available | TEXT      | nullable           | Time for cooking                  |
-| created_at             | TIMESTAMP | NOT NULL           | Profile creation time             |
-| updated_at             | TIMESTAMP | NOT NULL           | Last update time                  |
+| Column                 | Type      | Constraints        | Description                                  |
+| ---------------------- | --------- | ------------------ | -------------------------------------------- |
+| id                     | SERIAL    | PK                 | Auto-incrementing ID                         |
+| user_id                | VARCHAR   | FK → users, UNIQUE | User reference                               |
+| allergies              | JSONB     | DEFAULT '[]'       | Array of {name, severity} objects            |
+| health_conditions      | JSONB     | DEFAULT '[]'       | Array of condition strings                   |
+| diet_type              | TEXT      | nullable           | Diet preference                              |
+| food_dislikes          | JSONB     | DEFAULT '[]'       | Foods to avoid                               |
+| primary_goal           | TEXT      | nullable           | Health/fitness goal                          |
+| activity_level         | TEXT      | nullable           | Exercise frequency                           |
+| household_size         | INTEGER   | DEFAULT 1          | Number in household                          |
+| cuisine_preferences    | JSONB     | DEFAULT '[]'       | Preferred cuisines                           |
+| cooking_skill_level    | TEXT      | nullable           | Cooking experience                           |
+| cooking_time_available | TEXT      | nullable           | Time for cooking                             |
+| glp1_mode              | BOOLEAN   | DEFAULT FALSE      | GLP-1 medication mode enabled                |
+| glp1_medication        | TEXT      | nullable           | GLP-1 medication name (e.g. `"semaglutide"`) |
+| glp1_start_date        | TIMESTAMP | nullable           | When GLP-1 medication was started            |
+| created_at             | TIMESTAMP | NOT NULL           | Profile creation time                        |
+| updated_at             | TIMESTAMP | NOT NULL           | Last update time                             |
 
 #### Allergy Schema
 
@@ -120,6 +144,7 @@ Example:
 - `gain_muscle`
 - `maintain`
 - `eat_healthier`
+- `manage_condition`
 
 **activity_level**:
 
@@ -203,20 +228,26 @@ CREATE TABLE daily_logs (
   id SERIAL PRIMARY KEY,
   user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE,
   scanned_item_id INTEGER REFERENCES scanned_items(id) ON DELETE CASCADE,
+  recipe_id INTEGER REFERENCES meal_plan_recipes(id) ON DELETE SET NULL,
+  meal_plan_item_id INTEGER REFERENCES meal_plan_items(id) ON DELETE SET NULL,
   servings DECIMAL(5, 2) DEFAULT '1',
   meal_type TEXT,
+  source TEXT DEFAULT 'scan',
   logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 ```
 
-| Column          | Type         | Constraints        | Description          |
-| --------------- | ------------ | ------------------ | -------------------- |
-| id              | SERIAL       | PK                 | Auto-incrementing ID |
-| user_id         | VARCHAR      | FK → users         | User who logged      |
-| scanned_item_id | INTEGER      | FK → scanned_items | Reference to food    |
-| servings        | DECIMAL(5,2) | DEFAULT '1'        | Number of servings   |
-| meal_type       | TEXT         | nullable           | Meal category        |
-| logged_at       | TIMESTAMP    | NOT NULL           | When food was logged |
+| Column            | Type         | Constraints            | Description                                                                    |
+| ----------------- | ------------ | ---------------------- | ------------------------------------------------------------------------------ |
+| id                | SERIAL       | PK                     | Auto-incrementing ID                                                           |
+| user_id           | VARCHAR      | FK → users             | User who logged                                                                |
+| scanned_item_id   | INTEGER      | FK → scanned_items     | Reference to food item                                                         |
+| recipe_id         | INTEGER      | FK → meal_plan_recipes | Reference to a meal plan recipe (nullable)                                     |
+| meal_plan_item_id | INTEGER      | FK → meal_plan_items   | Reference to a meal plan item (nullable)                                       |
+| servings          | DECIMAL(5,2) | DEFAULT '1'            | Number of servings                                                             |
+| meal_type         | TEXT         | nullable               | Meal category                                                                  |
+| source            | TEXT         | DEFAULT 'scan'         | How the log was created: `"scan"`, `"photo"`, `"recipe"`, `"quick"`, `"voice"` |
+| logged_at         | TIMESTAMP    | NOT NULL               | When food was logged                                                           |
 
 ### Nutrition Cache Table
 
@@ -342,6 +373,264 @@ CREATE INDEX recipe_gen_log_user_date_idx ON recipe_generation_log (user_id, gen
 
 The compound index on `(user_id, generated_at)` supports the daily counting query used by `GET /api/recipes/generation-status`.
 
+### Favourite Scanned Items Table
+
+Allows users to mark scanned items as favourites for quick re-logging.
+
+| Column          | Type      | Constraints                  | Description          |
+| --------------- | --------- | ---------------------------- | -------------------- |
+| id              | SERIAL    | PK                           | Auto-incrementing ID |
+| user_id         | VARCHAR   | FK → users, NOT NULL         | User who favourited  |
+| scanned_item_id | INTEGER   | FK → scanned_items, NOT NULL | Favourited item      |
+| created_at      | TIMESTAMP | NOT NULL, auto               | When favourited      |
+
+**Constraints:** Unique on `(user_id, scanned_item_id)`. Index on `user_id`.
+
+### Micronutrient Cache Table
+
+Caches micronutrient data (vitamins, minerals) for nutrition items. 7-day TTL.
+
+| Column     | Type         | Constraints      | Description                    |
+| ---------- | ------------ | ---------------- | ------------------------------ |
+| id         | SERIAL       | PK               | Auto-incrementing ID           |
+| query_key  | VARCHAR(255) | NOT NULL, UNIQUE | Normalized food name           |
+| data       | JSONB        | NOT NULL         | Full micronutrient data object |
+| hit_count  | INTEGER      | DEFAULT 0        | Number of cache hits           |
+| created_at | TIMESTAMP    | NOT NULL, auto   | When entry was cached          |
+| expires_at | TIMESTAMP    | NOT NULL         | TTL expiry                     |
+
+### Meal Suggestion Cache Table
+
+Caches AI-generated meal suggestions per user. Keyed by a combination of user dietary context.
+
+| Column      | Type         | Constraints      | Description          |
+| ----------- | ------------ | ---------------- | -------------------- |
+| id          | SERIAL       | PK               | Auto-incrementing ID |
+| user_id     | VARCHAR      | FK → users       | User who requested   |
+| cache_key   | VARCHAR(255) | NOT NULL, UNIQUE | Context-based key    |
+| suggestions | JSONB        | NOT NULL         | Array of suggestions |
+| hit_count   | INTEGER      | DEFAULT 0        | Number of cache hits |
+| created_at  | TIMESTAMP    | NOT NULL, auto   | When cached          |
+| expires_at  | TIMESTAMP    | NOT NULL         | TTL expiry           |
+
+### Exercise Library Table
+
+Reference table of exercises with MET values. Includes both system-wide and user-created custom exercises.
+
+| Column     | Type         | Constraints    | Description                                               |
+| ---------- | ------------ | -------------- | --------------------------------------------------------- |
+| id         | SERIAL       | PK             | Auto-incrementing ID                                      |
+| name       | TEXT         | NOT NULL       | Exercise name                                             |
+| type       | TEXT         | NOT NULL       | Category: `"cardio"`, `"strength"`, `"flexibility"`, etc. |
+| met_value  | DECIMAL(4,1) | NOT NULL       | MET (Metabolic Equivalent of Task) value                  |
+| is_custom  | BOOLEAN      | DEFAULT FALSE  | Whether user-created                                      |
+| user_id    | VARCHAR      | FK → users     | Owner (null for system exercises)                         |
+| created_at | TIMESTAMP    | NOT NULL, auto | When created                                              |
+
+### Exercise Logs Table
+
+Records individual exercise sessions.
+
+| Column           | Type          | Constraints      | Description                     |
+| ---------------- | ------------- | ---------------- | ------------------------------- |
+| id               | SERIAL        | PK               | Auto-incrementing ID            |
+| user_id          | VARCHAR       | FK → users       | User who exercised              |
+| exercise_name    | TEXT          | NOT NULL         | Exercise name                   |
+| exercise_type    | TEXT          | NOT NULL         | Exercise category               |
+| duration_minutes | INTEGER       | NOT NULL         | Duration in minutes             |
+| calories_burned  | DECIMAL(10,2) | nullable         | Estimated calories burned       |
+| intensity        | TEXT          | nullable         | `"low"`, `"moderate"`, `"high"` |
+| sets             | INTEGER       | nullable         | Number of sets (strength)       |
+| reps             | INTEGER       | nullable         | Number of reps (strength)       |
+| weight_lifted    | DECIMAL(8,2)  | nullable         | Weight in kg (strength)         |
+| distance_km      | DECIMAL(8,2)  | nullable         | Distance in km (cardio)         |
+| source           | TEXT          | DEFAULT 'manual' | `"manual"` or `"healthkit"`     |
+| notes            | TEXT          | nullable         | Exercise notes                  |
+| logged_at        | TIMESTAMP     | NOT NULL, auto   | When exercise was logged        |
+
+### Weight Logs Table
+
+Tracks weight measurements over time for trend analysis.
+
+| Column    | Type         | Constraints      | Description                 |
+| --------- | ------------ | ---------------- | --------------------------- |
+| id        | SERIAL       | PK               | Auto-incrementing ID        |
+| user_id   | VARCHAR      | FK → users       | User tracking weight        |
+| weight    | DECIMAL(6,2) | NOT NULL         | Weight in kg                |
+| source    | TEXT         | DEFAULT 'manual' | `"manual"` or `"healthkit"` |
+| note      | TEXT         | nullable         | Optional note               |
+| logged_at | TIMESTAMP    | NOT NULL, auto   | When weight was logged      |
+
+### HealthKit Sync Table
+
+Tracks Apple HealthKit sync preferences per data type per user.
+
+| Column         | Type      | Constraints    | Description                                         |
+| -------------- | --------- | -------------- | --------------------------------------------------- |
+| id             | SERIAL    | PK             | Auto-incrementing ID                                |
+| user_id        | VARCHAR   | FK → users     | User with HealthKit sync                            |
+| data_type      | TEXT      | NOT NULL       | HealthKit data type (e.g. `"weight"`, `"exercise"`) |
+| enabled        | BOOLEAN   | DEFAULT FALSE  | Whether sync is enabled                             |
+| last_sync_at   | TIMESTAMP | nullable       | Last successful sync time                           |
+| sync_direction | TEXT      | DEFAULT 'read' | `"read"` or `"write"`                               |
+
+**Constraints:** Unique on `(user_id, data_type)`.
+
+### Fasting Schedules Table
+
+Stores the user's active intermittent fasting schedule (one per user).
+
+| Column              | Type    | Constraints  | Description                                       |
+| ------------------- | ------- | ------------ | ------------------------------------------------- |
+| id                  | SERIAL  | PK           | Auto-incrementing ID                              |
+| user_id             | VARCHAR | FK → users   | User with fasting schedule                        |
+| protocol            | TEXT    | NOT NULL     | `"16:8"`, `"18:6"`, `"20:4"`, `"5:2"`, `"custom"` |
+| fasting_hours       | INTEGER | NOT NULL     | Hours of fasting per cycle                        |
+| eating_hours        | INTEGER | NOT NULL     | Hours of eating window                            |
+| eating_window_start | TEXT    | nullable     | Start time (e.g. `"12:00"`)                       |
+| eating_window_end   | TEXT    | nullable     | End time (e.g. `"20:00"`)                         |
+| is_active           | BOOLEAN | DEFAULT TRUE | Whether this schedule is active                   |
+
+**Constraints:** Unique on `user_id` (one active schedule per user).
+
+### Fasting Logs Table
+
+Records individual fasting sessions.
+
+| Column                  | Type      | Constraints    | Description                          |
+| ----------------------- | --------- | -------------- | ------------------------------------ |
+| id                      | SERIAL    | PK             | Auto-incrementing ID                 |
+| user_id                 | VARCHAR   | FK → users     | User who fasted                      |
+| started_at              | TIMESTAMP | NOT NULL, auto | When the fast began                  |
+| ended_at                | TIMESTAMP | nullable       | When the fast ended (null = ongoing) |
+| target_duration_hours   | INTEGER   | NOT NULL       | Target fast length                   |
+| actual_duration_minutes | INTEGER   | nullable       | Actual duration when completed       |
+| completed               | BOOLEAN   | nullable       | Whether the target was met           |
+| note                    | TEXT      | nullable       | User notes                           |
+
+### Medication Logs Table
+
+Tracks GLP-1 medication doses and side effects.
+
+| Column          | Type      | Constraints    | Description                          |
+| --------------- | --------- | -------------- | ------------------------------------ |
+| id              | SERIAL    | PK             | Auto-incrementing ID                 |
+| user_id         | VARCHAR   | FK → users     | User taking medication               |
+| medication_name | TEXT      | NOT NULL       | Medication (e.g. `"semaglutide"`)    |
+| brand_name      | TEXT      | nullable       | Brand (e.g. `"Ozempic"`, `"Wegovy"`) |
+| dosage          | TEXT      | NOT NULL       | Dose (e.g. `"0.25mg"`)               |
+| taken_at        | TIMESTAMP | NOT NULL, auto | When medication was taken            |
+| side_effects    | JSONB     | DEFAULT '[]'   | Array of side effect strings         |
+| appetite_level  | INTEGER   | nullable       | Appetite score 1–5                   |
+| notes           | TEXT      | nullable       | User notes                           |
+
+### Goal Adjustment Logs Table
+
+Records adaptive goal adjustments made by the system based on weight trends.
+
+| Column            | Type         | Constraints    | Description                          |
+| ----------------- | ------------ | -------------- | ------------------------------------ |
+| id                | SERIAL       | PK             | Auto-incrementing ID                 |
+| user_id           | VARCHAR      | FK → users     | User whose goals were adjusted       |
+| previous_calories | INTEGER      | NOT NULL       | Calorie goal before adjustment       |
+| new_calories      | INTEGER      | NOT NULL       | Calorie goal after adjustment        |
+| previous_protein  | INTEGER      | NOT NULL       | Protein goal before adjustment       |
+| new_protein       | INTEGER      | NOT NULL       | Protein goal after adjustment        |
+| previous_carbs    | INTEGER      | NOT NULL       | Carbs goal before adjustment         |
+| new_carbs         | INTEGER      | NOT NULL       | Carbs goal after adjustment          |
+| previous_fat      | INTEGER      | NOT NULL       | Fat goal before adjustment           |
+| new_fat           | INTEGER      | NOT NULL       | Fat goal after adjustment            |
+| reason            | TEXT         | NOT NULL       | Explanation for the adjustment       |
+| weight_trend_rate | DECIMAL(5,2) | nullable       | Weight change rate (kg/week)         |
+| applied_at        | TIMESTAMP    | NOT NULL, auto | When adjustment was applied          |
+| accepted_by_user  | BOOLEAN      | DEFAULT FALSE  | Whether user accepted the adjustment |
+
+### Chat Conversations Table
+
+Stores AI nutrition coaching chat sessions.
+
+| Column     | Type      | Constraints | Description                |
+| ---------- | --------- | ----------- | -------------------------- |
+| id         | SERIAL    | PK          | Auto-incrementing ID       |
+| user_id    | VARCHAR   | FK → users  | User who owns conversation |
+| title      | TEXT      | NOT NULL    | Conversation title         |
+| created_at | TIMESTAMP | NOT NULL    | When conversation started  |
+| updated_at | TIMESTAMP | NOT NULL    | When last updated          |
+
+### Chat Messages Table
+
+Individual messages within a chat conversation.
+
+| Column          | Type      | Constraints             | Description                              |
+| --------------- | --------- | ----------------------- | ---------------------------------------- |
+| id              | SERIAL    | PK                      | Auto-incrementing ID                     |
+| conversation_id | INTEGER   | FK → chat_conversations | Parent conversation                      |
+| role            | TEXT      | NOT NULL                | `"user"`, `"assistant"`, or `"system"`   |
+| content         | TEXT      | NOT NULL                | Message text                             |
+| metadata        | JSONB     | nullable                | Extra metadata (e.g. function call data) |
+| created_at      | TIMESTAMP | NOT NULL                | When message was sent                    |
+
+### Menu Scans Table
+
+Stores restaurant menu scan results from the AI vision pipeline.
+
+| Column          | Type      | Constraints    | Description                                                                |
+| --------------- | --------- | -------------- | -------------------------------------------------------------------------- |
+| id              | SERIAL    | PK             | Auto-incrementing ID                                                       |
+| user_id         | VARCHAR   | FK → users     | User who scanned                                                           |
+| restaurant_name | TEXT      | nullable       | Restaurant name (AI-detected)                                              |
+| cuisine         | TEXT      | nullable       | Cuisine type                                                               |
+| menu_items      | JSONB     | DEFAULT '[]'   | Array of `{name, description?, price?, calories?, protein?, carbs?, fat?}` |
+| image_url       | TEXT      | nullable       | Image URL of the menu photo                                                |
+| scanned_at      | TIMESTAMP | NOT NULL, auto | When menu was scanned                                                      |
+
+### Grocery Lists Table
+
+Stores grocery lists generated from meal plans or manually created.
+
+| Column           | Type      | Constraints | Description               |
+| ---------------- | --------- | ----------- | ------------------------- |
+| id               | SERIAL    | PK          | Auto-incrementing ID      |
+| user_id          | VARCHAR   | FK → users  | User who created the list |
+| title            | TEXT      | NOT NULL    | List title                |
+| date_range_start | DATE      | NOT NULL    | Meal plan start date      |
+| date_range_end   | DATE      | NOT NULL    | Meal plan end date        |
+| created_at       | TIMESTAMP | NOT NULL    | When list was created     |
+| updated_at       | TIMESTAMP | NOT NULL    | When last updated         |
+
+### Grocery List Items Table
+
+Individual items within a grocery list.
+
+| Column          | Type          | Constraints        | Description                                 |
+| --------------- | ------------- | ------------------ | ------------------------------------------- |
+| id              | SERIAL        | PK                 | Auto-incrementing ID                        |
+| grocery_list_id | INTEGER       | FK → grocery_lists | Parent grocery list                         |
+| name            | TEXT          | NOT NULL           | Ingredient name                             |
+| quantity        | DECIMAL(10,2) | nullable           | Amount needed                               |
+| unit            | TEXT          | nullable           | Unit of measure                             |
+| category        | TEXT          | DEFAULT 'other'    | Grocery category (produce, dairy, etc.)     |
+| is_checked      | BOOLEAN       | DEFAULT FALSE      | Whether item has been purchased             |
+| is_manual       | BOOLEAN       | DEFAULT FALSE      | Whether manually added (not auto-generated) |
+| added_to_pantry | BOOLEAN       | DEFAULT FALSE      | Whether moved to pantry on checkout         |
+| checked_at      | TIMESTAMP     | nullable           | When item was checked off                   |
+
+### Pantry Items Table
+
+Tracks items in the user's pantry for recipe matching and deduction.
+
+| Column     | Type          | Constraints     | Description              |
+| ---------- | ------------- | --------------- | ------------------------ |
+| id         | SERIAL        | PK              | Auto-incrementing ID     |
+| user_id    | VARCHAR       | FK → users      | User who owns the pantry |
+| name       | TEXT          | NOT NULL        | Item name                |
+| quantity   | DECIMAL(10,2) | nullable        | Amount available         |
+| unit       | TEXT          | nullable        | Unit of measure          |
+| category   | TEXT          | DEFAULT 'other' | Pantry category          |
+| expires_at | TIMESTAMP     | nullable        | Expiration date          |
+| added_at   | TIMESTAMP     | NOT NULL, auto  | When item was added      |
+| updated_at | TIMESTAMP     | NOT NULL, auto  | When last updated        |
+
 ---
 
 ## Relationships
@@ -396,11 +685,14 @@ export const dailyLogsRelations = relations(dailyLogs, ({ one }) => ({
 
 All foreign keys use `ON DELETE CASCADE` unless noted:
 
-- Deleting a user removes all their profiles, scanned items, daily logs, saved items, suggestion cache entries, and transactions
+- Deleting a user removes all their profiles, scanned items, daily logs, saved items, suggestion cache entries, exercise logs, weight logs, fasting schedules/logs, medication logs, goal adjustment logs, chat conversations, menu scans, grocery lists, pantry items, and transactions
 - Deleting a scanned item removes all related daily logs and suggestion cache entries
 - Deleting a suggestion cache entry removes all related instruction cache entries
+- Deleting a chat conversation removes all its messages
+- Deleting a grocery list removes all its items
 - `saved_items.source_item_id` uses `ON DELETE SET NULL` (saved item preserved if source deleted)
 - `meal_plan_items.recipe_id` and `meal_plan_items.scanned_item_id` use `ON DELETE SET NULL`
+- `daily_logs.recipe_id` and `daily_logs.meal_plan_item_id` use `ON DELETE SET NULL`
 
 ---
 
