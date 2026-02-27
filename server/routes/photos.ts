@@ -29,31 +29,55 @@ import {
 
 // In-memory store for analysis sessions
 // TODO: Replace with Redis for horizontal scaling in production
-// See: https://github.com/Xertox1234/Nutri-Cam/issues (create issue for this)
 interface AnalysisSession {
   userId: string;
   result: AnalysisResult;
   imageBase64?: string;
+  createdAt: number;
 }
 const analysisSessionStore = new Map<string, AnalysisSession>();
 
 // Track session timeout references to prevent memory leaks
 const sessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
+// Per-user session count for enforcing per-user caps
+const userSessionCount = new Map<string, number>();
+
+// Session limits
+const MAX_SESSIONS_PER_USER = 3;
+const MAX_SESSIONS_GLOBAL = 1000;
+const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB decoded
+
 // Session timeout duration (30 minutes)
 const SESSION_TIMEOUT = 30 * 60 * 1000;
+
+/**
+ * Decrement the per-user session count (and clean up entry when zero).
+ */
+function decrementUserCount(userId: string): void {
+  const count = userSessionCount.get(userId) ?? 0;
+  if (count <= 1) {
+    userSessionCount.delete(userId);
+  } else {
+    userSessionCount.set(userId, count - 1);
+  }
+}
 
 /**
  * Clear session and its associated timeout.
  * Call this whenever a session is deleted to prevent memory leaks.
  */
 function clearSession(sessionId: string): void {
+  const session = analysisSessionStore.get(sessionId);
   const existingTimeout = sessionTimeouts.get(sessionId);
   if (existingTimeout) {
     clearTimeout(existingTimeout);
     sessionTimeouts.delete(sessionId);
   }
   analysisSessionStore.delete(sessionId);
+  if (session) {
+    decrementUserCount(session.userId);
+  }
 }
 
 // Zod schema for follow-up input validation
@@ -79,6 +103,16 @@ const confirmPhotoSchema = z.object({
   preparationMethods: z.array(preparationMethodSchema).optional(),
   analysisIntent: photoIntentSchema.optional(),
 });
+
+// Exported for testing only
+export const _testInternals = {
+  analysisSessionStore,
+  userSessionCount,
+  MAX_SESSIONS_PER_USER,
+  MAX_SESSIONS_GLOBAL,
+  MAX_IMAGE_SIZE_BYTES,
+  clearSession,
+};
 
 export function register(app: Express): void {
   // Photo Analysis Endpoints
@@ -154,16 +188,49 @@ export function register(app: Express): void {
         // Generate session ID (needed for follow-ups and confirm)
         const sessionId = crypto.randomUUID();
         if (intentConfig.needsSession) {
+          // Validate image size before storing
+          const imageSizeBytes = Buffer.byteLength(imageBase64, "utf8");
+          if (imageSizeBytes > MAX_IMAGE_SIZE_BYTES) {
+            return sendError(
+              res,
+              413,
+              "Image too large for analysis session",
+              "IMAGE_TOO_LARGE",
+            );
+          }
+
+          // Enforce global session cap
+          if (analysisSessionStore.size >= MAX_SESSIONS_GLOBAL) {
+            return sendError(
+              res,
+              429,
+              "Server is busy, please try again later",
+              "SESSION_LIMIT_REACHED",
+            );
+          }
+
+          // Enforce per-user session cap
+          const currentUserSessions = userSessionCount.get(req.userId!) ?? 0;
+          if (currentUserSessions >= MAX_SESSIONS_PER_USER) {
+            return sendError(
+              res,
+              429,
+              "Too many active analysis sessions. Please confirm or wait for existing sessions to expire.",
+              "USER_SESSION_LIMIT",
+            );
+          }
+
           analysisSessionStore.set(sessionId, {
             userId: req.userId!,
             result: analysisResult,
             imageBase64,
+            createdAt: Date.now(),
           });
+          userSessionCount.set(req.userId!, currentUserSessions + 1);
 
           // Clean up old sessions after timeout, tracking the timeout reference
           const timeoutId = setTimeout(() => {
-            analysisSessionStore.delete(sessionId);
-            sessionTimeouts.delete(sessionId);
+            clearSession(sessionId);
           }, SESSION_TIMEOUT);
           sessionTimeouts.set(sessionId, timeoutId);
         }
