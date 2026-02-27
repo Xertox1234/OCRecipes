@@ -128,6 +128,16 @@ function setupErrorHandler(app: express.Application) {
   // Serve static assets
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
 
+  // Serve uploaded avatar images with caching headers
+  app.use(
+    "/api/avatars",
+    express.static(path.resolve(process.cwd(), "uploads/avatars"), {
+      maxAge: "1d",
+      etag: true,
+      lastModified: true,
+    }),
+  );
+
   const server = await registerRoutes(app);
 
   setupErrorHandler(app);

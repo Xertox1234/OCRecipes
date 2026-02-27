@@ -34,6 +34,7 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import type { CommunityRecipe } from "@shared/schema";
+import { resolveImageUrl } from "@/lib/query-client";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 
 const AVATAR_SIZE = 28;
@@ -193,7 +194,10 @@ export default function HomeScreen() {
           >
             <View style={styles.headerLeft}>
               {user?.avatarUrl ? (
-                <Image source={{ uri: user.avatarUrl }} style={styles.avatar} />
+                <Image
+                  source={{ uri: resolveImageUrl(user.avatarUrl)! }}
+                  style={styles.avatar}
+                />
               ) : (
                 <View
                   style={[

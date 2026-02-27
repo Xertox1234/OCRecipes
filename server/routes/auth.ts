@@ -1,5 +1,7 @@
 import type { Express, Request, Response } from "express";
 import bcrypt from "bcrypt";
+import * as fs from "fs";
+import * as path from "path";
 import { ZodError } from "zod";
 import { storage } from "../storage";
 import {
@@ -195,7 +197,7 @@ export function register(app: Express): void {
     },
   );
 
-  // Avatar upload endpoint - converts image to base64 data URL
+  // Avatar upload endpoint - saves image to disk
   app.post(
     "/api/user/avatar",
     requireAuth,
@@ -217,26 +219,41 @@ export function register(app: Express): void {
           );
         }
 
-        // Convert to base64 data URL using the verified MIME type
-        const base64 = req.file.buffer.toString("base64");
-        const dataUrl = `data:${detectedMime};base64,${base64}`;
+        // Determine file extension from MIME type
+        const ext =
+          detectedMime === "image/jpeg"
+            ? "jpg"
+            : detectedMime === "image/png"
+              ? "png"
+              : "webp";
+        const filename = `${req.userId}-${Date.now()}.${ext}`;
+        const avatarDir = path.resolve(process.cwd(), "uploads/avatars");
+        const filepath = path.join(avatarDir, filename);
 
-        // Limit size check (already handled by multer, but double-check data URL)
-        if (dataUrl.length > 1.5 * 1024 * 1024) {
-          return sendError(res, 400, "Image too large after encoding");
+        // Delete old avatar file if it exists
+        const currentUser = await storage.getUser(req.userId!);
+        if (currentUser?.avatarUrl?.startsWith("/api/avatars/")) {
+          const oldFilename = currentUser.avatarUrl.replace(
+            "/api/avatars/",
+            "",
+          );
+          const oldPath = path.join(avatarDir, oldFilename);
+          fs.unlink(oldPath, () => {}); // best-effort cleanup
         }
 
-        const user = await storage.updateUser(req.userId!, {
-          avatarUrl: dataUrl,
-        });
+        // Write new avatar file to disk
+        fs.writeFileSync(filepath, req.file.buffer);
+
+        const avatarUrl = `/api/avatars/${filename}`;
+        const user = await storage.updateUser(req.userId!, { avatarUrl });
 
         if (!user) {
+          // Clean up the written file if user update fails
+          fs.unlink(filepath, () => {});
           return sendError(res, 404, "User not found");
         }
 
-        res.json({
-          avatarUrl: user.avatarUrl,
-        });
+        res.json({ avatarUrl: user.avatarUrl });
       } catch (error) {
         console.error("Avatar upload error:", error);
         sendError(res, 500, "Failed to upload avatar");
@@ -250,6 +267,14 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
+        // Delete old avatar file if it exists
+        const currentUser = await storage.getUser(req.userId!);
+        if (currentUser?.avatarUrl?.startsWith("/api/avatars/")) {
+          const filename = currentUser.avatarUrl.replace("/api/avatars/", "");
+          const avatarDir = path.resolve(process.cwd(), "uploads/avatars");
+          fs.unlink(path.join(avatarDir, filename), () => {}); // best-effort cleanup
+        }
+
         const user = await storage.updateUser(req.userId!, {
           avatarUrl: null,
         });

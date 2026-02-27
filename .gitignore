@@ -49,6 +49,10 @@ app-example
 # Attached assets (user uploads during development)
 attached_assets/
 
+# User-uploaded avatars (keep directory structure via .gitkeep)
+uploads/avatars/*
+!uploads/avatars/.gitkeep
+
 # Logs
 *.log
 logs/

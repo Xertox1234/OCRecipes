@@ -24,6 +24,20 @@ vi.mock("../../lib/image-mime", () => ({
   detectImageMimeType: vi.fn(),
 }));
 
+vi.mock("fs", async () => {
+  const actual = await vi.importActual<typeof import("fs")>("fs");
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      writeFileSync: vi.fn(),
+      unlink: vi.fn((_path: string, cb: () => void) => cb()),
+    },
+    writeFileSync: vi.fn(),
+    unlink: vi.fn((_path: string, cb: () => void) => cb()),
+  };
+});
+
 function createApp() {
   const app = express();
   app.use(express.json());
@@ -359,7 +373,11 @@ describe("Auth Routes", () => {
 
     it("uploads a valid JPEG avatar", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
-      const updated = { ...mockUser, avatarUrl: "data:image/jpeg;base64,/9j/" };
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
+      const updated = {
+        ...mockUser,
+        avatarUrl: "/api/avatars/1-1234567890.jpg",
+      };
       vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
 
       const res = await request(app)
@@ -372,10 +390,11 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty("avatarUrl");
+      expect(res.body.avatarUrl).toMatch(/^\/api\/avatars\/1-\d+\.jpg$/);
       expect(storage.updateUser).toHaveBeenCalledWith(
         "1",
         expect.objectContaining({
-          avatarUrl: expect.stringContaining("data:image/jpeg;base64,"),
+          avatarUrl: expect.stringMatching(/^\/api\/avatars\/1-\d+\.jpg$/),
         }),
       );
     });
@@ -405,6 +424,7 @@ describe("Auth Routes", () => {
 
     it("returns 404 when user not found after update", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
       vi.mocked(storage.updateUser).mockResolvedValue(null as never);
 
       const res = await request(app)
@@ -420,6 +440,7 @@ describe("Auth Routes", () => {
 
     it("returns 500 when storage throws", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
       vi.mocked(storage.updateUser).mockRejectedValue(new Error("DB error"));
 
       const res = await request(app)
@@ -436,6 +457,10 @@ describe("Auth Routes", () => {
 
   describe("DELETE /api/user/avatar", () => {
     it("deletes avatar successfully", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue({
+        ...mockUser,
+        avatarUrl: "/api/avatars/1-123.jpg",
+      } as never);
       const updated = { ...mockUser, avatarUrl: null };
       vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
 
@@ -451,6 +476,7 @@ describe("Auth Routes", () => {
     });
 
     it("returns 404 when user not found", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
       vi.mocked(storage.updateUser).mockResolvedValue(null as never);
 
       const res = await request(app)
@@ -461,6 +487,7 @@ describe("Auth Routes", () => {
     });
 
     it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
       vi.mocked(storage.updateUser).mockRejectedValue(new Error("DB error"));
 
       const res = await request(app)
