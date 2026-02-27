@@ -12,6 +12,7 @@ vi.mock("../../lib/openai", () => ({
       },
     },
   },
+  OPENAI_TIMEOUT_FAST_MS: 15_000,
 }));
 
 // Mock nutrition lookup
@@ -183,6 +184,24 @@ describe("Food NLP", () => {
       const result = await parseNaturalLanguageFood("a cup of rice");
 
       expect(result[0].servingSize).toBe("1 cup cooked");
+    });
+
+    it("returns empty array on OpenAI API error", async () => {
+      mockCreate.mockRejectedValue(new Error("API timeout"));
+
+      const result = await parseNaturalLanguageFood("2 eggs");
+
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array when AI returns invalid JSON", async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: "not valid json {{{" } }],
+      } as any);
+
+      const result = await parseNaturalLanguageFood("some food");
+
+      expect(result).toEqual([]);
     });
 
     it("returns empty array for invalid AI response", async () => {

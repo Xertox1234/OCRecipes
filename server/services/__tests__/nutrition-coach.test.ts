@@ -14,6 +14,7 @@ vi.mock("../../lib/openai", () => ({
       },
     },
   },
+  OPENAI_TIMEOUT_STREAM_MS: 30_000,
 }));
 
 vi.mock("../../lib/ai-safety", () => ({

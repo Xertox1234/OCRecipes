@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
-import { openai } from "../lib/openai";
+import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 
 // Zod schema for validating AI response
 const ingredientSchema = z.object({
@@ -149,16 +149,19 @@ Respond with JSON: { "suggestions": [...] }`;
 
   let response;
   try {
-    response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.8,
-      max_completion_tokens: 3000,
-    });
+    response = await openai.chat.completions.create(
+      {
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.8,
+        max_completion_tokens: 3000,
+      },
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
   } catch (error) {
     console.error("Meal suggestions API error:", error);
     throw new Error("Failed to generate meal suggestions. Please try again.");

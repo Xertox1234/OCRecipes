@@ -207,6 +207,24 @@ describe("Menu Analysis", () => {
       expect(result.menuItems).toHaveLength(2);
     });
 
+    it("throws user-friendly error on OpenAI API failure", async () => {
+      mockCreate.mockRejectedValue(new Error("API timeout"));
+
+      await expect(analyzeMenuPhoto("img", "user-1")).rejects.toThrow(
+        "Failed to analyze menu photo. Please try again.",
+      );
+    });
+
+    it("throws user-friendly error on invalid JSON from AI", async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: "not valid json {{{" } }],
+      } as any);
+
+      await expect(analyzeMenuPhoto("img", "user-1")).rejects.toThrow(
+        "Menu analysis returned invalid data. Please try again.",
+      );
+    });
+
     it("throws on empty OpenAI response", async () => {
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: null } }],

@@ -21,6 +21,8 @@ vi.mock("../../lib/openai", () => ({
       generate: vi.fn(),
     },
   },
+  OPENAI_TIMEOUT_HEAVY_MS: 60_000,
+  OPENAI_TIMEOUT_IMAGE_MS: 120_000,
 }));
 
 const mockCreate = vi.mocked(openai.chat.completions.create);
@@ -135,6 +137,14 @@ describe("Recipe Generation", () => {
 
       expect(result.instructions).toContain("Boil water");
       expect(result.instructions).toContain("Add rice");
+    });
+
+    it("throws user-friendly error on OpenAI API failure", async () => {
+      mockCreate.mockRejectedValue(new Error("API timeout"));
+
+      await expect(
+        generateRecipeContent({ productName: "Chicken" }),
+      ).rejects.toThrow("Failed to generate recipe. Please try again.");
     });
 
     it("throws on invalid recipe content from OpenAI", async () => {

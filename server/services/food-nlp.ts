@@ -1,7 +1,7 @@
 import pLimit from "p-limit";
 import { z } from "zod";
 import { lookupNutrition } from "./nutrition-lookup";
-import { openai } from "../lib/openai";
+import { openai, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
 import {
   sanitizeUserInput,
   validateAiResponse,
@@ -69,7 +69,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
           },
         ],
       },
-      { timeout: 15_000 },
+      { timeout: OPENAI_TIMEOUT_FAST_MS },
     );
   } catch (error) {
     console.error("Food NLP parsing error:", error);
@@ -80,7 +80,14 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
   if (!content) return [];
 
   // Validate AI response against expected schema
-  const parsed = validateAiResponse(JSON.parse(content), foodNlpResponseSchema);
+  let rawJson;
+  try {
+    rawJson = JSON.parse(content);
+  } catch {
+    console.error("Food NLP: AI returned invalid JSON");
+    return [];
+  }
+  const parsed = validateAiResponse(rawJson, foodNlpResponseSchema);
   if (!parsed || !Array.isArray(parsed.items)) return [];
 
   // Look up nutrition for all parsed items in parallel (rate-limited)
