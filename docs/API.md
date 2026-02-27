@@ -2,7 +2,7 @@
 
 ## Overview
 
-The NutriScan API is a RESTful API built with Express.js 5.0. All endpoints use JSON for request/response bodies and JWT-based authentication.
+The NutriScan API is a RESTful API built with Express.js 5.0 with 23 route modules and 107 endpoints. All endpoints use JSON for request/response bodies and JWT-based authentication.
 
 **Base URL**: `http://192.168.137.175:3000` (development) or your production domain
 
@@ -178,6 +178,35 @@ All fields are optional. Only provided fields will be updated.
 
 ---
 
+#### Upload Avatar
+
+Uploads a user avatar image (multipart form data).
+
+```http
+POST /api/user/avatar
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+avatar: <file>
+```
+
+**Response** `200 OK` — Returns the updated user object with `avatarUrl`.
+
+---
+
+#### Delete Avatar
+
+Removes the user's avatar image.
+
+```http
+DELETE /api/user/avatar
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
 ### Dietary Profile
 
 #### Get Dietary Profile
@@ -348,6 +377,45 @@ Content-Type: application/json
 **Response** `201 Created` - Returns the created item object.
 
 **Note**: A daily log entry with `servings: 1` is automatically created.
+
+---
+
+#### Delete Scanned Item
+
+Deletes a scanned item and its associated daily logs.
+
+```http
+DELETE /api/scanned-items/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### List Favourite Items
+
+Returns all items the user has favourited.
+
+```http
+GET /api/scanned-items/favourites
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of scanned item objects with favourite metadata.
+
+---
+
+#### Toggle Favourite
+
+Adds or removes a scanned item from the user's favourites.
+
+```http
+POST /api/scanned-items/:id/favourite
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Returns `{ favourited: true }` or `{ favourited: false }`.
 
 ---
 
@@ -540,6 +608,25 @@ POST /api/items/:id/suggestions
 | 401 | Not authenticated |
 | 404 | Item not found |
 | 500 | Failed to generate suggestions |
+
+---
+
+#### Get Suggestion Instructions
+
+Generates detailed instructions for a specific suggestion. Results are cached.
+
+```http
+POST /api/items/:itemId/suggestions/:suggestionIndex/instructions
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "instructions": "Step-by-step instruction text..."
+}
+```
 
 ---
 
@@ -1232,6 +1319,44 @@ Free users receive `dailyLimit: 0` and `canGenerate: false`.
 
 ---
 
+#### Upgrade Subscription
+
+Upgrades the user to premium tier by submitting an IAP receipt.
+
+```http
+POST /api/subscription/upgrade
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "receipt": "string",
+  "platform": "ios" | "android"
+}
+```
+
+**Response** `200 OK` — Returns updated subscription status.
+
+---
+
+#### Restore Subscription
+
+Restores a previously purchased subscription using receipt data.
+
+```http
+POST /api/subscription/restore
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "receipt": "string",
+  "platform": "ios" | "android"
+}
+```
+
+**Response** `200 OK` — Returns updated subscription status.
+
+---
+
 #### Premium Error Responses
 
 Endpoints gated behind premium return these error codes:
@@ -1240,6 +1365,988 @@ Endpoints gated behind premium return these error codes:
 | ------ | --------------------- | ------------------------------------------------------------------------- |
 | 403    | `PREMIUM_REQUIRED`    | Feature requires a premium subscription                                   |
 | 429    | `DAILY_LIMIT_REACHED` | Daily usage limit exceeded (includes `generationsToday` and `dailyLimit`) |
+
+---
+
+### Saved Items
+
+#### List Saved Items
+
+Returns all items saved by the user.
+
+```http
+GET /api/saved-items
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of saved item objects.
+
+---
+
+#### Get Saved Item Count
+
+Returns the count of the user's saved items (used for free-tier cap enforcement).
+
+```http
+GET /api/saved-items/count
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — `{ count: number }`
+
+---
+
+#### Save Item
+
+Saves a scanned item for quick re-logging.
+
+```http
+POST /api/saved-items
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "sourceItemId": 123,
+  "productName": "string",
+  "calories": 120,
+  "protein": 5,
+  "carbs": 20,
+  "fat": 3
+}
+```
+
+**Response** `201 Created` — Returns saved item.
+Free-tier users are limited to 6 saved items.
+
+---
+
+#### Delete Saved Item
+
+```http
+DELETE /api/saved-items/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+### Grocery Lists
+
+#### Generate Grocery List
+
+Auto-generates a grocery list from meal plan items in a date range.
+
+```http
+POST /api/meal-plan/grocery-lists
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "string",
+  "dateRangeStart": "2025-01-20",
+  "dateRangeEnd": "2025-01-26"
+}
+```
+
+**Response** `201 Created` — Returns the grocery list with auto-populated items.
+
+---
+
+#### List Grocery Lists
+
+```http
+GET /api/meal-plan/grocery-lists
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of grocery lists.
+
+---
+
+#### Get Grocery List
+
+```http
+GET /api/meal-plan/grocery-lists/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Grocery list with items.
+
+---
+
+#### Update Grocery List Item
+
+Toggles checked status or updates item details.
+
+```http
+PUT /api/meal-plan/grocery-lists/:id/items/:itemId
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "isChecked": true
+}
+```
+
+**Response** `200 OK`
+
+---
+
+#### Add Item to Grocery List
+
+Manually adds an item to a grocery list.
+
+```http
+POST /api/meal-plan/grocery-lists/:id/items
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "string",
+  "quantity": 2,
+  "unit": "cups",
+  "category": "produce"
+}
+```
+
+**Response** `201 Created`
+
+---
+
+#### Add Grocery Item to Pantry
+
+Moves a checked grocery item to the user's pantry.
+
+```http
+POST /api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### Delete Grocery List
+
+```http
+DELETE /api/meal-plan/grocery-lists/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+### Pantry
+
+#### List Pantry Items
+
+```http
+GET /api/pantry
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of pantry items.
+
+---
+
+#### Add Pantry Item
+
+```http
+POST /api/pantry
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "string",
+  "quantity": 1,
+  "unit": "kg",
+  "category": "produce",
+  "expiresAt": "2025-02-15T00:00:00.000Z"
+}
+```
+
+**Response** `201 Created`
+
+---
+
+#### Update Pantry Item
+
+```http
+PUT /api/pantry/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+**Response** `200 OK`
+
+---
+
+#### Delete Pantry Item
+
+```http
+DELETE /api/pantry/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### Get Expiring Items
+
+Returns pantry items expiring within the next 7 days.
+
+```http
+GET /api/pantry/expiring
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of pantry items near expiration.
+
+---
+
+### Meal Suggestions
+
+#### Generate Meal Suggestions
+
+AI-powered meal suggestions based on user's dietary profile, goals, and pantry contents.
+
+```http
+POST /api/meal-plan/suggest
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of meal suggestion objects. Results are cached per user.
+
+---
+
+### Weight Tracking
+
+#### List Weight Logs
+
+Returns the user's weight history.
+
+```http
+GET /api/weight
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of weight log entries, most recent first.
+
+---
+
+#### Get Weight Trend
+
+Returns weight trend analysis (rate of change, moving average).
+
+```http
+GET /api/weight/trend
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "currentWeight": 75.5,
+  "startWeight": 80.0,
+  "trendRate": -0.5,
+  "trendDirection": "losing",
+  "entries": []
+}
+```
+
+---
+
+#### Log Weight
+
+```http
+POST /api/weight
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "weight": 75.5,
+  "note": "Morning weigh-in",
+  "source": "manual"
+}
+```
+
+**Response** `201 Created`
+
+---
+
+#### Delete Weight Log
+
+```http
+DELETE /api/weight/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### Set Goal Weight
+
+```http
+PUT /api/goals/weight
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "goalWeight": 70.0
+}
+```
+
+**Response** `200 OK`
+
+---
+
+### Exercise
+
+#### Get Exercise Summary
+
+Returns today's exercise summary (calories burned, duration, count).
+
+```http
+GET /api/exercises/summary
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "totalCaloriesBurned": 450,
+  "totalDurationMinutes": 60,
+  "exerciseCount": 2
+}
+```
+
+---
+
+#### List Exercise Logs
+
+```http
+GET /api/exercises
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of exercise log entries.
+
+---
+
+#### Log Exercise
+
+```http
+POST /api/exercises
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "exerciseName": "Running",
+  "exerciseType": "cardio",
+  "durationMinutes": 30,
+  "intensity": "moderate",
+  "distanceKm": 5.0
+}
+```
+
+Calorie burn is auto-calculated using MET values if not provided.
+
+**Response** `201 Created`
+
+---
+
+#### Update Exercise Log
+
+```http
+PUT /api/exercises/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### Delete Exercise Log
+
+```http
+DELETE /api/exercises/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### Get Exercise Library
+
+Returns available exercises with MET values (system + user custom).
+
+```http
+GET /api/exercise-library
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of exercise library entries.
+
+---
+
+#### Create Custom Exercise
+
+```http
+POST /api/exercise-library
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "Jump Rope",
+  "type": "cardio",
+  "metValue": 12.3
+}
+```
+
+**Response** `201 Created`
+
+---
+
+#### Get Daily Calorie Budget
+
+Returns net calories (intake minus exercise burn) for today.
+
+```http
+GET /api/daily-budget
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "caloriesConsumed": 1500,
+  "caloriesBurned": 450,
+  "netCalories": 1050,
+  "dailyGoal": 2000,
+  "remaining": 950
+}
+```
+
+---
+
+### Food NLP & Voice
+
+#### Parse Food Text
+
+Parses natural language food descriptions into structured nutrition data.
+
+```http
+POST /api/food/parse-text
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "text": "2 eggs and a slice of toast with butter"
+}
+```
+
+**Response** `200 OK` — Array of parsed food items with estimated nutrition.
+
+---
+
+#### Transcribe Voice
+
+Transcribes audio to text for voice-based food logging.
+
+```http
+POST /api/food/transcribe
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+audio: <file>
+```
+
+**Response** `200 OK` — `{ text: "transcribed text" }`
+
+---
+
+### HealthKit Sync
+
+#### Sync HealthKit Data
+
+Pushes HealthKit data from the device to the server.
+
+```http
+POST /api/healthkit/sync
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "dataType": "weight",
+  "entries": [{ "value": 75.5, "date": "2025-01-15T08:00:00Z" }]
+}
+```
+
+**Response** `200 OK` — `{ synced: number }`
+
+---
+
+#### Get HealthKit Settings
+
+```http
+GET /api/healthkit/settings
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of `{ dataType, enabled, lastSyncAt, syncDirection }`.
+
+---
+
+#### Update HealthKit Settings
+
+```http
+PUT /api/healthkit/settings
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "dataType": "weight",
+  "enabled": true,
+  "syncDirection": "read"
+}
+```
+
+**Response** `200 OK`
+
+---
+
+### Adaptive Goals
+
+#### Get Adaptive Goal Suggestion
+
+Returns the current adaptive goal adjustment suggestion based on weight trends.
+
+```http
+GET /api/goals/adaptive
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Adjustment suggestion or `null` if no adjustment needed.
+
+---
+
+#### Accept Adjustment
+
+Applies the suggested goal adjustment.
+
+```http
+POST /api/goals/adaptive/accept
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Updated goals.
+
+---
+
+#### Dismiss Adjustment
+
+Dismisses the current suggestion without applying.
+
+```http
+POST /api/goals/adaptive/dismiss
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### Update Adaptive Settings
+
+Enables or disables adaptive goal adjustment.
+
+```http
+PUT /api/goals/adaptive/settings
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "adaptiveGoalsEnabled": true
+}
+```
+
+**Response** `200 OK`
+
+---
+
+#### Get Adjustment History
+
+```http
+GET /api/goals/adjustment-history
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of past goal adjustment log entries.
+
+---
+
+### Chat (AI Nutrition Coach)
+
+#### List Conversations
+
+```http
+GET /api/chat/conversations
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of conversation objects.
+
+---
+
+#### Create Conversation
+
+```http
+POST /api/chat/conversations
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "Meal prep advice"
+}
+```
+
+**Response** `201 Created`
+
+---
+
+#### Get Conversation Messages
+
+```http
+GET /api/chat/conversations/:id/messages
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of messages (`{ role, content, createdAt }`).
+
+---
+
+#### Send Message (SSE Streaming)
+
+Sends a message and receives the AI response via Server-Sent Events.
+
+```http
+POST /api/chat/conversations/:id/messages
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "content": "What should I eat for dinner tonight?"
+}
+```
+
+**Response** — SSE stream of `data:` events containing the assistant's response tokens, followed by `data: [DONE]`.
+
+---
+
+#### Delete Conversation
+
+```http
+DELETE /api/chat/conversations/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+### Fasting
+
+#### Get Fasting Schedule
+
+Returns the user's active fasting schedule.
+
+```http
+GET /api/fasting/schedule
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Schedule object or `null`.
+
+---
+
+#### Set Fasting Schedule
+
+Creates or updates the user's fasting schedule.
+
+```http
+PUT /api/fasting/schedule
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "protocol": "16:8",
+  "fastingHours": 16,
+  "eatingHours": 8,
+  "eatingWindowStart": "12:00",
+  "eatingWindowEnd": "20:00"
+}
+```
+
+**Response** `200 OK`
+
+---
+
+#### Start Fast
+
+Begins a new fasting session.
+
+```http
+POST /api/fasting/start
+Authorization: Bearer <token>
+```
+
+**Response** `201 Created` — Returns the fasting log entry.
+
+---
+
+#### End Fast
+
+Ends the current active fast.
+
+```http
+POST /api/fasting/end
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Returns the completed fasting log with actual duration.
+
+---
+
+#### Get Current Fast
+
+Returns the currently active fast, if any.
+
+```http
+GET /api/fasting/current
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Current fasting log or `null`.
+
+---
+
+#### Get Fasting History
+
+```http
+GET /api/fasting/history
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of past fasting log entries with stats.
+
+---
+
+### Medication (GLP-1)
+
+#### List Medication Logs
+
+```http
+GET /api/medication/logs
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of medication log entries.
+
+---
+
+#### Log Medication
+
+```http
+POST /api/medication/log
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "medicationName": "semaglutide",
+  "brandName": "Ozempic",
+  "dosage": "0.5mg",
+  "sideEffects": ["nausea"],
+  "appetiteLevel": 2,
+  "notes": "Feeling less hungry"
+}
+```
+
+**Response** `201 Created`
+
+---
+
+#### Update Medication Log
+
+```http
+PUT /api/medication/log/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### Delete Medication Log
+
+```http
+DELETE /api/medication/log/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+#### Get Medication Insights
+
+Returns AI-generated insights about the user's medication journey (trends, side effects, appetite changes).
+
+```http
+GET /api/medication/insights
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Insights object with trends and recommendations.
+
+---
+
+#### Get High-Protein Suggestions
+
+Returns protein-rich food suggestions tailored for GLP-1 users.
+
+```http
+GET /api/medication/protein-suggestions
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of food suggestions.
+
+---
+
+#### Toggle GLP-1 Mode
+
+Enables or disables GLP-1 medication mode on the user's profile.
+
+```http
+PUT /api/user/glp1-mode
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "glp1Mode": true,
+  "glp1Medication": "semaglutide",
+  "glp1StartDate": "2025-01-01T00:00:00.000Z"
+}
+```
+
+**Response** `200 OK`
+
+---
+
+### Menu Scanning
+
+#### Scan Menu
+
+Analyzes a restaurant menu photo using AI vision.
+
+```http
+POST /api/menu/scan
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+
+image: <file>
+```
+
+**Response** `200 OK`
+
+```json
+{
+  "id": 1,
+  "restaurantName": "Joe's Diner",
+  "cuisine": "American",
+  "menuItems": [
+    {
+      "name": "Grilled Chicken Salad",
+      "description": "...",
+      "calories": 450,
+      "protein": 35,
+      "carbs": 20,
+      "fat": 25
+    }
+  ]
+}
+```
+
+---
+
+#### Get Menu Scan History
+
+```http
+GET /api/menu/history
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of past menu scan results.
+
+---
+
+#### Delete Menu Scan
+
+```http
+DELETE /api/menu/scans/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK`
+
+---
+
+### Micronutrients
+
+#### Get Item Micronutrients
+
+Returns detailed vitamin and mineral data for a scanned item.
+
+```http
+GET /api/micronutrients/item/:id
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Object with per-micronutrient values.
+
+---
+
+#### Get Daily Micronutrient Summary
+
+Returns aggregated micronutrient intake for the current day.
+
+```http
+GET /api/micronutrients/daily
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Aggregated micronutrient totals with % of RDA.
+
+---
+
+#### Get Micronutrient Reference Values
+
+Returns the reference daily intake values (RDAs) for all tracked micronutrients.
+
+```http
+GET /api/micronutrients/reference
+Authorization: Bearer <token>
+```
+
+**Response** `200 OK` — Array of `{ name, unit, rda, upperLimit }`.
 
 ---
 
@@ -1278,6 +2385,7 @@ interface Allergy {
 - `gain_muscle`
 - `maintain`
 - `eat_healthier`
+- `manage_condition`
 
 ### Cooking Skill Levels
 
