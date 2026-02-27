@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
@@ -10,7 +10,7 @@ import {
   getFollowUpQuestions,
 } from "../../services/photo-analysis";
 import { batchNutritionLookup } from "../../services/nutrition-lookup";
-import { register } from "../photos";
+import { register, _testInternals } from "../photos";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -300,6 +300,137 @@ describe("Photos Routes", () => {
         });
 
       expect(res.status).toBe(500);
+    });
+  });
+
+  describe("Session bounds", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      _testInternals.analysisSessionStore.clear();
+      _testInternals.userSessionCount.clear();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("returns 429 when user exceeds per-user session limit", async () => {
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0 as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+      } as never);
+      vi.mocked(analyzePhoto).mockResolvedValue({
+        foods: [{ name: "Apple", quantity: "1 medium", confidence: 0.9 }],
+        overallConfidence: 0.9,
+      } as never);
+      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+      vi.mocked(needsFollowUp).mockReturnValue(false);
+      vi.mocked(getFollowUpQuestions).mockReturnValue([]);
+
+      // Pre-fill 3 sessions for user "1" (the max)
+      for (let i = 0; i < 3; i++) {
+        _testInternals.analysisSessionStore.set(`existing-session-${i}`, {
+          userId: "1",
+          result: { foods: [], overallConfidence: 0.9 },
+          imageBase64: "abc",
+          createdAt: Date.now(),
+        });
+      }
+      _testInternals.userSessionCount.set("1", 3);
+
+      const res = await request(app)
+        .post("/api/photos/analyze")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("USER_SESSION_LIMIT");
+    });
+
+    it("allows session when user is under per-user limit", async () => {
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0 as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+      } as never);
+      vi.mocked(analyzePhoto).mockResolvedValue({
+        foods: [{ name: "Apple", quantity: "1 medium", confidence: 0.9 }],
+        overallConfidence: 0.9,
+      } as never);
+      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+      vi.mocked(needsFollowUp).mockReturnValue(false);
+      vi.mocked(getFollowUpQuestions).mockReturnValue([]);
+
+      // Pre-fill 2 sessions for user "1" (under the limit of 3)
+      for (let i = 0; i < 2; i++) {
+        _testInternals.analysisSessionStore.set(`existing-session-${i}`, {
+          userId: "1",
+          result: { foods: [], overallConfidence: 0.9 },
+          imageBase64: "abc",
+          createdAt: Date.now(),
+        });
+      }
+      _testInternals.userSessionCount.set("1", 2);
+
+      const res = await request(app)
+        .post("/api/photos/analyze")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(200);
+      expect(res.body.sessionId).toBeDefined();
+    });
+
+    it("returns 429 when global session limit is reached", async () => {
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0 as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+      } as never);
+      vi.mocked(analyzePhoto).mockResolvedValue({
+        foods: [{ name: "Apple", quantity: "1 medium", confidence: 0.9 }],
+        overallConfidence: 0.9,
+      } as never);
+      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+      vi.mocked(needsFollowUp).mockReturnValue(false);
+      vi.mocked(getFollowUpQuestions).mockReturnValue([]);
+
+      // Fill the session store to the global cap (1000 entries)
+      for (let i = 0; i < 1000; i++) {
+        _testInternals.analysisSessionStore.set(`global-session-${i}`, {
+          userId: "other",
+          result: { foods: [], overallConfidence: 0.5 },
+          imageBase64: "x",
+          createdAt: Date.now(),
+        });
+      }
+
+      const res = await request(app)
+        .post("/api/photos/analyze")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(429);
+      expect(res.body.code).toBe("SESSION_LIMIT_REACHED");
+    });
+
+    it("clears user session count when session is cleared via clearSession", () => {
+      const sessionId = "session-to-clear";
+
+      // Manually seed a session for user "1"
+      _testInternals.analysisSessionStore.set(sessionId, {
+        userId: "1",
+        result: { foods: [], overallConfidence: 0.9 },
+        imageBase64: "abc",
+        createdAt: Date.now(),
+      });
+      _testInternals.userSessionCount.set("1", 1);
+
+      // Clear the session
+      _testInternals.clearSession(sessionId);
+
+      // Verify session was removed from the store
+      expect(_testInternals.analysisSessionStore.size).toBe(0);
+      // Verify user session count was cleaned up (deleted when reaching 0)
+      expect(_testInternals.userSessionCount.get("1")).toBeUndefined();
     });
   });
 });
