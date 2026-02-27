@@ -5,6 +5,11 @@ import {
   parseIngredientString,
   findRecipeInLdJson,
   importRecipeFromUrl,
+  isBlockedIPv4,
+  isBlockedIPv6,
+  isBlockedIP,
+  isBlockedUrl,
+  resolveAndValidateHost,
   MAX_RESPONSE_BYTES,
 } from "../recipe-import";
 
@@ -177,6 +182,136 @@ describe("Recipe Import", () => {
     });
   });
 
+  describe("isBlockedIPv4", () => {
+    it("blocks private ranges", () => {
+      expect(isBlockedIPv4("10.0.0.1")).toBe(true);
+      expect(isBlockedIPv4("172.16.0.1")).toBe(true);
+      expect(isBlockedIPv4("172.31.255.255")).toBe(true);
+      expect(isBlockedIPv4("192.168.1.1")).toBe(true);
+    });
+
+    it("blocks loopback", () => {
+      expect(isBlockedIPv4("127.0.0.1")).toBe(true);
+      expect(isBlockedIPv4("127.255.255.255")).toBe(true);
+    });
+
+    it("blocks current network", () => {
+      expect(isBlockedIPv4("0.0.0.0")).toBe(true);
+    });
+
+    it("blocks CGNAT range", () => {
+      expect(isBlockedIPv4("100.64.0.1")).toBe(true);
+      expect(isBlockedIPv4("100.127.255.255")).toBe(true);
+    });
+
+    it("blocks link-local", () => {
+      expect(isBlockedIPv4("169.254.1.1")).toBe(true);
+    });
+
+    it("allows public IPs", () => {
+      expect(isBlockedIPv4("8.8.8.8")).toBe(false);
+      expect(isBlockedIPv4("93.184.216.34")).toBe(false);
+    });
+
+    it("blocks malformed IPs", () => {
+      expect(isBlockedIPv4("not.an.ip.address")).toBe(true);
+      expect(isBlockedIPv4("256.1.2.3")).toBe(true);
+    });
+  });
+
+  describe("isBlockedIPv6", () => {
+    it("blocks loopback", () => {
+      expect(isBlockedIPv6("::1")).toBe(true);
+    });
+
+    it("blocks IPv4-mapped IPv6 with private IPv4", () => {
+      expect(isBlockedIPv6("::ffff:127.0.0.1")).toBe(true);
+      expect(isBlockedIPv6("::ffff:10.0.0.1")).toBe(true);
+    });
+
+    it("allows IPv4-mapped IPv6 with public IPv4", () => {
+      expect(isBlockedIPv6("::ffff:8.8.8.8")).toBe(false);
+    });
+
+    it("blocks unique local addresses", () => {
+      expect(isBlockedIPv6("fc00::1")).toBe(true);
+      expect(isBlockedIPv6("fd12:3456::1")).toBe(true);
+    });
+
+    it("blocks link-local", () => {
+      expect(isBlockedIPv6("fe80::1")).toBe(true);
+    });
+
+    it("allows public IPv6", () => {
+      expect(isBlockedIPv6("2001:db8::1")).toBe(false);
+    });
+  });
+
+  describe("isBlockedIP", () => {
+    it("handles hex IPv4 representations", () => {
+      expect(isBlockedIP("0x7f000001")).toBe(true); // 127.0.0.1
+      expect(isBlockedIP("0x0a000001")).toBe(true); // 10.0.0.1
+      expect(isBlockedIP("0x08080808")).toBe(false); // 8.8.8.8
+    });
+
+    it("blocks malformed hex IPs", () => {
+      expect(isBlockedIP("0xZZZZZZZZ")).toBe(true);
+    });
+
+    it("delegates IPv6 to isBlockedIPv6", () => {
+      expect(isBlockedIP("::1")).toBe(true);
+      expect(isBlockedIP("2001:db8::1")).toBe(false);
+    });
+
+    it("delegates IPv4 to isBlockedIPv4", () => {
+      expect(isBlockedIP("192.168.0.1")).toBe(true);
+      expect(isBlockedIP("8.8.4.4")).toBe(false);
+    });
+  });
+
+  describe("isBlockedUrl", () => {
+    it("blocks non-http protocols", () => {
+      expect(isBlockedUrl("ftp://example.com")).toBe(true);
+      expect(isBlockedUrl("file:///etc/passwd")).toBe(true);
+    });
+
+    it("blocks localhost variations", () => {
+      expect(isBlockedUrl("http://localhost/path")).toBe(true);
+      expect(isBlockedUrl("http://127.0.0.1/path")).toBe(true);
+      expect(isBlockedUrl("http://0.0.0.0/path")).toBe(true);
+    });
+
+    it("blocks IPv6 loopback", () => {
+      expect(isBlockedUrl("http://[::1]/path")).toBe(true);
+    });
+
+    it("allows public URLs", () => {
+      expect(isBlockedUrl("https://example.com/recipe")).toBe(false);
+      expect(isBlockedUrl("http://allrecipes.com/recipe/123")).toBe(false);
+    });
+
+    it("blocks invalid URLs", () => {
+      expect(isBlockedUrl("not a url")).toBe(true);
+    });
+  });
+
+  describe("resolveAndValidateHost", () => {
+    it("allows public hostnames", async () => {
+      const result = await resolveAndValidateHost("example.com");
+      expect(result).toBe(true);
+    });
+
+    it("blocks literal private IPs without DNS resolution", async () => {
+      const result = await resolveAndValidateHost("192.168.1.1");
+      expect(result).toBe(false);
+    });
+
+    it("allows literal public IPs", async () => {
+      const result = await resolveAndValidateHost("93.184.216.34");
+      expect(result).toBe(true);
+    });
+  });
+
   describe("importRecipeFromUrl – timeout and size limits", () => {
     const originalFetch = globalThis.fetch;
 
@@ -305,6 +440,124 @@ describe("Recipe Import", () => {
     it("returns FETCH_FAILED for blocked URLs", async () => {
       const result = await importRecipeFromUrl("https://127.0.0.1/recipe");
       expect(result).toEqual({ success: false, error: "FETCH_FAILED" });
+    });
+
+    it("returns NO_RECIPE_DATA when page has no LD+JSON", async () => {
+      const html = `<html><head></head><body><p>No recipe here</p></body></html>`;
+      const encoder = new TextEncoder();
+      const encoded = encoder.encode(html);
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoded);
+          controller.close();
+        },
+      });
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": String(encoded.byteLength) }),
+        body: stream,
+      });
+
+      const result = await importRecipeFromUrl("https://example.com/no-recipe");
+      expect(result).toEqual({ success: false, error: "NO_RECIPE_DATA" });
+    });
+
+    it("returns PARSE_ERROR when LD+JSON has Recipe type but invalid schema", async () => {
+      // Has @type: Recipe but missing required fields like name
+      const invalidRecipe = JSON.stringify({
+        "@type": "Recipe",
+        // name is required but missing
+        description: "A recipe without a name",
+      });
+      const html = `<html><head><script type="application/ld+json">${invalidRecipe}</script></head><body></body></html>`;
+      const encoder = new TextEncoder();
+      const encoded = encoder.encode(html);
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoded);
+          controller.close();
+        },
+      });
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": String(encoded.byteLength) }),
+        body: stream,
+      });
+
+      const result = await importRecipeFromUrl(
+        "https://example.com/bad-recipe",
+      );
+      expect(result).toEqual({ success: false, error: "PARSE_ERROR" });
+    });
+
+    it("parses full recipe with nutrition, keywords, and all optional fields", async () => {
+      const recipeJson = JSON.stringify({
+        "@type": "Recipe",
+        name: "Full Recipe",
+        description: "A complete recipe",
+        image: ["https://example.com/img.jpg"],
+        recipeIngredient: ["2 cups flour", "1 tsp salt"],
+        recipeInstructions: [
+          { "@type": "HowToStep", text: "Mix dry ingredients" },
+          { "@type": "HowToStep", text: "Add wet ingredients" },
+        ],
+        prepTime: "PT10M",
+        cookTime: "PT30M",
+        recipeYield: "4 servings",
+        recipeCuisine: "Italian",
+        keywords: "pasta,dinner,easy",
+        nutrition: {
+          calories: "350 calories",
+          proteinContent: "12g",
+          carbohydrateContent: "45g",
+          fatContent: "15g",
+        },
+      });
+      const html = `<html><head><script type="application/ld+json">${recipeJson}</script></head><body></body></html>`;
+      const encoder = new TextEncoder();
+      const encoded = encoder.encode(html);
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoded);
+          controller.close();
+        },
+      });
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-length": String(encoded.byteLength) }),
+        body: stream,
+      });
+
+      const result = await importRecipeFromUrl(
+        "https://example.com/full-recipe",
+      );
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.title).toBe("Full Recipe");
+        expect(result.data.description).toBe("A complete recipe");
+        expect(result.data.servings).toBe(4);
+        expect(result.data.prepTimeMinutes).toBe(10);
+        expect(result.data.cookTimeMinutes).toBe(30);
+        expect(result.data.cuisine).toBe("Italian");
+        expect(result.data.dietTags).toEqual(["pasta", "dinner", "easy"]);
+        expect(result.data.ingredients).toHaveLength(2);
+        expect(result.data.caloriesPerServing).toBe("350");
+        expect(result.data.proteinPerServing).toBe("12");
+        expect(result.data.carbsPerServing).toBe("45");
+        expect(result.data.fatPerServing).toBe("15");
+        expect(result.data.imageUrl).toBe("https://example.com/img.jpg");
+        expect(result.data.instructions).toContain("1. Mix dry ingredients");
+        expect(result.data.sourceUrl).toBe("https://example.com/full-recipe");
+      }
     });
   });
 });

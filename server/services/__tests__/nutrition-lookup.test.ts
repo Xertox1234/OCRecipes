@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { lookupBarcode, _resetCNFCacheForTesting } from "../nutrition-lookup";
+import {
+  lookupBarcode,
+  lookupNutrition,
+  batchNutritionLookup,
+  _resetCNFCacheForTesting,
+} from "../nutrition-lookup";
 
 // Mock the db module so the cache functions don't hit a real database
 vi.mock("../../db", () => ({
@@ -29,7 +34,7 @@ vi.stubGlobal("fetch", mockFetch);
 function setupFetchMock(
   urlResponses: Record<
     string,
-    () => Promise<{ ok: boolean; json: () => Promise<any> }>
+    () => Promise<{ ok: boolean; json: () => Promise<unknown> }>
   >,
 ) {
   mockFetch.mockImplementation((url: string) => {
@@ -378,5 +383,290 @@ describe("lookupBarcode", () => {
     expect(result!.brandName).toBe("Nestle");
     expect(result!.per100g.calories).toBe(500);
     expect(result!.source).toBe("usda");
+  });
+
+  it("uses secondary data when OFF has no calorie data", async () => {
+    // OFF product name "sugar" matches CNF "Sweets, sugars, granulated"
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "sugar",
+              nutriments: {
+                // No energy-kcal_100g → calories = undefined
+                proteins_100g: 0,
+                carbohydrates_100g: 100,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": cnfWithSugarEN,
+      "food/?lang=fr": cnfWithSugarFR,
+      nutrientamount: cnfSugarNutrients,
+    });
+
+    const result = await lookupBarcode("5555555555");
+    expect(result).not.toBeNull();
+    // OFF has no calories (undefined), secondary (CNF) has 387
+    expect(result!.per100g.calories).toBe(387);
+    expect(result!.source).toBe("cnf");
+  });
+
+  it("uses secondary data when OFF calories are zero", async () => {
+    // OFF product name "sugar" matches CNF for cross-validation
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "sugar",
+              nutriments: {
+                "energy-kcal_100g": 0,
+                proteins_100g: 0,
+                carbohydrates_100g: 100,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": cnfWithSugarEN,
+      "food/?lang=fr": cnfWithSugarFR,
+      nutrientamount: cnfSugarNutrients,
+    });
+
+    const result = await lookupBarcode("6666666666");
+    expect(result).not.toBeNull();
+    // OFF has 0 calories, secondary (CNF) has 387
+    expect(result!.per100g.calories).toBe(387);
+    expect(result!.source).toBe("cnf");
+  });
+
+  it("returns product with no calorie data when no secondary source available", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Known Product",
+              nutriments: {
+                proteins_100g: 5,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("7777777777");
+    expect(result).not.toBeNull();
+    expect(result!.productName).toBe("Known Product");
+    // No calorie data, but product name exists, so result is returned
+    expect(result!.per100g.calories).toBeUndefined();
+  });
+
+  it("handles fetch errors for OFF gracefully", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () => Promise.reject(new Error("network error")),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("0000000000001");
+    // All OFF variants fail, no USDA data either → null
+    expect(result).toBeNull();
+  });
+});
+
+describe("lookupNutrition", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("returns CNF data when available", async () => {
+    setupFetchMock({
+      "food/?lang=en": cnfWithSugarEN,
+      "food/?lang=fr": cnfWithSugarFR,
+      nutrientamount: cnfSugarNutrients,
+    });
+
+    const result = await lookupNutrition("sugar");
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("cnf");
+    expect(result!.calories).toBe(387);
+    expect(result!.protein).toBe(0);
+    expect(result!.carbs).toBe(99.98);
+  });
+
+  it("falls back to USDA when CNF has no match", async () => {
+    setupFetchMock({
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "Chicken Breast",
+                foodNutrients: [
+                  { nutrientName: "Energy", value: 165 },
+                  { nutrientName: "Protein", value: 31 },
+                  { nutrientName: "Carbohydrate, by difference", value: 0 },
+                  { nutrientName: "Total lipid (fat)", value: 3.6 },
+                  { nutrientName: "Fiber, total dietary", value: 0 },
+                  { nutrientName: "Sugars, total", value: 0 },
+                  { nutrientName: "Sodium, Na", value: 74 },
+                ],
+              },
+            ],
+          }),
+        }),
+    });
+
+    const result = await lookupNutrition("chicken breast");
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("usda");
+    expect(result!.calories).toBe(165);
+    expect(result!.protein).toBe(31);
+  });
+
+  it("falls back to API Ninjas as last resort", async () => {
+    const originalKey = process.env.API_NINJAS_KEY;
+    process.env.API_NINJAS_KEY = "test-key";
+
+    try {
+      setupFetchMock({
+        "food/?lang=en": emptyCNFEN,
+        "food/?lang=fr": emptyCNFFR,
+        "fdc/v1/foods/search": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => ({ foods: [] }),
+          }),
+        "api-ninjas.com": () =>
+          Promise.resolve({
+            ok: true,
+            json: async () => [
+              {
+                name: "banana",
+                calories: 89,
+                protein_g: 1.1,
+                carbohydrates_total_g: 22.8,
+                fat_total_g: 0.3,
+                fiber_g: 2.6,
+                sugar_g: 12.2,
+                sodium_mg: 1,
+                serving_size_g: 100,
+              },
+            ],
+          }),
+      });
+
+      const result = await lookupNutrition("banana");
+      expect(result).not.toBeNull();
+      expect(result!.source).toBe("api-ninjas");
+      expect(result!.calories).toBe(89);
+    } finally {
+      if (originalKey === undefined) delete process.env.API_NINJAS_KEY;
+      else process.env.API_NINJAS_KEY = originalKey;
+    }
+  });
+
+  it("returns null when no source has data", async () => {
+    setupFetchMock({
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({ foods: [] }),
+        }),
+    });
+
+    const result = await lookupNutrition("xyznonexistent");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when USDA returns non-ok response", async () => {
+    setupFetchMock({
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({ ok: false, json: async () => ({}) }),
+    });
+
+    const result = await lookupNutrition("test food");
+    expect(result).toBeNull();
+  });
+});
+
+describe("batchNutritionLookup", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("returns empty map for empty input", async () => {
+    const result = await batchNutritionLookup([]);
+    expect(result.size).toBe(0);
+  });
+
+  it("looks up multiple items in parallel", async () => {
+    setupFetchMock({
+      "food/?lang=en": cnfWithSugarEN,
+      "food/?lang=fr": cnfWithSugarFR,
+      nutrientamount: cnfSugarNutrients,
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "Chicken Breast",
+                foodNutrients: [
+                  { nutrientName: "Energy", value: 165 },
+                  { nutrientName: "Protein", value: 31 },
+                  { nutrientName: "Carbohydrate, by difference", value: 0 },
+                  { nutrientName: "Total lipid (fat)", value: 3.6 },
+                ],
+              },
+            ],
+          }),
+        }),
+    });
+
+    const result = await batchNutritionLookup(["sugar", "chicken breast"]);
+    expect(result.size).toBe(2);
+
+    const sugarData = result.get("sugar");
+    expect(sugarData).not.toBeNull();
+    expect(sugarData!.calories).toBe(387);
+    expect(sugarData!.source).toBe("cnf");
+
+    const chickenData = result.get("chicken breast");
+    expect(chickenData).not.toBeNull();
+    expect(chickenData!.calories).toBe(165);
+    expect(chickenData!.source).toBe("usda");
+  });
+
+  it("returns null for items with no nutrition data", async () => {
+    setupFetchMock({
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await batchNutritionLookup(["nonexistentfood123"]);
+    expect(result.size).toBe(1);
+    expect(result.get("nonexistentfood123")).toBeNull();
   });
 });
