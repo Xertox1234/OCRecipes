@@ -195,7 +195,7 @@ export default function HomeScreen() {
             <View style={styles.headerLeft}>
               {user?.avatarUrl ? (
                 <Image
-                  source={{ uri: resolveImageUrl(user.avatarUrl)! }}
+                  source={{ uri: resolveImageUrl(user.avatarUrl) ?? undefined }}
                   style={styles.avatar}
                 />
               ) : (

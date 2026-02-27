@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import bcrypt from "bcrypt";
-import * as fs from "fs";
+import fs, { promises as fsp } from "fs";
 import * as path from "path";
 import { ZodError } from "zod";
 import { storage } from "../storage";
@@ -21,6 +21,15 @@ import {
   profileUpdateSchema,
   upload,
 } from "./_helpers";
+
+const AVATAR_DIR = path.resolve(process.cwd(), "uploads/avatars");
+fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
+function deleteOldAvatarFile(avatarUrl: string | null | undefined): void {
+  if (!avatarUrl?.startsWith("/api/avatars/")) return;
+  const safeName = path.basename(avatarUrl);
+  fs.unlink(path.join(AVATAR_DIR, safeName), () => {});
+}
 
 export function register(app: Express): void {
   app.post(
@@ -227,28 +236,18 @@ export function register(app: Express): void {
               ? "png"
               : "webp";
         const filename = `${req.userId}-${Date.now()}.${ext}`;
-        const avatarDir = path.resolve(process.cwd(), "uploads/avatars");
-        const filepath = path.join(avatarDir, filename);
+        const filepath = path.join(AVATAR_DIR, filename);
 
-        // Delete old avatar file if it exists
+        // Delete old avatar file if it exists (path.basename prevents traversal)
         const currentUser = await storage.getUser(req.userId!);
-        if (currentUser?.avatarUrl?.startsWith("/api/avatars/")) {
-          const oldFilename = currentUser.avatarUrl.replace(
-            "/api/avatars/",
-            "",
-          );
-          const oldPath = path.join(avatarDir, oldFilename);
-          fs.unlink(oldPath, () => {}); // best-effort cleanup
-        }
+        deleteOldAvatarFile(currentUser?.avatarUrl);
 
-        // Write new avatar file to disk
-        fs.writeFileSync(filepath, req.file.buffer);
+        await fsp.writeFile(filepath, req.file.buffer);
 
         const avatarUrl = `/api/avatars/${filename}`;
         const user = await storage.updateUser(req.userId!, { avatarUrl });
 
         if (!user) {
-          // Clean up the written file if user update fails
           fs.unlink(filepath, () => {});
           return sendError(res, 404, "User not found");
         }
@@ -267,13 +266,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       try {
-        // Delete old avatar file if it exists
         const currentUser = await storage.getUser(req.userId!);
-        if (currentUser?.avatarUrl?.startsWith("/api/avatars/")) {
-          const filename = currentUser.avatarUrl.replace("/api/avatars/", "");
-          const avatarDir = path.resolve(process.cwd(), "uploads/avatars");
-          fs.unlink(path.join(avatarDir, filename), () => {}); // best-effort cleanup
-        }
+        deleteOldAvatarFile(currentUser?.avatarUrl);
 
         const user = await storage.updateUser(req.userId!, {
           avatarUrl: null,

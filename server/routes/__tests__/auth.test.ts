@@ -24,17 +24,25 @@ vi.mock("../../lib/image-mime", () => ({
   detectImageMimeType: vi.fn(),
 }));
 
+const { mockWriteFile, mockUnlink, mockMkdirSync } = vi.hoisted(() => ({
+  mockWriteFile: vi.fn().mockResolvedValue(undefined),
+  mockUnlink: vi.fn((_path: string, cb: () => void) => cb()),
+  mockMkdirSync: vi.fn(),
+}));
+
 vi.mock("fs", async () => {
   const actual = await vi.importActual<typeof import("fs")>("fs");
   return {
     ...actual,
     default: {
       ...actual,
-      writeFileSync: vi.fn(),
-      unlink: vi.fn((_path: string, cb: () => void) => cb()),
+      mkdirSync: mockMkdirSync,
+      unlink: mockUnlink,
+      promises: { ...actual.promises, writeFile: mockWriteFile },
     },
-    writeFileSync: vi.fn(),
-    unlink: vi.fn((_path: string, cb: () => void) => cb()),
+    mkdirSync: mockMkdirSync,
+    unlink: mockUnlink,
+    promises: { ...actual.promises, writeFile: mockWriteFile },
   };
 });
 
@@ -495,6 +503,26 @@ describe("Auth Routes", () => {
         .set("Authorization", "Bearer mock-token");
 
       expect(res.status).toBe(500);
+    });
+
+    it("sanitizes path traversal in stored avatarUrl", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue({
+        ...mockUser,
+        avatarUrl: "/api/avatars/../../etc/passwd",
+      } as never);
+      const updated = { ...mockUser, avatarUrl: null };
+      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+
+      const res = await request(app)
+        .delete("/api/user/avatar")
+        .set("Authorization", "Bearer mock-token");
+
+      expect(res.status).toBe(200);
+      // path.basename strips traversal — unlink target should be just "passwd"
+      const unlinkCalls = mockUnlink.mock.calls;
+      const lastCall = unlinkCalls[unlinkCalls.length - 1];
+      expect(lastCall[0]).not.toContain("..");
+      expect(lastCall[0]).toMatch(/avatars[/\\]passwd$/);
     });
   });
 });

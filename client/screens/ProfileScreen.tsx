@@ -157,7 +157,7 @@ const AvatarWithRing = React.memo(function AvatarWithRing({
         <ActivityIndicator size="small" color={theme.link} />
       ) : user?.avatarUrl ? (
         <Image
-          source={{ uri: resolveImageUrl(user.avatarUrl)! }}
+          source={{ uri: resolveImageUrl(user.avatarUrl) ?? undefined }}
           style={styles.avatarImage}
         />
       ) : (

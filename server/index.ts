@@ -128,13 +128,14 @@ function setupErrorHandler(app: express.Application) {
   // Serve static assets
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
 
-  // Serve uploaded avatar images with caching headers
+  // Serve uploaded avatar images (intentionally public — no auth required)
   app.use(
     "/api/avatars",
     express.static(path.resolve(process.cwd(), "uploads/avatars"), {
       maxAge: "1d",
       etag: true,
       lastModified: true,
+      dotfiles: "deny",
     }),
   );
 
