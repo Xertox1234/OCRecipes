@@ -41,14 +41,18 @@ export async function parseNaturalLanguageFood(
   // Sanitize user input before sending to AI
   const sanitizedText = sanitizeUserInput(text);
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.1,
-    response_format: { type: "json_object" },
-    messages: [
+  let response;
+  try {
+    response = await openai.chat.completions.create(
       {
-        role: "system",
-        content: `You are a food parsing assistant. Parse the user's natural language food description into structured items.
+        model: "gpt-4o-mini",
+        temperature: 0.1,
+        max_completion_tokens: 500,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: `You are a food parsing assistant. Parse the user's natural language food description into structured items.
 Return JSON: { "items": [{ "name": string, "quantity": number, "unit": string }] }
 - "name" should be the common food name suitable for nutrition database lookup
 - "quantity" should be a number (default 1 if not specified)
@@ -58,13 +62,19 @@ Return JSON: { "items": [{ "name": string, "quantity": number, "unit": string }]
 - Use standard serving sizes when unspecified
 
 ${SYSTEM_PROMPT_BOUNDARY}`,
+          },
+          {
+            role: "user",
+            content: sanitizedText,
+          },
+        ],
       },
-      {
-        role: "user",
-        content: sanitizedText,
-      },
-    ],
-  });
+      { timeout: 15_000 },
+    );
+  } catch (error) {
+    console.error("Food NLP parsing error:", error);
+    return [];
+  }
 
   const content = response.choices[0]?.message?.content;
   if (!content) return [];

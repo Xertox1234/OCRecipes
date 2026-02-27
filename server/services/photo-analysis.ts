@@ -115,7 +115,7 @@ Respond with JSON only:
   "followUpQuestions": []
 }`;
 
-/** Get the system prompt and max_tokens for a given intent */
+/** Get the system prompt and max completion tokens for a given intent */
 export function getPromptForIntent(intent: PhotoIntent): {
   prompt: string;
   maxTokens: number;
@@ -146,7 +146,7 @@ export async function analyzePhoto(
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: maxTokens,
+      max_completion_tokens: maxTokens,
       messages: [
         {
           role: "system",
@@ -225,7 +225,7 @@ export async function refineAnalysis(
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: 500,
+      max_completion_tokens: 500,
       messages: [
         {
           role: "system",

@@ -147,16 +147,22 @@ Each suggestion needs: title, description, reasoning (why this fits), calories, 
 
 Respond with JSON: { "suggestions": [...] }`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.8,
-    max_tokens: 3000,
-  });
+  let response;
+  try {
+    response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.8,
+      max_completion_tokens: 3000,
+    });
+  } catch (error) {
+    console.error("Meal suggestions API error:", error);
+    throw new Error("Failed to generate meal suggestions. Please try again.");
+  }
 
   const content = response.choices[0]?.message?.content;
   if (!content) {

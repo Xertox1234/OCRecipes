@@ -109,6 +109,7 @@ describe("Nutrition Coach", () => {
             }),
           ]),
         }),
+        expect.objectContaining({ timeout: 30_000 }),
       );
 
       // Check that context details appear in system prompt
@@ -273,7 +274,7 @@ describe("Nutrition Coach", () => {
       expect(result).toBe("Hello world");
     });
 
-    it("propagates OpenAI errors", async () => {
+    it("yields friendly message on OpenAI API error", async () => {
       mockCreate.mockRejectedValue(new Error("Rate limited"));
 
       const gen = generateCoachResponse(
@@ -281,7 +282,27 @@ describe("Nutrition Coach", () => {
         makeContext(),
       );
 
-      await expect(collectStream(gen)).rejects.toThrow("Rate limited");
+      const result = await collectStream(gen);
+      expect(result).toBe(
+        "Sorry, I'm having trouble responding right now. Please try again.",
+      );
+    });
+
+    it("yields friendly message on streaming error", async () => {
+      const failingStream = {
+        async *[Symbol.asyncIterator]() {
+          yield { choices: [{ delta: { content: "Hello" } }] };
+          throw new Error("Connection reset");
+        },
+      };
+      mockCreate.mockResolvedValue(failingStream as any);
+
+      const result = await collectStream(
+        generateCoachResponse([{ role: "user", content: "Hi" }], makeContext()),
+      );
+
+      expect(result).toContain("Hello");
+      expect(result).toContain("Sorry, the response was interrupted.");
     });
   });
 });

@@ -84,32 +84,51 @@ export async function* generateCoachResponse(
     content: m.role === "user" ? sanitizeUserInput(m.content) : m.content,
   }));
 
-  const stream = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    stream: true,
-    messages: [{ role: "system", content: systemPrompt }, ...sanitizedMessages],
-    max_tokens: 1000,
-    temperature: 0.7,
-  });
+  let stream;
+  try {
+    stream = await openai.chat.completions.create(
+      {
+        model: "gpt-4o-mini",
+        stream: true,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...sanitizedMessages,
+        ],
+        max_completion_tokens: 1000,
+        temperature: 0.7,
+      },
+      { timeout: 30_000 },
+    );
+  } catch (error) {
+    console.error("Coach API error:", error);
+    yield "Sorry, I'm having trouble responding right now. Please try again.";
+    return;
+  }
 
   // Accumulate full response for content filtering
   let fullResponse = "";
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content;
-    if (delta) {
-      fullResponse += delta;
+  try {
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        fullResponse += delta;
 
-      // Check periodically (every ~200 chars) for dangerous content
-      if (fullResponse.length % 200 < delta.length) {
-        if (containsDangerousDietaryAdvice(fullResponse)) {
-          yield "\n\n*I need to be careful here. For specific dietary plans, especially very low calorie or fasting protocols, please consult a registered dietitian or healthcare provider who can assess your individual needs.*";
-          return;
+        // Check periodically (every ~200 chars) for dangerous content
+        if (fullResponse.length % 200 < delta.length) {
+          if (containsDangerousDietaryAdvice(fullResponse)) {
+            yield "\n\n*I need to be careful here. For specific dietary plans, especially very low calorie or fasting protocols, please consult a registered dietitian or healthcare provider who can assess your individual needs.*";
+            return;
+          }
         }
-      }
 
-      yield delta;
+        yield delta;
+      }
     }
+  } catch (error) {
+    console.error("Coach streaming error:", error);
+    yield "\n\nSorry, the response was interrupted. Please try again.";
+    return;
   }
 
   // Final check on complete response

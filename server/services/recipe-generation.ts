@@ -137,19 +137,28 @@ Respond with JSON only:
   "dietTags": ["tag1", "tag2"]
 }`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    max_tokens: 2000,
-    messages: [
+  let response;
+  try {
+    response = await openai.chat.completions.create(
       {
-        role: "system",
-        content:
-          "You are a professional chef and recipe developer. Create delicious, practical recipes that are easy to follow. Always respond with valid JSON only.",
+        model: "gpt-4o",
+        max_completion_tokens: 2000,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a professional chef and recipe developer. Create delicious, practical recipes that are easy to follow. Always respond with valid JSON only.",
+          },
+          { role: "user", content: prompt },
+        ],
+        response_format: { type: "json_object" },
       },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
-  });
+      { timeout: 60_000 },
+    );
+  } catch (error) {
+    console.error("Recipe generation API error:", error);
+    throw new Error("Failed to generate recipe. Please try again.");
+  }
 
   const content = response.choices[0]?.message?.content || "{}";
 
@@ -181,14 +190,17 @@ export async function generateRecipeImage(
   try {
     const prompt = `Appetizing food photography of "${recipeTitle}" featuring ${productName}. Professional lighting, top-down view, styled on rustic wooden table. No text or labels. Photorealistic style.`;
 
-    const response = await dalleClient.images.generate({
-      model: "dall-e-3",
-      prompt,
-      n: 1,
-      size: "1024x1024",
-      quality: "standard",
-      response_format: "b64_json",
-    });
+    const response = await dalleClient.images.generate(
+      {
+        model: "dall-e-3",
+        prompt,
+        n: 1,
+        size: "1024x1024",
+        quality: "standard",
+        response_format: "b64_json",
+      },
+      { timeout: 120_000 },
+    );
 
     const imageData = response.data?.[0]?.b64_json;
     if (!imageData) {

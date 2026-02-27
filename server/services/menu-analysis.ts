@@ -94,34 +94,40 @@ export async function analyzeMenuPhoto(
     // Non-critical — proceed without personalization
   }
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: MENU_ANALYSIS_PROMPT + userContext,
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "image_url",
-            image_url: {
-              url: `data:image/jpeg;base64,${imageBase64}`,
-              detail: "high",
+  let response;
+  try {
+    response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: MENU_ANALYSIS_PROMPT + userContext,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${imageBase64}`,
+                detail: "high",
+              },
             },
-          },
-          {
-            type: "text",
-            text: "Analyze this restaurant menu and provide nutrition estimates for each item.",
-          },
-        ],
-      },
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 4096,
-    temperature: 0.3,
-  });
+            {
+              type: "text",
+              text: "Analyze this restaurant menu and provide nutrition estimates for each item.",
+            },
+          ],
+        },
+      ],
+      response_format: { type: "json_object" },
+      max_completion_tokens: 4096,
+      temperature: 0.3,
+    });
+  } catch (error) {
+    console.error("Menu analysis API error:", error);
+    throw new Error("Failed to analyze menu photo. Please try again.");
+  }
 
   const content = response.choices[0]?.message?.content;
   if (!content) throw new Error("No response from menu analysis");
