@@ -1,4 +1,4 @@
-import { openai } from "../lib/openai";
+import { openai, OPENAI_TIMEOUT_STREAM_MS } from "../lib/openai";
 import {
   sanitizeUserInput,
   containsDangerousDietaryAdvice,
@@ -97,7 +97,7 @@ export async function* generateCoachResponse(
         max_completion_tokens: 1000,
         temperature: 0.7,
       },
-      { timeout: 30_000 },
+      { timeout: OPENAI_TIMEOUT_STREAM_MS },
     );
   } catch (error) {
     console.error("Coach API error:", error);

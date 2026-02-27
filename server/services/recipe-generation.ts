@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
-import { openai, dalleClient } from "../lib/openai";
+import {
+  openai,
+  dalleClient,
+  OPENAI_TIMEOUT_HEAVY_MS,
+  OPENAI_TIMEOUT_IMAGE_MS,
+} from "../lib/openai";
 
 // Zod schemas for recipe generation
 const instructionItemSchema = z.union([
@@ -153,7 +158,7 @@ Respond with JSON only:
         ],
         response_format: { type: "json_object" },
       },
-      { timeout: 60_000 },
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
   } catch (error) {
     console.error("Recipe generation API error:", error);
@@ -199,7 +204,7 @@ export async function generateRecipeImage(
         quality: "standard",
         response_format: "b64_json",
       },
-      { timeout: 120_000 },
+      { timeout: OPENAI_TIMEOUT_IMAGE_MS },
     );
 
     const imageData = response.data?.[0]?.b64_json;

@@ -19,6 +19,7 @@ vi.mock("../../lib/openai", () => ({
       },
     },
   },
+  OPENAI_TIMEOUT_HEAVY_MS: 60_000,
 }));
 
 describe("meal-suggestions", () => {
@@ -358,6 +359,14 @@ describe("meal-suggestions", () => {
       expect(userMessage).toContain("DIETARY REQUIREMENTS");
       expect(userMessage).toContain("vegan");
       expect(userMessage).toContain("gluten");
+    });
+
+    it("throws user-friendly error on OpenAI API failure", async () => {
+      mockCreate.mockRejectedValue(new Error("API timeout"));
+
+      await expect(generateMealSuggestions(baseInput)).rejects.toThrow(
+        "Failed to generate meal suggestions. Please try again.",
+      );
     });
 
     it("throws when AI returns no content", async () => {

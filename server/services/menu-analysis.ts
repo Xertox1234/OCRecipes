@@ -132,7 +132,12 @@ export async function analyzeMenuPhoto(
   const content = response.choices[0]?.message?.content;
   if (!content) throw new Error("No response from menu analysis");
 
-  const parsed = JSON.parse(content);
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("Menu analysis returned invalid data. Please try again.");
+  }
   const validated = menuAnalysisSchema.parse(parsed);
 
   // Sort by recommendation: great > good > okay > avoid
