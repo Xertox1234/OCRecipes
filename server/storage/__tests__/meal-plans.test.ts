@@ -21,6 +21,7 @@ import {
   scannedItems,
   communityRecipes,
 } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 // Mock the db import so the storage functions use our test transaction
 vi.mock("../../db", () => ({
@@ -573,6 +574,30 @@ describe("meal-plans storage", () => {
       );
       expect(items).toHaveLength(0);
     });
+
+    it("excludes soft-deleted scanned items from enrichment", async () => {
+      const scanned = await createTestScannedItem(testUser.id);
+      await addMealPlanItem({
+        userId: testUser.id,
+        scannedItemId: scanned.id,
+        plannedDate: "2025-06-15",
+        mealType: "lunch",
+      });
+
+      // Soft-delete the scanned item
+      await tx
+        .update(scannedItems)
+        .set({ discardedAt: new Date() })
+        .where(eq(scannedItems.id, scanned.id));
+
+      const items = await getMealPlanItems(
+        testUser.id,
+        "2025-06-15",
+        "2025-06-15",
+      );
+      expect(items).toHaveLength(1);
+      expect(items[0].scannedItem).toBeNull();
+    });
   });
 
   describe("getMealPlanItemById", () => {
@@ -611,6 +636,26 @@ describe("meal-plans storage", () => {
     it("returns undefined for non-existent item", async () => {
       const found = await getMealPlanItemById(999999, testUser.id);
       expect(found).toBeUndefined();
+    });
+
+    it("returns null scannedItem when linked scanned item is soft-deleted", async () => {
+      const scanned = await createTestScannedItem(testUser.id);
+      const item = await addMealPlanItem({
+        userId: testUser.id,
+        scannedItemId: scanned.id,
+        plannedDate: "2025-06-15",
+        mealType: "lunch",
+      });
+
+      // Soft-delete the scanned item
+      await tx
+        .update(scannedItems)
+        .set({ discardedAt: new Date() })
+        .where(eq(scannedItems.id, scanned.id));
+
+      const found = await getMealPlanItemById(item.id, testUser.id);
+      expect(found).toBeDefined();
+      expect(found!.scannedItem).toBeNull();
     });
   });
 

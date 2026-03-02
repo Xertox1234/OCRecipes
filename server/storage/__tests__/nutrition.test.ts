@@ -593,6 +593,16 @@ describe("nutrition storage", () => {
       expect(count).toBe(0);
     });
 
+    it("excludes soft-deleted items from count", async () => {
+      await insertScannedItem(testUser.id);
+      await insertScannedItem(testUser.id, {
+        discardedAt: new Date(),
+      });
+
+      const count = await getDailyScanCount(testUser.id, new Date());
+      expect(count).toBe(1);
+    });
+
     it("does not count another user's scans", async () => {
       const otherUser = await createTestUser(tx, {
         username: `scan_count_other_${Date.now()}`,

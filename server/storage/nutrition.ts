@@ -316,6 +316,7 @@ export async function getDailyScanCount(
         eq(scannedItems.userId, userId),
         gte(scannedItems.scannedAt, startOfDay),
         lt(scannedItems.scannedAt, endOfDay),
+        isNull(scannedItems.discardedAt),
       ),
     );
 

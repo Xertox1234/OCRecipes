@@ -24,7 +24,18 @@ import {
   communityRecipes,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lte, lt, sql, or, ilike } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  and,
+  gte,
+  lte,
+  lt,
+  sql,
+  or,
+  ilike,
+  isNull,
+} from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
 
 // ============================================================================
@@ -271,10 +282,13 @@ export async function getMealPlanItems(
       .select()
       .from(scannedItems)
       .where(
-        sql`${scannedItems.id} IN (${sql.join(
-          scannedItemIds.map((id) => sql`${id}`),
-          sql`, `,
-        )})`,
+        and(
+          sql`${scannedItems.id} IN (${sql.join(
+            scannedItemIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+          isNull(scannedItems.discardedAt),
+        ),
       );
     for (const s of scanned) scannedItemsMap.set(s.id, s);
   }
@@ -318,7 +332,12 @@ export async function getMealPlanItemById(
     const [s] = await db
       .select()
       .from(scannedItems)
-      .where(eq(scannedItems.id, item.scannedItemId));
+      .where(
+        and(
+          eq(scannedItems.id, item.scannedItemId),
+          isNull(scannedItems.discardedAt),
+        ),
+      );
     scannedItem = s || null;
   }
 
