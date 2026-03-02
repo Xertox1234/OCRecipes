@@ -93,6 +93,27 @@ export function parseQueryDate(value: unknown): Date | undefined {
   return date;
 }
 
+/**
+ * Parse a query string parameter as a trimmed string. Returns undefined if the
+ * value is missing or not a string. Handles Express 5's `unknown` query type
+ * without requiring an `as string` cast.
+ */
+export function parseQueryString(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  return value;
+}
+
+/**
+ * Parse a route parameter as a string. Handles Express 5's `string | string[]`
+ * param type without requiring an `as string` cast.
+ */
+export function parseStringParam(
+  value: string | string[] | undefined,
+): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
 /** Extract IP address for rate limiting fallback when user is not authenticated */
 export function ipKeyGenerator(req: Request): string {
   return req.ip || req.socket.remoteAddress || "unknown";

@@ -2,16 +2,18 @@
 /**
  * Hardcoded Color Checker
  *
- * Checks React Native .tsx files for hardcoded black/white hex colors
- * that should use theme values instead.
+ * Checks React Native .tsx files for hardcoded hex colors and named CSS
+ * colors that should use theme values instead.
  *
  * Flagged patterns:
- *   #FFFFFF / #ffffff / #FFF / #fff
- *   #000000 / #000
+ *   Any hex color: #RGB, #RGBA, #RRGGBB, #RRGGBBAA (e.g. #fff, #FF6B35, #00000080)
+ *   Named CSS colors in strings: "white", "black", "red", "blue", "green", "grey", "gray"
  *
  * Exceptions (won't flag):
  *   - Files in __tests__/
  *   - Lines with "// hardcoded" comment (opt-out for intentional cases)
+ *   - Lines that are imports or require statements
+ *   - "transparent" is always allowed
  *
  * Usage:
  *   node scripts/check-hardcoded-colors.js [files...]
@@ -43,9 +45,15 @@ function shouldSkipFile(filePath) {
   return skipPatterns.some((pattern) => filePath.includes(pattern));
 }
 
-// Matches #FFFFFF, #ffffff, #FFF, #fff, #000000, #000
-// Word boundary before # prevents matching inside longer hex codes
-const COLOR_PATTERN = /(?:#(?:FFFFFF|ffffff|FFF|fff|000000|000))(?!\w)/g;
+// Matches any hex color: #RGB, #RGBA, #RRGGBB, #RRGGBBAA
+// Negative lookbehind avoids matching inside longer tokens; negative lookahead avoids word chars after
+const HEX_COLOR_PATTERN =
+  /(?<![&\w])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?!\w)/g;
+
+// Named CSS colors inside string literals (single or double quotes)
+// "transparent" is intentionally excluded — it's not a real color value
+const NAMED_COLOR_PATTERN =
+  /(?:"|')(?:white|black|red|blue|green|grey|gray)(?:"|')/gi;
 
 function checkFile(filePath) {
   if (shouldSkipFile(filePath)) {
@@ -74,8 +82,8 @@ function checkFile(filePath) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Skip lines with opt-out comment
-    if (line.includes("// hardcoded")) {
+    // Skip lines with opt-out comment (supports both JS and JSX comment styles)
+    if (line.includes("// hardcoded") || line.includes("/* hardcoded")) {
       continue;
     }
 
@@ -85,9 +93,52 @@ function checkFile(filePath) {
       continue;
     }
 
-    const matches = line.match(COLOR_PATTERN);
-    if (matches) {
-      for (const match of matches) {
+    // Skip import/require lines
+    if (trimmed.startsWith("import ") || trimmed.includes("require(")) {
+      continue;
+    }
+
+    // Strip trailing inline comments before checking for colors
+    // e.g. `theme.backgroundSecondary // #393948 in dark` should not flag #393948
+    const commentIndex = trimmed.indexOf("//");
+    const codePortion =
+      commentIndex >= 0 ? trimmed.substring(0, commentIndex) : trimmed;
+
+    // Check hex colors (only in code portion, not trailing comments)
+    const hexMatches = codePortion.match(HEX_COLOR_PATTERN);
+    if (hexMatches) {
+      for (const match of hexMatches) {
+        issues.push({
+          file: filePath,
+          line: i + 1,
+          color: match,
+          context:
+            trimmed.substring(0, 80) + (trimmed.length > 80 ? "..." : ""),
+        });
+      }
+    }
+
+    // Check named CSS colors (only in code portion, not trailing comments)
+    // Exclude patterns like `"red" as const` which are type literals, not CSS color values
+    const namedMatches = codePortion.match(NAMED_COLOR_PATTERN);
+    if (namedMatches) {
+      for (const match of namedMatches) {
+        // Skip if followed by "as const" — it's a discriminant/type literal, not a CSS color
+        const matchIdx = codePortion.indexOf(match);
+        const afterMatch = codePortion
+          .substring(matchIdx + match.length)
+          .trim();
+        if (
+          afterMatch.startsWith("as const") ||
+          afterMatch.startsWith("as const;")
+        ) {
+          continue;
+        }
+        // Skip if it's in a comparison (=== or !==)
+        const beforeMatch = codePortion.substring(0, matchIdx).trimEnd();
+        if (beforeMatch.endsWith("===") || beforeMatch.endsWith("!==")) {
+          continue;
+        }
         issues.push({
           file: filePath,
           line: i + 1,

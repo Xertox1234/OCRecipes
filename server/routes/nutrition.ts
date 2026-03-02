@@ -17,6 +17,7 @@ import {
   parsePositiveIntParam,
   parseQueryInt,
   parseQueryDate,
+  parseQueryString,
 } from "./_helpers";
 
 // Coerce literal "null" strings to actual null
@@ -72,7 +73,7 @@ export function register(app: Express): void {
     requireAuth,
     nutritionLookupRateLimit,
     async (req: Request, res: Response) => {
-      const name = (req.query.name as string)?.trim();
+      const name = parseQueryString(req.query.name)?.trim();
       if (!name || name.length > 200) {
         sendError(res, 400, "name query parameter is required (max 200 chars)");
         return;

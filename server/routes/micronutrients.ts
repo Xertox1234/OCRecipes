@@ -3,6 +3,7 @@ import {
   micronutrientRateLimit,
   checkPremiumFeature,
   parsePositiveIntParam,
+  parseQueryString,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { requireAuth } from "../middleware/auth";
@@ -64,7 +65,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const dateStr = req.query.date as string;
+        const dateStr = parseQueryString(req.query.date);
         const date = dateStr ? new Date(dateStr) : new Date();
 
         // Get daily logs for the date

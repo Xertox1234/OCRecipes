@@ -22,6 +22,7 @@ import {
   parsePositiveIntParam,
   checkPremiumFeature,
   getPremiumFeatures,
+  parseQueryString,
 } from "./_helpers";
 
 // Zod schemas for recipe endpoints
@@ -121,8 +122,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const barcode = (req.query.barcode as string) || null;
-        const productName = req.query.productName as string;
+        const barcode = parseQueryString(req.query.barcode) || null;
+        const productName = parseQueryString(req.query.productName);
 
         if (!productName) {
           sendError(res, 400, "productName is required");

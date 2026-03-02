@@ -25,6 +25,7 @@ import {
   formatZodError,
   upload,
   checkPremiumFeature,
+  parseStringParam,
 } from "./_helpers";
 
 // In-memory store for analysis sessions
@@ -264,7 +265,10 @@ export function register(app: Express): void {
     photoRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const sessionId = req.params.sessionId as string;
+        const sessionId = parseStringParam(req.params.sessionId);
+        if (!sessionId) {
+          return sendError(res, 400, "Session ID is required");
+        }
 
         const parsed = followUpSchema.safeParse(req.body);
         if (!parsed.success) {

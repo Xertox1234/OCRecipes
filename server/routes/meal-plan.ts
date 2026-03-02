@@ -10,6 +10,7 @@ import {
   checkPremiumFeature,
   formatZodError,
   parsePositiveIntParam,
+  parseQueryString,
 } from "./_helpers";
 
 // Zod schemas for meal plan endpoints
@@ -224,8 +225,8 @@ export function register(app: Express): void {
     requireAuth,
     async (req: Request, res: Response): Promise<void> => {
       try {
-        const start = req.query.start as string;
-        const end = req.query.end as string;
+        const start = parseQueryString(req.query.start);
+        const end = parseQueryString(req.query.end);
 
         if (
           !start ||
