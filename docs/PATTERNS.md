@@ -21,6 +21,8 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [`sendError` -- Standardized Error Response Helper](#senderror----standardized-error-response-helper)
   - [`parseQueryInt` -- Typed Query Parameter Parsing](#parsequeryint----typed-query-parameter-parsing)
   - [`parsePositiveIntParam` -- Express 5 Route Param Parsing](#parsepositiveintparam----express-5-route-param-parsing)
+  - [`parseQueryString` -- Typed String Query Parameter Parsing](#parsequerystring----typed-string-query-parameter-parsing)
+  - [`parseStringParam` -- Express 5 String Route Param Parsing](#parsestringparam----express-5-string-route-param-parsing)
   - [`createRateLimiter` -- Rate Limiter Factory](#createratelimiter----rate-limiter-factory)
   - [Atomic Server Endpoints Over Multi-Request Flows](#atomic-server-endpoints-over-multi-request-flows)
 - [External API Patterns](#external-api-patterns)
@@ -124,6 +126,10 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Pure Function Extraction for Server Services](#pure-function-extraction-for-server-services)
   - [Type Guard Over `as` Cast for Runtime Safety](#type-guard-over-as-cast-for-runtime-safety)
   - [vi.resetModules for Env-Dependent Module Testing](#viresetmodules-for-env-dependent-module-testing)
+- [Automated Enforcement](#automated-enforcement)
+  - [Pre-Commit Hook](#pre-commit-hook)
+  - [Custom ESLint Rules](#custom-eslint-rules-eslint-plugin-nutriscan)
+  - [Custom Lint Scripts](#custom-lint-scripts)
 
 ---
 
@@ -1584,6 +1590,91 @@ export function parsePositiveIntParam(value: string | string[]): number | null {
 
 - `server/routes/_helpers.ts` -- implementation
 - 14 route files: `suggestions`, `exercises`, `weight`, `pantry`, `chat`, `menu`, `saved-items`, `medication`, `grocery`, `nutrition`, `micronutrients`, `meal-plan`, `recipes` -- consumers
+
+### `parseQueryString` -- Typed String Query Parameter Parsing
+
+Parse a query string parameter as a string without `as string` casts. Handles Express 5's `unknown` query type safely, returning `string | undefined`.
+
+```typescript
+import { parseQueryString } from "./_helpers";
+
+// Before (unsafe):
+const name = req.query.name as string;
+
+// After (type-safe):
+const name = parseQueryString(req.query.name);
+```
+
+**Implementation:**
+
+```typescript
+// server/routes/_helpers.ts
+export function parseQueryString(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value) return undefined;
+  return value;
+}
+```
+
+**When to use:**
+
+- Any route that reads a string query parameter (`?name=...`, `?date=...`, `?q=...`)
+- Replaces every `req.query.x as string` cast in route handlers
+
+**When NOT to use:**
+
+- Numeric query params (use `parseQueryInt`)
+- Date query params (use `parseQueryDate` for automatic parsing)
+- Route params (use `parseStringParam`)
+
+**Enforcement:** The `nutriscan/no-as-string-req` ESLint rule flags `as string` casts on `req.query` in `server/routes/**/*.ts`.
+
+**References:**
+
+- `server/routes/_helpers.ts` -- implementation
+- Route files: `micronutrients`, `nutrition`, `meal-plan`, `recipes`, `exercises` -- consumers
+
+### `parseStringParam` -- Express 5 String Route Param Parsing
+
+Parse a string route parameter without `as string` casts. Handles Express 5's `string | string[]` param type, returning `string | undefined`.
+
+```typescript
+import { parseStringParam } from "./_helpers";
+
+// Before (unsafe):
+const sessionId = req.params.sessionId as string;
+
+// After (type-safe):
+const sessionId = parseStringParam(req.params.sessionId);
+if (!sessionId) return sendError(res, 400, "Session ID is required");
+```
+
+**Implementation:**
+
+```typescript
+// server/routes/_helpers.ts
+export function parseStringParam(
+  value: string | string[] | undefined,
+): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+```
+
+**When to use:**
+
+- Routes with string params like `:sessionId`, `:slug`, `:uuid`
+- Combine with a null check and `sendError` for the error response
+
+**When NOT to use:**
+
+- Numeric params like `:id` (use `parsePositiveIntParam`)
+
+**Enforcement:** The `nutriscan/no-as-string-req` ESLint rule flags `as string` casts on `req.params` in `server/routes/**/*.ts`.
+
+**References:**
+
+- `server/routes/_helpers.ts` -- implementation
+- `server/routes/photos.ts` -- consumer
 
 ### `createRateLimiter` -- Rate Limiter Factory
 
@@ -5306,7 +5397,7 @@ const DashboardHeader = React.memo(function DashboardHeader({
     <DashboardHeader
       userName={user?.username ?? ""}
       currentCalories={summary?.totalCalories ?? 0}
-      calorieGoal={user?.dailyCalorieGoal ?? 2000}
+      calorieGoal={user?.dailyCalorieGoal ?? DEFAULT_NUTRITION_GOALS.calories}
       onScanPress={handleScanPress}
     />
   }
@@ -7717,6 +7808,41 @@ vi.mock("@apple/app-store-server-library", async () => {
 **References:**
 
 - `server/services/__tests__/receipt-validation.test.ts` — `MockSignedDataVerifier` class mock with `mockVerifyAndDecodeTransaction`
+
+---
+
+## Automated Enforcement
+
+### Pre-Commit Hook
+
+The pre-commit hook (`.husky/pre-commit`) runs three stages in sequence:
+
+1. **TypeScript type checking** — `tsc --noEmit --project tsconfig.check.json` (production code only, excludes test files)
+2. **Full test suite** — `npm run test:run` (~2300+ Vitest tests)
+3. **Lint-staged** — applies the following checks to staged files:
+
+| Glob              | Checks                                                |
+| ----------------- | ----------------------------------------------------- |
+| `*.{ts,tsx}`      | `eslint --fix`, `prettier --write`                    |
+| `client/**/*.tsx` | `check-accessibility.js`, `check-hardcoded-colors.js` |
+| `*.{js,md}`       | `prettier --write`                                    |
+
+### Custom ESLint Rules (`eslint-plugin-nutriscan`)
+
+Three custom rules in `eslint-plugin-nutriscan/index.js` enforce server-side patterns. They apply to `server/routes/**/*.ts` via `eslint.config.js`:
+
+| Rule                               | Enforces                                | Error Flagged                                       |
+| ---------------------------------- | --------------------------------------- | --------------------------------------------------- |
+| `nutriscan/no-bare-error-response` | `sendError()` pattern                   | `res.status(4xx/5xx).json({ error: ... })`          |
+| `nutriscan/no-parseint-req`        | `parsePositiveIntParam`/`parseQueryInt` | `parseInt(req.params.*)` or `parseInt(req.query.*)` |
+| `nutriscan/no-as-string-req`       | `parseQueryString`/`parseStringParam`   | `req.params.* as string` or `req.query.* as string` |
+
+### Custom Lint Scripts
+
+| Script                              | Scope             | Checks                                                                                                                                                         |
+| ----------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/check-accessibility.js`    | `client/**/*.tsx` | `Pressable`/`TouchableOpacity` with `onPress` missing `accessibilityLabel`; `TextInput` without `accessibilityLabel`                                           |
+| `scripts/check-hardcoded-colors.js` | `client/**/*.tsx` | All hex colors (`#RGB`, `#RRGGBB`, etc.) and named CSS colors (`"white"`, `"black"`, etc.). Opt out with `// hardcoded` or `{/* hardcoded */}` inline comment. |
 
 ---
 

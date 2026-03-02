@@ -144,6 +144,9 @@ export function register(app: Express): void {
         ]);
 
         const context: CoachContext = {
+          // When user has no calorie goal, pass null so the coach knows goals aren't set.
+          // Macro fallbacks are 0 (not DEFAULT_NUTRITION_GOALS) because the coach should
+          // only reference macros the user has explicitly configured.
           goals: user.dailyCalorieGoal
             ? {
                 calories: user.dailyCalorieGoal,

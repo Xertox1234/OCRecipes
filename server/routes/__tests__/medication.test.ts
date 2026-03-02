@@ -231,7 +231,7 @@ describe("Medication Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      expect(res.body.proteinGoal).toBe(120);
+      expect(res.body.proteinGoal).toBe(150);
     });
   });
 

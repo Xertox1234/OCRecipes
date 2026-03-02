@@ -13,6 +13,7 @@ import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { analyzeGlp1Insights } from "../services/glp1-insights";
 import type { ProteinSuggestion } from "@shared/types/protein-suggestions";
+import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
 export function register(app: Express): void {
   // GET /api/medication/logs
@@ -203,7 +204,8 @@ export function register(app: Express): void {
           req.userId!,
           new Date(),
         );
-        const proteinGoal = user?.dailyProteinGoal ?? 120;
+        const proteinGoal =
+          user?.dailyProteinGoal ?? DEFAULT_NUTRITION_GOALS.protein;
         const remainingProtein = Math.max(
           0,
           proteinGoal - Number(dailySummary.totalProtein),
