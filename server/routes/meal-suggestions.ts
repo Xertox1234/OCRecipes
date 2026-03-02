@@ -9,6 +9,7 @@ import {
   buildSuggestionCacheKey,
 } from "../services/meal-suggestions";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
+import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 import {
   mealSuggestionRateLimit,
   formatZodError,
@@ -107,10 +108,10 @@ export function register(app: Express): void {
 
         // Calculate remaining budget
         const dailyTargets = {
-          calories: user?.dailyCalorieGoal || 2000,
-          protein: user?.dailyProteinGoal || 100,
-          carbs: user?.dailyCarbsGoal || 250,
-          fat: user?.dailyFatGoal || 65,
+          calories: user?.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories,
+          protein: user?.dailyProteinGoal || DEFAULT_NUTRITION_GOALS.protein,
+          carbs: user?.dailyCarbsGoal || DEFAULT_NUTRITION_GOALS.carbs,
+          fat: user?.dailyFatGoal || DEFAULT_NUTRITION_GOALS.fat,
         };
 
         // Use actual confirmed intake from daily summary (includes scans + confirmed meals)

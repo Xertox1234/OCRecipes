@@ -7,10 +7,12 @@ import {
   parsePositiveIntParam,
   parseQueryInt,
   parseQueryDate,
+  parseQueryString,
   crudRateLimit,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { calculateCaloriesBurned } from "../services/exercise-calorie";
+import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
 const createExerciseLogSchema = z.object({
   exerciseName: z.string().min(1).max(200),
@@ -202,7 +204,7 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: Request, res: Response) => {
       try {
-        const query = (req.query.q as string) || "";
+        const query = parseQueryString(req.query.q) || "";
         if (query.length < 1) return res.json([]);
         const results = await storage.searchExerciseLibrary(query, req.userId!);
         res.json(results);
@@ -266,7 +268,8 @@ export function register(app: Express): void {
           date,
         );
 
-        const calorieGoal = user.dailyCalorieGoal || 2000;
+        const calorieGoal =
+          user.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories;
         const foodCalories = dailySummary.totalCalories;
         const exerciseCalories = exerciseSummary.totalCaloriesBurned;
         const adjustedBudget = calorieGoal + exerciseCalories;

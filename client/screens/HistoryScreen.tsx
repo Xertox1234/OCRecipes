@@ -72,6 +72,7 @@ import type {
   DailySummaryResponse,
 } from "@/types/api";
 import type { RouteProp } from "@react-navigation/native";
+import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
 const PAGE_SIZE = 50;
 const DASHBOARD_ITEM_LIMIT = 5;
@@ -917,7 +918,8 @@ export default function HistoryScreen() {
   }, [showAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Calculate calorie progress
-  const calorieGoal = user?.dailyCalorieGoal || 2000;
+  const calorieGoal =
+    user?.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories;
   const currentCalories = Math.round(todaySummary?.totalCalories || 0);
   const calorieProgress = Math.min((currentCalories / calorieGoal) * 100, 100);
   const userName = user?.displayName || user?.username || "there";

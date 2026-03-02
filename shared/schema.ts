@@ -16,6 +16,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -25,7 +26,9 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   displayName: text("display_name"),
   avatarUrl: text("avatar_url"),
-  dailyCalorieGoal: integer("daily_calorie_goal").default(2000),
+  dailyCalorieGoal: integer("daily_calorie_goal").default(
+    DEFAULT_NUTRITION_GOALS.calories,
+  ),
   dailyProteinGoal: integer("daily_protein_goal"),
   dailyCarbsGoal: integer("daily_carbs_goal"),
   dailyFatGoal: integer("daily_fat_goal"),

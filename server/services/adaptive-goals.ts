@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
 /** Approximate kilocalories stored per kilogram of body weight. */
 export const KCAL_PER_KG = 7700;
@@ -187,10 +188,12 @@ export async function computeAdaptiveGoals(
 
   // Get average daily intake over same period
   // We'd need daily summaries for each day — approximate with current goal as baseline
-  const currentCalories = user.dailyCalorieGoal || 2000;
-  const currentProtein = user.dailyProteinGoal || 150;
-  const currentCarbs = user.dailyCarbsGoal || 250;
-  const currentFat = user.dailyFatGoal || 67;
+  const currentCalories =
+    user.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories;
+  const currentProtein =
+    user.dailyProteinGoal || DEFAULT_NUTRITION_GOALS.protein;
+  const currentCarbs = user.dailyCarbsGoal || DEFAULT_NUTRITION_GOALS.carbs;
+  const currentFat = user.dailyFatGoal || DEFAULT_NUTRITION_GOALS.fat;
 
   // Estimated actual TDEE
   const tdee = estimateTDEE(currentCalories, weightChange, daySpan);
