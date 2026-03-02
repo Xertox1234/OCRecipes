@@ -16,18 +16,19 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type MenuScanResultRouteProp = RouteProp<RootStackParamList, "MenuScanResult">;
 
+// hardcoded — semantic health rating colors, not themeable
 const RECOMMENDATION_STYLES: Record<
   string,
   { icon: string; color: string; label: string }
 > = {
-  great: { icon: "checkmark-circle", color: "#2E7D32", label: "Great Choice" },
-  good: { icon: "thumbs-up", color: "#1565C0", label: "Good Option" },
+  great: { icon: "checkmark-circle", color: "#2E7D32", label: "Great Choice" }, // hardcoded
+  good: { icon: "thumbs-up", color: "#1565C0", label: "Good Option" }, // hardcoded
   okay: {
     icon: "remove-circle-outline",
-    color: "#F57F17",
+    color: "#F57F17", // hardcoded
     label: "Okay",
   },
-  avoid: { icon: "warning", color: "#C62828", label: "Not Ideal" },
+  avoid: { icon: "warning", color: "#C62828", label: "Not Ideal" }, // hardcoded
 };
 
 const MenuItemCard = React.memo(function MenuItemCard({

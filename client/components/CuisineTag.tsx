@@ -9,23 +9,24 @@ interface CuisineTagProps {
 }
 
 const CUISINE_COLORS: Record<string, string> = {
-  Japanese: "#D32F2F",
-  Korean: "#1976D2",
-  "East Asian": "#F57C00",
-  "Southeast Asian": "#388E3C",
-  Vietnamese: "#7B1FA2",
-  "South Asian": "#FF8F00",
-  "Middle Eastern": "#5D4037",
-  Mexican: "#C62828",
-  "Latin American": "#00838F",
-  Italian: "#2E7D32",
-  Spanish: "#E65100",
-  European: "#37474F",
-  "Eastern European": "#4527A0",
-  "North African": "#BF360C",
-  Ethiopian: "#1B5E20",
-  "West African": "#E65100",
-  African: "#4E342E",
+  // hardcoded — data-driven cuisine color map, not themeable
+  Japanese: "#D32F2F", // hardcoded
+  Korean: "#1976D2", // hardcoded
+  "East Asian": "#F57C00", // hardcoded
+  "Southeast Asian": "#388E3C", // hardcoded
+  Vietnamese: "#7B1FA2", // hardcoded
+  "South Asian": "#FF8F00", // hardcoded
+  "Middle Eastern": "#5D4037", // hardcoded
+  Mexican: "#C62828", // hardcoded
+  "Latin American": "#00838F", // hardcoded
+  Italian: "#2E7D32", // hardcoded
+  Spanish: "#E65100", // hardcoded
+  European: "#37474F", // hardcoded
+  "Eastern European": "#4527A0", // hardcoded
+  "North African": "#BF360C", // hardcoded
+  Ethiopian: "#1B5E20", // hardcoded
+  "West African": "#E65100", // hardcoded
+  African: "#4E342E", // hardcoded
 };
 
 export default function CuisineTag({

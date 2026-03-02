@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   actionButtonText: {
-    color: "#FFFFFF",
+    color: "#FFFFFF", // hardcoded — always white text on colored button
     fontSize: 16,
     fontFamily: FontFamily.semiBold,
   },

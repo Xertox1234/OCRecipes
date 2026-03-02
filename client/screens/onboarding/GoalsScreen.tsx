@@ -10,30 +10,31 @@ import { useOnboarding } from "@/context/OnboardingContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 
 const GOALS = [
+  // hardcoded — goal-specific accent colors for visual differentiation
   {
     id: "lose_weight",
     name: "Lose Weight",
     icon: "trending-down",
-    color: "#FF6B35",
+    color: "#FF6B35", // hardcoded
   },
   {
     id: "gain_muscle",
     name: "Build Muscle",
     icon: "trending-up",
-    color: "#00C853",
+    color: "#00C853", // hardcoded
   },
-  { id: "maintain", name: "Maintain Weight", icon: "minus", color: "#2196F3" },
+  { id: "maintain", name: "Maintain Weight", icon: "minus", color: "#2196F3" }, // hardcoded
   {
     id: "eat_healthier",
     name: "Eat Healthier",
     icon: "heart",
-    color: "#E91E63",
+    color: "#E91E63", // hardcoded
   },
   {
     id: "manage_condition",
     name: "Manage Condition",
     icon: "activity",
-    color: "#9C27B0",
+    color: "#9C27B0", // hardcoded
   },
 ];
 

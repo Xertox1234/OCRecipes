@@ -58,7 +58,7 @@ export function RecipeGenerationModal({
   const [shareToPublic, setShareToPublic] = useState(true);
 
   // Purple accent
-  const accentColor = "#9372F1";
+  const accentColor = "#9372F1"; // hardcoded — recipe generation branded purple
   const accentBg = withOpacity(accentColor, 0.12);
 
   // Generate recipe mutation

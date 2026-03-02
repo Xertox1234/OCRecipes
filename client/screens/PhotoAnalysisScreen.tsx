@@ -1097,7 +1097,7 @@ const styles = StyleSheet.create({
     padding: Spacing.xl,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
-    shadowColor: "#000",
+    shadowColor: "#000", // hardcoded — shadow color is always black
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
     shadowRadius: 12,

@@ -94,14 +94,22 @@ export default function MicronutrientSummary({
         style={[styles.statsRow, { marginTop: Spacing.sm, gap: Spacing.md }]}
       >
         <View style={styles.stat}>
-          <Ionicons name="checkmark-circle" size={16} color="#2E7D32" />
+          <Ionicons
+            name="checkmark-circle"
+            size={16}
+            color="#2E7D32" // hardcoded — green checkmark for met-goal
+          />{" "}
           <Text style={[styles.statText, { color: theme.text }]}>
             {metGoalCount} met goal
           </Text>
         </View>
         {lowCount > 0 && (
           <View style={styles.stat}>
-            <Ionicons name="warning" size={16} color="#C62828" />
+            <Ionicons
+              name="warning"
+              size={16}
+              color="#C62828" // hardcoded — red warning for low nutrient
+            />{" "}
             <Text style={[styles.statText, { color: theme.text }]}>
               {lowCount} low
             </Text>
