@@ -130,6 +130,7 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Pre-Commit Hook](#pre-commit-hook)
   - [Custom ESLint Rules](#custom-eslint-rules-eslint-plugin-nutriscan)
   - [Custom Lint Scripts](#custom-lint-scripts)
+  - [Prettier-Safe Lint Suppressions in JSX](#prettier-safe-lint-suppressions-in-jsx)
 
 ---
 
@@ -7867,10 +7868,35 @@ Three custom rules in `eslint-plugin-nutriscan/index.js` enforce server-side pat
 
 ### Custom Lint Scripts
 
-| Script                              | Scope             | Checks                                                                                                                                                         |
-| ----------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scripts/check-accessibility.js`    | `client/**/*.tsx` | `Pressable`/`TouchableOpacity` with `onPress` missing `accessibilityLabel`; `TextInput` without `accessibilityLabel`                                           |
-| `scripts/check-hardcoded-colors.js` | `client/**/*.tsx` | All hex colors (`#RGB`, `#RRGGBB`, etc.) and named CSS colors (`"white"`, `"black"`, etc.). Opt out with `// hardcoded` or `{/* hardcoded */}` inline comment. |
+| Script                              | Scope             | Checks                                                                                                                                                                                                                          |
+| ----------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/check-accessibility.js`    | `client/**/*.tsx` | `Pressable`/`TouchableOpacity` with `onPress` missing `accessibilityLabel`; `TextInput` without `accessibilityLabel`                                                                                                            |
+| `scripts/check-hardcoded-colors.js` | `client/**/*.tsx` | All hex colors (`#RGB`, `#RRGGBB`, etc.) and named CSS colors (`"white"`, `"black"`, etc.). Opt out with `// hardcoded` inline comment (see [Prettier-Safe Lint Suppressions in JSX](#prettier-safe-lint-suppressions-in-jsx)). |
+
+### Prettier-Safe Lint Suppressions in JSX
+
+When a lint check requires a comment on the **same line** as flagged code (e.g., `// hardcoded` for the color checker), use a trailing `//` comment on the JSX prop — not a `{/* */}` JSX comment:
+
+```tsx
+// Good: // comment on the prop line — Prettier keeps it in place
+<Ionicons
+  name="checkmark-circle"
+  size={16}
+  color="#2E7D32" // hardcoded — semantic green for met-goal
+/>
+
+// Bad: {/* */} comment — Prettier moves it to the next line
+<Ionicons name="checkmark-circle" size={16} color="#2E7D32" />{" "}
+{/* hardcoded — Prettier puts this on line N+1, checker looks at line N */}
+```
+
+**When to use:**
+
+- Any lint suppression that must be on the same line as the flagged value
+- `// hardcoded` opt-outs for the color checker
+- `// eslint-disable-next-line` equivalents in JSX props
+
+**Why:** Prettier treats `{/* */}` as a JSX child element and freely reflows it onto separate lines. Trailing `//` comments on prop lines are preserved because Prettier won't split a prop from its trailing comment.
 
 ---
 
