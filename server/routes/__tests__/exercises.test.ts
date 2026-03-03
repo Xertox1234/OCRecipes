@@ -488,6 +488,18 @@ describe("Exercise Routes", () => {
       expect(res.status).toBe(500);
     });
 
+    it("GET /api/exercise-library returns 500 on storage error", async () => {
+      vi.mocked(storage.searchExerciseLibrary).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .get("/api/exercise-library?q=run")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+
     it("POST /api/exercise-library returns 500 on storage error", async () => {
       vi.mocked(storage.createExerciseLibraryEntry).mockRejectedValue(
         new Error("DB error"),
@@ -524,6 +536,49 @@ describe("Exercise Routes", () => {
       expect(res.body.adjustedBudget).toBe(2300);
       expect(res.body.remaining).toBe(1500);
       expect(res.body.exerciseCalories).toBe(300);
+    });
+
+    it("returns 404 when user not found", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue(null as never);
+
+      const res = await request(app)
+        .get("/api/daily-budget")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.getUser).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app)
+        .get("/api/daily-budget")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+
+    it("uses default calorie goal when user has no goal set", async () => {
+      vi.mocked(storage.getUser).mockResolvedValue({
+        dailyCalorieGoal: null,
+      } as never);
+      vi.mocked(storage.getDailySummary).mockResolvedValue({
+        totalCalories: 500,
+      } as never);
+      vi.mocked(storage.getExerciseDailySummary).mockResolvedValue({
+        totalCaloriesBurned: 200,
+        totalMinutes: 20,
+        exerciseCount: 1,
+      } as never);
+
+      const res = await request(app)
+        .get("/api/daily-budget")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.calorieGoal).toBe(2000);
+      expect(res.body.adjustedBudget).toBe(2200);
+      expect(res.body.remaining).toBe(1700);
     });
   });
 });

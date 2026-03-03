@@ -449,6 +449,18 @@ describe("Nutrition Routes", () => {
       expect(res.status).toBe(500);
     });
 
+    it("GET /api/scanned-items/:id returns 500 on storage error", async () => {
+      vi.mocked(storage.getScannedItemWithFavourite).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .get("/api/scanned-items/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
+
     it("GET /api/scanned-items returns 500 on storage error", async () => {
       vi.mocked(storage.getScannedItems).mockRejectedValue(
         new Error("DB error"),
