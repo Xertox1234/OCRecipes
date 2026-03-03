@@ -20,7 +20,11 @@ export const BottomSheetScrollView = React.forwardRef<
   unknown,
   Record<string, unknown>
 >(({ children, testID, ...rest }, ref) =>
-  React.createElement("div", { ref, "data-testid": testID, ...rest }, children),
+  React.createElement(
+    "div",
+    { ref, "data-testid": testID, ...rest },
+    children as React.ReactNode,
+  ),
 );
 (BottomSheetScrollView as unknown as { displayName: string }).displayName =
   "BottomSheetScrollView";
@@ -29,7 +33,11 @@ export const BottomSheetView = React.forwardRef<
   unknown,
   Record<string, unknown>
 >(({ children, testID, ...rest }, ref) =>
-  React.createElement("div", { ref, "data-testid": testID, ...rest }, children),
+  React.createElement(
+    "div",
+    { ref, "data-testid": testID, ...rest },
+    children as React.ReactNode,
+  ),
 );
 (BottomSheetView as unknown as { displayName: string }).displayName =
   "BottomSheetView";

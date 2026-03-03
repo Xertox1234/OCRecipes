@@ -40,8 +40,9 @@ function mockComponent(
         ...rest
       },
       ref,
-    ) =>
-      React.createElement(
+    ) => {
+      const a11y = accessibilityState as Record<string, unknown> | undefined;
+      return React.createElement(
         Element,
         {
           ref,
@@ -49,19 +50,20 @@ function mockComponent(
           role: accessibilityRole,
           "aria-label": accessibilityLabel,
           "aria-hint": accessibilityHint,
-          ...(accessibilityState?.disabled != null && {
-            "aria-disabled": accessibilityState.disabled,
+          ...(a11y?.disabled != null && {
+            "aria-disabled": a11y.disabled,
           }),
-          ...(accessibilityState?.selected != null && {
-            "aria-selected": accessibilityState.selected,
+          ...(a11y?.selected != null && {
+            "aria-selected": a11y.selected,
           }),
-          ...(accessibilityState?.busy != null && {
-            "aria-busy": accessibilityState.busy,
+          ...(a11y?.busy != null && {
+            "aria-busy": a11y.busy,
           }),
           ...rest,
-        },
-        children,
-      ),
+        } as Record<string, unknown>,
+        children as React.ReactNode,
+      );
+    },
   );
   Comp.displayName = displayName;
   return Comp;
@@ -108,18 +110,19 @@ export const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
         role: accessibilityRole ?? "button",
         "aria-label": accessibilityLabel,
         "aria-hint": accessibilityHint,
-        ...(accessibilityState?.disabled != null && {
-          "aria-disabled": accessibilityState.disabled,
-        }),
-        ...(accessibilityState?.selected != null && {
-          "aria-selected": accessibilityState.selected,
-        }),
-        ...(accessibilityState?.busy != null && {
-          "aria-busy": accessibilityState.busy,
-        }),
+        ...(() => {
+          const a11y = accessibilityState as
+            | Record<string, unknown>
+            | undefined;
+          return {
+            ...(a11y?.disabled != null && { "aria-disabled": a11y.disabled }),
+            ...(a11y?.selected != null && { "aria-selected": a11y.selected }),
+            ...(a11y?.busy != null && { "aria-busy": a11y.busy }),
+          };
+        })(),
         ...rest,
-      },
-      resolvedChildren,
+      } as Record<string, unknown>,
+      resolvedChildren as React.ReactNode,
     );
   },
 );
@@ -174,13 +177,15 @@ export function createFlatListMock(displayName: string) {
         { ref, "data-testid": testID },
         ListHeaderComponent
           ? typeof ListHeaderComponent === "function"
-            ? React.createElement(ListHeaderComponent)
-            : ListHeaderComponent
+            ? React.createElement(
+                ListHeaderComponent as React.FunctionComponent,
+              )
+            : (ListHeaderComponent as React.ReactNode)
           : null,
         empty
           ? typeof ListEmptyComponent === "function"
-            ? React.createElement(ListEmptyComponent)
-            : ListEmptyComponent
+            ? React.createElement(ListEmptyComponent as React.FunctionComponent)
+            : (ListEmptyComponent as React.ReactNode)
           : items.map((item: unknown, index: number) =>
               React.createElement(
                 React.Fragment,
@@ -201,8 +206,10 @@ export function createFlatListMock(displayName: string) {
             ),
         ListFooterComponent
           ? typeof ListFooterComponent === "function"
-            ? React.createElement(ListFooterComponent)
-            : ListFooterComponent
+            ? React.createElement(
+                ListFooterComponent as React.FunctionComponent,
+              )
+            : (ListFooterComponent as React.ReactNode)
           : null,
       );
     },
@@ -219,7 +226,7 @@ export const Modal = React.forwardRef<unknown, Record<string, unknown>>(
       ? React.createElement(
           "div",
           { ref, "data-testid": testID, role: "dialog", ...rest },
-          children,
+          children as React.ReactNode,
         )
       : null,
 );

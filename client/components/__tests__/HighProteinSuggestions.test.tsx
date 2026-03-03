@@ -16,7 +16,11 @@ vi.mock("@/hooks/useMedication", () => ({
 // Card component renders as a pressable wrapper
 vi.mock("@/components/Card", () => ({
   Card: ({ children, ...props }: Record<string, unknown>) =>
-    React.createElement("div", props, children),
+    React.createElement(
+      "div",
+      props as React.HTMLAttributes<HTMLDivElement>,
+      children as React.ReactNode,
+    ),
 }));
 
 describe("HighProteinSuggestions", () => {
