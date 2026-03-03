@@ -209,6 +209,19 @@ describe("Adaptive Goals Routes", () => {
 
       expect(res.status).toBe(400);
     });
+
+    it("returns 500 when storage throws", async () => {
+      mockPremium();
+      vi.mocked(storage.updateUser).mockRejectedValue(new Error("db error"));
+
+      const res = await request(app)
+        .put("/api/goals/adaptive/settings")
+        .set("Authorization", "Bearer token")
+        .send({ enabled: true });
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
+    });
   });
 
   describe("GET /api/goals/adjustment-history", () => {
@@ -234,6 +247,20 @@ describe("Adaptive Goals Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(storage.getGoalAdjustmentLogs).toHaveBeenCalledWith("1", 10);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      mockPremium();
+      vi.mocked(storage.getGoalAdjustmentLogs).mockRejectedValue(
+        new Error("db error"),
+      );
+
+      const res = await request(app)
+        .get("/api/goals/adjustment-history")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
     });
   });
 });
