@@ -63,6 +63,7 @@ describe("Nutrition Routes", () => {
   let app: express.Express;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     app = createApp();
   });
 
@@ -201,12 +202,37 @@ describe("Nutrition Routes", () => {
       expect(res.status).toBe(404);
     });
 
+    it("returns 404 when item is null", async () => {
+      vi.mocked(storage.getScannedItemWithFavourite).mockResolvedValue(
+        null as never,
+      );
+
+      const res = await request(app)
+        .get("/api/scanned-items/999")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(404);
+    });
+
     it("returns 400 for invalid ID", async () => {
       const res = await request(app)
         .get("/api/scanned-items/abc")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(400);
+    });
+
+    it("returns 500 on storage error", async () => {
+      vi.mocked(storage.getScannedItemWithFavourite).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .get("/api/scanned-items/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBeDefined();
     });
   });
 
@@ -235,6 +261,27 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe("ITEM_NOT_FOUND");
+    });
+
+    it("returns 400 for invalid ID", async () => {
+      const res = await request(app)
+        .post("/api/scanned-items/abc/favourite")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.toggleFavouriteScannedItem).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .post("/api/scanned-items/1/favourite")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBeDefined();
     });
   });
 
@@ -363,7 +410,7 @@ describe("Nutrition Routes", () => {
       expect(res.body).toHaveProperty("confirmedMealPlanItemIds");
     });
 
-    it("accepts date parameter", async () => {
+    it("accepts date parameter and passes parsed date to storage", async () => {
       vi.mocked(storage.getDailySummary).mockResolvedValue({} as never);
       vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue(
         [] as never,
@@ -377,6 +424,9 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
+      const passedDate = vi.mocked(storage.getDailySummary).mock
+        .calls[0][1] as Date;
+      expect(passedDate.toISOString()).toContain("2024-01-15");
     });
 
     it("returns 500 when storage throws", async () => {
@@ -392,42 +442,6 @@ describe("Nutrition Routes", () => {
     });
   });
 
-  describe("POST /api/scanned-items/:id/favourite — error paths", () => {
-    it("returns 400 for invalid ID", async () => {
-      const res = await request(app)
-        .post("/api/scanned-items/abc/favourite")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(400);
-    });
-
-    it("returns 500 when storage throws", async () => {
-      vi.mocked(storage.toggleFavouriteScannedItem).mockRejectedValue(
-        new Error("DB error"),
-      );
-
-      const res = await request(app)
-        .post("/api/scanned-items/1/favourite")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(500);
-    });
-  });
-
-  describe("GET /api/scanned-items/:id — not found", () => {
-    it("returns 404 when item is null", async () => {
-      vi.mocked(storage.getScannedItemWithFavourite).mockResolvedValue(
-        null as never,
-      );
-
-      const res = await request(app)
-        .get("/api/scanned-items/999")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(404);
-    });
-  });
-
   describe("Error catch blocks", () => {
     it("GET /api/nutrition/lookup returns 500 on service error", async () => {
       vi.mocked(lookupNutrition).mockRejectedValue(new Error("API down"));
@@ -437,6 +451,7 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(500);
+      expect(res.body.error).toBeDefined();
     });
 
     it("GET /api/nutrition/barcode/:code returns 500 on service error", async () => {
@@ -447,18 +462,7 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(500);
-    });
-
-    it("GET /api/scanned-items/:id returns 500 on storage error", async () => {
-      vi.mocked(storage.getScannedItemWithFavourite).mockRejectedValue(
-        new Error("DB error"),
-      );
-
-      const res = await request(app)
-        .get("/api/scanned-items/1")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(500);
+      expect(res.body.error).toBeDefined();
     });
 
     it("GET /api/scanned-items returns 500 on storage error", async () => {
@@ -471,6 +475,7 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(500);
+      expect(res.body.error).toBeDefined();
     });
   });
 

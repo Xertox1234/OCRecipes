@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { detectImageMimeType } from "../../lib/image-mime";
 import { register } from "../auth";
+import { ZodError } from "zod";
 import {
   parsePositiveIntParam,
   parseQueryInt,
@@ -262,6 +263,16 @@ describe("Auth Routes", () => {
         .set("Authorization", "Bearer mock-token");
 
       expect(res.status).toBe(401);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.getUser).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app)
+        .get("/api/auth/me")
+        .set("Authorization", "Bearer mock-token");
+
+      expect(res.status).toBe(500);
     });
   });
 
@@ -655,7 +666,8 @@ describe("Auth Routes", () => {
           contentType: "text/plain",
         });
 
-      // multer fileFilter rejects non-image MIME types
+      // multer fileFilter calls cb(new Error(...)), which Express's default
+      // error handler surfaces as a 500 response
       expect(res.status).toBe(500);
     });
   });
@@ -682,6 +694,10 @@ describe("Auth Routes", () => {
 });
 
 describe("_helpers utility functions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe("parsePositiveIntParam", () => {
     it("parses a valid positive integer string", () => {
       expect(parsePositiveIntParam("42")).toBe(42);
@@ -735,6 +751,10 @@ describe("_helpers utility functions", () => {
       expect(parseQueryInt("1", { default: 5, min: 3, max: 50 })).toBe(3);
       expect(parseQueryInt("100", { default: 5, min: 3, max: 50 })).toBe(50);
       expect(parseQueryInt("25", { default: 5, min: 3, max: 50 })).toBe(25);
+    });
+
+    it("parses '0' as a valid integer", () => {
+      expect(parseQueryInt("0", { default: 5 })).toBe(0);
     });
   });
 
@@ -809,7 +829,6 @@ describe("_helpers utility functions", () => {
 
   describe("formatZodError", () => {
     it("formats errors with paths", () => {
-      const { ZodError } = require("zod");
       const error = new ZodError([
         { path: ["username"], message: "Required", code: "invalid_type" },
       ]);
@@ -817,7 +836,6 @@ describe("_helpers utility functions", () => {
     });
 
     it("formats errors without paths", () => {
-      const { ZodError } = require("zod");
       const error = new ZodError([
         { path: [], message: "Invalid input", code: "custom" },
       ]);
@@ -825,7 +843,6 @@ describe("_helpers utility functions", () => {
     });
 
     it("joins multiple errors with semicolons", () => {
-      const { ZodError } = require("zod");
       const error = new ZodError([
         { path: ["username"], message: "Required", code: "invalid_type" },
         { path: ["password"], message: "Too short", code: "too_small" },
@@ -899,6 +916,11 @@ describe("_helpers utility functions", () => {
       );
       expect(features).toBeNull();
       expect(statusMock).toHaveBeenCalledWith(403);
+      expect(jsonMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining("premium subscription"),
+        }),
+      );
     });
   });
 });

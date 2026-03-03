@@ -75,7 +75,7 @@ describe("Exercise Routes", () => {
       expect(res.body.totalCaloriesBurned).toBe(300);
     });
 
-    it("accepts date parameter", async () => {
+    it("accepts date parameter and passes parsed date to storage", async () => {
       vi.mocked(storage.getExerciseDailySummary).mockResolvedValue(
         mockSummary as never,
       );
@@ -84,7 +84,13 @@ describe("Exercise Routes", () => {
         .get("/api/exercises/summary?date=2024-01-15")
         .set("Authorization", "Bearer token");
 
-      expect(storage.getExerciseDailySummary).toHaveBeenCalled();
+      expect(storage.getExerciseDailySummary).toHaveBeenCalledWith(
+        "1",
+        expect.any(Date),
+      );
+      const calls = vi.mocked(storage.getExerciseDailySummary).mock.calls;
+      const passedDate = calls[calls.length - 1][1] as Date;
+      expect(passedDate.toISOString()).toContain("2024-01-15");
     });
   });
 
@@ -356,7 +362,7 @@ describe("Exercise Routes", () => {
       );
     });
 
-    it("leaves calories undefined when no library match", async () => {
+    it("leaves calories undefined when no exact name match in library", async () => {
       vi.mocked(storage.searchExerciseLibrary).mockResolvedValue([
         { id: 1, name: "Jogging", type: "cardio", metValue: "7" },
       ] as never);
@@ -404,6 +410,7 @@ describe("Exercise Routes", () => {
 
     it("returns 500 when storage throws on create", async () => {
       vi.mocked(storage.searchExerciseLibrary).mockResolvedValue([] as never);
+      vi.mocked(storage.getUser).mockResolvedValue({ weight: "70" } as never);
       vi.mocked(storage.createExerciseLog).mockRejectedValue(
         new Error("DB error"),
       );
@@ -447,6 +454,20 @@ describe("Exercise Routes", () => {
         from: undefined,
         to: undefined,
         limit: 100,
+      });
+    });
+
+    it("passes valid limit through without capping", async () => {
+      vi.mocked(storage.getExerciseLogs).mockResolvedValue([] as never);
+
+      await request(app)
+        .get("/api/exercises?limit=25")
+        .set("Authorization", "Bearer token");
+
+      expect(storage.getExerciseLogs).toHaveBeenCalledWith("1", {
+        from: undefined,
+        to: undefined,
+        limit: 25,
       });
     });
 
