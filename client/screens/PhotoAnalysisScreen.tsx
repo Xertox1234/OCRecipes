@@ -32,6 +32,7 @@ import Animated, { FadeInUp, FadeIn } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
+import { ScanFlowStepIndicator } from "@/components/ScanFlowStepIndicator";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { PreparationPicker } from "@/components/PreparationPicker";
@@ -389,6 +390,10 @@ export default function PhotoAnalysisScreen() {
 
   const { imageUri, intent } = route.params;
   const intentConfig = INTENT_CONFIG[intent];
+  const headerPaddingStyle = useMemo(
+    () => ({ paddingTop: headerHeight }),
+    [headerHeight],
+  );
 
   const [analysisResult, setAnalysisResult] =
     useState<PhotoAnalysisResponse | null>(null);
@@ -669,6 +674,9 @@ export default function PhotoAnalysisScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <View style={headerPaddingStyle}>
+        <ScanFlowStepIndicator currentStep={3} totalSteps={3} />
+      </View>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -679,7 +687,7 @@ export default function PhotoAnalysisScreen() {
           contentContainerStyle={[
             styles.content,
             {
-              paddingTop: headerHeight + Spacing.xl,
+              paddingTop: Spacing.xl,
               paddingBottom: insets.bottom + Spacing["3xl"],
             },
           ]}

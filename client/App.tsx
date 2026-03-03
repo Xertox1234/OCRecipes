@@ -22,6 +22,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { PremiumProvider } from "@/context/PremiumContext";
 import { ThemeProvider, useThemePreference } from "@/context/ThemeContext";
+import { ToastProvider } from "@/context/ToastContext";
 
 function AppContent() {
   const { isDark } = useThemePreference();
@@ -30,9 +31,11 @@ function AppContent() {
     <GestureHandlerRootView style={styles.root}>
       <KeyboardProvider>
         <BottomSheetModalProvider>
-          <NavigationContainer>
-            <RootStackNavigator />
-          </NavigationContainer>
+          <ToastProvider>
+            <NavigationContainer>
+              <RootStackNavigator />
+            </NavigationContainer>
+          </ToastProvider>
         </BottomSheetModalProvider>
         <StatusBar style={isDark ? "light" : "dark"} />
       </KeyboardProvider>

@@ -14,6 +14,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
@@ -244,7 +245,16 @@ export default function PantryScreen() {
         sections={sections}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
-          <PantryItemRow item={item} onDelete={handleDelete} />
+          <SwipeableRow
+            rightAction={{
+              icon: "trash-2",
+              label: "Delete",
+              backgroundColor: theme.error,
+              onAction: () => handleDelete(item.id),
+            }}
+          >
+            <PantryItemRow item={item} onDelete={handleDelete} />
+          </SwipeableRow>
         )}
         renderSectionHeader={({ section }) => (
           <View

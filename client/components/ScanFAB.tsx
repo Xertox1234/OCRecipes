@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -9,6 +9,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
+import { SpeedDial } from "@/components/SpeedDial";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -32,9 +33,11 @@ export function ScanFAB() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const scale = useSharedValue(1);
+  const rotation = useSharedValue(0);
+  const [speedDialOpen, setSpeedDialOpen] = useState(false);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+    transform: [{ scale: scale.value }, { rotate: `${rotation.value}deg` }],
   }));
 
   const handlePressIn = () => {
@@ -50,29 +53,83 @@ export function ScanFAB() {
   };
 
   const handlePress = () => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.navigate("Scan");
+    if (speedDialOpen) {
+      closeSpeedDial();
+    } else {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+      navigation.navigate("Scan");
+    }
   };
 
-  return (
-    <AnimatedPressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      accessibilityRole="button"
-      accessibilityLabel="Scan food item"
-      style={[
-        styles.fab,
-        Shadows.large,
-        animatedStyle,
-        {
-          backgroundColor: theme.link,
-          bottom: TAB_BAR_HEIGHT + Spacing.lg,
+  const handleLongPress = () => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Heavy);
+    setSpeedDialOpen(true);
+    if (!reducedMotion) {
+      rotation.value = withSpring(45, pressSpringConfig);
+    }
+  };
+
+  const closeSpeedDial = useCallback(() => {
+    setSpeedDialOpen(false);
+    if (!reducedMotion) {
+      rotation.value = withSpring(0, pressSpringConfig);
+    }
+  }, [reducedMotion, rotation]);
+
+  const speedDialActions = useMemo(
+    () => [
+      {
+        icon: "camera",
+        label: "Camera Scan",
+        onPress: () => {
+          closeSpeedDial();
+          haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+          navigation.navigate("Scan");
         },
-      ]}
-    >
-      <Feather name="plus" size={28} color={theme.buttonText} />
-    </AnimatedPressable>
+      },
+      {
+        icon: "edit-3",
+        label: "Quick Log",
+        onPress: () => {
+          closeSpeedDial();
+          haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+          navigation.navigate("QuickLog");
+        },
+      },
+    ],
+    [closeSpeedDial, haptics, navigation],
+  );
+
+  return (
+    <>
+      {speedDialOpen && (
+        <SpeedDial actions={speedDialActions} onClose={closeSpeedDial} />
+      )}
+      <AnimatedPressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onLongPress={handleLongPress}
+        delayLongPress={400}
+        accessibilityRole="button"
+        accessibilityLabel={
+          speedDialOpen
+            ? "Close quick actions"
+            : "Scan food item. Long press for more options."
+        }
+        style={[
+          styles.fab,
+          Shadows.large,
+          animatedStyle,
+          {
+            backgroundColor: theme.link,
+            bottom: TAB_BAR_HEIGHT + Spacing.lg,
+          },
+        ]}
+      >
+        <Feather name="plus" size={28} color={theme.buttonText} />
+      </AnimatedPressable>
+    </>
   );
 }
 
@@ -85,5 +142,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 1000,
   },
 });

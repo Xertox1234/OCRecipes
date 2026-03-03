@@ -39,6 +39,8 @@ import Animated, {
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList, SkeletonBox } from "@/components/SkeletonLoader";
 import { HistoryItemActions } from "@/components/HistoryItemActions";
 import { UpgradeModal } from "@/components/UpgradeModal";
@@ -46,6 +48,7 @@ import { GroceryListPickerModal } from "@/components/GroceryListPickerModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useToast } from "@/context/ToastContext";
 import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useToggleFavourite } from "@/hooks/useFavourites";
@@ -189,132 +192,149 @@ const HistoryItem = React.memo(function HistoryItem({
   return (
     <Animated.View entering={enteringAnimation}>
       <Animated.View style={animatedScale}>
-        <Card elevation={1} style={styles.itemCard}>
-          <Pressable
-            onPress={handlePress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            accessibilityLabel={`${item.productName}${item.brandName && item.brandName !== "null" ? ` by ${item.brandName}` : ""}, ${calorieText}. ${isExpanded ? "Tap to view details." : "Tap to show actions."}`}
-            accessibilityRole="button"
-          >
-            <View style={styles.itemContent}>
-              {item.imageUrl ? (
-                <Image
-                  source={{ uri: item.imageUrl }}
-                  style={styles.itemImage}
-                  accessible={false}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.itemPlaceholder,
-                    { backgroundColor: theme.backgroundSecondary },
-                  ]}
-                >
-                  <Feather
-                    name="package"
-                    size={24}
-                    color={theme.textSecondary}
+        <SwipeableRow
+          rightAction={{
+            icon: "trash-2",
+            label: "Discard",
+            backgroundColor: theme.error,
+            onAction: () => onDiscard(item),
+          }}
+          leftAction={{
+            icon: item.isFavourited ? "heart" : "heart",
+            label: item.isFavourited ? "Unfavorite" : "Favorite",
+            backgroundColor: theme.link,
+            onAction: () => onFavourite(item.id),
+          }}
+        >
+          <Card elevation={1} style={styles.itemCard}>
+            <Pressable
+              onPress={handlePress}
+              onPressIn={handlePressIn}
+              onPressOut={handlePressOut}
+              accessibilityLabel={`${item.productName}${item.brandName && item.brandName !== "null" ? ` by ${item.brandName}` : ""}, ${calorieText}. ${isExpanded ? "Tap to view details." : "Tap to show actions."}`}
+              accessibilityRole="button"
+            >
+              <View style={styles.itemContent}>
+                {item.imageUrl ? (
+                  <Image
+                    source={{ uri: item.imageUrl }}
+                    style={styles.itemImage}
                     accessible={false}
                   />
-                </View>
-              )}
+                ) : (
+                  <View
+                    style={[
+                      styles.itemPlaceholder,
+                      { backgroundColor: theme.backgroundSecondary },
+                    ]}
+                  >
+                    <Feather
+                      name="package"
+                      size={24}
+                      color={theme.textSecondary}
+                      accessible={false}
+                    />
+                  </View>
+                )}
 
-              <View style={styles.itemInfo}>
-                <ThemedText
-                  type="body"
-                  style={styles.itemName}
-                  numberOfLines={1}
-                >
-                  {item.productName}
-                </ThemedText>
-                {item.brandName && item.brandName !== "null" ? (
+                <View style={styles.itemInfo}>
                   <ThemedText
-                    type="small"
-                    style={{ color: theme.textSecondary }}
+                    type="body"
+                    style={styles.itemName}
                     numberOfLines={1}
                   >
-                    {item.brandName}
+                    {item.productName}
                   </ThemedText>
-                ) : null}
-                {item.servingSize && item.servingSize !== "null" ? (
+                  {item.brandName && item.brandName !== "null" ? (
+                    <ThemedText
+                      type="small"
+                      style={{ color: theme.textSecondary }}
+                      numberOfLines={1}
+                    >
+                      {item.brandName}
+                    </ThemedText>
+                  ) : null}
+                  {item.servingSize && item.servingSize !== "null" ? (
+                    <ThemedText
+                      type="caption"
+                      style={{
+                        color: theme.textSecondary,
+                        marginTop: Spacing.xs,
+                      }}
+                    >
+                      Serving: {item.servingSize}
+                    </ThemedText>
+                  ) : null}
+                  {item.protein || item.carbs || item.fat ? (
+                    <View style={styles.macroRow}>
+                      {item.protein && !isNaN(parseFloat(item.protein)) ? (
+                        <ThemedText
+                          type="caption"
+                          style={{ color: theme.proteinAccent }}
+                        >
+                          P {Math.round(parseFloat(item.protein))}g
+                        </ThemedText>
+                      ) : null}
+                      {item.carbs && !isNaN(parseFloat(item.carbs)) ? (
+                        <ThemedText
+                          type="caption"
+                          style={{ color: theme.carbsAccent }}
+                        >
+                          C {Math.round(parseFloat(item.carbs))}g
+                        </ThemedText>
+                      ) : null}
+                      {item.fat && !isNaN(parseFloat(item.fat)) ? (
+                        <ThemedText
+                          type="caption"
+                          style={{ color: theme.fatAccent }}
+                        >
+                          F {Math.round(parseFloat(item.fat))}g
+                        </ThemedText>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.itemCalories}>
+                  <ThemedText type="h4" style={{ color: theme.calorieAccent }}>
+                    {item.calories
+                      ? Math.round(parseFloat(item.calories))
+                      : "—"}
+                  </ThemedText>
                   <ThemedText
                     type="caption"
-                    style={{
-                      color: theme.textSecondary,
-                      marginTop: Spacing.xs,
-                    }}
+                    style={{ color: theme.textSecondary }}
                   >
-                    Serving: {item.servingSize}
+                    kcal
                   </ThemedText>
-                ) : null}
-                {item.protein || item.carbs || item.fat ? (
-                  <View style={styles.macroRow}>
-                    {item.protein && !isNaN(parseFloat(item.protein)) ? (
-                      <ThemedText
-                        type="caption"
-                        style={{ color: theme.proteinAccent }}
-                      >
-                        P {Math.round(parseFloat(item.protein))}g
-                      </ThemedText>
-                    ) : null}
-                    {item.carbs && !isNaN(parseFloat(item.carbs)) ? (
-                      <ThemedText
-                        type="caption"
-                        style={{ color: theme.carbsAccent }}
-                      >
-                        C {Math.round(parseFloat(item.carbs))}g
-                      </ThemedText>
-                    ) : null}
-                    {item.fat && !isNaN(parseFloat(item.fat)) ? (
-                      <ThemedText
-                        type="caption"
-                        style={{ color: theme.fatAccent }}
-                      >
-                        F {Math.round(parseFloat(item.fat))}g
-                      </ThemedText>
-                    ) : null}
-                  </View>
-                ) : null}
+                </View>
+
+                <Animated.View style={animatedChevron}>
+                  <Feather
+                    name="chevron-right"
+                    size={20}
+                    color={theme.textSecondary}
+                  />
+                </Animated.View>
               </View>
+            </Pressable>
 
-              <View style={styles.itemCalories}>
-                <ThemedText type="h4" style={{ color: theme.calorieAccent }}>
-                  {item.calories ? Math.round(parseFloat(item.calories)) : "—"}
-                </ThemedText>
-                <ThemedText
-                  type="caption"
-                  style={{ color: theme.textSecondary }}
-                >
-                  kcal
-                </ThemedText>
-              </View>
-
-              <Animated.View style={animatedChevron}>
-                <Feather
-                  name="chevron-right"
-                  size={20}
-                  color={theme.textSecondary}
-                />
-              </Animated.View>
-            </View>
-          </Pressable>
-
-          {/* Expandable actions area */}
-          <Animated.View style={animatedExpand}>
-            <HistoryItemActions
-              isFavourited={item.isFavourited}
-              isPremium={isPremium}
-              isFavouriteLoading={isFavouriteLoading}
-              isDiscardLoading={isDiscardLoading}
-              onFavourite={() => onFavourite(item.id)}
-              onGroceryList={() => onGroceryList(item)}
-              onGenerateRecipe={() => onGenerateRecipe(item)}
-              onShare={() => onShare(item)}
-              onDiscard={() => onDiscard(item)}
-            />
-          </Animated.View>
-        </Card>
+            {/* Expandable actions area */}
+            <Animated.View style={animatedExpand}>
+              <HistoryItemActions
+                isFavourited={item.isFavourited}
+                isPremium={isPremium}
+                isFavouriteLoading={isFavouriteLoading}
+                isDiscardLoading={isDiscardLoading}
+                onFavourite={() => onFavourite(item.id)}
+                onGroceryList={() => onGroceryList(item)}
+                onGenerateRecipe={() => onGenerateRecipe(item)}
+                onShare={() => onShare(item)}
+                onDiscard={() => onDiscard(item)}
+              />
+            </Animated.View>
+          </Card>
+        </SwipeableRow>
       </Animated.View>
     </Animated.View>
   );
@@ -325,28 +345,16 @@ const ItemSeparator = React.memo(function ItemSeparator() {
   return <View style={{ height: Spacing.md }} />;
 });
 
-function EmptyState() {
-  const { theme } = useTheme();
-
+function HistoryEmptyState({ onScan }: { onScan?: () => void }) {
   return (
-    <View style={styles.emptyContainer}>
-      <Image
-        source={require("../../assets/images/empty-history.png")}
-        style={styles.emptyImage}
-        resizeMode="contain"
-        accessible={false}
-        accessibilityElementsHidden={true}
-      />
-      <ThemedText type="h4" style={styles.emptyTitle}>
-        No scans yet
-      </ThemedText>
-      <ThemedText
-        type="body"
-        style={[styles.emptyText, { color: theme.textSecondary }]}
-      >
-        Start scanning barcodes or nutrition labels to track your food
-      </ThemedText>
-    </View>
+    <EmptyState
+      variant="firstTime"
+      icon="camera"
+      title="No scans yet"
+      description="Start scanning barcodes or nutrition labels to track your food"
+      actionLabel="Scan Now"
+      onAction={onScan}
+    />
   );
 }
 
@@ -643,6 +651,7 @@ export default function HistoryScreen() {
   const { user } = useAuthContext();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const { isPremium } = usePremiumContext();
   const toggleFavourite = useToggleFavourite();
@@ -838,13 +847,17 @@ export default function HistoryScreen() {
             style: "destructive",
             onPress: () => {
               setExpandedItemId(null);
-              discardItem.mutate(item.id);
+              discardItem.mutate(item.id, {
+                onSuccess: () => {
+                  toast.success("Item removed");
+                },
+              });
             },
           },
         ],
       );
     },
-    [haptics, discardItem],
+    [haptics, discardItem, toast],
   );
 
   const handleScanPress = useCallback(() => {
@@ -1023,7 +1036,7 @@ export default function HistoryScreen() {
               <SkeletonList count={5} />
             </View>
           ) : (
-            <EmptyState />
+            <HistoryEmptyState onScan={handleScanPress} />
           )
         }
         ListFooterComponent={

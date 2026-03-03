@@ -679,6 +679,7 @@ export const mealPlanItems = pgTable(
     plannedDate: date("planned_date").notNull(),
     mealType: text("meal_type").notNull(),
     servings: decimal("servings", { precision: 5, scale: 2 }).default("1"),
+    sortOrder: integer("sort_order").default(0),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),

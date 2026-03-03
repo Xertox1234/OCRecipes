@@ -23,7 +23,7 @@ describe("ScanFAB", () => {
   it("has correct accessibility label", () => {
     renderComponent(<ScanFAB />);
     expect(screen.getByRole("button").getAttribute("aria-label")).toBe(
-      "Scan food item",
+      "Scan food item. Long press for more options.",
     );
   });
 

@@ -1,7 +1,11 @@
 import React from "react";
+import { View, StyleSheet } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
+import { OnboardingProgressBar } from "@/components/OnboardingProgressBar";
+import { useTheme } from "@/hooks/useTheme";
 import WelcomeScreen from "@/screens/onboarding/WelcomeScreen";
 import AllergiesScreen from "@/screens/onboarding/AllergiesScreen";
 import HealthConditionsScreen from "@/screens/onboarding/HealthConditionsScreen";
@@ -30,22 +34,40 @@ const SCREENS = [
 ];
 
 function OnboardingStack() {
-  const { currentStep } = useOnboarding();
+  const { currentStep, totalSteps } = useOnboarding();
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const currentScreen = SCREENS[currentStep];
 
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        animation: "slide_from_right",
-        gestureEnabled: false,
-      }}
+    <View
+      style={[
+        styles.root,
+        {
+          backgroundColor: theme.backgroundRoot,
+          paddingTop: insets.top,
+        },
+      ]}
     >
-      <Stack.Screen
-        name={currentScreen.name}
-        component={currentScreen.component}
+      <OnboardingProgressBar
+        currentStep={currentStep}
+        totalSteps={totalSteps}
       />
-    </Stack.Navigator>
+      <View style={styles.content}>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: "slide_from_right",
+            gestureEnabled: false,
+          }}
+        >
+          <Stack.Screen
+            name={currentScreen.name}
+            component={currentScreen.component}
+          />
+        </Stack.Navigator>
+      </View>
+    </View>
   );
 }
 
@@ -56,3 +78,12 @@ export default function OnboardingNavigator() {
     </OnboardingProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+  },
+});

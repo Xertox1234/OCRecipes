@@ -23,6 +23,7 @@ import { VoiceLogButton } from "@/components/VoiceLogButton";
 import { ParsedFoodPreview } from "@/components/ParsedFoodPreview";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useVoiceRecording } from "@/hooks/useVoiceRecording";
 import {
   useParseFoodText,
@@ -42,6 +43,7 @@ export default function QuickLogScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { isPremium } = usePremiumContext();
@@ -130,6 +132,7 @@ export default function QuickLogScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       AccessibilityInfo.announceForAccessibility("Food items logged");
+      toast.success("Food items logged");
       setParsedItems([]);
       setTextInput("");
       setTranscription(null);

@@ -6,6 +6,13 @@ import {
   ScrollView,
   RefreshControl,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  runOnJS,
+} from "react-native-reanimated";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
@@ -14,11 +21,15 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { DraggableList } from "@/components/DraggableList";
+import { EmptyState as EmptyStateComponent } from "@/components/EmptyState";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useAccessibility } from "@/hooks/useAccessibility";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -27,9 +38,11 @@ import {
   withOpacity,
   FAB_CLEARANCE,
 } from "@/constants/theme";
+import { dateStripSwipeThreshold } from "@/constants/animations";
 import {
   useMealPlanItems,
   useRemoveMealPlanItem,
+  useReorderMealPlanItems,
   invalidateMealPlanItems,
   useAddMealPlanItem,
   useConfirmMealPlanItem,
@@ -245,6 +258,7 @@ const MealSlotSection = React.memo(function MealSlotSection({
   onAddItem,
   onSuggest,
   onConfirmItem,
+  onReorder,
   canSuggest,
   canConfirm,
 }: {
@@ -256,6 +270,7 @@ const MealSlotSection = React.memo(function MealSlotSection({
   onAddItem: (mealType: MealType) => void;
   onSuggest: (mealType: MealType) => void;
   onConfirmItem: (id: number) => void;
+  onReorder?: (items: MealPlanItemWithRelations[]) => void;
   canSuggest: boolean;
   canConfirm: boolean;
 }) {
@@ -309,17 +324,53 @@ const MealSlotSection = React.memo(function MealSlotSection({
           </ThemedText>
         </Pressable>
       </View>
-      {items.map((item) => (
-        <MealSlotItem
-          key={item.id}
-          item={item}
-          isConfirmed={confirmedIds.has(item.id)}
-          onPress={onItemPress}
-          onRemove={onRemoveItem}
-          onConfirm={onConfirmItem}
-          canConfirm={canConfirm}
+      {items.length > 1 && onReorder ? (
+        <DraggableList
+          items={items}
+          keyExtractor={(item) => item.id}
+          renderItem={(item) => (
+            <SwipeableRow
+              rightAction={{
+                icon: "trash-2",
+                label: "Remove",
+                backgroundColor: theme.error,
+                onAction: () => onRemoveItem(item.id),
+              }}
+            >
+              <MealSlotItem
+                item={item}
+                isConfirmed={confirmedIds.has(item.id)}
+                onPress={onItemPress}
+                onRemove={onRemoveItem}
+                onConfirm={onConfirmItem}
+                canConfirm={canConfirm}
+              />
+            </SwipeableRow>
+          )}
+          onReorder={onReorder}
         />
-      ))}
+      ) : (
+        items.map((item) => (
+          <SwipeableRow
+            key={item.id}
+            rightAction={{
+              icon: "trash-2",
+              label: "Remove",
+              backgroundColor: theme.error,
+              onAction: () => onRemoveItem(item.id),
+            }}
+          >
+            <MealSlotItem
+              item={item}
+              isConfirmed={confirmedIds.has(item.id)}
+              onPress={onItemPress}
+              onRemove={onRemoveItem}
+              onConfirm={onConfirmItem}
+              canConfirm={canConfirm}
+            />
+          </SwipeableRow>
+        ))
+      )}
       <Pressable
         onPress={() => onAddItem(mealType)}
         style={[
@@ -445,21 +496,16 @@ const DailyTotals = React.memo(function DailyTotals({
 
 // ── Empty State ──────────────────────────────────────────────────────
 
-function EmptyState() {
-  const { theme } = useTheme();
-
+function MealPlanEmptyState() {
   return (
-    <View style={styles.emptyState}>
-      <Feather name="calendar" size={48} color={withOpacity(theme.text, 0.2)} />
-      <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-        Plan Your Meals
-      </ThemedText>
-      <ThemedText
-        style={[styles.emptySubtitle, { color: theme.textSecondary }]}
-      >
-        {'Tap "+ Add item" on any meal slot to start building your daily plan.'}
-      </ThemedText>
-    </View>
+    <EmptyStateComponent
+      variant="temporary"
+      icon="calendar"
+      title="Plan Your Meals"
+      description={
+        'Tap "+ Add item" on any meal slot to start building your daily plan.'
+      }
+    />
   );
 }
 
@@ -477,6 +523,9 @@ export default function MealPlanHomeScreen() {
   const haptics = useHaptics();
   const queryClient = useQueryClient();
   const { features, isPremium } = usePremiumContext();
+  const { reducedMotion } = useAccessibility();
+
+  const dateStripTranslateX = useSharedValue(0);
 
   const [today, setToday] = useState(() => {
     const d = new Date();
@@ -551,6 +600,7 @@ export default function MealPlanHomeScreen() {
   } = useMealPlanItems(startDate, endDate);
 
   const removeMutation = useRemoveMealPlanItem();
+  const reorderMutation = useReorderMealPlanItems();
 
   // Group items by date and meal type
   const dayItems = useMemo(() => {
@@ -621,6 +671,17 @@ export default function MealPlanHomeScreen() {
       removeMutation.mutate(id);
     },
     [removeMutation, haptics],
+  );
+
+  const handleReorder = useCallback(
+    (reorderedItems: MealPlanItemWithRelations[]) => {
+      const updates = reorderedItems.map((item, idx) => ({
+        id: item.id,
+        sortOrder: idx,
+      }));
+      reorderMutation.mutate(updates);
+    },
+    [reorderMutation],
   );
 
   const handleAddItem = useCallback(
@@ -720,6 +781,39 @@ export default function MealPlanHomeScreen() {
   const handleRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
   }, [queryClient]);
+
+  // Date strip swipe gesture
+  const dateStripPanGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-20, 20])
+        .onUpdate((e) => {
+          if (!reducedMotion) {
+            // Clamp visual feedback to +/-30px
+            dateStripTranslateX.value = Math.max(
+              -30,
+              Math.min(30, e.translationX),
+            );
+          }
+        })
+        .onEnd((e) => {
+          if (e.translationX < -dateStripSwipeThreshold) {
+            runOnJS(handleNextWeek)();
+          } else if (e.translationX > dateStripSwipeThreshold) {
+            runOnJS(handlePrevWeek)();
+          }
+          dateStripTranslateX.value = withSpring(0, {
+            damping: 20,
+            stiffness: 200,
+          });
+        }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dateStripTranslateX is a stable shared value ref
+    [reducedMotion, handleNextWeek, handlePrevWeek],
+  );
+
+  const dateStripAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: dateStripTranslateX.value }],
+  }));
 
   // Month/year header
   const monthYear = selectedDate.toLocaleDateString("en-US", {
@@ -865,21 +959,23 @@ export default function MealPlanHomeScreen() {
           </Pressable>
         </View>
 
-        {/* Date Strip */}
-        <View style={styles.dateStrip}>
-          {weekDates.map((date) => {
-            const dateStr = formatDate(date);
-            return (
-              <DateStripItem
-                key={dateStr}
-                date={date}
-                isSelected={dateStr === selectedDateStr}
-                hasItems={!!dayItems[dateStr]?.length}
-                onPress={handleDatePress}
-              />
-            );
-          })}
-        </View>
+        {/* Date Strip — swipe left/right to change week */}
+        <GestureDetector gesture={dateStripPanGesture}>
+          <Animated.View style={[styles.dateStrip, dateStripAnimatedStyle]}>
+            {weekDates.map((date) => {
+              const dateStr = formatDate(date);
+              return (
+                <DateStripItem
+                  key={dateStr}
+                  date={date}
+                  isSelected={dateStr === selectedDateStr}
+                  hasItems={!!dayItems[dateStr]?.length}
+                  onPress={handleDatePress}
+                />
+              );
+            })}
+          </Animated.View>
+        </GestureDetector>
 
         {/* Day Label */}
         <ThemedText style={styles.dayLabel}>
@@ -887,7 +983,7 @@ export default function MealPlanHomeScreen() {
         </ThemedText>
 
         {/* Meal Slots */}
-        {selectedDayItems.length === 0 ? <EmptyState /> : null}
+        {selectedDayItems.length === 0 ? <MealPlanEmptyState /> : null}
 
         {MEAL_TYPES.map((mealType) => (
           <MealSlotSection
@@ -900,6 +996,7 @@ export default function MealPlanHomeScreen() {
             onAddItem={handleAddItem}
             onSuggest={handleSuggest}
             onConfirmItem={handleConfirmItem}
+            onReorder={handleReorder}
             canSuggest={features.aiMealSuggestions}
             canConfirm={features.mealConfirmation}
           />

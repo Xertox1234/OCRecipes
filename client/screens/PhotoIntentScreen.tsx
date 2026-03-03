@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, View, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -8,6 +8,7 @@ import * as Haptics from "expo-haptics";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { Card } from "@/components/Card";
+import { ScanFlowStepIndicator } from "@/components/ScanFlowStepIndicator";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { useTheme } from "@/hooks/useTheme";
@@ -85,6 +86,11 @@ export default function PhotoIntentScreen() {
 
   const { imageUri } = route.params;
 
+  const headerPaddingStyle = useMemo(
+    () => ({ paddingTop: headerHeight }),
+    [headerHeight],
+  );
+
   const handleSelectIntent = (option: IntentOption) => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.navigate("PhotoAnalysis", {
@@ -97,11 +103,14 @@ export default function PhotoIntentScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <View style={headerPaddingStyle}>
+        <ScanFlowStepIndicator currentStep={2} totalSteps={3} />
+      </View>
       <View
         style={[
           styles.content,
           {
-            paddingTop: headerHeight + Spacing.lg,
+            paddingTop: Spacing.lg,
             paddingBottom: insets.bottom + Spacing.xl,
           },
         ]}

@@ -14,20 +14,25 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
   AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import Animated, { FadeInUp } from "react-native-reanimated";
+import Animated, {
+  FadeInUp,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+} from "react-native-reanimated";
 
 import { ChatBubble } from "@/components/ChatBubble";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useToast } from "@/context/ToastContext";
 import {
   useChatMessages,
   useSendMessage,
@@ -39,6 +44,7 @@ import {
   BorderRadius,
   withOpacity,
 } from "@/constants/theme";
+import { pressSpringConfig } from "@/constants/animations";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
@@ -142,12 +148,21 @@ function SuggestedPrompts({
   );
 }
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
+  const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute<ChatScreenRouteProp>();
+
+  const sendButtonScale = useSharedValue(1);
+  const sendButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: sendButtonScale.value }],
+  }));
 
   const conversationId = route.params?.conversationId ?? null;
 
@@ -223,12 +238,11 @@ export default function ChatScreen() {
           message.includes("429") ||
           message.includes("DAILY_LIMIT_REACHED")
         ) {
-          Alert.alert(
-            "Daily Limit Reached",
-            "You have reached your daily chat limit. Upgrade to Premium for unlimited messages.",
+          toast.error(
+            "Daily limit reached. Upgrade to Premium for unlimited messages.",
           );
         } else {
-          Alert.alert("Error", "Could not send message. Please try again.");
+          toast.error("Could not send message. Please try again.");
         }
       }
     },
@@ -240,6 +254,7 @@ export default function ChatScreen() {
       createConversation,
       navigation,
       sendMessage,
+      toast,
     ],
   );
 
@@ -334,11 +349,22 @@ export default function ChatScreen() {
             accessibilityLabel="Message input"
             accessibilityHint="Type your question for NutriCoach"
           />
-          <Pressable
+          <AnimatedPressable
             onPress={() => handleSend()}
+            onPressIn={() => {
+              if (!reducedMotion) {
+                sendButtonScale.value = withSpring(0.85, pressSpringConfig);
+              }
+            }}
+            onPressOut={() => {
+              if (!reducedMotion) {
+                sendButtonScale.value = withSpring(1, pressSpringConfig);
+              }
+            }}
             disabled={!inputText.trim() || isStreaming}
             style={[
               styles.sendButton,
+              sendButtonStyle,
               {
                 backgroundColor:
                   inputText.trim() && !isStreaming
@@ -355,7 +381,7 @@ export default function ChatScreen() {
             ) : (
               <Feather name="send" size={18} color={theme.buttonText} />
             )}
-          </Pressable>
+          </AnimatedPressable>
         </View>
       </View>
     </KeyboardAvoidingView>

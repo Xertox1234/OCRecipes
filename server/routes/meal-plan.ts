@@ -430,6 +430,50 @@ export function register(app: Express): void {
     },
   );
 
+  // PATCH /api/meal-plan/reorder - Reorder meal plan items
+  app.patch(
+    "/api/meal-plan/reorder",
+    requireAuth,
+    mealPlanRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const schema = z.object({
+          items: z
+            .array(
+              z.object({
+                id: z.number().int().positive(),
+                sortOrder: z.number().int().min(0),
+              }),
+            )
+            .max(100),
+        });
+
+        const { items } = schema.parse(req.body);
+
+        await storage.reorderMealPlanItems(req.userId!, items);
+
+        res.status(200).json({ success: true });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        console.error("Reorder meal plan items error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to reorder items",
+          ErrorCode.INTERNAL_ERROR,
+        );
+      }
+    },
+  );
+
   // ============================================================================
   // MEAL CONFIRMATION
   // ============================================================================

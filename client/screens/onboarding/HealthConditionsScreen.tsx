@@ -96,10 +96,7 @@ export default function HealthConditionsScreen() {
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + Spacing["3xl"] },
-        ]}
+        contentContainerStyle={[styles.content, { paddingTop: Spacing["3xl"] }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>

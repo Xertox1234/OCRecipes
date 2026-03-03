@@ -95,3 +95,23 @@ export function useConfirmMealPlanItem() {
     },
   });
 }
+
+export function useReorderMealPlanItems() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (items: { id: number; sortOrder: number }[]) => {
+      const res = await apiRequest("PATCH", "/api/meal-plan/reorder", {
+        items,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateMealPlanItems(queryClient);
+    },
+  });
+}

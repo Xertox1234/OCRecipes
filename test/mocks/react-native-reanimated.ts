@@ -5,7 +5,14 @@ import React from "react";
 export const useSharedValue = (init: number) => ({ value: init });
 export const useAnimatedStyle = (fn: () => Record<string, unknown>) => fn();
 export const withSpring = (val: number) => val;
-export const withTiming = (val: number) => val;
+export const withTiming = (
+  val: number,
+  _config?: unknown,
+  callback?: (finished: boolean) => void,
+) => {
+  if (callback) callback(true);
+  return val;
+};
 export const withRepeat = (val: number) => val;
 export const withDelay = (_delay: number, val: number) => val;
 export const withSequence = (...vals: number[]) => vals[vals.length - 1];
@@ -41,23 +48,37 @@ export const Easing = {
 export type WithSpringConfig = Record<string, unknown>;
 export type WithTimingConfig = Record<string, unknown>;
 
-// Layout animations — return undefined so they're ignored
-export const FadeIn = { delay: () => FadeIn, duration: () => FadeIn };
-export const FadeInDown = {
-  delay: () => FadeInDown,
-  duration: () => FadeInDown,
-};
-export const FadeOut = { delay: () => FadeOut, duration: () => FadeOut };
-export const FadeInUp = { delay: () => FadeInUp, duration: () => FadeInUp };
-export const SlideInRight = {
-  delay: () => SlideInRight,
-  duration: () => SlideInRight,
-};
-export const SlideOutRight = {
-  delay: () => SlideOutRight,
-  duration: () => SlideOutRight,
-};
-export const LinearTransition = { duration: () => LinearTransition };
+// Layout animation helper — creates a chainable mock that supports all modifiers
+function createLayoutAnimation(name: string): Record<string, unknown> {
+  const anim: Record<string, (...args: unknown[]) => Record<string, unknown>> =
+    {};
+  const methods = [
+    "delay",
+    "duration",
+    "springify",
+    "damping",
+    "stiffness",
+    "mass",
+    "withInitialValues",
+    "withCallback",
+    "easing",
+  ];
+  for (const method of methods) {
+    anim[method] = () => anim;
+  }
+  return anim;
+}
+
+// Layout animations — return chainable mocks
+export const FadeIn = createLayoutAnimation("FadeIn");
+export const FadeInDown = createLayoutAnimation("FadeInDown");
+export const FadeOut = createLayoutAnimation("FadeOut");
+export const FadeInUp = createLayoutAnimation("FadeInUp");
+export const SlideInRight = createLayoutAnimation("SlideInRight");
+export const SlideInLeft = createLayoutAnimation("SlideInLeft");
+export const SlideOutRight = createLayoutAnimation("SlideOutRight");
+export const SlideInUp = createLayoutAnimation("SlideInUp");
+export const LinearTransition = createLayoutAnimation("LinearTransition");
 
 /** Map RN accessibility props to DOM aria attributes, stripping unknown DOM props. */
 function mapA11yProps(props: Record<string, unknown>) {
@@ -67,6 +88,7 @@ function mapA11yProps(props: Record<string, unknown>) {
     accessibilityLabel,
     accessibilityHint,
     accessibilityState,
+    accessibilityLiveRegion,
     accessibilityValue: _av,
     entering: _entering,
     exiting: _exiting,
@@ -94,6 +116,9 @@ function mapA11yProps(props: Record<string, unknown>) {
       null && {
       "aria-busy": (accessibilityState as Record<string, unknown>).busy,
     }),
+    ...(accessibilityLiveRegion
+      ? { "aria-live": accessibilityLiveRegion as string }
+      : {}),
   };
 }
 

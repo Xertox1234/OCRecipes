@@ -13,6 +13,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
+import { EmptyState } from "@/components/EmptyState";
 import { SavedItemCard } from "@/components/SavedItemCard";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -67,21 +68,12 @@ export default function SavedItemsScreen() {
   );
 
   const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Feather name="bookmark" size={48} color={theme.textSecondary} />
-      <ThemedText
-        type="h4"
-        style={[styles.emptyTitle, { color: theme.textSecondary }]}
-      >
-        No Saved Items
-      </ThemedText>
-      <ThemedText
-        type="body"
-        style={[styles.emptyText, { color: theme.textSecondary }]}
-      >
-        Save recipes and activities from your scan history to access them here.
-      </ThemedText>
-    </View>
+    <EmptyState
+      variant="firstTime"
+      icon="bookmark"
+      title="No Saved Items"
+      description="Save recipes and activities from your scan history to access them here."
+    />
   );
 
   const renderHeader = () => (

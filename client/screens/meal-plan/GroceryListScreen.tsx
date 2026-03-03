@@ -17,6 +17,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -304,11 +305,26 @@ export default function GroceryListScreen() {
         sections={sections}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (
-          <GroceryItemRow
-            item={item}
-            listId={listId}
-            onChecked={handleItemChecked}
-          />
+          <SwipeableRow
+            leftAction={
+              features.pantryTracking && !item.addedToPantry
+                ? {
+                    icon: "home",
+                    label: "Pantry",
+                    backgroundColor: theme.success,
+                    onAction: () => {
+                      addToPantryMutation.mutate({ listId, itemId: item.id });
+                    },
+                  }
+                : undefined
+            }
+          >
+            <GroceryItemRow
+              item={item}
+              listId={listId}
+              onChecked={handleItemChecked}
+            />
+          </SwipeableRow>
         )}
         renderSectionHeader={({ section }) => (
           <View

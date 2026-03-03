@@ -30,6 +30,18 @@ export default defineConfig({
         __dirname,
         "./test/mocks/react-native-reanimated.ts",
       ),
+      "react-native-safe-area-context": path.resolve(
+        __dirname,
+        "./test/mocks/react-native-safe-area-context.ts",
+      ),
+      "react-native-gesture-handler/ReanimatedSwipeable": path.resolve(
+        __dirname,
+        "./test/mocks/react-native-gesture-handler-reanimated-swipeable.ts",
+      ),
+      "react-native-gesture-handler": path.resolve(
+        __dirname,
+        "./test/mocks/react-native-gesture-handler.ts",
+      ),
       "@expo/vector-icons": path.resolve(
         __dirname,
         "./test/mocks/expo-vector-icons.ts",

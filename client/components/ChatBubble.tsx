@@ -7,7 +7,8 @@ import Animated, {
   withTiming,
   withDelay,
   cancelAnimation,
-  FadeIn,
+  SlideInRight,
+  SlideInLeft,
 } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -131,9 +132,15 @@ export function ChatBubble({ role, content, isStreaming }: ChatBubbleProps) {
 
   if (!content) return null;
 
+  const entering = reducedMotion
+    ? undefined
+    : isUser
+      ? SlideInRight.springify().damping(18).stiffness(150).duration(200)
+      : SlideInLeft.springify().damping(18).stiffness(150).delay(100);
+
   return (
     <Animated.View
-      entering={reducedMotion ? undefined : FadeIn.duration(200)}
+      entering={entering}
       style={[
         styles.bubbleRow,
         isUser ? styles.bubbleRowUser : styles.bubbleRowAssistant,

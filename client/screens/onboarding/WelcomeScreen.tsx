@@ -16,9 +16,7 @@ export default function WelcomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <View
-        style={[styles.content, { paddingTop: insets.top + Spacing["3xl"] }]}
-      >
+      <View style={[styles.content, { paddingTop: Spacing["3xl"] }]}>
         <View style={styles.iconContainer}>
           <View
             style={[

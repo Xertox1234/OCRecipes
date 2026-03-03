@@ -355,6 +355,22 @@ export async function removeMealPlanItem(
   return result.length > 0;
 }
 
+export async function reorderMealPlanItems(
+  userId: string,
+  items: { id: number; sortOrder: number }[],
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    for (const item of items) {
+      await tx
+        .update(mealPlanItems)
+        .set({ sortOrder: item.sortOrder })
+        .where(
+          and(eq(mealPlanItems.id, item.id), eq(mealPlanItems.userId, userId)),
+        );
+    }
+  });
+}
+
 // ============================================================================
 // GROCERY LISTS
 // ============================================================================

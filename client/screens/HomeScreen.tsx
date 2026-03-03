@@ -17,6 +17,8 @@ import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
+import { QuickActionsRow } from "@/components/QuickActionsRow";
 import { TrendingTags } from "@/components/TrendingTags";
 import { HomeRecipeCard } from "@/components/HomeRecipeCard";
 import { AdaptiveGoalCard } from "@/components/AdaptiveGoalCard";
@@ -73,26 +75,13 @@ function HomeSkeleton() {
 }
 
 function EmptyRecipes() {
-  const { theme } = useTheme();
-
   return (
-    <View style={styles.emptyContainer}>
-      <Feather
-        name="book-open"
-        size={48}
-        color={theme.textSecondary}
-        accessible={false}
-      />
-      <ThemedText type="h4" style={styles.emptyTitle}>
-        No recipes yet
-      </ThemedText>
-      <ThemedText
-        type="body"
-        style={[styles.emptyText, { color: theme.textSecondary }]}
-      >
-        Check back soon for featured recipes
-      </ThemedText>
-    </View>
+    <EmptyState
+      variant="temporary"
+      icon="book-open"
+      title="No recipes yet"
+      description="Check back soon for featured recipes"
+    />
   );
 }
 
@@ -288,6 +277,28 @@ export default function HomeScreen() {
               )}
             </View>
           </Animated.View>
+
+          {/* Quick actions */}
+          <QuickActionsRow
+            actions={[
+              {
+                icon: "camera",
+                label: "Scan",
+                onPress: () => {
+                  haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+                  navigation.navigate("Scan");
+                },
+              },
+              {
+                icon: "edit-3",
+                label: "Quick Log",
+                onPress: () => {
+                  haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+                  navigation.navigate("QuickLog");
+                },
+              },
+            ]}
+          />
 
           {/* Adaptive goal recommendation */}
           {adaptiveGoalStatus?.hasRecommendation &&

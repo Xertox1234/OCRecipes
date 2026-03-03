@@ -92,6 +92,11 @@ This document captures established patterns for the NutriScan codebase. Follow t
 - [Animation Patterns](#animation-patterns)
   - [Circular Progress with Animated SVG Arc](#circular-progress-with-animated-svg-arc)
   - [Pulsing Animation for Active State Indicators](#pulsing-animation-for-active-state-indicators)
+  - [Layout Animation Chained API (Not WithSpringConfig)](#layout-animation-chained-api-not-withspringconfig)
+- [Interaction Patterns](#interaction-patterns)
+  - [Navigator-Level Safe Area Ownership](#navigator-level-safe-area-ownership)
+  - [Gesture Interaction with Reduced Motion Component Fallback](#gesture-interaction-with-reduced-motion-component-fallback)
+  - [Toast Context with Single-Toast Replacement](#toast-context-with-single-toast-replacement)
 - [Performance Patterns](#performance-patterns)
   - [React.memo for FlatList Header/Footer](#reactmemo-for-flatlist-headerfooter-components)
   - [Parameterized ID Callbacks for Memoized List Items](#parameterized-id-callbacks-for-memoized-list-items)
@@ -5255,6 +5260,168 @@ return (
 - `client/components/VoiceLogButton.tsx` — recording pulse
 - `client/components/ChatBubble.tsx` — typing indicator pulse
 - `client/screens/ScanScreen.tsx` — scan active pulse
+
+### Layout Animation Chained API (Not WithSpringConfig)
+
+Reanimated v4 layout animations (`FadeInUp`, `SlideInRight`, etc.) use a **chained builder API** — they do NOT accept `WithSpringConfig` objects. Do not extract their spring parameters into shared config objects.
+
+```typescript
+// Bad: Layout animations can't use WithSpringConfig objects
+import { pressSpringConfig } from "@/constants/animations";
+const entering = SlideInRight.springify(pressSpringConfig); // ❌ Won't work
+
+// Good: Chain modifiers directly on the layout animation
+const entering = SlideInRight.springify().damping(18).stiffness(150);
+
+// Good: Use WithSpringConfig for imperative animations only
+scale.value = withSpring(1, pressSpringConfig); // ✅ withSpring accepts config objects
+```
+
+**When to use:** Any time you're configuring layout entrance/exit animations (`entering`, `exiting` props).
+
+**When NOT to use:** Imperative animations via `withSpring()` / `withTiming()` — those accept config objects and should use shared constants from `animations.ts`.
+
+**Why:** Layout animations return builder objects with fluent methods (`.springify()`, `.damping()`, `.duration()`). Creating `WithSpringConfig` objects for them produces dead code that TypeScript won't catch.
+
+**References:**
+
+- `client/components/ChatBubble.tsx` — `SlideInRight.springify().damping(18).stiffness(150)`
+- `client/components/Toast.tsx` — `SlideInUp.springify().damping(20).stiffness(200)`
+
+---
+
+## Interaction Patterns
+
+### Navigator-Level Safe Area Ownership
+
+Apply safe area insets at the **navigator level**, not in individual screens. This prevents double-inset bugs when a navigator wraps multiple screens.
+
+```typescript
+// Good: Navigator owns insets.top
+function OnboardingStack() {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ flex: 1, paddingTop: insets.top }}>
+      <ProgressBar />
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {/* screens don't apply insets.top */}
+      </Stack.Navigator>
+    </View>
+  );
+}
+
+// In each screen — only add content padding, not safe area
+<ScrollView contentContainerStyle={{ paddingTop: Spacing["3xl"] }}>
+```
+
+```typescript
+// Bad: Both navigator AND screen apply insets.top
+// Navigator:
+<View style={{ paddingTop: insets.top }}> ...
+// Screen:
+<ScrollView contentContainerStyle={{ paddingTop: insets.top + Spacing["3xl"] }}>
+// Result: 2× safe area padding
+```
+
+**When to use:** Custom navigators that wrap screens in a shared container (onboarding flows, wizards, tab navigators with custom headers).
+
+**When NOT to use:** Screens under `headerShown: true` navigators — React Navigation handles the header inset automatically.
+
+**References:**
+
+- `client/navigation/OnboardingNavigator.tsx` — owns `insets.top` for all 6 onboarding screens
+
+---
+
+### Gesture Interaction with Reduced Motion Component Fallback
+
+When a component's primary interaction is gesture-based (swipe, drag, pan), provide a **structurally different fallback** when reduced motion is enabled — don't just skip the animation.
+
+```typescript
+function SwipeableRow({ children, rightAction }: Props) {
+  const { reducedMotion } = useAccessibility();
+
+  // Reduced motion: render plain View — actions are available via buttons
+  if (reducedMotion) {
+    return <View>{children}</View>;
+  }
+
+  // Full interaction: gesture-driven swipeable with animations
+  return (
+    <ReanimatedSwipeable
+      renderRightActions={...}
+      onSwipeableOpen={handleSwipeableOpen}
+    >
+      {children}
+    </ReanimatedSwipeable>
+  );
+}
+```
+
+**When to use:** Components where the gesture IS the feature (swipe-to-delete, drag-to-reorder, swipe navigation). The gesture wrapper adds complexity and native gesture recognizers that serve no purpose when motion is reduced.
+
+**When NOT to use:** Simple press animations or entrance animations — use the existing `reducedMotion ? undefined : animation` guard pattern instead.
+
+**Key principle:** Ensure all actions reachable via gesture are also reachable via buttons. SwipeableRow's delete action has a fallback X button; DraggableList's drag has tap + chevron buttons.
+
+**References:**
+
+- `client/components/SwipeableRow.tsx` — falls back to plain `<View>` wrapper
+- `client/components/DraggableList.tsx` — tap-to-activate reorder with chevron buttons (no drag gesture)
+
+---
+
+### Toast Context with Single-Toast Replacement
+
+For global toast/snackbar notifications, use a context provider with a **single-toast replacement strategy** — each new toast replaces the previous one instead of stacking.
+
+```typescript
+function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const nextId = useRef(0);
+
+  // Replace (not append) — prevents toast pile-up from rapid actions
+  const show = useCallback((message: string, variant: ToastVariant) => {
+    const id = nextId.current++;
+    setToasts([{ id, message, variant }]);
+  }, []);
+
+  // Stable dismiss — no per-id closure needed with single toast
+  const dismiss = useCallback(() => {
+    setToasts([]);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={{ success, error, info }}>
+      {children}
+      {toasts.length > 0 && (
+        <Toast
+          key={toasts[0].id}
+          message={toasts[0].message}
+          variant={toasts[0].variant}
+          onDismiss={dismiss}
+        />
+      )}
+    </ToastContext.Provider>
+  );
+}
+```
+
+**When to use:** App-wide toast/snackbar systems where only the most recent message matters.
+
+**When NOT to use:** Notification centers where users need to see multiple messages (use a queue with max visible count instead).
+
+**Key details:**
+
+1. **`setToasts([newItem])` not `setToasts(prev => [...prev, newItem])`** — prevents stacking
+2. **Stable `dismiss` callback** — `useCallback(() => setToasts([]), [])` avoids creating closures per toast ID
+3. **`key={toasts[0].id}`** forces React to unmount/remount on replacement, triggering the entrance animation
+4. **Place `<ToastProvider>` inside `ThemeProvider`** — toasts need theme context for colors
+
+**References:**
+
+- `client/context/ToastContext.tsx` — provider implementation
+- `client/components/Toast.tsx` — animated toast with swipe-to-dismiss and auto-dismiss
 
 ---
 

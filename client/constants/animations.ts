@@ -34,3 +34,25 @@ export const contentRevealTimingConfig: WithTimingConfig = {
   duration: 200,
   easing: Easing.out(Easing.cubic),
 };
+
+/** Spring configuration for toast entry animation */
+export const toastSpringConfig: WithSpringConfig = {
+  damping: 20,
+  mass: 0.4,
+  stiffness: 200,
+};
+
+/** Timing configuration for toast exit animation */
+export const toastExitTimingConfig: WithTimingConfig = {
+  duration: 200,
+  easing: Easing.in(Easing.cubic),
+};
+
+/** Pixels threshold to trigger swipe action */
+export const swipeActionThreshold = 80;
+
+/** Milliseconds between mini-FAB stagger appearances */
+export const speedDialStaggerDelay = 50;
+
+/** Pixels threshold to trigger date strip week change */
+export const dateStripSwipeThreshold = 50;
