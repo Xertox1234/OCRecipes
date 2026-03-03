@@ -4765,6 +4765,115 @@ const { data, isLoading, isError, refetch } = useQuery({
 
 **Why:** Users should always have a way to recover from transient errors without navigating away. The retry button provides an immediate action rather than requiring a pull-to-refresh or screen reload.
 
+### Modal Focus Trapping
+
+Add `accessibilityViewIsModal` to the inner container of all modal components to prevent screen readers from accessing content behind the modal:
+
+```typescript
+<Modal visible={visible} transparent animationType="slide">
+  <View style={styles.overlay}>
+    <KeyboardAvoidingView
+      accessibilityViewIsModal   // ← on the inner focusable container
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      {/* modal content */}
+    </KeyboardAvoidingView>
+  </View>
+</Modal>
+```
+
+**Why:** Without this prop, VoiceOver/TalkBack can navigate to elements behind the modal overlay, confusing users and breaking the expected focus flow.
+
+### Inline Validation Errors
+
+Use the shared `<InlineError>` component for form validation instead of `Alert.alert()`:
+
+```typescript
+import { InlineError } from "@/components/InlineError";
+
+const [error, setError] = useState<string | null>(null);
+
+// Validate on submit
+const handleSubmit = () => {
+  if (isNaN(value) || value <= 0) {
+    setError("Please enter a valid value.");
+    return;
+  }
+  setError(null);
+  // proceed...
+};
+
+// Clear error on input change
+<TextInput onChangeText={(text) => {
+  setValue(text);
+  if (error) setError(null);
+}} />
+
+// Render after input
+<InlineError message={error} style={{ marginTop: Spacing.sm }} />
+```
+
+**Why:** Inline errors are visible alongside the input, accessible via `accessibilityRole="alert"`, and don't block interaction like `Alert.alert()` does.
+
+### KeyboardAvoidingView Android Behavior
+
+Always use `"height"` for Android, not `undefined`:
+
+```typescript
+<KeyboardAvoidingView
+  behavior={Platform.OS === "ios" ? "padding" : "height"}
+>
+```
+
+**Why:** `undefined` on Android causes the keyboard to overlap inputs. `"height"` shrinks the view to fit above the keyboard.
+
+### Keyboard Dismiss on Scroll
+
+Add `keyboardDismissMode` to scrollable views on screens with text inputs:
+
+```typescript
+// Form screens — dismiss on drag
+<ScrollView keyboardDismissMode="on-drag">
+
+// Chat screens — interactive dismiss (keyboard follows finger)
+<FlatList keyboardDismissMode="interactive" />
+```
+
+**Why:** Users expect the keyboard to dismiss when scrolling. Without this, they must tap outside the input to dismiss.
+
+### Cross-Platform Live Region Announcements
+
+`accessibilityLiveRegion` is Android-only in React Native. For cross-platform coverage, pair it with `AccessibilityInfo.announceForAccessibility()`:
+
+```typescript
+// Android: live region announces automatically
+<View accessibilityLiveRegion="polite">
+  <ThemedText>{statusText}</ThemedText>
+</View>
+
+// iOS: announce via useEffect when state changes
+useEffect(() => {
+  if (isScanning) {
+    AccessibilityInfo.announceForAccessibility("Scanning");
+  }
+}, [isScanning]);
+```
+
+**Why:** `accessibilityLiveRegion` has no effect on iOS. The explicit announcement ensures VoiceOver users get the same feedback as TalkBack users.
+
+### WCAG Color Contrast
+
+Light mode color tokens must maintain at least 4.5:1 contrast ratio against white backgrounds (WCAG 2.1 AA). Current compliant values:
+
+| Token                           | Value     | Ratio  |
+| ------------------------------- | --------- | ------ |
+| `textSecondary`                 | `#717171` | ~4.5:1 |
+| `success` / `proteinAccent`     | `#008A38` | ~4.6:1 |
+| `calorieAccent` / `carbsAccent` | `#C94E1A` | ~4.6:1 |
+| `fatAccent`                     | `#8C6800` | ~5.1:1 |
+
+When adding new color tokens, verify contrast at [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) before committing.
+
 ---
 
 ## Animation Patterns
