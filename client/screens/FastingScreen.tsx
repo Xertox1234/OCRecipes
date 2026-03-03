@@ -259,7 +259,7 @@ export default function FastingScreen() {
         <RefreshControl
           refreshing={false}
           onRefresh={handleRefresh}
-          tintColor={theme.success}
+          tintColor={theme.link}
         />
       }
     >
@@ -277,7 +277,7 @@ export default function FastingScreen() {
             }}
             accessibilityLabel="Configure fasting schedule"
             accessibilityRole="button"
-            hitSlop={8}
+            hitSlop={11}
           >
             <Feather name="settings" size={22} color={theme.link} />
           </Pressable>
@@ -306,6 +306,10 @@ export default function FastingScreen() {
                 disabled={endFast.isPending}
                 accessibilityLabel="End fast"
                 accessibilityRole="button"
+                accessibilityState={{
+                  disabled: endFast.isPending,
+                  busy: endFast.isPending,
+                }}
                 style={({ pressed }) => [
                   styles.actionButton,
                   {
@@ -364,6 +368,10 @@ export default function FastingScreen() {
                 disabled={startFast.isPending}
                 accessibilityLabel="Start fast"
                 accessibilityRole="button"
+                accessibilityState={{
+                  disabled: startFast.isPending,
+                  busy: startFast.isPending,
+                }}
                 style={({ pressed }) => [
                   styles.actionButton,
                   {
@@ -405,6 +413,7 @@ export default function FastingScreen() {
                 }}
                 accessibilityLabel="Edit schedule"
                 accessibilityRole="button"
+                hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
               >
                 <Feather name="edit-2" size={16} color={theme.link} />
               </Pressable>

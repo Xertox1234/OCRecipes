@@ -91,6 +91,7 @@ export function UpgradeModal({
     >
       <View style={[styles.overlay, { backgroundColor: "rgba(0,0,0,0.5)" }]}>
         <View
+          accessibilityViewIsModal
           style={[
             styles.container,
             {

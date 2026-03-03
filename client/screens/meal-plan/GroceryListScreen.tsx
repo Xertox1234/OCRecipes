@@ -315,11 +315,13 @@ export default function GroceryListScreen() {
           paddingHorizontal: Spacing.lg,
           paddingBottom: insets.bottom + Spacing.xl,
         }}
+        keyboardDismissMode="on-drag"
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
             onRefresh={() => refetch()}
             progressViewOffset={headerHeight}
+            tintColor={theme.link}
           />
         }
         ListHeaderComponent={

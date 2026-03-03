@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -128,6 +129,7 @@ export default function QuickLogScreen() {
       queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility("Food items logged");
       setParsedItems([]);
       setTextInput("");
       setTranscription(null);
@@ -147,7 +149,7 @@ export default function QuickLogScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
@@ -155,6 +157,7 @@ export default function QuickLogScreen() {
           paddingBottom: insets.bottom + Spacing.xl,
         }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* Text Input */}
         <Card elevation={1} style={styles.inputCard}>
@@ -193,6 +196,10 @@ export default function QuickLogScreen() {
               disabled={isParsing || !textInput.trim()}
               accessibilityLabel="Parse food text"
               accessibilityRole="button"
+              accessibilityState={{
+                disabled: isParsing || !textInput.trim(),
+                busy: isParsing,
+              }}
               style={({ pressed }) => [
                 styles.parseButton,
                 {

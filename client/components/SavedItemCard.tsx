@@ -140,7 +140,7 @@ export function SavedItemCard({ item, onPress }: SavedItemCardProps) {
           onPress={handleShare}
           accessibilityLabel="Share this item"
           accessibilityRole="button"
-          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
             styles.actionButton,
             { backgroundColor: theme.backgroundSecondary },
@@ -154,7 +154,7 @@ export function SavedItemCard({ item, onPress }: SavedItemCardProps) {
           disabled={deleteMutation.isPending}
           accessibilityLabel="Delete this item"
           accessibilityRole="button"
-          hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           style={({ pressed }) => [
             styles.actionButton,
             { backgroundColor: withOpacity(theme.error, 0.12) },

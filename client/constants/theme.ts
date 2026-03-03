@@ -4,7 +4,7 @@ export const Colors = {
   light: {
     // Text - from Figma light mode
     text: "#212832",
-    textSecondary: "#878787",
+    textSecondary: "#717171",
     buttonText: "#FFFFFF",
     // Navigation
     tabIconDefault: "#6B6B6B",
@@ -19,16 +19,16 @@ export const Colors = {
     backgroundTertiary: "#E8E8E8",
     // Border
     border: "#E0E0E0",
-    // Status colors (unchanged)
+    // Status colors
     error: "#D32F2F",
     warning: "#F57C00",
-    success: "#00C853",
+    success: "#008A38",
     info: "#2196F3",
-    // Nutrition accents (unchanged)
-    calorieAccent: "#FF6B35",
-    proteinAccent: "#00C853",
-    carbsAccent: "#FF6B35",
-    fatAccent: "#FFC107",
+    // Nutrition accents
+    calorieAccent: "#C94E1A",
+    proteinAccent: "#008A38",
+    carbsAccent: "#C94E1A",
+    fatAccent: "#8C6800",
   },
   dark: {
     // Text - from Figma dark mode
@@ -48,12 +48,12 @@ export const Colors = {
     backgroundTertiary: "#4A4A5A",
     // Border
     border: "#4A4A5A",
-    // Status colors (unchanged)
+    // Status colors
     error: "#EF5350",
     warning: "#FFB74D",
     success: "#00E676",
     info: "#64B5F6",
-    // Nutrition accents (unchanged)
+    // Nutrition accents
     calorieAccent: "#FF8A65",
     proteinAccent: "#00E676",
     carbsAccent: "#FF8A65",

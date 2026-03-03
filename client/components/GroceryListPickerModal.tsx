@@ -167,7 +167,8 @@ export function GroceryListPickerModal({
       onRequestClose={handleClose}
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        accessibilityViewIsModal
         style={[
           styles.container,
           {

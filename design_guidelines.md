@@ -11,11 +11,13 @@
 ## 2. Navigation Architecture
 
 **Root Navigation**: Tab Bar (3 tabs)
+
 - **Scan** (Center tab with camera icon) - Core action
 - **History** (Left tab)
 - **Profile** (Right tab)
 
 **Auth Flow**: Users see onboarding → signup/login screen before accessing main app. Implement session-based authentication with:
+
 - Apple Sign-In (required for iOS)
 - Google Sign-In
 - Email/Password option
@@ -23,14 +25,16 @@
 ## 3. Screen-by-Screen Specifications
 
 ### Onboarding (Stack-Only, shown once)
+
 - **Purpose**: Explain app value in 2-3 slides
 - **Layout**: Full-screen with large illustration, headline, subtext, skip button (top-right)
 - **Screens**: 1) "Scan Any Food Label" 2) "Track Your Nutrition" 3) "Reach Your Goals"
 - **Navigation**: Swipeable carousel with dot indicators, "Get Started" button on final slide
 
 ### Login/Signup
+
 - **Purpose**: Authenticate user
-- **Layout**: 
+- **Layout**:
   - Transparent header with back button (left)
   - Centered logo/app icon
   - SSO buttons (Apple, Google) with system-standard styling
@@ -40,6 +44,7 @@
 - **Safe Area**: Top inset = insets.top + Spacing.xl, Bottom inset = insets.bottom + Spacing.xl
 
 ### Scan (Main Tab - Camera View)
+
 - **Purpose**: Capture barcodes or nutrition labels
 - **Layout**:
   - **NO traditional header** - full-screen camera viewfinder
@@ -48,7 +53,7 @@
     - Center: Scanning reticle (outline box showing scan area)
     - Bottom: Large circular shutter button, gallery icon (bottom-left)
   - Scanning reticle has animated corners that pulse when detecting barcode
-- **Components**: 
+- **Components**:
   - expo-camera full-screen background
   - expo-barcode-scanner for barcode detection
   - Floating action button (shutter) with shadow
@@ -56,6 +61,7 @@
 - **Safe Area**: Top overlay = insets.top + Spacing.md, Bottom overlay = insets.bottom + Spacing.xl
 
 ### Nutrition Detail (Modal, appears after successful scan)
+
 - **Purpose**: Display extracted nutrition information
 - **Layout**:
   - Native modal presentation (slides up from bottom)
@@ -69,6 +75,7 @@
 - **Safe Area**: Bottom inset = insets.bottom + Spacing.xl
 
 ### History Tab
+
 - **Purpose**: View all previously scanned items
 - **Layout**:
   - Transparent header with "History" title, filter icon (right)
@@ -79,6 +86,7 @@
 - **Safe Area**: Top inset = headerHeight + Spacing.xl, Bottom inset = tabBarHeight + Spacing.xl
 
 ### Daily Summary (Sub-screen from History, push navigation)
+
 - **Purpose**: Show nutrition totals for selected day
 - **Layout**:
   - Default navigation header with back button, date selector (title)
@@ -89,6 +97,7 @@
 - **Safe Area**: Top inset = Spacing.xl, Bottom inset = tabBarHeight + Spacing.xl
 
 ### Profile Tab
+
 - **Purpose**: User settings and account management
 - **Layout**:
   - Transparent header with "Profile" title
@@ -103,8 +112,8 @@
 
 ## 4. Color Palette
 
-- **Primary**: `#00C853` (Vibrant green - success, health, freshness)
-- **Primary Dark**: `#00A043` (For pressed states)
+- **Primary**: `#008A38` (WCAG-compliant green - success, health, freshness)
+- **Primary Dark**: `#006B2B` (For pressed states)
 - **Background**: `#FAFAFA` (Off-white, reduces eye strain)
 - **Surface**: `#FFFFFF` (Cards, modals)
 - **Surface Elevated**: `#FFFFFF` with shadow
@@ -113,13 +122,14 @@
 - **Border**: `#E0E0E0` (Subtle dividers)
 - **Error**: `#D32F2F` (Failed scans, validation)
 - **Warning**: `#F57C00` (Missing nutrition data)
-- **Calorie Accent**: `#FF6B35` (Warm orange for calorie displays)
+- **Calorie Accent**: `#C94E1A` (WCAG-compliant warm orange for calorie displays)
 
 ## 5. Typography
 
 **Font**: **Inter** (Google Font - highly legible, modern, professional)
 
 **Type Scale**:
+
 - Display (Product names): Inter Bold, 24px
 - Heading (Section titles): Inter SemiBold, 18px
 - Body (Descriptions, lists): Inter Regular, 16px
@@ -131,7 +141,7 @@
 ## 6. Visual Design Principles
 
 - **Camera Shutter Button**: Large (72px diameter), green fill, white camera icon, subtle shadow (shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.10, shadowRadius: 2)
-- **Macro Cards**: White background, 8px border-radius, 1px border (#E0E0E0), no shadow. Each macro has colored accent bar on left edge (Protein: #00C853, Carbs: #FF6B35, Fat: #FFC107)
+- **Macro Cards**: White background, 8px border-radius, 1px border (#E0E0E0), no shadow. Each macro has colored accent bar on left edge (Protein: #008A38, Carbs: #C94E1A, Fat: #8C6800)
 - **Scan Success Animation**: Green pulse ring expanding from scan reticle center, lasting 300ms
 - **List Items**: Subtle press state (95% scale, 100ms duration)
 - **All icons**: Feather icon set from @expo/vector-icons
@@ -139,6 +149,7 @@
 ## 7. Assets to Generate
 
 **Required**:
+
 - `icon.png` - App icon showing camera viewfinder with nutrition label inside (512x512px)
 - `splash-icon.png` - Simplified icon for splash screen (400x400px)
 - `empty-history.png` - Illustration of empty plate on table, soft shadows, matches color palette. **WHERE USED**: History tab empty state

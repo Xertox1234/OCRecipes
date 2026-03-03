@@ -6,6 +6,7 @@ import {
   Platform,
   Linking,
   ActivityIndicator,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -125,6 +126,13 @@ export default function ScanScreen() {
       if (resetTimeoutRef.current) clearTimeout(resetTimeoutRef.current);
     };
   }, []);
+
+  // Announce scanning state changes for iOS (accessibilityLiveRegion is Android-only)
+  useEffect(() => {
+    if (isScanning) {
+      AccessibilityInfo.announceForAccessibility("Scanning");
+    }
+  }, [isScanning]);
 
   const pulseScale = useSharedValue(1);
   const cornerOpacity = useSharedValue(0.6);
@@ -390,15 +398,17 @@ export default function ScanScreen() {
             ]}
           />
 
-          <ThemedText
-            type="body"
-            style={styles.reticleText}
-            maxFontSizeMultiplier={1.3}
-          >
-            {isScanning
-              ? "Scanning..."
-              : "Scan barcode or tap shutter for food photo"}
-          </ThemedText>
+          <View accessibilityLiveRegion="polite">
+            <ThemedText
+              type="body"
+              style={styles.reticleText}
+              maxFontSizeMultiplier={1.3}
+            >
+              {isScanning
+                ? "Scanning..."
+                : "Scan barcode or tap shutter for food photo"}
+            </ThemedText>
+          </View>
 
           {/* Show remaining scans for free users */}
           {!isPremium && remainingScans !== null && (

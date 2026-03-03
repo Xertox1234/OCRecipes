@@ -15,13 +15,13 @@ const GOALS = [
     id: "lose_weight",
     name: "Lose Weight",
     icon: "trending-down",
-    color: "#FF6B35", // hardcoded
+    color: "#C94E1A", // hardcoded
   },
   {
     id: "gain_muscle",
     name: "Build Muscle",
     icon: "trending-up",
-    color: "#00C853", // hardcoded
+    color: "#008A38", // hardcoded
   },
   { id: "maintain", name: "Maintain Weight", icon: "minus", color: "#2196F3" }, // hardcoded
   {

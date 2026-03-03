@@ -31,13 +31,14 @@ export default function AppetiteTracker({
       >
         Appetite Level
       </Text>
-      <View style={styles.levels}>
+      <View style={styles.levels} accessibilityRole="radiogroup">
         {APPETITE_LEVELS.map((level) => (
           <Pressable
             key={level.value}
             onPress={() => handleSelect(level.value)}
             accessibilityLabel={`Appetite level ${level.label}`}
-            accessibilityRole="button"
+            accessibilityRole="radio"
+            accessibilityState={{ selected: selected === level.value }}
             style={[
               styles.level,
               {

@@ -1035,7 +1035,7 @@ export default function HistoryScreen() {
           <RefreshControl
             refreshing={showAll ? isRefetching : isRefreshingDashboard}
             onRefresh={handleRefresh}
-            tintColor={theme.success}
+            tintColor={theme.link}
           />
         }
         ItemSeparatorComponent={ItemSeparator}

@@ -127,6 +127,7 @@ export default function ItemDetailScreen() {
               <Image
                 source={{ uri: item.imageUrl }}
                 style={styles.productImage}
+                accessibilityLabel={`Photo of ${item.productName}`}
               />
             ) : (
               <View

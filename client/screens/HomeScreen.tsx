@@ -175,7 +175,7 @@ export default function HomeScreen() {
         <RefreshControl
           refreshing={isRefetching}
           onRefresh={refetch}
-          tintColor={theme.success}
+          tintColor={theme.link}
         />
       }
     >
@@ -197,6 +197,7 @@ export default function HomeScreen() {
                 <Image
                   source={{ uri: resolveImageUrl(user.avatarUrl) ?? undefined }}
                   style={styles.avatar}
+                  accessibilityLabel={`${displayName}'s profile photo`}
                 />
               ) : (
                 <View
@@ -290,7 +291,11 @@ export default function HomeScreen() {
             }
             style={styles.sectionHeader}
           >
-            <ThemedText type="body" style={styles.sectionTitle}>
+            <ThemedText
+              type="body"
+              accessibilityRole="header"
+              style={styles.sectionTitle}
+            >
               Recipes For You
             </ThemedText>
           </Animated.View>

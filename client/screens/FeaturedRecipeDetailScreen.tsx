@@ -125,6 +125,7 @@ export default function FeaturedRecipeDetailScreen() {
               source={{ uri: imageUri }}
               style={styles.heroImage}
               resizeMode="cover"
+              accessibilityLabel={`Photo of ${recipe.title}`}
             />
           ) : (
             <View

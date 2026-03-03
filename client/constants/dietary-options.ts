@@ -208,13 +208,13 @@ export const GOALS: GoalOption[] = [
     id: "lose_weight",
     name: "Lose Weight",
     icon: "trending-down",
-    color: "#FF6B35",
+    color: "#C94E1A",
   },
   {
     id: "gain_muscle",
     name: "Build Muscle",
     icon: "trending-up",
-    color: "#00C853",
+    color: "#008A38",
   },
   { id: "maintain", name: "Maintain Weight", icon: "minus", color: "#2196F3" },
   {

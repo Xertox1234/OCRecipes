@@ -209,7 +209,7 @@ export default function ChatListScreen() {
           <RefreshControl
             refreshing={isRefetching}
             onRefresh={refetch}
-            tintColor={theme.success}
+            tintColor={theme.link}
           />
         }
         ListEmptyComponent={

@@ -171,6 +171,7 @@ export function MealSuggestionsModal({
     >
       <View style={[styles.overlay, { backgroundColor: "rgba(0,0,0,0.5)" }]}>
         <View
+          accessibilityViewIsModal
           style={[
             styles.container,
             {

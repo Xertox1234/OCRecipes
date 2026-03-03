@@ -8,6 +8,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -16,6 +17,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { InlineError } from "@/components/InlineError";
 import { Card } from "@/components/Card";
 import { CalorieBudgetBar } from "@/components/CalorieBudgetBar";
 import { useTheme } from "@/hooks/useTheme";
@@ -72,6 +74,7 @@ export default function ExerciseLogScreen() {
   const [exerciseType, setExerciseType] = useState<string>("cardio");
   const [duration, setDuration] = useState("");
   const [notes, setNotes] = useState("");
+  const [exerciseError, setExerciseError] = useState<string | null>(null);
 
   // Get today's date range for fetching logs
   const today = new Date();
@@ -91,16 +94,14 @@ export default function ExerciseLogScreen() {
   const handleLogExercise = useCallback(() => {
     const durationMinutes = parseInt(duration, 10);
     if (!exerciseName.trim()) {
-      Alert.alert("Missing Name", "Please enter an exercise name.");
+      setExerciseError("Please enter an exercise name.");
       return;
     }
     if (isNaN(durationMinutes) || durationMinutes <= 0) {
-      Alert.alert(
-        "Invalid Duration",
-        "Please enter a valid duration in minutes.",
-      );
+      setExerciseError("Please enter a valid duration in minutes.");
       return;
     }
+    setExerciseError(null);
 
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     logExercise.mutate(
@@ -116,6 +117,9 @@ export default function ExerciseLogScreen() {
           setDuration("");
           setNotes("");
           haptics.notification(Haptics.NotificationFeedbackType.Success);
+          AccessibilityInfo.announceForAccessibility(
+            "Exercise logged successfully",
+          );
         },
       },
     );
@@ -151,7 +155,7 @@ export default function ExerciseLogScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
@@ -160,6 +164,7 @@ export default function ExerciseLogScreen() {
           paddingBottom:
             insets.bottom + TAB_BAR_HEIGHT + FAB_CLEARANCE + Spacing.xl,
         }}
+        keyboardDismissMode="on-drag"
       >
         {/* Page Title */}
         <ThemedText type="h3" style={styles.pageTitle}>
@@ -200,7 +205,10 @@ export default function ExerciseLogScreen() {
               placeholder="Exercise name"
               placeholderTextColor={theme.textSecondary}
               value={exerciseName}
-              onChangeText={setExerciseName}
+              onChangeText={(text) => {
+                setExerciseName(text);
+                if (exerciseError) setExerciseError(null);
+              }}
               accessibilityLabel="Exercise name"
             />
             <Pressable
@@ -273,7 +281,10 @@ export default function ExerciseLogScreen() {
               placeholderTextColor={theme.textSecondary}
               keyboardType="number-pad"
               value={duration}
-              onChangeText={setDuration}
+              onChangeText={(text) => {
+                setDuration(text);
+                if (exerciseError) setExerciseError(null);
+              }}
               accessibilityLabel="Duration in minutes"
             />
             <Pressable
@@ -281,6 +292,10 @@ export default function ExerciseLogScreen() {
               disabled={logExercise.isPending || !exerciseName || !duration}
               accessibilityLabel="Log exercise"
               accessibilityRole="button"
+              accessibilityState={{
+                disabled: logExercise.isPending || !exerciseName || !duration,
+                busy: logExercise.isPending,
+              }}
               style={({ pressed }) => [
                 styles.logButton,
                 {
@@ -314,6 +329,10 @@ export default function ExerciseLogScreen() {
             value={notes}
             onChangeText={setNotes}
             accessibilityLabel="Optional notes"
+          />
+          <InlineError
+            message={exerciseError}
+            style={{ marginTop: Spacing.sm }}
           />
         </Card>
 

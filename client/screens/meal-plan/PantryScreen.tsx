@@ -266,6 +266,7 @@ export default function PantryScreen() {
             refreshing={isRefetching}
             onRefresh={() => refetch()}
             progressViewOffset={headerHeight}
+            tintColor={theme.link}
           />
         }
         ListHeaderComponent={

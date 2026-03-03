@@ -8,7 +8,9 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  AccessibilityInfo,
 } from "react-native";
+import { InlineError } from "@/components/InlineError";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -44,6 +46,8 @@ export default function WeightTrackingScreen() {
   const [noteInput, setNoteInput] = useState("");
   const [goalInput, setGoalInput] = useState("");
   const [showGoalInput, setShowGoalInput] = useState(false);
+  const [weightError, setWeightError] = useState<string | null>(null);
+  const [goalError, setGoalError] = useState<string | null>(null);
 
   const { data: logs = [] } = useWeightLogs();
   const { data: trend } = useWeightTrend();
@@ -54,9 +58,10 @@ export default function WeightTrackingScreen() {
   const handleLogWeight = useCallback(() => {
     const weight = parseFloat(weightInput);
     if (isNaN(weight) || weight <= 0 || weight > 999) {
-      Alert.alert("Invalid Weight", "Please enter a valid weight in kg.");
+      setWeightError("Please enter a valid weight in kg.");
       return;
     }
+    setWeightError(null);
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     logWeight.mutate(
       { weight, note: noteInput || undefined },
@@ -65,6 +70,9 @@ export default function WeightTrackingScreen() {
           setWeightInput("");
           setNoteInput("");
           haptics.notification(Haptics.NotificationFeedbackType.Success);
+          AccessibilityInfo.announceForAccessibility(
+            "Weight logged successfully",
+          );
         },
       },
     );
@@ -90,9 +98,10 @@ export default function WeightTrackingScreen() {
   const handleSetGoal = useCallback(() => {
     const goal = parseFloat(goalInput);
     if (isNaN(goal) || goal <= 0 || goal > 999) {
-      Alert.alert("Invalid Weight", "Please enter a valid goal weight.");
+      setGoalError("Please enter a valid goal weight.");
       return;
     }
+    setGoalError(null);
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     setGoalWeight.mutate(goal, {
       onSuccess: () => {
@@ -106,13 +115,14 @@ export default function WeightTrackingScreen() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
         contentContainerStyle={{
           paddingBottom: insets.bottom + Spacing.xl,
         }}
+        keyboardDismissMode="on-drag"
       >
         {/* Log Weight Card */}
         <Card elevation={1} style={styles.inputCard}>
@@ -133,7 +143,10 @@ export default function WeightTrackingScreen() {
               placeholderTextColor={theme.textSecondary}
               keyboardType="decimal-pad"
               value={weightInput}
-              onChangeText={setWeightInput}
+              onChangeText={(text) => {
+                setWeightInput(text);
+                if (weightError) setWeightError(null);
+              }}
               accessibilityLabel="Weight in kilograms"
             />
             <Pressable
@@ -141,6 +154,10 @@ export default function WeightTrackingScreen() {
               disabled={logWeight.isPending || !weightInput}
               accessibilityLabel="Log weight"
               accessibilityRole="button"
+              accessibilityState={{
+                disabled: logWeight.isPending || !weightInput,
+                busy: logWeight.isPending,
+              }}
               style={({ pressed }) => [
                 styles.logButton,
                 {
@@ -167,6 +184,10 @@ export default function WeightTrackingScreen() {
             value={noteInput}
             onChangeText={setNoteInput}
             accessibilityLabel="Optional note"
+          />
+          <InlineError
+            message={weightError}
+            style={{ marginTop: Spacing.sm }}
           />
         </Card>
 
@@ -254,9 +275,14 @@ export default function WeightTrackingScreen() {
           <View style={styles.goalHeader}>
             <ThemedText type="h4">Goal Weight</ThemedText>
             <Pressable
-              onPress={() => setShowGoalInput(!showGoalInput)}
+              onPress={() => {
+                const closing = showGoalInput;
+                setShowGoalInput(!showGoalInput);
+                if (closing) setGoalError(null);
+              }}
               accessibilityLabel="Set goal weight"
               accessibilityRole="button"
+              hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
             >
               <Feather name="edit-2" size={18} color={theme.link} />
             </Pressable>
@@ -286,7 +312,10 @@ export default function WeightTrackingScreen() {
                 placeholderTextColor={theme.textSecondary}
                 keyboardType="decimal-pad"
                 value={goalInput}
-                onChangeText={setGoalInput}
+                onChangeText={(text) => {
+                  setGoalInput(text);
+                  if (goalError) setGoalError(null);
+                }}
                 accessibilityLabel="Goal weight in kilograms"
               />
               <Pressable
@@ -306,6 +335,7 @@ export default function WeightTrackingScreen() {
               </Pressable>
             </View>
           )}
+          <InlineError message={goalError} style={{ marginTop: Spacing.sm }} />
         </Card>
 
         {/* History List */}

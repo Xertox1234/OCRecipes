@@ -2,18 +2,18 @@ import React, { useState } from "react";
 import { StyleSheet, View, Pressable, Image, Dimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
+import { InlineError } from "@/components/InlineError";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { TextInput } from "@/components/TextInput";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { Spacing, withOpacity } from "@/constants/theme";
 
 const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
 
@@ -157,22 +157,7 @@ export default function LoginScreen() {
             />
           ) : null}
 
-          {error ? (
-            <View
-              style={[
-                styles.errorContainer,
-                { backgroundColor: withOpacity(theme.error, 0.06) },
-              ]}
-            >
-              <Feather name="alert-circle" size={16} color={theme.error} />
-              <ThemedText
-                type="small"
-                style={[styles.errorText, { color: theme.error }]}
-              >
-                {error}
-              </ThemedText>
-            </View>
-          ) : null}
+          <InlineError message={error} />
 
           <Button
             onPress={handleSubmit}
@@ -258,16 +243,6 @@ const styles = StyleSheet.create({
   form: {
     gap: Spacing.lg,
     marginBottom: Spacing["3xl"],
-  },
-  errorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.input,
-  },
-  errorText: {
-    flex: 1,
   },
   button: {
     marginTop: Spacing.sm,

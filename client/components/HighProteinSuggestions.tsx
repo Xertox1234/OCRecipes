@@ -23,7 +23,7 @@ export const HighProteinSuggestions = React.memo(
     return (
       <View
         style={styles.container}
-        accessibilityRole="summary"
+        accessibilityRole="none"
         accessibilityLabel={`High protein suggestions. ${data.remainingProtein}g protein remaining today.`}
       >
         <View style={styles.header}>

@@ -134,6 +134,7 @@ export function RecipeGenerationModal({
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+        accessibilityViewIsModal
       >
         {/* Header */}
         <View

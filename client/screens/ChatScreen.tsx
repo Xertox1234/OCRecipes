@@ -1,4 +1,10 @@
-import React, { useCallback, useRef, useState, useMemo } from "react";
+import React, {
+  useCallback,
+  useRef,
+  useState,
+  useMemo,
+  useEffect,
+} from "react";
 import {
   StyleSheet,
   View,
@@ -9,6 +15,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, useNavigation } from "@react-navigation/native";
@@ -147,6 +154,14 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState("");
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
+  const prevStreamingRef = useRef(false);
+
+  useEffect(() => {
+    if (prevStreamingRef.current && !isStreaming) {
+      AccessibilityInfo.announceForAccessibility("Coach response received");
+    }
+    prevStreamingRef.current = isStreaming;
+  }, [isStreaming]);
 
   // Build display messages: fetched messages + optimistic user message + streaming assistant
   const displayMessages = useMemo(() => {
@@ -247,7 +262,7 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       {isLoading ? (
@@ -272,6 +287,7 @@ export default function ChatScreen() {
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.messagesContent}
+          keyboardDismissMode="interactive"
           onContentSizeChange={() => {
             flatListRef.current?.scrollToEnd({ animated: true });
           }}

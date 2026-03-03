@@ -8,7 +8,7 @@ const lightTheme = {
   backgroundDefault: "#FFFFFF",
   backgroundSecondary: "#F2F2F2",
   backgroundTertiary: "#E8E8E8",
-  success: "#00C853",
+  success: "#008A38",
   warning: "#F57C00",
   error: "#D32F2F",
   info: "#2196F3",
@@ -38,8 +38,8 @@ describe("card-utils", () => {
   describe("getBadgeColors", () => {
     it("returns success colors for success variant", () => {
       const result = getBadgeColors("success", lightTheme);
-      expect(result.text).toBe("#00C853");
-      expect(result.bg).toContain("00C853"); // withOpacity wraps the color
+      expect(result.text).toBe("#008A38");
+      expect(result.bg).toContain("008A38"); // withOpacity wraps the color
     });
 
     it("returns warning colors for warning variant", () => {

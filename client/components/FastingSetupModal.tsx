@@ -97,7 +97,8 @@ export function FastingSetupModal({
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        accessibilityViewIsModal
       >
         <ScrollView
           style={[

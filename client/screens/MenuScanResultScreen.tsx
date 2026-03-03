@@ -50,7 +50,6 @@ const MenuItemCard = React.memo(function MenuItemCard({
           borderColor: rec ? withOpacity(rec.color, 0.19) : theme.border,
         },
       ]}
-      accessibilityRole="summary"
       accessibilityLabel={`${item.name}, ${item.estimatedCalories} calories${rec ? `, ${rec.label}` : ""}`}
     >
       <View style={styles.cardHeader}>

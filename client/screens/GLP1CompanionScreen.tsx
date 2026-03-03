@@ -12,7 +12,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, Typography } from "@/constants/theme";
+import { ThemedText } from "@/components/ThemedText";
+import { Spacing } from "@/constants/theme";
 import {
   useMedicationLogs,
   useMedicationInsights,
@@ -207,14 +208,9 @@ export default function GLP1CompanionScreen() {
         {insights?.commonSideEffects &&
           insights.commonSideEffects.length > 0 && (
             <View style={{ marginTop: Spacing.md }}>
-              <Text
-                style={[
-                  styles.sectionTitle,
-                  { color: theme.text, ...Typography.h4 },
-                ]}
-              >
+              <ThemedText type="h4" style={styles.sectionTitle}>
                 Common Side Effects
-              </Text>
+              </ThemedText>
               {insights.commonSideEffects.map((effect) => (
                 <View
                   key={effect.name}
@@ -239,14 +235,9 @@ export default function GLP1CompanionScreen() {
         <HighProteinSuggestions />
 
         <View style={{ marginTop: Spacing.md }}>
-          <Text
-            style={[
-              styles.sectionTitle,
-              { color: theme.text, ...Typography.h4 },
-            ]}
-          >
+          <ThemedText type="h4" style={styles.sectionTitle}>
             Dose History
-          </Text>
+          </ThemedText>
           {logs?.map((log) => (
             <View key={log.id} style={{ marginTop: Spacing.sm }}>
               <MedicationLogCard
@@ -329,7 +320,10 @@ export default function GLP1CompanionScreen() {
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={{ padding: Spacing.md }}>
+          <ScrollView
+            contentContainerStyle={{ padding: Spacing.md }}
+            keyboardDismissMode="on-drag"
+          >
             <Text
               style={[
                 styles.formLabel,
@@ -341,56 +335,61 @@ export default function GLP1CompanionScreen() {
             >
               Medication
             </Text>
-            {COMMON_MEDICATIONS.map((med) => (
-              <Pressable
-                key={med.name}
-                onPress={() => {
-                  setSelectedMedication(med.name);
-                  setSelectedBrand(med.brands[0]);
-                }}
-                accessibilityLabel={`Select ${med.name}`}
-                accessibilityRole="button"
-                style={[
-                  styles.medicationOption,
-                  {
-                    backgroundColor:
-                      selectedMedication === med.name
-                        ? theme.link
-                        : theme.backgroundSecondary,
-                    borderColor:
-                      selectedMedication === med.name
-                        ? theme.link
-                        : theme.border,
-                    borderRadius: Spacing.sm,
-                    padding: Spacing.sm,
-                    marginBottom: Spacing.xs,
-                  },
-                ]}
-              >
-                <Text
-                  style={{
-                    color:
-                      selectedMedication === med.name
-                        ? theme.buttonText
-                        : theme.text,
-                    fontWeight: "600",
+            <View accessibilityRole="radiogroup">
+              {COMMON_MEDICATIONS.map((med) => (
+                <Pressable
+                  key={med.name}
+                  onPress={() => {
+                    setSelectedMedication(med.name);
+                    setSelectedBrand(med.brands[0]);
                   }}
-                >
-                  {med.name}
-                </Text>
-                <Text
-                  style={{
-                    color:
-                      selectedMedication === med.name
-                        ? theme.buttonText
-                        : theme.textSecondary,
-                    fontSize: 12,
+                  accessibilityLabel={`Select ${med.name}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{
+                    selected: selectedMedication === med.name,
                   }}
+                  style={[
+                    styles.medicationOption,
+                    {
+                      backgroundColor:
+                        selectedMedication === med.name
+                          ? theme.link
+                          : theme.backgroundSecondary,
+                      borderColor:
+                        selectedMedication === med.name
+                          ? theme.link
+                          : theme.border,
+                      borderRadius: Spacing.sm,
+                      padding: Spacing.sm,
+                      marginBottom: Spacing.xs,
+                    },
+                  ]}
                 >
-                  {med.brands.join(", ")}
-                </Text>
-              </Pressable>
-            ))}
+                  <Text
+                    style={{
+                      color:
+                        selectedMedication === med.name
+                          ? theme.buttonText
+                          : theme.text,
+                      fontWeight: "600",
+                    }}
+                  >
+                    {med.name}
+                  </Text>
+                  <Text
+                    style={{
+                      color:
+                        selectedMedication === med.name
+                          ? theme.buttonText
+                          : theme.textSecondary,
+                      fontSize: 12,
+                    }}
+                  >
+                    {med.brands.join(", ")}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
 
             {selectedMedication && (
               <>
@@ -406,7 +405,10 @@ export default function GLP1CompanionScreen() {
                 >
                   Brand
                 </Text>
-                <View style={[styles.brandRow, { gap: Spacing.xs }]}>
+                <View
+                  style={[styles.brandRow, { gap: Spacing.xs }]}
+                  accessibilityRole="radiogroup"
+                >
                   {COMMON_MEDICATIONS.find(
                     (m) => m.name === selectedMedication,
                   )?.brands.map((brand) => (
@@ -414,7 +416,8 @@ export default function GLP1CompanionScreen() {
                       key={brand}
                       onPress={() => setSelectedBrand(brand)}
                       accessibilityLabel={`Select brand ${brand}`}
-                      accessibilityRole="button"
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: selectedBrand === brand }}
                       style={[
                         styles.brandOption,
                         {
@@ -603,9 +606,9 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 17, fontWeight: "600" },
   formLabel: { fontSize: 14, fontWeight: "500" },
-  medicationOption: { borderWidth: 1 },
+  medicationOption: { borderWidth: 1, minHeight: 44 },
   brandRow: { flexDirection: "row", flexWrap: "wrap" },
-  brandOption: { borderWidth: 1 },
+  brandOption: { borderWidth: 1, minHeight: 44 },
   input: { borderWidth: 1, fontSize: 15 },
   textArea: { minHeight: 80, textAlignVertical: "top" },
   sideEffectsGrid: { flexDirection: "row", flexWrap: "wrap" },

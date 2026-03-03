@@ -2,10 +2,10 @@ import { getMacroColor, getMacroColors, type MacroType } from "../macro-colors";
 
 // Define theme colors inline to avoid importing react-native via theme.ts
 const lightThemeColors = {
-  calorieAccent: "#FF6B35",
-  proteinAccent: "#00C853",
-  carbsAccent: "#FF6B35",
-  fatAccent: "#FFC107",
+  calorieAccent: "#C94E1A",
+  proteinAccent: "#008A38",
+  carbsAccent: "#C94E1A",
+  fatAccent: "#8C6800",
 } as any;
 
 const darkThemeColors = {
@@ -21,19 +21,19 @@ describe("Macro Colors", () => {
 
   describe("getMacroColor", () => {
     it("returns calorie accent for light theme", () => {
-      expect(getMacroColor(lightTheme, "calories")).toBe("#FF6B35");
+      expect(getMacroColor(lightTheme, "calories")).toBe("#C94E1A");
     });
 
     it("returns protein accent for light theme", () => {
-      expect(getMacroColor(lightTheme, "protein")).toBe("#00C853");
+      expect(getMacroColor(lightTheme, "protein")).toBe("#008A38");
     });
 
     it("returns carbs accent for light theme", () => {
-      expect(getMacroColor(lightTheme, "carbs")).toBe("#FF6B35");
+      expect(getMacroColor(lightTheme, "carbs")).toBe("#C94E1A");
     });
 
     it("returns fat accent for light theme", () => {
-      expect(getMacroColor(lightTheme, "fat")).toBe("#FFC107");
+      expect(getMacroColor(lightTheme, "fat")).toBe("#8C6800");
     });
 
     it("returns calorie accent for dark theme", () => {
@@ -56,10 +56,10 @@ describe("Macro Colors", () => {
   describe("getMacroColors", () => {
     it("returns all macro colors for light theme", () => {
       const colors = getMacroColors(lightTheme);
-      expect(colors.calories).toBe("#FF6B35");
-      expect(colors.protein).toBe("#00C853");
-      expect(colors.carbs).toBe("#FF6B35");
-      expect(colors.fat).toBe("#FFC107");
+      expect(colors.calories).toBe("#C94E1A");
+      expect(colors.protein).toBe("#008A38");
+      expect(colors.carbs).toBe("#C94E1A");
+      expect(colors.fat).toBe("#8C6800");
     });
 
     it("returns all macro colors for dark theme", () => {
