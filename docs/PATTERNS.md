@@ -4861,6 +4861,73 @@ useEffect(() => {
 
 **Why:** `accessibilityLiveRegion` has no effect on iOS. The explicit announcement ensures VoiceOver users get the same feedback as TalkBack users.
 
+### Input Error States with `aria-invalid`
+
+Use `aria-invalid` (not `accessibilityState={{ invalid: true }}`) to mark inputs in an error state:
+
+```tsx
+<RNTextInput
+  aria-invalid={error ? true : undefined}
+  accessibilityHint={error && errorMessage ? errorMessage : undefined}
+  {...props}
+/>
+```
+
+**Why:** React Native's `AccessibilityState` type does not include `invalid` — using `accessibilityState={{ invalid: true }}` causes a TypeScript error. The `aria-invalid` prop is the correct cross-platform ARIA prop supported since RN 0.71.
+
+**References:**
+
+- `client/components/TextInput.tsx` — shared input component with error state
+
+### `role` Prop for Unsupported ARIA Roles
+
+When `accessibilityRole` doesn't support a needed value (like `"group"`), use the `role` prop instead:
+
+```tsx
+// Bad: "group" is not in accessibilityRole's type union — TS error
+<View accessibilityRole="group" accessibilityLabel="Side effects">
+
+// Good: role prop supports all ARIA roles (RN 0.73+)
+<View role="group" accessibilityLabel="Side effects">
+```
+
+**When to use:** ARIA roles not in `accessibilityRole`'s type union: `"group"`, `"list"`, `"listitem"`, `"form"`, etc.
+
+**When NOT to use:** Roles that `accessibilityRole` already supports (`"button"`, `"radiogroup"`, `"checkbox"`, `"alert"`, etc.) — prefer `accessibilityRole` for consistency with the rest of the codebase.
+
+**References:**
+
+- `client/screens/GLP1CompanionScreen.tsx` — `role="group"` on checkbox group container
+
+### Cancel Running Animations on `reducedMotion` Change
+
+When `reducedMotion` toggles at runtime (user enables Reduce Motion while the app is open), actively cancel running `withRepeat` animations and reset shared values:
+
+```tsx
+const dot1 = useSharedValue(0);
+const { reducedMotion } = useAccessibility();
+
+useEffect(() => {
+  if (reducedMotion) {
+    cancelAnimation(dot1);
+    dot1.value = 0; // Reset to rest position
+    return;
+  }
+  dot1.value = withRepeat(withTiming(1, { duration: 600 }), -1, true);
+}, [dot1, reducedMotion]);
+```
+
+**Why:** Simply returning early from the effect doesn't stop already-running `withRepeat` animations. The shared values continue animating on the UI thread. `cancelAnimation()` explicitly stops them, and resetting to 0 (or 1, depending on the rest state) ensures a clean visual state.
+
+**When to use:** Any `useEffect` that starts `withRepeat` or continuous animations conditionally on `reducedMotion`.
+
+**When NOT to use:** One-shot entrance animations using the `entering` prop (these are handled by passing `undefined` when `reducedMotion` is true).
+
+**References:**
+
+- `client/components/ChatBubble.tsx` — typing indicator dots
+- `client/components/VoiceLogButton.tsx` — recording pulse
+
 ### WCAG Color Contrast
 
 Light mode color tokens must maintain at least 4.5:1 contrast ratio against white backgrounds (WCAG 2.1 AA). Current compliant values:
