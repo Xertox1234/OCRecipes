@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# Build output
+server_dist/
+
 # Expo
 .expo/
 dist/
