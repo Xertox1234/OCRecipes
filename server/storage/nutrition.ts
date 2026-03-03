@@ -34,36 +34,33 @@ export async function getScannedItems(
     isNull(scannedItems.discardedAt),
   );
 
-  const [rows, countResult] = await Promise.all([
-    db
-      .select({
-        item: scannedItems,
-        favouriteId: favouriteScannedItems.id,
-      })
-      .from(scannedItems)
-      .leftJoin(
-        favouriteScannedItems,
-        and(
-          eq(favouriteScannedItems.scannedItemId, scannedItems.id),
-          eq(favouriteScannedItems.userId, userId),
-        ),
-      )
-      .where(activeFilter)
-      .orderBy(desc(scannedItems.scannedAt))
-      .limit(limit)
-      .offset(offset),
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(scannedItems)
-      .where(activeFilter),
-  ]);
+  const rows = await db
+    .select({
+      item: scannedItems,
+      favouriteId: favouriteScannedItems.id,
+      total: sql<number>`count(*) OVER()`,
+    })
+    .from(scannedItems)
+    .leftJoin(
+      favouriteScannedItems,
+      and(
+        eq(favouriteScannedItems.scannedItemId, scannedItems.id),
+        eq(favouriteScannedItems.userId, userId),
+      ),
+    )
+    .where(activeFilter)
+    .orderBy(desc(scannedItems.scannedAt))
+    .limit(limit)
+    .offset(offset);
 
   const items = rows.map((row) => ({
     ...row.item,
     isFavourited: row.favouriteId !== null,
   }));
 
-  return { items, total: Number(countResult[0]?.count ?? 0) };
+  const total = rows.length > 0 ? Number(rows[0].total) : 0;
+
+  return { items, total };
 }
 
 export async function getScannedItem(
@@ -126,25 +123,47 @@ export async function softDeleteScannedItem(
   id: number,
   userId: string,
 ): Promise<boolean> {
-  const [updated] = await db
-    .update(scannedItems)
-    .set({ discardedAt: new Date() })
-    .where(
-      and(
-        eq(scannedItems.id, id),
-        eq(scannedItems.userId, userId),
-        isNull(scannedItems.discardedAt),
-      ),
-    )
-    .returning({ id: scannedItems.id });
-  return !!updated;
+  return db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(scannedItems)
+      .set({ discardedAt: new Date() })
+      .where(
+        and(
+          eq(scannedItems.id, id),
+          eq(scannedItems.userId, userId),
+          isNull(scannedItems.discardedAt),
+        ),
+      )
+      .returning({ id: scannedItems.id });
+
+    if (updated) {
+      await tx
+        .delete(favouriteScannedItems)
+        .where(eq(favouriteScannedItems.scannedItemId, id));
+    }
+
+    return !!updated;
+  });
 }
 
 export async function toggleFavouriteScannedItem(
   scannedItemId: number,
   userId: string,
-): Promise<boolean> {
+): Promise<boolean | null> {
   return db.transaction(async (tx) => {
+    // Verify item is active + owned (inside transaction to close TOCTOU gap)
+    const [item] = await tx
+      .select({ id: scannedItems.id })
+      .from(scannedItems)
+      .where(
+        and(
+          eq(scannedItems.id, scannedItemId),
+          eq(scannedItems.userId, userId),
+          isNull(scannedItems.discardedAt),
+        ),
+      );
+    if (!item) return null;
+
     const [existing] = await tx
       .select()
       .from(favouriteScannedItems)
@@ -162,60 +181,31 @@ export async function toggleFavouriteScannedItem(
       return false; // un-favourited
     }
 
-    await tx.insert(favouriteScannedItems).values({ userId, scannedItemId });
-    return true; // favourited
+    try {
+      await tx.insert(favouriteScannedItems).values({ userId, scannedItemId });
+      return true; // favourited
+    } catch (err: unknown) {
+      // Concurrent toggle race: unique constraint violation means another
+      // request already inserted the favourite — treat as "toggle off".
+      if (
+        err &&
+        typeof err === "object" &&
+        "code" in err &&
+        err.code === "23505"
+      ) {
+        await tx
+          .delete(favouriteScannedItems)
+          .where(
+            and(
+              eq(favouriteScannedItems.scannedItemId, scannedItemId),
+              eq(favouriteScannedItems.userId, userId),
+            ),
+          );
+        return false;
+      }
+      throw err;
+    }
   });
-}
-
-export async function getFavouriteScannedItems(
-  userId: string,
-  limit = 50,
-  offset = 0,
-): Promise<{
-  items: (ScannedItem & { isFavourited: boolean })[];
-  total: number;
-}> {
-  const [rows, countResult] = await Promise.all([
-    db
-      .select({
-        item: scannedItems,
-        favouriteId: favouriteScannedItems.id,
-      })
-      .from(favouriteScannedItems)
-      .innerJoin(
-        scannedItems,
-        eq(favouriteScannedItems.scannedItemId, scannedItems.id),
-      )
-      .where(
-        and(
-          eq(favouriteScannedItems.userId, userId),
-          isNull(scannedItems.discardedAt),
-        ),
-      )
-      .orderBy(desc(favouriteScannedItems.createdAt))
-      .limit(limit)
-      .offset(offset),
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(favouriteScannedItems)
-      .innerJoin(
-        scannedItems,
-        eq(favouriteScannedItems.scannedItemId, scannedItems.id),
-      )
-      .where(
-        and(
-          eq(favouriteScannedItems.userId, userId),
-          isNull(scannedItems.discardedAt),
-        ),
-      ),
-  ]);
-
-  const items = rows.map((row) => ({
-    ...row.item,
-    isFavourited: true,
-  }));
-
-  return { items, total: Number(countResult[0]?.count ?? 0) };
 }
 
 // ============================================================================

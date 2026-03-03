@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import {
   formatZodError,
   checkPremiumFeature,
@@ -52,10 +53,20 @@ export function register(app: Express): void {
         res.json({ items });
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Food parse error:", error);
-        sendError(res, 500, "Failed to parse food text");
+        sendError(
+          res,
+          500,
+          "Failed to parse food text",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -78,7 +89,12 @@ export function register(app: Express): void {
         if (!features) return;
 
         if (!req.file) {
-          return sendError(res, 400, "No audio file provided");
+          return sendError(
+            res,
+            400,
+            "No audio file provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const transcription = await transcribeAudio(
@@ -87,7 +103,12 @@ export function register(app: Express): void {
         );
 
         if (!transcription.trim()) {
-          return sendError(res, 400, "Could not transcribe audio");
+          return sendError(
+            res,
+            400,
+            "Could not transcribe audio",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const items = await parseNaturalLanguageFood(transcription);
@@ -98,7 +119,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Voice transcription error:", error);
-        sendError(res, 500, "Failed to transcribe and parse audio");
+        sendError(
+          res,
+          500,
+          "Failed to transcribe and parse audio",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

@@ -486,27 +486,13 @@ function getOpenAI(): OpenAI {
 
 **Category:** Bug Post-Mortem
 
-**Context:** Added a soft delete feature (discard) to scanned items using a `discardedAt` timestamp column instead of hard deleting rows.
+**Problem:** After implementing soft delete (discard) on scanned items, the daily summary dashboard continued to include calories from discarded items. The bug was invisible because the aggregation returned a plausible number -- just inflated. The `getDailySummary()` LEFT JOIN did not filter out discarded rows, and the fix required a compound WHERE because `scannedItemId` is nullable.
 
-**Problem:** After implementing discard, the daily summary dashboard continued to include calories from discarded items in the totals. The bug was invisible because the aggregation still returned a valid number — it was just wrong (inflated).
+**Lesson:** When adding soft delete, grep for every query that reads from or joins against that table. Aggregation queries are the most dangerous because they silently return wrong numbers. Create a checklist of affected queries before merging.
 
-**Root Cause:** The `getDailySummary()` method joins `dailyLogs` with `scannedItems` via LEFT JOIN. The WHERE clause did not filter out rows where `scannedItems.discardedAt` is not null. Since daily logs reference scanned items, discarding an item left the daily log intact, and the aggregation happily summed the discarded item's calories.
+**Pattern + fix:** See "Soft Delete with Aggregation Guard" in PATTERNS.md (includes the compound WHERE clause)
 
-The fix required a compound condition because `dailyLogs.scannedItemId` is nullable (meal plan confirmations have `scannedItemId = null`):
-
-```typescript
-// Simple filter would also exclude meal plan logs (where scannedItemId IS NULL):
-// where(isNull(scannedItems.discardedAt))  // ← WRONG: drops meal plan rows too
-
-// Correct: exclude discarded scanned items but keep null-FK rows
-sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`;
-```
-
-**Lesson:** When adding soft delete to a table, grep for every query that reads from or joins against that table. Aggregation queries are the most dangerous because they return plausible-looking numbers rather than obviously wrong results. Create a checklist of affected queries before merging.
-
-**Pattern Reference:** See "Soft Delete with Aggregation Guard" in PATTERNS.md
-
-**File:** `server/storage.ts` — `getDailySummary()`
+**File:** `server/storage/nutrition.ts:249` -- `getDailySummary()`
 
 ---
 
@@ -514,41 +500,13 @@ sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`
 
 **Category:** Bug Post-Mortem
 
-**Context:** Implemented a toggle favourite endpoint that checks if a favourite row exists, then inserts or deletes accordingly.
-
-**Problem:** Without a transaction, two rapid taps could both see "no existing favourite" and both insert, creating a duplicate row. Even with a unique constraint, the second request would fail with a database error rather than toggling gracefully.
-
-**Solution:** Wrapped the check-then-write in `db.transaction()`:
-
-```typescript
-return db.transaction(async (tx) => {
-  const [existing] = await tx
-    .select()
-    .from(favouriteScannedItems)
-    .where(
-      and(
-        eq(favouriteScannedItems.scannedItemId, scannedItemId),
-        eq(favouriteScannedItems.userId, userId),
-      ),
-    );
-
-  if (existing) {
-    await tx
-      .delete(favouriteScannedItems)
-      .where(eq(favouriteScannedItems.id, existing.id));
-    return false;
-  }
-
-  await tx.insert(favouriteScannedItems).values({ userId, scannedItemId });
-  return true;
-});
-```
+**Problem:** Without a transaction, two rapid taps on the favourite button could both see "no existing favourite" and both insert, creating a duplicate row. Even with a unique constraint, the second request failed with a database error rather than toggling gracefully.
 
 **Lesson:** Any check-then-write operation on a join table must be wrapped in a transaction. This applies to all toggle patterns: follow/unfollow, like/unlike, bookmark/unbookmark. The unique constraint is defense-in-depth, not a substitute for proper serialization.
 
-**Pattern Reference:** See "Toggle via Transaction to Prevent Duplicate Inserts" in PATTERNS.md
+**Pattern + fix:** See "Toggle via Transaction to Prevent Duplicate Inserts" in PATTERNS.md
 
-**File:** `server/storage.ts` — `toggleFavouriteScannedItem()`
+**File:** `server/storage/nutrition.ts:143` -- `toggleFavouriteScannedItem()`
 
 ---
 
@@ -556,44 +514,13 @@ return db.transaction(async (tx) => {
 
 **Category:** Performance
 
-**Context:** The HistoryScreen renders a FlatList with memoized `HistoryItem` components. Each item has five action callbacks (favourite, grocery, recipe, share, discard).
+**Problem:** HistoryScreen passed inline arrow functions (e.g., `() => toggleFavourite.mutate(item.id)`) to each memoized `HistoryItem` in `renderItem`. Despite `React.memo`, every item re-rendered on every parent render because arrow function props were always new references. With 5 callbacks per item, the performance impact scaled with list length.
 
-**Problem:** The initial implementation passed inline arrow functions to each list item in `renderItem`:
+**Lesson:** When a `React.memo` component receives callbacks, define them in the parent with an ID parameter (`(itemId: number) => void`) rather than creating closures per item. Profile with React DevTools "Highlight updates" to verify memoization is working.
 
-```typescript
-// Each render of renderItem creates 5 new arrow functions per item
-const renderItem = useCallback(
-  ({ item }) => (
-    <HistoryItem
-      onFavourite={() => toggleFavourite.mutate(item.id)}  // new ref every time
-      onDiscard={() => discardItem.mutate(item.id)}        // new ref every time
-      // ...3 more
-    />
-  ),
-  [toggleFavourite, discardItem],
-);
-```
+**Pattern + fix:** See "Parameterized ID Callbacks for Memoized List Items" in PATTERNS.md
 
-Even though `HistoryItem` was wrapped in `React.memo`, every item re-rendered on every parent render because the arrow function props were always new references.
-
-**Solution:** Refactored callbacks to accept an ID parameter in the parent, passing the stable callback reference to all items:
-
-```typescript
-const handleFavourite = useCallback(
-  (itemId: number) => toggleFavourite.mutate(itemId),
-  [toggleFavourite],
-);
-
-// renderItem now passes the stable reference
-<HistoryItem onFavourite={handleFavourite} />
-// Child calls: onFavourite(item.id)
-```
-
-**Lesson:** When a `React.memo` component receives callbacks, define them in the parent with an ID/key parameter rather than creating closures per item. The number of callbacks multiplied by the number of items makes this a significant source of unnecessary re-renders. Profile with React DevTools "Highlight updates" to verify memoization is working.
-
-**Pattern Reference:** See "Parameterized ID Callbacks for Memoized List Items" in PATTERNS.md
-
-**File:** `client/screens/HistoryScreen.tsx`
+**File:** `client/screens/HistoryScreen.tsx:785`
 
 ---
 
@@ -601,37 +528,11 @@ const handleFavourite = useCallback(
 
 **Category:** Bug Post-Mortem
 
-**Context:** Implemented optimistic removal (discard) on a `useInfiniteQuery`-powered list. The optimistic update filters the item out and decrements `page.total`.
+**Problem:** When optimistically removing an item from a `useInfiniteQuery` list, the initial implementation decremented `page.total` on every page, not just the page containing the discarded item. This corrupted pagination offsets, causing skipped or duplicate items on subsequent page fetches.
 
-**Problem:** The initial implementation decremented `total` on every page, not just the page containing the discarded item:
+**Lesson:** The `total` count represents the server's total, not the page size. Decrementing it on every page breaks pagination. Always compare `filtered.length < page.items.length` to detect which page actually contained the removed item.
 
-```typescript
-// Bug: decrements total on ALL pages
-pages: old.pages.map((page) => ({
-  ...page,
-  items: page.items.filter((item) => item.id !== itemId),
-  total: page.total - 1, // Wrong: decrements even if this page didn't have the item
-}));
-```
-
-This caused pagination to request incorrect offsets on subsequent page fetches, resulting in skipped or duplicate items.
-
-**Solution:** Only decrement `total` on the page that actually contained the removed item:
-
-```typescript
-pages: old.pages.map((page) => {
-  const filtered = page.items.filter((item) => item.id !== itemId);
-  return {
-    ...page,
-    items: filtered,
-    total: filtered.length < page.items.length ? page.total - 1 : page.total,
-  };
-});
-```
-
-**Lesson:** When optimistically removing items from infinite query pages, the `total` count is shared across all pages (it represents the server's total, not the page size). Decrementing it on every page corrupts pagination offsets. Always compare `filtered.length < page.items.length` to detect which page contained the item.
-
-**Pattern Reference:** See "Optimistic Mutation on Infinite Query Pages" in PATTERNS.md
+**Pattern + fix:** See "Optimistic Mutation on Infinite Query Pages" in PATTERNS.md (includes the per-page total correction code)
 
 **File:** `client/hooks/useDiscardItem.ts`
 

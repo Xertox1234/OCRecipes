@@ -10,6 +10,7 @@ import {
   crudRateLimit,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { calculateWeightTrend } from "../services/weight-trend";
 
 const createWeightLogSchema = z.object({
@@ -50,7 +51,12 @@ export function register(app: Express): void {
         res.json(logs);
       } catch (error) {
         console.error("Get weight logs error:", error);
-        sendError(res, 500, "Failed to get weight logs");
+        sendError(
+          res,
+          500,
+          "Failed to get weight logs",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -65,7 +71,7 @@ export function register(app: Express): void {
       try {
         const user = await storage.getUser(req.userId!);
         if (!user) {
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         const logs = await storage.getWeightLogs(req.userId!);
@@ -87,7 +93,12 @@ export function register(app: Express): void {
         res.json({ ...trend, goalWeight });
       } catch (error) {
         console.error("Get weight trend error:", error);
-        sendError(res, 500, "Failed to get weight trend");
+        sendError(
+          res,
+          500,
+          "Failed to get weight trend",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -115,10 +126,15 @@ export function register(app: Express): void {
         res.status(201).json(log);
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Create weight log error:", error);
-        sendError(res, 500, "Failed to log weight");
+        sendError(res, 500, "Failed to log weight", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -132,16 +148,31 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          return sendError(res, 400, "Invalid weight log ID");
+          return sendError(
+            res,
+            400,
+            "Invalid weight log ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         const deleted = await storage.deleteWeightLog(id, req.userId!);
         if (!deleted) {
-          return sendError(res, 404, "Weight log not found");
+          return sendError(
+            res,
+            404,
+            "Weight log not found",
+            ErrorCode.NOT_FOUND,
+          );
         }
         res.status(204).send();
       } catch (error) {
         console.error("Delete weight log error:", error);
-        sendError(res, 500, "Failed to delete weight log");
+        sendError(
+          res,
+          500,
+          "Failed to delete weight log",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -158,15 +189,25 @@ export function register(app: Express): void {
           goalWeight: validated.goalWeight?.toString() ?? null,
         });
         if (!user) {
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
         res.json({ goalWeight: user.goalWeight });
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Set goal weight error:", error);
-        sendError(res, 500, "Failed to set goal weight");
+        sendError(
+          res,
+          500,
+          "Failed to set goal weight",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

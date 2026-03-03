@@ -15,6 +15,7 @@ import {
   getTestTx,
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { eq } from "drizzle-orm";
 import type * as schema from "@shared/schema";
 import {
   scannedItems,
@@ -38,7 +39,6 @@ const {
   createScannedItem,
   softDeleteScannedItem,
   toggleFavouriteScannedItem,
-  getFavouriteScannedItems,
   getDailyLogs,
   createDailyLog,
   getDailySummary,
@@ -378,6 +378,48 @@ describe("nutrition storage", () => {
       const fetched = await getScannedItem(item.id);
       expect(fetched).toBeDefined();
     });
+
+    it("deletes orphaned favourite rows in the same transaction", async () => {
+      const item = await insertScannedItem(testUser.id);
+      await toggleFavouriteScannedItem(item.id, testUser.id);
+
+      // Verify the favourite row exists before soft-delete
+      const t = getTestTx();
+      const beforeRows = await t
+        .select()
+        .from(favouriteScannedItems)
+        .where(eq(favouriteScannedItems.scannedItemId, item.id));
+      expect(beforeRows).toHaveLength(1);
+
+      await softDeleteScannedItem(item.id, testUser.id);
+
+      // Favourite row should be physically deleted, not just hidden by JOINs
+      const afterRows = await t
+        .select()
+        .from(favouriteScannedItems)
+        .where(eq(favouriteScannedItems.scannedItemId, item.id));
+      expect(afterRows).toHaveLength(0);
+    });
+
+    it("does not delete favourite rows when soft-delete fails (wrong user)", async () => {
+      const otherUser = await createTestUser(tx, {
+        username: `soft_del_fav_other_${Date.now()}`,
+      });
+      const item = await insertScannedItem(otherUser.id);
+      await toggleFavouriteScannedItem(item.id, otherUser.id);
+
+      // Attempt to soft-delete as wrong user
+      const result = await softDeleteScannedItem(item.id, testUser.id);
+      expect(result).toBe(false);
+
+      // Favourite row should still exist
+      const t = getTestTx();
+      const rows = await t
+        .select()
+        .from(favouriteScannedItems)
+        .where(eq(favouriteScannedItems.scannedItemId, item.id));
+      expect(rows).toHaveLength(1);
+    });
   });
 
   describe("toggleFavouriteScannedItem", () => {
@@ -401,43 +443,26 @@ describe("nutrition storage", () => {
       const result = await toggleFavouriteScannedItem(item.id, testUser.id);
       expect(result).toBe(true);
     });
-  });
 
-  describe("getFavouriteScannedItems", () => {
-    it("returns only favourited items with correct total", async () => {
-      const item1 = await insertScannedItem(testUser.id, {
-        productName: "Fav",
-      });
-      await insertScannedItem(testUser.id, { productName: "Not Fav" });
-      await toggleFavouriteScannedItem(item1.id, testUser.id);
-
-      const { items, total } = await getFavouriteScannedItems(testUser.id);
-      expect(total).toBe(1);
-      expect(items).toHaveLength(1);
-      expect(items[0].id).toBe(item1.id);
-      expect(items[0].isFavourited).toBe(true);
+    it("returns null for non-existent item", async () => {
+      const result = await toggleFavouriteScannedItem(999999, testUser.id);
+      expect(result).toBeNull();
     });
 
-    it("excludes soft-deleted favourites", async () => {
-      const item = await insertScannedItem(testUser.id);
-      await toggleFavouriteScannedItem(item.id, testUser.id);
-      await softDeleteScannedItem(item.id, testUser.id);
-
-      const { items, total } = await getFavouriteScannedItems(testUser.id);
-      expect(total).toBe(0);
-      expect(items).toHaveLength(0);
-    });
-
-    it("does not return another user's favourites", async () => {
+    it("returns null for item owned by another user", async () => {
       const otherUser = await createTestUser(tx, {
-        username: `fav_other_user_${Date.now()}`,
+        username: `fav_toggle_other_${Date.now()}`,
       });
       const item = await insertScannedItem(otherUser.id);
-      await toggleFavouriteScannedItem(item.id, otherUser.id);
+      const result = await toggleFavouriteScannedItem(item.id, testUser.id);
+      expect(result).toBeNull();
+    });
 
-      const { items, total } = await getFavouriteScannedItems(testUser.id);
-      expect(total).toBe(0);
-      expect(items).toHaveLength(0);
+    it("returns null for soft-deleted item", async () => {
+      const item = await insertScannedItem(testUser.id);
+      await softDeleteScannedItem(item.id, testUser.id);
+      const result = await toggleFavouriteScannedItem(item.id, testUser.id);
+      expect(result).toBeNull();
     });
   });
 

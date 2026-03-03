@@ -10,6 +10,7 @@ import {
   invalidateTokenVersionCache,
 } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { detectImageMimeType } from "../lib/image-mime";
 import {
   registerLimiter,
@@ -43,7 +44,12 @@ export function register(app: Express): void {
           validated.username,
         );
         if (existingUser) {
-          return sendError(res, 409, "Username already exists");
+          return sendError(
+            res,
+            409,
+            "Username already exists",
+            ErrorCode.CONFLICT,
+          );
         }
 
         const hashedPassword = await bcrypt.hash(validated.password, 10);
@@ -68,10 +74,20 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Registration error:", error);
-        sendError(res, 500, "Failed to create account");
+        sendError(
+          res,
+          500,
+          "Failed to create account",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -85,7 +101,12 @@ export function register(app: Express): void {
 
         const user = await storage.getUserByUsername(validated.username);
         if (!user) {
-          return sendError(res, 401, "Invalid credentials");
+          return sendError(
+            res,
+            401,
+            "Invalid credentials",
+            ErrorCode.UNAUTHORIZED,
+          );
         }
 
         const isValidPassword = await bcrypt.compare(
@@ -93,7 +114,12 @@ export function register(app: Express): void {
           user.password,
         );
         if (!isValidPassword) {
-          return sendError(res, 401, "Invalid credentials");
+          return sendError(
+            res,
+            401,
+            "Invalid credentials",
+            ErrorCode.UNAUTHORIZED,
+          );
         }
 
         const token = generateToken(user.id.toString(), user.tokenVersion);
@@ -112,10 +138,15 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Login error:", error);
-        sendError(res, 500, "Failed to login");
+        sendError(res, 500, "Failed to login", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -127,7 +158,7 @@ export function register(app: Express): void {
       try {
         const user = await storage.getUser(req.userId!);
         if (!user) {
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         // Increment tokenVersion to invalidate all existing tokens
@@ -141,7 +172,7 @@ export function register(app: Express): void {
         res.json({ success: true });
       } catch (error) {
         console.error("Logout error:", error);
-        sendError(res, 500, "Failed to logout");
+        sendError(res, 500, "Failed to logout", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -149,7 +180,7 @@ export function register(app: Express): void {
   app.get("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
     const user = await storage.getUser(req.userId!);
     if (!user) {
-      return sendError(res, 401, "User not found");
+      return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
     }
 
     res.json({
@@ -178,13 +209,18 @@ export function register(app: Express): void {
           updates.onboardingCompleted = validated.onboardingCompleted;
 
         if (Object.keys(updates).length === 0) {
-          return sendError(res, 400, "No valid fields to update");
+          return sendError(
+            res,
+            400,
+            "No valid fields to update",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const user = await storage.updateUser(req.userId!, updates);
 
         if (!user) {
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         res.json({
@@ -198,10 +234,20 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Profile update error:", error);
-        sendError(res, 500, "Failed to update profile");
+        sendError(
+          res,
+          500,
+          "Failed to update profile",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -215,7 +261,12 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         if (!req.file) {
-          return sendError(res, 400, "No image provided");
+          return sendError(
+            res,
+            400,
+            "No image provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         // Validate actual file content via magic bytes (do not trust client header)
@@ -225,6 +276,7 @@ export function register(app: Express): void {
             res,
             400,
             "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+            ErrorCode.VALIDATION_ERROR,
           );
         }
 
@@ -249,13 +301,18 @@ export function register(app: Express): void {
 
         if (!user) {
           fs.unlink(filepath, () => {});
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         res.json({ avatarUrl: user.avatarUrl });
       } catch (error) {
         console.error("Avatar upload error:", error);
-        sendError(res, 500, "Failed to upload avatar");
+        sendError(
+          res,
+          500,
+          "Failed to upload avatar",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -274,13 +331,18 @@ export function register(app: Express): void {
         });
 
         if (!user) {
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         res.json({ success: true });
       } catch (error) {
         console.error("Avatar delete error:", error);
-        sendError(res, 500, "Failed to delete avatar");
+        sendError(
+          res,
+          500,
+          "Failed to delete avatar",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

@@ -14,6 +14,7 @@ vi.mock("../../storage", () => ({
     getMealPlanIngredientsForDateRange: vi.fn(),
     createGroceryList: vi.fn(),
     addGroceryListItem: vi.fn(),
+    addGroceryListItems: vi.fn(),
     getGroceryListWithItems: vi.fn(),
     updateGroceryListItemChecked: vi.fn(),
     updateGroceryListItemPantryFlag: vi.fn(),
@@ -71,10 +72,9 @@ describe("Grocery Routes", () => {
         { name: "Milk", quantity: 1, unit: "gallon", category: "dairy" },
       ] as never);
       vi.mocked(storage.createGroceryList).mockResolvedValue(mockList as never);
-      vi.mocked(storage.addGroceryListItem).mockResolvedValue({
-        id: 1,
-        name: "Milk",
-      } as never);
+      vi.mocked(storage.addGroceryListItems).mockResolvedValue([
+        { id: 1, name: "Milk" },
+      ] as never);
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists")

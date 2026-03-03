@@ -393,19 +393,6 @@ Authorization: Bearer <token>
 
 ---
 
-#### List Favourite Items
-
-Returns all items the user has favourited.
-
-```http
-GET /api/scanned-items/favourites
-Authorization: Bearer <token>
-```
-
-**Response** `200 OK` — Array of scanned item objects with favourite metadata.
-
----
-
 #### Toggle Favourite
 
 Adds or removes a scanned item from the user's favourites.

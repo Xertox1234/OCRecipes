@@ -5,6 +5,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { scannedItems, dailyLogs } from "@shared/schema";
 import {
   photoIntentSchema,
@@ -155,7 +156,12 @@ export function register(app: Express): void {
         }
 
         if (!req.file) {
-          return sendError(res, 400, "No photo provided");
+          return sendError(
+            res,
+            400,
+            "No photo provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         // Parse intent from multipart form parameters (default: "log")
@@ -254,7 +260,12 @@ export function register(app: Express): void {
         res.json(response);
       } catch (error) {
         console.error("Photo analysis error:", error);
-        sendError(res, 500, "Failed to analyze photo");
+        sendError(
+          res,
+          500,
+          "Failed to analyze photo",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -267,23 +278,38 @@ export function register(app: Express): void {
       try {
         const sessionId = parseStringParam(req.params.sessionId);
         if (!sessionId) {
-          return sendError(res, 400, "Session ID is required");
+          return sendError(
+            res,
+            400,
+            "Session ID is required",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const parsed = followUpSchema.safeParse(req.body);
         if (!parsed.success) {
-          return sendError(res, 400, "Invalid input");
+          return sendError(
+            res,
+            400,
+            "Invalid input",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         const { question, answer } = parsed.data;
 
         const session = analysisSessionStore.get(sessionId);
         if (!session) {
-          return sendError(res, 404, "Session not found or expired");
+          return sendError(
+            res,
+            404,
+            "Session not found or expired",
+            ErrorCode.NOT_FOUND,
+          );
         }
 
         // Verify session ownership
         if (session.userId !== req.userId!) {
-          return sendError(res, 403, "Not authorized");
+          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
         // Refine analysis based on follow-up
@@ -321,7 +347,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Follow-up error:", error);
-        sendError(res, 500, "Failed to process follow-up");
+        sendError(
+          res,
+          500,
+          "Failed to process follow-up",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -349,7 +380,7 @@ export function register(app: Express): void {
 
         // Verify session ownership if session exists
         if (session && session.userId !== req.userId!) {
-          return sendError(res, 403, "Not authorized");
+          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
         const confidence = session?.result?.overallConfidence;
@@ -388,10 +419,15 @@ export function register(app: Express): void {
         res.status(201).json(scannedItem);
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Confirm error:", error);
-        sendError(res, 500, "Failed to save meal");
+        sendError(res, 500, "Failed to save meal", ErrorCode.INTERNAL_ERROR);
       }
     },
   );

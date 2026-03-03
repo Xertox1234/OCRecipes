@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import {
   pantryRateLimit,
   checkPremiumFeature,
@@ -57,7 +58,12 @@ export function register(app: Express): void {
         res.json(items);
       } catch (error) {
         console.error("Get pantry items error:", error);
-        sendError(res, 500, "Failed to fetch pantry items");
+        sendError(
+          res,
+          500,
+          "Failed to fetch pantry items",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -79,7 +85,12 @@ export function register(app: Express): void {
 
         const parsed = pantryItemSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -94,7 +105,12 @@ export function register(app: Express): void {
         res.status(201).json(item);
       } catch (error) {
         console.error("Create pantry item error:", error);
-        sendError(res, 500, "Failed to create pantry item");
+        sendError(
+          res,
+          500,
+          "Failed to create pantry item",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -116,13 +132,23 @@ export function register(app: Express): void {
 
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid pantry item ID");
+          sendError(
+            res,
+            400,
+            "Invalid pantry item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
         const parsed = pantryItemUpdateSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -132,13 +158,18 @@ export function register(app: Express): void {
           parsed.data,
         );
         if (!updated) {
-          sendError(res, 404, "Pantry item not found");
+          sendError(res, 404, "Pantry item not found", ErrorCode.NOT_FOUND);
           return;
         }
         res.json(updated);
       } catch (error) {
         console.error("Update pantry item error:", error);
-        sendError(res, 500, "Failed to update pantry item");
+        sendError(
+          res,
+          500,
+          "Failed to update pantry item",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -160,19 +191,29 @@ export function register(app: Express): void {
 
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid pantry item ID");
+          sendError(
+            res,
+            400,
+            "Invalid pantry item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
         const deleted = await storage.deletePantryItem(id, req.userId!);
         if (!deleted) {
-          sendError(res, 404, "Pantry item not found");
+          sendError(res, 404, "Pantry item not found", ErrorCode.NOT_FOUND);
           return;
         }
         res.status(204).send();
       } catch (error) {
         console.error("Delete pantry item error:", error);
-        sendError(res, 500, "Failed to delete pantry item");
+        sendError(
+          res,
+          500,
+          "Failed to delete pantry item",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -196,7 +237,12 @@ export function register(app: Express): void {
         res.json(items);
       } catch (error) {
         console.error("Get expiring pantry items error:", error);
-        sendError(res, 500, "Failed to fetch expiring items");
+        sendError(
+          res,
+          500,
+          "Failed to fetch expiring items",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

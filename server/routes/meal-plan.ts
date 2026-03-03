@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { isValidCalendarDate } from "../utils/date-validation";
 import {
   mealPlanRateLimit,
@@ -83,7 +84,12 @@ export function register(app: Express): void {
         res.json(recipes);
       } catch (error) {
         console.error("Get meal plan recipes error:", error);
-        sendError(res, 500, "Failed to fetch recipes");
+        sendError(
+          res,
+          500,
+          "Failed to fetch recipes",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -96,20 +102,20 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid recipe ID");
+          sendError(res, 400, "Invalid recipe ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const recipe = await storage.getMealPlanRecipeWithIngredients(id);
         if (!recipe || recipe.userId !== req.userId) {
-          sendError(res, 404, "Recipe not found");
+          sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         res.json(recipe);
       } catch (error) {
         console.error("Get meal plan recipe error:", error);
-        sendError(res, 500, "Failed to fetch recipe");
+        sendError(res, 500, "Failed to fetch recipe", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -123,7 +129,12 @@ export function register(app: Express): void {
       try {
         const parsed = createMealPlanRecipeSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -139,11 +150,21 @@ export function register(app: Express): void {
         res.status(201).json(recipe);
       } catch (error) {
         if (error instanceof ZodError) {
-          sendError(res, 400, formatZodError(error));
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
         console.error("Create meal plan recipe error:", error);
-        sendError(res, 500, "Failed to create recipe");
+        sendError(
+          res,
+          500,
+          "Failed to create recipe",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -157,7 +178,7 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid recipe ID");
+          sendError(res, 400, "Invalid recipe ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
@@ -166,7 +187,12 @@ export function register(app: Express): void {
           .partial();
         const parsed = updateSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -176,18 +202,28 @@ export function register(app: Express): void {
           parsed.data,
         );
         if (!recipe) {
-          sendError(res, 404, "Recipe not found");
+          sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         res.json(recipe);
       } catch (error) {
         if (error instanceof ZodError) {
-          sendError(res, 400, formatZodError(error));
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
         console.error("Update meal plan recipe error:", error);
-        sendError(res, 500, "Failed to update recipe");
+        sendError(
+          res,
+          500,
+          "Failed to update recipe",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -201,20 +237,25 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid recipe ID");
+          sendError(res, 400, "Invalid recipe ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const deleted = await storage.deleteMealPlanRecipe(id, req.userId!);
         if (!deleted) {
-          sendError(res, 404, "Recipe not found");
+          sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         res.status(204).send();
       } catch (error) {
         console.error("Delete meal plan recipe error:", error);
-        sendError(res, 500, "Failed to delete recipe");
+        sendError(
+          res,
+          500,
+          "Failed to delete recipe",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -244,13 +285,23 @@ export function register(app: Express): void {
 
         // Validate that the strings represent real calendar dates
         if (!isValidCalendarDate(start) || !isValidCalendarDate(end)) {
-          sendError(res, 400, "Invalid calendar date");
+          sendError(
+            res,
+            400,
+            "Invalid calendar date",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
         // Validate start <= end
         if (start > end) {
-          sendError(res, 400, "start must be on or before end");
+          sendError(
+            res,
+            400,
+            "start must be on or before end",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -259,7 +310,12 @@ export function register(app: Express): void {
         const endMs = new Date(end + "T00:00:00Z").getTime();
         const diffDays = (endMs - startMs) / (1000 * 60 * 60 * 24);
         if (diffDays > 90) {
-          sendError(res, 400, "Date range must not exceed 90 days");
+          sendError(
+            res,
+            400,
+            "Date range must not exceed 90 days",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -267,7 +323,12 @@ export function register(app: Express): void {
         res.json(items);
       } catch (error) {
         console.error("Get meal plan error:", error);
-        sendError(res, 500, "Failed to fetch meal plan");
+        sendError(
+          res,
+          500,
+          "Failed to fetch meal plan",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -281,12 +342,22 @@ export function register(app: Express): void {
       try {
         const parsed = addMealPlanItemSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
         if (!parsed.data.recipeId && !parsed.data.scannedItemId) {
-          sendError(res, 400, "Either recipeId or scannedItemId is required");
+          sendError(
+            res,
+            400,
+            "Either recipeId or scannedItemId is required",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -294,14 +365,14 @@ export function register(app: Express): void {
         if (parsed.data.recipeId) {
           const recipe = await storage.getMealPlanRecipe(parsed.data.recipeId);
           if (!recipe || recipe.userId !== req.userId) {
-            sendError(res, 404, "Recipe not found");
+            sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
             return;
           }
         }
         if (parsed.data.scannedItemId) {
           const item = await storage.getScannedItem(parsed.data.scannedItemId);
           if (!item || item.userId !== req.userId) {
-            sendError(res, 404, "Scanned item not found");
+            sendError(res, 404, "Scanned item not found", ErrorCode.NOT_FOUND);
             return;
           }
         }
@@ -314,11 +385,21 @@ export function register(app: Express): void {
         res.status(201).json(mealPlanItem);
       } catch (error) {
         if (error instanceof ZodError) {
-          sendError(res, 400, formatZodError(error));
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
         console.error("Add meal plan item error:", error);
-        sendError(res, 500, "Failed to add item to plan");
+        sendError(
+          res,
+          500,
+          "Failed to add item to plan",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -331,20 +412,20 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid item ID");
+          sendError(res, 400, "Invalid item ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const removed = await storage.removeMealPlanItem(id, req.userId!);
         if (!removed) {
-          sendError(res, 404, "Item not found");
+          sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         res.status(204).send();
       } catch (error) {
         console.error("Remove meal plan item error:", error);
-        sendError(res, 500, "Failed to remove item");
+        sendError(res, 500, "Failed to remove item", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -370,14 +451,19 @@ export function register(app: Express): void {
 
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid meal plan item ID");
+          sendError(
+            res,
+            400,
+            "Invalid meal plan item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
         // Fetch meal plan item and verify ownership (IDOR)
         const mealPlanItem = await storage.getMealPlanItemById(id, req.userId!);
         if (!mealPlanItem) {
-          sendError(res, 404, "Meal plan item not found");
+          sendError(res, 404, "Meal plan item not found", ErrorCode.NOT_FOUND);
           return;
         }
 
@@ -410,7 +496,7 @@ export function register(app: Express): void {
         res.status(201).json(dailyLog);
       } catch (error) {
         console.error("Meal confirmation error:", error);
-        sendError(res, 500, "Failed to confirm meal");
+        sendError(res, 500, "Failed to confirm meal", ErrorCode.INTERNAL_ERROR);
       }
     },
   );

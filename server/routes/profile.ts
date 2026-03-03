@@ -5,6 +5,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { userProfiles, users } from "@shared/schema";
 import {
   formatZodError,
@@ -31,7 +32,12 @@ export function register(app: Express): void {
         res.json(profile || null);
       } catch (error) {
         console.error("Error fetching dietary profile:", error);
-        sendError(res, 500, "Failed to fetch dietary profile");
+        sendError(
+          res,
+          500,
+          "Failed to fetch dietary profile",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -92,10 +98,20 @@ export function register(app: Express): void {
         res.status(201).json(profile);
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Error saving dietary profile:", error);
-        sendError(res, 500, "Failed to save dietary profile");
+        sendError(
+          res,
+          500,
+          "Failed to save dietary profile",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -115,7 +131,7 @@ export function register(app: Express): void {
         const profile = await storage.updateUserProfile(req.userId!, validated);
 
         if (!profile) {
-          return sendError(res, 404, "Profile not found");
+          return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
         }
 
         // Invalidate suggestion cache if dietary-affecting fields changed
@@ -132,10 +148,20 @@ export function register(app: Express): void {
         res.json(profile);
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Error updating dietary profile:", error);
-        sendError(res, 500, "Failed to update dietary profile");
+        sendError(
+          res,
+          500,
+          "Failed to update dietary profile",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

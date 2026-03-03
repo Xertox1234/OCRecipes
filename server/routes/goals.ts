@@ -7,6 +7,7 @@ import {
   calculateGoals,
   userPhysicalProfileSchema,
 } from "../services/goal-calculator";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { formatZodError, crudRateLimit } from "./_helpers";
 
 // Zod schema for manual goal update
@@ -26,7 +27,7 @@ export function register(app: Express): void {
       try {
         const user = await storage.getUser(req.userId!);
         if (!user) {
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         res.json({
@@ -38,7 +39,7 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Get goals error:", error);
-        sendError(res, 500, "Failed to fetch goals");
+        sendError(res, 500, "Failed to fetch goals", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -95,10 +96,20 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Calculate goals error:", error);
-        sendError(res, 500, "Failed to calculate goals");
+        sendError(
+          res,
+          500,
+          "Failed to calculate goals",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -127,7 +138,7 @@ export function register(app: Express): void {
         });
 
         if (!updatedUser) {
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         res.json({
@@ -138,10 +149,15 @@ export function register(app: Express): void {
         });
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Update goals error:", error);
-        sendError(res, 500, "Failed to update goals");
+        sendError(res, 500, "Failed to update goals", ErrorCode.INTERNAL_ERROR);
       }
     },
   );

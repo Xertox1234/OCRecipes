@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { calculateProfileHash } from "../utils/profile-hash";
 import {
   generateMealSuggestions,
@@ -31,7 +32,12 @@ export function register(app: Express): void {
       try {
         const parsed = suggestMealSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -178,11 +184,21 @@ export function register(app: Express): void {
         res.json({ suggestions, remainingToday: Math.max(0, remaining) });
       } catch (error) {
         if (error instanceof ZodError) {
-          sendError(res, 400, formatZodError(error));
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
         console.error("Meal suggestion error:", error);
-        sendError(res, 500, "Failed to generate suggestions");
+        sendError(
+          res,
+          500,
+          "Failed to generate suggestions",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

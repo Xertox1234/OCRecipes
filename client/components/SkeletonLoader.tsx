@@ -48,8 +48,7 @@ export function SkeletonBox({
     return () => {
       cancelAnimation(shimmerValue);
     };
-    // shimmerValue is a stable ref from useSharedValue
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- shimmerValue is a stable ref from useSharedValue that never changes identity
   }, [reducedMotion]);
 
   const shimmerStyle = useAnimatedStyle(() => {

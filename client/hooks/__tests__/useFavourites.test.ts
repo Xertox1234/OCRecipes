@@ -2,6 +2,7 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 import { useToggleFavourite } from "../useFavourites";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest } = vi.hoisted(() => ({
@@ -31,7 +32,7 @@ describe("useToggleFavourite", () => {
       { id: 1, productName: "Apple", isFavourited: false },
       { id: 2, productName: "Banana", isFavourited: true },
     ];
-    queryClient.setQueryData(["/api/scanned-items"], makePaginatedData(items));
+    queryClient.setQueryData(QUERY_KEYS.scannedItems, makePaginatedData(items));
 
     // Keep API pending to inspect optimistic state
     mockApiRequest.mockReturnValue(new Promise(() => {}));
@@ -45,7 +46,7 @@ describe("useToggleFavourite", () => {
     await waitFor(() => {
       const data = queryClient.getQueryData<
         ReturnType<typeof makePaginatedData>
-      >(["/api/scanned-items"]);
+      >(QUERY_KEYS.scannedItems);
       const apple = data?.pages[0].items.find((i) => i.id === 1);
       expect(apple?.isFavourited).toBe(true);
       // Other item unchanged
@@ -58,7 +59,7 @@ describe("useToggleFavourite", () => {
     const { wrapper, queryClient } = createQueryWrapper();
 
     const items = [{ id: 1, productName: "Apple", isFavourited: false }];
-    queryClient.setQueryData(["/api/scanned-items"], makePaginatedData(items));
+    queryClient.setQueryData(QUERY_KEYS.scannedItems, makePaginatedData(items));
 
     mockApiRequest.mockRejectedValue(new Error("Server error"));
 
@@ -74,7 +75,7 @@ describe("useToggleFavourite", () => {
 
     // Should be rolled back
     const data = queryClient.getQueryData<ReturnType<typeof makePaginatedData>>(
-      ["/api/scanned-items"],
+      QUERY_KEYS.scannedItems,
     );
     expect(data?.pages[0].items[0].isFavourited).toBe(false);
   });
@@ -106,7 +107,7 @@ describe("useToggleFavourite", () => {
     const { wrapper, queryClient } = createQueryWrapper();
 
     queryClient.setQueryData(
-      ["/api/scanned-items"],
+      QUERY_KEYS.scannedItems,
       makePaginatedData([{ id: 1, productName: "Apple", isFavourited: false }]),
     );
 
@@ -126,7 +127,7 @@ describe("useToggleFavourite", () => {
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["/api/scanned-items"],
+      queryKey: QUERY_KEYS.scannedItems,
     });
   });
 

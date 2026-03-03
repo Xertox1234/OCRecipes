@@ -13,6 +13,7 @@ import {
   RestoreRequestSchema,
 } from "@shared/schemas/subscription";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { subscriptionRateLimit } from "./_helpers";
 
 export function register(app: Express): void {
@@ -26,7 +27,7 @@ export function register(app: Express): void {
         );
 
         if (!subscriptionData) {
-          return sendError(res, 404, "User not found");
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         const tier = isValidSubscriptionTier(subscriptionData.tier)
@@ -52,7 +53,12 @@ export function register(app: Express): void {
         res.json(response);
       } catch (error) {
         console.error("Error fetching subscription status:", error);
-        sendError(res, 500, "Failed to fetch subscription status");
+        sendError(
+          res,
+          500,
+          "Failed to fetch subscription status",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -66,7 +72,12 @@ export function register(app: Express): void {
         res.json({ count });
       } catch (error) {
         console.error("Error fetching scan count:", error);
-        sendError(res, 500, "Failed to fetch scan count");
+        sendError(
+          res,
+          500,
+          "Failed to fetch scan count",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -79,7 +90,12 @@ export function register(app: Express): void {
       try {
         const parsed = UpgradeRequestSchema.safeParse(req.body);
         if (!parsed.success) {
-          return sendError(res, 400, "Invalid request body");
+          return sendError(
+            res,
+            400,
+            "Invalid request body",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const { receipt, platform, productId, transactionId } = parsed.data;
@@ -133,7 +149,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Error processing upgrade:", error);
-        sendError(res, 500, "Failed to process upgrade");
+        sendError(
+          res,
+          500,
+          "Failed to process upgrade",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -146,7 +167,12 @@ export function register(app: Express): void {
       try {
         const parsed = RestoreRequestSchema.safeParse(req.body);
         if (!parsed.success) {
-          return sendError(res, 400, "Invalid request body");
+          return sendError(
+            res,
+            400,
+            "Invalid request body",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const { receipt, platform } = parsed.data;
@@ -179,7 +205,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Error restoring purchases:", error);
-        sendError(res, 500, "Failed to restore purchases");
+        sendError(
+          res,
+          500,
+          "Failed to restore purchases",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

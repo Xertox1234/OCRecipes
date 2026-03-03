@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import type { ScannedItemResponse, PaginatedResponse } from "@/types/api";
 
 /**
@@ -18,12 +19,12 @@ export function useToggleFavourite() {
       return res.json() as Promise<{ isFavourited: boolean }>;
     },
     onMutate: async (itemId: number) => {
-      await queryClient.cancelQueries({ queryKey: ["/api/scanned-items"] });
+      await queryClient.cancelQueries({ queryKey: QUERY_KEYS.scannedItems });
 
-      const previousData = queryClient.getQueryData(["/api/scanned-items"]);
+      const previousData = queryClient.getQueryData(QUERY_KEYS.scannedItems);
 
       queryClient.setQueryData(
-        ["/api/scanned-items"],
+        QUERY_KEYS.scannedItems,
         (
           old:
             | {
@@ -51,11 +52,11 @@ export function useToggleFavourite() {
     },
     onError: (_err, _itemId, context) => {
       if (context?.previousData) {
-        queryClient.setQueryData(["/api/scanned-items"], context.previousData);
+        queryClient.setQueryData(QUERY_KEYS.scannedItems, context.previousData);
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
     },
   });
 }

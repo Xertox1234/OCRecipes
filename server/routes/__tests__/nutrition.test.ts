@@ -13,9 +13,7 @@ import { register } from "../nutrition";
 vi.mock("../../storage", () => ({
   storage: {
     getScannedItems: vi.fn(),
-    getScannedItem: vi.fn(),
     getScannedItemWithFavourite: vi.fn(),
-    getFavouriteScannedItems: vi.fn(),
     softDeleteScannedItem: vi.fn(),
     toggleFavouriteScannedItem: vi.fn(),
     getDailySummary: vi.fn(),
@@ -176,21 +174,6 @@ describe("Nutrition Routes", () => {
     });
   });
 
-  describe("GET /api/scanned-items/favourites", () => {
-    it("returns favourite scanned items", async () => {
-      vi.mocked(storage.getFavouriteScannedItems).mockResolvedValue([
-        mockScannedItem,
-      ] as never);
-
-      const res = await request(app)
-        .get("/api/scanned-items/favourites")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-    });
-  });
-
   describe("GET /api/scanned-items/:id", () => {
     it("returns a scanned item by ID", async () => {
       vi.mocked(storage.getScannedItemWithFavourite).mockResolvedValue(
@@ -229,9 +212,6 @@ describe("Nutrition Routes", () => {
 
   describe("POST /api/scanned-items/:id/favourite", () => {
     it("toggles favourite status", async () => {
-      vi.mocked(storage.getScannedItem).mockResolvedValue(
-        mockScannedItem as never,
-      );
       vi.mocked(storage.toggleFavouriteScannedItem).mockResolvedValue(
         true as never,
       );
@@ -244,27 +224,17 @@ describe("Nutrition Routes", () => {
       expect(res.body.isFavourited).toBe(true);
     });
 
-    it("returns 404 for non-existent item", async () => {
-      vi.mocked(storage.getScannedItem).mockResolvedValue(null as never);
+    it("returns 404 when toggle returns null (item not found or not owned)", async () => {
+      vi.mocked(storage.toggleFavouriteScannedItem).mockResolvedValue(
+        null as never,
+      );
 
       const res = await request(app)
         .post("/api/scanned-items/999/favourite")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(404);
-    });
-
-    it("returns 404 for item owned by another user", async () => {
-      vi.mocked(storage.getScannedItem).mockResolvedValue({
-        ...mockScannedItem,
-        userId: "2",
-      } as never);
-
-      const res = await request(app)
-        .post("/api/scanned-items/1/favourite")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("ITEM_NOT_FOUND");
     });
   });
 
@@ -432,7 +402,7 @@ describe("Nutrition Routes", () => {
     });
 
     it("returns 500 when storage throws", async () => {
-      vi.mocked(storage.getScannedItem).mockRejectedValue(
+      vi.mocked(storage.toggleFavouriteScannedItem).mockRejectedValue(
         new Error("DB error"),
       );
 
@@ -486,18 +456,6 @@ describe("Nutrition Routes", () => {
 
       const res = await request(app)
         .get("/api/scanned-items")
-        .set("Authorization", "Bearer token");
-
-      expect(res.status).toBe(500);
-    });
-
-    it("GET /api/scanned-items/favourites returns 500 on storage error", async () => {
-      vi.mocked(storage.getFavouriteScannedItems).mockRejectedValue(
-        new Error("DB error"),
-      );
-
-      const res = await request(app)
-        .get("/api/scanned-items/favourites")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(500);

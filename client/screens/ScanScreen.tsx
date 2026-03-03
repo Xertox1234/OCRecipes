@@ -131,7 +131,6 @@ export default function ScanScreen() {
   const scanSuccessScale = useSharedValue(0);
 
   // Start corner pulse animation on mount (respects reduced motion preference)
-  // Note: cornerOpacity is a stable useSharedValue ref, safe to omit from deps
   useEffect(() => {
     if (reducedMotion) {
       cornerOpacity.value = 0.8; // Static value for reduced motion
@@ -146,7 +145,7 @@ export default function ScanScreen() {
       -1,
       true,
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cornerOpacity is a stable useSharedValue ref that never changes identity
   }, [reducedMotion]);
 
   const pulseStyle = useAnimatedStyle(() => ({

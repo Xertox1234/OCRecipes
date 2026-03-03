@@ -11,6 +11,7 @@ import {
   crudRateLimit,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { calculateCaloriesBurned } from "../services/exercise-calorie";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
@@ -52,7 +53,12 @@ export function register(app: Express): void {
         res.json(summary);
       } catch (error) {
         console.error("Get exercise summary error:", error);
-        sendError(res, 500, "Failed to get exercise summary");
+        sendError(
+          res,
+          500,
+          "Failed to get exercise summary",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -77,7 +83,12 @@ export function register(app: Express): void {
         res.json(logs);
       } catch (error) {
         console.error("Get exercise logs error:", error);
-        sendError(res, 500, "Failed to get exercise logs");
+        sendError(
+          res,
+          500,
+          "Failed to get exercise logs",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -132,10 +143,15 @@ export function register(app: Express): void {
         res.status(201).json(log);
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Create exercise log error:", error);
-        sendError(res, 500, "Failed to log exercise");
+        sendError(res, 500, "Failed to log exercise", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -148,7 +164,13 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
-        if (!id) return sendError(res, 400, "Invalid exercise log ID");
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid exercise log ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
         const validated = updateExerciseLogSchema.parse(req.body);
         const updates: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(validated)) {
@@ -167,13 +189,29 @@ export function register(app: Express): void {
           req.userId!,
           updates,
         );
-        if (!updated) return sendError(res, 404, "Exercise log not found");
+        if (!updated)
+          return sendError(
+            res,
+            404,
+            "Exercise log not found",
+            ErrorCode.NOT_FOUND,
+          );
         res.json(updated);
       } catch (error) {
         if (error instanceof ZodError)
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         console.error("Update exercise log error:", error);
-        sendError(res, 500, "Failed to update exercise log");
+        sendError(
+          res,
+          500,
+          "Failed to update exercise log",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -186,13 +224,30 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
-        if (!id) return sendError(res, 400, "Invalid exercise log ID");
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid exercise log ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
         const deleted = await storage.deleteExerciseLog(id, req.userId!);
-        if (!deleted) return sendError(res, 404, "Exercise log not found");
+        if (!deleted)
+          return sendError(
+            res,
+            404,
+            "Exercise log not found",
+            ErrorCode.NOT_FOUND,
+          );
         res.status(204).send();
       } catch (error) {
         console.error("Delete exercise log error:", error);
-        sendError(res, 500, "Failed to delete exercise log");
+        sendError(
+          res,
+          500,
+          "Failed to delete exercise log",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -210,7 +265,12 @@ export function register(app: Express): void {
         res.json(results);
       } catch (error) {
         console.error("Search exercise library error:", error);
-        sendError(res, 500, "Failed to search exercises");
+        sendError(
+          res,
+          500,
+          "Failed to search exercises",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -244,9 +304,19 @@ export function register(app: Express): void {
         res.status(201).json(entry);
       } catch (error) {
         if (error instanceof ZodError)
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         console.error("Create exercise library entry error:", error);
-        sendError(res, 500, "Failed to create exercise");
+        sendError(
+          res,
+          500,
+          "Failed to create exercise",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -260,7 +330,8 @@ export function register(app: Express): void {
       try {
         const date = parseQueryDate(req.query.date) ?? new Date();
         const user = await storage.getUser(req.userId!);
-        if (!user) return sendError(res, 404, "User not found");
+        if (!user)
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
 
         const dailySummary = await storage.getDailySummary(req.userId!, date);
         const exerciseSummary = await storage.getExerciseDailySummary(
@@ -286,7 +357,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Get daily budget error:", error);
-        sendError(res, 500, "Failed to get daily budget");
+        sendError(
+          res,
+          500,
+          "Failed to get daily budget",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

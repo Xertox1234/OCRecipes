@@ -119,7 +119,9 @@ export const scannedItems = pgTable(
     discardedAt: timestamp("discarded_at"),
   },
   (table) => ({
-    userIdIdx: index("scanned_items_user_id_idx").on(table.userId),
+    userActiveIdx: index("scanned_items_user_active_idx")
+      .on(table.userId, table.scannedAt)
+      .where(sql`discarded_at IS NULL`),
     scannedAtIdx: index("scanned_items_scanned_at_idx").on(table.scannedAt),
   }),
 );
@@ -152,8 +154,14 @@ export const dailyLogs = pgTable(
       .notNull(),
   },
   (table) => ({
-    userIdIdx: index("daily_logs_user_id_idx").on(table.userId),
+    userLoggedAtIdx: index("daily_logs_user_logged_at_idx").on(
+      table.userId,
+      table.loggedAt,
+    ),
     loggedAtIdx: index("daily_logs_logged_at_idx").on(table.loggedAt),
+    mealPlanItemIdIdx: index("daily_logs_meal_plan_item_id_idx").on(
+      table.mealPlanItemId,
+    ),
   }),
 );
 
@@ -466,6 +474,9 @@ export const favouriteScannedItems = pgTable(
   (table) => ({
     uniqueUserItem: unique().on(table.userId, table.scannedItemId),
     userIdIdx: index("favourite_scanned_items_user_id_idx").on(table.userId),
+    scannedItemIdIdx: index("favourite_scanned_items_scanned_item_id_idx").on(
+      table.scannedItemId,
+    ),
   }),
 );
 

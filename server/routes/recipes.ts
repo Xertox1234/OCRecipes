@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import {
   generateFullRecipe,
   normalizeProductName,
@@ -79,7 +80,12 @@ export function register(app: Express): void {
         res.json(stripAuthorId(recipes));
       } catch (error) {
         console.error("Get featured recipes error:", error);
-        sendError(res, 500, "Failed to fetch featured recipes");
+        sendError(
+          res,
+          500,
+          "Failed to fetch featured recipes",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -93,7 +99,12 @@ export function register(app: Express): void {
       try {
         const parsed = browseQuerySchema.safeParse(req.query);
         if (!parsed.success) {
-          sendError(res, 400, "Invalid query parameters");
+          sendError(
+            res,
+            400,
+            "Invalid query parameters",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
         const { query, cuisine, diet, limit } = parsed.data;
@@ -111,7 +122,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Browse recipes error:", error);
-        sendError(res, 500, "Failed to browse recipes");
+        sendError(
+          res,
+          500,
+          "Failed to browse recipes",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -126,7 +142,12 @@ export function register(app: Express): void {
         const productName = parseQueryString(req.query.productName);
 
         if (!productName) {
-          sendError(res, 400, "productName is required");
+          sendError(
+            res,
+            400,
+            "productName is required",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -139,7 +160,12 @@ export function register(app: Express): void {
         res.json(stripAuthorId(recipes));
       } catch (error) {
         console.error("Get community recipes error:", error);
-        sendError(res, 500, "Failed to fetch recipes");
+        sendError(
+          res,
+          500,
+          "Failed to fetch recipes",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -166,7 +192,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Get generation status error:", error);
-        sendError(res, 500, "Failed to fetch generation status");
+        sendError(
+          res,
+          500,
+          "Failed to fetch generation status",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -206,7 +237,12 @@ export function register(app: Express): void {
         // Validate input
         const parsed = recipeGenerationSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -253,11 +289,21 @@ export function register(app: Express): void {
         res.status(201).json(recipe);
       } catch (error) {
         if (error instanceof ZodError) {
-          sendError(res, 400, formatZodError(error));
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
         console.error("Recipe generation error:", error);
-        sendError(res, 500, "Failed to generate recipe");
+        sendError(
+          res,
+          500,
+          "Failed to generate recipe",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -270,13 +316,18 @@ export function register(app: Express): void {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
-          sendError(res, 400, "Invalid recipe ID");
+          sendError(res, 400, "Invalid recipe ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const parsed = recipeShareSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -287,14 +338,24 @@ export function register(app: Express): void {
         );
 
         if (!recipe) {
-          sendError(res, 404, "Recipe not found or not owned by you");
+          sendError(
+            res,
+            404,
+            "Recipe not found or not owned by you",
+            ErrorCode.NOT_FOUND,
+          );
           return;
         }
 
         res.json(recipe);
       } catch (error) {
         console.error("Recipe share error:", error);
-        sendError(res, 500, "Failed to update recipe sharing");
+        sendError(
+          res,
+          500,
+          "Failed to update recipe sharing",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -309,7 +370,12 @@ export function register(app: Express): void {
         res.json(recipes);
       } catch (error) {
         console.error("Get user recipes error:", error);
-        sendError(res, 500, "Failed to fetch your recipes");
+        sendError(
+          res,
+          500,
+          "Failed to fetch your recipes",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -322,20 +388,20 @@ export function register(app: Express): void {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
-          sendError(res, 400, "Invalid recipe ID");
+          sendError(res, 400, "Invalid recipe ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const recipe = await storage.getCommunityRecipe(recipeId);
 
         if (!recipe) {
-          sendError(res, 404, "Recipe not found");
+          sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         // Only show public recipes or recipes owned by the user
         if (!recipe.isPublic && recipe.authorId !== req.userId) {
-          sendError(res, 404, "Recipe not found");
+          sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
         }
 
@@ -343,7 +409,7 @@ export function register(app: Express): void {
         res.json(safeRecipe);
       } catch (error) {
         console.error("Get recipe error:", error);
-        sendError(res, 500, "Failed to fetch recipe");
+        sendError(res, 500, "Failed to fetch recipe", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -356,7 +422,7 @@ export function register(app: Express): void {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
-          sendError(res, 400, "Invalid recipe ID");
+          sendError(res, 400, "Invalid recipe ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
@@ -366,14 +432,24 @@ export function register(app: Express): void {
         );
 
         if (!deleted) {
-          sendError(res, 404, "Recipe not found or not owned by you");
+          sendError(
+            res,
+            404,
+            "Recipe not found or not owned by you",
+            ErrorCode.NOT_FOUND,
+          );
           return;
         }
 
         res.status(204).send();
       } catch (error) {
         console.error("Delete recipe error:", error);
-        sendError(res, 500, "Failed to delete recipe");
+        sendError(
+          res,
+          500,
+          "Failed to delete recipe",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -391,7 +467,12 @@ export function register(app: Express): void {
       try {
         const parsed = catalogSearchSchema.safeParse(req.query);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -403,7 +484,12 @@ export function register(app: Express): void {
           return;
         }
         console.error("Catalog search error:", error);
-        sendError(res, 500, "Failed to search recipes");
+        sendError(
+          res,
+          500,
+          "Failed to search recipes",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -417,13 +503,18 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid catalog ID");
+          sendError(res, 400, "Invalid catalog ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const detail = await getCatalogRecipeDetail(id);
         if (!detail) {
-          sendError(res, 404, "Recipe not found in catalog");
+          sendError(
+            res,
+            404,
+            "Recipe not found in catalog",
+            ErrorCode.NOT_FOUND,
+          );
           return;
         }
 
@@ -434,7 +525,12 @@ export function register(app: Express): void {
           return;
         }
         console.error("Catalog detail error:", error);
-        sendError(res, 500, "Failed to fetch recipe detail");
+        sendError(
+          res,
+          500,
+          "Failed to fetch recipe detail",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -448,7 +544,7 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid catalog ID");
+          sendError(res, 400, "Invalid catalog ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
@@ -465,7 +561,12 @@ export function register(app: Express): void {
         // Fetch from Spoonacular
         const detail = await getCatalogRecipeDetail(id);
         if (!detail) {
-          sendError(res, 404, "Recipe not found in catalog");
+          sendError(
+            res,
+            404,
+            "Recipe not found in catalog",
+            ErrorCode.NOT_FOUND,
+          );
           return;
         }
 
@@ -483,7 +584,12 @@ export function register(app: Express): void {
           return;
         }
         console.error("Catalog save error:", error);
-        sendError(res, 500, "Failed to save catalog recipe");
+        sendError(
+          res,
+          500,
+          "Failed to save catalog recipe",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -497,7 +603,12 @@ export function register(app: Express): void {
       try {
         const parsed = importUrlSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -554,7 +665,12 @@ export function register(app: Express): void {
         res.status(201).json(recipe);
       } catch (error) {
         console.error("URL import error:", error);
-        sendError(res, 500, "Failed to import recipe");
+        sendError(
+          res,
+          500,
+          "Failed to import recipe",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

@@ -124,9 +124,7 @@ export default function RecipeCreateScreen() {
         sheetRefs[section].current?.present();
       });
     },
-    // All captured values are stable refs and state setters — including them
-    // would not change behavior but would obscure the intentional stability.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- all captured values are stable refs and state setters; including them would not change behavior but would obscure the intentional stability
     [],
   );
 

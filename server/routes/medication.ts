@@ -9,6 +9,7 @@ import {
   parseQueryDate,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { analyzeGlp1Insights } from "../services/glp1-insights";
@@ -43,7 +44,12 @@ export function register(app: Express): void {
         res.json(logs);
       } catch (error) {
         console.error("Get medication logs error:", error);
-        sendError(res, 500, "Failed to get medication logs");
+        sendError(
+          res,
+          500,
+          "Failed to get medication logs",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -73,7 +79,12 @@ export function register(app: Express): void {
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
-          return sendError(res, 400, formatZodError(parsed.error));
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const log = await storage.createMedicationLog({
           userId: req.userId!,
@@ -82,7 +93,12 @@ export function register(app: Express): void {
         res.status(201).json(log);
       } catch (error) {
         console.error("Create medication log error:", error);
-        sendError(res, 500, "Failed to create medication log");
+        sendError(
+          res,
+          500,
+          "Failed to create medication log",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -103,7 +119,13 @@ export function register(app: Express): void {
         if (!features) return;
 
         const id = parsePositiveIntParam(req.params.id);
-        if (!id) return sendError(res, 400, "Invalid log ID");
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid log ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const schema = z.object({
           medicationName: z.string().max(100).optional(),
@@ -115,18 +137,34 @@ export function register(app: Express): void {
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
-          return sendError(res, 400, formatZodError(parsed.error));
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const updated = await storage.updateMedicationLog(
           id,
           req.userId!,
           parsed.data,
         );
-        if (!updated) return sendError(res, 404, "Medication log not found");
+        if (!updated)
+          return sendError(
+            res,
+            404,
+            "Medication log not found",
+            ErrorCode.NOT_FOUND,
+          );
         res.json(updated);
       } catch (error) {
         console.error("Update medication log error:", error);
-        sendError(res, 500, "Failed to update medication log");
+        sendError(
+          res,
+          500,
+          "Failed to update medication log",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -147,14 +185,31 @@ export function register(app: Express): void {
         if (!features) return;
 
         const id = parsePositiveIntParam(req.params.id);
-        if (!id) return sendError(res, 400, "Invalid log ID");
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid log ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const deleted = await storage.deleteMedicationLog(id, req.userId!);
-        if (!deleted) return sendError(res, 404, "Medication log not found");
+        if (!deleted)
+          return sendError(
+            res,
+            404,
+            "Medication log not found",
+            ErrorCode.NOT_FOUND,
+          );
         res.status(204).send();
       } catch (error) {
         console.error("Delete medication log error:", error);
-        sendError(res, 500, "Failed to delete medication log");
+        sendError(
+          res,
+          500,
+          "Failed to delete medication log",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -178,7 +233,12 @@ export function register(app: Express): void {
         res.json(insights);
       } catch (error) {
         console.error("Get medication insights error:", error);
-        sendError(res, 500, "Failed to get medication insights");
+        sendError(
+          res,
+          500,
+          "Failed to get medication insights",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -225,7 +285,12 @@ export function register(app: Express): void {
         res.json({ suggestions, remainingProtein, proteinGoal });
       } catch (error) {
         console.error("Get protein suggestions error:", error);
-        sendError(res, 500, "Failed to get protein suggestions");
+        sendError(
+          res,
+          500,
+          "Failed to get protein suggestions",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -251,7 +316,12 @@ export function register(app: Express): void {
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
-          return sendError(res, 400, formatZodError(parsed.error));
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const updates: Record<string, unknown> = {
           glp1Mode: parsed.data.glp1Mode,
@@ -264,11 +334,17 @@ export function register(app: Express): void {
         }
 
         const profile = await storage.updateUserProfile(req.userId!, updates);
-        if (!profile) return sendError(res, 404, "Profile not found");
+        if (!profile)
+          return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
         res.json(profile);
       } catch (error) {
         console.error("Update GLP-1 mode error:", error);
-        sendError(res, 500, "Failed to update GLP-1 mode");
+        sendError(
+          res,
+          500,
+          "Failed to update GLP-1 mode",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

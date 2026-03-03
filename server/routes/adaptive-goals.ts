@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { checkPremiumFeature, parseQueryInt, crudRateLimit } from "./_helpers";
 import { computeAdaptiveGoals } from "../services/adaptive-goals";
 
@@ -30,7 +31,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Get adaptive goals error:", error);
-        sendError(res, 500, "Failed to get adaptive goals");
+        sendError(
+          res,
+          500,
+          "Failed to get adaptive goals",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -52,7 +58,12 @@ export function register(app: Express): void {
 
         const recommendation = await computeAdaptiveGoals(req.userId!);
         if (!recommendation) {
-          return sendError(res, 400, "No pending recommendation");
+          return sendError(
+            res,
+            400,
+            "No pending recommendation",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         // Apply the new goals
@@ -91,7 +102,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Accept adaptive goal error:", error);
-        sendError(res, 500, "Failed to accept adaptive goal");
+        sendError(
+          res,
+          500,
+          "Failed to accept adaptive goal",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -138,7 +154,12 @@ export function register(app: Express): void {
         res.json({ success: true });
       } catch (error) {
         console.error("Dismiss adaptive goal error:", error);
-        sendError(res, 500, "Failed to dismiss adaptive goal");
+        sendError(
+          res,
+          500,
+          "Failed to dismiss adaptive goal",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -160,7 +181,12 @@ export function register(app: Express): void {
 
         const { enabled } = req.body;
         if (typeof enabled !== "boolean") {
-          return sendError(res, 400, "enabled must be a boolean");
+          return sendError(
+            res,
+            400,
+            "enabled must be a boolean",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         await storage.updateUser(req.userId!, {
@@ -170,7 +196,12 @@ export function register(app: Express): void {
         res.json({ success: true, enabled });
       } catch (error) {
         console.error("Update adaptive goals settings error:", error);
-        sendError(res, 500, "Failed to update settings");
+        sendError(
+          res,
+          500,
+          "Failed to update settings",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -195,7 +226,12 @@ export function register(app: Express): void {
         res.json(logs);
       } catch (error) {
         console.error("Get adjustment history error:", error);
-        sendError(res, 500, "Failed to get adjustment history");
+        sendError(
+          res,
+          500,
+          "Failed to get adjustment history",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

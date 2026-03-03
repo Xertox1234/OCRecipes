@@ -6,6 +6,7 @@ import {
   parseQueryString,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { requireAuth } from "../middleware/auth";
 import {
   lookupMicronutrientsWithCache,
@@ -32,12 +33,19 @@ export function register(app: Express): void {
         if (!features) return;
 
         const itemId = parsePositiveIntParam(req.params.id);
-        if (!itemId) return sendError(res, 400, "Invalid item ID");
+        if (!itemId)
+          return sendError(
+            res,
+            400,
+            "Invalid item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const item = await storage.getScannedItem(itemId);
-        if (!item) return sendError(res, 404, "Item not found");
+        if (!item)
+          return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         if (item.userId !== req.userId)
-          return sendError(res, 404, "Item not found");
+          return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
 
         const micronutrients = await lookupMicronutrientsWithCache(
           item.productName,
@@ -45,7 +53,12 @@ export function register(app: Express): void {
         res.json({ itemId, productName: item.productName, micronutrients });
       } catch (error) {
         console.error("Get item micronutrients error:", error);
-        sendError(res, 500, "Failed to get micronutrients");
+        sendError(
+          res,
+          500,
+          "Failed to get micronutrients",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -95,7 +108,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Get daily micronutrients error:", error);
-        sendError(res, 500, "Failed to get daily micronutrients");
+        sendError(
+          res,
+          500,
+          "Failed to get daily micronutrients",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

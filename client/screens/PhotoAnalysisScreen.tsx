@@ -436,7 +436,7 @@ export default function PhotoAnalysisScreen() {
       });
       setPrepMethods(initialPrep);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on foods.length, not foods: avoids resetting user's selections/prep edits when food names change
   }, [foods.length]);
 
   // Upload and analyze photo
@@ -473,7 +473,7 @@ export default function PhotoAnalysisScreen() {
     };
 
     analyzePhoto();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot analysis on mount; haptics object is unstable (new ref each render), intentConfig derived from intent
   }, [imageUri, intent]);
 
   const handleEditFood = (

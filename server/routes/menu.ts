@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { analyzeMenuPhoto } from "../services/menu-analysis";
 import {
   checkPremiumFeature,
@@ -42,7 +43,12 @@ export function register(app: Express): void {
         if (!features) return;
 
         if (!req.file) {
-          return sendError(res, 400, "No photo provided");
+          return sendError(
+            res,
+            400,
+            "No photo provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const imageBase64 = req.file.buffer.toString("base64");
@@ -59,7 +65,7 @@ export function register(app: Express): void {
         res.json({ ...result, id: saved.id });
       } catch (error) {
         console.error("Menu scan error:", error);
-        sendError(res, 500, "Failed to analyze menu");
+        sendError(res, 500, "Failed to analyze menu", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -83,7 +89,12 @@ export function register(app: Express): void {
         res.json(scans);
       } catch (error) {
         console.error("Get menu history error:", error);
-        sendError(res, 500, "Failed to get menu history");
+        sendError(
+          res,
+          500,
+          "Failed to get menu history",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -95,14 +106,31 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
-        if (!id) return sendError(res, 400, "Invalid scan ID");
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid scan ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const deleted = await storage.deleteMenuScan(id, req.userId!);
-        if (!deleted) return sendError(res, 404, "Menu scan not found");
+        if (!deleted)
+          return sendError(
+            res,
+            404,
+            "Menu scan not found",
+            ErrorCode.NOT_FOUND,
+          );
         res.status(204).send();
       } catch (error) {
         console.error("Delete menu scan error:", error);
-        sendError(res, 500, "Failed to delete menu scan");
+        sendError(
+          res,
+          500,
+          "Failed to delete menu scan",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

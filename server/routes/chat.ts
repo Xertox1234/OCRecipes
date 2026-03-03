@@ -10,6 +10,7 @@ import {
   checkPremiumFeature,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import {
   generateCoachResponse,
   type CoachContext,
@@ -31,7 +32,12 @@ export function register(app: Express): void {
         res.json(conversations);
       } catch (error) {
         console.error("Chat error:", error);
-        sendError(res, 500, "Failed to list conversations");
+        sendError(
+          res,
+          500,
+          "Failed to list conversations",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -46,7 +52,12 @@ export function register(app: Express): void {
         const schema = z.object({ title: z.string().max(200).optional() });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
-          return sendError(res, 400, formatZodError(parsed.error));
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const conversation = await storage.createChatConversation(
           req.userId!,
@@ -55,7 +66,12 @@ export function register(app: Express): void {
         res.status(201).json(conversation);
       } catch (error) {
         console.error("Chat error:", error);
-        sendError(res, 500, "Failed to create conversation");
+        sendError(
+          res,
+          500,
+          "Failed to create conversation",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -68,16 +84,33 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
-        if (!id) return sendError(res, 400, "Invalid conversation ID");
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid conversation ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const conversation = await storage.getChatConversation(id, req.userId!);
-        if (!conversation) return sendError(res, 404, "Conversation not found");
+        if (!conversation)
+          return sendError(
+            res,
+            404,
+            "Conversation not found",
+            ErrorCode.NOT_FOUND,
+          );
 
         const messages = await storage.getChatMessages(id, 100);
         res.json(messages);
       } catch (error) {
         console.error("Chat error:", error);
-        sendError(res, 500, "Failed to fetch messages");
+        sendError(
+          res,
+          500,
+          "Failed to fetch messages",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -90,15 +123,32 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
-        if (!id) return sendError(res, 400, "Invalid conversation ID");
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid conversation ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const conversation = await storage.getChatConversation(id, req.userId!);
-        if (!conversation) return sendError(res, 404, "Conversation not found");
+        if (!conversation)
+          return sendError(
+            res,
+            404,
+            "Conversation not found",
+            ErrorCode.NOT_FOUND,
+          );
 
         const schema = z.object({ content: z.string().min(1).max(2000) });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
-          return sendError(res, 400, formatZodError(parsed.error));
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         // Premium gate — fail fast before DB queries
         const features = await checkPremiumFeature(
@@ -114,7 +164,8 @@ export function register(app: Express): void {
           storage.getUser(req.userId!),
           storage.getDailyChatMessageCount(req.userId!, new Date()),
         ]);
-        if (!user) return sendError(res, 401, "Unauthorized");
+        if (!user)
+          return sendError(res, 401, "Unauthorized", ErrorCode.UNAUTHORIZED);
 
         if (dailyCount >= features.dailyCoachMessages) {
           return sendError(
@@ -246,7 +297,12 @@ export function register(app: Express): void {
       } catch (error) {
         console.error("Chat error:", error);
         if (!res.headersSent) {
-          sendError(res, 500, "Failed to send message");
+          sendError(
+            res,
+            500,
+            "Failed to send message",
+            ErrorCode.INTERNAL_ERROR,
+          );
         }
       }
     },
@@ -260,14 +316,31 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
-        if (!id) return sendError(res, 400, "Invalid conversation ID");
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid conversation ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
 
         const deleted = await storage.deleteChatConversation(id, req.userId!);
-        if (!deleted) return sendError(res, 404, "Conversation not found");
+        if (!deleted)
+          return sendError(
+            res,
+            404,
+            "Conversation not found",
+            ErrorCode.NOT_FOUND,
+          );
         res.status(204).send();
       } catch (error) {
         console.error("Chat error:", error);
-        sendError(res, 500, "Failed to delete conversation");
+        sendError(
+          res,
+          500,
+          "Failed to delete conversation",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

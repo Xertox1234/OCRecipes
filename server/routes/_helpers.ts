@@ -12,6 +12,7 @@ import {
   isValidSubscriptionTier,
   type PremiumFeatures,
 } from "@shared/types/premium";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { insertUserProfileSchema, allergySchema } from "@shared/schema";
 
 // ============================================================================
@@ -47,7 +48,7 @@ export async function checkPremiumFeature(
       res,
       403,
       `${featureLabel} requires a premium subscription`,
-      "PREMIUM_REQUIRED",
+      ErrorCode.PREMIUM_REQUIRED,
     );
     return null;
   }

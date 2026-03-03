@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import {
   insertScannedItemSchema,
   scannedItems,
@@ -75,20 +76,30 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       const name = parseQueryString(req.query.name)?.trim();
       if (!name || name.length > 200) {
-        sendError(res, 400, "name query parameter is required (max 200 chars)");
+        sendError(
+          res,
+          400,
+          "name query parameter is required (max 200 chars)",
+          ErrorCode.VALIDATION_ERROR,
+        );
         return;
       }
 
       try {
         const result = await lookupNutrition(name);
         if (!result) {
-          sendError(res, 404, "Nutrition data not found");
+          sendError(res, 404, "Nutrition data not found", ErrorCode.NOT_FOUND);
           return;
         }
         res.json(result);
       } catch (error) {
         console.error("Nutrition lookup error:", error);
-        sendError(res, 500, "Nutrition lookup failed");
+        sendError(
+          res,
+          500,
+          "Nutrition lookup failed",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -104,7 +115,7 @@ export function register(app: Express): void {
       const rawCode = req.params.code;
       const code = typeof rawCode === "string" ? rawCode.trim() : "";
       if (!code || code.length > 50 || !/^\d+$/.test(code)) {
-        sendError(res, 400, "Invalid barcode");
+        sendError(res, 400, "Invalid barcode", ErrorCode.VALIDATION_ERROR);
         return;
       }
 
@@ -117,7 +128,7 @@ export function register(app: Express): void {
         res.json(result);
       } catch (error) {
         console.error("Barcode lookup error:", error);
-        sendError(res, 500, "Barcode lookup failed");
+        sendError(res, 500, "Barcode lookup failed", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -143,39 +154,7 @@ export function register(app: Express): void {
         res.json(result);
       } catch (error) {
         console.error("Error fetching scanned items:", error);
-        sendError(res, 500, "Failed to fetch items");
-      }
-    },
-  );
-
-  // Get favourite scanned items (must be before /:id to avoid route conflict)
-  app.get(
-    "/api/scanned-items/favourites",
-    requireAuth,
-    pantryRateLimit,
-    async (req: Request, res: Response) => {
-      try {
-        const limit = parseQueryInt(req.query.limit, {
-          default: 50,
-          min: 1,
-          max: 100,
-        });
-        const offset = parseQueryInt(req.query.offset, { default: 0, min: 0 });
-
-        const result = await storage.getFavouriteScannedItems(
-          req.userId!,
-          limit,
-          offset,
-        );
-        res.json(result);
-      } catch (error) {
-        console.error("Error fetching favourite items:", error);
-        sendError(
-          res,
-          500,
-          "Failed to fetch favourites",
-          "FETCH_FAVOURITES_FAILED",
-        );
+        sendError(res, 500, "Failed to fetch items", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -188,19 +167,24 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          return sendError(res, 400, "Invalid item ID");
+          return sendError(
+            res,
+            400,
+            "Invalid item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const item = await storage.getScannedItemWithFavourite(id, req.userId!);
 
         if (!item || item.userId !== req.userId) {
-          return sendError(res, 404, "Item not found");
+          return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
 
         res.json(item);
       } catch (error) {
         console.error("Error fetching scanned item:", error);
-        sendError(res, 500, "Failed to fetch item");
+        sendError(res, 500, "Failed to fetch item", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -250,10 +234,15 @@ export function register(app: Express): void {
         res.status(201).json(item);
       } catch (error) {
         if (error instanceof ZodError) {
-          return sendError(res, 400, formatZodError(error));
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         console.error("Error creating scanned item:", error);
-        sendError(res, 500, "Failed to save item");
+        sendError(res, 500, "Failed to save item", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -270,17 +259,17 @@ export function register(app: Express): void {
           return sendError(res, 400, "Invalid item ID", "INVALID_ITEM_ID");
         }
 
-        // IDOR: verify ownership (getScannedItem filters discarded items,
-        // so favouriting a discarded item returns 404 — intentional)
-        const item = await storage.getScannedItem(id);
-        if (!item || item.userId !== req.userId) {
-          return sendError(res, 404, "Item not found", "ITEM_NOT_FOUND");
-        }
-
+        // Ownership + discardedAt check is done inside the transaction
+        // to close the TOCTOU gap (see storage.toggleFavouriteScannedItem).
         const isFavourited = await storage.toggleFavouriteScannedItem(
           id,
           req.userId!,
         );
+
+        if (isFavourited === null) {
+          return sendError(res, 404, "Item not found", "ITEM_NOT_FOUND");
+        }
+
         res.json({ isFavourited });
       } catch (error) {
         console.error("Error toggling favourite:", error);
@@ -343,7 +332,12 @@ export function register(app: Express): void {
         });
       } catch (error) {
         console.error("Error fetching daily summary:", error);
-        sendError(res, 500, "Failed to fetch summary");
+        sendError(
+          res,
+          500,
+          "Failed to fetch summary",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

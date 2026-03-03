@@ -5,7 +5,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
-  TouchableOpacity,
+  Pressable,
   TextInput as RNTextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,6 +25,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
@@ -431,8 +432,8 @@ export default function NutritionDetailScreen() {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     },
@@ -558,15 +559,16 @@ export default function NutritionDetailScreen() {
                     servingSizeGrams !== null &&
                     Math.abs(servingSizeGrams - opt.grams) < 0.1;
                   return (
-                    <TouchableOpacity
+                    <Pressable
                       key={opt.grams}
-                      style={[
+                      style={({ pressed }) => [
                         styles.servingChip,
                         {
                           backgroundColor: isActive
                             ? theme.link
                             : withOpacity(theme.text, 0.06),
                         },
+                        pressed && { opacity: 0.7 },
                       ]}
                       onPress={() => {
                         setShowCustomInput(false);
@@ -587,18 +589,19 @@ export default function NutritionDetailScreen() {
                       >
                         {opt.label}
                       </ThemedText>
-                    </TouchableOpacity>
+                    </Pressable>
                   );
                 })}
                 {/* Custom option */}
-                <TouchableOpacity
-                  style={[
+                <Pressable
+                  style={({ pressed }) => [
                     styles.servingChip,
                     {
                       backgroundColor: showCustomInput
                         ? theme.link
                         : withOpacity(theme.text, 0.06),
                     },
+                    pressed && { opacity: 0.7 },
                   ]}
                   onPress={() => {
                     setShowCustomInput(true);
@@ -617,7 +620,7 @@ export default function NutritionDetailScreen() {
                   >
                     Custom
                   </ThemedText>
-                </TouchableOpacity>
+                </Pressable>
               </ScrollView>
 
               {showCustomInput ? (
@@ -673,10 +676,11 @@ export default function NutritionDetailScreen() {
                 Servings
               </ThemedText>
               <View style={styles.quantityStepper}>
-                <TouchableOpacity
-                  style={[
+                <Pressable
+                  style={({ pressed }) => [
                     styles.stepperButton,
                     { backgroundColor: withOpacity(theme.text, 0.08) },
+                    pressed && { opacity: 0.7 },
                   ]}
                   onPress={() => {
                     const next = Math.max(0.5, servingQuantity - 0.5);
@@ -690,16 +694,17 @@ export default function NutritionDetailScreen() {
                   accessibilityRole="button"
                 >
                   <Feather name="minus" size={18} color={theme.text} />
-                </TouchableOpacity>
+                </Pressable>
                 <ThemedText type="h4" style={styles.quantityValue}>
                   {servingQuantity % 1 === 0
                     ? servingQuantity
                     : servingQuantity.toFixed(1)}
                 </ThemedText>
-                <TouchableOpacity
-                  style={[
+                <Pressable
+                  style={({ pressed }) => [
                     styles.stepperButton,
                     { backgroundColor: withOpacity(theme.text, 0.08) },
+                    pressed && { opacity: 0.7 },
                   ]}
                   onPress={() => {
                     const next = servingQuantity + 0.5;
@@ -713,7 +718,7 @@ export default function NutritionDetailScreen() {
                   accessibilityRole="button"
                 >
                   <Feather name="plus" size={18} color={theme.text} />
-                </TouchableOpacity>
+                </Pressable>
               </View>
             </View>
           </Card>
@@ -768,13 +773,14 @@ export default function NutritionDetailScreen() {
                 autoFocus
                 editable={!isSearching}
               />
-              <TouchableOpacity
-                style={[
+              <Pressable
+                style={({ pressed }) => [
                   styles.manualSearchButton,
                   {
                     backgroundColor: theme.link,
                     opacity: isSearching || !manualSearchQuery.trim() ? 0.5 : 1,
                   },
+                  pressed && { opacity: 0.7 },
                 ]}
                 onPress={() => handleManualSearch(manualSearchQuery)}
                 disabled={isSearching || !manualSearchQuery.trim()}
@@ -790,7 +796,7 @@ export default function NutritionDetailScreen() {
                     color={theme.buttonText}
                   />
                 )}
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </Card>
         ) : null}

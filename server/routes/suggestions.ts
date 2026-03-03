@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { type Allergy } from "@shared/schema";
 import { calculateProfileHash } from "../utils/profile-hash";
 import {
@@ -28,14 +29,19 @@ export function register(app: Express): void {
       try {
         const itemId = parsePositiveIntParam(req.params.id);
         if (!itemId) {
-          return sendError(res, 400, "Invalid item ID");
+          return sendError(
+            res,
+            400,
+            "Invalid item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const item = await storage.getScannedItem(itemId);
 
         // IDOR protection: verify user owns the item
         if (!item || item.userId !== req.userId) {
-          return sendError(res, 404, "Item not found");
+          return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
 
         const userProfile = await storage.getUserProfile(req.userId!);
@@ -146,7 +152,12 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
         });
       } catch (error) {
         console.error("Error generating suggestions:", error);
-        sendError(res, 500, "Failed to generate suggestions");
+        sendError(
+          res,
+          500,
+          "Failed to generate suggestions",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -165,20 +176,35 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
         );
 
         if (!itemId) {
-          return sendError(res, 400, "Invalid item ID");
+          return sendError(
+            res,
+            400,
+            "Invalid item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
         if (isNaN(suggestionIndex) || suggestionIndex < 0) {
-          return sendError(res, 400, "Invalid suggestion index");
+          return sendError(
+            res,
+            400,
+            "Invalid suggestion index",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const item = await storage.getScannedItem(itemId);
         if (!item || item.userId !== req.userId) {
-          return sendError(res, 404, "Item not found");
+          return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
 
         const parsed = instructionsRequestSchema.safeParse(req.body);
         if (!parsed.success) {
-          return sendError(res, 400, "Invalid input");
+          return sendError(
+            res,
+            400,
+            "Invalid input",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const { suggestionTitle, suggestionType, cacheId } = parsed.data;
@@ -295,7 +321,12 @@ Format as plain text with clear sections.`;
         res.json({ instructions });
       } catch (error) {
         console.error("Error generating instructions:", error);
-        sendError(res, 500, "Failed to generate instructions");
+        sendError(
+          res,
+          500,
+          "Failed to generate instructions",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

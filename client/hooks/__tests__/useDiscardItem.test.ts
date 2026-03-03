@@ -2,6 +2,7 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 
 import { useDiscardItem } from "../useDiscardItem";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest } = vi.hoisted(() => ({
@@ -30,7 +31,7 @@ describe("useDiscardItem", () => {
       { id: 2, productName: "Banana" },
       { id: 3, productName: "Cherry" },
     ];
-    queryClient.setQueryData(["/api/scanned-items"], makePaginatedData(items));
+    queryClient.setQueryData(QUERY_KEYS.scannedItems, makePaginatedData(items));
 
     // Make the API call hang so we can inspect optimistic state
     mockApiRequest.mockReturnValue(new Promise(() => {}));
@@ -44,7 +45,7 @@ describe("useDiscardItem", () => {
     await waitFor(() => {
       const data = queryClient.getQueryData<
         ReturnType<typeof makePaginatedData>
-      >(["/api/scanned-items"]);
+      >(QUERY_KEYS.scannedItems);
       expect(data?.pages[0].items).toHaveLength(2);
       expect(data?.pages[0].items.map((i) => i.id)).toEqual([1, 3]);
       expect(data?.pages[0].total).toBe(2);
@@ -58,7 +59,7 @@ describe("useDiscardItem", () => {
       { id: 1, productName: "Apple" },
       { id: 2, productName: "Banana" },
     ];
-    queryClient.setQueryData(["/api/scanned-items"], makePaginatedData(items));
+    queryClient.setQueryData(QUERY_KEYS.scannedItems, makePaginatedData(items));
 
     mockApiRequest.mockRejectedValue(new Error("Server error"));
 
@@ -74,7 +75,7 @@ describe("useDiscardItem", () => {
 
     // Cache should be rolled back to original
     const data = queryClient.getQueryData<ReturnType<typeof makePaginatedData>>(
-      ["/api/scanned-items"],
+      QUERY_KEYS.scannedItems,
     );
     expect(data?.pages[0].items).toHaveLength(2);
     expect(data?.pages[0].items.map((i) => i.id)).toEqual([1, 2]);
@@ -84,7 +85,7 @@ describe("useDiscardItem", () => {
     const { wrapper, queryClient } = createQueryWrapper();
 
     queryClient.setQueryData(
-      ["/api/scanned-items"],
+      QUERY_KEYS.scannedItems,
       makePaginatedData([{ id: 1, productName: "Apple" }]),
     );
 
@@ -102,10 +103,10 @@ describe("useDiscardItem", () => {
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["/api/scanned-items"],
+      queryKey: QUERY_KEYS.scannedItems,
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["/api/daily-summary"],
+      queryKey: QUERY_KEYS.dailySummary,
     });
   });
 

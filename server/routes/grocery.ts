@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { isValidCalendarDate } from "../utils/date-validation";
 import { generateGroceryItems } from "../services/grocery-generation";
@@ -44,7 +45,12 @@ export function register(app: Express): void {
       try {
         const parsed = generateGroceryListSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -52,12 +58,22 @@ export function register(app: Express): void {
           !isValidCalendarDate(parsed.data.startDate) ||
           !isValidCalendarDate(parsed.data.endDate)
         ) {
-          sendError(res, 400, "Invalid date format");
+          sendError(
+            res,
+            400,
+            "Invalid date format",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
         if (parsed.data.startDate > parsed.data.endDate) {
-          sendError(res, 400, "Start date must be before end date");
+          sendError(
+            res,
+            400,
+            "Start date must be before end date",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -130,27 +146,35 @@ export function register(app: Express): void {
           dateRangeEnd: parsed.data.endDate,
         });
 
-        // Create items
-        const items = [];
-        for (const agg of aggregated) {
-          const item = await storage.addGroceryListItem({
+        // Create items (batch insert)
+        const items = await storage.addGroceryListItems(
+          aggregated.map((agg) => ({
             groceryListId: list.id,
             name: agg.name,
             quantity: agg.quantity?.toString() || null,
             unit: agg.unit,
             category: agg.category,
-          });
-          items.push(item);
-        }
+          })),
+        );
 
         res.status(201).json({ ...list, items });
       } catch (error) {
         if (error instanceof ZodError) {
-          sendError(res, 400, formatZodError(error));
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
         console.error("Generate grocery list error:", error);
-        sendError(res, 500, "Failed to generate grocery list");
+        sendError(
+          res,
+          500,
+          "Failed to generate grocery list",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -166,7 +190,12 @@ export function register(app: Express): void {
         res.json(lists);
       } catch (error) {
         console.error("Get grocery lists error:", error);
-        sendError(res, 500, "Failed to fetch grocery lists");
+        sendError(
+          res,
+          500,
+          "Failed to fetch grocery lists",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -179,20 +208,25 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid list ID");
+          sendError(res, 400, "Invalid list ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const list = await storage.getGroceryListWithItems(id, req.userId!);
         if (!list) {
-          sendError(res, 404, "Grocery list not found");
+          sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         res.json(list);
       } catch (error) {
         console.error("Get grocery list error:", error);
-        sendError(res, 500, "Failed to fetch grocery list");
+        sendError(
+          res,
+          500,
+          "Failed to fetch grocery list",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -206,14 +240,14 @@ export function register(app: Express): void {
         const listId = parsePositiveIntParam(req.params.id);
         const itemId = parsePositiveIntParam(req.params.itemId);
         if (!listId || !itemId) {
-          sendError(res, 400, "Invalid ID");
+          sendError(res, 400, "Invalid ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         // IDOR: verify list belongs to user
         const list = await storage.getGroceryListWithItems(listId, req.userId!);
         if (!list) {
-          sendError(res, 404, "Grocery list not found");
+          sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
         }
 
@@ -225,7 +259,7 @@ export function register(app: Express): void {
             req.body.isChecked,
           );
           if (!updated) {
-            sendError(res, 404, "Item not found");
+            sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
             return;
           }
           // Also handle addedToPantry if provided in same request
@@ -252,17 +286,22 @@ export function register(app: Express): void {
             req.body.addedToPantry,
           );
           if (!updated) {
-            sendError(res, 404, "Item not found");
+            sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
             return;
           }
           res.json(updated);
           return;
         }
 
-        sendError(res, 400, "No update fields provided");
+        sendError(
+          res,
+          400,
+          "No update fields provided",
+          ErrorCode.VALIDATION_ERROR,
+        );
       } catch (error) {
         console.error("Toggle grocery item error:", error);
-        sendError(res, 500, "Failed to update item");
+        sendError(res, 500, "Failed to update item", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -285,20 +324,20 @@ export function register(app: Express): void {
         const listId = parsePositiveIntParam(req.params.id);
         const itemId = parsePositiveIntParam(req.params.itemId);
         if (!listId || !itemId) {
-          sendError(res, 400, "Invalid ID");
+          sendError(res, 400, "Invalid ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         // IDOR: verify list belongs to user
         const list = await storage.getGroceryListWithItems(listId, req.userId!);
         if (!list) {
-          sendError(res, 404, "Grocery list not found");
+          sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         const groceryItem = list.items.find((i) => i.id === itemId);
         if (!groceryItem) {
-          sendError(res, 404, "Grocery item not found");
+          sendError(res, 404, "Grocery item not found", ErrorCode.NOT_FOUND);
           return;
         }
 
@@ -318,7 +357,12 @@ export function register(app: Express): void {
         res.status(201).json(pantryItem);
       } catch (error) {
         console.error("Add grocery item to pantry error:", error);
-        sendError(res, 500, "Failed to add item to pantry");
+        sendError(
+          res,
+          500,
+          "Failed to add item to pantry",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );
@@ -331,20 +375,25 @@ export function register(app: Express): void {
       try {
         const listId = parsePositiveIntParam(req.params.id);
         if (!listId) {
-          sendError(res, 400, "Invalid list ID");
+          sendError(res, 400, "Invalid list ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         // IDOR: verify list belongs to user
         const list = await storage.getGroceryListWithItems(listId, req.userId!);
         if (!list) {
-          sendError(res, 404, "Grocery list not found");
+          sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         const parsed = addManualGroceryItemSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, formatZodError(parsed.error));
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -360,11 +409,16 @@ export function register(app: Express): void {
         res.status(201).json(item);
       } catch (error) {
         if (error instanceof ZodError) {
-          sendError(res, 400, formatZodError(error));
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
         console.error("Add grocery item error:", error);
-        sendError(res, 500, "Failed to add item");
+        sendError(res, 500, "Failed to add item", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -377,20 +431,25 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          sendError(res, 400, "Invalid list ID");
+          sendError(res, 400, "Invalid list ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const deleted = await storage.deleteGroceryList(id, req.userId!);
         if (!deleted) {
-          sendError(res, 404, "Grocery list not found");
+          sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         res.status(204).send();
       } catch (error) {
         console.error("Delete grocery list error:", error);
-        sendError(res, 500, "Failed to delete grocery list");
+        sendError(
+          res,
+          500,
+          "Failed to delete grocery list",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

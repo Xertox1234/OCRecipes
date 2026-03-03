@@ -56,13 +56,9 @@ import {
   withOpacity,
   FAB_CLEARANCE,
 } from "@/constants/theme";
-import {
-  pressSpringConfig,
-  expandTimingConfig,
-  collapseTimingConfig,
-  contentRevealTimingConfig,
-} from "@/constants/animations";
+import { pressSpringConfig, expandTimingConfig } from "@/constants/animations";
 import { getApiUrl } from "@/lib/query-client";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
 import type { ScanHistoryNavigationProp } from "@/types/navigation";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
@@ -80,13 +76,24 @@ const DASHBOARD_ITEM_LIMIT = 5;
 /** Height of the expanded action row */
 const ACTION_ROW_HEIGHT = 90;
 
+/**
+ * Estimated height (px) of a collapsed history item card.
+ * Used by getItemLayout to speed up FlatList scroll calculations.
+ * Since only one item is expanded at a time, the vast majority use this height.
+ * Breakdown: Card padding (16*2) + content-area padding (20*2) + image row (~56) = ~128
+ */
+const ESTIMATED_COLLAPSED_ITEM_HEIGHT = 128;
+
+/** Height of the separator between items (Spacing.md) */
+const ITEM_SEPARATOR_HEIGHT = Spacing.md;
+
 /** Cap staggered animation index to avoid slow entrance on long lists */
 const MAX_ANIMATED_INDEX = 10;
 
 const HistoryItem = React.memo(function HistoryItem({
   item,
   index,
-  isExpanded,
+  expandedItemId,
   onToggleExpand,
   onNavigateToDetail,
   isPremium,
@@ -95,13 +102,13 @@ const HistoryItem = React.memo(function HistoryItem({
   onGenerateRecipe,
   onShare,
   onDiscard,
-  isFavouriteLoading,
-  isDiscardLoading,
+  favouritePendingItemId,
+  discardPendingItemId,
   reducedMotion,
 }: {
   item: ScannedItemResponse;
   index: number;
-  isExpanded: boolean;
+  expandedItemId: number | null;
   onToggleExpand: (itemId: number) => void;
   onNavigateToDetail: (itemId: number) => void;
   isPremium: boolean;
@@ -110,46 +117,33 @@ const HistoryItem = React.memo(function HistoryItem({
   onGenerateRecipe: (item: ScannedItemResponse) => void;
   onShare: (item: ScannedItemResponse) => void;
   onDiscard: (item: ScannedItemResponse) => void;
-  isFavouriteLoading: boolean;
-  isDiscardLoading: boolean;
+  favouritePendingItemId: number | undefined;
+  discardPendingItemId: number | undefined;
   reducedMotion: boolean;
 }) {
+  // Compute derived state internally so renderItem doesn't depend on expandedItemId
+  // or mutation state. FlatList's extraData triggers re-render; memo compares props.
+  const isExpanded = expandedItemId === item.id;
+  const isFavouriteLoading = favouritePendingItemId === item.id;
+  const isDiscardLoading = discardPendingItemId === item.id;
   const { theme } = useTheme();
   const scale = useSharedValue(1);
   const expandHeight = useSharedValue(0);
-  const contentOpacity = useSharedValue(0);
   const chevronRotation = useSharedValue(0);
 
-  // Track previous expanded state to determine direction
-  const prevExpandedRef = useRef(isExpanded);
-
   useEffect(() => {
-    if (isExpanded === prevExpandedRef.current) return;
-    prevExpandedRef.current = isExpanded;
-
     if (reducedMotion) {
       expandHeight.value = isExpanded ? ACTION_ROW_HEIGHT : 0;
-      contentOpacity.value = isExpanded ? 1 : 0;
       chevronRotation.value = isExpanded ? 90 : 0;
       return;
     }
 
-    if (isExpanded) {
-      expandHeight.value = withTiming(ACTION_ROW_HEIGHT, expandTimingConfig);
-      contentOpacity.value = withTiming(1, contentRevealTimingConfig);
-      chevronRotation.value = withTiming(90, expandTimingConfig);
-    } else {
-      contentOpacity.value = withTiming(0, collapseTimingConfig);
-      expandHeight.value = withTiming(0, collapseTimingConfig);
-      chevronRotation.value = withTiming(0, collapseTimingConfig);
-    }
-  }, [
-    isExpanded,
-    expandHeight,
-    contentOpacity,
-    chevronRotation,
-    reducedMotion,
-  ]);
+    expandHeight.value = withTiming(
+      isExpanded ? ACTION_ROW_HEIGHT : 0,
+      expandTimingConfig,
+    );
+    chevronRotation.value = withTiming(isExpanded ? 90 : 0, expandTimingConfig);
+  }, [isExpanded, expandHeight, chevronRotation, reducedMotion]);
 
   const animatedScale = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -158,10 +152,6 @@ const HistoryItem = React.memo(function HistoryItem({
   const animatedExpand = useAnimatedStyle(() => ({
     height: expandHeight.value,
     overflow: "hidden" as const,
-  }));
-
-  const animatedContent = useAnimatedStyle(() => ({
-    opacity: contentOpacity.value,
   }));
 
   const animatedChevron = useAnimatedStyle(() => ({
@@ -310,19 +300,17 @@ const HistoryItem = React.memo(function HistoryItem({
 
           {/* Expandable actions area */}
           <Animated.View style={animatedExpand}>
-            <Animated.View style={animatedContent}>
-              <HistoryItemActions
-                isFavourited={item.isFavourited ?? false}
-                isPremium={isPremium}
-                isFavouriteLoading={isFavouriteLoading}
-                isDiscardLoading={isDiscardLoading}
-                onFavourite={() => onFavourite(item.id)}
-                onGroceryList={() => onGroceryList(item)}
-                onGenerateRecipe={() => onGenerateRecipe(item)}
-                onShare={() => onShare(item)}
-                onDiscard={() => onDiscard(item)}
-              />
-            </Animated.View>
+            <HistoryItemActions
+              isFavourited={item.isFavourited}
+              isPremium={isPremium}
+              isFavouriteLoading={isFavouriteLoading}
+              isDiscardLoading={isDiscardLoading}
+              onFavourite={() => onFavourite(item.id)}
+              onGroceryList={() => onGroceryList(item)}
+              onGenerateRecipe={() => onGenerateRecipe(item)}
+              onShare={() => onShare(item)}
+              onDiscard={() => onDiscard(item)}
+            />
           </Animated.View>
         </Card>
       </Animated.View>
@@ -671,7 +659,7 @@ export default function HistoryScreen() {
     isLoading: summaryLoading,
     isFetching: summaryFetching,
   } = useQuery<DailySummaryResponse>({
-    queryKey: ["/api/daily-summary"],
+    queryKey: QUERY_KEYS.dailySummary,
     queryFn: async (): Promise<DailySummaryResponse> => {
       const baseUrl = getApiUrl();
       const url = new URL("/api/daily-summary", baseUrl);
@@ -704,7 +692,7 @@ export default function HistoryScreen() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["/api/scanned-items"],
+    queryKey: QUERY_KEYS.scannedItems,
     initialPageParam: 0,
     queryFn: async ({
       pageParam,
@@ -758,8 +746,8 @@ export default function HistoryScreen() {
     setExpandedItemId(null);
     if (!showAll) {
       await Promise.all([
-        queryClient.refetchQueries({ queryKey: ["/api/daily-summary"] }),
-        queryClient.refetchQueries({ queryKey: ["/api/scanned-items"] }),
+        queryClient.refetchQueries({ queryKey: QUERY_KEYS.dailySummary }),
+        queryClient.refetchQueries({ queryKey: QUERY_KEYS.scannedItems }),
       ]);
     } else {
       refetch();
@@ -870,12 +858,28 @@ export default function HistoryScreen() {
     navigation.setParams({ showAll: false });
   }, [navigation, haptics]);
 
+  // Pending item IDs for mutation loading state — passed as scalars so
+  // HistoryItem can compute its own loading booleans internally.
+  const favouritePendingItemId = toggleFavourite.isPending
+    ? toggleFavourite.variables
+    : undefined;
+  const discardPendingItemId = discardItem.isPending
+    ? discardItem.variables
+    : undefined;
+
+  // Memoised extraData so FlatList re-renders items when expand or mutation
+  // state changes, even though renderItem itself is not recreated.
+  const extraData = useMemo(
+    () => ({ expandedItemId, favouritePendingItemId, discardPendingItemId }),
+    [expandedItemId, favouritePendingItemId, discardPendingItemId],
+  );
+
   const renderItem = useCallback(
     ({ item, index }: { item: ScannedItemResponse; index: number }) => (
       <HistoryItem
         item={item}
         index={index}
-        isExpanded={expandedItemId === item.id}
+        expandedItemId={expandedItemId}
         onToggleExpand={handleToggleExpand}
         onNavigateToDetail={handleNavigateToDetail}
         isPremium={isPremium}
@@ -884,17 +888,18 @@ export default function HistoryScreen() {
         onGenerateRecipe={handleGenerateRecipe}
         onShare={handleShare}
         onDiscard={handleDiscard}
-        isFavouriteLoading={
-          toggleFavourite.isPending && toggleFavourite.variables === item.id
-        }
-        isDiscardLoading={
-          discardItem.isPending && discardItem.variables === item.id
-        }
+        favouritePendingItemId={favouritePendingItemId}
+        discardPendingItemId={discardPendingItemId}
         reducedMotion={reducedMotion}
       />
     ),
+    // expandedItemId and mutation pending state are intentionally excluded —
+    // they change frequently and would force renderItem to be recreated for
+    // every expand/collapse or mutation start/end. Instead, FlatList's
+    // extraData triggers re-renders and React.memo on HistoryItem ensures
+    // only affected items update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reason: renderItem stability optimisation
     [
-      expandedItemId,
       handleToggleExpand,
       handleNavigateToDetail,
       isPremium,
@@ -903,19 +908,32 @@ export default function HistoryScreen() {
       handleGenerateRecipe,
       handleShare,
       handleDiscard,
-      toggleFavourite.isPending,
-      toggleFavourite.variables,
-      discardItem.isPending,
-      discardItem.variables,
       reducedMotion,
     ],
   );
+
+  const handleScrollBeginDrag = useCallback(() => {
+    setExpandedItemId(null);
+  }, []);
 
   const handleEndReached = useCallback(() => {
     if (showAll && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
   }, [showAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Estimated layout using collapsed height — accurate for all but 1 expanded item
+  const getItemLayout = useCallback(
+    (
+      _data: ArrayLike<ScannedItemResponse> | null | undefined,
+      index: number,
+    ) => ({
+      length: ESTIMATED_COLLAPSED_ITEM_HEIGHT,
+      offset: (ESTIMATED_COLLAPSED_ITEM_HEIGHT + ITEM_SEPARATOR_HEIGHT) * index,
+      index,
+    }),
+    [],
+  );
 
   // Calculate calorie progress
   const calorieGoal =
@@ -977,7 +995,8 @@ export default function HistoryScreen() {
         data={isLoading ? [] : displayItems}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}
-        extraData={expandedItemId}
+        extraData={extraData}
+        onScrollBeginDrag={handleScrollBeginDrag}
         ListHeaderComponent={
           showAll ? (
             <FullHistoryHeader onBackPress={handleBackToDashboard} />
@@ -1020,6 +1039,7 @@ export default function HistoryScreen() {
           />
         }
         ItemSeparatorComponent={ItemSeparator}
+        getItemLayout={getItemLayout}
         onEndReached={handleEndReached}
         onEndReachedThreshold={0.5}
         accessibilityLabel={

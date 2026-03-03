@@ -312,28 +312,27 @@ export async function getMealPlanItemById(
     .where(and(eq(mealPlanItems.id, id), eq(mealPlanItems.userId, userId)));
   if (!item) return undefined;
 
-  let recipe: MealPlanRecipe | null = null;
-  let scannedItem: ScannedItem | null = null;
-
-  if (item.recipeId) {
-    const [r] = await db
-      .select()
-      .from(mealPlanRecipes)
-      .where(eq(mealPlanRecipes.id, item.recipeId));
-    recipe = r || null;
-  }
-  if (item.scannedItemId) {
-    const [s] = await db
-      .select()
-      .from(scannedItems)
-      .where(
-        and(
-          eq(scannedItems.id, item.scannedItemId),
-          isNull(scannedItems.discardedAt),
-        ),
-      );
-    scannedItem = s || null;
-  }
+  const [recipe, scannedItem] = await Promise.all([
+    item.recipeId
+      ? db
+          .select()
+          .from(mealPlanRecipes)
+          .where(eq(mealPlanRecipes.id, item.recipeId))
+          .then(([r]) => r || null)
+      : Promise.resolve(null),
+    item.scannedItemId
+      ? db
+          .select()
+          .from(scannedItems)
+          .where(
+            and(
+              eq(scannedItems.id, item.scannedItemId),
+              isNull(scannedItems.discardedAt),
+            ),
+          )
+          .then(([s]) => s || null)
+      : Promise.resolve(null),
+  ]);
 
   return { ...item, recipe, scannedItem };
 }
@@ -414,6 +413,13 @@ export async function addGroceryListItem(
 ): Promise<GroceryListItem> {
   const [created] = await db.insert(groceryListItems).values(item).returning();
   return created;
+}
+
+export async function addGroceryListItems(
+  items: InsertGroceryListItem[],
+): Promise<GroceryListItem[]> {
+  if (items.length === 0) return [];
+  return db.insert(groceryListItems).values(items).returning();
 }
 
 export async function updateGroceryListItemChecked(
