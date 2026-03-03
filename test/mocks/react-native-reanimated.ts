@@ -111,13 +111,21 @@ function createAnimatedComponent(
 /** Animated namespace */
 const AnimatedView = React.forwardRef<unknown, Record<string, unknown>>(
   ({ children, ...rest }, ref) =>
-    React.createElement("div", { ...mapA11yProps(rest), ref }, children),
+    React.createElement(
+      "div",
+      { ...mapA11yProps(rest), ref },
+      children as React.ReactNode,
+    ),
 );
 AnimatedView.displayName = "Animated.View";
 
 const AnimatedText = React.forwardRef<unknown, Record<string, unknown>>(
   ({ children, ...rest }, ref) =>
-    React.createElement("span", { ...mapA11yProps(rest), ref }, children),
+    React.createElement(
+      "span",
+      { ...mapA11yProps(rest), ref },
+      children as React.ReactNode,
+    ),
 );
 AnimatedText.displayName = "Animated.Text";
 

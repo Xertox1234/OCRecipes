@@ -830,7 +830,13 @@ describe("_helpers utility functions", () => {
   describe("formatZodError", () => {
     it("formats errors with paths", () => {
       const error = new ZodError([
-        { path: ["username"], message: "Required", code: "invalid_type" },
+        {
+          path: ["username"],
+          message: "Required",
+          code: "invalid_type",
+          expected: "string",
+          received: "undefined",
+        },
       ]);
       expect(formatZodError(error)).toBe("username: Required");
     });
@@ -844,8 +850,21 @@ describe("_helpers utility functions", () => {
 
     it("joins multiple errors with semicolons", () => {
       const error = new ZodError([
-        { path: ["username"], message: "Required", code: "invalid_type" },
-        { path: ["password"], message: "Too short", code: "too_small" },
+        {
+          path: ["username"],
+          message: "Required",
+          code: "invalid_type",
+          expected: "string",
+          received: "undefined",
+        },
+        {
+          path: ["password"],
+          message: "Too short",
+          code: "too_small",
+          minimum: 8,
+          inclusive: true,
+          type: "string",
+        },
       ]);
       expect(formatZodError(error)).toBe(
         "username: Required; password: Too short",

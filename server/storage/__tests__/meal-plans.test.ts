@@ -43,7 +43,7 @@ const {
   getMealPlanItemById,
   addMealPlanItem,
   removeMealPlanItem,
-  createGroceryList,
+  createGroceryList: _createGroceryList,
   getGroceryLists,
   getGroceryListWithItems,
   deleteGroceryList,
@@ -60,6 +60,11 @@ const {
   getPlannedNutritionSummary,
   getMealPlanIngredientsForDateRange,
 } = await import("../meal-plans");
+
+// Widen the insert type to allow passing `createdAt` for ordering tests.
+const createGroceryList = _createGroceryList as (
+  list: Parameters<typeof _createGroceryList>[0] & { createdAt?: Date },
+) => ReturnType<typeof _createGroceryList>;
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;

@@ -58,7 +58,7 @@ let testUser: schema.User;
 
 async function insertScannedItem(
   userId: string,
-  overrides: Partial<schema.InsertScannedItem> = {},
+  overrides: Partial<schema.InsertScannedItem> & { scannedAt?: Date } = {},
 ) {
   const t = getTestTx();
   const [item] = await t

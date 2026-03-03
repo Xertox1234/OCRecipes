@@ -52,7 +52,6 @@ describe("menu storage", () => {
         userId: testUser.id,
         restaurantName: "Test Restaurant",
         menuItems: [{ name: "Burger", price: "$10" }],
-        rawAnalysis: "Some analysis",
       });
 
       expect(scan).toBeDefined();
@@ -71,14 +70,14 @@ describe("menu storage", () => {
         userId: testUser.id,
         restaurantName: "First",
         menuItems: [],
-        rawAnalysis: "",
+
         scannedAt: earlier,
       });
       await createMenuScan({
         userId: testUser.id,
         restaurantName: "Second",
         menuItems: [],
-        rawAnalysis: "",
+
         scannedAt: later,
       });
 
@@ -94,19 +93,16 @@ describe("menu storage", () => {
         userId: testUser.id,
         restaurantName: "A",
         menuItems: [],
-        rawAnalysis: "",
       });
       await createMenuScan({
         userId: testUser.id,
         restaurantName: "B",
         menuItems: [],
-        rawAnalysis: "",
       });
       await createMenuScan({
         userId: testUser.id,
         restaurantName: "C",
         menuItems: [],
-        rawAnalysis: "",
       });
 
       const scans = await getMenuScans(testUser.id, 2);
@@ -119,7 +115,6 @@ describe("menu storage", () => {
         userId: otherUser.id,
         restaurantName: "Other",
         menuItems: [],
-        rawAnalysis: "",
       });
 
       const scans = await getMenuScans(testUser.id);
@@ -133,7 +128,6 @@ describe("menu storage", () => {
         userId: testUser.id,
         restaurantName: "ToDelete",
         menuItems: [],
-        rawAnalysis: "",
       });
 
       const deleted = await deleteMenuScan(scan.id, testUser.id);
@@ -149,7 +143,6 @@ describe("menu storage", () => {
         userId: otherUser.id,
         restaurantName: "Other's scan",
         menuItems: [],
-        rawAnalysis: "",
       });
 
       const deleted = await deleteMenuScan(scan.id, testUser.id);

@@ -127,7 +127,9 @@ describe("useRecipeForm", () => {
         carbsPerServing: "25",
         fatPerServing: "5",
         cuisine: "Italian",
-        dietTags: ["vegetarian"],
+        dietTags: ["Vegetarian"],
+        imageUrl: null,
+        sourceUrl: "https://example.com/recipe",
       };
 
       const { result } = renderHook(() => useRecipeForm(prefill));
@@ -370,7 +372,7 @@ describe("useRecipeForm", () => {
         });
         result.current.setTags({
           cuisine: "Italian",
-          dietTags: ["vegetarian"],
+          dietTags: ["Vegetarian"],
         });
       });
 
@@ -380,7 +382,7 @@ describe("useRecipeForm", () => {
       expect(payload.prepTimeMinutes).toBe(10);
       expect(payload.cookTimeMinutes).toBe(30);
       expect(payload.cuisine).toBe("Italian");
-      expect(payload.dietTags).toEqual(["vegetarian"]);
+      expect(payload.dietTags).toEqual(["Vegetarian"]);
       expect(payload.instructions).toBe("1. Mix well");
       expect(payload.ingredients).toHaveLength(1);
       expect(payload.ingredients[0].name).toBe("flour");

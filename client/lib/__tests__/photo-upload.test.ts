@@ -197,6 +197,7 @@ describe("uploadPhotoForAnalysis", () => {
       status: 200,
       body: JSON.stringify(mockAnalysisResponse),
       headers: {},
+      mimeType: null,
     });
 
     const result = await uploadPhotoForAnalysis("file:///photo.jpg", "log");
@@ -243,6 +244,7 @@ describe("uploadPhotoForAnalysis", () => {
       status: 500,
       body: JSON.stringify({ error: "Server overloaded" }),
       headers: {},
+      mimeType: null,
     });
 
     await expect(uploadPhotoForAnalysis("file:///photo.jpg")).rejects.toThrow(
@@ -263,6 +265,7 @@ describe("uploadPhotoForAnalysis", () => {
       status: 502,
       body: "Bad Gateway",
       headers: {},
+      mimeType: null,
     });
 
     await expect(uploadPhotoForAnalysis("file:///photo.jpg")).rejects.toThrow(

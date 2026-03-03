@@ -25,11 +25,11 @@ vi.mock("../../db", () => ({
 
 const {
   getWeightLogs,
-  createWeightLog,
+  createWeightLog: _createWeightLog,
   deleteWeightLog,
   getLatestWeight,
   getExerciseLogs,
-  createExerciseLog,
+  createExerciseLog: _createExerciseLog,
   updateExerciseLog,
   deleteExerciseLog,
   getExerciseDailySummary,
@@ -39,6 +39,15 @@ const {
   upsertHealthKitSyncSetting,
   updateHealthKitLastSync,
 } = await import("../activity");
+
+// Widen the insert types to allow passing `loggedAt` for ordering tests.
+// The DB column has a default, but tests need deterministic timestamps.
+const createWeightLog = _createWeightLog as (
+  log: Parameters<typeof _createWeightLog>[0] & { loggedAt?: Date },
+) => ReturnType<typeof _createWeightLog>;
+const createExerciseLog = _createExerciseLog as (
+  log: Parameters<typeof _createExerciseLog>[0] & { loggedAt?: Date },
+) => ReturnType<typeof _createExerciseLog>;
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
