@@ -6,6 +6,7 @@ import Animated, {
   withRepeat,
   withTiming,
   withDelay,
+  cancelAnimation,
   FadeIn,
 } from "react-native-reanimated";
 
@@ -22,11 +23,21 @@ interface ChatBubbleProps {
 
 function TypingIndicator() {
   const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
   const dot1 = useSharedValue(0);
   const dot2 = useSharedValue(0);
   const dot3 = useSharedValue(0);
 
   useEffect(() => {
+    if (reducedMotion) {
+      cancelAnimation(dot1);
+      cancelAnimation(dot2);
+      cancelAnimation(dot3);
+      dot1.value = 0;
+      dot2.value = 0;
+      dot3.value = 0;
+      return;
+    }
     dot1.value = withRepeat(withTiming(1, { duration: 600 }), -1, true);
     dot2.value = withRepeat(
       withDelay(200, withTiming(1, { duration: 600 })),
@@ -38,7 +49,7 @@ function TypingIndicator() {
       -1,
       true,
     );
-  }, [dot1, dot2, dot3]);
+  }, [dot1, dot2, dot3, reducedMotion]);
 
   const dot1Style = useAnimatedStyle(() => ({
     opacity: 0.3 + dot1.value * 0.7,
@@ -56,6 +67,23 @@ function TypingIndicator() {
   }));
 
   const dotColor = theme.textSecondary;
+
+  if (reducedMotion) {
+    return (
+      <View
+        style={styles.typingContainer}
+        accessibilityLabel="Coach is typing"
+        accessibilityRole="text"
+      >
+        <ThemedText
+          type="body"
+          style={[styles.reducedMotionDots, { color: dotColor }]}
+        >
+          ...
+        </ThemedText>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -180,4 +208,5 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
   },
+  reducedMotionDots: {},
 });

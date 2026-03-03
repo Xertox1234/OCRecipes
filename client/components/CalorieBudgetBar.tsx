@@ -79,6 +79,12 @@ export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
           styles.barBackground,
           { backgroundColor: withOpacity(theme.border, 0.3) },
         ]}
+        accessibilityRole="progressbar"
+        accessibilityValue={{
+          min: 0,
+          max: 100,
+          now: Math.round(progress * 100),
+        }}
       >
         <View
           style={[

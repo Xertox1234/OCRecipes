@@ -18,6 +18,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
+import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -374,7 +375,11 @@ export default function GoalSetupScreen() {
             <ThemedText type="body" style={styles.fieldLabel}>
               Gender
             </ThemedText>
-            <View style={styles.chipRow}>
+            <View
+              style={styles.chipRow}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Gender"
+            >
               {GENDER_OPTIONS.map((option) => (
                 <SelectableChip
                   key={option.value}
@@ -399,7 +404,11 @@ export default function GoalSetupScreen() {
               <ThemedText type="h4">Activity Level</ThemedText>
             </View>
 
-            <View style={styles.chipColumn}>
+            <View
+              style={styles.chipColumn}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Activity level"
+            >
               {ACTIVITY_OPTIONS.map((option) => (
                 <SelectableChip
                   key={option.value}
@@ -425,7 +434,11 @@ export default function GoalSetupScreen() {
               <ThemedText type="h4">Primary Goal</ThemedText>
             </View>
 
-            <View style={styles.chipColumn}>
+            <View
+              style={styles.chipColumn}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Goal"
+            >
               {GOAL_OPTIONS.map((option) => (
                 <SelectableChip
                   key={option.value}
@@ -458,6 +471,14 @@ export default function GoalSetupScreen() {
             >
               Calculate My Goals
             </Button>
+            <InlineError
+              message={
+                calculateMutation.isError
+                  ? "Failed to calculate goals. Please check your inputs."
+                  : null
+              }
+              style={{ marginTop: Spacing.sm }}
+            />
           </Animated.View>
         )}
 
@@ -637,6 +658,14 @@ export default function GoalSetupScreen() {
               >
                 Save My Goals
               </Button>
+              <InlineError
+                message={
+                  saveMutation.isError
+                    ? "Failed to save goals. Please try again."
+                    : null
+                }
+                style={{ marginTop: Spacing.sm }}
+              />
             </Card>
           </Animated.View>
         )}

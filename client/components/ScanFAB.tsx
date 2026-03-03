@@ -11,6 +11,7 @@ import Animated, {
 
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   BorderRadius,
   FAB_SIZE,
@@ -27,6 +28,7 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export function ScanFAB() {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const scale = useSharedValue(1);
@@ -36,11 +38,15 @@ export function ScanFAB() {
   }));
 
   const handlePressIn = () => {
-    scale.value = withSpring(0.9, pressSpringConfig);
+    if (!reducedMotion) {
+      scale.value = withSpring(0.9, pressSpringConfig);
+    }
   };
 
   const handlePressOut = () => {
-    scale.value = withSpring(1, pressSpringConfig);
+    if (!reducedMotion) {
+      scale.value = withSpring(1, pressSpringConfig);
+    }
   };
 
   const handlePress = () => {

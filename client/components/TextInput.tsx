@@ -90,6 +90,7 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
           accessibilityHint={
             error && errorMessage ? errorMessage : props.accessibilityHint
           }
+          aria-invalid={error ? true : undefined}
           style={[
             styles.input,
             {

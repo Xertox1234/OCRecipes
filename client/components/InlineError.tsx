@@ -26,7 +26,12 @@ export function InlineError({ message, style }: InlineErrorProps) {
         style,
       ]}
     >
-      <Feather name="alert-circle" size={16} color={theme.error} />
+      <Feather
+        name="alert-circle"
+        size={16}
+        color={theme.error}
+        accessible={false}
+      />
       <ThemedText
         type="small"
         style={{ color: theme.error, marginLeft: Spacing.sm, flex: 1 }}

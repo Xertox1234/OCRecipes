@@ -33,7 +33,7 @@ interface ChipProps {
   /** Accessibility label */
   accessibilityLabel?: string;
   /** Override the default accessibility role (defaults to "button") */
-  accessibilityRole?: "button" | "tab";
+  accessibilityRole?: "button" | "tab" | "radio";
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -45,6 +45,7 @@ export function Chip({
   onPress,
   style,
   accessibilityLabel,
+  accessibilityRole,
 }: ChipProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -143,7 +144,9 @@ export function Chip({
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        accessibilityRole={variant === "tab" ? "tab" : "button"}
+        accessibilityRole={
+          accessibilityRole ?? (variant === "tab" ? "tab" : "button")
+        }
         accessibilityLabel={accessibilityLabel || label}
         accessibilityState={{ selected }}
         style={[chipStyles, animatedStyle]}

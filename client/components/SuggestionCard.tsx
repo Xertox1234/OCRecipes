@@ -243,21 +243,17 @@ export function SuggestionCard({
   const isLoading = cardState === "loading";
 
   return (
-    <Animated.View
-      entering={enteringAnimation}
-      accessible={true}
-      accessibilityLabel={`${typeLabel}: ${suggestion.title}. ${suggestion.description}. ${isExpanded ? "Expanded. Tap to collapse." : "Tap to expand and see full instructions."}`}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: isExpanded }}
-    >
+    <Animated.View entering={enteringAnimation}>
       <Card
         elevation={1}
         style={[styles.suggestionCard, { borderLeftColor: iconColor }]}
       >
         <Pressable
           onPress={handlePress}
-          accessibilityLabel={`${isExpanded ? "Collapse" : "Expand"} ${suggestion.title}`}
+          accessible={true}
+          accessibilityLabel={`${typeLabel}: ${suggestion.title}. ${suggestion.description}. ${isExpanded ? "Expanded. Tap to collapse." : "Tap to expand and see full instructions."}`}
           accessibilityRole="button"
+          accessibilityState={{ expanded: isExpanded }}
           accessibilityHint={
             isExpanded
               ? "Collapses to hide instructions"

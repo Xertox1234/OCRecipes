@@ -144,7 +144,12 @@ export default function ChatListScreen() {
               { backgroundColor: withOpacity(theme.link, 0.12) },
             ]}
           >
-            <Feather name="message-circle" size={18} color={theme.link} />
+            <Feather
+              name="message-circle"
+              size={18}
+              color={theme.link}
+              accessible={false}
+            />
           </View>
           <View style={styles.conversationContent}>
             <ThemedText
@@ -274,9 +279,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   newChatButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
   },

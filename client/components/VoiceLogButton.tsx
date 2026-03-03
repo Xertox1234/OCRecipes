@@ -1,5 +1,10 @@
 import React from "react";
-import { Pressable, StyleSheet } from "react-native";
+import {
+  AccessibilityInfo,
+  Platform,
+  Pressable,
+  StyleSheet,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
   useAnimatedStyle,
@@ -9,6 +14,7 @@ import Animated, {
   cancelAnimation,
 } from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
+import { useAccessibility } from "@/hooks/useAccessibility";
 
 interface VoiceLogButtonProps {
   isRecording: boolean;
@@ -22,23 +28,43 @@ export const VoiceLogButton = React.memo(function VoiceLogButton({
   disabled,
 }: VoiceLogButtonProps) {
   const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
   const scale = useSharedValue(1);
 
+  const isFirstRender = React.useRef(true);
+
   React.useEffect(() => {
+    if (reducedMotion) {
+      cancelAnimation(scale);
+      scale.value = 1;
+      return;
+    }
     if (isRecording) {
       scale.value = withRepeat(withTiming(1.15, { duration: 600 }), -1, true);
     } else {
       cancelAnimation(scale);
       scale.value = withTiming(1, { duration: 200 });
     }
-  }, [isRecording, scale]);
+  }, [isRecording, scale, reducedMotion]);
+
+  React.useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        isRecording ? "Recording started" : "Recording stopped",
+      );
+    }
+  }, [isRecording]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
   return (
-    <Animated.View style={animatedStyle}>
+    <Animated.View style={animatedStyle} accessibilityLiveRegion="polite">
       <Pressable
         onPress={onPress}
         disabled={disabled}

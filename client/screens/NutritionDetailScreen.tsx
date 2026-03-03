@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
+  AccessibilityInfo,
+  Platform,
   StyleSheet,
   View,
   ScrollView,
@@ -130,6 +132,20 @@ export default function NutritionDetailScreen() {
   const [showManualSearch, setShowManualSearch] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === "ios" && correctionNotice) {
+      AccessibilityInfo.announceForAccessibility(
+        `Serving size adjusted: ${correctionNotice}`,
+      );
+    }
+  }, [correctionNotice]);
+
+  useEffect(() => {
+    if (Platform.OS === "ios" && error) {
+      AccessibilityInfo.announceForAccessibility(error);
+    }
+  }, [error]);
 
   // Derive per-100g values: prefer validatedData when available,
   // otherwise back-calculate from whatever nutrition state we have
@@ -482,6 +498,7 @@ export default function NutritionDetailScreen() {
               source={{ uri: nutrition.imageUrl }}
               style={styles.productImage}
               resizeMode="contain"
+              accessibilityLabel={`Image of ${nutrition.productName || "product"}`}
             />
           </Animated.View>
         ) : null}
@@ -514,6 +531,7 @@ export default function NutritionDetailScreen() {
 
         {correctionNotice && !itemId ? (
           <View
+            accessibilityLiveRegion="polite"
             style={[
               styles.correctionContainer,
               { backgroundColor: withOpacity(theme.warning, 0.1) },
@@ -726,6 +744,8 @@ export default function NutritionDetailScreen() {
 
         {error ? (
           <View
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
             style={[
               styles.warningContainer,
               { backgroundColor: withOpacity(theme.warning, 0.12) },
@@ -772,6 +792,7 @@ export default function NutritionDetailScreen() {
                 returnKeyType="search"
                 autoFocus
                 editable={!isSearching}
+                accessibilityLabel="Search for a product"
               />
               <Pressable
                 style={({ pressed }) => [
@@ -1092,6 +1113,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.xl,
+    minHeight: 44,
   },
   customInputRow: {
     flexDirection: "row",
@@ -1122,9 +1144,9 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   stepperButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },

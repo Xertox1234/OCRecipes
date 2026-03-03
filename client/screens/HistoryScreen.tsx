@@ -202,6 +202,7 @@ const HistoryItem = React.memo(function HistoryItem({
                 <Image
                   source={{ uri: item.imageUrl }}
                   style={styles.itemImage}
+                  accessible={false}
                 />
               ) : (
                 <View
@@ -214,6 +215,7 @@ const HistoryItem = React.memo(function HistoryItem({
                     name="package"
                     size={24}
                     color={theme.textSecondary}
+                    accessible={false}
                   />
                 </View>
               )}
@@ -332,6 +334,8 @@ function EmptyState() {
         source={require("../../assets/images/empty-history.png")}
         style={styles.emptyImage}
         resizeMode="contain"
+        accessible={false}
+        accessibilityElementsHidden={true}
       />
       <ThemedText type="h4" style={styles.emptyTitle}>
         No scans yet

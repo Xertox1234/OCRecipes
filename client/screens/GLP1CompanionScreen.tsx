@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useMemo } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   Pressable,
@@ -13,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { ThemedText } from "@/components/ThemedText";
+import { InlineError } from "@/components/InlineError";
 import { Spacing } from "@/constants/theme";
 import {
   useMedicationLogs,
@@ -57,6 +57,7 @@ export default function GLP1CompanionScreen() {
   const [appetiteLevel, setAppetiteLevel] = useState<number | undefined>();
   const [selectedSideEffects, setSelectedSideEffects] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const resetForm = useCallback(() => {
     setSelectedMedication("");
@@ -65,10 +66,19 @@ export default function GLP1CompanionScreen() {
     setAppetiteLevel(undefined);
     setSelectedSideEffects([]);
     setNotes("");
+    setValidationError(null);
   }, []);
 
   const handleLogDose = useCallback(async () => {
-    if (!selectedMedication || !dosage) return;
+    if (!selectedMedication || !dosage) {
+      setValidationError(
+        !selectedMedication
+          ? "Please select a medication."
+          : "Please enter a dosage.",
+      );
+      return;
+    }
+    setValidationError(null);
     await logMedication.mutateAsync({
       medicationName: selectedMedication,
       brandName: selectedBrand || undefined,
@@ -113,12 +123,14 @@ export default function GLP1CompanionScreen() {
             },
           ]}
         >
-          <Text style={[styles.insightValue, { color: theme.link }]}>
+          <ThemedText style={[styles.insightValue, { color: theme.link }]}>
             {insights.totalDoses}
-          </Text>
-          <Text style={[styles.insightLabel, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            style={[styles.insightLabel, { color: theme.textSecondary }]}
+          >
             Total Doses
-          </Text>
+          </ThemedText>
         </View>
         {insights.daysSinceStart != null && (
           <View
@@ -131,12 +143,14 @@ export default function GLP1CompanionScreen() {
               },
             ]}
           >
-            <Text style={[styles.insightValue, { color: theme.link }]}>
+            <ThemedText style={[styles.insightValue, { color: theme.link }]}>
               {insights.daysSinceStart}
-            </Text>
-            <Text style={[styles.insightLabel, { color: theme.textSecondary }]}>
+            </ThemedText>
+            <ThemedText
+              style={[styles.insightLabel, { color: theme.textSecondary }]}
+            >
               Days on GLP-1
-            </Text>
+            </ThemedText>
           </View>
         )}
         {insights.averageAppetiteLevel != null && (
@@ -150,12 +164,14 @@ export default function GLP1CompanionScreen() {
               },
             ]}
           >
-            <Text style={[styles.insightValue, { color: theme.link }]}>
+            <ThemedText style={[styles.insightValue, { color: theme.link }]}>
               {insights.averageAppetiteLevel}/5
-            </Text>
-            <Text style={[styles.insightLabel, { color: theme.textSecondary }]}>
+            </ThemedText>
+            <ThemedText
+              style={[styles.insightLabel, { color: theme.textSecondary }]}
+            >
               Avg Appetite
-            </Text>
+            </ThemedText>
           </View>
         )}
         {insights.weightChangeSinceStart != null && (
@@ -169,7 +185,7 @@ export default function GLP1CompanionScreen() {
               },
             ]}
           >
-            <Text
+            <ThemedText
               style={[
                 styles.insightValue,
                 {
@@ -182,10 +198,12 @@ export default function GLP1CompanionScreen() {
             >
               {insights.weightChangeSinceStart > 0 ? "+" : ""}
               {insights.weightChangeSinceStart} kg
-            </Text>
-            <Text style={[styles.insightLabel, { color: theme.textSecondary }]}>
+            </ThemedText>
+            <ThemedText
+              style={[styles.insightLabel, { color: theme.textSecondary }]}
+            >
               Weight Change
-            </Text>
+            </ThemedText>
           </View>
         )}
       </View>
@@ -216,17 +234,19 @@ export default function GLP1CompanionScreen() {
                   key={effect.name}
                   style={[styles.sideEffectRow, { marginTop: Spacing.xs }]}
                 >
-                  <Text style={[styles.sideEffectName, { color: theme.text }]}>
+                  <ThemedText
+                    style={[styles.sideEffectName, { color: theme.text }]}
+                  >
                     {effect.name}
-                  </Text>
-                  <Text
+                  </ThemedText>
+                  <ThemedText
                     style={[
                       styles.sideEffectCount,
                       { color: theme.textSecondary },
                     ]}
                   >
                     {effect.count}x
-                  </Text>
+                  </ThemedText>
                 </View>
               ))}
             </View>
@@ -251,14 +271,14 @@ export default function GLP1CompanionScreen() {
             </View>
           ))}
           {(!logs || logs.length === 0) && (
-            <Text
+            <ThemedText
               style={[
                 styles.emptyText,
                 { color: theme.textSecondary, marginTop: Spacing.md },
               ]}
             >
               No doses logged yet. Tap + to log your first dose.
-            </Text>
+            </ThemedText>
           )}
         </View>
       </ScrollView>
@@ -284,7 +304,10 @@ export default function GLP1CompanionScreen() {
         animationType="slide"
         presentationStyle="pageSheet"
       >
-        <View style={[styles.modal, { backgroundColor: theme.backgroundRoot }]}>
+        <View
+          style={[styles.modal, { backgroundColor: theme.backgroundRoot }]}
+          accessibilityViewIsModal={true}
+        >
           <View style={[styles.modalHeader, { padding: Spacing.md }]}>
             <Pressable
               onPress={() => {
@@ -294,18 +317,20 @@ export default function GLP1CompanionScreen() {
               accessibilityLabel="Cancel"
               accessibilityRole="button"
             >
-              <Text style={{ color: theme.link, fontSize: 16 }}>Cancel</Text>
+              <ThemedText style={{ color: theme.link, fontSize: 16 }}>
+                Cancel
+              </ThemedText>
             </Pressable>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>
+            <ThemedText style={[styles.modalTitle, { color: theme.text }]}>
               Log Dose
-            </Text>
+            </ThemedText>
             <Pressable
               onPress={handleLogDose}
               disabled={!selectedMedication || !dosage}
               accessibilityLabel="Save dose"
               accessibilityRole="button"
             >
-              <Text
+              <ThemedText
                 style={{
                   color:
                     selectedMedication && dosage
@@ -316,7 +341,7 @@ export default function GLP1CompanionScreen() {
                 }}
               >
                 Save
-              </Text>
+              </ThemedText>
             </Pressable>
           </View>
 
@@ -324,7 +349,7 @@ export default function GLP1CompanionScreen() {
             contentContainerStyle={{ padding: Spacing.md }}
             keyboardDismissMode="on-drag"
           >
-            <Text
+            <ThemedText
               style={[
                 styles.formLabel,
                 {
@@ -334,7 +359,7 @@ export default function GLP1CompanionScreen() {
               ]}
             >
               Medication
-            </Text>
+            </ThemedText>
             <View accessibilityRole="radiogroup">
               {COMMON_MEDICATIONS.map((med) => (
                 <Pressable
@@ -365,7 +390,7 @@ export default function GLP1CompanionScreen() {
                     },
                   ]}
                 >
-                  <Text
+                  <ThemedText
                     style={{
                       color:
                         selectedMedication === med.name
@@ -375,8 +400,8 @@ export default function GLP1CompanionScreen() {
                     }}
                   >
                     {med.name}
-                  </Text>
-                  <Text
+                  </ThemedText>
+                  <ThemedText
                     style={{
                       color:
                         selectedMedication === med.name
@@ -386,14 +411,14 @@ export default function GLP1CompanionScreen() {
                     }}
                   >
                     {med.brands.join(", ")}
-                  </Text>
+                  </ThemedText>
                 </Pressable>
               ))}
             </View>
 
             {selectedMedication && (
               <>
-                <Text
+                <ThemedText
                   style={[
                     styles.formLabel,
                     {
@@ -404,7 +429,7 @@ export default function GLP1CompanionScreen() {
                   ]}
                 >
                   Brand
-                </Text>
+                </ThemedText>
                 <View
                   style={[styles.brandRow, { gap: Spacing.xs }]}
                   accessibilityRole="radiogroup"
@@ -433,7 +458,7 @@ export default function GLP1CompanionScreen() {
                         },
                       ]}
                     >
-                      <Text
+                      <ThemedText
                         style={{
                           color:
                             selectedBrand === brand
@@ -443,14 +468,14 @@ export default function GLP1CompanionScreen() {
                         }}
                       >
                         {brand}
-                      </Text>
+                      </ThemedText>
                     </Pressable>
                   ))}
                 </View>
               </>
             )}
 
-            <Text
+            <ThemedText
               style={[
                 styles.formLabel,
                 {
@@ -461,7 +486,7 @@ export default function GLP1CompanionScreen() {
               ]}
             >
               Dosage
-            </Text>
+            </ThemedText>
             <TextInput
               value={dosage}
               onChangeText={setDosage}
@@ -480,6 +505,11 @@ export default function GLP1CompanionScreen() {
               ]}
             />
 
+            <InlineError
+              message={validationError}
+              style={{ marginTop: Spacing.sm }}
+            />
+
             <View style={{ marginTop: Spacing.md }}>
               <AppetiteTracker
                 value={appetiteLevel}
@@ -487,7 +517,7 @@ export default function GLP1CompanionScreen() {
               />
             </View>
 
-            <Text
+            <ThemedText
               style={[
                 styles.formLabel,
                 {
@@ -498,14 +528,21 @@ export default function GLP1CompanionScreen() {
               ]}
             >
               Side Effects
-            </Text>
-            <View style={[styles.sideEffectsGrid, { gap: Spacing.xs }]}>
+            </ThemedText>
+            <View
+              role="group"
+              accessibilityLabel="Side effects"
+              style={[styles.sideEffectsGrid, { gap: Spacing.xs }]}
+            >
               {COMMON_SIDE_EFFECTS.map((effect) => (
                 <Pressable
                   key={effect}
                   onPress={() => toggleSideEffect(effect)}
-                  accessibilityLabel={`Toggle side effect: ${effect}`}
-                  accessibilityRole="button"
+                  accessibilityLabel={effect}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{
+                    checked: selectedSideEffects.includes(effect),
+                  }}
                   style={[
                     styles.sideEffectOption,
                     {
@@ -521,7 +558,7 @@ export default function GLP1CompanionScreen() {
                     },
                   ]}
                 >
-                  <Text
+                  <ThemedText
                     style={{
                       color: selectedSideEffects.includes(effect)
                         ? theme.error
@@ -530,12 +567,12 @@ export default function GLP1CompanionScreen() {
                     }}
                   >
                     {effect}
-                  </Text>
+                  </ThemedText>
                 </Pressable>
               ))}
             </View>
 
-            <Text
+            <ThemedText
               style={[
                 styles.formLabel,
                 {
@@ -546,7 +583,7 @@ export default function GLP1CompanionScreen() {
               ]}
             >
               Notes (optional)
-            </Text>
+            </ThemedText>
             <TextInput
               value={notes}
               onChangeText={setNotes}

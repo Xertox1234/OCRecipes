@@ -152,7 +152,11 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
       }
     >
       {imageUri ? (
-        <Image source={{ uri: imageUri }} style={styles.recipeCardThumbnail} />
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.recipeCardThumbnail}
+          accessible={false}
+        />
       ) : (
         <View
           style={[
@@ -160,7 +164,12 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
             { backgroundColor: withOpacity(theme.text, 0.08) },
           ]}
         >
-          <Feather name="image" size={20} color={theme.textSecondary} />
+          <Feather
+            name="image"
+            size={20}
+            color={theme.textSecondary}
+            accessible={false}
+          />
         </View>
       )}
       <View style={styles.recipeCardContent}>
@@ -765,6 +774,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.chip,
     borderWidth: 1,
+    minHeight: 44,
   },
   headerActionText: {
     fontSize: 12,
@@ -814,9 +824,9 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
   },
   addButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },

@@ -152,7 +152,12 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
             { backgroundColor: theme.backgroundDefault },
           ]}
         >
-          <Feather name="camera-off" size={48} color={theme.textSecondary} />
+          <Feather
+            name="camera-off"
+            size={48}
+            color={theme.textSecondary}
+            accessible={false}
+          />
           <ThemedText type="h4" style={styles.unavailableTitle}>
             Camera unavailable
           </ThemedText>

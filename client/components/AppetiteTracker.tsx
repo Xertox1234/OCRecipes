@@ -82,6 +82,8 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 2,
     borderWidth: 1,
+    minWidth: 44,
+    minHeight: 44,
   },
   emoji: { fontSize: 20 },
   levelLabel: { fontWeight: "500", marginTop: 2 },

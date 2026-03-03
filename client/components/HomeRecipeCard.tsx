@@ -53,6 +53,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
               source={{ uri: imageUri }}
               style={styles.image}
               resizeMode="cover"
+              accessible={false}
             />
           ) : (
             <View
@@ -61,7 +62,12 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
                 { backgroundColor: theme.backgroundSecondary },
               ]}
             >
-              <Feather name="image" size={40} color={theme.textSecondary} />
+              <Feather
+                name="image"
+                size={40}
+                color={theme.textSecondary}
+                accessible={false}
+              />
             </View>
           )}
 

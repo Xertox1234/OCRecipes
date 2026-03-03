@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
+  AccessibilityInfo,
   StyleSheet,
   View,
   TextInput,
@@ -45,6 +46,21 @@ export default function RecipeImportScreen() {
     title: string;
     caloriesPerServing: string | null;
   } | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    if (state === "loading") {
+      AccessibilityInfo.announceForAccessibility("Extracting recipe data");
+    } else if (state === "success") {
+      AccessibilityInfo.announceForAccessibility(
+        "Recipe imported successfully",
+      );
+    } else if (state === "error") {
+      AccessibilityInfo.announceForAccessibility(
+        `Import failed: ${errorMessage}`,
+      );
+    }
+  }, [state, errorMessage]);
 
   const handleImport = useCallback(async () => {
     const trimmed = url.trim();
@@ -108,7 +124,7 @@ export default function RecipeImportScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={headerHeight}
     >
       <View
@@ -168,7 +184,7 @@ export default function RecipeImportScreen() {
         )}
 
         {state === "loading" && (
-          <View style={styles.centeredContent}>
+          <View accessibilityLiveRegion="polite" style={styles.centeredContent}>
             <ActivityIndicator size="large" color={theme.link} />
             <ThemedText
               style={[styles.loadingText, { color: theme.textSecondary }]}
@@ -179,7 +195,7 @@ export default function RecipeImportScreen() {
         )}
 
         {state === "success" && importedRecipe && (
-          <View style={styles.centeredContent}>
+          <View accessibilityLiveRegion="polite" style={styles.centeredContent}>
             <View
               style={[
                 styles.successIcon,
@@ -232,7 +248,11 @@ export default function RecipeImportScreen() {
         )}
 
         {state === "error" && (
-          <View style={styles.centeredContent}>
+          <View
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+            style={styles.centeredContent}
+          >
             <View
               style={[
                 styles.errorIcon,

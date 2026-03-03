@@ -102,7 +102,10 @@ const CoverPhotoSection = React.memo(function CoverPhotoSection({
   const totalHeight = COVER_HEIGHT + topInset;
 
   return (
-    <View style={[styles.coverContainer, { height: totalHeight }]}>
+    <View
+      style={[styles.coverContainer, { height: totalHeight }]}
+      accessibilityElementsHidden={true}
+    >
       <Image
         source={require("../../assets/images/login-hero.jpg")}
         style={styles.coverImage}
@@ -159,6 +162,7 @@ const AvatarWithRing = React.memo(function AvatarWithRing({
         <Image
           source={{ uri: resolveImageUrl(user.avatarUrl) ?? undefined }}
           style={styles.avatarImage}
+          accessible={false}
         />
       ) : (
         <View
@@ -625,9 +629,11 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!isInitialLoading && user && !hasAnnouncedProfileRef.current) {
       hasAnnouncedProfileRef.current = true;
-      AccessibilityInfo.announceForAccessibility(
-        `Profile loaded for ${user.displayName || user.username}`,
-      );
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(
+          `Profile loaded for ${user.displayName || user.username}`,
+        );
+      }
     }
   }, [isInitialLoading, user]);
 
@@ -645,6 +651,11 @@ export default function ProfileScreen() {
           ? "dark"
           : "system";
     await setThemePreference(nextPreference);
+    if (Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        `Appearance changed to ${THEME_LABELS[nextPreference]}`,
+      );
+    }
   };
 
   const handleAvatarPress = async () => {
@@ -946,7 +957,7 @@ const styles = StyleSheet.create({
   },
   editProfileButton: {
     flex: 1,
-    height: 36,
+    height: 44,
     borderRadius: BorderRadius.xs,
     justifyContent: "center",
     alignItems: "center",
@@ -957,8 +968,8 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   gearButton: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.xs,
     justifyContent: "center",
     alignItems: "center",

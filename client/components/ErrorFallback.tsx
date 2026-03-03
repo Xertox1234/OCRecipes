@@ -98,7 +98,10 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           onRequestClose={() => setIsModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
-            <ThemedView style={styles.modalContainer}>
+            <ThemedView
+              style={styles.modalContainer}
+              accessibilityViewIsModal={true}
+            >
               <View style={styles.modalHeader}>
                 <ThemedText type="h2" style={styles.modalTitle}>
                   Error Details
@@ -230,6 +233,10 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: Spacing.xs,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalScrollView: {
     flex: 1,

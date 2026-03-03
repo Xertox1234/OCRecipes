@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -20,6 +20,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { NotificationFeedbackType } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { InlineError } from "@/components/InlineError";
 import { SectionRow } from "@/components/recipe-builder/SectionRow";
 import { SheetHeader } from "@/components/recipe-builder/SheetHeader";
 import { TimeServingsSheet } from "@/components/recipe-builder/TimeServingsSheet";
@@ -65,6 +66,7 @@ export default function RecipeCreateScreen() {
   const createMutation = useCreateMealPlanRecipe();
 
   const form = useRecipeForm(prefill);
+  const [validationError, setValidationError] = useState("");
   const sheetState = useRef<SheetLifecycleState>("IDLE");
   const activeSheetTrigger = useRef<View | null>(null);
 
@@ -183,9 +185,10 @@ export default function RecipeCreateScreen() {
   // ── Save ──
   const handleSave = useCallback(async () => {
     if (!form.title.trim()) {
-      Alert.alert("Required", "Please enter a recipe title.");
+      setValidationError("Please enter a recipe title.");
       return;
     }
+    setValidationError("");
     if (sheetState.current !== "IDLE") return;
 
     sheetState.current = "SAVING";
@@ -221,11 +224,18 @@ export default function RecipeCreateScreen() {
             },
           ]}
           value={form.title}
-          onChangeText={form.setTitle}
+          onChangeText={(text) => {
+            form.setTitle(text);
+            if (validationError) setValidationError("");
+          }}
           placeholder="What are you making?"
           placeholderTextColor={theme.textSecondary}
           autoFocus
           accessibilityLabel="Recipe title"
+        />
+        <InlineError
+          message={validationError}
+          style={{ marginTop: Spacing.xs }}
         />
 
         {/* Subtitle / Description */}

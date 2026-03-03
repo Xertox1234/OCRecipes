@@ -1,5 +1,7 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import {
+  AccessibilityInfo,
+  Platform,
   StyleSheet,
   View,
   ScrollView,
@@ -152,6 +154,12 @@ export default function HealthKitSettingsScreen() {
     }
     return map;
   }, [settings]);
+
+  useEffect(() => {
+    if (syncHealthKit.isSuccess && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility("Sync complete");
+    }
+  }, [syncHealthKit.isSuccess]);
 
   const handleToggle = useCallback(
     (dataType: string, enabled: boolean) => {
@@ -329,6 +337,7 @@ export default function HealthKitSettingsScreen() {
       {syncHealthKit.isSuccess && (
         <ThemedText
           type="small"
+          accessibilityLiveRegion="polite"
           style={{
             textAlign: "center",
             color: theme.success,

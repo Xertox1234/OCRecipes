@@ -27,7 +27,7 @@ import {
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { CommunityRecipe } from "@shared/schema";
 
-const CLOSE_BUTTON_SIZE = 32;
+const CLOSE_BUTTON_SIZE = 44;
 const HERO_IMAGE_HEIGHT = 250;
 const HERO_PLACEHOLDER_HEIGHT = 200;
 
@@ -134,7 +134,12 @@ export default function FeaturedRecipeDetailScreen() {
                 { backgroundColor: theme.backgroundSecondary },
               ]}
             >
-              <Feather name="image" size={48} color={theme.textSecondary} />
+              <Feather
+                name="image"
+                size={48}
+                color={theme.textSecondary}
+                accessible={false}
+              />
             </View>
           )}
 

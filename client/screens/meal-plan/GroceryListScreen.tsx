@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
+  Platform,
   StyleSheet,
   View,
   Pressable,
@@ -156,6 +158,14 @@ export default function GroceryListScreen() {
   const [newItemName, setNewItemName] = useState("");
   const [pantryPromptItem, setPantryPromptItem] =
     useState<GroceryListItem | null>(null);
+
+  useEffect(() => {
+    if (pantryPromptItem && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        `Add ${pantryPromptItem.name} to pantry?`,
+      );
+    }
+  }, [pantryPromptItem]);
 
   const handleAddItem = useCallback(() => {
     const name = newItemName.trim();
@@ -388,6 +398,7 @@ export default function GroceryListScreen() {
       />
       {pantryPromptItem && (
         <View
+          accessibilityLiveRegion="polite"
           style={[
             styles.pantrySnackbar,
             {
@@ -471,6 +482,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: Spacing.sm,
     gap: Spacing.md,
+    minHeight: 44,
   },
   checkbox: {
     width: 22,
@@ -515,9 +527,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   addItemButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },

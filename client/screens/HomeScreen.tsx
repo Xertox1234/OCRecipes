@@ -38,6 +38,7 @@ import { resolveImageUrl } from "@/lib/query-client";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 
 const AVATAR_SIZE = 28;
+const HIT_SLOP_44 = { top: 14, bottom: 14, left: 14, right: 14 };
 
 function HomeSkeleton() {
   return (
@@ -76,7 +77,12 @@ function EmptyRecipes() {
 
   return (
     <View style={styles.emptyContainer}>
-      <Feather name="book-open" size={48} color={theme.textSecondary} />
+      <Feather
+        name="book-open"
+        size={48}
+        color={theme.textSecondary}
+        accessible={false}
+      />
       <ThemedText type="h4" style={styles.emptyTitle}>
         No recipes yet
       </ThemedText>
@@ -206,7 +212,12 @@ export default function HomeScreen() {
                     { backgroundColor: theme.backgroundSecondary },
                   ]}
                 >
-                  <Feather name="user" size={14} color={theme.textSecondary} />
+                  <Feather
+                    name="user"
+                    size={14}
+                    color={theme.textSecondary}
+                    accessible={false}
+                  />
                 </View>
               )}
               <ThemedText type="body" style={styles.greeting}>
@@ -247,7 +258,12 @@ export default function HomeScreen() {
                 { backgroundColor: withOpacity(theme.text, 0.06) },
               ]}
             >
-              <Feather name="search" size={16} color={theme.textSecondary} />
+              <Feather
+                name="search"
+                size={16}
+                color={theme.textSecondary}
+                accessible={false}
+              />
               <TextInput
                 style={[styles.searchInput, { color: theme.text }]}
                 placeholder="Search recipes..."
@@ -263,7 +279,7 @@ export default function HomeScreen() {
               {searchText.length > 0 && (
                 <Pressable
                   onPress={() => setSearchText("")}
-                  hitSlop={8}
+                  hitSlop={HIT_SLOP_44}
                   accessibilityRole="button"
                   accessibilityLabel="Clear search"
                 >

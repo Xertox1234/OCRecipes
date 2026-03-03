@@ -91,6 +91,7 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
         styles.confidenceBadge,
         { backgroundColor: withOpacity(getConfidenceColor(), 0.12) },
       ]}
+      accessibilityLabel={`Confidence: ${Math.round(confidence * 100)}%`}
     >
       <ThemedText type="small" style={{ color: getConfidenceColor() }}>
         {getConfidenceLabel()} Confidence ({Math.round(confidence * 100)}%)
@@ -182,6 +183,7 @@ function FoodItemCard({
                 onChangeText={setEditName}
                 placeholder="Food name"
                 placeholderTextColor={theme.textSecondary}
+                accessibilityLabel="Food name"
               />
               <TextInput
                 style={[
@@ -196,6 +198,7 @@ function FoodItemCard({
                 onChangeText={setEditQuantity}
                 placeholder="Quantity"
                 placeholderTextColor={theme.textSecondary}
+                accessibilityLabel="Quantity"
               />
             </View>
           ) : (
@@ -319,6 +322,7 @@ function FollowUpModal({
         styles.followUpModal,
         { backgroundColor: theme.backgroundDefault },
       ]}
+      accessibilityViewIsModal={true}
     >
       <View style={styles.followUpHeader}>
         <Feather name="help-circle" size={24} color={theme.info} />
@@ -343,6 +347,7 @@ function FollowUpModal({
         onChangeText={setAnswer}
         placeholder="Type your answer..."
         placeholderTextColor={theme.textSecondary}
+        accessibilityLabel="Follow-up question about food"
         multiline
         returnKeyType="done"
         onSubmitEditing={handleSubmit}
@@ -689,12 +694,15 @@ export default function PhotoAnalysisScreen() {
               source={{ uri: imageUri }}
               style={styles.productImage}
               resizeMode="cover"
+              accessibilityLabel="Photo being analyzed"
             />
           </Animated.View>
 
           {/* Error State */}
           {error && (
             <View
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
               style={[
                 styles.errorContainer,
                 { backgroundColor: withOpacity(theme.error, 0.12) },
@@ -1040,8 +1048,8 @@ const styles = StyleSheet.create({
     width: 120,
   },
   editButton: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.xs,
     justifyContent: "center",
     alignItems: "center",

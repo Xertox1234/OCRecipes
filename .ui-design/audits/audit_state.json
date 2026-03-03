@@ -1,19 +1,19 @@
 {
-  "audit_id": "full_ui_20260201_120000",
+  "audit_id": "a11y_full_app_20260303",
   "target": "client/screens + client/components + client/camera",
   "wcag_level": "AA",
   "focus_areas": ["all"],
   "status": "complete",
-  "started_at": "2026-02-01T12:00:00Z",
-  "completed_at": "2026-02-01T12:15:00Z",
-  "files_audited": 21,
+  "started_at": "2026-03-03T00:00:00Z",
+  "completed_at": "2026-03-03T00:30:00Z",
+  "files_audited": 86,
   "issues_found": {
-    "critical": 0,
-    "serious": 4,
-    "moderate": 7,
-    "minor": 5
+    "critical": 18,
+    "serious": 42,
+    "moderate": 42,
+    "minor": 33
   },
-  "criteria_checked": 28,
-  "criteria_passed": 24,
+  "criteria_checked": 38,
+  "criteria_passed": 13,
   "compliance_status": "needs_improvement"
 }

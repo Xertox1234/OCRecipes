@@ -36,20 +36,17 @@ export default function MedicationLogCard({
     minute: "2-digit",
   });
 
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityLabel={`${brandName || medicationName} ${dosage} dose`}
-      accessibilityRole="button"
-      style={[
-        styles.card,
-        {
-          backgroundColor: theme.backgroundSecondary,
-          borderColor: theme.border,
-          padding: Spacing.md,
-        },
-      ]}
-    >
+  const cardStyle = [
+    styles.card,
+    {
+      backgroundColor: theme.backgroundSecondary,
+      borderColor: theme.border,
+      padding: Spacing.md,
+    },
+  ];
+
+  const content = (
+    <>
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Ionicons name="medkit" size={18} color={theme.link} />
@@ -106,7 +103,29 @@ export default function MedicationLogCard({
           ))}
         </View>
       )}
-    </Pressable>
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityLabel={`${brandName || medicationName} ${dosage} dose`}
+        accessibilityRole="button"
+        style={cardStyle}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View
+      accessibilityLabel={`${brandName || medicationName} ${dosage} dose`}
+      style={cardStyle}
+    >
+      {content}
+    </View>
   );
 }
 

@@ -124,7 +124,11 @@ export function FastingSetupModal({
           <ThemedText type="h4" style={styles.sectionLabel}>
             Protocol
           </ThemedText>
-          <View style={styles.protocolGrid}>
+          <View
+            style={styles.protocolGrid}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Fasting protocol"
+          >
             {FASTING_PROTOCOLS.map((p) => {
               const isSelected = protocol === p.key;
               return (
@@ -135,7 +139,7 @@ export function FastingSetupModal({
                     setProtocol(p.key);
                   }}
                   accessibilityLabel={`${p.label} protocol`}
-                  accessibilityRole="button"
+                  accessibilityRole="radio"
                   accessibilityState={{ selected: isSelected }}
                   style={[
                     styles.protocolChip,

@@ -14,6 +14,7 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
+import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { apiRequest } from "@/lib/query-client";
@@ -69,6 +70,7 @@ export default function EditDietaryProfileScreen() {
   const [cookingTimeAvailable, setCookingTimeAvailable] = useState<
     string | null
   >(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const { data: profile, isLoading } = useQuery<DietaryProfile>({
     queryKey: ["/api/user/dietary-profile"],
@@ -127,6 +129,7 @@ export default function EditDietaryProfileScreen() {
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveError(null);
     try {
       await apiRequest("PUT", "/api/user/dietary-profile", {
         allergies,
@@ -148,6 +151,7 @@ export default function EditDietaryProfileScreen() {
       navigation.goBack();
     } catch (error) {
       console.error("Failed to save dietary profile:", error);
+      setSaveError("Failed to save profile. Please try again.");
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsSaving(false);
@@ -672,9 +676,11 @@ export default function EditDietaryProfileScreen() {
           {
             backgroundColor: theme.backgroundRoot,
             paddingBottom: insets.bottom + Spacing.lg,
+            borderTopColor: theme.border,
           },
         ]}
       >
+        <InlineError message={saveError} style={{ marginBottom: Spacing.sm }} />
         <Button
           onPress={handleSave}
           loading={isSaving}
@@ -814,6 +820,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     borderTopWidth: 1,
-    borderTopColor: "rgba(0,0,0,0.1)",
   },
 });

@@ -75,7 +75,7 @@ export default function LoginScreen() {
   return (
     <ThemedView style={styles.container}>
       {/* Hero Image with Gradient Fade */}
-      <View style={styles.heroContainer}>
+      <View style={styles.heroContainer} accessibilityElementsHidden={true}>
         <Image
           source={require("../../assets/images/login-hero.jpg")}
           style={styles.heroImage}

@@ -112,8 +112,8 @@ export function SaveButton({ item, style, onSaved }: SaveButtonProps) {
 
 const styles = StyleSheet.create({
   button: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.md,
     justifyContent: "center",
     alignItems: "center",

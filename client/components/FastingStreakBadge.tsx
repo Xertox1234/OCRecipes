@@ -38,7 +38,7 @@ export const FastingStreakBadge = React.memo(function FastingStreakBadge({
         accessibilityLabel={`${streak} day fasting streak`}
         accessibilityRole="text"
       >
-        <Feather name="zap" size={12} color={badgeColor} />
+        <Feather name="zap" size={12} color={badgeColor} accessible={false} />
         <ThemedText style={[styles.compactText, { color: badgeColor }]}>
           {streak}
         </ThemedText>
@@ -52,7 +52,7 @@ export const FastingStreakBadge = React.memo(function FastingStreakBadge({
       accessibilityLabel={`${streak} day fasting streak`}
       accessibilityRole="text"
     >
-      <Feather name="zap" size={18} color={badgeColor} />
+      <Feather name="zap" size={18} color={badgeColor} accessible={false} />
       <View>
         <ThemedText style={[styles.streakCount, { color: badgeColor }]}>
           {formatStreakLabel(streak)}

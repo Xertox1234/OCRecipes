@@ -218,8 +218,8 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
   },
   actionButton: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.md,
     justifyContent: "center",
     alignItems: "center",

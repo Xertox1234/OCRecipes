@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
 
@@ -49,17 +50,17 @@ export default function CuisineTag({
         },
       ]}
     >
-      <Text
+      <ThemedText
         style={[
           styles.text,
           {
             color: bgColor,
-            fontSize: size === "small" ? 10 : 12,
+            fontSize: 12,
           },
         ]}
       >
         {cuisine}
-      </Text>
+      </ThemedText>
     </View>
   );
 }

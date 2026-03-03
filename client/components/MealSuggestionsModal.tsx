@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect } from "react";
 import {
+  AccessibilityInfo,
+  Platform,
   StyleSheet,
   View,
   Modal,
@@ -146,6 +148,19 @@ export function MealSuggestionsModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation excluded to prevent infinite re-renders (changes identity on mutate)
   }, [visible, date, mealType]);
 
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    if (mutation.isError) {
+      const isLimit =
+        mutation.error instanceof ApiError &&
+        mutation.error.code === "DAILY_LIMIT_REACHED";
+      AccessibilityInfo.announceForAccessibility(
+        isLimit ? "Daily suggestion limit reached" : mutation.error.message,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- announce only on error state change
+  }, [mutation.isError]);
+
   const handleSuggestMore = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     mutation.mutate({ date, mealType });
@@ -210,8 +225,17 @@ export function MealSuggestionsModal({
 
             {/* Error */}
             {mutation.isError && !isLimitReached && (
-              <View style={styles.errorContainer}>
-                <Feather name="alert-circle" size={32} color={theme.error} />
+              <View
+                accessibilityRole="alert"
+                accessibilityLiveRegion="assertive"
+                style={styles.errorContainer}
+              >
+                <Feather
+                  name="alert-circle"
+                  size={32}
+                  color={theme.error}
+                  accessible={false}
+                />
                 <ThemedText style={[styles.errorText, { color: theme.error }]}>
                   {mutation.error.message}
                 </ThemedText>
@@ -230,8 +254,17 @@ export function MealSuggestionsModal({
 
             {/* Limit reached */}
             {isLimitReached && (
-              <View style={styles.errorContainer}>
-                <Feather name="clock" size={32} color={theme.textSecondary} />
+              <View
+                accessibilityRole="alert"
+                accessibilityLiveRegion="assertive"
+                style={styles.errorContainer}
+              >
+                <Feather
+                  name="clock"
+                  size={32}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
                 <ThemedText
                   style={[styles.errorText, { color: theme.textSecondary }]}
                 >
@@ -362,6 +395,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
+    minHeight: 44,
   },
   pickButtonText: {
     fontSize: 14,

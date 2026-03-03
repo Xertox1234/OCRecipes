@@ -1,5 +1,12 @@
-import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable } from "react-native";
+import React, { useEffect, useState } from "react";
+import {
+  AccessibilityInfo,
+  Platform,
+  View,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
@@ -32,6 +39,17 @@ export default function AllergiesScreen() {
   const insets = useSafeAreaInsets();
   const { data, updateData, nextStep, prevStep } = useOnboarding();
   const [selectedAllergen, setSelectedAllergen] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === "ios" && selectedAllergen) {
+      const name = COMMON_ALLERGENS.find(
+        (a) => a.id === selectedAllergen,
+      )?.name;
+      AccessibilityInfo.announceForAccessibility(
+        `Select severity for ${name} allergy`,
+      );
+    }
+  }, [selectedAllergen]);
 
   const toggleAllergen = (allergenId: string) => {
     const existing = data.allergies.find((a) => a.name === allergenId);
@@ -158,6 +176,7 @@ export default function AllergiesScreen() {
 
         {selectedAllergen ? (
           <View
+            accessibilityLiveRegion="polite"
             style={[
               styles.severityModal,
               { backgroundColor: theme.backgroundDefault },

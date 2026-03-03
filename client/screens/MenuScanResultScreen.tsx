@@ -1,8 +1,9 @@
 import React, { useMemo, useCallback } from "react";
-import { View, Text, StyleSheet, FlatList } from "react-native";
+import { View, StyleSheet, FlatList } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, type RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
+import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Spacing,
@@ -54,60 +55,72 @@ const MenuItemCard = React.memo(function MenuItemCard({
     >
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderLeft}>
-          <Text
+          <ThemedText
             style={[styles.itemName, { color: theme.text }]}
             numberOfLines={2}
           >
             {item.name}
-          </Text>
+          </ThemedText>
           {item.description ? (
-            <Text
+            <ThemedText
               style={[styles.itemDesc, { color: theme.textSecondary }]}
               numberOfLines={2}
             >
               {item.description}
-            </Text>
+            </ThemedText>
           ) : null}
         </View>
         {item.price ? (
-          <Text style={[styles.price, { color: theme.text }]}>
+          <ThemedText style={[styles.price, { color: theme.text }]}>
             {item.price}
-          </Text>
+          </ThemedText>
         ) : null}
       </View>
 
       <View style={styles.macroRow}>
         <View style={styles.macro}>
-          <Text style={[styles.macroValue, { color: theme.calorieAccent }]}>
+          <ThemedText
+            style={[styles.macroValue, { color: theme.calorieAccent }]}
+          >
             {item.estimatedCalories}
-          </Text>
-          <Text style={[styles.macroLabel, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            style={[styles.macroLabel, { color: theme.textSecondary }]}
+          >
             cal
-          </Text>
+          </ThemedText>
         </View>
         <View style={styles.macro}>
-          <Text style={[styles.macroValue, { color: theme.proteinAccent }]}>
+          <ThemedText
+            style={[styles.macroValue, { color: theme.proteinAccent }]}
+          >
             {item.estimatedProtein}g
-          </Text>
-          <Text style={[styles.macroLabel, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            style={[styles.macroLabel, { color: theme.textSecondary }]}
+          >
             protein
-          </Text>
+          </ThemedText>
         </View>
         <View style={styles.macro}>
-          <Text style={[styles.macroValue, { color: theme.carbsAccent }]}>
+          <ThemedText style={[styles.macroValue, { color: theme.carbsAccent }]}>
             {item.estimatedCarbs}g
-          </Text>
-          <Text style={[styles.macroLabel, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            style={[styles.macroLabel, { color: theme.textSecondary }]}
+          >
             carbs
-          </Text>
+          </ThemedText>
         </View>
         <View style={styles.macro}>
-          <Text style={[styles.macroValue, { color: theme.fatAccent }]}>
+          <ThemedText style={[styles.macroValue, { color: theme.fatAccent }]}>
             {item.estimatedFat}g
-          </Text>
-          <Text style={[styles.macroLabel, { color: theme.textSecondary }]}>
+          </ThemedText>
+          <ThemedText
+            style={[styles.macroLabel, { color: theme.textSecondary }]}
+          >
             fat
-          </Text>
+          </ThemedText>
         </View>
       </View>
 
@@ -123,7 +136,9 @@ const MenuItemCard = React.memo(function MenuItemCard({
                 },
               ]}
             >
-              <Text style={[styles.tagText, { color: theme.link }]}>{tag}</Text>
+              <ThemedText style={[styles.tagText, { color: theme.link }]}>
+                {tag}
+              </ThemedText>
             </View>
           ))}
         </View>
@@ -144,13 +159,15 @@ const MenuItemCard = React.memo(function MenuItemCard({
             color={rec.color}
           />
           <View style={styles.recTextContainer}>
-            <Text style={[styles.recLabel, { color: rec.color }]}>
+            <ThemedText style={[styles.recLabel, { color: rec.color }]}>
               {rec.label}
-            </Text>
+            </ThemedText>
             {item.recommendationReason ? (
-              <Text style={[styles.recReason, { color: theme.textSecondary }]}>
+              <ThemedText
+                style={[styles.recReason, { color: theme.textSecondary }]}
+              >
                 {item.recommendationReason}
-              </Text>
+              </ThemedText>
             ) : null}
           </View>
         </View>
@@ -195,25 +212,29 @@ export default function MenuScanResultScreen() {
         ListHeaderComponent={
           <View style={styles.header}>
             {restaurantName ? (
-              <Text
+              <ThemedText
                 style={[styles.restaurantName, { color: theme.text }]}
                 accessibilityRole="header"
               >
                 {restaurantName}
-              </Text>
+              </ThemedText>
             ) : null}
             {cuisine ? (
-              <Text style={[styles.cuisine, { color: theme.textSecondary }]}>
+              <ThemedText
+                style={[styles.cuisine, { color: theme.textSecondary }]}
+              >
                 {cuisine} cuisine
-              </Text>
+              </ThemedText>
             ) : null}
-            <Text style={[styles.summary, { color: theme.textSecondary }]}>
+            <ThemedText
+              style={[styles.summary, { color: theme.textSecondary }]}
+            >
               {summary.total} items found
               {summary.great > 0
                 ? ` \u00B7 ${summary.great} great choices`
                 : ""}
               {summary.good > 0 ? ` \u00B7 ${summary.good} good options` : ""}
-            </Text>
+            </ThemedText>
           </View>
         }
         renderItem={renderItem}

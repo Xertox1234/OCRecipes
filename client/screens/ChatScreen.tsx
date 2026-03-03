@@ -80,7 +80,12 @@ function SuggestedPrompts({
             { backgroundColor: withOpacity(theme.link, 0.12) },
           ]}
         >
-          <Feather name="heart" size={24} color={theme.link} />
+          <Feather
+            name="heart"
+            size={24}
+            color={theme.link}
+            accessible={false}
+          />
         </View>
         <ThemedText type="h4" style={styles.suggestionsTitle}>
           NutriCoach
@@ -441,9 +446,9 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 2,

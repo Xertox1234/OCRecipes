@@ -136,7 +136,12 @@ export default function ItemDetailScreen() {
                   { backgroundColor: theme.backgroundSecondary },
                 ]}
               >
-                <Feather name="package" size={40} color={theme.textSecondary} />
+                <Feather
+                  name="package"
+                  size={40}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
               </View>
             )}
             <View style={styles.headerInfo}>

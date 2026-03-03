@@ -164,6 +164,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     borderRadius: BorderRadius.md,
     minWidth: 56,
+    minHeight: 44,
   },
   actionIconContainer: {
     position: "relative",

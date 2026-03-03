@@ -456,7 +456,13 @@ export default function FastingScreen() {
             <ThemedText type="h4" style={styles.sectionTitle}>
               This Week
             </ThemedText>
-            <WeeklyChart data={weeklyData} />
+            <View
+              accessible={true}
+              accessibilityRole="image"
+              accessibilityLabel={`Weekly fasting chart: ${weeklyData.filter((d) => d.completed).length} of 7 days completed, ${weeklyData.filter((d) => d.minutes > 0).length} days with fasting activity`}
+            >
+              <WeeklyChart data={weeklyData} />
+            </View>
             <View style={styles.chartLegend}>
               <View style={styles.legendItem}>
                 <View

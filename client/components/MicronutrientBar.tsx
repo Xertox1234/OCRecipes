@@ -58,6 +58,7 @@ export default function MicronutrientBar({
                 borderRadius: 3,
               },
             ]}
+            importantForAccessibility="no"
           />
         </View>
       </View>

@@ -238,7 +238,11 @@ export default function ScanScreen() {
       <View
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       >
-        <ActivityIndicator size="large" color={theme.success} />
+        <ActivityIndicator
+          size="large"
+          color={theme.success}
+          accessibilityLabel="Loading camera"
+        />
       </View>
     );
   }

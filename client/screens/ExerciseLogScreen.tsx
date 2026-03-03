@@ -229,7 +229,11 @@ export default function ExerciseLogScreen() {
           </View>
 
           {/* Type Selector */}
-          <View style={styles.typeRow}>
+          <View
+            style={styles.typeRow}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Exercise type"
+          >
             {EXERCISE_TYPES.map((t) => {
               const isSelected = exerciseType === t.key;
               return (
@@ -240,7 +244,7 @@ export default function ExerciseLogScreen() {
                     setExerciseType(t.key);
                   }}
                   accessibilityLabel={`${t.label} exercise type`}
-                  accessibilityRole="button"
+                  accessibilityRole="radio"
                   accessibilityState={{ selected: isSelected }}
                   style={[
                     styles.typeChip,

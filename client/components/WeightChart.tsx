@@ -35,8 +35,15 @@ export const WeightChart = React.memo(function WeightChart({
 
   const { points, pathData, goalY, minWeight, maxWeight, padding } = chartData;
 
+  const latestWeight = points.length > 0 ? data[data.length - 1]?.weight : null;
+
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      accessible={true}
+      accessibilityRole="image"
+      accessibilityLabel={`Weight chart showing ${points.length} entries${latestWeight ? `, latest: ${latestWeight} kg` : ""}`}
+    >
       <Svg
         width="100%"
         height={height}

@@ -112,6 +112,7 @@ export default function PhotoIntentScreen() {
             source={{ uri: imageUri }}
             style={styles.thumbnail}
             resizeMode="cover"
+            accessibilityLabel="Captured food photo"
           />
         </View>
 

@@ -55,6 +55,7 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
             accessibilityLabel={`Remove ${item.name}`}
             accessibilityRole="button"
             hitSlop={8}
+            style={styles.removeButton}
           >
             <Feather name="x" size={18} color={theme.textSecondary} />
           </Pressable>
@@ -106,6 +107,12 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.medium,
     fontWeight: "500",
     textTransform: "capitalize",
+  },
+  removeButton: {
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
   },
   logAllButton: {
     flexDirection: "row",

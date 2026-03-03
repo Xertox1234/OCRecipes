@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
+  AccessibilityInfo,
   StyleSheet,
   View,
   Modal,
@@ -100,6 +101,17 @@ export function RecipeGenerationModal({
       console.error("Recipe generation error:", error);
     },
   });
+
+  useEffect(() => {
+    if (Platform.OS === "ios" && generateMutation.isError) {
+      const msg =
+        generateMutation.error instanceof Error
+          ? generateMutation.error.message
+          : "Recipe generation failed";
+      AccessibilityInfo.announceForAccessibility(msg);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- announce only on error state change
+  }, [generateMutation.isError]);
 
   const handleGenerate = () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
@@ -216,7 +228,11 @@ export function RecipeGenerationModal({
             <ThemedText type="body" style={styles.sectionTitle}>
               Servings
             </ThemedText>
-            <View style={styles.optionsRow}>
+            <View
+              style={styles.optionsRow}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Servings"
+            >
               {SERVING_OPTIONS.map((option) => (
                 <Pressable
                   key={option}
@@ -237,7 +253,7 @@ export function RecipeGenerationModal({
                     },
                   ]}
                   accessibilityLabel={`${option} servings`}
-                  accessibilityRole="button"
+                  accessibilityRole="radio"
                   accessibilityState={{ selected: servings === option }}
                 >
                   <ThemedText
@@ -259,7 +275,11 @@ export function RecipeGenerationModal({
             <ThemedText type="body" style={styles.sectionTitle}>
               Max Cooking Time
             </ThemedText>
-            <View style={styles.optionsRow}>
+            <View
+              style={styles.optionsRow}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Max cooking time"
+            >
               {TIME_OPTIONS.map((option) => (
                 <Pressable
                   key={option.label}
@@ -282,7 +302,7 @@ export function RecipeGenerationModal({
                     },
                   ]}
                   accessibilityLabel={`${option.label} maximum`}
-                  accessibilityRole="button"
+                  accessibilityRole="radio"
                   accessibilityState={{
                     selected: timeConstraint === option.value,
                   }}
@@ -411,6 +431,8 @@ export function RecipeGenerationModal({
           {/* Error Message */}
           {generateMutation.isError && (
             <View
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
               style={[
                 styles.errorBanner,
                 { backgroundColor: withOpacity(theme.error, 0.12) },
@@ -558,6 +580,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.chip,
     borderWidth: 1,
+    minHeight: 44,
   },
   dietGrid: {
     flexDirection: "row",

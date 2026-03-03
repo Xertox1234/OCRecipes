@@ -17,6 +17,7 @@ export function HeaderTitle({ title, showIcon = true }: HeaderTitleProps) {
           source={require("../../assets/images/icon.png")}
           style={styles.icon}
           resizeMode="contain"
+          accessible={false}
         />
       ) : null}
       <ThemedText style={styles.title}>{title}</ThemedText>

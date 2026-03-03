@@ -1094,6 +1094,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
+    minHeight: 44,
   },
   groceryButtonText: {
     fontSize: 13,
@@ -1106,6 +1107,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
+    minHeight: 44,
   },
   suggestChipText: {
     fontSize: 12,
