@@ -85,6 +85,19 @@ describe("Medication Routes", () => {
       expect(res.status).toBe(403);
       expect(res.body.code).toBe("PREMIUM_REQUIRED");
     });
+
+    it("returns 500 when storage throws", async () => {
+      mockPremium();
+      vi.mocked(storage.getMedicationLogs).mockRejectedValue(
+        new Error("db error"),
+      );
+
+      const res = await request(app)
+        .get("/api/medication/logs")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
   });
 
   describe("POST /api/medication/log", () => {
@@ -233,6 +246,38 @@ describe("Medication Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.proteinGoal).toBe(150);
     });
+
+    it("returns high-appetite suggestions when appetite > 3", async () => {
+      mockPremium();
+      vi.mocked(storage.getUser).mockResolvedValue({
+        dailyProteinGoal: 120,
+      } as never);
+      vi.mocked(storage.getDailySummary).mockResolvedValue({
+        totalProtein: "20",
+      } as never);
+      vi.mocked(storage.getMedicationLogs).mockResolvedValue([
+        { appetiteLevel: 4 },
+      ] as never);
+
+      const res = await request(app)
+        .get("/api/medication/protein-suggestions")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.suggestions.length).toBeGreaterThan(0);
+      expect(res.body.remainingProtein).toBe(100);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      mockPremium();
+      vi.mocked(storage.getUser).mockRejectedValue(new Error("db error"));
+
+      const res = await request(app)
+        .get("/api/medication/protein-suggestions")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+    });
   });
 
   describe("PUT /api/user/glp1-mode", () => {
@@ -271,6 +316,20 @@ describe("Medication Routes", () => {
         .send({ glp1Mode: false });
 
       expect(res.status).toBe(404);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      mockPremium();
+      vi.mocked(storage.updateUserProfile).mockRejectedValue(
+        new Error("db error"),
+      );
+
+      const res = await request(app)
+        .put("/api/user/glp1-mode")
+        .set("Authorization", "Bearer token")
+        .send({ glp1Mode: true });
+
+      expect(res.status).toBe(500);
     });
   });
 });

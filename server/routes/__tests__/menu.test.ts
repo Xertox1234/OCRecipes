@@ -23,6 +23,9 @@ vi.mock("../../services/menu-analysis", () => ({
   analyzeMenuPhoto: vi.fn(),
 }));
 
+// Module-level flag to control whether multer mock attaches a file
+let simulateNoFile = false;
+
 // Mock multer to simulate file uploads without actual multipart parsing
 vi.mock("multer", () => {
   const multerMock = () => ({
@@ -33,13 +36,15 @@ vi.mock("multer", () => {
         _res: express.Response,
         next: express.NextFunction,
       ) => {
-        // Simulate file being present by default
-        req.file = {
-          buffer: Buffer.from("fake-image-data"),
-          mimetype: "image/jpeg",
-          originalname: "menu.jpg",
-          size: 1000,
-        } as Express.Multer.File;
+        // Simulate file being present unless simulateNoFile is set
+        if (!simulateNoFile) {
+          req.file = {
+            buffer: Buffer.from("fake-image-data"),
+            mimetype: "image/jpeg",
+            originalname: "menu.jpg",
+            size: 1000,
+          } as Express.Multer.File;
+        }
         next();
       },
   });
@@ -65,6 +70,7 @@ describe("Menu Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    simulateNoFile = false;
     app = createApp();
   });
 
@@ -112,6 +118,18 @@ describe("Menu Routes", () => {
 
       expect(res.status).toBe(500);
     });
+
+    it("returns 400 when no photo is provided", async () => {
+      mockPremium();
+      simulateNoFile = true;
+
+      const res = await request(app)
+        .post("/api/menu/scan")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_ERROR");
+    });
   });
 
   describe("GET /api/menu/history", () => {
@@ -140,6 +158,18 @@ describe("Menu Routes", () => {
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe("PREMIUM_REQUIRED");
+    });
+
+    it("returns 500 on storage error", async () => {
+      mockPremium();
+      vi.mocked(storage.getMenuScans).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app)
+        .get("/api/menu/history")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
     });
   });
 
@@ -170,6 +200,19 @@ describe("Menu Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(400);
+    });
+
+    it("returns 500 on storage error", async () => {
+      vi.mocked(storage.deleteMenuScan).mockRejectedValue(
+        new Error("DB error"),
+      );
+
+      const res = await request(app)
+        .delete("/api/menu/scans/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
     });
   });
 });

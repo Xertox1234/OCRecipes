@@ -70,6 +70,19 @@ describe("Saved Items Routes", () => {
 
       expect(storage.getSavedItems).toHaveBeenCalledWith("1", 10);
     });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.getSavedItems).mockRejectedValue(
+        new Error("db error") as never,
+      );
+
+      const res = await request(app)
+        .get("/api/saved-items")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
+    });
   });
 
   describe("GET /api/saved-items/count", () => {
@@ -82,6 +95,19 @@ describe("Saved Items Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.count).toBe(5);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.getSavedItemCount).mockRejectedValue(
+        new Error("db error") as never,
+      );
+
+      const res = await request(app)
+        .get("/api/saved-items/count")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
     });
   });
 
@@ -127,6 +153,23 @@ describe("Saved Items Routes", () => {
 
       expect(res.status).toBe(400);
     });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.createSavedItem).mockRejectedValue(
+        new Error("db error") as never,
+      );
+
+      const res = await request(app)
+        .post("/api/saved-items")
+        .set("Authorization", "Bearer token")
+        .send({
+          type: "recipe",
+          title: "Test Recipe",
+        });
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
+    });
   });
 
   describe("DELETE /api/saved-items/:id", () => {
@@ -156,6 +199,19 @@ describe("Saved Items Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(400);
+    });
+
+    it("returns 500 when storage throws", async () => {
+      vi.mocked(storage.deleteSavedItem).mockRejectedValue(
+        new Error("db error") as never,
+      );
+
+      const res = await request(app)
+        .delete("/api/saved-items/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
     });
   });
 });

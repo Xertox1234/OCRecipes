@@ -271,6 +271,19 @@ describe("Fasting Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body).toBeNull();
     });
+
+    it("returns 500 on storage error", async () => {
+      vi.mocked(storage.getActiveFastingLog).mockRejectedValue(
+        new Error("db error") as never,
+      );
+
+      const res = await request(app)
+        .get("/api/fasting/current")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Failed to get current fast");
+    });
   });
 
   describe("GET /api/fasting/history", () => {
@@ -303,6 +316,19 @@ describe("Fasting Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(storage.getFastingLogs).toHaveBeenCalledWith("1", 10);
+    });
+
+    it("returns 500 on storage error", async () => {
+      vi.mocked(storage.getFastingLogs).mockRejectedValue(
+        new Error("db error") as never,
+      );
+
+      const res = await request(app)
+        .get("/api/fasting/history")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Failed to get fasting history");
     });
   });
 });
