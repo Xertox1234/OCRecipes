@@ -44,6 +44,7 @@ const browseQuerySchema = z.object({
   cuisine: z.string().max(50).optional(),
   diet: z.string().max(50).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
 });
 
 const catalogSearchSchema = z.object({
@@ -107,18 +108,24 @@ export function register(app: Express): void {
           );
           return;
         }
-        const { query, cuisine, diet, limit } = parsed.data;
+        const { query, cuisine, diet, limit, mealType } = parsed.data;
 
-        const result = await storage.getUnifiedRecipes({
-          userId: req.userId!,
-          query: query || undefined,
-          cuisine: cuisine || undefined,
-          diet: diet || undefined,
-          limit,
-        });
+        const [result, frequent] = await Promise.all([
+          storage.getUnifiedRecipes({
+            userId: req.userId!,
+            query: query || undefined,
+            cuisine: cuisine || undefined,
+            diet: diet || undefined,
+            limit,
+          }),
+          mealType
+            ? storage.getFrequentRecipesForMealType(req.userId!, mealType)
+            : Promise.resolve([]),
+        ]);
         res.json({
           community: stripAuthorId(result.community),
           personal: result.personal,
+          frequent,
         });
       } catch (error) {
         console.error("Browse recipes error:", error);

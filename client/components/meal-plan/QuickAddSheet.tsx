@@ -29,14 +29,10 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import type { MealType } from "@/screens/meal-plan/meal-plan-utils";
-
-const MEAL_LABELS: Record<string, string> = {
-  breakfast: "Breakfast",
-  lunch: "Lunch",
-  dinner: "Dinner",
-  snack: "Snack",
-};
+import {
+  MEAL_LABELS,
+  type MealType,
+} from "@/screens/meal-plan/meal-plan-utils";
 
 const SNAP_POINTS = ["70%"];
 
@@ -86,10 +82,26 @@ function QuickAddSheetInner({
     }
   }, [mealType]);
 
-  const queryParams = debouncedQuery ? { query: debouncedQuery } : undefined;
+  const queryParams = useMemo(() => {
+    const p: Record<string, string> = {};
+    if (debouncedQuery) p.query = debouncedQuery;
+    if (mealType) p.mealType = mealType;
+    return Object.keys(p).length > 0 ? p : undefined;
+  }, [debouncedQuery, mealType]);
   const { data, isLoading } = useUnifiedRecipes(queryParams);
 
   const addItemMutation = useAddMealPlanItem();
+  const isAdding = useRef(false);
+
+  const frequentRecipes: RecipeRow[] = useMemo(() => {
+    if (!data?.frequent.length || debouncedQuery) return [];
+    return data.frequent.map((r) => ({
+      id: r.id,
+      title: r.title,
+      calories: r.caloriesPerServing,
+      source: "personal" as const,
+    }));
+  }, [data?.frequent, debouncedQuery]);
 
   const recipes: RecipeRow[] = useMemo(() => {
     if (!data) return [];
@@ -111,35 +123,37 @@ function QuickAddSheetInner({
       return [...personal, ...community];
     }
 
-    // No query: show first 8 personal recipes
-    return data.personal.slice(0, 8).map((r) => ({
-      id: r.id,
-      title: r.title,
-      calories: r.caloriesPerServing,
-      source: "personal" as const,
-    }));
-  }, [data, debouncedQuery]);
+    // No query: show personal recipes, excluding those already in frequent
+    const frequentIds = new Set(frequentRecipes.map((r) => r.id));
+    return data.personal
+      .filter((r) => !frequentIds.has(r.id))
+      .slice(0, 8)
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        calories: r.caloriesPerServing,
+        source: "personal" as const,
+      }));
+  }, [data, debouncedQuery, frequentRecipes]);
 
   const handleAdd = useCallback(
-    (recipe: RecipeRow) => {
-      if (!mealType || addItemMutation.isPending) return;
+    async (recipe: RecipeRow) => {
+      if (!mealType || isAdding.current) return;
+      isAdding.current = true;
       haptics.impact(ImpactFeedbackStyle.Light);
-      addItemMutation.mutate(
-        {
+      try {
+        await addItemMutation.mutateAsync({
           recipeId: recipe.id,
           plannedDate,
           mealType,
-        },
-        {
-          onSuccess: () => {
-            haptics.notification(NotificationFeedbackType.Success);
-            onDismiss();
-          },
-          onError: () => {
-            haptics.notification(NotificationFeedbackType.Error);
-          },
-        },
-      );
+        });
+        haptics.notification(NotificationFeedbackType.Success);
+        onDismiss();
+      } catch {
+        haptics.notification(NotificationFeedbackType.Error);
+      } finally {
+        isAdding.current = false;
+      }
     },
     [mealType, plannedDate, haptics, addItemMutation, onDismiss],
   );
@@ -205,14 +219,68 @@ function QuickAddSheetInner({
 
   const sectionTitle = debouncedQuery ? "Results" : "Your Recipes";
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
+  const frequentLabel = mealType
+    ? `Frequent for ${MEAL_LABELS[mealType] || mealType}`
+    : "Frequent";
 
   const ListHeader = useMemo(
     () => (
-      <ThemedText style={[styles.sectionTitle, { color: theme.textSecondary }]}>
-        {sectionTitle}
-      </ThemedText>
+      <View>
+        {frequentRecipes.length > 0 && (
+          <>
+            <ThemedText
+              style={[styles.sectionTitle, { color: theme.textSecondary }]}
+            >
+              {frequentLabel}
+            </ThemedText>
+            {frequentRecipes.map((item) => {
+              const cal = item.calories
+                ? `${Math.round(parseFloat(item.calories))} cal`
+                : null;
+              return (
+                <Pressable
+                  key={`freq-${item.id}`}
+                  onPress={() => handleAdd(item)}
+                  style={[
+                    styles.resultRow,
+                    { backgroundColor: withOpacity(theme.text, 0.03) },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add ${item.title}${cal ? `, ${cal}` : ""} to ${mealType}`}
+                >
+                  <View style={styles.resultContent}>
+                    <ThemedText style={styles.resultTitle} numberOfLines={1}>
+                      {item.title}
+                    </ThemedText>
+                    {cal && (
+                      <ThemedText
+                        style={[
+                          styles.resultCal,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        {cal}
+                      </ThemedText>
+                    )}
+                  </View>
+                  <Feather name="plus-circle" size={20} color={theme.link} />
+                </Pressable>
+              );
+            })}
+          </>
+        )}
+        <ThemedText
+          style={[
+            styles.sectionTitle,
+            { color: theme.textSecondary },
+            frequentRecipes.length > 0 && { marginTop: Spacing.md },
+          ]}
+        >
+          {sectionTitle}
+        </ThemedText>
+      </View>
     ),
-    [sectionTitle, theme.textSecondary],
+    [sectionTitle, frequentLabel, frequentRecipes, theme, mealType, handleAdd],
   );
 
   const ListEmpty = useMemo(() => {

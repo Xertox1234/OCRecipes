@@ -681,6 +681,51 @@ export async function getPlannedNutritionSummary(
 }
 
 // ============================================================================
+// FREQUENT RECIPES BY MEAL TYPE
+// ============================================================================
+
+export async function getFrequentRecipesForMealType(
+  userId: string,
+  mealType: string,
+  limit = 8,
+): Promise<MealPlanRecipe[]> {
+  // Find the most-used recipeIds for a given mealType, then fetch the recipes.
+  const frequentRows = await db
+    .select({
+      recipeId: mealPlanItems.recipeId,
+      useCount: sql<number>`count(*)`.as("use_count"),
+    })
+    .from(mealPlanItems)
+    .where(
+      and(
+        eq(mealPlanItems.userId, userId),
+        eq(mealPlanItems.mealType, mealType),
+        sql`${mealPlanItems.recipeId} IS NOT NULL`,
+      ),
+    )
+    .groupBy(mealPlanItems.recipeId)
+    .orderBy(sql`count(*) DESC`)
+    .limit(limit);
+
+  const recipeIds = frequentRows
+    .map((r) => r.recipeId)
+    .filter((id): id is number => id !== null);
+
+  if (recipeIds.length === 0) return [];
+
+  const recipes = await db
+    .select()
+    .from(mealPlanRecipes)
+    .where(inArray(mealPlanRecipes.id, recipeIds));
+
+  // Preserve frequency order
+  const recipeMap = new Map(recipes.map((r) => [r.id, r]));
+  return recipeIds
+    .map((id) => recipeMap.get(id))
+    .filter(Boolean) as MealPlanRecipe[];
+}
+
+// ============================================================================
 // AGGREGATION
 // ============================================================================
 

@@ -27,6 +27,7 @@ vi.mock("../../storage", () => ({
     deleteCommunityRecipe: vi.fn(),
     findMealPlanRecipeByExternalId: vi.fn(),
     createMealPlanRecipe: vi.fn(),
+    getFrequentRecipesForMealType: vi.fn(),
   },
 }));
 
@@ -106,6 +107,51 @@ describe("Recipes Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.community).toHaveLength(1);
       expect(res.body.community[0].authorId).toBeUndefined();
+    });
+
+    it("returns frequent recipes when mealType provided", async () => {
+      vi.mocked(storage.getUnifiedRecipes).mockResolvedValue({
+        community: [],
+        personal: [],
+      } as never);
+      vi.mocked(storage.getFrequentRecipesForMealType).mockResolvedValue([
+        { id: 10, title: "Oatmeal" },
+      ] as never);
+
+      const res = await request(app)
+        .get("/api/recipes/browse?mealType=breakfast")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.frequent).toHaveLength(1);
+      expect(res.body.frequent[0].title).toBe("Oatmeal");
+      expect(storage.getFrequentRecipesForMealType).toHaveBeenCalledWith(
+        "1",
+        "breakfast",
+      );
+    });
+
+    it("returns empty frequent when no mealType", async () => {
+      vi.mocked(storage.getUnifiedRecipes).mockResolvedValue({
+        community: [],
+        personal: [],
+      } as never);
+
+      const res = await request(app)
+        .get("/api/recipes/browse")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.frequent).toEqual([]);
+      expect(storage.getFrequentRecipesForMealType).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid mealType", async () => {
+      const res = await request(app)
+        .get("/api/recipes/browse?mealType=brunch")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
     });
   });
 
