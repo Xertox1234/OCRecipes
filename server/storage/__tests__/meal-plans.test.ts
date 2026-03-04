@@ -1285,7 +1285,7 @@ describe("meal-plans storage", () => {
         mealType: "lunch",
         servings: "1",
       });
-      const item2 = await addMealPlanItem({
+      await addMealPlanItem({
         userId: testUser.id,
         recipeId: recipe.id,
         plannedDate: "2025-06-15",

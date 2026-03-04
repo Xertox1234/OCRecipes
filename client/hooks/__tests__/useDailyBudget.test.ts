@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 import { useDailyBudget } from "../useDailyBudget";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 

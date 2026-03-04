@@ -86,7 +86,7 @@ describe("chat storage", () => {
 
   describe("getChatConversations", () => {
     it("returns conversations ordered by updatedAt desc", async () => {
-      const conv1 = await createChatConversation(testUser.id, "Older");
+      await createChatConversation(testUser.id, "Older");
       // Make conv2 newer by updating its timestamp via a message
       const conv2 = await createChatConversation(testUser.id, "Newer");
       await createChatMessage(conv2.id, "user", "Hello");

@@ -3,8 +3,6 @@ import {
   findNutrient,
   mapToMealPlanRecipe,
   recipeDetailSchema,
-  searchCatalogRecipes,
-  getCatalogRecipeDetail,
   clearDetailCache,
   CatalogQuotaError,
 } from "../recipe-catalog";

@@ -559,7 +559,6 @@ describe("cache storage", () => {
 
     it("returns undefined for expired entry", async () => {
       // Insert with a TTL that's already passed
-      const { eq } = await import("drizzle-orm");
       await tx.insert(schema.micronutrientCache).values({
         queryKey: "micro_expired",
         data: [{ nutrient: "B12", amount: 2.4 }],

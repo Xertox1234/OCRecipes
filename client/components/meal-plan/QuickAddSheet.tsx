@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import { StyleSheet, View, Pressable } from "react-native";
+import type { TextInput } from "react-native-gesture-handler";
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -64,7 +65,7 @@ function QuickAddSheetInner({
   const { theme } = useTheme();
   const haptics = useHaptics();
   const sheetRef = useRef<BottomSheetModal>(null);
-  const isAdding = useRef(false);
+  const inputRef = useRef<TextInput>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
@@ -120,23 +121,25 @@ function QuickAddSheetInner({
   }, [data, debouncedQuery]);
 
   const handleAdd = useCallback(
-    async (recipe: RecipeRow) => {
-      if (!mealType || isAdding.current) return;
-      isAdding.current = true;
+    (recipe: RecipeRow) => {
+      if (!mealType || addItemMutation.isPending) return;
       haptics.impact(ImpactFeedbackStyle.Light);
-      try {
-        await addItemMutation.mutateAsync({
+      addItemMutation.mutate(
+        {
           recipeId: recipe.id,
           plannedDate,
           mealType,
-        });
-        haptics.notification(NotificationFeedbackType.Success);
-        onDismiss();
-      } catch {
-        // Mutation errors handled by React Query
-      } finally {
-        isAdding.current = false;
-      }
+        },
+        {
+          onSuccess: () => {
+            haptics.notification(NotificationFeedbackType.Success);
+            onDismiss();
+          },
+          onError: () => {
+            haptics.notification(NotificationFeedbackType.Error);
+          },
+        },
+      );
     },
     [mealType, plannedDate, haptics, addItemMutation, onDismiss],
   );
@@ -279,6 +282,11 @@ function QuickAddSheetInner({
       keyboardBlurBehavior="restore"
       backdropComponent={renderBackdrop}
       onDismiss={onDismiss}
+      onChange={(index) => {
+        if (index === 0) {
+          inputRef.current?.focus();
+        }
+      }}
       accessibilityViewIsModal
     >
       {/* Header */}
@@ -314,12 +322,12 @@ function QuickAddSheetInner({
         >
           <Feather name="search" size={16} color={theme.textSecondary} />
           <BottomSheetTextInput
+            ref={inputRef}
             style={[styles.searchInput, { color: theme.text }]}
             placeholder="Search recipes..."
             placeholderTextColor={theme.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            autoFocus
             accessibilityLabel="Search recipes"
           />
         </View>

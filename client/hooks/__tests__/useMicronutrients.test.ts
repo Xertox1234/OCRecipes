@@ -67,8 +67,6 @@ describe("useMicronutrients", () => {
 
     it("defaults to today's date when none provided", () => {
       const { wrapper } = createQueryWrapper();
-      const today = new Date().toISOString().split("T")[0];
-
       const { result } = renderHook(() => useDailyMicronutrients(), {
         wrapper,
       });

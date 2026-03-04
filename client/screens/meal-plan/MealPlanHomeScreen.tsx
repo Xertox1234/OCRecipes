@@ -13,7 +13,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withTiming,
   runOnJS,
 } from "react-native-reanimated";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -33,6 +32,7 @@ import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useCollapsibleHeight } from "@/hooks/useCollapsibleHeight";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -41,11 +41,7 @@ import {
   withOpacity,
   FAB_CLEARANCE,
 } from "@/constants/theme";
-import {
-  dateStripSwipeThreshold,
-  expandTimingConfig,
-  collapseTimingConfig,
-} from "@/constants/animations";
+import { dateStripSwipeThreshold } from "@/constants/animations";
 import {
   computeItemMacros,
   computeMealSectionSummary,
@@ -298,60 +294,8 @@ const MealSlotSection = React.memo(function MealSlotSection({
   const iconName = MEAL_ICONS[mealType] || "circle";
   const label = MEAL_LABELS[mealType] || mealType;
 
-  // Animated height for expand/collapse
-  const contentHeight = useSharedValue(0);
-  const animatedHeight = useSharedValue(isExpanded ? -1 : 0); // -1 = auto
-  const isFirstRender = React.useRef(true);
-
-  const onContentLayout = useCallback(
-    (e: { nativeEvent: { layout: { height: number } } }) => {
-      const measured = e.nativeEvent.layout.height;
-      contentHeight.value = measured;
-      // On first render, if expanded, set to auto (don't animate)
-      if (isFirstRender.current) {
-        isFirstRender.current = false;
-        if (isExpanded) {
-          animatedHeight.value = -1; // auto
-        }
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs
-    [isExpanded],
-  );
-
-  // Respond to expand/collapse changes
-  React.useEffect(() => {
-    if (isFirstRender.current) return;
-
-    if (reducedMotion) {
-      animatedHeight.value = isExpanded ? -1 : 0;
-    } else if (isExpanded) {
-      animatedHeight.value = withTiming(
-        contentHeight.value,
-        expandTimingConfig,
-        (finished) => {
-          if (finished) {
-            animatedHeight.value = -1; // switch to auto after animation
-          }
-        },
-      );
-    } else {
-      // Snap to measured height first (from auto), then animate to 0
-      animatedHeight.value = contentHeight.value;
-      animatedHeight.value = withTiming(0, collapseTimingConfig);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs
-  }, [isExpanded, reducedMotion]);
-
-  const animatedContentStyle = useAnimatedStyle(() => {
-    if (animatedHeight.value === -1) {
-      return { overflow: "visible" as const };
-    }
-    return {
-      height: animatedHeight.value,
-      overflow: "hidden" as const,
-    };
-  });
+  const { animatedStyle: animatedContentStyle, onContentLayout } =
+    useCollapsibleHeight(isExpanded, reducedMotion);
 
   const summaryText =
     sectionSummary.itemCount > 0
@@ -527,6 +471,13 @@ const DailyTotals = React.memo(function DailyTotals({
   }, [items]);
 
   if (items.length === 0) return null;
+  if (
+    totals.calories === 0 &&
+    totals.protein === 0 &&
+    totals.carbs === 0 &&
+    totals.fat === 0
+  )
+    return null;
 
   return (
     <View
@@ -1319,23 +1270,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-  emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: Spacing["3xl"],
-    paddingHorizontal: Spacing.xl,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontFamily: FontFamily.semiBold,
-    marginTop: Spacing.lg,
-    marginBottom: Spacing.sm,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: "center",
-    lineHeight: 20,
-  },
   topActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -1374,7 +1308,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 4,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
+    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
     minHeight: 44,
   },

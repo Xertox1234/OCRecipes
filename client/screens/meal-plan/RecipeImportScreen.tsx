@@ -130,9 +130,7 @@ export default function RecipeImportScreen() {
   }, []);
 
   const handleCreateManually = useCallback(() => {
-    navigation.navigate("RecipeCreate", {
-      ...(returnToMealPlan ? { returnToMealPlan } : {}),
-    });
+    navigation.navigate("RecipeCreate", { returnToMealPlan });
   }, [navigation, returnToMealPlan]);
 
   const handleViewRecipe = useCallback(() => {

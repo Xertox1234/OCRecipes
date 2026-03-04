@@ -13,7 +13,7 @@ import pg from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 
-const { Pool, Client } = pg;
+const { Pool } = pg;
 
 // Shared pool for all storage integration tests
 let testPool: pg.Pool | null = null;
