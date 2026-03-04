@@ -43,6 +43,7 @@ import {
 } from "@/constants/theme";
 import { dateStripSwipeThreshold } from "@/constants/animations";
 import {
+  MEAL_LABELS,
   computeItemMacros,
   computeMealSectionSummary,
   formatMacroLine,
@@ -73,12 +74,6 @@ const MEAL_ICONS: Record<MealType, string> = {
   lunch: "sun",
   dinner: "moon",
   snack: "coffee",
-};
-const MEAL_LABELS: Record<MealType, string> = {
-  breakfast: "Breakfast",
-  lunch: "Lunch",
-  dinner: "Dinner",
-  snack: "Snack",
 };
 
 function addDays(date: Date, days: number): Date {
@@ -433,7 +428,7 @@ const MealSlotSection = React.memo(function MealSlotSection({
           >
             <Feather name="plus" size={16} color={theme.link} />
             <ThemedText style={[styles.addItemText, { color: theme.link }]}>
-              Add item
+              {`Add ${label.toLowerCase()} item`}
             </ThemedText>
           </Pressable>
         </View>
@@ -550,7 +545,7 @@ function MealPlanEmptyState() {
       icon="calendar"
       title="Plan Your Meals"
       description={
-        'Tap "+ Add item" on any meal slot to start building your daily plan.'
+        "Tap the add button on any meal slot to start building your daily plan."
       }
     />
   );
@@ -1194,7 +1189,7 @@ const styles = StyleSheet.create({
   },
   mealSlotSection: {
     paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
   mealSlotHeader: {
     flexDirection: "row",

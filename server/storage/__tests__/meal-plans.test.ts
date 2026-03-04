@@ -59,6 +59,7 @@ const {
   getExpiringPantryItems,
   getPlannedNutritionSummary,
   getMealPlanIngredientsForDateRange,
+  getFrequentRecipesForMealType,
 } = await import("../meal-plans");
 
 // Widen the insert type to allow passing `createdAt` for ordering tests.
@@ -1482,6 +1483,116 @@ describe("meal-plans storage", () => {
         "2025-06-15",
       );
       expect(ingredients).toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // getFrequentRecipesForMealType
+  // -----------------------------------------------------------------------
+
+  describe("getFrequentRecipesForMealType", () => {
+    it("returns recipes ordered by frequency", async () => {
+      const recipeA = await createTestMealPlanRecipe(testUser.id, {
+        title: "Oatmeal",
+      });
+      const recipeB = await createTestMealPlanRecipe(testUser.id, {
+        title: "Pancakes",
+      });
+
+      // Use recipeA once, recipeB twice for breakfast
+      await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: recipeA.id,
+        plannedDate: "2025-06-01",
+        mealType: "breakfast",
+      });
+      await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: recipeB.id,
+        plannedDate: "2025-06-02",
+        mealType: "breakfast",
+      });
+      await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: recipeB.id,
+        plannedDate: "2025-06-03",
+        mealType: "breakfast",
+      });
+
+      const result = await getFrequentRecipesForMealType(
+        testUser.id,
+        "breakfast",
+      );
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe(recipeB.id); // more frequent first
+      expect(result[1].id).toBe(recipeA.id);
+    });
+
+    it("returns empty array when no items for meal type", async () => {
+      const result = await getFrequentRecipesForMealType(testUser.id, "lunch");
+      expect(result).toEqual([]);
+    });
+
+    it("only returns recipes for the specified meal type", async () => {
+      const recipe = await createTestMealPlanRecipe(testUser.id, {
+        title: "Salad",
+      });
+      await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2025-06-01",
+        mealType: "lunch",
+      });
+
+      const breakfast = await getFrequentRecipesForMealType(
+        testUser.id,
+        "breakfast",
+      );
+      expect(breakfast).toEqual([]);
+
+      const lunch = await getFrequentRecipesForMealType(testUser.id, "lunch");
+      expect(lunch).toHaveLength(1);
+      expect(lunch[0].id).toBe(recipe.id);
+    });
+
+    it("does not return other user's frequent recipes", async () => {
+      const otherUser = await createTestUser(tx, { username: "other-freq" });
+      const recipe = await createTestMealPlanRecipe(otherUser.id, {
+        title: "Other User Recipe",
+      });
+      await addMealPlanItem({
+        userId: otherUser.id,
+        recipeId: recipe.id,
+        plannedDate: "2025-06-01",
+        mealType: "dinner",
+      });
+
+      const result = await getFrequentRecipesForMealType(testUser.id, "dinner");
+      expect(result).toEqual([]);
+    });
+
+    it("respects the limit parameter", async () => {
+      const recipes = [];
+      for (let i = 0; i < 5; i++) {
+        recipes.push(
+          await createTestMealPlanRecipe(testUser.id, {
+            title: `Snack ${i}`,
+          }),
+        );
+        await addMealPlanItem({
+          userId: testUser.id,
+          recipeId: recipes[i].id,
+          plannedDate: `2025-06-0${i + 1}`,
+          mealType: "snack",
+        });
+      }
+
+      const result = await getFrequentRecipesForMealType(
+        testUser.id,
+        "snack",
+        3,
+      );
+      expect(result).toHaveLength(3);
     });
   });
 });

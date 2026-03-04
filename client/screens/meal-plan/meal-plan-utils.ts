@@ -2,6 +2,13 @@ import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 
+export const MEAL_LABELS: Record<MealType, string> = {
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  snack: "Snack",
+};
+
 export type ItemMacros = {
   calories: number;
   protein: number;

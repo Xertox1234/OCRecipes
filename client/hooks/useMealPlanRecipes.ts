@@ -37,12 +37,14 @@ export type CatalogSearchParams = {
 type UnifiedRecipesResponse = {
   community: CommunityRecipe[];
   personal: MealPlanRecipe[];
+  frequent: MealPlanRecipe[];
 };
 
 export function useUnifiedRecipes(params?: {
   query?: string;
   cuisine?: string;
   diet?: string;
+  mealType?: string;
 }) {
   const qs = params
     ? new URLSearchParams(
