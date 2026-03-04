@@ -90,13 +90,14 @@ export const getQueryFn: <T>(options: {
 
 /**
  * Resolves a recipe image URL to a fully-qualified URI.
- * Handles both absolute URLs (http/https) and server-relative paths.
+ * Handles absolute URLs (http/https), data URIs, and server-relative paths.
  */
 export function resolveImageUrl(
   imageUrl: string | null | undefined,
 ): string | null {
   if (!imageUrl) return null;
-  if (imageUrl.startsWith("http")) return imageUrl;
+  if (imageUrl.startsWith("http") || imageUrl.startsWith("data:"))
+    return imageUrl;
   return `${getApiUrl()}${imageUrl}`;
 }
 
