@@ -84,6 +84,11 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Form State Hook with Summaries and isDirty](#form-state-hook-with-summaries-and-isdirty)
   - [Auto-Dismiss Snackbar with useRef Timer](#auto-dismiss-snackbar-with-useref-timer)
   - [Ref Guard for One-Shot Effects](#ref-guard-for-one-shot-effects)
+  - [Multi-Section Accordion with Set State](#multi-section-accordion-with-set-state)
+  - [Measure-Then-Animate Collapsible Height](#measure-then-animate-collapsible-height)
+  - [Return-to-Origin Navigation Flow](#return-to-origin-navigation-flow)
+  - [Inline Quick-Add Bottom Sheet](#inline-quick-add-bottom-sheet)
+  - [Async Mutation Double-Tap Guard](#async-mutation-double-tap-guard)
 - [External API Parsing Patterns](#external-api-parsing-patterns)
   - [ISO 8601 Duration Parsing](#iso-8601-duration-parsing)
   - [Intent-Driven Config Object](#intent-driven-config-object)
@@ -4983,6 +4988,241 @@ Light mode color tokens must maintain at least 4.5:1 contrast ratio against whit
 | `fatAccent`                     | `#8C6800` | ~5.1:1 |
 
 When adding new color tokens, verify contrast at [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) before committing.
+
+### Multi-Section Accordion with Set State
+
+When multiple sections can be independently expanded/collapsed (unlike single-selection accordions that use `number | null`), use a `Set` for the expanded state. Initialize with a default via a factory function.
+
+```tsx
+// client/screens/meal-plan/MealPlanHomeScreen.tsx
+const [expandedSections, setExpandedSections] = useState<Set<MealType>>(
+  () => new Set([getAutoExpandedMealType()]),
+);
+
+const handleToggleSection = useCallback(
+  (mealType: MealType) => {
+    haptics.impact(ImpactFeedbackStyle.Light);
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(mealType)) {
+        next.delete(mealType);
+      } else {
+        next.add(mealType);
+      }
+      return next;
+    });
+  },
+  [haptics],
+);
+```
+
+**When to use:** Any multi-section layout where users should be able to have multiple sections open simultaneously (e.g., meal sections, settings groups).
+
+**When NOT to use:** Single-selection accordions (FAQ, detail panels) — use `string | null` state instead.
+
+**Key elements:**
+
+- `useState<Set<T>>` with factory initializer `() => new Set([default])`
+- Functional updater in toggle to avoid stale closures
+- `getAutoExpandedMealType()` auto-selects the contextually relevant section (time-of-day)
+- Section receives `isExpanded` boolean and `onToggle` callback
+
+**References:**
+
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — meal section expand/collapse
+- `client/screens/meal-plan/meal-plan-utils.ts` — `getAutoExpandedMealType()`
+
+### Measure-Then-Animate Collapsible Height
+
+For collapsible sections where content height is dynamic, measure via `onLayout` and animate between 0 and the measured height. Use a sentinel value (`-1`) to switch to `"auto"` after expand completes, so content reflows naturally.
+
+```tsx
+// client/screens/meal-plan/MealPlanHomeScreen.tsx — MealSlotSection
+const contentHeight = useRef(0);
+const animHeight = useSharedValue(isExpanded ? -1 : 0);
+
+// Measure content
+const handleContentLayout = useCallback((e: LayoutChangeEvent) => {
+  contentHeight.current = e.nativeEvent.layout.height;
+}, []);
+
+// Toggle animation
+useEffect(() => {
+  if (reducedMotion) {
+    animHeight.value = isExpanded ? -1 : 0;
+    return;
+  }
+  if (isExpanded) {
+    animHeight.value = withTiming(
+      contentHeight.current || 200,
+      expandTimingConfig,
+      () => {
+        animHeight.value = -1;
+      }, // Switch to auto after animation
+    );
+  } else {
+    if (animHeight.value === -1) {
+      animHeight.value = contentHeight.current || 200;
+    }
+    animHeight.value = withTiming(0, collapseTimingConfig);
+  }
+}, [isExpanded, reducedMotion]);
+
+const animStyle = useAnimatedStyle(() => ({
+  height: animHeight.value === -1 ? "auto" : animHeight.value,
+  overflow: animHeight.value === -1 ? "visible" : "hidden",
+}));
+```
+
+**Why:** Fixed-height animations clip content when items are added/removed. The `-1` sentinel means "use auto height" so the container can grow naturally between user interactions.
+
+**When to use:** Any collapsible section with dynamic-length content (lists, forms).
+
+**Key elements:**
+
+- `onLayout` measures natural height into a `ref` (not state, to avoid re-renders)
+- Animate to measured height, then switch to `auto` via `-1` sentinel in `withTiming` callback
+- On collapse: snapshot current height before animating to 0
+- Respect `reducedMotion` by setting final value instantly
+
+**References:**
+
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — `MealSlotSection` collapsible
+
+### Return-to-Origin Navigation Flow
+
+When a creation/import flow is triggered from an inline context (e.g., a bottom sheet), pass a `returnTo` param so the destination screen can auto-add the result and `popToTop()` back to the origin.
+
+```tsx
+// 1. Define the param in the navigator
+type MealPlanStackParamList = {
+  RecipeCreate: {
+    returnToMealPlan?: { mealType: string; plannedDate: string };
+  };
+};
+
+// 2. Pass it from the trigger (QuickAddSheet footer)
+onNavigateCreate(mealType, plannedDate);
+// → navigation.navigate("RecipeCreate", {
+//     returnToMealPlan: { mealType, plannedDate },
+//   });
+
+// 3. Consume in the destination screen
+const returnToMealPlan = route.params?.returnToMealPlan;
+
+const handleSave = async () => {
+  const newRecipe = await createMutation.mutateAsync(payload);
+  if (returnToMealPlan) {
+    await addItemMutation.mutateAsync({
+      recipeId: newRecipe.id,
+      mealType: returnToMealPlan.mealType,
+      plannedDate: returnToMealPlan.plannedDate,
+    });
+    navigation.popToTop(); // Back to origin
+  } else {
+    navigation.goBack(); // Normal flow
+  }
+};
+```
+
+**When to use:** Any flow where a screen can be reached from multiple contexts and should return differently based on origin (inline add vs standalone browse).
+
+**Key elements:**
+
+- Optional `returnTo` route param with the data needed to complete the action
+- Destination screen auto-performs the follow-up action (add to plan) on success
+- `popToTop()` instead of `goBack()` to clear the entire sub-stack
+- Both paths share the same save logic — only post-save behavior differs
+
+**References:**
+
+- `client/screens/meal-plan/RecipeCreateScreen.tsx` — auto-add + `popToTop` when `returnToMealPlan` set
+- `client/screens/meal-plan/RecipeImportScreen.tsx` — same pattern
+- `client/components/meal-plan/QuickAddSheet.tsx` — passes `returnToMealPlan` via footer buttons
+
+### Inline Quick-Add Bottom Sheet
+
+For lightweight add flows, use a `BottomSheetModal` with search + tap-to-add instead of navigating to a full-screen browser. This keeps the user's context visible and reduces navigation depth.
+
+```tsx
+// client/components/meal-plan/QuickAddSheet.tsx
+interface QuickAddSheetProps {
+  mealType: MealType | null; // null = sheet is closed
+  plannedDate: string;
+  onDismiss: () => void;
+  onNavigateCreate: (mealType: MealType, plannedDate: string) => void;
+  onNavigateImport: (mealType: MealType, plannedDate: string) => void;
+}
+
+// Parent state controls visibility
+const [quickAddMealType, setQuickAddMealType] = useState<MealType | null>(null);
+
+// Open: set meal type (sheet reads it in useEffect and calls .present())
+const handleAddItem = (mealType: MealType) => setQuickAddMealType(mealType);
+
+// Close: clear meal type
+const handleDismiss = () => setQuickAddMealType(null);
+```
+
+**Key elements:**
+
+- `mealType: null` = closed, non-null = open for that type. Sheet calls `present()`/`dismiss()` in a `useEffect` on `mealType`.
+- Debounced search (300ms) with `useUnifiedRecipes()` — shows personal recipes by default, combined results when searching
+- Tap anywhere on a result row → `addItemMutation` + dismiss (no confirm step)
+- Footer actions navigate to full create/import screens with `returnToMealPlan` param
+- `BottomSheetFlatList` + `BottomSheetTextInput` for proper scroll/keyboard handling inside sheets
+
+**References:**
+
+- `client/components/meal-plan/QuickAddSheet.tsx` — full implementation
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — integration with `quickAddMealType` state
+
+### Async Mutation Double-Tap Guard
+
+For mutation handlers in bottom sheets or modals where rapid taps can fire duplicate requests, use a `useRef(false)` guard instead of relying on button `disabled` state (which may not update fast enough).
+
+```tsx
+// client/components/meal-plan/QuickAddSheet.tsx
+const isAdding = useRef(false);
+
+const handleAdd = useCallback(
+  async (recipe: RecipeRow) => {
+    if (!mealType || isAdding.current) return;
+    isAdding.current = true;
+    haptics.impact(ImpactFeedbackStyle.Light);
+    try {
+      await addItemMutation.mutateAsync({
+        recipeId: recipe.id,
+        plannedDate,
+        mealType,
+      });
+      haptics.notification(NotificationFeedbackType.Success);
+      onDismiss();
+    } catch {
+      // Mutation errors handled by React Query
+    } finally {
+      isAdding.current = false;
+    }
+  },
+  [mealType, plannedDate, haptics, addItemMutation, onDismiss],
+);
+```
+
+**Why:** `disabled` prop relies on a state update → re-render cycle, which can lag behind rapid taps. A ref check is synchronous and prevents the second tap from ever entering the async path.
+
+**When to use:**
+
+- Tap-to-add in lists/sheets where each row triggers a mutation
+- Any `mutateAsync` handler without a loading spinner that disables the trigger
+
+**When NOT to use:**
+
+- Buttons that already show a loading state and are properly `disabled` during mutation
+- Forms with a single submit button (use `isPending` from mutation)
+
+**References:**
+
+- `client/components/meal-plan/QuickAddSheet.tsx` — `isAdding` ref guard on recipe add
 
 ---
 

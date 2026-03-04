@@ -1,5 +1,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
+  Platform,
   StyleSheet,
   View,
   Pressable,
@@ -11,6 +13,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withTiming,
   runOnJS,
 } from "react-native-reanimated";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -38,7 +41,17 @@ import {
   withOpacity,
   FAB_CLEARANCE,
 } from "@/constants/theme";
-import { dateStripSwipeThreshold } from "@/constants/animations";
+import {
+  dateStripSwipeThreshold,
+  expandTimingConfig,
+  collapseTimingConfig,
+} from "@/constants/animations";
+import {
+  computeItemMacros,
+  computeMealSectionSummary,
+  formatMacroLine,
+  getAutoExpandedMealType,
+} from "./meal-plan-utils";
 import {
   useMealPlanItems,
   useRemoveMealPlanItem,
@@ -50,6 +63,7 @@ import {
 import { apiRequest } from "@/lib/query-client";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
+import { QuickAddSheet } from "@/components/meal-plan/QuickAddSheet";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
 import type { DailySummaryResponse } from "@/types/api";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
@@ -175,13 +189,12 @@ const MealSlotItem = React.memo(function MealSlotItem({
   const name = isOrphaned
     ? "Item removed"
     : item.recipe?.title || item.scannedItem?.productName || "Unknown item";
-  const calories = isOrphaned
-    ? null
-    : item.recipe?.caloriesPerServing || item.scannedItem?.calories || null;
-  const servings = parseFloat(item.servings || "1");
-  const totalCal = calories
-    ? Math.round(parseFloat(calories) * servings)
-    : null;
+  const macros = isOrphaned ? null : computeItemMacros(item);
+  const macroLine = macros ? formatMacroLine(macros) : null;
+
+  const accessLabel = macros
+    ? `${name}, ${macros.calories} calories, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat${isConfirmed ? ", confirmed" : ""}`
+    : `${name}${isConfirmed ? ", confirmed" : ""}`;
 
   return (
     <Pressable
@@ -197,7 +210,7 @@ const MealSlotItem = React.memo(function MealSlotItem({
         },
       ]}
       accessibilityRole="button"
-      accessibilityLabel={`${name}${totalCal ? `, ${totalCal} calories` : ""}${isConfirmed ? ", confirmed" : ""}`}
+      accessibilityLabel={accessLabel}
     >
       {canConfirm && (
         <Pressable
@@ -227,11 +240,11 @@ const MealSlotItem = React.memo(function MealSlotItem({
         >
           {name}
         </ThemedText>
-        {totalCal !== null && (
+        {macroLine !== null && (
           <ThemedText
             style={[styles.mealSlotCalories, { color: theme.textSecondary }]}
           >
-            {totalCal} cal
+            {macroLine}
           </ThemedText>
         )}
       </View>
@@ -261,6 +274,9 @@ const MealSlotSection = React.memo(function MealSlotSection({
   onReorder,
   canSuggest,
   canConfirm,
+  isExpanded,
+  onToggle,
+  sectionSummary,
 }: {
   mealType: MealType;
   items: MealPlanItemWithRelations[];
@@ -273,14 +289,88 @@ const MealSlotSection = React.memo(function MealSlotSection({
   onReorder?: (items: MealPlanItemWithRelations[]) => void;
   canSuggest: boolean;
   canConfirm: boolean;
+  isExpanded: boolean;
+  onToggle: (mealType: MealType) => void;
+  sectionSummary: { itemCount: number; totalCalories: number };
 }) {
   const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
   const iconName = MEAL_ICONS[mealType] || "circle";
   const label = MEAL_LABELS[mealType] || mealType;
 
+  // Animated height for expand/collapse
+  const contentHeight = useSharedValue(0);
+  const animatedHeight = useSharedValue(isExpanded ? -1 : 0); // -1 = auto
+  const isFirstRender = React.useRef(true);
+
+  const onContentLayout = useCallback(
+    (e: { nativeEvent: { layout: { height: number } } }) => {
+      const measured = e.nativeEvent.layout.height;
+      contentHeight.value = measured;
+      // On first render, if expanded, set to auto (don't animate)
+      if (isFirstRender.current) {
+        isFirstRender.current = false;
+        if (isExpanded) {
+          animatedHeight.value = -1; // auto
+        }
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs
+    [isExpanded],
+  );
+
+  // Respond to expand/collapse changes
+  React.useEffect(() => {
+    if (isFirstRender.current) return;
+
+    if (reducedMotion) {
+      animatedHeight.value = isExpanded ? -1 : 0;
+    } else if (isExpanded) {
+      animatedHeight.value = withTiming(
+        contentHeight.value,
+        expandTimingConfig,
+        (finished) => {
+          if (finished) {
+            animatedHeight.value = -1; // switch to auto after animation
+          }
+        },
+      );
+    } else {
+      // Snap to measured height first (from auto), then animate to 0
+      animatedHeight.value = contentHeight.value;
+      animatedHeight.value = withTiming(0, collapseTimingConfig);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs
+  }, [isExpanded, reducedMotion]);
+
+  const animatedContentStyle = useAnimatedStyle(() => {
+    if (animatedHeight.value === -1) {
+      return { overflow: "visible" as const };
+    }
+    return {
+      height: animatedHeight.value,
+      overflow: "hidden" as const,
+    };
+  });
+
+  const summaryText =
+    sectionSummary.itemCount > 0
+      ? ` \u00B7 ${sectionSummary.itemCount} item${sectionSummary.itemCount !== 1 ? "s" : ""} \u00B7 ${sectionSummary.totalCalories} cal`
+      : "";
+
+  const headerAccessLabel = isExpanded
+    ? `${label}, expanded`
+    : `${label}${summaryText}, collapsed`;
+
   return (
     <View style={styles.mealSlotSection}>
-      <View style={styles.mealSlotHeader}>
+      <Pressable
+        onPress={() => onToggle(mealType)}
+        style={styles.mealSlotHeader}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isExpanded }}
+        accessibilityLabel={headerAccessLabel}
+      >
         <Feather
           name={iconName as keyof typeof Feather.glyphMap}
           size={16}
@@ -288,103 +378,122 @@ const MealSlotSection = React.memo(function MealSlotSection({
         />
         <ThemedText style={[styles.mealSlotLabel, { flex: 1 }]}>
           {label}
+          {!isExpanded && summaryText ? (
+            <ThemedText
+              style={[styles.collapsedSummary, { color: theme.textSecondary }]}
+            >
+              {summaryText}
+            </ThemedText>
+          ) : null}
         </ThemedText>
-        <Pressable
-          onPress={() => onSuggest(mealType)}
-          hitSlop={8}
-          style={[
-            styles.suggestChip,
-            {
-              backgroundColor: canSuggest
-                ? withOpacity(theme.link, 0.1)
-                : withOpacity(theme.text, 0.05),
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={
-            canSuggest
-              ? `AI suggest ${label.toLowerCase()}`
-              : `Upgrade to suggest ${label.toLowerCase()}`
-          }
-        >
-          <Feather
-            name={canSuggest ? "zap" : "lock"}
-            size={12}
-            color={canSuggest ? theme.link : theme.textSecondary}
-          />
-          <ThemedText
+        {isExpanded && (
+          <Pressable
+            onPress={() => onSuggest(mealType)}
+            hitSlop={8}
             style={[
-              styles.suggestChipText,
+              styles.suggestChip,
               {
-                color: canSuggest ? theme.link : theme.textSecondary,
+                backgroundColor: canSuggest
+                  ? withOpacity(theme.link, 0.1)
+                  : withOpacity(theme.text, 0.05),
               },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              canSuggest
+                ? `AI suggest ${label.toLowerCase()}`
+                : `Upgrade to suggest ${label.toLowerCase()}`
+            }
           >
-            Suggest
-          </ThemedText>
-        </Pressable>
-      </View>
-      {items.length > 1 && onReorder ? (
-        <DraggableList
-          items={items}
-          keyExtractor={(item) => item.id}
-          renderItem={(item) => (
-            <SwipeableRow
-              rightAction={{
-                icon: "trash-2",
-                label: "Remove",
-                backgroundColor: theme.error,
-                onAction: () => onRemoveItem(item.id),
-              }}
-            >
-              <MealSlotItem
-                item={item}
-                isConfirmed={confirmedIds.has(item.id)}
-                onPress={onItemPress}
-                onRemove={onRemoveItem}
-                onConfirm={onConfirmItem}
-                canConfirm={canConfirm}
-              />
-            </SwipeableRow>
-          )}
-          onReorder={onReorder}
-        />
-      ) : (
-        items.map((item) => (
-          <SwipeableRow
-            key={item.id}
-            rightAction={{
-              icon: "trash-2",
-              label: "Remove",
-              backgroundColor: theme.error,
-              onAction: () => onRemoveItem(item.id),
-            }}
-          >
-            <MealSlotItem
-              item={item}
-              isConfirmed={confirmedIds.has(item.id)}
-              onPress={onItemPress}
-              onRemove={onRemoveItem}
-              onConfirm={onConfirmItem}
-              canConfirm={canConfirm}
+            <Feather
+              name={canSuggest ? "zap" : "lock"}
+              size={12}
+              color={canSuggest ? theme.link : theme.textSecondary}
             />
-          </SwipeableRow>
-        ))
-      )}
-      <Pressable
-        onPress={() => onAddItem(mealType)}
-        style={[
-          styles.addItemButton,
-          { borderColor: withOpacity(theme.text, 0.1) },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={`Add ${label.toLowerCase()} item`}
-      >
-        <Feather name="plus" size={16} color={theme.link} />
-        <ThemedText style={[styles.addItemText, { color: theme.link }]}>
-          Add item
-        </ThemedText>
+            <ThemedText
+              style={[
+                styles.suggestChipText,
+                {
+                  color: canSuggest ? theme.link : theme.textSecondary,
+                },
+              ]}
+            >
+              Suggest
+            </ThemedText>
+          </Pressable>
+        )}
+        <Feather
+          name={isExpanded ? "chevron-up" : "chevron-down"}
+          size={16}
+          color={theme.textSecondary}
+          style={{ marginLeft: Spacing.sm }}
+        />
       </Pressable>
+      <Animated.View style={animatedContentStyle}>
+        <View onLayout={onContentLayout}>
+          {items.length > 1 && onReorder ? (
+            <DraggableList
+              items={items}
+              keyExtractor={(item) => item.id}
+              renderItem={(item) => (
+                <SwipeableRow
+                  rightAction={{
+                    icon: "trash-2",
+                    label: "Remove",
+                    backgroundColor: theme.error,
+                    onAction: () => onRemoveItem(item.id),
+                  }}
+                >
+                  <MealSlotItem
+                    item={item}
+                    isConfirmed={confirmedIds.has(item.id)}
+                    onPress={onItemPress}
+                    onRemove={onRemoveItem}
+                    onConfirm={onConfirmItem}
+                    canConfirm={canConfirm}
+                  />
+                </SwipeableRow>
+              )}
+              onReorder={onReorder}
+            />
+          ) : (
+            items.map((item) => (
+              <SwipeableRow
+                key={item.id}
+                rightAction={{
+                  icon: "trash-2",
+                  label: "Remove",
+                  backgroundColor: theme.error,
+                  onAction: () => onRemoveItem(item.id),
+                }}
+              >
+                <MealSlotItem
+                  item={item}
+                  isConfirmed={confirmedIds.has(item.id)}
+                  onPress={onItemPress}
+                  onRemove={onRemoveItem}
+                  onConfirm={onConfirmItem}
+                  canConfirm={canConfirm}
+                />
+              </SwipeableRow>
+            ))
+          )}
+          <Pressable
+            onPress={() => onAddItem(mealType)}
+            style={[
+              styles.addItemButton,
+              { borderColor: withOpacity(theme.text, 0.1) },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Add ${label.toLowerCase()} item`}
+          >
+            <Feather name="plus" size={16} color={theme.link} />
+            <ThemedText style={[styles.addItemText, { color: theme.link }]}>
+              Add item
+            </ThemedText>
+          </Pressable>
+        </View>
+      </Animated.View>
     </View>
   );
 });
@@ -405,29 +514,16 @@ const DailyTotals = React.memo(function DailyTotals({
     let fat = 0;
 
     for (const item of items) {
-      const servings = parseFloat(item.servings || "1");
-      const recipe = item.recipe;
-      const scannedItem = item.scannedItem;
-
-      if (recipe) {
-        calories += parseFloat(recipe.caloriesPerServing || "0") * servings;
-        protein += parseFloat(recipe.proteinPerServing || "0") * servings;
-        carbs += parseFloat(recipe.carbsPerServing || "0") * servings;
-        fat += parseFloat(recipe.fatPerServing || "0") * servings;
-      } else if (scannedItem) {
-        calories += parseFloat(scannedItem.calories || "0") * servings;
-        protein += parseFloat(scannedItem.protein || "0") * servings;
-        carbs += parseFloat(scannedItem.carbs || "0") * servings;
-        fat += parseFloat(scannedItem.fat || "0") * servings;
+      const macros = computeItemMacros(item);
+      if (macros) {
+        calories += macros.calories;
+        protein += macros.protein;
+        carbs += macros.carbs;
+        fat += macros.fat;
       }
     }
 
-    return {
-      calories: Math.round(calories),
-      protein: Math.round(protein),
-      carbs: Math.round(carbs),
-      fat: Math.round(fat),
-    };
+    return { calories, protein, carbs, fat };
   }, [items]);
 
   if (items.length === 0) return null;
@@ -548,6 +644,12 @@ export default function MealPlanHomeScreen() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [suggestModalVisible, setSuggestModalVisible] = useState(false);
   const [suggestMealType, setSuggestMealType] = useState<MealType>("breakfast");
+  const [expandedSections, setExpandedSections] = useState<Set<MealType>>(
+    () => new Set([getAutoExpandedMealType()]),
+  );
+  const [quickAddMealType, setQuickAddMealType] = useState<MealType | null>(
+    null,
+  );
 
   const selectedDateStr = formatDate(selectedDate);
 
@@ -629,6 +731,17 @@ export default function MealPlanHomeScreen() {
     return grouped;
   }, [selectedDayItems]);
 
+  const sectionSummaries = useMemo(() => {
+    const result: Record<string, { itemCount: number; totalCalories: number }> =
+      {};
+    for (const mealType of MEAL_TYPES) {
+      result[mealType] = computeMealSectionSummary(
+        itemsByMealType[mealType] || [],
+      );
+    }
+    return result;
+  }, [itemsByMealType]);
+
   const handleDatePress = useCallback(
     (date: Date) => {
       haptics.selection();
@@ -684,15 +797,57 @@ export default function MealPlanHomeScreen() {
     [reorderMutation],
   );
 
+  const handleToggleSection = useCallback(
+    (mealType: MealType) => {
+      haptics.selection();
+      setExpandedSections((prev) => {
+        const next = new Set(prev);
+        const nowExpanded = !next.has(mealType);
+        if (nowExpanded) {
+          next.add(mealType);
+        } else {
+          next.delete(mealType);
+        }
+        if (Platform.OS === "ios") {
+          const label = MEAL_LABELS[mealType];
+          AccessibilityInfo.announceForAccessibility(
+            `${label} ${nowExpanded ? "expanded" : "collapsed"}`,
+          );
+        }
+        return next;
+      });
+    },
+    [haptics],
+  );
+
   const handleAddItem = useCallback(
     (mealType: MealType) => {
       haptics.selection();
-      navigation.navigate("RecipeBrowser", {
-        mealType,
-        plannedDate: selectedDateStr,
+      setQuickAddMealType(mealType);
+    },
+    [haptics],
+  );
+
+  const handleQuickAddDismiss = useCallback(() => {
+    setQuickAddMealType(null);
+  }, []);
+
+  const handleNavigateCreate = useCallback(
+    (mt: MealType, date: string) => {
+      navigation.navigate("RecipeCreate", {
+        returnToMealPlan: { mealType: mt, plannedDate: date },
       });
     },
-    [haptics, navigation, selectedDateStr],
+    [navigation],
+  );
+
+  const handleNavigateImport = useCallback(
+    (mt: MealType, date: string) => {
+      navigation.navigate("RecipeImport", {
+        returnToMealPlan: { mealType: mt, plannedDate: date },
+      });
+    },
+    [navigation],
   );
 
   const handleSuggest = useCallback(
@@ -985,22 +1140,28 @@ export default function MealPlanHomeScreen() {
         {/* Meal Slots */}
         {selectedDayItems.length === 0 ? <MealPlanEmptyState /> : null}
 
-        {MEAL_TYPES.map((mealType) => (
-          <MealSlotSection
-            key={mealType}
-            mealType={mealType}
-            items={itemsByMealType[mealType] || []}
-            confirmedIds={confirmedIds}
-            onItemPress={handleItemPress}
-            onRemoveItem={handleRemoveItem}
-            onAddItem={handleAddItem}
-            onSuggest={handleSuggest}
-            onConfirmItem={handleConfirmItem}
-            onReorder={handleReorder}
-            canSuggest={features.aiMealSuggestions}
-            canConfirm={features.mealConfirmation}
-          />
-        ))}
+        {MEAL_TYPES.map((mealType) => {
+          const sectionItems = itemsByMealType[mealType] || [];
+          return (
+            <MealSlotSection
+              key={mealType}
+              mealType={mealType}
+              items={sectionItems}
+              confirmedIds={confirmedIds}
+              onItemPress={handleItemPress}
+              onRemoveItem={handleRemoveItem}
+              onAddItem={handleAddItem}
+              onSuggest={handleSuggest}
+              onConfirmItem={handleConfirmItem}
+              onReorder={handleReorder}
+              canSuggest={features.aiMealSuggestions}
+              canConfirm={features.mealConfirmation}
+              isExpanded={expandedSections.has(mealType)}
+              onToggle={handleToggleSection}
+              sectionSummary={sectionSummaries[mealType]}
+            />
+          );
+        })}
 
         {/* Daily Totals */}
         <DailyTotals items={selectedDayItems} />
@@ -1017,6 +1178,13 @@ export default function MealPlanHomeScreen() {
       <UpgradeModal
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
+      />
+      <QuickAddSheet
+        mealType={quickAddMealType}
+        plannedDate={selectedDateStr}
+        onDismiss={handleQuickAddDismiss}
+        onNavigateCreate={handleNavigateCreate}
+        onNavigateImport={handleNavigateImport}
       />
     </View>
   );
@@ -1087,11 +1255,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FontFamily.semiBold,
   },
+  collapsedSummary: {
+    fontSize: 13,
+    fontFamily: FontFamily.regular,
+  },
   mealSlotItem: {
     flexDirection: "row",
     alignItems: "center",
     padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
+    borderRadius: BorderRadius.card,
     marginBottom: Spacing.xs,
   },
   mealSlotContent: {
@@ -1100,7 +1272,7 @@ const styles = StyleSheet.create({
   },
   mealSlotName: {
     fontSize: 15,
-    fontFamily: FontFamily.medium,
+    fontFamily: FontFamily.semiBold,
   },
   mealSlotCalories: {
     fontSize: 13,

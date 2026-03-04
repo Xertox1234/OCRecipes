@@ -38,6 +38,7 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
+import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeCreateScreenNavigationProp } from "@/types/navigation";
 import type {
@@ -63,7 +64,9 @@ export default function RecipeCreateScreen() {
   const haptics = useHaptics();
 
   const prefill = route.params?.prefill;
+  const returnToMealPlan = route.params?.returnToMealPlan;
   const createMutation = useCreateMealPlanRecipe();
+  const addItemMutation = useAddMealPlanItem();
 
   const form = useRecipeForm(prefill);
   const [validationError, setValidationError] = useState("");
@@ -194,14 +197,31 @@ export default function RecipeCreateScreen() {
     sheetState.current = "SAVING";
 
     try {
-      await createMutation.mutateAsync(form.formToPayload());
+      const newRecipe = await createMutation.mutateAsync(form.formToPayload());
       haptics.notification(NotificationFeedbackType.Success);
-      navigation.goBack();
+
+      if (returnToMealPlan) {
+        await addItemMutation.mutateAsync({
+          recipeId: newRecipe.id,
+          mealType: returnToMealPlan.mealType,
+          plannedDate: returnToMealPlan.plannedDate,
+        });
+        navigation.popToTop();
+      } else {
+        navigation.goBack();
+      }
     } catch {
       sheetState.current = "IDLE";
       Alert.alert("Error", "Failed to save recipe. Please try again.");
     }
-  }, [form, haptics, createMutation, navigation]);
+  }, [
+    form,
+    haptics,
+    createMutation,
+    addItemMutation,
+    returnToMealPlan,
+    navigation,
+  ]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>

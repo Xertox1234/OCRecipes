@@ -21,8 +21,13 @@ export type MealPlanStackParamList = {
     plannedDate?: string;
     searchQuery?: string;
   };
-  RecipeCreate: { prefill?: ImportedRecipeData };
-  RecipeImport: undefined;
+  RecipeCreate: {
+    prefill?: ImportedRecipeData;
+    returnToMealPlan?: { mealType: string; plannedDate: string };
+  };
+  RecipeImport:
+    | { returnToMealPlan?: { mealType: string; plannedDate: string } }
+    | undefined;
   GroceryLists: undefined;
   GroceryList: { listId: number };
   Pantry: undefined;

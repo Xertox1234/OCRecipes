@@ -11,7 +11,8 @@ import {
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -25,18 +26,25 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { useImportRecipeFromUrl } from "@/hooks/useMealPlanRecipes";
+import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeImportScreenNavigationProp } from "@/types/navigation";
 
 type ImportState = "idle" | "loading" | "success" | "error";
 
+type RecipeImportRouteProp = RouteProp<MealPlanStackParamList, "RecipeImport">;
+
 export default function RecipeImportScreen() {
   const navigation = useNavigation<RecipeImportScreenNavigationProp>();
+  const route = useRoute<RecipeImportRouteProp>();
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
 
+  const returnToMealPlan = route.params?.returnToMealPlan;
   const importMutation = useImportRecipeFromUrl();
+  const addItemMutation = useAddMealPlanItem();
 
   const [url, setUrl] = useState("");
   const [state, setState] = useState<ImportState>("idle");
@@ -72,6 +80,18 @@ export default function RecipeImportScreen() {
 
     try {
       const recipe = await importMutation.mutateAsync(trimmed);
+
+      if (returnToMealPlan) {
+        await addItemMutation.mutateAsync({
+          recipeId: recipe.id,
+          mealType: returnToMealPlan.mealType,
+          plannedDate: returnToMealPlan.plannedDate,
+        });
+        haptics.notification(NotificationFeedbackType.Success);
+        navigation.popToTop();
+        return;
+      }
+
       setImportedRecipe({
         id: recipe.id,
         title: recipe.title,
@@ -94,7 +114,14 @@ export default function RecipeImportScreen() {
         setErrorMessage("Something went wrong. Please try again.");
       }
     }
-  }, [url, haptics, importMutation]);
+  }, [
+    url,
+    haptics,
+    importMutation,
+    addItemMutation,
+    returnToMealPlan,
+    navigation,
+  ]);
 
   const handleTryAgain = useCallback(() => {
     setState("idle");
@@ -103,8 +130,10 @@ export default function RecipeImportScreen() {
   }, []);
 
   const handleCreateManually = useCallback(() => {
-    navigation.navigate("RecipeCreate", {});
-  }, [navigation]);
+    navigation.navigate("RecipeCreate", {
+      ...(returnToMealPlan ? { returnToMealPlan } : {}),
+    });
+  }, [navigation, returnToMealPlan]);
 
   const handleViewRecipe = useCallback(() => {
     if (importedRecipe) {
