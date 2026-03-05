@@ -32,7 +32,6 @@ import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { useCollapsibleHeight } from "@/hooks/useCollapsibleHeight";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -285,12 +284,8 @@ const MealSlotSection = React.memo(function MealSlotSection({
   sectionSummary: { itemCount: number; totalCalories: number };
 }) {
   const { theme } = useTheme();
-  const { reducedMotion } = useAccessibility();
   const iconName = MEAL_ICONS[mealType] || "circle";
   const label = MEAL_LABELS[mealType] || mealType;
-
-  const { animatedStyle: animatedContentStyle, onContentLayout } =
-    useCollapsibleHeight(isExpanded, reducedMotion);
 
   const summaryText =
     sectionSummary.itemCount > 0
@@ -368,8 +363,8 @@ const MealSlotSection = React.memo(function MealSlotSection({
           style={{ marginLeft: Spacing.sm }}
         />
       </Pressable>
-      <Animated.View style={animatedContentStyle}>
-        <View onLayout={onContentLayout}>
+      {isExpanded && (
+        <View>
           {items.length > 1 && onReorder ? (
             <DraggableList
               items={items}
@@ -432,7 +427,7 @@ const MealSlotSection = React.memo(function MealSlotSection({
             </ThemedText>
           </Pressable>
         </View>
-      </Animated.View>
+      )}
     </View>
   );
 });
