@@ -1,11 +1,10 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   StyleSheet,
   View,
   ScrollView,
   TextInput,
   Pressable,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
@@ -24,12 +23,8 @@ import { ParsedFoodPreview } from "@/components/ParsedFoodPreview";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { useVoiceRecording } from "@/hooks/useVoiceRecording";
-import {
-  useParseFoodText,
-  useTranscribeFood,
-  type ParsedFoodItem,
-} from "@/hooks/useFoodParse";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { useParseFoodText, type ParsedFoodItem } from "@/hooks/useFoodParse";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { apiRequest } from "@/lib/query-client";
 import {
@@ -50,13 +45,49 @@ export default function QuickLogScreen() {
 
   const [textInput, setTextInput] = useState("");
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
-  const [transcription, setTranscription] = useState<string | null>(null);
 
-  const { isRecording, startRecording, stopRecording } = useVoiceRecording();
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
   const parseFoodText = useParseFoodText();
-  const transcribeFood = useTranscribeFood();
 
-  const isParsing = parseFoodText.isPending || transcribeFood.isPending;
+  const isParsing = parseFoodText.isPending;
+
+  // Stream transcript into text input while listening
+  useEffect(() => {
+    if (isListening && transcript) {
+      setTextInput(transcript);
+    }
+  }, [isListening, transcript]);
+
+  // Auto-trigger parse when recognition produces a final result
+  useEffect(() => {
+    if (isFinal && transcript) {
+      setTextInput(transcript);
+      parseFoodText.mutate(transcript, {
+        onSuccess: (data) => {
+          setParsedItems(data.items);
+          haptics.notification(Haptics.NotificationFeedbackType.Success);
+        },
+        onError: () => {
+          toast.error("Failed to parse food text. Please try again.");
+        },
+      });
+    }
+  }, [isFinal, transcript, parseFoodText, haptics, toast]);
+
+  // Show speech errors
+  useEffect(() => {
+    if (speechError) {
+      toast.error(speechError);
+    }
+  }, [speechError, toast]);
 
   const handleTextSubmit = useCallback(() => {
     if (!textInput.trim()) return;
@@ -67,38 +98,19 @@ export default function QuickLogScreen() {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
       onError: () => {
-        Alert.alert("Error", "Failed to parse food text. Please try again.");
+        toast.error("Failed to parse food text. Please try again.");
       },
     });
-  }, [textInput, haptics, parseFoodText]);
+  }, [textInput, haptics, parseFoodText, toast]);
 
-  const handleVoicePress = useCallback(async () => {
+  const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isRecording) {
-      const uri = await stopRecording();
-      if (uri) {
-        transcribeFood.mutate(uri, {
-          onSuccess: (data) => {
-            setTranscription(data.transcription);
-            setParsedItems(data.items);
-            haptics.notification(Haptics.NotificationFeedbackType.Success);
-          },
-          onError: () => {
-            Alert.alert("Error", "Failed to process voice recording.");
-          },
-        });
-      }
+    if (isListening) {
+      stopListening();
     } else {
-      try {
-        await startRecording();
-      } catch {
-        Alert.alert(
-          "Permission Required",
-          "Microphone access is needed for voice logging.",
-        );
-      }
+      startListening();
     }
-  }, [isRecording, startRecording, stopRecording, haptics, transcribeFood]);
+  }, [isListening, startListening, stopListening, haptics]);
 
   const handleRemoveItem = useCallback((index: number) => {
     setParsedItems((prev) => prev.filter((_, i) => i !== index));
@@ -135,11 +147,10 @@ export default function QuickLogScreen() {
       toast.success("Food items logged");
       setParsedItems([]);
       setTextInput("");
-      setTranscription(null);
       navigation.goBack();
     },
     onError: () => {
-      Alert.alert("Error", "Failed to log some items. Please try again.");
+      toast.error("Failed to log some items. Please try again.");
     },
   });
 
@@ -183,7 +194,11 @@ export default function QuickLogScreen() {
                   borderColor: theme.border,
                 },
               ]}
-              placeholder="e.g., 2 eggs and toast with butter"
+              placeholder={
+                isListening
+                  ? "Listening..."
+                  : "e.g., 2 eggs and toast with butter"
+              }
               placeholderTextColor={theme.textSecondary}
               value={textInput}
               onChangeText={setTextInput}
@@ -229,23 +244,14 @@ export default function QuickLogScreen() {
             </Pressable>
             {isPremium && (
               <VoiceLogButton
-                isRecording={isRecording}
+                isListening={isListening}
+                volume={volume}
                 onPress={handleVoicePress}
                 disabled={isParsing}
               />
             )}
           </View>
         </Card>
-
-        {/* Transcription result */}
-        {transcription && (
-          <Card elevation={1} style={styles.transcriptionCard}>
-            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-              Heard:
-            </ThemedText>
-            <ThemedText>{transcription}</ThemedText>
-          </Card>
-        )}
 
         {/* Parsed items preview */}
         <ParsedFoodPreview
@@ -344,10 +350,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: FontFamily.medium,
     fontWeight: "500",
-  },
-  transcriptionCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
   },
   helpSection: {
     paddingHorizontal: Spacing.lg,

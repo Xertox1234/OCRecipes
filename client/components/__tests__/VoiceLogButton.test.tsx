@@ -5,41 +5,56 @@ import { renderComponent } from "../../../test/utils/render-component";
 import { VoiceLogButton } from "../VoiceLogButton";
 
 describe("VoiceLogButton", () => {
-  it("renders mic icon when not recording", () => {
-    renderComponent(<VoiceLogButton isRecording={false} onPress={() => {}} />);
+  it("renders mic icon when not listening", () => {
+    renderComponent(
+      <VoiceLogButton isListening={false} volume={-2} onPress={() => {}} />,
+    );
     expect(screen.getByText("mic")).toBeDefined();
   });
 
-  it("renders mic-off icon when recording", () => {
-    renderComponent(<VoiceLogButton isRecording={true} onPress={() => {}} />);
-    expect(screen.getByText("mic-off")).toBeDefined();
+  it("renders mic icon when listening (not mic-off)", () => {
+    renderComponent(
+      <VoiceLogButton isListening={true} volume={3} onPress={() => {}} />,
+    );
+    expect(screen.getByText("mic")).toBeDefined();
   });
 
   it("calls onPress when clicked", () => {
     const onPress = vi.fn();
-    renderComponent(<VoiceLogButton isRecording={false} onPress={onPress} />);
+    renderComponent(
+      <VoiceLogButton isListening={false} volume={-2} onPress={onPress} />,
+    );
     fireEvent.click(screen.getByRole("button"));
     expect(onPress).toHaveBeenCalledOnce();
   });
 
   it("uses correct accessibility label when idle", () => {
-    renderComponent(<VoiceLogButton isRecording={false} onPress={() => {}} />);
+    renderComponent(
+      <VoiceLogButton isListening={false} volume={-2} onPress={() => {}} />,
+    );
     expect(screen.getByRole("button").getAttribute("aria-label")).toBe(
-      "Start voice recording",
+      "Start voice input",
     );
   });
 
-  it("uses correct accessibility label when recording", () => {
-    renderComponent(<VoiceLogButton isRecording={true} onPress={() => {}} />);
+  it("uses correct accessibility label when listening", () => {
+    renderComponent(
+      <VoiceLogButton isListening={true} volume={3} onPress={() => {}} />,
+    );
     expect(screen.getByRole("button").getAttribute("aria-label")).toBe(
-      "Stop recording",
+      "Listening, tap to stop",
     );
   });
 
   it("is disabled when disabled prop is true", () => {
     const onPress = vi.fn();
     renderComponent(
-      <VoiceLogButton isRecording={false} onPress={onPress} disabled />,
+      <VoiceLogButton
+        isListening={false}
+        volume={-2}
+        onPress={onPress}
+        disabled
+      />,
     );
     const btn = screen.getByRole("button");
     expect(btn).toHaveProperty("disabled", true);

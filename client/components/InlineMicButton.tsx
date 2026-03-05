@@ -1,31 +1,26 @@
 import React from "react";
-import {
-  AccessibilityInfo,
-  ActivityIndicator,
-  Platform,
-  Pressable,
-} from "react-native";
+import { AccessibilityInfo, Platform, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withRepeat,
   withTiming,
   cancelAnimation,
 } from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { volumeToScale } from "@/lib/volume-scale";
 
 interface InlineMicButtonProps {
-  isRecording: boolean;
-  isTranscribing: boolean;
+  isListening: boolean;
+  volume: number;
   onPress: () => void;
   disabled?: boolean;
 }
 
 export const InlineMicButton = React.memo(function InlineMicButton({
-  isRecording,
-  isTranscribing,
+  isListening,
+  volume,
   onPress,
   disabled,
 }: InlineMicButtonProps) {
@@ -41,13 +36,13 @@ export const InlineMicButton = React.memo(function InlineMicButton({
       scale.value = 1;
       return;
     }
-    if (isRecording) {
-      scale.value = withRepeat(withTiming(1.15, { duration: 600 }), -1, true);
+    if (isListening) {
+      scale.value = withTiming(volumeToScale(volume, 0.3), { duration: 100 });
     } else {
       cancelAnimation(scale);
       scale.value = withTiming(1, { duration: 200 });
     }
-  }, [isRecording, scale, reducedMotion]);
+  }, [isListening, volume, scale, reducedMotion]);
 
   React.useEffect(() => {
     if (isFirstRender.current) {
@@ -56,26 +51,24 @@ export const InlineMicButton = React.memo(function InlineMicButton({
     }
     if (Platform.OS === "ios") {
       AccessibilityInfo.announceForAccessibility(
-        isRecording ? "Recording started" : "Recording stopped",
+        isListening ? "Listening started" : "Listening stopped",
       );
     }
-  }, [isRecording]);
+  }, [isListening]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
-  const accessibilityLabel = isTranscribing
-    ? "Transcribing voice recording"
-    : isRecording
-      ? "Stop recording"
-      : "Start voice recording";
+  const accessibilityLabel = isListening
+    ? "Listening, tap to stop"
+    : "Start voice input";
 
   return (
     <Animated.View style={animatedStyle} accessibilityLiveRegion="polite">
       <Pressable
         onPress={onPress}
-        disabled={disabled || isTranscribing}
+        disabled={disabled}
         hitSlop={12}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
@@ -83,15 +76,11 @@ export const InlineMicButton = React.memo(function InlineMicButton({
           opacity: pressed || disabled ? 0.5 : 1,
         })}
       >
-        {isTranscribing ? (
-          <ActivityIndicator size="small" color={theme.textSecondary} />
-        ) : (
-          <Feather
-            name={isRecording ? "mic-off" : "mic"}
-            size={20}
-            color={isRecording ? theme.error : theme.textSecondary}
-          />
-        )}
+        <Feather
+          name="mic"
+          size={20}
+          color={isListening ? theme.error : theme.textSecondary}
+        />
       </Pressable>
     </Animated.View>
   );

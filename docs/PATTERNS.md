@@ -5490,54 +5490,66 @@ export const FastingTimer = React.memo(function FastingTimer({
 
 **Reference:** `client/components/FastingTimer.tsx`
 
-### Pulsing Animation for Active State Indicators
+### Volume-Reactive Animation for Active State Indicators
 
-When a component has an "active" state that should be visually emphasized (recording, syncing, processing), use `withRepeat` + `withTiming` to create a pulsing scale animation. Cancel the animation cleanly when the state becomes inactive.
+When a component has an "active" state driven by a continuous value (e.g. microphone volume), map the value to a scale factor using `withTiming` for smooth transitions. Cancel the animation cleanly when the state becomes inactive. Extract the mapping function to a shared utility (`client/lib/volume-scale.ts`) to avoid duplication.
 
 ```typescript
+// client/lib/volume-scale.ts
+export const VOLUME_SILENT = -2;
+
+export function volumeToScale(vol: number, maxScale: number): number {
+  "worklet";
+  const clamped = Math.max(-2, Math.min(10, vol));
+  return 1.0 + ((clamped + 2) / 12) * maxScale;
+}
+
 // client/components/VoiceLogButton.tsx
+import { volumeToScale } from "@/lib/volume-scale";
+
 const scale = useSharedValue(1);
 
 React.useEffect(() => {
-  if (isRecording) {
-    // Pulse between 1.0 and 1.15 indefinitely, reversing each cycle
-    scale.value = withRepeat(withTiming(1.15, { duration: 600 }), -1, true);
+  if (reducedMotion) {
+    cancelAnimation(scale);
+    scale.value = 1;
+    return;
+  }
+  if (isListening) {
+    // Scale reactively to volume: 1.0 at silent, 1.2 at max volume
+    scale.value = withTiming(volumeToScale(volume, 0.2), { duration: 100 });
   } else {
-    // Stop pulsing and return to normal size
     cancelAnimation(scale);
     scale.value = withTiming(1, { duration: 200 });
   }
-}, [isRecording, scale]);
-
-const animatedStyle = useAnimatedStyle(() => ({
-  transform: [{ scale: scale.value }],
-}));
-
-return (
-  <Animated.View style={animatedStyle}>
-    <Pressable style={{ backgroundColor: isRecording ? theme.error : theme.link }}>
-      <Feather name={isRecording ? "mic-off" : "mic"} />
-    </Pressable>
-  </Animated.View>
-);
+}, [isListening, volume, scale, reducedMotion]);
 ```
 
 **Key elements:**
 
-1. **`withRepeat(animation, -1, true)`** — `-1` for infinite repetition, `true` for reverse (ping-pong)
+1. **`volumeToScale(vol, maxScale)`** — shared worklet maps volume (-2..10) to scale (1.0..1.0+maxScale)
 2. **`cancelAnimation(scale)`** — stops the current animation before starting a new one to prevent conflicts
-3. **Quick settle on deactivation** — `withTiming(1, { duration: 200 })` returns to rest quickly (200ms) vs the slower pulse (600ms)
-4. **Combine with color change** — the button also changes color (link -> error) for a double visual signal
+3. **Fast `withTiming` (100ms)** — keeps the scale responsive to rapid volume changes
+4. **Quick settle on deactivation** — `withTiming(1, { duration: 200 })` returns to rest quickly
+5. **`reducedMotion` guard** — skip all scale animation when reduced motion is enabled
 
-**When to use:** Recording indicators, active sync status, processing states, "live" badges.
+**When to use:** Microphone volume indicators, audio level meters, any continuous-value-driven animation.
+
+**For fixed pulsing** (syncing, processing without a continuous value), use `withRepeat` + `withTiming` instead:
+
+```typescript
+scale.value = withRepeat(withTiming(1.15, { duration: 600 }), -1, true);
+```
 
 **When NOT to use:** Loading spinners (use `ActivityIndicator` instead) or one-shot entrance animations (use `entering` prop).
 
 **References:**
 
-- `client/components/VoiceLogButton.tsx` — recording pulse
-- `client/components/ChatBubble.tsx` — typing indicator pulse
-- `client/screens/ScanScreen.tsx` — scan active pulse
+- `client/components/VoiceLogButton.tsx` — volume-reactive mic button (maxScale 0.2)
+- `client/components/InlineMicButton.tsx` — volume-reactive inline mic (maxScale 0.3)
+- `client/lib/volume-scale.ts` — shared volume-to-scale utility
+- `client/components/ChatBubble.tsx` — typing indicator pulse (withRepeat)
+- `client/screens/ScanScreen.tsx` — scan active pulse (withRepeat)
 
 ### Layout Animation Chained API (Not WithSpringConfig)
 
@@ -7237,6 +7249,8 @@ export function getStandardizedFoodName(query: string): string {
 
 ### Audio-to-Structured-Data Pipeline
 
+> **Note:** The mobile client no longer uses this server-side pipeline. Voice input now uses on-device speech recognition via `expo-speech-recognition` (see "Client-Side Voice-to-Text-Input Pattern" below). The server endpoint and Whisper service remain available for potential non-mobile clients but are currently unused. Consider removing in a future cleanup.
+
 When a feature accepts voice input and needs to produce structured data (food items, exercise descriptions, notes), chain two services: (1) audio transcription via Whisper, and (2) text parsing via an LLM with JSON output mode. The route handler orchestrates both steps and returns the intermediate transcription alongside the parsed results.
 
 ```typescript
@@ -7338,60 +7352,71 @@ export async function parseNaturalLanguageFood(
 
 #### Client-Side Voice-to-Text-Input Pattern
 
-When a screen has a text input that accepts voice dictation, compose three hooks and a toggle handler. Gate the UI behind `usePremiumFeature("voiceLogging")`.
+When a screen has a text input that accepts voice dictation, use the `useSpeechToText` hook which wraps `expo-speech-recognition` for on-device streaming speech-to-text. Gate the UI behind `usePremiumFeature("voiceLogging")`.
 
 ```typescript
 // Hook composition
 const hasVoiceLogging = usePremiumFeature("voiceLogging");
-const { isRecording, startRecording, stopRecording } = useVoiceRecording();
-const transcribeFood = useTranscribeFood();
-const isTranscribing = transcribeFood.isPending;
+const {
+  isListening,
+  transcript,
+  isFinal,
+  volume,
+  error: speechError,
+  startListening,
+  stopListening,
+} = useSpeechToText();
 
-// Toggle handler — tap to start, tap again to stop & transcribe
-const handleVoicePress = useCallback(async () => {
+// Toggle handler — tap to start, tap again to stop early
+const handleVoicePress = useCallback(() => {
   haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-  if (isRecording) {
-    const uri = await stopRecording();
-    if (uri) {
-      transcribeFood.mutate(uri, {
-        onSuccess: (data) => setInputValue(data.transcription),
-        onError: () =>
-          showError("Couldn't transcribe voice. Please try again."),
-      });
-    }
+  if (isListening) {
+    stopListening();
   } else {
-    try {
-      await startRecording();
-    } catch {
-      showError("Microphone access is needed for voice input.");
-    }
+    startListening();
   }
-}, [
-  isRecording,
-  startRecording,
-  stopRecording,
-  haptics,
-  transcribeFood,
-  showError,
-]);
+}, [isListening, startListening, stopListening, haptics]);
+
+// Stream transcript into input as user speaks
+useEffect(() => {
+  if (isListening && transcript) {
+    setInputValue(transcript);
+  }
+}, [isListening, transcript]);
+
+// Handle final result (auto-stop after ~3s silence on iOS)
+useEffect(() => {
+  if (isFinal && transcript) {
+    setInputValue(transcript);
+  }
+}, [isFinal, transcript]);
+
+// Show speech errors
+useEffect(() => {
+  if (speechError) showError(speechError);
+}, [speechError]);
 ```
 
 **Key conventions:**
 
-- Use `InlineMicButton` for compact input-row placement (20px icon, `hitSlop={12}` for 44pt touch target)
-- Use `VoiceLogButton` for standalone placement (56px circle, 24px icon)
-- Disable the text input during transcription (`editable={!isTranscribing}`)
-- Stop any active recording when the screen/sheet dismisses
+- Uses `expo-speech-recognition` for on-device recognition (no server round-trip, no Whisper API cost)
+- `continuous: false` — iOS auto-stops after ~3s silence (no second tap required)
+- `interimResults: true` — words appear in the input as the user speaks
+- `volumeChangeEventOptions` — drives volume-reactive scale animation on mic buttons
+- Use `InlineMicButton` for compact input-row placement (20px icon, volume-reactive scale 1.0–1.3)
+- Use `VoiceLogButton` for standalone placement (56px circle, volume-reactive scale 1.0–1.2)
+- Both buttons show `"mic"` icon always (not `"mic-off"` since auto-stop handles it)
+- Stop listening when the screen/sheet dismisses
 - Haptic feedback on every press (medium impact)
+- Placeholder changes to `"Listening..."` while active
 
 **References:**
 
+- `client/hooks/useSpeechToText.ts` — on-device speech-to-text hook
 - `client/screens/QuickLogScreen.tsx` — standalone voice + text parse flow
 - `client/components/meal-plan/SimpleEntrySheet.tsx` — inline voice in bottom sheet
 - `client/components/InlineMicButton.tsx` — compact inline mic button
 - `client/components/VoiceLogButton.tsx` — standalone mic button
-- `client/hooks/useVoiceRecording.ts` — recording start/stop
-- `client/hooks/useFoodParse.ts` — `useTranscribeFood()` mutation
 
 ### MET-Based Calorie Burn Formula
 

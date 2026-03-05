@@ -9,21 +9,23 @@ import { Feather } from "@expo/vector-icons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withRepeat,
   withTiming,
   cancelAnimation,
 } from "react-native-reanimated";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { volumeToScale } from "@/lib/volume-scale";
 
 interface VoiceLogButtonProps {
-  isRecording: boolean;
+  isListening: boolean;
+  volume: number;
   onPress: () => void;
   disabled?: boolean;
 }
 
 export const VoiceLogButton = React.memo(function VoiceLogButton({
-  isRecording,
+  isListening,
+  volume,
   onPress,
   disabled,
 }: VoiceLogButtonProps) {
@@ -39,13 +41,13 @@ export const VoiceLogButton = React.memo(function VoiceLogButton({
       scale.value = 1;
       return;
     }
-    if (isRecording) {
-      scale.value = withRepeat(withTiming(1.15, { duration: 600 }), -1, true);
+    if (isListening) {
+      scale.value = withTiming(volumeToScale(volume, 0.2), { duration: 100 });
     } else {
       cancelAnimation(scale);
       scale.value = withTiming(1, { duration: 200 });
     }
-  }, [isRecording, scale, reducedMotion]);
+  }, [isListening, volume, scale, reducedMotion]);
 
   React.useEffect(() => {
     if (isFirstRender.current) {
@@ -54,10 +56,10 @@ export const VoiceLogButton = React.memo(function VoiceLogButton({
     }
     if (Platform.OS === "ios") {
       AccessibilityInfo.announceForAccessibility(
-        isRecording ? "Recording started" : "Recording stopped",
+        isListening ? "Listening started" : "Listening stopped",
       );
     }
-  }, [isRecording]);
+  }, [isListening]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -69,22 +71,18 @@ export const VoiceLogButton = React.memo(function VoiceLogButton({
         onPress={onPress}
         disabled={disabled}
         accessibilityLabel={
-          isRecording ? "Stop recording" : "Start voice recording"
+          isListening ? "Listening, tap to stop" : "Start voice input"
         }
         accessibilityRole="button"
         style={({ pressed }) => [
           styles.button,
           {
-            backgroundColor: isRecording ? theme.error : theme.link,
+            backgroundColor: isListening ? theme.error : theme.link,
             opacity: pressed || disabled ? 0.7 : 1,
           },
         ]}
       >
-        <Feather
-          name={isRecording ? "mic-off" : "mic"}
-          size={24}
-          color={theme.buttonText}
-        />
+        <Feather name="mic" size={24} color={theme.buttonText} />
       </Pressable>
     </Animated.View>
   );

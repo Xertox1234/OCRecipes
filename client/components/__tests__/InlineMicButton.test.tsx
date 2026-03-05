@@ -6,8 +6,8 @@ import { InlineMicButton } from "../InlineMicButton";
 
 describe("InlineMicButton", () => {
   const defaultProps = {
-    isRecording: false,
-    isTranscribing: false,
+    isListening: false,
+    volume: -2,
     onPress: vi.fn(),
   };
 
@@ -20,18 +20,9 @@ describe("InlineMicButton", () => {
     expect(screen.getByText("mic")).toBeDefined();
   });
 
-  it("renders mic-off icon when recording", () => {
-    renderComponent(<InlineMicButton {...defaultProps} isRecording={true} />);
-    expect(screen.getByText("mic-off")).toBeDefined();
-  });
-
-  it("shows ActivityIndicator when transcribing", () => {
-    renderComponent(
-      <InlineMicButton {...defaultProps} isTranscribing={true} />,
-    );
-    // ActivityIndicator should be rendered; mic icon should not
-    expect(screen.queryByText("mic")).toBeNull();
-    expect(screen.queryByText("mic-off")).toBeNull();
+  it("renders mic icon when listening (not mic-off)", () => {
+    renderComponent(<InlineMicButton {...defaultProps} isListening={true} />);
+    expect(screen.getByText("mic")).toBeDefined();
   });
 
   it("calls onPress on click", () => {
@@ -44,23 +35,14 @@ describe("InlineMicButton", () => {
   it("uses correct accessibility label when idle", () => {
     renderComponent(<InlineMicButton {...defaultProps} />);
     expect(screen.getByRole("button").getAttribute("aria-label")).toBe(
-      "Start voice recording",
+      "Start voice input",
     );
   });
 
-  it("uses correct accessibility label when recording", () => {
-    renderComponent(<InlineMicButton {...defaultProps} isRecording={true} />);
+  it("uses correct accessibility label when listening", () => {
+    renderComponent(<InlineMicButton {...defaultProps} isListening={true} />);
     expect(screen.getByRole("button").getAttribute("aria-label")).toBe(
-      "Stop recording",
-    );
-  });
-
-  it("uses correct accessibility label when transcribing", () => {
-    renderComponent(
-      <InlineMicButton {...defaultProps} isTranscribing={true} />,
-    );
-    expect(screen.getByRole("button").getAttribute("aria-label")).toBe(
-      "Transcribing voice recording",
+      "Listening, tap to stop",
     );
   });
 
@@ -73,12 +55,11 @@ describe("InlineMicButton", () => {
     expect(btn).toHaveProperty("disabled", true);
   });
 
-  it("is disabled when transcribing", () => {
-    const onPress = vi.fn();
+  it("accepts volume prop", () => {
+    // Just verifying it renders without error with a volume value
     renderComponent(
-      <InlineMicButton {...defaultProps} onPress={onPress} isTranscribing />,
+      <InlineMicButton {...defaultProps} isListening={true} volume={5} />,
     );
-    const btn = screen.getByRole("button");
-    expect(btn).toHaveProperty("disabled", true);
+    expect(screen.getByText("mic")).toBeDefined();
   });
 });

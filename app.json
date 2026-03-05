@@ -66,6 +66,13 @@
           "cameraPermissionText": "NutriScan needs camera access to scan barcodes and nutrition labels.",
           "enableCodeScanner": true
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "NutriScan uses the microphone for voice food logging.",
+          "speechRecognitionPermission": "NutriScan uses speech recognition for voice food logging."
+        }
       ]
     ],
     "experiments": {

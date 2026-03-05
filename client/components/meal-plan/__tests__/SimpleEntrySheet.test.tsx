@@ -7,21 +7,19 @@ import { SimpleEntrySheet } from "../SimpleEntrySheet";
 const mockParseFoodText = vi.fn();
 const mockCreateRecipe = vi.fn();
 const mockAddItem = vi.fn();
-const mockTranscribeMutate = vi.fn();
-const mockStartRecording = vi.fn();
-const mockStopRecording = vi.fn();
+const mockStartListening = vi.fn();
+const mockStopListening = vi.fn();
 
-let mockIsRecording = false;
-let mockTranscribeIsPending = false;
+let mockIsListening = false;
+let mockTranscript = "";
+let mockIsFinal = false;
+let mockVolume = -2;
+let mockSpeechError: string | null = null;
 let mockHasVoiceLogging = true;
 
 vi.mock("@/hooks/useFoodParse", () => ({
   useParseFoodText: () => ({
     mutateAsync: mockParseFoodText,
-  }),
-  useTranscribeFood: () => ({
-    mutate: mockTranscribeMutate,
-    isPending: mockTranscribeIsPending,
   }),
 }));
 
@@ -46,11 +44,15 @@ vi.mock("@/hooks/useHaptics", () => ({
   }),
 }));
 
-vi.mock("@/hooks/useVoiceRecording", () => ({
-  useVoiceRecording: () => ({
-    isRecording: mockIsRecording,
-    startRecording: mockStartRecording,
-    stopRecording: mockStopRecording,
+vi.mock("@/hooks/useSpeechToText", () => ({
+  useSpeechToText: () => ({
+    isListening: mockIsListening,
+    transcript: mockTranscript,
+    isFinal: mockIsFinal,
+    volume: mockVolume,
+    error: mockSpeechError,
+    startListening: mockStartListening,
+    stopListening: mockStopListening,
   }),
 }));
 
@@ -67,8 +69,11 @@ describe("SimpleEntrySheet", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsRecording = false;
-    mockTranscribeIsPending = false;
+    mockIsListening = false;
+    mockTranscript = "";
+    mockIsFinal = false;
+    mockVolume = -2;
+    mockSpeechError = null;
     mockHasVoiceLogging = true;
   });
 
@@ -259,91 +264,40 @@ describe("SimpleEntrySheet", () => {
     it("renders mic button for premium users", () => {
       mockHasVoiceLogging = true;
       renderComponent(<SimpleEntrySheet {...defaultProps} />);
-      expect(screen.getByLabelText("Start voice recording")).toBeDefined();
+      expect(screen.getByLabelText("Start voice input")).toBeDefined();
     });
 
     it("hides mic button for free users", () => {
       mockHasVoiceLogging = false;
       renderComponent(<SimpleEntrySheet {...defaultProps} />);
-      expect(screen.queryByLabelText("Start voice recording")).toBeNull();
+      expect(screen.queryByLabelText("Start voice input")).toBeNull();
     });
 
-    it("calls startRecording on mic press when idle", () => {
-      mockStartRecording.mockResolvedValue(undefined);
+    it("calls startListening on mic press when idle", () => {
       renderComponent(<SimpleEntrySheet {...defaultProps} />);
-      fireEvent.click(screen.getByLabelText("Start voice recording"));
-      expect(mockStartRecording).toHaveBeenCalledOnce();
+      fireEvent.click(screen.getByLabelText("Start voice input"));
+      expect(mockStartListening).toHaveBeenCalledOnce();
     });
 
-    it("calls stopRecording and transcribe on mic press when recording", async () => {
-      mockIsRecording = true;
-      mockStopRecording.mockResolvedValue("file:///audio.m4a");
+    it("calls stopListening on mic press when listening", () => {
+      mockIsListening = true;
       renderComponent(<SimpleEntrySheet {...defaultProps} />);
-      fireEvent.click(screen.getByLabelText("Stop recording"));
-
-      await waitFor(() => {
-        expect(mockStopRecording).toHaveBeenCalledOnce();
-      });
-
-      await waitFor(() => {
-        expect(mockTranscribeMutate).toHaveBeenCalledWith(
-          "file:///audio.m4a",
-          expect.objectContaining({
-            onSuccess: expect.any(Function),
-            onError: expect.any(Function),
-          }),
-        );
-      });
+      fireEvent.click(screen.getByLabelText("Listening, tap to stop"));
+      expect(mockStopListening).toHaveBeenCalledOnce();
     });
 
-    it("fills dish name on successful transcription", async () => {
-      mockIsRecording = true;
-      mockStopRecording.mockResolvedValue("file:///audio.m4a");
-      mockTranscribeMutate.mockImplementation(
-        (
-          _uri: string,
-          opts: { onSuccess: (data: { transcription: string }) => void },
-        ) => {
-          opts.onSuccess({ transcription: "grilled salmon" });
-        },
-      );
-
+    it("shows error when speech recognition has an error", async () => {
+      // Set error before mount — mealType effect runs first (clears error),
+      // then speechError effect runs (sets error)
+      mockSpeechError =
+        "Microphone or speech recognition permission not granted.";
       renderComponent(<SimpleEntrySheet {...defaultProps} />);
-      fireEvent.click(screen.getByLabelText("Stop recording"));
-
-      await waitFor(() => {
-        const input = screen.getByLabelText("Dish name") as HTMLInputElement;
-        expect(input.value).toBe("grilled salmon");
-      });
-    });
-
-    it("shows error when transcription fails", async () => {
-      mockIsRecording = true;
-      mockStopRecording.mockResolvedValue("file:///audio.m4a");
-      mockTranscribeMutate.mockImplementation(
-        (_uri: string, opts: { onError: () => void }) => {
-          opts.onError();
-        },
-      );
-
-      renderComponent(<SimpleEntrySheet {...defaultProps} />);
-      fireEvent.click(screen.getByLabelText("Stop recording"));
 
       await waitFor(() => {
         expect(
-          screen.getByText("Couldn't transcribe voice. Please try again."),
-        ).toBeDefined();
-      });
-    });
-
-    it("shows error when microphone permission is denied", async () => {
-      mockStartRecording.mockRejectedValue(new Error("Permission denied"));
-      renderComponent(<SimpleEntrySheet {...defaultProps} />);
-      fireEvent.click(screen.getByLabelText("Start voice recording"));
-
-      await waitFor(() => {
-        expect(
-          screen.getByText("Microphone access is needed for voice input."),
+          screen.getByText(
+            "Microphone or speech recognition permission not granted.",
+          ),
         ).toBeDefined();
       });
     });

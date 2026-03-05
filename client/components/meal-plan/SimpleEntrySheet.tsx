@@ -22,14 +22,14 @@ import { ThemedText } from "@/components/ThemedText";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useParseFoodText, useTranscribeFood } from "@/hooks/useFoodParse";
+import { useParseFoodText } from "@/hooks/useFoodParse";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import {
   useAddMealPlanItem,
   invalidateMealPlanItems,
 } from "@/hooks/useMealPlan";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
-import { useVoiceRecording } from "@/hooks/useVoiceRecording";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 import {
   Spacing,
   BorderRadius,
@@ -71,10 +71,24 @@ function SimpleEntrySheetInner({
   const addItem = useAddMealPlanItem();
 
   const hasVoiceLogging = usePremiumFeature("voiceLogging");
-  const { isRecording, startRecording, stopRecording } = useVoiceRecording();
-  const transcribeFood = useTranscribeFood();
-  const isTranscribing = transcribeFood.isPending;
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    error: speechError,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
 
+  const showError = useCallback((msg: string) => {
+    setError(msg);
+    if (Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(msg);
+    }
+  }, []);
+
+  // Reset state when sheet opens/closes
   useEffect(() => {
     if (mealType) {
       sheetRef.current?.present();
@@ -85,11 +99,32 @@ function SimpleEntrySheetInner({
       isAddingRef.current = false;
     } else {
       sheetRef.current?.dismiss();
-      if (isRecording) {
-        stopRecording();
+      if (isListening) {
+        stopListening();
       }
     }
-  }, [mealType]); // eslint-disable-line react-hooks/exhaustive-deps -- stop recording on dismiss only
+  }, [mealType, isListening, stopListening]);
+
+  // Auto-fill dish name from streaming transcript
+  useEffect(() => {
+    if (isListening && transcript) {
+      setDishName(transcript);
+    }
+  }, [isListening, transcript]);
+
+  // Set final transcript when recognition completes
+  useEffect(() => {
+    if (isFinal && transcript) {
+      setDishName(transcript);
+    }
+  }, [isFinal, transcript]);
+
+  // Show speech errors
+  useEffect(() => {
+    if (speechError) {
+      showError(speechError);
+    }
+  }, [speechError, showError]);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -112,43 +147,14 @@ function SimpleEntrySheetInner({
     [haptics],
   );
 
-  const showError = useCallback((msg: string) => {
-    setError(msg);
-    if (Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(msg);
-    }
-  }, []);
-
-  const handleVoicePress = useCallback(async () => {
+  const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    if (isRecording) {
-      const uri = await stopRecording();
-      if (uri) {
-        transcribeFood.mutate(uri, {
-          onSuccess: (data) => {
-            setDishName(data.transcription);
-            setError(null);
-          },
-          onError: () => {
-            showError("Couldn't transcribe voice. Please try again.");
-          },
-        });
-      }
+    if (isListening) {
+      stopListening();
     } else {
-      try {
-        await startRecording();
-      } catch {
-        showError("Microphone access is needed for voice input.");
-      }
+      startListening();
     }
-  }, [
-    isRecording,
-    startRecording,
-    stopRecording,
-    haptics,
-    transcribeFood,
-    showError,
-  ]);
+  }, [isListening, startListening, stopListening, haptics]);
 
   const handleAdd = useCallback(async () => {
     if (!mealType || !dishName.trim() || isAddingRef.current) return;
@@ -223,7 +229,7 @@ function SimpleEntrySheetInner({
   ]);
 
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
-  const canAdd = dishName.trim().length > 0 && !isAdding && !isTranscribing;
+  const canAdd = dishName.trim().length > 0 && !isAdding && !isListening;
 
   return (
     <BottomSheetModal
@@ -279,7 +285,9 @@ function SimpleEntrySheetInner({
             <BottomSheetTextInput
               ref={inputRef}
               style={[styles.input, { color: theme.text }]}
-              placeholder="e.g. chicken stir fry"
+              placeholder={
+                isListening ? "Listening..." : "e.g. chicken stir fry"
+              }
               placeholderTextColor={theme.textSecondary}
               value={dishName}
               onChangeText={(text) => {
@@ -287,13 +295,12 @@ function SimpleEntrySheetInner({
                 if (error) setError(null);
               }}
               returnKeyType="done"
-              editable={!isTranscribing}
               accessibilityLabel="Dish name"
             />
             {hasVoiceLogging && (
               <InlineMicButton
-                isRecording={isRecording}
-                isTranscribing={isTranscribing}
+                isListening={isListening}
+                volume={volume}
                 onPress={handleVoicePress}
                 disabled={isAdding}
               />
