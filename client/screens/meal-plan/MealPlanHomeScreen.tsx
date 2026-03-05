@@ -26,7 +26,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { DraggableList } from "@/components/DraggableList";
-import { EmptyState as EmptyStateComponent } from "@/components/EmptyState";
+import { CalorieRing } from "@/components/CalorieRing";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
@@ -57,6 +57,7 @@ import {
   useAddMealPlanItem,
   useConfirmMealPlanItem,
 } from "@/hooks/useMealPlan";
+import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { apiRequest } from "@/lib/query-client";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
@@ -435,119 +436,7 @@ const MealSlotSection = React.memo(function MealSlotSection({
   );
 });
 
-// ── Daily Totals ─────────────────────────────────────────────────────
-
-const DailyTotals = React.memo(function DailyTotals({
-  items,
-}: {
-  items: MealPlanItemWithRelations[];
-}) {
-  const { theme } = useTheme();
-
-  const totals = useMemo(() => {
-    let calories = 0;
-    let protein = 0;
-    let carbs = 0;
-    let fat = 0;
-
-    for (const item of items) {
-      const macros = computeItemMacros(item);
-      if (macros) {
-        calories += macros.calories;
-        protein += macros.protein;
-        carbs += macros.carbs;
-        fat += macros.fat;
-      }
-    }
-
-    return { calories, protein, carbs, fat };
-  }, [items]);
-
-  if (items.length === 0) return null;
-  if (
-    totals.calories === 0 &&
-    totals.protein === 0 &&
-    totals.carbs === 0 &&
-    totals.fat === 0
-  )
-    return null;
-
-  return (
-    <View
-      style={[
-        styles.dailyTotals,
-        { backgroundColor: withOpacity(theme.link, 0.08) },
-      ]}
-    >
-      <ThemedText style={styles.dailyTotalsTitle}>Daily Total</ThemedText>
-      <View style={styles.dailyTotalsRow}>
-        <View style={styles.dailyTotalItem}>
-          <ThemedText
-            style={[styles.dailyTotalValue, { color: theme.calorieAccent }]}
-          >
-            {totals.calories}
-          </ThemedText>
-          <ThemedText
-            style={[styles.dailyTotalLabel, { color: theme.textSecondary }]}
-          >
-            cal
-          </ThemedText>
-        </View>
-        <View style={styles.dailyTotalItem}>
-          <ThemedText
-            style={[styles.dailyTotalValue, { color: theme.proteinAccent }]}
-          >
-            {totals.protein}g
-          </ThemedText>
-          <ThemedText
-            style={[styles.dailyTotalLabel, { color: theme.textSecondary }]}
-          >
-            protein
-          </ThemedText>
-        </View>
-        <View style={styles.dailyTotalItem}>
-          <ThemedText
-            style={[styles.dailyTotalValue, { color: theme.carbsAccent }]}
-          >
-            {totals.carbs}g
-          </ThemedText>
-          <ThemedText
-            style={[styles.dailyTotalLabel, { color: theme.textSecondary }]}
-          >
-            carbs
-          </ThemedText>
-        </View>
-        <View style={styles.dailyTotalItem}>
-          <ThemedText
-            style={[styles.dailyTotalValue, { color: theme.fatAccent }]}
-          >
-            {totals.fat}g
-          </ThemedText>
-          <ThemedText
-            style={[styles.dailyTotalLabel, { color: theme.textSecondary }]}
-          >
-            fat
-          </ThemedText>
-        </View>
-      </View>
-    </View>
-  );
-});
-
-// ── Empty State ──────────────────────────────────────────────────────
-
-function MealPlanEmptyState() {
-  return (
-    <EmptyStateComponent
-      variant="temporary"
-      icon="calendar"
-      title="Plan Your Meals"
-      description={
-        "Tap the add button on any meal slot to start building your daily plan."
-      }
-    />
-  );
-}
+// ── CalorieRing replaces DailyTotals + Empty State ──────────────────
 
 // ── Main Screen ──────────────────────────────────────────────────────
 
@@ -689,6 +578,27 @@ export default function MealPlanHomeScreen() {
     }
     return result;
   }, [itemsByMealType]);
+
+  // Calorie ring data
+  const { data: budgetData } = useDailyBudget(selectedDateStr);
+  const calorieGoal = budgetData?.calorieGoal ?? 2000;
+
+  const dailyTotals = useMemo(() => {
+    let calories = 0;
+    let protein = 0;
+    let carbs = 0;
+    let fat = 0;
+    for (const item of selectedDayItems) {
+      const macros = computeItemMacros(item);
+      if (macros) {
+        calories += macros.calories;
+        protein += macros.protein;
+        carbs += macros.carbs;
+        fat += macros.fat;
+      }
+    }
+    return { calories, protein, carbs, fat };
+  }, [selectedDayItems]);
 
   const handleDatePress = useCallback(
     (date: Date) => {
@@ -1105,9 +1015,16 @@ export default function MealPlanHomeScreen() {
           {getDayLabel(selectedDate)}
         </ThemedText>
 
-        {/* Meal Slots */}
-        {selectedDayItems.length === 0 ? <MealPlanEmptyState /> : null}
+        {/* Calorie Ring */}
+        <CalorieRing
+          consumed={dailyTotals.calories}
+          goal={calorieGoal}
+          protein={dailyTotals.protein}
+          carbs={dailyTotals.carbs}
+          fat={dailyTotals.fat}
+        />
 
+        {/* Meal Slots */}
         {MEAL_TYPES.map((mealType) => {
           const sectionItems = itemsByMealType[mealType] || [];
           return (
@@ -1131,8 +1048,7 @@ export default function MealPlanHomeScreen() {
           );
         })}
 
-        {/* Daily Totals */}
-        <DailyTotals items={selectedDayItems} />
+        {/* Spacer for FAB clearance */}
       </ScrollView>
 
       {/* Modals */}
@@ -1270,33 +1186,6 @@ const styles = StyleSheet.create({
   addItemText: {
     fontSize: 14,
     fontFamily: FontFamily.medium,
-  },
-  dailyTotals: {
-    marginHorizontal: Spacing.lg,
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.card,
-    marginTop: Spacing.sm,
-  },
-  dailyTotalsTitle: {
-    fontSize: 14,
-    fontFamily: FontFamily.semiBold,
-    textAlign: "center",
-    marginBottom: Spacing.md,
-  },
-  dailyTotalsRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-  },
-  dailyTotalItem: {
-    alignItems: "center",
-  },
-  dailyTotalValue: {
-    fontSize: 17,
-    fontFamily: FontFamily.bold,
-  },
-  dailyTotalLabel: {
-    fontSize: 11,
-    marginTop: 2,
   },
   topActions: {
     flexDirection: "row",
