@@ -16,13 +16,17 @@ import {
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
 import { NotificationFeedbackType } from "expo-haptics";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useParseFoodText } from "@/hooks/useFoodParse";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
-import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import {
+  useAddMealPlanItem,
+  invalidateMealPlanItems,
+} from "@/hooks/useMealPlan";
 import {
   Spacing,
   BorderRadius,
@@ -49,6 +53,7 @@ function SimpleEntrySheetInner({
 }: SimpleEntrySheetProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const queryClient = useQueryClient();
   const sheetRef = useRef<BottomSheetModal>(null);
   const inputRef = useRef<TextInput>(null);
 
@@ -111,9 +116,10 @@ function SimpleEntrySheetInner({
 
     try {
       // 1. Parse food text to get nutrition estimate
-      const { items } = await parseFoodText.mutateAsync(dishName.trim());
+      const result = await parseFoodText.mutateAsync(dishName.trim());
+      const items = result?.items;
 
-      if (!items.length) {
+      if (!items?.length) {
         showError("Couldn't estimate nutrition. Try a simpler description.");
         isAddingRef.current = false;
         setIsAdding(false);
@@ -151,6 +157,7 @@ function SimpleEntrySheetInner({
         servings,
       });
 
+      invalidateMealPlanItems(queryClient);
       haptics.notification(NotificationFeedbackType.Success);
       onDismiss();
     } catch {
@@ -167,6 +174,7 @@ function SimpleEntrySheetInner({
     parseFoodText,
     createRecipe,
     addItem,
+    queryClient,
     haptics,
     showError,
     onDismiss,

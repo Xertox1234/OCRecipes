@@ -46,6 +46,7 @@ describe("useFoodParse", () => {
         { name: "Apple", quantity: 1, unit: "medium", calories: 95 },
       ];
       mockApiRequest.mockResolvedValue({
+        ok: true,
         json: () => Promise.resolve({ items }),
       });
 
