@@ -188,7 +188,7 @@ function SimpleEntrySheetInner({
       ref={sheetRef}
       snapPoints={SNAP_POINTS}
       enableDynamicSizing={false}
-      keyboardBehavior="extend"
+      keyboardBehavior="fillParent"
       keyboardBlurBehavior="restore"
       backdropComponent={renderBackdrop}
       onDismiss={onDismiss}
