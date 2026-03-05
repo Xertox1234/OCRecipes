@@ -7336,6 +7336,63 @@ export async function parseNaturalLanguageFood(
 - `server/services/voice-transcription.ts` — `transcribeAudio()`
 - `server/services/food-nlp.ts` — `parseNaturalLanguageFood()`
 
+#### Client-Side Voice-to-Text-Input Pattern
+
+When a screen has a text input that accepts voice dictation, compose three hooks and a toggle handler. Gate the UI behind `usePremiumFeature("voiceLogging")`.
+
+```typescript
+// Hook composition
+const hasVoiceLogging = usePremiumFeature("voiceLogging");
+const { isRecording, startRecording, stopRecording } = useVoiceRecording();
+const transcribeFood = useTranscribeFood();
+const isTranscribing = transcribeFood.isPending;
+
+// Toggle handler — tap to start, tap again to stop & transcribe
+const handleVoicePress = useCallback(async () => {
+  haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+  if (isRecording) {
+    const uri = await stopRecording();
+    if (uri) {
+      transcribeFood.mutate(uri, {
+        onSuccess: (data) => setInputValue(data.transcription),
+        onError: () =>
+          showError("Couldn't transcribe voice. Please try again."),
+      });
+    }
+  } else {
+    try {
+      await startRecording();
+    } catch {
+      showError("Microphone access is needed for voice input.");
+    }
+  }
+}, [
+  isRecording,
+  startRecording,
+  stopRecording,
+  haptics,
+  transcribeFood,
+  showError,
+]);
+```
+
+**Key conventions:**
+
+- Use `InlineMicButton` for compact input-row placement (20px icon, `hitSlop={12}` for 44pt touch target)
+- Use `VoiceLogButton` for standalone placement (56px circle, 24px icon)
+- Disable the text input during transcription (`editable={!isTranscribing}`)
+- Stop any active recording when the screen/sheet dismisses
+- Haptic feedback on every press (medium impact)
+
+**References:**
+
+- `client/screens/QuickLogScreen.tsx` — standalone voice + text parse flow
+- `client/components/meal-plan/SimpleEntrySheet.tsx` — inline voice in bottom sheet
+- `client/components/InlineMicButton.tsx` — compact inline mic button
+- `client/components/VoiceLogButton.tsx` — standalone mic button
+- `client/hooks/useVoiceRecording.ts` — recording start/stop
+- `client/hooks/useFoodParse.ts` — `useTranscribeFood()` mutation
+
 ### MET-Based Calorie Burn Formula
 
 When calculating calories burned from exercise, use the standard MET (Metabolic Equivalent of Task) formula as a pure function. This is a well-established exercise science formula that requires no external API calls.

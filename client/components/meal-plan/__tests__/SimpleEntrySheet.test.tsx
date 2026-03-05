@@ -7,10 +7,21 @@ import { SimpleEntrySheet } from "../SimpleEntrySheet";
 const mockParseFoodText = vi.fn();
 const mockCreateRecipe = vi.fn();
 const mockAddItem = vi.fn();
+const mockTranscribeMutate = vi.fn();
+const mockStartRecording = vi.fn();
+const mockStopRecording = vi.fn();
+
+let mockIsRecording = false;
+let mockTranscribeIsPending = false;
+let mockHasVoiceLogging = true;
 
 vi.mock("@/hooks/useFoodParse", () => ({
   useParseFoodText: () => ({
     mutateAsync: mockParseFoodText,
+  }),
+  useTranscribeFood: () => ({
+    mutate: mockTranscribeMutate,
+    isPending: mockTranscribeIsPending,
   }),
 }));
 
@@ -24,6 +35,7 @@ vi.mock("@/hooks/useMealPlan", () => ({
   useAddMealPlanItem: () => ({
     mutateAsync: mockAddItem,
   }),
+  invalidateMealPlanItems: vi.fn(),
 }));
 
 vi.mock("@/hooks/useHaptics", () => ({
@@ -32,6 +44,18 @@ vi.mock("@/hooks/useHaptics", () => ({
     selection: vi.fn(),
     notification: vi.fn(),
   }),
+}));
+
+vi.mock("@/hooks/useVoiceRecording", () => ({
+  useVoiceRecording: () => ({
+    isRecording: mockIsRecording,
+    startRecording: mockStartRecording,
+    stopRecording: mockStopRecording,
+  }),
+}));
+
+vi.mock("@/hooks/usePremiumFeatures", () => ({
+  usePremiumFeature: () => mockHasVoiceLogging,
 }));
 
 describe("SimpleEntrySheet", () => {
@@ -43,6 +67,9 @@ describe("SimpleEntrySheet", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsRecording = false;
+    mockTranscribeIsPending = false;
+    mockHasVoiceLogging = true;
   });
 
   it("renders header with meal label", () => {
@@ -225,6 +252,100 @@ describe("SimpleEntrySheet", () => {
           fatPerServing: "7",
         }),
       );
+    });
+  });
+
+  describe("voice dictation", () => {
+    it("renders mic button for premium users", () => {
+      mockHasVoiceLogging = true;
+      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      expect(screen.getByLabelText("Start voice recording")).toBeDefined();
+    });
+
+    it("hides mic button for free users", () => {
+      mockHasVoiceLogging = false;
+      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      expect(screen.queryByLabelText("Start voice recording")).toBeNull();
+    });
+
+    it("calls startRecording on mic press when idle", () => {
+      mockStartRecording.mockResolvedValue(undefined);
+      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("Start voice recording"));
+      expect(mockStartRecording).toHaveBeenCalledOnce();
+    });
+
+    it("calls stopRecording and transcribe on mic press when recording", async () => {
+      mockIsRecording = true;
+      mockStopRecording.mockResolvedValue("file:///audio.m4a");
+      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("Stop recording"));
+
+      await waitFor(() => {
+        expect(mockStopRecording).toHaveBeenCalledOnce();
+      });
+
+      await waitFor(() => {
+        expect(mockTranscribeMutate).toHaveBeenCalledWith(
+          "file:///audio.m4a",
+          expect.objectContaining({
+            onSuccess: expect.any(Function),
+            onError: expect.any(Function),
+          }),
+        );
+      });
+    });
+
+    it("fills dish name on successful transcription", async () => {
+      mockIsRecording = true;
+      mockStopRecording.mockResolvedValue("file:///audio.m4a");
+      mockTranscribeMutate.mockImplementation(
+        (
+          _uri: string,
+          opts: { onSuccess: (data: { transcription: string }) => void },
+        ) => {
+          opts.onSuccess({ transcription: "grilled salmon" });
+        },
+      );
+
+      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("Stop recording"));
+
+      await waitFor(() => {
+        const input = screen.getByLabelText("Dish name") as HTMLInputElement;
+        expect(input.value).toBe("grilled salmon");
+      });
+    });
+
+    it("shows error when transcription fails", async () => {
+      mockIsRecording = true;
+      mockStopRecording.mockResolvedValue("file:///audio.m4a");
+      mockTranscribeMutate.mockImplementation(
+        (_uri: string, opts: { onError: () => void }) => {
+          opts.onError();
+        },
+      );
+
+      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("Stop recording"));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("Couldn't transcribe voice. Please try again."),
+        ).toBeDefined();
+      });
+    });
+
+    it("shows error when microphone permission is denied", async () => {
+      mockStartRecording.mockRejectedValue(new Error("Permission denied"));
+      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("Start voice recording"));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("Microphone access is needed for voice input."),
+        ).toBeDefined();
+      });
     });
   });
 });

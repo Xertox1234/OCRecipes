@@ -15,18 +15,21 @@ import {
 } from "@gorhom/bottom-sheet";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
-import { NotificationFeedbackType } from "expo-haptics";
+import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
+import { InlineMicButton } from "@/components/InlineMicButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useParseFoodText } from "@/hooks/useFoodParse";
+import { useParseFoodText, useTranscribeFood } from "@/hooks/useFoodParse";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import {
   useAddMealPlanItem,
   invalidateMealPlanItems,
 } from "@/hooks/useMealPlan";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { useVoiceRecording } from "@/hooks/useVoiceRecording";
 import {
   Spacing,
   BorderRadius,
@@ -67,6 +70,11 @@ function SimpleEntrySheetInner({
   const createRecipe = useCreateMealPlanRecipe();
   const addItem = useAddMealPlanItem();
 
+  const hasVoiceLogging = usePremiumFeature("voiceLogging");
+  const { isRecording, startRecording, stopRecording } = useVoiceRecording();
+  const transcribeFood = useTranscribeFood();
+  const isTranscribing = transcribeFood.isPending;
+
   useEffect(() => {
     if (mealType) {
       sheetRef.current?.present();
@@ -77,8 +85,11 @@ function SimpleEntrySheetInner({
       isAddingRef.current = false;
     } else {
       sheetRef.current?.dismiss();
+      if (isRecording) {
+        stopRecording();
+      }
     }
-  }, [mealType]);
+  }, [mealType]); // eslint-disable-line react-hooks/exhaustive-deps -- stop recording on dismiss only
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -107,6 +118,37 @@ function SimpleEntrySheetInner({
       AccessibilityInfo.announceForAccessibility(msg);
     }
   }, []);
+
+  const handleVoicePress = useCallback(async () => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    if (isRecording) {
+      const uri = await stopRecording();
+      if (uri) {
+        transcribeFood.mutate(uri, {
+          onSuccess: (data) => {
+            setDishName(data.transcription);
+            setError(null);
+          },
+          onError: () => {
+            showError("Couldn't transcribe voice. Please try again.");
+          },
+        });
+      }
+    } else {
+      try {
+        await startRecording();
+      } catch {
+        showError("Microphone access is needed for voice input.");
+      }
+    }
+  }, [
+    isRecording,
+    startRecording,
+    stopRecording,
+    haptics,
+    transcribeFood,
+    showError,
+  ]);
 
   const handleAdd = useCallback(async () => {
     if (!mealType || !dishName.trim() || isAddingRef.current) return;
@@ -158,7 +200,7 @@ function SimpleEntrySheetInner({
       });
 
       invalidateMealPlanItems(queryClient);
-      haptics.notification(NotificationFeedbackType.Success);
+      haptics.notification(Haptics.NotificationFeedbackType.Success);
       onDismiss();
     } catch {
       showError("Couldn't estimate nutrition. Try a simpler description.");
@@ -181,7 +223,7 @@ function SimpleEntrySheetInner({
   ]);
 
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
-  const canAdd = dishName.trim().length > 0 && !isAdding;
+  const canAdd = dishName.trim().length > 0 && !isAdding && !isTranscribing;
 
   return (
     <BottomSheetModal
@@ -245,8 +287,17 @@ function SimpleEntrySheetInner({
                 if (error) setError(null);
               }}
               returnKeyType="done"
+              editable={!isTranscribing}
               accessibilityLabel="Dish name"
             />
+            {hasVoiceLogging && (
+              <InlineMicButton
+                isRecording={isRecording}
+                isTranscribing={isTranscribing}
+                onPress={handleVoicePress}
+                disabled={isAdding}
+              />
+            )}
           </View>
         </View>
 
