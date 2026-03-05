@@ -1672,6 +1672,42 @@ export function usePurchase() {
 
 ## Database Migration Gotchas
 
+### ADD COLUMN with `.default()` Leaves Existing Rows NULL
+
+**Category:** Gotcha
+
+**Problem:** When adding a new JSONB column `mealTypes` to `mealPlanRecipes` with `.default([])` in the Drizzle schema, all existing rows received NULL instead of the empty array default. Queries that filtered with `WHERE mealTypes::jsonb = '[]'::jsonb` found zero rows to backfill, and storage queries that checked `mealTypes = '[]'` to treat unclassified recipes as universal silently missed all legacy recipes.
+
+**Root Cause:** Drizzle's `.default([])` sets a `DEFAULT` constraint on the column, which only applies to future `INSERT` statements that omit the column. PostgreSQL's `ALTER TABLE ADD COLUMN ... DEFAULT` does apply the default to existing rows in PostgreSQL 11+, but only for non-volatile defaults. Drizzle's `db push` migration strategy may not always produce the exact `ALTER TABLE` form that triggers this behavior, and in practice existing rows ended up with NULL.
+
+**Key insight:** `column = '[]'` and `column IS NULL` are completely different in PostgreSQL. `NULL = '[]'` evaluates to `NULL` (not `FALSE`), so `WHERE` clauses using equality silently skip NULL rows. This is a fundamental SQL three-valued logic issue, but it bites hardest after schema migrations where you expect the default value to be present.
+
+**Fix:** Always pair equality checks with `IS NULL` when querying columns that may contain legacy NULL rows:
+
+```typescript
+// ❌ Bad: Misses rows where mealTypes is NULL (all pre-migration rows)
+.where(sql`${table.mealTypes}::jsonb = '[]'::jsonb`)
+
+// ✅ Good: Catches both empty arrays AND NULL (legacy rows)
+.where(sql`${table.mealTypes}::jsonb = '[]'::jsonb OR ${table.mealTypes} IS NULL`)
+```
+
+**Prevention checklist for new columns:**
+
+1. Write backfill queries with `OR column IS NULL` — never assume the default was applied to existing rows
+2. If the column must never be NULL, add `.notNull()` to the schema AND run a backfill migration before deploying queries that depend on the value
+3. When writing storage queries that filter on the new column, add a safety-net fallback for NULL (e.g., treat NULL the same as the default value)
+
+**Lesson:** When adding a new column with a default value, always assume existing rows have NULL until a backfill confirms otherwise. The `.default()` in Drizzle's schema is an INSERT-time convenience, not a retroactive data migration.
+
+**Files:**
+
+- `shared/schema.ts` — `mealTypes: jsonb("meal_types").$type<string[]>().default([])`
+- `server/services/meal-type-inference.ts` — `backfillMealTypes()` query with `OR ... IS NULL`
+- `server/storage/meal-plans.ts` — `getUnifiedRecipes()` filter with `OR ... IS NULL`
+
+---
+
 ### getDailySummary LEFT JOIN Rewrite: When Nullable FKs Break INNER JOINs
 
 **Problem:** The `getDailySummary()` storage method used INNER JOIN on `scannedItems` to aggregate daily nutrition. When Phase 4 added meal plan confirmation (creating `dailyLogs` with `scannedItemId: null` and `recipeId` pointing to a meal plan recipe), all confirmed meal plan items became invisible in the daily summary.
@@ -1832,6 +1868,7 @@ const token = parsed.data.access_token; // Guaranteed to be a string
 30. **OpenAI Client Initialization Recurrence:** Module-level `new OpenAI()` keeps appearing in new service files (7 out of 8 services). "Document and hope" has failed; this needs a structural fix (shared lazy singleton or lint rule).
 31. **Time-Window Dedup for Health APIs:** When deduplicating data from external health/fitness APIs (HealthKit, Google Fit), use a time window (30s-2min) rather than exact timestamp matching. Precision differences between systems cause false negatives with exact matching.
 32. **Drizzle `sql<number>` is TypeScript-only:** PostgreSQL DECIMAL/NUMERIC types return as strings through the `pg` driver. Always wrap `sql<number>` results with `Number()` before arithmetic, or use `::float`/`::integer` casts instead of `::decimal` in SQL.
+33. **ADD COLUMN defaults are INSERT-time only:** Drizzle's `.default()` sets a DEFAULT constraint for new INSERTs, but existing rows get NULL after `ALTER TABLE ADD COLUMN`. Always write backfill queries with `OR column IS NULL`, and treat NULL as equivalent to the default in storage queries.
 
 ---
 

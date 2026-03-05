@@ -116,6 +116,7 @@ export function register(app: Express): void {
             query: query || undefined,
             cuisine: cuisine || undefined,
             diet: diet || undefined,
+            mealType: mealType || undefined,
             limit,
           }),
           mealType

@@ -603,6 +603,7 @@ export const mealPlanRecipes = pgTable(
     imageUrl: text("image_url"),
     instructions: text("instructions"),
     dietTags: jsonb("diet_tags").$type<string[]>().default([]),
+    mealTypes: jsonb("meal_types").$type<string[]>().default([]),
     caloriesPerServing: decimal("calories_per_serving", {
       precision: 10,
       scale: 2,

@@ -340,6 +340,23 @@ describe("meal-plans storage", () => {
       expect(withIngredients!.ingredients[1].displayOrder).toBe(1);
       expect(withIngredients!.ingredients[2].displayOrder).toBe(2);
     });
+
+    it("auto-infers mealTypes from title when not provided", async () => {
+      const recipe = await createMealPlanRecipe({
+        userId: testUser.id,
+        title: "Blueberry Pancakes",
+      });
+      expect(recipe.mealTypes).toContain("breakfast");
+    });
+
+    it("preserves explicitly provided mealTypes", async () => {
+      const recipe = await createMealPlanRecipe({
+        userId: testUser.id,
+        title: "Blueberry Pancakes",
+        mealTypes: ["snack"],
+      });
+      expect(recipe.mealTypes).toEqual(["snack"]);
+    });
   });
 
   describe("updateMealPlanRecipe", () => {
@@ -474,6 +491,41 @@ describe("meal-plans storage", () => {
       });
       expect(result.personal).toHaveLength(1);
       expect(result.personal[0].title).toBe("Vegan Bowl");
+    });
+
+    it("filters personal recipes by mealType", async () => {
+      await createTestMealPlanRecipe(testUser.id, {
+        title: "Breakfast Pancakes",
+        mealTypes: ["breakfast"],
+      });
+      await createTestMealPlanRecipe(testUser.id, {
+        title: "Dinner Steak",
+        mealTypes: ["dinner"],
+      });
+
+      const result = await getUnifiedRecipes({
+        userId: testUser.id,
+        mealType: "breakfast",
+      });
+      expect(result.personal).toHaveLength(1);
+      expect(result.personal[0].title).toBe("Breakfast Pancakes");
+    });
+
+    it("includes un-tagged recipes (empty mealTypes) when filtering by mealType", async () => {
+      await createTestMealPlanRecipe(testUser.id, {
+        title: "Pancakes",
+        mealTypes: ["breakfast"],
+      });
+      await createTestMealPlanRecipe(testUser.id, {
+        title: "Legacy Recipe",
+        mealTypes: [],
+      });
+
+      const result = await getUnifiedRecipes({
+        userId: testUser.id,
+        mealType: "breakfast",
+      });
+      expect(result.personal).toHaveLength(2);
     });
   });
 

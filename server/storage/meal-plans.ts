@@ -39,6 +39,7 @@ import {
   notInArray,
 } from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
+import { inferMealTypes } from "../services/meal-type-inference";
 
 // ============================================================================
 // MEAL PLAN RECIPES
@@ -112,11 +113,20 @@ export async function createMealPlanRecipe(
   recipe: InsertMealPlanRecipe,
   ingredients?: InsertRecipeIngredient[],
 ): Promise<MealPlanRecipe> {
+  const mealTypes =
+    recipe.mealTypes && recipe.mealTypes.length > 0
+      ? recipe.mealTypes
+      : inferMealTypes(
+          recipe.title,
+          ingredients?.map((i) => i.name),
+        );
+  const recipeWithMealTypes = { ...recipe, mealTypes };
+
   if (ingredients && ingredients.length > 0) {
     return db.transaction(async (tx) => {
       const [created] = await tx
         .insert(mealPlanRecipes)
-        .values(recipe)
+        .values(recipeWithMealTypes)
         .returning();
       await tx.insert(recipeIngredients).values(
         ingredients.map((ing, idx) => ({
@@ -129,7 +139,10 @@ export async function createMealPlanRecipe(
     });
   }
 
-  const [created] = await db.insert(mealPlanRecipes).values(recipe).returning();
+  const [created] = await db
+    .insert(mealPlanRecipes)
+    .values(recipeWithMealTypes)
+    .returning();
   return created;
 }
 
@@ -162,9 +175,10 @@ export async function getUnifiedRecipes(params: {
   query?: string;
   cuisine?: string;
   diet?: string;
+  mealType?: string;
   limit?: number;
 }): Promise<{ community: CommunityRecipe[]; personal: MealPlanRecipe[] }> {
-  const { userId, query, cuisine, diet } = params;
+  const { userId, query, cuisine, diet, mealType } = params;
   // Limit is applied independently to each source, so the total result
   // set may contain up to 2x this value (community + personal).
   const resultLimit = Math.min(params.limit ?? 50, 100);
@@ -206,6 +220,17 @@ export async function getUnifiedRecipes(params: {
     );
     personalConditions.push(
       sql`${mealPlanRecipes.dietTags}::jsonb @> ${JSON.stringify([dietLower])}::jsonb`,
+    );
+  }
+
+  if (mealType) {
+    // Only filter personal recipes by mealType — community recipes have no
+    // mealTypes column and are returned unfiltered.
+    personalConditions.push(
+      or(
+        sql`${mealPlanRecipes.mealTypes}::jsonb @> ${JSON.stringify([mealType])}::jsonb`,
+        sql`${mealPlanRecipes.mealTypes}::jsonb = '[]'::jsonb OR ${mealPlanRecipes.mealTypes} IS NULL`,
+      )!,
     );
   }
 

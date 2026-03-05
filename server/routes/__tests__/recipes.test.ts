@@ -146,6 +146,24 @@ describe("Recipes Routes", () => {
       expect(storage.getFrequentRecipesForMealType).not.toHaveBeenCalled();
     });
 
+    it("passes mealType to getUnifiedRecipes", async () => {
+      vi.mocked(storage.getUnifiedRecipes).mockResolvedValue({
+        community: [],
+        personal: [],
+      } as never);
+      vi.mocked(storage.getFrequentRecipesForMealType).mockResolvedValue(
+        [] as never,
+      );
+
+      await request(app)
+        .get("/api/recipes/browse?mealType=breakfast")
+        .set("Authorization", "Bearer token");
+
+      expect(storage.getUnifiedRecipes).toHaveBeenCalledWith(
+        expect.objectContaining({ mealType: "breakfast" }),
+      );
+    });
+
     it("rejects invalid mealType", async () => {
       const res = await request(app)
         .get("/api/recipes/browse?mealType=brunch")
