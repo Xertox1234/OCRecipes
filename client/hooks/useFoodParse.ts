@@ -17,6 +17,10 @@ export function useParseFoodText() {
   return useMutation({
     mutationFn: async (text: string): Promise<{ items: ParsedFoodItem[] }> => {
       const res = await apiRequest("POST", "/api/food/parse-text", { text });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`${res.status}: ${body}`);
+      }
       return res.json();
     },
   });

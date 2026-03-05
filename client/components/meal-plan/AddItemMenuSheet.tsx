@@ -19,7 +19,7 @@ import {
   type MealType,
 } from "@/screens/meal-plan/meal-plan-utils";
 
-const SNAP_POINTS = ["25%"];
+const SNAP_POINTS = ["35%"];
 
 interface AddItemMenuSheetProps {
   mealType: MealType | null;
