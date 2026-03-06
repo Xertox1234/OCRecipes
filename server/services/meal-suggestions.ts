@@ -7,7 +7,7 @@ import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 // Zod schema for validating AI response
 const ingredientSchema = z.object({
   name: z.string().min(1),
-  quantity: z.string().optional(),
+  quantity: z.coerce.string().optional(),
   unit: z.string().optional(),
 });
 
@@ -22,7 +22,9 @@ const mealSuggestionSchema = z.object({
   prepTimeMinutes: z.number().int().min(0),
   difficulty: z.enum(["Easy", "Medium", "Hard"]),
   ingredients: z.array(ingredientSchema).min(1),
-  instructions: z.string().min(1),
+  instructions: z
+    .union([z.string(), z.array(z.string())])
+    .transform((val) => (Array.isArray(val) ? val.join("\n") : val)),
   dietTags: z.array(z.string()).default([]),
 });
 
