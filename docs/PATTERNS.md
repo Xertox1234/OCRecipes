@@ -96,6 +96,11 @@ This document captures established patterns for the NutriScan codebase. Follow t
   - [Compress-Upload-Cleanup for Image Uploads](#compress-upload-cleanup-for-image-uploads)
   - [Confidence-Based Follow-Up Refinement](#confidence-based-follow-up-refinement)
   - [Zod Union + Transform for LLM Output Flexibility](#zod-union--transform-for-llm-output-flexibility)
+  - [Multi-Photo GPT-4o Vision Calls](#multi-photo-gpt-4o-vision-calls)
+  - [Monthly Usage Cap with COUNT(\*)](#monthly-usage-cap-with-count)
+  - [Import + Re-export for Shared Types](#import--re-export-for-shared-types)
+  - [`popToTop()` for Multi-Modal Dismiss](#poptotop-for-multi-modal-dismiss)
+  - [React Native FormData File Upload Cast](#react-native-formdata-file-upload-cast)
 - [Animation Patterns](#animation-patterns)
   - [Circular Progress with Animated SVG Arc](#circular-progress-with-animated-svg-arc)
   - [Pulsing Animation for Active State Indicators](#pulsing-animation-for-active-state-indicators)
@@ -8439,6 +8444,166 @@ When a lint check requires a comment on the **same line** as flagged code (e.g.,
 - `// eslint-disable-next-line` equivalents in JSX props
 
 **Why:** Prettier treats `{/* */}` as a JSX child element and freely reflows it onto separate lines. Trailing `//` comments on prop lines are preserved because Prettier won't split a prop from its trailing comment.
+
+---
+
+### Multi-Photo GPT-4o Vision Calls
+
+When analyzing multi-page documents (receipts, menus), send all photos as separate `image_url` entries in a single API call rather than making multiple calls:
+
+```typescript
+// server/services/receipt-analysis.ts
+const imageContent = imagesBase64.map((base64) => ({
+  type: "image_url" as const,
+  image_url: {
+    url: `data:image/jpeg;base64,${base64}`,
+    detail: "high" as const,
+  },
+}));
+
+const response = await openai.chat.completions.create({
+  model: "gpt-4o",
+  max_completion_tokens: 4096,
+  temperature: 0.2, // Low temperature for structured extraction
+  messages: [
+    { role: "system", content: RECEIPT_PROMPT },
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Extract all food items from this receipt:" },
+        ...imageContent,
+      ],
+    },
+  ],
+  response_format: { type: "json_object" },
+});
+```
+
+**When to use:** Analyzing multi-page/multi-photo documents where context spans images (receipts, multi-page menus).
+
+**When NOT to use:** Independent single-photo analyses where results don't depend on each other.
+
+**Why:** A single call gives the model cross-image context (e.g., store name on page 1, items on page 2), is faster than sequential calls, and uses fewer API requests.
+
+---
+
+### Monthly Usage Cap with COUNT(\*)
+
+For premium features with monthly limits, use `COUNT(*)` instead of fetching all rows:
+
+```typescript
+// server/storage/receipt.ts
+import { sql } from "drizzle-orm";
+
+export async function getMonthlyReceiptScanCount(
+  userId: string,
+  date: Date,
+): Promise<number> {
+  const { startOfMonth, endOfMonth } = getMonthBounds(date);
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(receiptScans)
+    .where(
+      and(
+        eq(receiptScans.userId, userId),
+        ne(receiptScans.status, "failed"), // Failed attempts don't count
+        gte(receiptScans.scannedAt, startOfMonth),
+        lte(receiptScans.scannedAt, endOfMonth),
+      ),
+    );
+  return Number(result[0]?.count ?? 0);
+}
+```
+
+Route usage:
+
+```typescript
+const count = await getMonthlyReceiptScanCount(req.userId!, new Date());
+if (count >= features.monthlyReceiptScans) {
+  return sendError(
+    res,
+    429,
+    "Monthly receipt scan limit reached",
+    ErrorCode.LIMIT_REACHED,
+  );
+}
+```
+
+**When to use:** Any usage-capped feature (monthly scans, daily limits).
+
+**When NOT to use:** When you need the actual rows for further processing — then query and count.
+
+**Why:** `COUNT(*)` is handled entirely by the database without transferring row data. Fetching all rows via `select().from()` + `.length` transfers unnecessary data and scales poorly.
+
+---
+
+### Import + Re-export for Shared Types
+
+When a module both uses a shared type internally and re-exports it for consumers, you must import it separately — `export type` alone doesn't bring the type into scope:
+
+```typescript
+// server/services/photo-analysis.ts
+
+// Import for use in this file
+import type { LabelExtractionResult } from "@shared/types/label-analysis";
+// Re-export for consumers that import from this module
+export type { LabelExtractionResult } from "@shared/types/label-analysis";
+
+export async function analyzeLabelPhoto(
+  imageBase64: string,
+): Promise<LabelExtractionResult> {
+  // ← needs the import above
+  // ...
+}
+```
+
+**When to use:** Any file that both uses and re-exports a type from `shared/types/`.
+
+**When NOT to use:** If the file only re-exports (barrel file) or only uses the type internally.
+
+**Why:** TypeScript's `export type { X } from "..."` is a pass-through — it doesn't create a local binding. Without the separate `import type`, the type is `undefined` within the file.
+
+---
+
+### `popToTop()` for Multi-Modal Dismiss
+
+When a flow spans multiple stacked modals (e.g., Camera → Review → Confirm), use `navigation.popToTop()` on the terminal action to dismiss the entire modal stack:
+
+```typescript
+// client/screens/ReceiptReviewScreen.tsx
+confirmMutation.mutate(confirmItems, {
+  onSuccess: () => {
+    haptics.notification(Haptics.NotificationFeedbackType.Success);
+    // Pop both ReceiptReview and ReceiptCapture modals
+    navigation.popToTop();
+  },
+});
+```
+
+**When to use:** After completing a multi-step modal flow (capture → review → confirm) where the user should return to the main app.
+
+**When NOT to use:** Single-modal flows where `goBack()` returns to the right screen.
+
+**Why:** `goBack()` only pops one screen — in a Camera → Review stack, it returns to the camera instead of the main app. `popToTop()` dismisses the entire modal stack cleanly.
+
+---
+
+### React Native FormData File Upload Cast
+
+React Native's `FormData.append()` for file uploads requires an object with `uri`/`type`/`name` fields, but TypeScript types it as `Blob`. Use `as unknown as Blob` with a comment:
+
+```typescript
+// React Native FormData accepts object with uri/type/name (differs from web Blob API)
+formData.append("photos", {
+  uri: compressed.uri,
+  type: "image/jpeg",
+  name: `receipt_${index}.jpg`,
+} as unknown as Blob);
+```
+
+**When to use:** Any `FormData` file upload in React Native.
+
+**Why:** React Native's network layer serializes `{ uri, type, name }` objects as multipart file parts, but TypeScript expects `Blob | string`. The cast is unavoidable — the comment explains why.
 
 ---
 

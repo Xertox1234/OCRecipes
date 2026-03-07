@@ -4,6 +4,9 @@ import { getApiUrl } from "./query-client";
 import { compressImage, cleanupImage } from "./image-compression";
 import type { PhotoIntent, FoodCategory } from "@shared/constants/preparation";
 
+// Import shared types for use in this file, and re-export for consumers
+import type { LabelAnalysisResponse } from "@shared/types/label-analysis";
+
 // Types matching server response
 export interface FoodItem {
   name: string;
@@ -184,6 +187,95 @@ export async function confirmPhotoAnalysis(
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Confirm failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+export type {
+  LabelExtractionResult,
+  LabelAnalysisResponse,
+} from "@shared/types/label-analysis";
+
+/**
+ * Upload a photo for nutrition label analysis.
+ * Higher compression settings than food photos for text readability.
+ */
+export async function uploadLabelForAnalysis(
+  uri: string,
+  barcode?: string,
+): Promise<LabelAnalysisResponse> {
+  const token = await tokenStorage.get();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const compressed = await compressImage(uri, {
+    maxWidth: 1536,
+    maxHeight: 1536,
+    quality: 0.85,
+    targetSizeKB: 4500, // Allow larger for label text readability
+  });
+
+  try {
+    const parameters: Record<string, string> = {};
+    if (barcode) parameters.barcode = barcode;
+
+    const uploadResult = await uploadAsync(
+      `${getApiUrl()}/api/photos/analyze-label`,
+      compressed.uri,
+      {
+        httpMethod: "POST",
+        uploadType: FileSystemUploadType.MULTIPART,
+        fieldName: "photo",
+        parameters,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    if (uploadResult.status !== 200) {
+      try {
+        const errorData = JSON.parse(uploadResult.body);
+        throw new Error(
+          errorData.error || `Upload failed: ${uploadResult.status}`,
+        );
+      } catch {
+        throw new Error(`Upload failed: ${uploadResult.status}`);
+      }
+    }
+
+    return JSON.parse(uploadResult.body) as LabelAnalysisResponse;
+  } finally {
+    await cleanupImage(compressed.uri);
+  }
+}
+
+/**
+ * Confirm label analysis and save to daily log
+ */
+export async function confirmLabelAnalysis(
+  sessionId: string,
+  servingsConsumed: number,
+  mealType?: string,
+): Promise<{ id: number; productName: string }> {
+  const token = await tokenStorage.get();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const response = await fetch(`${getApiUrl()}/api/photos/confirm-label`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ sessionId, servingsConsumed, mealType }),
   });
 
   if (!response.ok) {

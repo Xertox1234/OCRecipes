@@ -20,7 +20,12 @@ import Animated, {
   withTiming,
   withSequence,
 } from "react-native-reanimated";
-import { useNavigation, useIsFocused } from "@react-navigation/native";
+import {
+  useNavigation,
+  useIsFocused,
+  useRoute,
+  RouteProp,
+} from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -29,6 +34,7 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import type { ScanScreenNavigationProp } from "@/types/navigation";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 // Camera abstraction imports
 import {
@@ -64,12 +70,25 @@ const RETICLE = {
   CORNER_RADIUS: 16,
 } as const;
 
+/** Larger frame for nutrition label scanning */
+const LABEL_FRAME = {
+  WIDTH: 300,
+  HEIGHT: 400,
+  CORNER_SIZE: 40,
+  CORNER_BORDER_WIDTH: 4,
+  CORNER_RADIUS: 16,
+} as const;
+
 export default function ScanScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<ScanScreenNavigationProp>();
+  const route = useRoute<RouteProp<RootStackParamList, "Scan">>();
   const isFocused = useIsFocused();
+
+  const isLabelMode = route.params?.mode === "label";
+  const frame = isLabelMode ? LABEL_FRAME : RETICLE;
   const {
     permission,
     isLoading: permissionLoading,
@@ -211,7 +230,11 @@ export default function ScanScreen() {
         const photo = await cameraRef.current.takePicture();
 
         if (photo?.uri) {
-          navigation.navigate("PhotoIntent", { imageUri: photo.uri });
+          if (isLabelMode) {
+            navigation.navigate("LabelAnalysis", { imageUri: photo.uri });
+          } else {
+            navigation.navigate("PhotoIntent", { imageUri: photo.uri });
+          }
           refreshScanCount();
         }
       } catch {
@@ -319,12 +342,12 @@ export default function ScanScreen() {
     <View style={styles.container}>
       <CameraView
         ref={cameraRef}
-        barcodeTypes={availableBarcodeTypes}
-        onBarcodeScanned={onBarcodeScanned}
+        barcodeTypes={isLabelMode ? [] : availableBarcodeTypes}
+        onBarcodeScanned={isLabelMode ? undefined : onBarcodeScanned}
         enableTorch={torch}
         facing="back"
         isActive={isFocused}
-        photoQuality={highQualityCapture ? 0.9 : 0.5}
+        photoQuality={isLabelMode ? 0.85 : highQualityCapture ? 0.9 : 0.5}
       />
 
       <View style={[styles.overlay, { paddingTop: insets.top + Spacing.md }]}>
@@ -363,33 +386,59 @@ export default function ScanScreen() {
         </View>
 
         <View style={styles.reticleContainer}>
-          <AnimatedView style={[styles.reticle, cornerStyle]}>
+          <AnimatedView
+            style={[
+              styles.reticle,
+              cornerStyle,
+              { width: frame.WIDTH, height: frame.HEIGHT },
+            ]}
+          >
             <View
               style={[
                 styles.corner,
                 styles.cornerTL,
-                { borderColor: theme.success },
+                {
+                  borderColor: theme.success,
+                  width: frame.CORNER_SIZE,
+                  height: frame.CORNER_SIZE,
+                  borderTopLeftRadius: frame.CORNER_RADIUS,
+                },
               ]}
             />
             <View
               style={[
                 styles.corner,
                 styles.cornerTR,
-                { borderColor: theme.success },
+                {
+                  borderColor: theme.success,
+                  width: frame.CORNER_SIZE,
+                  height: frame.CORNER_SIZE,
+                  borderTopRightRadius: frame.CORNER_RADIUS,
+                },
               ]}
             />
             <View
               style={[
                 styles.corner,
                 styles.cornerBL,
-                { borderColor: theme.success },
+                {
+                  borderColor: theme.success,
+                  width: frame.CORNER_SIZE,
+                  height: frame.CORNER_SIZE,
+                  borderBottomLeftRadius: frame.CORNER_RADIUS,
+                },
               ]}
             />
             <View
               style={[
                 styles.corner,
                 styles.cornerBR,
-                { borderColor: theme.success },
+                {
+                  borderColor: theme.success,
+                  width: frame.CORNER_SIZE,
+                  height: frame.CORNER_SIZE,
+                  borderBottomRightRadius: frame.CORNER_RADIUS,
+                },
               ]}
             />
           </AnimatedView>
@@ -410,7 +459,9 @@ export default function ScanScreen() {
             >
               {isScanning
                 ? "Scanning..."
-                : "Scan barcode or tap shutter for food photo"}
+                : isLabelMode
+                  ? "Align nutrition label within the frame"
+                  : "Scan barcode or tap shutter for food photo"}
             </ThemedText>
           </View>
 
@@ -519,14 +570,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   reticle: {
-    width: RETICLE.WIDTH,
-    height: RETICLE.HEIGHT,
     position: "relative",
   },
   corner: {
     position: "absolute",
-    width: RETICLE.CORNER_SIZE,
-    height: RETICLE.CORNER_SIZE,
     borderWidth: RETICLE.CORNER_BORDER_WIDTH,
   },
   cornerTL: {
@@ -534,28 +581,24 @@ const styles = StyleSheet.create({
     left: 0,
     borderBottomWidth: 0,
     borderRightWidth: 0,
-    borderTopLeftRadius: RETICLE.CORNER_RADIUS,
   },
   cornerTR: {
     top: 0,
     right: 0,
     borderBottomWidth: 0,
     borderLeftWidth: 0,
-    borderTopRightRadius: RETICLE.CORNER_RADIUS,
   },
   cornerBL: {
     bottom: 0,
     left: 0,
     borderTopWidth: 0,
     borderRightWidth: 0,
-    borderBottomLeftRadius: RETICLE.CORNER_RADIUS,
   },
   cornerBR: {
     bottom: 0,
     right: 0,
     borderTopWidth: 0,
     borderLeftWidth: 0,
-    borderBottomRightRadius: RETICLE.CORNER_RADIUS,
   },
   successPulse: {
     position: "absolute",

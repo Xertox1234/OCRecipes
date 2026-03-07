@@ -1008,6 +1008,40 @@ export type MenuScan = typeof menuScans.$inferSelect;
 export type InsertMenuScan = typeof menuScans.$inferInsert;
 
 // ============================================================================
+// RECEIPT SCANS (Receipt Scanner for Pantry)
+// ============================================================================
+
+export const receiptScans = pgTable(
+  "receipt_scans",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    itemCount: integer("item_count").default(0),
+    photoCount: integer("photo_count").default(1),
+    status: text("status").notNull().default("completed"),
+    scannedAt: timestamp("scanned_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("receipt_scans_user_id_idx").on(table.userId),
+    scannedAtIdx: index("receipt_scans_scanned_at_idx").on(table.scannedAt),
+  }),
+);
+
+export const receiptScansRelations = relations(receiptScans, ({ one }) => ({
+  user: one(users, {
+    fields: [receiptScans.userId],
+    references: [users.id],
+  }),
+}));
+
+export type ReceiptScan = typeof receiptScans.$inferSelect;
+export type InsertReceiptScan = typeof receiptScans.$inferInsert;
+
+// ============================================================================
 // GOAL ADJUSTMENT LOGS (Adaptive Goals)
 // ============================================================================
 

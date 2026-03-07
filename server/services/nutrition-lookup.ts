@@ -1077,6 +1077,63 @@ export async function lookupBarcode(
 }
 
 /**
+ * Count non-null nutrition fields in data. Pure function for testability.
+ */
+export function countNonNullNutritionFields(data: {
+  calories?: number | null;
+  protein?: number | null;
+  carbs?: number | null;
+  fat?: number | null;
+  fiber?: number | null;
+  sugar?: number | null;
+  sodium?: number | null;
+}): number {
+  let count = 0;
+  if (data.calories != null) count++;
+  if (data.protein != null) count++;
+  if (data.carbs != null) count++;
+  if (data.fat != null) count++;
+  if (data.fiber != null) count++;
+  if (data.sugar != null) count++;
+  if (data.sodium != null) count++;
+  return count;
+}
+
+/**
+ * Map label extraction data to NutritionData format for cache storage.
+ * Pure function for testability.
+ */
+export function mapLabelToNutritionData(labelData: {
+  calories?: number | null;
+  protein?: number | null;
+  totalCarbs?: number | null;
+  totalFat?: number | null;
+  dietaryFiber?: number | null;
+  totalSugars?: number | null;
+  sodium?: number | null;
+  servingSize?: string | null;
+  productName?: string | null;
+}): NutritionData {
+  return {
+    name: labelData.productName ?? "Label scan",
+    calories: labelData.calories ?? 0,
+    protein: labelData.protein ?? 0,
+    carbs: labelData.totalCarbs ?? 0,
+    fat: labelData.totalFat ?? 0,
+    fiber: labelData.dietaryFiber ?? 0,
+    sugar: labelData.totalSugars ?? 0,
+    sodium: labelData.sodium ?? 0,
+    servingSize: labelData.servingSize ?? "1 serving",
+    source: "usda", // closest match for label data source
+  };
+}
+
+/**
+ * Cache nutrition data (exported for use by label endpoints).
+ */
+export { cacheNutrition };
+
+/**
  * Reset the in-memory CNF food list cache. Used by tests only.
  */
 export function _resetCNFCacheForTesting(): void {

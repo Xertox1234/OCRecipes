@@ -39,6 +39,8 @@ export interface PremiumFeatures {
   glp1Companion: boolean;
   menuScanner: boolean;
   micronutrientTracking: boolean;
+  receiptScanner: boolean;
+  monthlyReceiptScans: number;
 }
 
 /** Represents effectively unlimited scans (JSON-safe alternative to Infinity). */
@@ -72,6 +74,8 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     glp1Companion: false,
     menuScanner: false,
     micronutrientTracking: false,
+    receiptScanner: false,
+    monthlyReceiptScans: 0,
   },
   premium: {
     maxDailyScans: UNLIMITED_SCANS,
@@ -100,6 +104,8 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     glp1Companion: true,
     menuScanner: true,
     micronutrientTracking: true,
+    receiptScanner: true,
+    monthlyReceiptScans: 15,
   },
 };
 

@@ -19,6 +19,12 @@ interface RecipeGenerationStatus {
   canGenerate: boolean;
 }
 
+interface ReceiptScanStatus {
+  count: number;
+  limit: number;
+  remaining: number;
+}
+
 interface PremiumContextType {
   tier: SubscriptionTier;
   features: PremiumFeatures;
@@ -30,9 +36,13 @@ interface PremiumContextType {
   canScanToday: boolean;
   recipeGenerationsToday: number;
   canGenerateRecipe: boolean;
+  monthlyReceiptScans: number;
+  receiptScanLimit: number;
+  canScanReceipt: boolean;
   refreshSubscription: () => Promise<void>;
   refreshScanCount: () => Promise<void>;
   refreshRecipeGenerationStatus: () => Promise<void>;
+  refreshReceiptScanCount: () => Promise<void>;
   refetch: () => Promise<void>;
 }
 
@@ -80,6 +90,17 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     staleTime: 30 * 1000, // 30 seconds
   });
 
+  // Fetch receipt scan count (only for premium users)
+  const isPremiumDerived =
+    (subscriptionData?.tier ?? "free") === "premium" &&
+    (subscriptionData?.isActive ?? false);
+  const { data: receiptScanData, refetch: refetchReceiptScanCount } =
+    useQuery<ReceiptScanStatus>({
+      queryKey: ["/api/receipt/scan-count"],
+      enabled: isAuthenticated && isPremiumDerived,
+      staleTime: 60 * 1000, // 60 seconds
+    });
+
   const tier = subscriptionData?.tier ?? "free";
   const features = subscriptionData?.features ?? DEFAULT_FEATURES;
   const isPremium = tier === "premium" && (subscriptionData?.isActive ?? false);
@@ -87,6 +108,10 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   const canScanToday = isPremium || dailyScanCount < features.maxDailyScans;
   const recipeGenerationsToday = recipeGenData?.generationsToday ?? 0;
   const canGenerateRecipe = recipeGenData?.canGenerate ?? false;
+  const monthlyReceiptScans = receiptScanData?.count ?? 0;
+  const receiptScanLimit =
+    receiptScanData?.limit ?? features.monthlyReceiptScans;
+  const canScanReceipt = isPremium && monthlyReceiptScans < receiptScanLimit;
 
   const refreshSubscription = useCallback(async () => {
     await refetchSubscription();
@@ -100,14 +125,24 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     await refetchRecipeGenStatus();
   }, [refetchRecipeGenStatus]);
 
+  const refreshReceiptScanCount = useCallback(async () => {
+    await refetchReceiptScanCount();
+  }, [refetchReceiptScanCount]);
+
   // Combined refetch for all status queries
   const refetch = useCallback(async () => {
     await Promise.all([
       refetchSubscription(),
       refetchScanCount(),
       refetchRecipeGenStatus(),
+      refetchReceiptScanCount(),
     ]);
-  }, [refetchSubscription, refetchScanCount, refetchRecipeGenStatus]);
+  }, [
+    refetchSubscription,
+    refetchScanCount,
+    refetchRecipeGenStatus,
+    refetchReceiptScanCount,
+  ]);
 
   // Combine error states - prioritize subscription error as it's the primary query
   const isError = isSubscriptionError || isScanCountError;
@@ -127,9 +162,13 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
         canScanToday,
         recipeGenerationsToday,
         canGenerateRecipe,
+        monthlyReceiptScans,
+        receiptScanLimit,
+        canScanReceipt,
         refreshSubscription,
         refreshScanCount,
         refreshRecipeGenerationStatus,
+        refreshReceiptScanCount,
         refetch,
       }}
     >

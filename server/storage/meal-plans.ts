@@ -553,6 +553,16 @@ export async function createPantryItem(
   return created;
 }
 
+/**
+ * Batch insert pantry items (used by receipt scanner).
+ */
+export async function createPantryItems(
+  items: InsertPantryItem[],
+): Promise<PantryItem[]> {
+  if (items.length === 0) return [];
+  return db.insert(pantryItems).values(items).returning();
+}
+
 export async function updatePantryItem(
   id: number,
   userId: string,
