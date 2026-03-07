@@ -15,19 +15,42 @@ import {
 } from "@shared/constants/preparation";
 import {
   analyzePhoto,
+  analyzeLabelPhoto,
   refineAnalysis,
   needsFollowUp,
   getFollowUpQuestions,
   type AnalysisResult,
+  type LabelExtractionResult,
 } from "../services/photo-analysis";
-import { batchNutritionLookup } from "../services/nutrition-lookup";
+import {
+  batchNutritionLookup,
+  countNonNullNutritionFields,
+  mapLabelToNutritionData,
+  cacheNutrition,
+} from "../services/nutrition-lookup";
+import multer from "multer";
 import {
   photoRateLimit,
   formatZodError,
   upload,
   checkPremiumFeature,
+  getPremiumFeatures,
   parseStringParam,
 } from "./_helpers";
+
+// Higher file size limit for label photos (5MB for text readability)
+const labelUpload = multer({
+  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP allowed."));
+    }
+  },
+});
 
 // In-memory store for analysis sessions
 // TODO: Replace with Redis for horizontal scaling in production
@@ -39,6 +62,16 @@ interface AnalysisSession {
   createdAt: number;
 }
 const analysisSessionStore = new Map<string, AnalysisSession>();
+
+// In-memory store for label analysis sessions
+interface LabelSession {
+  userId: string;
+  labelData: LabelExtractionResult;
+  barcode?: string;
+  createdAt: number;
+}
+const labelSessionStore = new Map<string, LabelSession>();
+const labelSessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
 // Track session timeout references to prevent memory leaks
 const sessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
@@ -119,6 +152,8 @@ export const _testInternals = {
   MAX_SESSIONS_GLOBAL,
   MAX_IMAGE_SIZE_BYTES,
   clearSession,
+  labelSessionStore,
+  labelSessionTimeouts,
 };
 
 export function register(app: Express): void {
@@ -151,7 +186,7 @@ export function register(app: Express): void {
             res,
             429,
             "Daily scan limit reached",
-            "DAILY_LIMIT_REACHED",
+            ErrorCode.LIMIT_REACHED,
           );
         }
 
@@ -428,6 +463,194 @@ export function register(app: Express): void {
         }
         console.error("Confirm error:", error);
         sendError(res, 500, "Failed to save meal", ErrorCode.INTERNAL_ERROR);
+      }
+    },
+  );
+
+  // ── Label Analysis Endpoints ──────────────────────────────────────────
+
+  // Zod schema for confirm-label request
+  const confirmLabelSchema = z.object({
+    sessionId: z.string(),
+    servingsConsumed: z.number().min(0.1).max(100).default(1),
+    mealType: z.string().optional(),
+  });
+
+  app.post(
+    "/api/photos/analyze-label",
+    requireAuth,
+    photoRateLimit,
+    labelUpload.single("photo"),
+    async (req: Request, res: Response) => {
+      try {
+        // Check scan limit (label scans share daily scan limit)
+        const features = await getPremiumFeatures(req);
+        const scanCount = await storage.getDailyScanCount(
+          req.userId!,
+          new Date(),
+        );
+
+        if (scanCount >= features.maxDailyScans) {
+          return sendError(
+            res,
+            429,
+            "Daily scan limit reached",
+            ErrorCode.LIMIT_REACHED,
+          );
+        }
+
+        if (!req.file) {
+          return sendError(
+            res,
+            400,
+            "No photo provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        const imageBase64 = req.file.buffer.toString("base64");
+        const barcode = (req.body?.barcode as string) || undefined;
+
+        const labelData = await analyzeLabelPhoto(imageBase64);
+
+        // Store session for confirm step
+        const sessionId = crypto.randomUUID();
+        labelSessionStore.set(sessionId, {
+          userId: req.userId!,
+          labelData,
+          barcode,
+          createdAt: Date.now(),
+        });
+
+        // Auto-expire after 30 minutes
+        const timeoutId = setTimeout(() => {
+          labelSessionStore.delete(sessionId);
+          labelSessionTimeouts.delete(sessionId);
+        }, SESSION_TIMEOUT);
+        labelSessionTimeouts.set(sessionId, timeoutId);
+
+        res.json({
+          sessionId,
+          intent: "label" as const,
+          labelData,
+          barcode,
+        });
+      } catch (error) {
+        console.error("Label analysis error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to analyze label",
+          ErrorCode.INTERNAL_ERROR,
+        );
+      }
+    },
+  );
+
+  app.post(
+    "/api/photos/confirm-label",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const validated = confirmLabelSchema.parse(req.body);
+
+        const session = labelSessionStore.get(validated.sessionId);
+        if (!session) {
+          return sendError(
+            res,
+            404,
+            "Session not found or expired",
+            ErrorCode.NOT_FOUND,
+          );
+        }
+
+        if (session.userId !== req.userId!) {
+          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
+        }
+
+        const { labelData, barcode } = session;
+        const servings = validated.servingsConsumed;
+
+        // Scale values by servings consumed
+        const scaledCalories = (labelData.calories ?? 0) * servings;
+        const scaledProtein = (labelData.protein ?? 0) * servings;
+        const scaledCarbs = (labelData.totalCarbs ?? 0) * servings;
+        const scaledFat = (labelData.totalFat ?? 0) * servings;
+        const scaledFiber = (labelData.dietaryFiber ?? 0) * servings;
+        const scaledSugar = (labelData.totalSugars ?? 0) * servings;
+        const scaledSodium = (labelData.sodium ?? 0) * servings;
+
+        const productName = labelData.productName || "Nutrition label scan";
+
+        const [scannedItem] = await db.transaction(async (tx) => {
+          const [item] = await tx
+            .insert(scannedItems)
+            .values({
+              userId: req.userId!,
+              barcode: barcode || null,
+              productName,
+              servingSize: labelData.servingSize || null,
+              calories: scaledCalories.toString(),
+              protein: scaledProtein.toString(),
+              carbs: scaledCarbs.toString(),
+              fat: scaledFat.toString(),
+              fiber: scaledFiber.toString(),
+              sugar: scaledSugar.toString(),
+              sodium: scaledSodium.toString(),
+              sourceType: "label",
+              aiConfidence: labelData.confidence.toString(),
+            })
+            .returning();
+
+          await tx.insert(dailyLogs).values({
+            userId: req.userId!,
+            scannedItemId: item.id,
+            servings: "1",
+            mealType: validated.mealType || null,
+          });
+
+          return [item];
+        });
+
+        // Silent cache improvement: if barcode was provided, compare label
+        // vs cached data field count — update cache if label is more complete
+        if (barcode) {
+          try {
+            const labelNutrition = mapLabelToNutritionData(labelData);
+            const labelFieldCount = countNonNullNutritionFields(labelNutrition);
+            if (labelFieldCount >= 4) {
+              await cacheNutrition(barcode, labelNutrition);
+            }
+          } catch {
+            // Cache improvement is best-effort
+          }
+        }
+
+        // Clean up session
+        const timeoutRef = labelSessionTimeouts.get(validated.sessionId);
+        if (timeoutRef) {
+          clearTimeout(timeoutRef);
+          labelSessionTimeouts.delete(validated.sessionId);
+        }
+        labelSessionStore.delete(validated.sessionId);
+
+        res.status(201).json(scannedItem);
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        console.error("Label confirm error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to save label data",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

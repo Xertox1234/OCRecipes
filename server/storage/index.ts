@@ -18,8 +18,9 @@ import * as community from "./community";
 import * as medication from "./medication";
 import * as fasting from "./fasting";
 import * as menu from "./menu";
+import * as receipt from "./receipt";
 
-export { escapeLike, getDayBounds } from "./helpers";
+export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 
 export const storage = {
   // Users & profiles
@@ -78,6 +79,7 @@ export const storage = {
   getPantryItems: mealPlans.getPantryItems,
   getPantryItem: mealPlans.getPantryItem,
   createPantryItem: mealPlans.createPantryItem,
+  createPantryItems: mealPlans.createPantryItems,
   updatePantryItem: mealPlans.updatePantryItem,
   deletePantryItem: mealPlans.deletePantryItem,
   getExpiringPantryItems: mealPlans.getExpiringPantryItems,
@@ -160,4 +162,8 @@ export const storage = {
   getMenuScans: menu.getMenuScans,
   createMenuScan: menu.createMenuScan,
   deleteMenuScan: menu.deleteMenuScan,
+
+  // Receipt scans
+  createReceiptScan: receipt.createReceiptScan,
+  getMonthlyReceiptScanCount: receipt.getMonthlyReceiptScanCount,
 };

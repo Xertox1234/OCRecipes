@@ -96,6 +96,24 @@ export function ScanFAB() {
           navigation.navigate("QuickLog");
         },
       },
+      {
+        icon: "file-text",
+        label: "Scan Label",
+        onPress: () => {
+          closeSpeedDial();
+          haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+          navigation.navigate("Scan", { mode: "label" });
+        },
+      },
+      {
+        icon: "shopping-bag",
+        label: "Receipt Scan",
+        onPress: () => {
+          closeSpeedDial();
+          haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+          navigation.navigate("ReceiptCapture");
+        },
+      },
     ],
     [closeSpeedDial, haptics, navigation],
   );

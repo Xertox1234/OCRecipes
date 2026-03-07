@@ -7,6 +7,9 @@ import { getCuisineForFood } from "./cultural-food-map";
 import { openai } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 
+// Import shared type for use in this file, and re-export for consumers
+import type { LabelExtractionResult } from "@shared/types/label-analysis";
+
 // Zod schemas for runtime validation (from institutional learning: unsafe-type-cast-zod-validation)
 const foodItemSchema = z.object({
   name: z.string(),
@@ -115,6 +118,163 @@ Respond with JSON only:
   "followUpQuestions": []
 }`;
 
+const LABEL_PROMPT = `You are a nutrition label extraction assistant. Extract ALL visible nutrition values from this nutrition facts label photo.
+
+Extract:
+1. Serving size (e.g., "1 cup (240ml)", "30g", "2 cookies (28g)")
+2. Calories
+3. Macronutrients: total fat, saturated fat, trans fat, cholesterol, sodium, total carbohydrates, dietary fiber, total sugars, added sugars, protein
+4. Vitamins and minerals with % Daily Value if visible (e.g., Vitamin D, Calcium, Iron, Potassium, Vitamin A, Vitamin C)
+5. Any other nutrients listed
+
+Rules:
+- Report values exactly as printed on the label
+- Use null for any value not visible or unreadable
+- Include units (g, mg, mcg, %)
+- If the label is partially obscured or blurry, extract what is readable and set confidence accordingly
+
+${SYSTEM_PROMPT_BOUNDARY}
+
+Respond with JSON only:
+{
+  "servingSize": "serving size text",
+  "servingsPerContainer": number or null,
+  "calories": number or null,
+  "totalFat": number or null,
+  "saturatedFat": number or null,
+  "transFat": number or null,
+  "cholesterol": number or null,
+  "sodium": number or null,
+  "totalCarbs": number or null,
+  "dietaryFiber": number or null,
+  "totalSugars": number or null,
+  "addedSugars": number or null,
+  "protein": number or null,
+  "vitaminD": number or null,
+  "calcium": number or null,
+  "iron": number or null,
+  "potassium": number or null,
+  "confidence": 0.9,
+  "productName": "product name if visible, or null"
+}`;
+
+export const labelExtractionSchema = z.object({
+  servingSize: z.string().nullable(),
+  servingsPerContainer: z.number().nullable(),
+  calories: z.number().nullable(),
+  totalFat: z.number().nullable(),
+  saturatedFat: z.number().nullable(),
+  transFat: z.number().nullable(),
+  cholesterol: z.number().nullable(),
+  sodium: z.number().nullable(),
+  totalCarbs: z.number().nullable(),
+  dietaryFiber: z.number().nullable(),
+  totalSugars: z.number().nullable(),
+  addedSugars: z.number().nullable(),
+  protein: z.number().nullable(),
+  vitaminD: z.number().nullable(),
+  calcium: z.number().nullable(),
+  iron: z.number().nullable(),
+  potassium: z.number().nullable(),
+  confidence: z.number().min(0).max(1),
+  productName: z.string().nullable(),
+});
+export type { LabelExtractionResult } from "@shared/types/label-analysis";
+
+/**
+ * Analyze a nutrition label photo to extract all visible values.
+ * Uses detail: "high" for reading small label text.
+ */
+export async function analyzeLabelPhoto(
+  imageBase64: string,
+): Promise<LabelExtractionResult> {
+  const startTime = Date.now();
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_completion_tokens: 800,
+      messages: [
+        {
+          role: "system",
+          content: LABEL_PROMPT,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Extract all nutrition values from this label:",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${imageBase64}`,
+                detail: "high", // critical for reading small label text
+              },
+            },
+          ],
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const content = response.choices[0]?.message?.content || "{}";
+    const parsed = labelExtractionSchema.safeParse(JSON.parse(content));
+
+    if (!parsed.success) {
+      console.error("Label extraction validation failed:", parsed.error);
+      return {
+        servingSize: null,
+        servingsPerContainer: null,
+        calories: null,
+        totalFat: null,
+        saturatedFat: null,
+        transFat: null,
+        cholesterol: null,
+        sodium: null,
+        totalCarbs: null,
+        dietaryFiber: null,
+        totalSugars: null,
+        addedSugars: null,
+        protein: null,
+        vitaminD: null,
+        calcium: null,
+        iron: null,
+        potassium: null,
+        confidence: 0,
+        productName: null,
+      };
+    }
+
+    console.warn(`Label extraction completed in ${Date.now() - startTime}ms`);
+    return parsed.data;
+  } catch (error) {
+    console.error("Label analysis error:", error);
+    return {
+      servingSize: null,
+      servingsPerContainer: null,
+      calories: null,
+      totalFat: null,
+      saturatedFat: null,
+      transFat: null,
+      cholesterol: null,
+      sodium: null,
+      totalCarbs: null,
+      dietaryFiber: null,
+      totalSugars: null,
+      addedSugars: null,
+      protein: null,
+      vitaminD: null,
+      calcium: null,
+      iron: null,
+      potassium: null,
+      confidence: 0,
+      productName: null,
+    };
+  }
+}
+
 /** Get the system prompt and max completion tokens for a given intent */
 export function getPromptForIntent(intent: PhotoIntent): {
   prompt: string;
@@ -125,6 +285,8 @@ export function getPromptForIntent(intent: PhotoIntent): {
       return { prompt: IDENTIFY_PROMPT, maxTokens: 300 };
     case "recipe":
       return { prompt: RECIPE_PROMPT, maxTokens: 300 };
+    case "label":
+      return { prompt: LABEL_PROMPT, maxTokens: 800 };
     case "log":
     case "calories":
     default:

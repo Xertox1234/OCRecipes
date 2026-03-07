@@ -17,3 +17,18 @@ export function getDayBounds(date: Date): {
   endOfDay.setHours(23, 59, 59, 999);
   return { startOfDay, endOfDay };
 }
+
+/**
+ * Returns the first day 00:00:00.000 and last day 23:59:59.999 of the month
+ * containing the given date.
+ */
+export function getMonthBounds(date: Date): {
+  startOfMonth: Date;
+  endOfMonth: Date;
+} {
+  const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  endOfMonth.setHours(23, 59, 59, 999);
+  return { startOfMonth, endOfMonth };
+}

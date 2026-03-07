@@ -13,6 +13,9 @@ import EditDietaryProfileScreen from "@/screens/EditDietaryProfileScreen";
 import FeaturedRecipeDetailScreen from "@/screens/FeaturedRecipeDetailScreen";
 import QuickLogScreen from "@/screens/QuickLogScreen";
 import MenuScanResultScreen from "@/screens/MenuScanResultScreen";
+import LabelAnalysisScreen from "@/screens/LabelAnalysisScreen";
+import ReceiptCaptureScreen from "@/screens/ReceiptCaptureScreen";
+import ReceiptReviewScreen from "@/screens/ReceiptReviewScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
@@ -25,7 +28,8 @@ export type RootStackParamList = {
   Login: undefined;
   Onboarding: undefined;
   Main: undefined;
-  Scan: undefined;
+  Scan: { mode?: "label" } | undefined;
+  LabelAnalysis: { imageUri: string; barcode?: string };
   NutritionDetail: {
     barcode?: string;
     imageUri?: string;
@@ -47,6 +51,8 @@ export type RootStackParamList = {
     restaurantName?: string;
     cuisine?: string;
   };
+  ReceiptCapture: undefined;
+  ReceiptReview: { photoUris: string[] };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -159,6 +165,31 @@ export default function RootStackNavigator() {
             component={MenuScanResultScreen}
             options={{
               headerTitle: "Menu Analysis",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="LabelAnalysis"
+            component={LabelAnalysisScreen}
+            options={{
+              headerTitle: "Label Analysis",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="ReceiptCapture"
+            component={ReceiptCaptureScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="ReceiptReview"
+            component={ReceiptReviewScreen}
+            options={{
+              headerTitle: "Review Items",
               presentation: "modal",
             }}
           />

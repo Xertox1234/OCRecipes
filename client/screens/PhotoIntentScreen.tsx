@@ -72,6 +72,12 @@ const INTENT_OPTIONS: IntentOption[] = [
     icon: "list",
     requiresPremium: true,
   },
+  {
+    intent: "label",
+    label: "Scan nutrition label",
+    description: "Extract values from a nutrition facts label",
+    icon: "file-text",
+  },
 ];
 
 export default function PhotoIntentScreen() {
@@ -93,10 +99,14 @@ export default function PhotoIntentScreen() {
 
   const handleSelectIntent = (option: IntentOption) => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate("PhotoAnalysis", {
-      imageUri,
-      intent: option.intent,
-    });
+    if (option.intent === "label") {
+      navigation.navigate("LabelAnalysis", { imageUri });
+    } else {
+      navigation.navigate("PhotoAnalysis", {
+        imageUri,
+        intent: option.intent,
+      });
+    }
   };
 
   const isRecipeAvailable = features.recipeGeneration && canGenerateRecipe;

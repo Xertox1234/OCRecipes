@@ -6,6 +6,7 @@ export const photoIntents = [
   "recipe",
   "calories",
   "menu",
+  "label",
 ] as const;
 export const photoIntentSchema = z.enum(photoIntents);
 export type PhotoIntent = z.infer<typeof photoIntentSchema>;
@@ -97,6 +98,12 @@ export const INTENT_CONFIG: Record<
     needsSession: false,
     canLog: false,
     label: "Scan restaurant menu",
+  },
+  label: {
+    needsNutrition: false,
+    needsSession: true,
+    canLog: true,
+    label: "Scan nutrition label",
   },
 };
 

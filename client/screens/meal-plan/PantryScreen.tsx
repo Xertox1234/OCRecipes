@@ -31,6 +31,9 @@ import {
   useCreatePantryItem,
   useDeletePantryItem,
 } from "@/hooks/usePantry";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { PantryItem } from "@shared/schema";
 
 function getExpirationBadge(expiresAt: string | Date | null) {
@@ -119,6 +122,8 @@ export default function PantryScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { features } = usePremiumContext();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");
@@ -281,7 +286,30 @@ export default function PantryScreen() {
         }
         ListHeaderComponent={
           <View style={styles.listHeader}>
-            <ThemedText style={styles.listTitle}>Your Pantry</ThemedText>
+            <View style={styles.listHeaderTop}>
+              <ThemedText style={styles.listTitle}>Your Pantry</ThemedText>
+              {features.receiptScanner && (
+                <Pressable
+                  onPress={() => {
+                    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+                    navigation.navigate("ReceiptCapture");
+                  }}
+                  style={[
+                    styles.receiptButton,
+                    { backgroundColor: withOpacity(theme.link, 0.1) },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Scan receipt to add items"
+                >
+                  <Feather name="camera" size={16} color={theme.link} />
+                  <ThemedText
+                    style={[styles.receiptButtonText, { color: theme.link }]}
+                  >
+                    Scan Receipt
+                  </ThemedText>
+                </Pressable>
+              )}
+            </View>
             <ThemedText
               style={[styles.itemCountText, { color: theme.textSecondary }]}
             >
@@ -359,10 +387,27 @@ const styles = StyleSheet.create({
   listHeader: {
     marginBottom: Spacing.lg,
   },
+  listHeaderTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   listTitle: {
     fontSize: 20,
     fontFamily: FontFamily.bold,
     marginBottom: Spacing.xs,
+  },
+  receiptButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.md,
+  },
+  receiptButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   itemCountText: {
     fontSize: 13,

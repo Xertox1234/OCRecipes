@@ -1,0 +1,484 @@
+import React, { useState, useCallback, useEffect } from "react";
+import {
+  StyleSheet,
+  View,
+  FlatList,
+  TextInput,
+  Pressable,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+
+import { ThemedText } from "@/components/ThemedText";
+import { SwipeableRow } from "@/components/SwipeableRow";
+import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
+import {
+  useReceiptScan,
+  useReceiptConfirm,
+  type ReceiptItem,
+} from "@/hooks/useReceiptScan";
+import {
+  Spacing,
+  BorderRadius,
+  FontFamily,
+  withOpacity,
+} from "@/constants/theme";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+
+interface EditableItem extends ReceiptItem {
+  id: string;
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  produce: "#4CAF50", // hardcoded
+  meat: "#E53935", // hardcoded
+  seafood: "#1E88E5", // hardcoded
+  dairy: "#FFC107", // hardcoded
+  bakery: "#8D6E63", // hardcoded
+  grains: "#FF9800", // hardcoded
+  canned: "#78909C", // hardcoded
+  condiments: "#AB47BC", // hardcoded
+  spices: "#F44336", // hardcoded
+  frozen: "#42A5F5", // hardcoded
+  beverages: "#26A69A", // hardcoded
+  snacks: "#FFB300", // hardcoded
+  other: "#9E9E9E", // hardcoded
+};
+
+function ItemSeparator({ color }: { color: string }) {
+  return <View style={[styles.separator, { backgroundColor: color }]} />;
+}
+
+export default function ReceiptReviewScreen() {
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+  const { theme } = useTheme();
+  const haptics = useHaptics();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, "ReceiptReview">>();
+
+  const { photoUris } = route.params;
+  const scanMutation = useReceiptScan();
+  const confirmMutation = useReceiptConfirm();
+
+  const [items, setItems] = useState<EditableItem[]>([]);
+  const [isPartial, setIsPartial] = useState(false);
+
+  // Trigger scan on mount
+  useEffect(() => {
+    scanMutation.mutate(photoUris, {
+      onSuccess: (result) => {
+        setItems(
+          result.items.map((item, i) => ({
+            ...item,
+            id: `${i}-${item.name}`,
+          })),
+        );
+        setIsPartial(result.isPartialExtraction);
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
+  }, []);
+
+  const handleRemoveItem = useCallback(
+    (id: string) => {
+      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+      setItems((prev) => prev.filter((item) => item.id !== id));
+    },
+    [haptics],
+  );
+
+  const handleUpdateName = useCallback((id: string, name: string) => {
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, name } : item)),
+    );
+  }, []);
+
+  const handleUpdateQuantity = useCallback((id: string, qty: string) => {
+    const num = parseFloat(qty);
+    if (!isNaN(num) && num >= 0) {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, quantity: num } : item,
+        ),
+      );
+    }
+  }, []);
+
+  const handleConfirm = useCallback(() => {
+    if (items.length === 0) return;
+    haptics.impact(Haptics.ImpactFeedbackStyle.Heavy);
+
+    const confirmItems = items.map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      unit: item.unit,
+      category: item.category,
+      estimatedShelfLifeDays: item.estimatedShelfLifeDays,
+    }));
+
+    confirmMutation.mutate(confirmItems, {
+      onSuccess: () => {
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        // Pop both ReceiptReview and ReceiptCapture modals to return to main app
+        navigation.popToTop();
+      },
+    });
+  }, [items, haptics, confirmMutation, navigation]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: EditableItem }) => {
+      const catColor = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.other;
+      const expiryDays = item.estimatedShelfLifeDays;
+
+      return (
+        <SwipeableRow
+          rightAction={{
+            icon: "trash-2",
+            label: "Remove",
+            backgroundColor: theme.error,
+            onAction: () => handleRemoveItem(item.id),
+          }}
+        >
+          <View
+            style={[
+              styles.itemRow,
+              { backgroundColor: theme.backgroundSecondary },
+            ]}
+          >
+            <View style={styles.itemMain}>
+              <TextInput
+                style={[styles.itemName, { color: theme.text }]}
+                value={item.name}
+                onChangeText={(text) => handleUpdateName(item.id, text)}
+                placeholderTextColor={theme.textSecondary}
+              />
+              <ThemedText
+                style={[styles.originalName, { color: theme.textSecondary }]}
+                numberOfLines={1}
+              >
+                {item.originalName}
+              </ThemedText>
+            </View>
+
+            <View style={styles.itemMeta}>
+              <TextInput
+                style={[
+                  styles.qtyInput,
+                  {
+                    color: theme.text,
+                    borderColor: withOpacity(theme.text, 0.15),
+                  },
+                ]}
+                value={String(item.quantity)}
+                onChangeText={(text) => handleUpdateQuantity(item.id, text)}
+                keyboardType="numeric"
+              />
+
+              <View
+                style={[
+                  styles.badge,
+                  { backgroundColor: withOpacity(catColor, 0.15) },
+                ]}
+              >
+                <ThemedText style={[styles.badgeText, { color: catColor }]}>
+                  {item.category}
+                </ThemedText>
+              </View>
+
+              <View
+                style={[
+                  styles.badge,
+                  { backgroundColor: withOpacity(theme.textSecondary, 0.1) },
+                ]}
+              >
+                <ThemedText
+                  style={[styles.badgeText, { color: theme.textSecondary }]}
+                >
+                  ~{expiryDays}d
+                </ThemedText>
+              </View>
+            </View>
+          </View>
+        </SwipeableRow>
+      );
+    },
+    [theme, handleRemoveItem, handleUpdateName, handleUpdateQuantity],
+  );
+
+  // Loading state
+  if (scanMutation.isPending) {
+    return (
+      <View
+        style={[
+          styles.centered,
+          { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
+        ]}
+      >
+        <ActivityIndicator size="large" color={theme.link} />
+        <ThemedText
+          style={[styles.loadingText, { color: theme.textSecondary }]}
+        >
+          Analyzing receipt...
+        </ThemedText>
+        <ThemedText
+          style={[styles.loadingSubtext, { color: theme.textSecondary }]}
+        >
+          This may take a few seconds
+        </ThemedText>
+      </View>
+    );
+  }
+
+  // Error / failed state
+  if (scanMutation.isError) {
+    return (
+      <View
+        style={[
+          styles.centered,
+          { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
+        ]}
+      >
+        <Feather name="alert-circle" size={48} color={theme.error} />
+        <ThemedText style={[styles.errorText, { color: theme.text }]}>
+          Could not read the receipt
+        </ThemedText>
+        <ThemedText
+          style={[styles.errorSubtext, { color: theme.textSecondary }]}
+        >
+          Try taking a clearer photo with good lighting
+        </ThemedText>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={[styles.retryButton, { backgroundColor: theme.link }]}
+          accessibilityRole="button"
+          accessibilityLabel="Try again"
+        >
+          <ThemedText style={{ color: theme.buttonText, fontWeight: "600" }}>
+            Try Again
+          </ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // No items extracted
+  if (scanMutation.isSuccess && items.length === 0) {
+    return (
+      <View
+        style={[
+          styles.centered,
+          { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
+        ]}
+      >
+        <Feather name="shopping-bag" size={48} color={theme.textSecondary} />
+        <ThemedText style={[styles.errorText, { color: theme.text }]}>
+          No food items found
+        </ThemedText>
+        <ThemedText
+          style={[styles.errorSubtext, { color: theme.textSecondary }]}
+        >
+          The receipt might not contain recognizable food items
+        </ThemedText>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={[styles.retryButton, { backgroundColor: theme.link }]}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ThemedText style={{ color: theme.buttonText, fontWeight: "600" }}>
+            Go Back
+          </ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={headerHeight}
+    >
+      {/* Partial extraction warning */}
+      {isPartial && (
+        <View
+          style={[
+            styles.warningBanner,
+            { backgroundColor: withOpacity(theme.warning, 0.15) },
+          ]}
+        >
+          <Feather name="alert-triangle" size={16} color={theme.warning} />
+          <ThemedText style={[styles.warningText, { color: theme.warning }]}>
+            Some items may be missing — check the list
+          </ThemedText>
+        </View>
+      )}
+
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        contentContainerStyle={styles.listContent}
+        ItemSeparatorComponent={() => (
+          <ItemSeparator color={withOpacity(theme.text, 0.08)} />
+        )}
+      />
+
+      {/* Bottom action bar */}
+      <View
+        style={[
+          styles.bottomBar,
+          {
+            backgroundColor: theme.backgroundSecondary,
+            paddingBottom: insets.bottom + Spacing.sm,
+            borderTopColor: withOpacity(theme.text, 0.08),
+          },
+        ]}
+      >
+        <Pressable
+          onPress={handleConfirm}
+          disabled={confirmMutation.isPending || items.length === 0}
+          style={[
+            styles.confirmButton,
+            {
+              backgroundColor: theme.link,
+              opacity: confirmMutation.isPending ? 0.6 : 1,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`Add ${items.length} items to pantry`}
+        >
+          {confirmMutation.isPending ? (
+            <ActivityIndicator size="small" color={theme.buttonText} />
+          ) : (
+            <ThemedText
+              style={[styles.confirmText, { color: theme.buttonText }]}
+            >
+              Add to Pantry ({items.length} items)
+            </ThemedText>
+          )}
+        </Pressable>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.xl,
+  },
+  loadingText: {
+    fontSize: 17,
+    fontWeight: "600",
+    marginTop: Spacing.lg,
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    marginTop: Spacing.xs,
+  },
+  errorText: {
+    fontSize: 17,
+    fontWeight: "600",
+    marginTop: Spacing.lg,
+    textAlign: "center",
+  },
+  errorSubtext: {
+    fontSize: 14,
+    marginTop: Spacing.xs,
+    textAlign: "center",
+  },
+  retryButton: {
+    marginTop: Spacing.xl,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  warningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  warningText: {
+    fontSize: 13,
+  },
+  listContent: {
+    paddingVertical: Spacing.sm,
+  },
+  separator: {
+    height: 1,
+    marginLeft: Spacing.md,
+  },
+  itemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  itemMain: {
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  itemName: {
+    fontSize: 15,
+    fontFamily: FontFamily.medium,
+  },
+  originalName: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  itemMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+  },
+  qtyInput: {
+    width: 40,
+    fontSize: 14,
+    textAlign: "center",
+    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  badge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  badgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  bottomBar: {
+    paddingTop: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderTopWidth: 1,
+  },
+  confirmButton: {
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+  },
+  confirmText: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+});

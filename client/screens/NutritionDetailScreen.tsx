@@ -946,6 +946,44 @@ export default function NutritionDetailScreen() {
           </Animated.View>
         ) : null}
 
+        {/* Verify with label prompt — shown when 2+ nutrition fields are missing */}
+        {!itemId &&
+          barcode &&
+          nutrition &&
+          [
+            nutrition.calories,
+            nutrition.protein,
+            nutrition.carbs,
+            nutrition.fat,
+            nutrition.fiber,
+            nutrition.sugar,
+            nutrition.sodium,
+          ].filter((v) => v == null).length >= 2 && (
+            <Pressable
+              onPress={() => navigation.navigate("Scan", { mode: "label" })}
+              accessibilityLabel="Verify nutrition data with a label photo"
+              accessibilityRole="button"
+              style={[
+                styles.verifyPrompt,
+                { backgroundColor: withOpacity(theme.info, 0.08) },
+              ]}
+            >
+              <Feather name="camera" size={18} color={theme.info} />
+              <View style={{ flex: 1 }}>
+                <ThemedText
+                  type="body"
+                  style={{ color: theme.info, fontWeight: "600" }}
+                >
+                  Data seems incomplete
+                </ThemedText>
+                <ThemedText type="small" style={{ color: theme.info }}>
+                  Verify with a nutrition label photo
+                </ThemedText>
+              </View>
+              <Feather name="chevron-right" size={18} color={theme.info} />
+            </Pressable>
+          )}
+
         {!itemId ? (
           <View style={styles.buttonContainer}>
             <Button
@@ -1084,6 +1122,14 @@ const styles = StyleSheet.create({
   },
   addButton: {
     marginBottom: Spacing.md,
+  },
+  verifyPrompt: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.lg,
   },
   correctionContainer: {
     flexDirection: "row",
