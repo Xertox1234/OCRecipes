@@ -17,6 +17,7 @@ describe("AddItemMenuSheet", () => {
     mealType: "breakfast" as const,
     onChooseRecipe: vi.fn(),
     onSimpleEntry: vi.fn(),
+    onImportRecipe: vi.fn(),
     onDismiss: vi.fn(),
   };
 
@@ -49,5 +50,16 @@ describe("AddItemMenuSheet", () => {
     renderComponent(<AddItemMenuSheet {...defaultProps} />);
     fireEvent.click(screen.getByLabelText("Simple entry"));
     expect(defaultProps.onSimpleEntry).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders Import Recipe option", () => {
+    renderComponent(<AddItemMenuSheet {...defaultProps} />);
+    expect(screen.getByText("Import Recipe")).toBeDefined();
+  });
+
+  it("calls onImportRecipe when Import Recipe is pressed", () => {
+    renderComponent(<AddItemMenuSheet {...defaultProps} />);
+    fireEvent.click(screen.getByLabelText("Import recipe"));
+    expect(defaultProps.onImportRecipe).toHaveBeenCalledTimes(1);
   });
 });

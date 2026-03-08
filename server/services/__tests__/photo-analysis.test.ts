@@ -1,5 +1,29 @@
 import { z } from "zod";
 
+// Re-create the recipe photo schema here for isolated testing
+const recipeIngredientSchema = z.object({
+  name: z.string(),
+  quantity: z.string().nullable().default(null),
+  unit: z.string().nullable().default(null),
+});
+
+const recipePhotoResultSchema = z.object({
+  title: z.string(),
+  description: z.string().nullable().default(null),
+  ingredients: z.array(recipeIngredientSchema),
+  instructions: z.string().nullable().default(null),
+  servings: z.number().nullable().default(null),
+  prepTimeMinutes: z.number().nullable().default(null),
+  cookTimeMinutes: z.number().nullable().default(null),
+  cuisine: z.string().nullable().default(null),
+  dietTags: z.array(z.string()).default([]),
+  caloriesPerServing: z.number().nullable().default(null),
+  proteinPerServing: z.number().nullable().default(null),
+  carbsPerServing: z.number().nullable().default(null),
+  fatPerServing: z.number().nullable().default(null),
+  confidence: z.number().min(0).max(1),
+});
+
 // Re-create the schemas here for testing (same as in photo-analysis.ts)
 // This avoids importing the entire module with OpenAI dependencies
 const foodItemSchema = z.object({
@@ -384,5 +408,126 @@ describe("Photo Analysis Schemas", () => {
 
       expect(analysisResultSchema.safeParse(errorResult).success).toBe(true);
     });
+  });
+});
+
+describe("Recipe Photo Analysis Schema", () => {
+  it("validates a complete recipe photo result", () => {
+    const validResult = {
+      title: "Chicken Parmesan",
+      description: "Classic Italian comfort dish",
+      ingredients: [
+        { name: "chicken breast", quantity: "2", unit: "lbs" },
+        { name: "marinara sauce", quantity: "1", unit: "cup" },
+        { name: "mozzarella", quantity: "8", unit: "oz" },
+      ],
+      instructions:
+        "1. Bread the chicken\n2. Fry until golden\n3. Top with sauce and cheese",
+      servings: 4,
+      prepTimeMinutes: 20,
+      cookTimeMinutes: 30,
+      cuisine: "Italian",
+      dietTags: ["gluten-free"],
+      caloriesPerServing: 450,
+      proteinPerServing: 35,
+      carbsPerServing: 20,
+      fatPerServing: 22,
+      confidence: 0.92,
+    };
+
+    const result = recipePhotoResultSchema.safeParse(validResult);
+    expect(result.success).toBe(true);
+  });
+
+  it("validates a minimal recipe with defaults", () => {
+    const minResult = {
+      title: "Mystery Recipe",
+      ingredients: [],
+      confidence: 0.4,
+    };
+
+    const result = recipePhotoResultSchema.safeParse(minResult);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.description).toBeNull();
+      expect(result.data.servings).toBeNull();
+      expect(result.data.dietTags).toEqual([]);
+      expect(result.data.caloriesPerServing).toBeNull();
+    }
+  });
+
+  it("rejects missing title", () => {
+    const noTitle = {
+      ingredients: [{ name: "flour", quantity: "2", unit: "cups" }],
+      confidence: 0.8,
+    };
+    expect(recipePhotoResultSchema.safeParse(noTitle).success).toBe(false);
+  });
+
+  it("rejects missing confidence", () => {
+    const noConfidence = {
+      title: "Recipe",
+      ingredients: [],
+    };
+    expect(recipePhotoResultSchema.safeParse(noConfidence).success).toBe(false);
+  });
+
+  it("rejects confidence above 1", () => {
+    const badConfidence = {
+      title: "Recipe",
+      ingredients: [],
+      confidence: 1.5,
+    };
+    expect(recipePhotoResultSchema.safeParse(badConfidence).success).toBe(
+      false,
+    );
+  });
+
+  it("validates ingredient with null quantity and unit", () => {
+    const validResult = {
+      title: "Simple Recipe",
+      ingredients: [{ name: "salt", quantity: null, unit: null }],
+      confidence: 0.9,
+    };
+
+    const result = recipePhotoResultSchema.safeParse(validResult);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.ingredients[0].quantity).toBeNull();
+      expect(result.data.ingredients[0].unit).toBeNull();
+    }
+  });
+
+  it("handles typical GPT-4o recipe extraction response", () => {
+    const gptResponse = {
+      title: "Grandma's Tomato Soup",
+      description: "A hearty homemade tomato soup recipe",
+      ingredients: [
+        { name: "tomatoes", quantity: "6", unit: "large" },
+        { name: "onion", quantity: "1", unit: "medium" },
+        { name: "garlic cloves", quantity: "3", unit: null },
+        { name: "olive oil", quantity: "2", unit: "tbsp" },
+        { name: "chicken broth", quantity: "4", unit: "cups" },
+      ],
+      instructions:
+        "1. Dice onion and garlic\n2. Sauté in olive oil\n3. Add tomatoes and broth\n4. Simmer 30 minutes",
+      servings: 6,
+      prepTimeMinutes: 15,
+      cookTimeMinutes: 35,
+      cuisine: "American",
+      dietTags: ["dairy-free"],
+      caloriesPerServing: 120,
+      proteinPerServing: 4,
+      carbsPerServing: 18,
+      fatPerServing: 5,
+      confidence: 0.88,
+    };
+
+    const result = recipePhotoResultSchema.safeParse(gptResponse);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.ingredients).toHaveLength(5);
+      expect(result.data.title).toBe("Grandma's Tomato Soup");
+    }
   });
 });

@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import {
   analyzePhoto,
+  analyzeRecipePhoto,
   refineAnalysis,
   needsFollowUp,
   getFollowUpQuestions,
@@ -23,6 +24,7 @@ vi.mock("../../storage", () => ({
 
 vi.mock("../../services/photo-analysis", () => ({
   analyzePhoto: vi.fn(),
+  analyzeRecipePhoto: vi.fn(),
   refineAnalysis: vi.fn(),
   needsFollowUp: vi.fn(),
   getFollowUpQuestions: vi.fn(),
@@ -438,6 +440,69 @@ describe("Photos Routes", () => {
 
       expect(_testInternals.analysisSessionStore.size).toBe(0);
       expect(_testInternals.userSessionCount.get("1")).toBeUndefined();
+    });
+  });
+
+  describe("POST /api/photos/analyze-recipe", () => {
+    it("returns 403 when user is free tier (premium gate)", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+      } as never);
+
+      const res = await request(app)
+        .post("/api/photos/analyze-recipe")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(403);
+    });
+
+    it("returns 200 with recipe data for premium user", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+      } as never);
+      vi.mocked(analyzeRecipePhoto).mockResolvedValue({
+        title: "Pancakes",
+        description: "Fluffy pancakes",
+        ingredients: [{ name: "flour", quantity: "2", unit: "cups" }],
+        instructions: "1. Mix\n2. Cook",
+        servings: 4,
+        prepTimeMinutes: 10,
+        cookTimeMinutes: 15,
+        cuisine: "American",
+        dietTags: [],
+        caloriesPerServing: 250,
+        proteinPerServing: 6,
+        carbsPerServing: 40,
+        fatPerServing: 8,
+        confidence: 0.9,
+      });
+
+      const res = await request(app)
+        .post("/api/photos/analyze-recipe")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe("Pancakes");
+      expect(res.body.confidence).toBe(0.9);
+      expect(res.body.ingredients).toHaveLength(1);
+    });
+
+    it("returns 500 when analyzeRecipePhoto throws", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+      } as never);
+      vi.mocked(analyzeRecipePhoto).mockRejectedValue(
+        new Error("Vision API down"),
+      );
+
+      const res = await request(app)
+        .post("/api/photos/analyze-recipe")
+        .set("Authorization", "Bearer token")
+        .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(500);
     });
   });
 });

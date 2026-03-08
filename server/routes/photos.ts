@@ -16,6 +16,7 @@ import {
 import {
   analyzePhoto,
   analyzeLabelPhoto,
+  analyzeRecipePhoto,
   refineAnalysis,
   needsFollowUp,
   getFollowUpQuestions,
@@ -463,6 +464,48 @@ export function register(app: Express): void {
         }
         console.error("Confirm error:", error);
         sendError(res, 500, "Failed to save meal", ErrorCode.INTERNAL_ERROR);
+      }
+    },
+  );
+
+  // ── Recipe Photo Analysis ────────────────────────────────────────────
+
+  app.post(
+    "/api/photos/analyze-recipe",
+    requireAuth,
+    photoRateLimit,
+    labelUpload.single("photo"),
+    async (req: Request, res: Response) => {
+      try {
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "recipePhotoImport",
+          "Recipe photo import",
+        );
+        if (!features) return;
+
+        if (!req.file) {
+          return sendError(
+            res,
+            400,
+            "No photo provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        const imageBase64 = req.file.buffer.toString("base64");
+        const result = await analyzeRecipePhoto(imageBase64);
+
+        res.json(result);
+      } catch (error) {
+        console.error("Recipe photo analysis error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to analyze recipe photo",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

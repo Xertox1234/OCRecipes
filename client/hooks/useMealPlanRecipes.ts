@@ -91,7 +91,11 @@ export function useCreateMealPlanRecipe() {
       cookTimeMinutes?: number | null;
       instructions?: string | null;
       dietTags?: string[];
-      sourceType?: "user_created" | "quick_entry" | "ai_suggestion";
+      sourceType?:
+        | "user_created"
+        | "quick_entry"
+        | "ai_suggestion"
+        | "photo_import";
       caloriesPerServing?: string | number | null;
       proteinPerServing?: string | number | null;
       carbsPerServing?: string | number | null;

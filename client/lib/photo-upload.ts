@@ -6,6 +6,7 @@ import type { PhotoIntent, FoodCategory } from "@shared/constants/preparation";
 
 // Import shared types for use in this file, and re-export for consumers
 import type { LabelAnalysisResponse } from "@shared/types/label-analysis";
+import type { ImportedRecipeData } from "@shared/types/recipe-import";
 
 // Types matching server response
 export interface FoodItem {
@@ -201,6 +202,23 @@ export type {
   LabelAnalysisResponse,
 } from "@shared/types/label-analysis";
 
+export interface RecipePhotoResult {
+  title: string;
+  description: string | null;
+  ingredients: { name: string; quantity: string | null; unit: string | null }[];
+  instructions: string | null;
+  servings: number | null;
+  prepTimeMinutes: number | null;
+  cookTimeMinutes: number | null;
+  cuisine: string | null;
+  dietTags: string[];
+  caloriesPerServing: number | null;
+  proteinPerServing: number | null;
+  carbsPerServing: number | null;
+  fatPerServing: number | null;
+  confidence: number;
+}
+
 /**
  * Upload a photo for nutrition label analysis.
  * Higher compression settings than food photos for text readability.
@@ -284,6 +302,81 @@ export async function confirmLabelAnalysis(
   }
 
   return response.json();
+}
+
+/**
+ * Upload a photo of a recipe (cookbook, recipe card, screenshot) for AI extraction.
+ * Uses same high-quality compression as label scanning for text readability.
+ */
+export async function uploadRecipePhotoForAnalysis(
+  uri: string,
+): Promise<RecipePhotoResult> {
+  const token = await tokenStorage.get();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const compressed = await compressImage(uri, {
+    maxWidth: 1536,
+    maxHeight: 1536,
+    quality: 0.85,
+    targetSizeKB: 4500,
+  });
+
+  try {
+    const uploadResult = await uploadAsync(
+      `${getApiUrl()}/api/photos/analyze-recipe`,
+      compressed.uri,
+      {
+        httpMethod: "POST",
+        uploadType: FileSystemUploadType.MULTIPART,
+        fieldName: "photo",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    if (uploadResult.status !== 200) {
+      try {
+        const errorData = JSON.parse(uploadResult.body);
+        throw new Error(
+          errorData.error || `Upload failed: ${uploadResult.status}`,
+        );
+      } catch {
+        throw new Error(`Upload failed: ${uploadResult.status}`);
+      }
+    }
+
+    return JSON.parse(uploadResult.body) as RecipePhotoResult;
+  } finally {
+    await cleanupImage(compressed.uri);
+  }
+}
+
+/**
+ * Convert a RecipePhotoResult into ImportedRecipeData for RecipeCreateScreen prefill.
+ */
+export function mapPhotoResultToImportedRecipeData(
+  result: RecipePhotoResult,
+): ImportedRecipeData {
+  return {
+    title: result.title,
+    description: result.description,
+    servings: result.servings,
+    prepTimeMinutes: result.prepTimeMinutes,
+    cookTimeMinutes: result.cookTimeMinutes,
+    cuisine: result.cuisine,
+    dietTags: result.dietTags,
+    ingredients: result.ingredients,
+    instructions: result.instructions,
+    imageUrl: null,
+    caloriesPerServing: result.caloriesPerServing?.toString() ?? null,
+    proteinPerServing: result.proteinPerServing?.toString() ?? null,
+    carbsPerServing: result.carbsPerServing?.toString() ?? null,
+    fatPerServing: result.fatPerServing?.toString() ?? null,
+    sourceUrl: "photo_import",
+  };
 }
 
 /**

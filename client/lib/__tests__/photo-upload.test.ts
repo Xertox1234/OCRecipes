@@ -6,7 +6,9 @@ import {
   lookupNutritionByPrep,
   submitFollowUp,
   confirmPhotoAnalysis,
+  mapPhotoResultToImportedRecipeData,
   type FoodItem,
+  type RecipePhotoResult,
 } from "../photo-upload";
 import { uploadAsync } from "expo-file-system/legacy";
 import { tokenStorage } from "../token-storage";
@@ -492,5 +494,75 @@ describe("confirmPhotoAnalysis", () => {
     await expect(confirmPhotoAnalysis(mockConfirmRequest)).rejects.toThrow(
       "Confirm failed: 500",
     );
+  });
+});
+
+describe("mapPhotoResultToImportedRecipeData", () => {
+  const fullResult: RecipePhotoResult = {
+    title: "Pasta Primavera",
+    description: "Light veggie pasta",
+    ingredients: [
+      { name: "penne pasta", quantity: "8", unit: "oz" },
+      { name: "zucchini", quantity: "1", unit: "medium" },
+    ],
+    instructions: "1. Cook pasta\n2. Sauté veggies\n3. Combine",
+    servings: 4,
+    prepTimeMinutes: 10,
+    cookTimeMinutes: 20,
+    cuisine: "Italian",
+    dietTags: ["vegetarian"],
+    caloriesPerServing: 320,
+    proteinPerServing: 12,
+    carbsPerServing: 48,
+    fatPerServing: 8,
+    confidence: 0.9,
+  };
+
+  it("maps all fields correctly", () => {
+    const mapped = mapPhotoResultToImportedRecipeData(fullResult);
+
+    expect(mapped.title).toBe("Pasta Primavera");
+    expect(mapped.description).toBe("Light veggie pasta");
+    expect(mapped.servings).toBe(4);
+    expect(mapped.prepTimeMinutes).toBe(10);
+    expect(mapped.cookTimeMinutes).toBe(20);
+    expect(mapped.cuisine).toBe("Italian");
+    expect(mapped.dietTags).toEqual(["vegetarian"]);
+    expect(mapped.ingredients).toHaveLength(2);
+    expect(mapped.ingredients[0].name).toBe("penne pasta");
+    expect(mapped.instructions).toContain("Cook pasta");
+    expect(mapped.imageUrl).toBeNull();
+    expect(mapped.sourceUrl).toBe("photo_import");
+  });
+
+  it("converts numeric nutrition to strings", () => {
+    const mapped = mapPhotoResultToImportedRecipeData(fullResult);
+
+    expect(mapped.caloriesPerServing).toBe("320");
+    expect(mapped.proteinPerServing).toBe("12");
+    expect(mapped.carbsPerServing).toBe("48");
+    expect(mapped.fatPerServing).toBe("8");
+  });
+
+  it("handles null nutrition values", () => {
+    const noNutrition: RecipePhotoResult = {
+      ...fullResult,
+      caloriesPerServing: null,
+      proteinPerServing: null,
+      carbsPerServing: null,
+      fatPerServing: null,
+    };
+
+    const mapped = mapPhotoResultToImportedRecipeData(noNutrition);
+
+    expect(mapped.caloriesPerServing).toBeNull();
+    expect(mapped.proteinPerServing).toBeNull();
+    expect(mapped.carbsPerServing).toBeNull();
+    expect(mapped.fatPerServing).toBeNull();
+  });
+
+  it("always sets sourceUrl to photo_import", () => {
+    const mapped = mapPhotoResultToImportedRecipeData(fullResult);
+    expect(mapped.sourceUrl).toBe("photo_import");
   });
 });

@@ -181,6 +181,160 @@ export const labelExtractionSchema = z.object({
 });
 export type { LabelExtractionResult } from "@shared/types/label-analysis";
 
+// ── Recipe Photo Analysis ─────────────────────────────────────────────
+
+const RECIPE_PHOTO_PROMPT = `You are a recipe extraction assistant. Extract the full recipe from this photo of a cookbook page, recipe card, or screenshot.
+
+Extract:
+1. Recipe title
+2. Description (1-2 sentences)
+3. Ingredients list with name, quantity, and unit for each
+4. Instructions as numbered steps
+5. Servings count
+6. Prep time and cook time in minutes
+7. Cuisine type (e.g., "Italian", "Mexican")
+8. Diet tags (e.g., "vegetarian", "gluten-free")
+9. Estimated nutrition per serving (calories, protein, carbs, fat)
+
+Rules:
+- Be thorough with ingredients — include every item mentioned
+- Standardize units (tbsp, tsp, cup, oz, g, etc.)
+- If nutrition is not visible, estimate based on ingredients
+- Set confidence based on text readability (1.0 = crystal clear, 0.0 = unreadable)
+
+${SYSTEM_PROMPT_BOUNDARY}
+
+Respond with JSON only:
+{
+  "title": "recipe title",
+  "description": "brief description",
+  "ingredients": [
+    { "name": "ingredient name", "quantity": "amount", "unit": "unit or null" }
+  ],
+  "instructions": "1. Step one\\n2. Step two",
+  "servings": 4,
+  "prepTimeMinutes": 15,
+  "cookTimeMinutes": 30,
+  "cuisine": "Italian",
+  "dietTags": ["vegetarian"],
+  "caloriesPerServing": 350,
+  "proteinPerServing": 20,
+  "carbsPerServing": 40,
+  "fatPerServing": 12,
+  "confidence": 0.9
+}`;
+
+const recipeIngredientSchema = z.object({
+  name: z.string(),
+  quantity: z.string().nullable().default(null),
+  unit: z.string().nullable().default(null),
+});
+
+export const recipePhotoResultSchema = z.object({
+  title: z.string(),
+  description: z.string().nullable().default(null),
+  ingredients: z.array(recipeIngredientSchema),
+  instructions: z.string().nullable().default(null),
+  servings: z.number().nullable().default(null),
+  prepTimeMinutes: z.number().nullable().default(null),
+  cookTimeMinutes: z.number().nullable().default(null),
+  cuisine: z.string().nullable().default(null),
+  dietTags: z.array(z.string()).default([]),
+  caloriesPerServing: z.number().nullable().default(null),
+  proteinPerServing: z.number().nullable().default(null),
+  carbsPerServing: z.number().nullable().default(null),
+  fatPerServing: z.number().nullable().default(null),
+  confidence: z.number().min(0).max(1),
+});
+
+export type RecipePhotoResult = z.infer<typeof recipePhotoResultSchema>;
+
+/**
+ * Analyze a recipe photo (cookbook page, recipe card, screenshot) to extract
+ * structured recipe data. Uses detail: "high" for reading small text.
+ */
+export async function analyzeRecipePhoto(
+  imageBase64: string,
+): Promise<RecipePhotoResult> {
+  const startTime = Date.now();
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_completion_tokens: 2000,
+      messages: [
+        {
+          role: "system",
+          content: RECIPE_PHOTO_PROMPT,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Extract the full recipe from this image:",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${imageBase64}`,
+                detail: "high",
+              },
+            },
+          ],
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const content = response.choices[0]?.message?.content || "{}";
+    const parsed = recipePhotoResultSchema.safeParse(JSON.parse(content));
+
+    if (!parsed.success) {
+      console.error("Recipe photo extraction validation failed:", parsed.error);
+      return {
+        title: "",
+        description: null,
+        ingredients: [],
+        instructions: null,
+        servings: null,
+        prepTimeMinutes: null,
+        cookTimeMinutes: null,
+        cuisine: null,
+        dietTags: [],
+        caloriesPerServing: null,
+        proteinPerServing: null,
+        carbsPerServing: null,
+        fatPerServing: null,
+        confidence: 0,
+      };
+    }
+
+    console.warn(
+      `Recipe photo extraction completed in ${Date.now() - startTime}ms`,
+    );
+    return parsed.data;
+  } catch (error) {
+    console.error("Recipe photo analysis error:", error);
+    return {
+      title: "",
+      description: null,
+      ingredients: [],
+      instructions: null,
+      servings: null,
+      prepTimeMinutes: null,
+      cookTimeMinutes: null,
+      cuisine: null,
+      dietTags: [],
+      caloriesPerServing: null,
+      proteinPerServing: null,
+      carbsPerServing: null,
+      fatPerServing: null,
+      confidence: 0,
+    };
+  }
+}
+
 /**
  * Analyze a nutrition label photo to extract all visible values.
  * Uses detail: "high" for reading small label text.
