@@ -3,27 +3,19 @@
  * Extracted for testability — no React or theme dependencies.
  */
 
-/** Adjusted budget = base goal + exercise calories burned */
-export function calculateAdjustedBudget(
-  calorieGoal: number,
-  exerciseCalories: number,
-): number {
-  return calorieGoal + exerciseCalories;
-}
-
-/** Remaining = adjusted budget - food consumed */
+/** Remaining = calorie goal - food consumed */
 export function calculateRemaining(
-  adjustedBudget: number,
+  calorieGoal: number,
   foodCalories: number,
 ): number {
-  return adjustedBudget - foodCalories;
+  return calorieGoal - foodCalories;
 }
 
-/** Progress ratio clamped to [0, 1]. Returns 0 when adjustedBudget <= 0. */
+/** Progress ratio clamped to [0, 1]. Returns 0 when calorieGoal <= 0. */
 export function calculateProgress(
   foodCalories: number,
-  adjustedBudget: number,
+  calorieGoal: number,
 ): number {
-  if (adjustedBudget <= 0) return 0;
-  return Math.min(foodCalories / adjustedBudget, 1);
+  if (calorieGoal <= 0) return 0;
+  return Math.min(foodCalories / calorieGoal, 1);
 }

@@ -8,7 +8,8 @@ import {
   userPhysicalProfileSchema,
 } from "../services/goal-calculator";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { formatZodError, crudRateLimit } from "./_helpers";
+import { formatZodError, crudRateLimit, parseQueryDate } from "./_helpers";
+import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
 // Zod schema for manual goal update
 const updateGoalsSchema = z.object({
@@ -158,6 +159,42 @@ export function register(app: Express): void {
         }
         console.error("Update goals error:", error);
         sendError(res, 500, "Failed to update goals", ErrorCode.INTERNAL_ERROR);
+      }
+    },
+  );
+
+  // Daily calorie budget
+  app.get(
+    "/api/daily-budget",
+    requireAuth,
+    crudRateLimit,
+    async (req: Request, res: Response) => {
+      try {
+        const date = parseQueryDate(req.query.date) ?? new Date();
+        const user = await storage.getUser(req.userId!);
+        if (!user)
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+
+        const dailySummary = await storage.getDailySummary(req.userId!, date);
+
+        const calorieGoal =
+          user.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories;
+        const foodCalories = dailySummary.totalCalories;
+        const remaining = calorieGoal - foodCalories;
+
+        res.json({
+          calorieGoal,
+          foodCalories,
+          remaining,
+        });
+      } catch (error) {
+        console.error("Get daily budget error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to get daily budget",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

@@ -11,7 +11,6 @@
 import * as users from "./users";
 import * as nutrition from "./nutrition";
 import * as mealPlans from "./meal-plans";
-import * as activity from "./activity";
 import * as chat from "./chat";
 import * as cache from "./cache";
 import * as community from "./community";
@@ -90,21 +89,14 @@ export const storage = {
   getFrequentRecipesForMealType: mealPlans.getFrequentRecipesForMealType,
   getPopularPicksByMealType: mealPlans.getPopularPicksByMealType,
 
-  // Activity (exercise, weight, healthkit)
-  getWeightLogs: activity.getWeightLogs,
-  createWeightLog: activity.createWeightLog,
-  deleteWeightLog: activity.deleteWeightLog,
-  getLatestWeight: activity.getLatestWeight,
-  getExerciseLogs: activity.getExerciseLogs,
-  createExerciseLog: activity.createExerciseLog,
-  updateExerciseLog: activity.updateExerciseLog,
-  deleteExerciseLog: activity.deleteExerciseLog,
-  getExerciseDailySummary: activity.getExerciseDailySummary,
-  searchExerciseLibrary: activity.searchExerciseLibrary,
-  createExerciseLibraryEntry: activity.createExerciseLibraryEntry,
-  getHealthKitSyncSettings: activity.getHealthKitSyncSettings,
-  upsertHealthKitSyncSetting: activity.upsertHealthKitSyncSetting,
-  updateHealthKitLastSync: activity.updateHealthKitLastSync,
+  // Weight & HealthKit
+  getWeightLogs: users.getWeightLogs,
+  createWeightLog: users.createWeightLog,
+  deleteWeightLog: users.deleteWeightLog,
+  getLatestWeight: users.getLatestWeight,
+  getHealthKitSyncSettings: users.getHealthKitSyncSettings,
+  upsertHealthKitSyncSetting: users.upsertHealthKitSyncSetting,
+  updateHealthKitLastSync: users.updateHealthKitLastSync,
 
   // Chat
   getChatConversation: chat.getChatConversation,

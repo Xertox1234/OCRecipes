@@ -1,1 +1,1 @@
-npx tsc --noEmit --project tsconfig.check.json && npm run test:run && NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false
+npx tsc --noEmit --project tsconfig.check.json && npm run test:unit && NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false

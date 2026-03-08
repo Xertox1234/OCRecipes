@@ -70,8 +70,7 @@ describe("GLP-1 Insights", () => {
 
   it("calculates days since start from profile", async () => {
     const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 30);
+    const startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     mockStorage.getMedicationLogs.mockResolvedValue([
       makeMedLog({ takenAt: now }),

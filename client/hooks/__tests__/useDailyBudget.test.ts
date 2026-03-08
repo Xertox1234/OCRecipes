@@ -13,11 +13,7 @@ describe("useDailyBudget", () => {
     const mockData = {
       calorieGoal: 2000,
       foodCalories: 800,
-      exerciseCalories: 200,
-      adjustedBudget: 2200,
-      remaining: 1400,
-      exerciseMinutes: 30,
-      exerciseCount: 1,
+      remaining: 1200,
     };
     queryClient.setQueryData(["/api/daily-budget"], mockData);
 
@@ -31,11 +27,7 @@ describe("useDailyBudget", () => {
     const mockData = {
       calorieGoal: 2000,
       foodCalories: 500,
-      exerciseCalories: 0,
-      adjustedBudget: 2000,
       remaining: 1500,
-      exerciseMinutes: 0,
-      exerciseCount: 0,
     };
     queryClient.setQueryData(["/api/daily-budget?date=2024-06-15"], mockData);
 

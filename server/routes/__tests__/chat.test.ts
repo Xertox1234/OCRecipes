@@ -18,7 +18,6 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     getUserProfile: vi.fn(),
     getDailySummary: vi.fn(),
-    getExerciseDailySummary: vi.fn(),
     getLatestWeight: vi.fn(),
     updateChatConversationTitle: vi.fn(),
     deleteChatConversation: vi.fn(),
@@ -219,10 +218,6 @@ describe("Chat Routes", () => {
         totalProtein: "20",
         totalCarbs: "60",
         totalFat: "15",
-      } as never);
-      vi.mocked(storage.getExerciseDailySummary).mockResolvedValue({
-        totalCaloriesBurned: 200,
-        totalMinutes: 30,
       } as never);
       vi.mocked(storage.getLatestWeight).mockResolvedValue({
         weight: "75.0",

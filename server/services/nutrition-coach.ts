@@ -24,7 +24,6 @@ export interface CoachContext {
     allergies: string[];
     dislikes: string[];
   };
-  recentExercise: { todayCaloriesBurned: number; todayMinutes: number };
 }
 
 function buildSystemPrompt(context: CoachContext): string {
@@ -63,12 +62,6 @@ function buildSystemPrompt(context: CoachContext): string {
   if (context.dietaryProfile.dislikes.length > 0) {
     parts.push(`Food dislikes: ${context.dietaryProfile.dislikes.join(", ")}`);
   }
-  if (context.recentExercise.todayMinutes > 0) {
-    parts.push(
-      `Today's exercise: ${context.recentExercise.todayMinutes}min, ${context.recentExercise.todayCaloriesBurned} cal burned`,
-    );
-  }
-
   return parts.join("\n");
 }
 

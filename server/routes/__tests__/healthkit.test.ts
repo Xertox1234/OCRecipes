@@ -47,7 +47,7 @@ describe("HealthKit Routes", () => {
     it("syncs healthkit data successfully", async () => {
       mockPremium();
       vi.mocked(syncHealthKitData).mockResolvedValue({
-        synced: { weights: 2, workouts: 1, steps: 0 },
+        weightsSynced: 2,
       } as never);
 
       const res = await request(app)

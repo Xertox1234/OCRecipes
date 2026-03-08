@@ -17,18 +17,6 @@ const syncDataSchema = z.object({
       }),
     )
     .optional(),
-  workouts: z
-    .array(
-      z.object({
-        name: z.string(),
-        type: z.string(),
-        durationMinutes: z.number().positive(),
-        caloriesBurned: z.number().nonnegative(),
-        date: z.string().datetime(),
-        source: z.string().default("healthkit"),
-      }),
-    )
-    .optional(),
   steps: z
     .array(
       z.object({
@@ -42,13 +30,7 @@ const syncDataSchema = z.object({
 const syncSettingsSchema = z.object({
   settings: z.array(
     z.object({
-      dataType: z.enum([
-        "weight",
-        "steps",
-        "workouts",
-        "active_energy",
-        "sleep",
-      ]),
+      dataType: z.enum(["weight", "steps", "active_energy", "sleep"]),
       enabled: z.boolean(),
       syncDirection: z.enum(["read", "write", "both"]).default("read"),
     }),

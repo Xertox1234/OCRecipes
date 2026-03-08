@@ -5,16 +5,21 @@ import {
   type InsertUserProfile,
   type Transaction,
   type InsertTransaction,
+  type WeightLog,
+  type InsertWeightLog,
+  type HealthKitSyncEntry,
   users,
   userProfiles,
   transactions,
+  weightLogs,
+  healthKitSync,
 } from "@shared/schema";
 import {
   subscriptionTierSchema,
   type SubscriptionTier,
 } from "@shared/types/premium";
 import { db } from "../db";
-import { eq } from "drizzle-orm";
+import { eq, desc, and, gte, lte } from "drizzle-orm";
 
 // ============================================================================
 // USER CRUD
@@ -149,4 +154,111 @@ export async function createTransaction(
 ): Promise<Transaction> {
   const [txn] = await db.insert(transactions).values(data).returning();
   return txn;
+}
+
+// ============================================================================
+// WEIGHT LOGS
+// ============================================================================
+
+export async function getWeightLogs(
+  userId: string,
+  options?: { from?: Date; to?: Date; limit?: number },
+): Promise<WeightLog[]> {
+  const conditions = [eq(weightLogs.userId, userId)];
+  if (options?.from) {
+    conditions.push(gte(weightLogs.loggedAt, options.from));
+  }
+  if (options?.to) {
+    conditions.push(lte(weightLogs.loggedAt, options.to));
+  }
+  const effectiveLimit = options?.limit ?? 100;
+  return db
+    .select()
+    .from(weightLogs)
+    .where(and(...conditions))
+    .orderBy(desc(weightLogs.loggedAt))
+    .limit(effectiveLimit);
+}
+
+export async function createWeightLog(
+  log: InsertWeightLog,
+): Promise<WeightLog> {
+  const [created] = await db.insert(weightLogs).values(log).returning();
+  return created;
+}
+
+export async function deleteWeightLog(
+  id: number,
+  userId: string,
+): Promise<boolean> {
+  const result = await db
+    .delete(weightLogs)
+    .where(and(eq(weightLogs.id, id), eq(weightLogs.userId, userId)))
+    .returning({ id: weightLogs.id });
+  return result.length > 0;
+}
+
+export async function getLatestWeight(
+  userId: string,
+): Promise<WeightLog | undefined> {
+  const [latest] = await db
+    .select()
+    .from(weightLogs)
+    .where(eq(weightLogs.userId, userId))
+    .orderBy(desc(weightLogs.loggedAt))
+    .limit(1);
+  return latest;
+}
+
+// ============================================================================
+// HEALTHKIT SYNC
+// ============================================================================
+
+export async function getHealthKitSyncSettings(
+  userId: string,
+): Promise<HealthKitSyncEntry[]> {
+  return db
+    .select()
+    .from(healthKitSync)
+    .where(eq(healthKitSync.userId, userId));
+}
+
+export async function upsertHealthKitSyncSetting(
+  userId: string,
+  dataType: string,
+  enabled: boolean,
+  syncDirection?: string,
+): Promise<HealthKitSyncEntry> {
+  const [result] = await db
+    .insert(healthKitSync)
+    .values({
+      userId,
+      dataType,
+      enabled,
+      syncDirection: syncDirection ?? "read",
+    })
+    .onConflictDoUpdate({
+      target: [healthKitSync.userId, healthKitSync.dataType],
+      set: {
+        enabled,
+        ...(syncDirection ? { syncDirection } : {}),
+      },
+    })
+    .returning();
+  return result;
+}
+
+export async function updateHealthKitLastSync(
+  userId: string,
+  dataType: string,
+): Promise<void> {
+  await db
+    .update(healthKitSync)
+    .set({ lastSyncAt: new Date() })
+    .where(
+      and(
+        eq(healthKitSync.userId, userId),
+        eq(healthKitSync.dataType, dataType),
+      ),
+    );
 }

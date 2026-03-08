@@ -6,27 +6,16 @@ interface HealthKitWeightSample {
   source: string;
 }
 
-interface HealthKitWorkout {
-  name: string;
-  type: string;
-  durationMinutes: number;
-  caloriesBurned: number;
-  date: string;
-  source: string;
-}
-
 interface HealthKitSyncData {
   weights?: HealthKitWeightSample[];
-  workouts?: HealthKitWorkout[];
   steps?: { date: string; count: number }[];
 }
 
 export async function syncHealthKitData(
   userId: string,
   data: HealthKitSyncData,
-): Promise<{ weightsSynced: number; workoutsSynced: number }> {
+): Promise<{ weightsSynced: number }> {
   let weightsSynced = 0;
-  let workoutsSynced = 0;
 
   // Sync weight samples (deduplicate by checking existing entries)
   if (data.weights?.length) {
@@ -49,21 +38,5 @@ export async function syncHealthKitData(
     await storage.updateHealthKitLastSync(userId, "weight");
   }
 
-  // Sync workouts
-  if (data.workouts?.length) {
-    for (const workout of data.workouts) {
-      await storage.createExerciseLog({
-        userId,
-        exerciseName: workout.name,
-        exerciseType: workout.type || "other",
-        durationMinutes: workout.durationMinutes,
-        caloriesBurned: workout.caloriesBurned?.toString(),
-        source: "healthkit",
-      });
-      workoutsSynced++;
-    }
-    await storage.updateHealthKitLastSync(userId, "workouts");
-  }
-
-  return { weightsSynced, workoutsSynced };
+  return { weightsSynced };
 }

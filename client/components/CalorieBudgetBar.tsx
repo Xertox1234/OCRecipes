@@ -8,27 +8,20 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import {
-  calculateAdjustedBudget,
-  calculateRemaining,
-  calculateProgress,
-} from "./calorie-budget-utils";
+import { calculateRemaining, calculateProgress } from "./calorie-budget-utils";
 
 interface CalorieBudgetBarProps {
   calorieGoal: number;
   foodCalories: number;
-  exerciseCalories: number;
 }
 
 export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
   calorieGoal,
   foodCalories,
-  exerciseCalories,
 }: CalorieBudgetBarProps) {
   const { theme } = useTheme();
-  const adjustedBudget = calculateAdjustedBudget(calorieGoal, exerciseCalories);
-  const remaining = calculateRemaining(adjustedBudget, foodCalories);
-  const progress = calculateProgress(foodCalories, adjustedBudget);
+  const remaining = calculateRemaining(calorieGoal, foodCalories);
+  const progress = calculateProgress(foodCalories, calorieGoal);
 
   return (
     <View style={styles.container} accessibilityLabel="Calorie budget summary">
@@ -48,15 +41,6 @@ export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
           </ThemedText>
           <ThemedText type="caption" style={{ color: theme.textSecondary }}>
             Food
-          </ThemedText>
-        </View>
-        <ThemedText style={styles.operator}>+</ThemedText>
-        <View style={styles.labelItem}>
-          <ThemedText style={[styles.labelValue, { color: theme.success }]}>
-            {Math.round(exerciseCalories)}
-          </ThemedText>
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-            Exercise
           </ThemedText>
         </View>
         <ThemedText style={styles.operator}>=</ThemedText>

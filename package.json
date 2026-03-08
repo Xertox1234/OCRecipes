@@ -18,6 +18,8 @@
     "format": "prettier --write \"**/*.{js,ts,tsx,css,json}\"",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:unit": "vitest run --exclude 'server/storage/__tests__/**'",
+    "test:integration": "vitest run server/storage/__tests__/",
     "test:coverage": "vitest run --coverage",
     "prepare": "husky",
     "android": "expo run:android",

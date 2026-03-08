@@ -308,81 +308,6 @@ export const savedItems = pgTable(
   }),
 );
 
-// ============================================================================
-// EXERCISE TRACKING
-// ============================================================================
-
-export const exerciseLibrary = pgTable(
-  "exercise_library",
-  {
-    id: serial("id").primaryKey(),
-    name: text("name").notNull(),
-    type: text("type").notNull(),
-    metValue: decimal("met_value", { precision: 4, scale: 1 }).notNull(),
-    isCustom: boolean("is_custom").default(false),
-    userId: varchar("user_id").references(() => users.id, {
-      onDelete: "cascade",
-    }),
-    createdAt: timestamp("created_at")
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-  },
-  (table) => ({
-    nameIdx: index("exercise_library_name_idx").on(table.name),
-    typeIdx: index("exercise_library_type_idx").on(table.type),
-  }),
-);
-
-export const exerciseLogs = pgTable(
-  "exercise_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    exerciseName: text("exercise_name").notNull(),
-    exerciseType: text("exercise_type").notNull(),
-    durationMinutes: integer("duration_minutes").notNull(),
-    caloriesBurned: decimal("calories_burned", {
-      precision: 10,
-      scale: 2,
-    }),
-    intensity: text("intensity"),
-    sets: integer("sets"),
-    reps: integer("reps"),
-    weightLifted: decimal("weight_lifted", { precision: 8, scale: 2 }),
-    distanceKm: decimal("distance_km", { precision: 8, scale: 2 }),
-    source: text("source").default("manual"),
-    notes: text("notes"),
-    loggedAt: timestamp("logged_at")
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-  },
-  (table) => ({
-    userDateIdx: index("exercise_logs_user_date_idx").on(
-      table.userId,
-      table.loggedAt,
-    ),
-  }),
-);
-
-export const exerciseLibraryRelations = relations(
-  exerciseLibrary,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [exerciseLibrary.userId],
-      references: [users.id],
-    }),
-  }),
-);
-
-export const exerciseLogsRelations = relations(exerciseLogs, ({ one }) => ({
-  user: one(users, {
-    fields: [exerciseLogs.userId],
-    references: [users.id],
-  }),
-}));
-
 export const usersRelations = relations(users, ({ one, many }) => ({
   scannedItems: many(scannedItems),
   dailyLogs: many(dailyLogs),
@@ -394,7 +319,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   groceryLists: many(groceryLists),
   pantryItems: many(pantryItems),
   weightLogs: many(weightLogs),
-  exerciseLogs: many(exerciseLogs),
   healthKitSync: many(healthKitSync),
   chatConversations: many(chatConversations),
   fastingSchedules: many(fastingSchedules),
@@ -1371,24 +1295,6 @@ export const insertWeightLogSchema = createInsertSchema(weightLogs).omit({
 
 export type WeightLog = typeof weightLogs.$inferSelect;
 export type InsertWeightLog = z.infer<typeof insertWeightLogSchema>;
-
-export const insertExerciseLogSchema = createInsertSchema(exerciseLogs).omit({
-  id: true,
-  loggedAt: true,
-});
-export const insertExerciseLibrarySchema = createInsertSchema(
-  exerciseLibrary,
-).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type ExerciseLog = typeof exerciseLogs.$inferSelect;
-export type InsertExerciseLog = z.infer<typeof insertExerciseLogSchema>;
-export type ExerciseLibraryEntry = typeof exerciseLibrary.$inferSelect;
-export type InsertExerciseLibraryEntry = z.infer<
-  typeof insertExerciseLibrarySchema
->;
 
 export type HealthKitSyncEntry = typeof healthKitSync.$inferSelect;
 export type InsertHealthKitSyncEntry = typeof healthKitSync.$inferInsert;

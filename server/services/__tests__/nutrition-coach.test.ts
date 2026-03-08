@@ -33,7 +33,7 @@ function makeContext(overrides: Partial<CoachContext> = {}): CoachContext {
     todayIntake: { calories: 800, protein: 60, carbs: 100, fat: 30 },
     weightTrend: { currentWeight: 80, weeklyRate: -0.3 },
     dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
-    recentExercise: { todayCaloriesBurned: 300, todayMinutes: 45 },
+
     ...overrides,
   };
 }
@@ -141,23 +141,6 @@ describe("Nutrition Coach", () => {
       expect(systemMsg).toContain("-0.5kg/week");
     });
 
-    it("includes exercise info in system prompt", async () => {
-      mockCreate.mockResolvedValue(createMockStream(["OK"]) as any);
-
-      const ctx = makeContext({
-        recentExercise: { todayCaloriesBurned: 500, todayMinutes: 60 },
-      });
-
-      await collectStream(
-        generateCoachResponse([{ role: "user", content: "Any tips?" }], ctx),
-      );
-
-      const callArgs = mockCreate.mock.calls[0]![0] as any;
-      const systemMsg = callArgs.messages[0].content;
-      expect(systemMsg).toContain("60min");
-      expect(systemMsg).toContain("500 cal burned");
-    });
-
     it("omits optional context when null/empty", async () => {
       mockCreate.mockResolvedValue(createMockStream(["OK"]) as any);
 
@@ -165,7 +148,6 @@ describe("Nutrition Coach", () => {
         goals: null,
         weightTrend: { currentWeight: null, weeklyRate: null },
         dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
-        recentExercise: { todayCaloriesBurned: 0, todayMinutes: 0 },
       });
 
       await collectStream(

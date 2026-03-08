@@ -16,7 +16,6 @@ import { register as registerSubscription } from "./routes/subscription";
 import { register as registerGoals } from "./routes/goals";
 import { register as registerMealSuggestions } from "./routes/meal-suggestions";
 import { register as registerWeightRoutes } from "./routes/weight";
-import { register as registerExercises } from "./routes/exercises";
 import { register as registerFood } from "./routes/food";
 import { register as registerHealthKit } from "./routes/healthkit";
 import { register as registerAdaptiveGoals } from "./routes/adaptive-goals";
@@ -45,7 +44,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerGoals(app);
   registerMealSuggestions(app);
   registerWeightRoutes(app);
-  registerExercises(app);
   registerFood(app);
   registerHealthKit(app);
   registerAdaptiveGoals(app);

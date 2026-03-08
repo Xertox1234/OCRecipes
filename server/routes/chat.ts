@@ -178,21 +178,14 @@ export function register(app: Express): void {
 
         // Save user message and build context in parallel
         const today = new Date();
-        const [
-          ,
-          profile,
-          dailySummary,
-          exerciseSummary,
-          latestWeight,
-          history,
-        ] = await Promise.all([
-          storage.createChatMessage(id, "user", parsed.data.content),
-          storage.getUserProfile(req.userId!),
-          storage.getDailySummary(req.userId!, today),
-          storage.getExerciseDailySummary(req.userId!, today),
-          storage.getLatestWeight(req.userId!),
-          storage.getChatMessages(id, 20),
-        ]);
+        const [, profile, dailySummary, latestWeight, history] =
+          await Promise.all([
+            storage.createChatMessage(id, "user", parsed.data.content),
+            storage.getUserProfile(req.userId!),
+            storage.getDailySummary(req.userId!, today),
+            storage.getLatestWeight(req.userId!),
+            storage.getChatMessages(id, 20),
+          ]);
 
         const context: CoachContext = {
           // When user has no calorie goal, pass null so the coach knows goals aren't set.
@@ -224,10 +217,6 @@ export function register(app: Express): void {
               (profile?.allergies as { name: string }[] | null) || []
             ).map((a) => a.name),
             dislikes: (profile?.foodDislikes as string[]) || [],
-          },
-          recentExercise: {
-            todayCaloriesBurned: exerciseSummary.totalCaloriesBurned,
-            todayMinutes: exerciseSummary.totalMinutes,
           },
         };
 
