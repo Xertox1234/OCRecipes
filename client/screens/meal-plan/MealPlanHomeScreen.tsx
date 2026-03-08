@@ -63,6 +63,7 @@ import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
 import { QuickAddSheet } from "@/components/meal-plan/QuickAddSheet";
 import { AddItemMenuSheet } from "@/components/meal-plan/AddItemMenuSheet";
+import { ImportRecipeSheet } from "@/components/meal-plan/ImportRecipeSheet";
 import { SimpleEntrySheet } from "@/components/meal-plan/SimpleEntrySheet";
 import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
 import type { DailySummaryResponse } from "@/types/api";
@@ -487,6 +488,8 @@ export default function MealPlanHomeScreen() {
     useState<MealType | null>(null);
   const [simpleEntryMealType, setSimpleEntryMealType] =
     useState<MealType | null>(null);
+  const [importRecipeMealType, setImportRecipeMealType] =
+    useState<MealType | null>(null);
 
   const selectedDateStr = formatDate(selectedDate);
 
@@ -709,6 +712,37 @@ export default function MealPlanHomeScreen() {
   const handleSimpleEntryDismiss = useCallback(() => {
     setSimpleEntryMealType(null);
   }, []);
+
+  const handleImportRecipe = useCallback(() => {
+    const mt = addItemMenuMealType;
+    setAddItemMenuMealType(null);
+    InteractionManager.runAfterInteractions(() => setImportRecipeMealType(mt));
+  }, [addItemMenuMealType]);
+
+  const handleImportRecipeDismiss = useCallback(() => {
+    setImportRecipeMealType(null);
+  }, []);
+
+  const handleNavigateUrlImport = useCallback(
+    (mt: MealType, date: string) => {
+      setImportRecipeMealType(null);
+      navigation.navigate("RecipeImport", {
+        returnToMealPlan: { mealType: mt, plannedDate: date },
+      });
+    },
+    [navigation],
+  );
+
+  const handlePhotoImport = useCallback(
+    (uri: string, mt: MealType, date: string) => {
+      setImportRecipeMealType(null);
+      navigation.navigate("RecipePhotoImport", {
+        photoUri: uri,
+        returnToMealPlan: { mealType: mt, plannedDate: date },
+      });
+    },
+    [navigation],
+  );
 
   const handleNavigateCreate = useCallback(
     (mt: MealType, date: string) => {
@@ -1068,7 +1102,15 @@ export default function MealPlanHomeScreen() {
         mealType={addItemMenuMealType}
         onChooseRecipe={handleChooseRecipe}
         onSimpleEntry={handleSimpleEntry}
+        onImportRecipe={handleImportRecipe}
         onDismiss={handleAddItemMenuDismiss}
+      />
+      <ImportRecipeSheet
+        mealType={importRecipeMealType}
+        plannedDate={selectedDateStr}
+        onDismiss={handleImportRecipeDismiss}
+        onNavigateUrlImport={handleNavigateUrlImport}
+        onPhotoImport={handlePhotoImport}
       />
       <QuickAddSheet
         mealType={quickAddMealType}

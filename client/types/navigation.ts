@@ -151,6 +151,15 @@ export type RecipeImportScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
+ * Navigation prop for RecipePhotoImportScreen
+ * Can navigate within meal plan stack
+ */
+export type RecipePhotoImportScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList,
+  "RecipePhotoImport"
+>;
+
+/**
  * Navigation prop for GroceryListsScreen
  * Can navigate within meal plan stack
  */

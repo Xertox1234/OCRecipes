@@ -41,6 +41,7 @@ export interface PremiumFeatures {
   micronutrientTracking: boolean;
   receiptScanner: boolean;
   monthlyReceiptScans: number;
+  recipePhotoImport: boolean;
 }
 
 /** Represents effectively unlimited scans (JSON-safe alternative to Infinity). */
@@ -76,6 +77,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     micronutrientTracking: false,
     receiptScanner: false,
     monthlyReceiptScans: 0,
+    recipePhotoImport: false,
   },
   premium: {
     maxDailyScans: UNLIMITED_SCANS,
@@ -106,6 +108,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     micronutrientTracking: true,
     receiptScanner: true,
     monthlyReceiptScans: 15,
+    recipePhotoImport: true,
   },
 };
 

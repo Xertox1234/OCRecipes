@@ -19,12 +19,13 @@ import {
   type MealType,
 } from "@/screens/meal-plan/meal-plan-utils";
 
-const SNAP_POINTS = ["35%"];
+const SNAP_POINTS = ["45%"];
 
 interface AddItemMenuSheetProps {
   mealType: MealType | null;
   onChooseRecipe: () => void;
   onSimpleEntry: () => void;
+  onImportRecipe: () => void;
   onDismiss: () => void;
 }
 
@@ -32,6 +33,7 @@ function AddItemMenuSheetInner({
   mealType,
   onChooseRecipe,
   onSimpleEntry,
+  onImportRecipe,
   onDismiss,
 }: AddItemMenuSheetProps) {
   const { theme } = useTheme();
@@ -68,6 +70,11 @@ function AddItemMenuSheetInner({
     haptics.impact(ImpactFeedbackStyle.Light);
     onSimpleEntry();
   }, [haptics, onSimpleEntry]);
+
+  const handleImportRecipe = useCallback(() => {
+    haptics.impact(ImpactFeedbackStyle.Light);
+    onImportRecipe();
+  }, [haptics, onImportRecipe]);
 
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
 
@@ -129,6 +136,30 @@ function AddItemMenuSheetInner({
                 style={[styles.optionDesc, { color: theme.textSecondary }]}
               >
                 Type a dish name, AI estimates nutrition
+              </ThemedText>
+            </View>
+            <Feather
+              name="chevron-right"
+              size={16}
+              color={theme.textSecondary}
+            />
+          </Pressable>
+          <Pressable
+            onPress={handleImportRecipe}
+            style={[
+              styles.optionRow,
+              { backgroundColor: withOpacity(theme.text, 0.04) },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Import recipe"
+          >
+            <Feather name="download" size={20} color={theme.link} />
+            <View style={styles.optionText}>
+              <ThemedText style={styles.optionTitle}>Import Recipe</ThemedText>
+              <ThemedText
+                style={[styles.optionDesc, { color: theme.textSecondary }]}
+              >
+                From URL, photo, or clipboard
               </ThemedText>
             </View>
             <Feather
