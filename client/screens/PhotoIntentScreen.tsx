@@ -30,7 +30,7 @@ type RouteParams = {
 };
 
 interface IntentOption {
-  intent: PhotoIntent;
+  intent: PhotoIntent | "cook";
   label: string;
   description: string;
   icon: keyof typeof Feather.glyphMap;
@@ -78,6 +78,13 @@ const INTENT_OPTIONS: IntentOption[] = [
     description: "Extract values from a nutrition facts label",
     icon: "file-text",
   },
+  {
+    intent: "cook",
+    label: "Cook & Track",
+    description: "Photograph ingredients, get nutrition, log or make a recipe",
+    icon: "thermometer",
+    requiresPremium: true,
+  },
 ];
 
 export default function PhotoIntentScreen() {
@@ -99,7 +106,9 @@ export default function PhotoIntentScreen() {
 
   const handleSelectIntent = (option: IntentOption) => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    if (option.intent === "label") {
+    if (option.intent === "cook") {
+      navigation.navigate("CookSessionCapture", { initialPhotoUri: imageUri });
+    } else if (option.intent === "label") {
       navigation.navigate("LabelAnalysis", { imageUri });
     } else {
       navigation.navigate("PhotoAnalysis", {
@@ -138,7 +147,10 @@ export default function PhotoIntentScreen() {
         {/* Intent Options */}
         <View style={styles.optionsContainer}>
           {INTENT_OPTIONS.map((option, index) => {
-            const isLocked = option.requiresPremium && !isRecipeAvailable;
+            const isLocked =
+              option.intent === "cook"
+                ? option.requiresPremium && !features.cookAndTrack
+                : option.requiresPremium && !isRecipeAvailable;
 
             return (
               <Animated.View

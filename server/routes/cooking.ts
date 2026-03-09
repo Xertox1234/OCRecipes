@@ -1,12 +1,10 @@
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";
-import { z } from "zod";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { type FoodCategory } from "@shared/constants/preparation";
 import {
-  photoRateLimit,
   formatZodError,
   checkPremiumFeature,
   parseStringParam,
@@ -18,17 +16,13 @@ import {
   logRequestSchema,
   substitutionRequestSchema,
   photoAnalysisResponseSchema,
-  substitutionSuggestionSchema,
   type CookingSessionIngredient,
   type CookSessionNutritionItem,
   type CookSessionNutritionSummary,
 } from "@shared/types/cook-session";
 import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
-import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
-import {
-  batchNutritionLookup,
-  type NutritionData,
-} from "../services/nutrition-lookup";
+import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import { batchNutritionLookup } from "../services/nutrition-lookup";
 import {
   calculateCookedNutrition,
   preparationToCookingMethod,
