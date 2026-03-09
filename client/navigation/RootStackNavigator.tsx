@@ -16,6 +16,9 @@ import MenuScanResultScreen from "@/screens/MenuScanResultScreen";
 import LabelAnalysisScreen from "@/screens/LabelAnalysisScreen";
 import ReceiptCaptureScreen from "@/screens/ReceiptCaptureScreen";
 import ReceiptReviewScreen from "@/screens/ReceiptReviewScreen";
+import CookSessionCaptureScreen from "@/screens/CookSessionCaptureScreen";
+import CookSessionReviewScreen from "@/screens/CookSessionReviewScreen";
+import SubstitutionResultScreen from "@/screens/SubstitutionResultScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
@@ -23,6 +26,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { Colors } from "@/constants/theme";
 import type { PhotoIntent } from "@shared/constants/preparation";
 import type { MenuAnalysisItem } from "@/hooks/useMenuScan";
+import type {
+  CookingSessionIngredient,
+  SubstitutionResult,
+} from "@shared/types/cook-session";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -53,6 +60,16 @@ export type RootStackParamList = {
   };
   ReceiptCapture: undefined;
   ReceiptReview: { photoUris: string[] };
+  CookSessionCapture: { initialPhotoUri?: string };
+  CookSessionReview: {
+    sessionId: string;
+    ingredients: CookingSessionIngredient[];
+  };
+  SubstitutionResult: {
+    sessionId: string;
+    result: SubstitutionResult;
+    ingredients: CookingSessionIngredient[];
+  };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -190,6 +207,31 @@ export default function RootStackNavigator() {
             component={ReceiptReviewScreen}
             options={{
               headerTitle: "Review Items",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="CookSessionCapture"
+            component={CookSessionCaptureScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="CookSessionReview"
+            component={CookSessionReviewScreen}
+            options={{
+              headerTitle: "Review Ingredients",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="SubstitutionResult"
+            component={SubstitutionResultScreen}
+            options={{
+              headerTitle: "Substitution Suggestions",
               presentation: "modal",
             }}
           />
