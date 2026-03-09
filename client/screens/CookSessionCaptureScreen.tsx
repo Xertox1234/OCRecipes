@@ -58,7 +58,7 @@ export default function CookSessionCaptureScreen() {
   const sessionPromiseRef = useRef<Promise<string> | null>(null);
 
   const createSession = useCreateCookSession();
-  const addPhoto = useAddCookPhoto(sessionId);
+  const addPhoto = useAddCookPhoto();
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (sessionId) return sessionId;
@@ -92,14 +92,16 @@ export default function CookSessionCaptureScreen() {
       setIsAnalyzing(true);
       try {
         const sid = await ensureSession();
-        // Update sessionId in addPhoto hook needs latest sid
         setSessionId(sid);
 
-        const result = await addPhoto.mutateAsync(photoUri);
+        const result = await addPhoto.mutateAsync({
+          photoUri,
+          sessionId: sid,
+        });
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         setIngredientCount(result.ingredients.length);
         setPhotos((prev) => [...prev, photoUri]);
-      } catch (error) {
+      } catch {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         Alert.alert(
           "Analysis Failed",
@@ -126,8 +128,8 @@ export default function CookSessionCaptureScreen() {
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         handleAnalyzePhoto(photo.uri);
       }
-    } catch (error) {
-      console.error("Capture error:", error);
+    } catch {
+      // Capture failed — camera may have been interrupted
     } finally {
       setIsCapturing(false);
     }
@@ -318,7 +320,7 @@ export default function CookSessionCaptureScreen() {
         >
           {photos.map((uri, index) => (
             <Image
-              key={index}
+              key={uri}
               source={{ uri }}
               style={styles.thumbnailImage}
               accessibilityLabel={`Ingredient photo ${index + 1}`}

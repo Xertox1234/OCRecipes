@@ -153,11 +153,14 @@ export default function CookSessionReviewScreen() {
     }
   }, [substitutionsMutation, navigation, sessionId, ingredients]);
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.8) return theme.success;
-    if (confidence >= 0.5) return theme.warning;
-    return theme.error;
-  };
+  const getConfidenceColor = useCallback(
+    (confidence: number) => {
+      if (confidence >= 0.8) return theme.success;
+      if (confidence >= 0.5) return theme.warning;
+      return theme.error;
+    },
+    [theme],
+  );
 
   const getConfidenceLabel = (confidence: number) => {
     if (confidence >= 0.8) return "High";
@@ -165,57 +168,60 @@ export default function CookSessionReviewScreen() {
     return "Low";
   };
 
-  const renderIngredient = ({ item }: { item: CookingSessionIngredient }) => {
-    const prepOptions =
-      PREPARATION_OPTIONS[item.category as FoodCategory] ??
-      PREPARATION_OPTIONS.other;
+  const renderIngredient = useCallback(
+    ({ item }: { item: CookingSessionIngredient }) => {
+      const prepOptions =
+        PREPARATION_OPTIONS[item.category as FoodCategory] ??
+        PREPARATION_OPTIONS.other;
 
-    return (
-      <Card style={styles.ingredientCard}>
-        <View style={styles.ingredientRow}>
-          <View style={styles.ingredientInfo}>
-            <ThemedText type="body" style={{ fontWeight: "600" }}>
-              {item.name}
-            </ThemedText>
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              {item.quantity} {item.unit}
-            </ThemedText>
-            <View style={styles.confidenceRow}>
-              <View
-                style={[
-                  styles.confidenceDot,
-                  { backgroundColor: getConfidenceColor(item.confidence) },
-                ]}
-              />
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {getConfidenceLabel(item.confidence)} confidence
+      return (
+        <Card style={styles.ingredientCard}>
+          <View style={styles.ingredientRow}>
+            <View style={styles.ingredientInfo}>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>
+                {item.name}
               </ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                {item.quantity} {item.unit}
+              </ThemedText>
+              <View style={styles.confidenceRow}>
+                <View
+                  style={[
+                    styles.confidenceDot,
+                    { backgroundColor: getConfidenceColor(item.confidence) },
+                  ]}
+                />
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  {getConfidenceLabel(item.confidence)} confidence
+                </ThemedText>
+              </View>
             </View>
-          </View>
 
-          {/* Preparation method picker */}
-          <View style={styles.prepContainer}>
-            <ScrollablePrepPicker
-              options={prepOptions}
-              selected={item.preparationMethod ?? "As Served"}
-              onSelect={(method) => handlePreparationChange(item.id, method)}
-              theme={theme}
-            />
-          </View>
+            {/* Preparation method picker */}
+            <View style={styles.prepContainer}>
+              <PrepPicker
+                options={prepOptions}
+                selected={item.preparationMethod ?? "As Served"}
+                onSelect={(method) => handlePreparationChange(item.id, method)}
+                theme={theme}
+              />
+            </View>
 
-          {/* Delete button */}
-          <Pressable
-            onPress={() => handleDelete(item.id, item.name)}
-            style={styles.deleteButton}
-            accessibilityLabel={`Remove ${item.name}`}
-            accessibilityRole="button"
-          >
-            <Feather name="trash-2" size={18} color={theme.error} />
-          </Pressable>
-        </View>
-      </Card>
-    );
-  };
+            {/* Delete button */}
+            <Pressable
+              onPress={() => handleDelete(item.id, item.name)}
+              style={styles.deleteButton}
+              accessibilityLabel={`Remove ${item.name}`}
+              accessibilityRole="button"
+            >
+              <Feather name="trash-2" size={18} color={theme.error} />
+            </Pressable>
+          </View>
+        </Card>
+      );
+    },
+    [theme, handlePreparationChange, handleDelete, getConfidenceColor],
+  );
 
   const isActionLoading =
     logSession.isPending ||
@@ -277,7 +283,10 @@ export default function CookSessionReviewScreen() {
           ) : (
             <>
               <Feather name="check-circle" size={20} color={theme.buttonText} />
-              <ThemedText type="body" style={styles.actionText}>
+              <ThemedText
+                type="body"
+                style={{ color: theme.buttonText, fontWeight: "700" }}
+              >
                 Log Meal
               </ThemedText>
             </>
@@ -350,7 +359,7 @@ export default function CookSessionReviewScreen() {
 // SUB-COMPONENTS
 // ============================================================================
 
-function ScrollablePrepPicker({
+function PrepPicker({
   options,
   selected,
   onSelect,
@@ -563,10 +572,6 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
-  },
-  actionText: {
-    color: "#FFFFFF", // hardcoded
-    fontWeight: "700",
   },
   secondaryActions: {
     flexDirection: "row",

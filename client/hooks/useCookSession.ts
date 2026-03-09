@@ -8,7 +8,7 @@ import type {
   SubstitutionResult,
   IngredientEdit,
 } from "@shared/types/cook-session";
-import type { RecipeContent } from "../../server/services/recipe-generation";
+import type { RecipeContent } from "@shared/types/recipe";
 
 // ============================================================================
 // Session queries
@@ -39,13 +39,15 @@ interface AddPhotoResult extends CookingSessionResponse {
   newDetections: number;
 }
 
-export function useAddCookPhoto(sessionId: string | null) {
+export function useAddCookPhoto() {
   const queryClient = useQueryClient();
 
-  return useMutation<AddPhotoResult, Error, string>({
-    mutationFn: async (photoUri: string) => {
-      if (!sessionId) throw new Error("No active session");
-
+  return useMutation<
+    AddPhotoResult,
+    Error,
+    { photoUri: string; sessionId: string }
+  >({
+    mutationFn: async ({ photoUri, sessionId }) => {
       const compressed = await compressImage(photoUri, {
         maxWidth: 1536,
         maxHeight: 1536,
@@ -78,7 +80,7 @@ export function useAddCookPhoto(sessionId: string | null) {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, { sessionId }) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/cooking/sessions", sessionId],
       });

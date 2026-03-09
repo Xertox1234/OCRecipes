@@ -3,7 +3,6 @@ import crypto from "crypto";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { type FoodCategory } from "@shared/constants/preparation";
 import {
   formatZodError,
   checkPremiumFeature,
@@ -399,7 +398,7 @@ export function register(app: Express): void {
             quantity: detected.quantity,
             unit: detected.unit,
             confidence: detected.confidence,
-            category: detected.category as FoodCategory,
+            category: detected.category,
             photoId,
             userEdited: false,
           }));
@@ -855,6 +854,8 @@ export function register(app: Express): void {
   );
 
   // --- Get substitution suggestions ---
+  // No premium gate here — session creation is already gated via cookAndTrack.
+  // Substitutions are available to all users who have an active session.
   app.post(
     "/api/cooking/sessions/:id/substitutions",
     requireAuth,

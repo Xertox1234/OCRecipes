@@ -2,6 +2,8 @@
  * Debounced AsyncStorage persistence for cook session recovery.
  * Stores the current session ID and ingredient list so the user can resume
  * if the app backgrounds or crashes.
+ *
+ * Uses in-memory cache to avoid repeated AsyncStorage reads.
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -16,6 +18,10 @@ interface CookSessionBackup {
   savedAt: number;
 }
 
+// In-memory cache to avoid repeated AsyncStorage reads
+let cachedBackup: CookSessionBackup | null = null;
+let cacheInitialized = false;
+
 export async function saveCookSessionBackup(
   sessionId: string,
   ingredients: CookingSessionIngredient[],
@@ -25,12 +31,29 @@ export async function saveCookSessionBackup(
     ingredients,
     savedAt: Date.now(),
   };
+  cachedBackup = backup;
+  cacheInitialized = true;
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(backup));
 }
 
 export async function loadCookSessionBackup(): Promise<CookSessionBackup | null> {
+  if (cacheInitialized) {
+    if (!cachedBackup) return null;
+    // Check TTL on cached value
+    if (Date.now() - cachedBackup.savedAt > TTL_MS) {
+      await clearCookSessionBackup();
+      return null;
+    }
+    return cachedBackup;
+  }
+
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
+  cacheInitialized = true;
+
+  if (!raw) {
+    cachedBackup = null;
+    return null;
+  }
 
   try {
     const backup: CookSessionBackup = JSON.parse(raw);
@@ -39,6 +62,7 @@ export async function loadCookSessionBackup(): Promise<CookSessionBackup | null>
       await clearCookSessionBackup();
       return null;
     }
+    cachedBackup = backup;
     return backup;
   } catch {
     await clearCookSessionBackup();
@@ -47,5 +71,7 @@ export async function loadCookSessionBackup(): Promise<CookSessionBackup | null>
 }
 
 export async function clearCookSessionBackup(): Promise<void> {
+  cachedBackup = null;
+  cacheInitialized = true;
   await AsyncStorage.removeItem(STORAGE_KEY);
 }

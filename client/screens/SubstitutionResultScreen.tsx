@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useMemo } from "react";
 import { StyleSheet, View, FlatList, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -27,7 +27,10 @@ export default function SubstitutionResultScreen() {
   const { result, ingredients } = route.params;
   const { suggestions, dietaryProfileSummary } = result;
 
-  const ingredientMap = new Map(ingredients.map((ing) => [ing.id, ing]));
+  const ingredientMap = useMemo(
+    () => new Map(ingredients.map((ing) => [ing.id, ing])),
+    [ingredients],
+  );
 
   const formatDelta = (value: number): string => {
     if (value === 0) return "0";
@@ -35,110 +38,113 @@ export default function SubstitutionResultScreen() {
     return `${sign}${Math.round(value)}`;
   };
 
-  const renderSuggestion = ({ item }: { item: SubstitutionSuggestion }) => {
-    const original = ingredientMap.get(item.originalIngredientId);
-    const originalName = original?.name ?? "Unknown";
+  const renderSuggestion = useCallback(
+    ({ item }: { item: SubstitutionSuggestion }) => {
+      const original = ingredientMap.get(item.originalIngredientId);
+      const originalName = original?.name ?? "Unknown";
 
-    return (
-      <Card
-        style={styles.suggestionCard}
-        accessibilityLabel={`Replace ${originalName} with ${item.substitute}. ${item.reason}`}
-      >
-        {/* Original → Substitute header */}
-        <View style={styles.swapRow}>
-          <View style={styles.swapItem}>
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              Replace
-            </ThemedText>
-            <ThemedText type="body" style={{ fontWeight: "600" }}>
-              {originalName}
-            </ThemedText>
+      return (
+        <Card
+          style={styles.suggestionCard}
+          accessibilityLabel={`Replace ${originalName} with ${item.substitute}. ${item.reason}`}
+        >
+          {/* Original → Substitute header */}
+          <View style={styles.swapRow}>
+            <View style={styles.swapItem}>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Replace
+              </ThemedText>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>
+                {originalName}
+              </ThemedText>
+            </View>
+
+            <Feather name="arrow-right" size={20} color={theme.success} />
+
+            <View style={styles.swapItem}>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                With
+              </ThemedText>
+              <ThemedText
+                type="body"
+                style={{ fontWeight: "600", color: theme.success }}
+              >
+                {item.substitute}
+              </ThemedText>
+            </View>
           </View>
 
-          <Feather name="arrow-right" size={20} color={theme.success} />
-
-          <View style={styles.swapItem}>
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              With
-            </ThemedText>
-            <ThemedText
-              type="body"
-              style={{ fontWeight: "600", color: theme.success }}
-            >
-              {item.substitute}
-            </ThemedText>
-          </View>
-        </View>
-
-        {/* Ratio */}
-        <View
-          style={[
-            styles.ratioBadge,
-            { backgroundColor: withOpacity(theme.link, 0.1) },
-          ]}
-        >
-          <ThemedText
-            type="small"
-            style={{ color: theme.link, fontWeight: "600" }}
-          >
-            Ratio: {item.ratio}
-          </ThemedText>
-        </View>
-
-        {/* Reason */}
-        <ThemedText
-          type="small"
-          style={{ color: theme.textSecondary, marginTop: Spacing.sm }}
-        >
-          {item.reason}
-        </ThemedText>
-
-        {/* Macro delta */}
-        <View style={styles.deltaRow}>
-          <DeltaChip
-            label="Cal"
-            value={formatDelta(item.macroDelta.calories)}
-            positive={item.macroDelta.calories <= 0}
-            theme={theme}
-          />
-          <DeltaChip
-            label="Protein"
-            value={`${formatDelta(item.macroDelta.protein)}g`}
-            positive={item.macroDelta.protein >= 0}
-            theme={theme}
-          />
-          <DeltaChip
-            label="Carbs"
-            value={`${formatDelta(item.macroDelta.carbs)}g`}
-            positive={item.macroDelta.carbs <= 0}
-            theme={theme}
-          />
-          <DeltaChip
-            label="Fat"
-            value={`${formatDelta(item.macroDelta.fat)}g`}
-            positive={item.macroDelta.fat <= 0}
-            theme={theme}
-          />
-        </View>
-
-        {/* Confidence */}
-        <View style={styles.confidenceRow}>
+          {/* Ratio */}
           <View
             style={[
-              styles.confidenceDot,
-              {
-                backgroundColor:
-                  item.confidence >= 0.8 ? theme.success : theme.warning,
-              },
+              styles.ratioBadge,
+              { backgroundColor: withOpacity(theme.link, 0.1) },
             ]}
-          />
-          <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {item.confidence >= 0.8 ? "High" : "Medium"} confidence
+          >
+            <ThemedText
+              type="small"
+              style={{ color: theme.link, fontWeight: "600" }}
+            >
+              Ratio: {item.ratio}
+            </ThemedText>
+          </View>
+
+          {/* Reason */}
+          <ThemedText
+            type="small"
+            style={{ color: theme.textSecondary, marginTop: Spacing.sm }}
+          >
+            {item.reason}
           </ThemedText>
-        </View>
-      </Card>
-    );
-  };
+
+          {/* Macro delta */}
+          <View style={styles.deltaRow}>
+            <DeltaChip
+              label="Cal"
+              value={formatDelta(item.macroDelta.calories)}
+              positive={item.macroDelta.calories <= 0}
+              theme={theme}
+            />
+            <DeltaChip
+              label="Protein"
+              value={`${formatDelta(item.macroDelta.protein)}g`}
+              positive={item.macroDelta.protein >= 0}
+              theme={theme}
+            />
+            <DeltaChip
+              label="Carbs"
+              value={`${formatDelta(item.macroDelta.carbs)}g`}
+              positive={item.macroDelta.carbs <= 0}
+              theme={theme}
+            />
+            <DeltaChip
+              label="Fat"
+              value={`${formatDelta(item.macroDelta.fat)}g`}
+              positive={item.macroDelta.fat <= 0}
+              theme={theme}
+            />
+          </View>
+
+          {/* Confidence */}
+          <View style={styles.confidenceRow}>
+            <View
+              style={[
+                styles.confidenceDot,
+                {
+                  backgroundColor:
+                    item.confidence >= 0.8 ? theme.success : theme.warning,
+                },
+              ]}
+            />
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              {item.confidence >= 0.8 ? "High" : "Medium"} confidence
+            </ThemedText>
+          </View>
+        </Card>
+      );
+    },
+    [ingredientMap, theme],
+  );
 
   return (
     <ThemedView style={styles.container}>

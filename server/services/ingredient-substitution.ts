@@ -155,6 +155,24 @@ function findStaticSubstitutions(
 // DIETARY PROFILE HELPERS
 // ============================================================================
 
+function isAllergyArray(value: unknown): value is { name: string }[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as Record<string, unknown>).name === "string",
+    )
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
 function buildDietaryProfileSummary(
   profile: UserProfile | null | undefined,
 ): string {
@@ -162,16 +180,13 @@ function buildDietaryProfileSummary(
 
   const parts: string[] = [];
   if (profile.dietType) parts.push(`Diet: ${profile.dietType}`);
-  if (profile.allergies && Array.isArray(profile.allergies)) {
-    const allergyNames = (profile.allergies as { name: string }[]).map(
-      (a) => a.name,
-    );
+  if (isAllergyArray(profile.allergies)) {
+    const allergyNames = profile.allergies.map((a) => a.name);
     if (allergyNames.length > 0)
       parts.push(`Allergies: ${allergyNames.join(", ")}`);
   }
-  if (profile.foodDislikes && Array.isArray(profile.foodDislikes)) {
-    if (profile.foodDislikes.length > 0)
-      parts.push(`Dislikes: ${(profile.foodDislikes as string[]).join(", ")}`);
+  if (isStringArray(profile.foodDislikes) && profile.foodDislikes.length > 0) {
+    parts.push(`Dislikes: ${profile.foodDislikes.join(", ")}`);
   }
   if (profile.primaryGoal) parts.push(`Goal: ${profile.primaryGoal}`);
 
@@ -191,8 +206,8 @@ function extractDietaryTags(profile: UserProfile | null | undefined): string[] {
     if (diet.includes("gluten")) tags.push("gluten-free");
   }
 
-  if (profile.allergies && Array.isArray(profile.allergies)) {
-    for (const allergy of profile.allergies as { name: string }[]) {
+  if (isAllergyArray(profile.allergies)) {
+    for (const allergy of profile.allergies) {
       const name = allergy.name.toLowerCase();
       if (name.includes("dairy") || name.includes("milk"))
         tags.push("dairy-free");
@@ -342,4 +357,6 @@ export const _testInternals = {
   findStaticSubstitutions,
   buildDietaryProfileSummary,
   extractDietaryTags,
+  isAllergyArray,
+  isStringArray,
 };

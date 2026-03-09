@@ -7,6 +7,8 @@ import {
   OPENAI_TIMEOUT_IMAGE_MS,
 } from "../lib/openai";
 
+import type { RecipeContent } from "@shared/types/recipe";
+
 // Zod schemas for recipe generation
 const instructionItemSchema = z.union([
   z.string(),
@@ -43,8 +45,7 @@ const recipeContentSchema = z.object({
     .pipe(z.string().min(1)),
   dietTags: z.array(z.string()).default([]),
 });
-
-export type RecipeContent = z.infer<typeof recipeContentSchema>;
+export type { RecipeContent };
 
 export interface RecipeGenerationInput {
   productName: string;
