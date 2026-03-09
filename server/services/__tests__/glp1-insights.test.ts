@@ -69,12 +69,14 @@ describe("GLP-1 Insights", () => {
   });
 
   it("calculates days since start from profile", async () => {
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(startDate.getDate() - 30);
+    // Use a fixed time to avoid off-by-one from time-of-day differences
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-09T12:00:00Z"));
+
+    const startDate = new Date("2026-02-07T12:00:00Z"); // exactly 30 days before
 
     mockStorage.getMedicationLogs.mockResolvedValue([
-      makeMedLog({ takenAt: now }),
+      makeMedLog({ takenAt: new Date("2026-03-09T12:00:00Z") }),
     ]);
     mockStorage.getUserProfile.mockResolvedValue({
       id: 1,
@@ -101,6 +103,8 @@ describe("GLP-1 Insights", () => {
     const result = await analyzeGlp1Insights("user-1");
 
     expect(result.daysSinceStart).toBe(30);
+
+    vi.useRealTimers();
   });
 
   it("calculates average appetite level", async () => {
