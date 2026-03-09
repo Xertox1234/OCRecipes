@@ -7,9 +7,9 @@
 
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
-import type {
-  CookingSessionIngredient,
+import {
   substitutionSuggestionSchema,
+  type CookingSessionIngredient,
   type SubstitutionSuggestion,
   type SubstitutionResult,
 } from "@shared/types/cook-session";

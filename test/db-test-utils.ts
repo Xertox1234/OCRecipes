@@ -114,7 +114,7 @@ export async function createTestUser(
 ): Promise<schema.User> {
   userSeq++;
   const defaults: schema.InsertUser = {
-    username: `testuser_${userSeq}_${Date.now()}`,
+    username: `testuser_${userSeq}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
     password: "hashed_password_placeholder",
     ...overrides,
   };
