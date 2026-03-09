@@ -100,7 +100,9 @@ export default function CookSessionCaptureScreen() {
         });
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         setIngredientCount(result.ingredients.length);
-        setPhotos((prev) => [...prev, photoUri]);
+        setPhotos((prev) =>
+          prev.includes(photoUri) ? prev : [...prev, photoUri],
+        );
       } catch {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         Alert.alert(

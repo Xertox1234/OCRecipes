@@ -17,6 +17,15 @@ import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 
 // ============================================================================
+// DIETARY PROFILE HELPERS
+// ============================================================================
+
+import {
+  isAllergyArray,
+  isStringArray,
+} from "@shared/types/user-profile-guards";
+
+// ============================================================================
 // STATIC SUBSTITUTION LOOKUP (avoids API call for common ingredients)
 // ============================================================================
 
@@ -149,28 +158,6 @@ function findStaticSubstitutions(
   }
 
   return subs;
-}
-
-// ============================================================================
-// DIETARY PROFILE HELPERS
-// ============================================================================
-
-function isAllergyArray(value: unknown): value is { name: string }[] {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (item) =>
-        typeof item === "object" &&
-        item !== null &&
-        typeof (item as Record<string, unknown>).name === "string",
-    )
-  );
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) && value.every((item) => typeof item === "string")
-  );
 }
 
 function buildDietaryProfileSummary(
@@ -357,6 +344,4 @@ export const _testInternals = {
   findStaticSubstitutions,
   buildDietaryProfileSummary,
   extractDietaryTags,
-  isAllergyArray,
-  isStringArray,
 };

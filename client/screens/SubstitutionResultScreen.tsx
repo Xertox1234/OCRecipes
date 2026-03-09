@@ -17,6 +17,12 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { SubstitutionSuggestion } from "@shared/types/cook-session";
 
+function formatDelta(value: number): string {
+  if (value === 0) return "0";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${Math.round(value)}`;
+}
+
 export default function SubstitutionResultScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
@@ -31,12 +37,6 @@ export default function SubstitutionResultScreen() {
     () => new Map(ingredients.map((ing) => [ing.id, ing])),
     [ingredients],
   );
-
-  const formatDelta = (value: number): string => {
-    if (value === 0) return "0";
-    const sign = value > 0 ? "+" : "";
-    return `${sign}${Math.round(value)}`;
-  };
 
   const renderSuggestion = useCallback(
     ({ item }: { item: SubstitutionSuggestion }) => {

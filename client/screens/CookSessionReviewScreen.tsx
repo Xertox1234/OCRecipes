@@ -24,10 +24,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import {
-  PREPARATION_OPTIONS,
-  type FoodCategory,
-} from "@shared/constants/preparation";
+import { PREPARATION_OPTIONS } from "@shared/constants/preparation";
 import {
   useCookSessionQuery,
   useEditIngredient,
@@ -43,6 +40,12 @@ import type {
   CookingSessionIngredient,
   CookSessionNutritionSummary,
 } from "@shared/types/cook-session";
+
+function getConfidenceLabel(confidence: number): string {
+  if (confidence >= 0.8) return "High";
+  if (confidence >= 0.5) return "Medium";
+  return "Low";
+}
 
 export default function CookSessionReviewScreen() {
   const insets = useSafeAreaInsets();
@@ -162,17 +165,10 @@ export default function CookSessionReviewScreen() {
     [theme],
   );
 
-  const getConfidenceLabel = (confidence: number) => {
-    if (confidence >= 0.8) return "High";
-    if (confidence >= 0.5) return "Medium";
-    return "Low";
-  };
-
   const renderIngredient = useCallback(
     ({ item }: { item: CookingSessionIngredient }) => {
       const prepOptions =
-        PREPARATION_OPTIONS[item.category as FoodCategory] ??
-        PREPARATION_OPTIONS.other;
+        PREPARATION_OPTIONS[item.category] ?? PREPARATION_OPTIONS.other;
 
       return (
         <Card style={styles.ingredientCard}>

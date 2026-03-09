@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
+import { isAllergyArray } from "@shared/types/user-profile-guards";
 import {
   openai,
   dalleClient,
@@ -77,13 +78,10 @@ function buildDietaryContext(
 
   if (userProfile) {
     if (
-      userProfile.allergies &&
-      Array.isArray(userProfile.allergies) &&
+      isAllergyArray(userProfile.allergies) &&
       userProfile.allergies.length > 0
     ) {
-      const allergyNames = (userProfile.allergies as { name: string }[]).map(
-        (a) => a.name,
-      );
+      const allergyNames = userProfile.allergies.map((a) => a.name);
       parts.push(`MUST AVOID these allergens: ${allergyNames.join(", ")}`);
     }
     if (userProfile.dietType) {
