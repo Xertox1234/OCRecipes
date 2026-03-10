@@ -5,6 +5,8 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { register } from "../meal-plan";
 
+import { generateMealPlanFromPantry } from "../../services/pantry-meal-plan";
+
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
@@ -21,12 +23,20 @@ vi.mock("../../storage", () => ({
     getMealPlanItemById: vi.fn(),
     getConfirmedMealPlanItemIds: vi.fn(),
     createDailyLog: vi.fn(),
+    getPantryItems: vi.fn(),
+    getUserProfile: vi.fn(),
+    getUser: vi.fn(),
+    reorderMealPlanItems: vi.fn(),
   },
 }));
 
 vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
+
+vi.mock("../../services/pantry-meal-plan", () => ({
+  generateMealPlanFromPantry: vi.fn(),
+}));
 
 function createApp() {
   const app = express();
@@ -631,6 +641,189 @@ describe("Meal Plan Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(500);
+    });
+  });
+
+  // ============================================================================
+  // PANTRY → MEAL PLAN GENERATION
+  // ============================================================================
+
+  describe("POST /api/meal-plan/generate-from-pantry", () => {
+    const mockPantryItems = [
+      { id: 1, userId: "1", name: "Chicken", category: "meat" },
+      { id: 2, userId: "1", name: "Rice", category: "grains" },
+    ];
+
+    const mockPlan = {
+      days: [
+        {
+          dayNumber: 1,
+          meals: [
+            {
+              mealType: "lunch",
+              title: "Chicken Rice",
+              description: "Simple dish",
+              servings: 1,
+              prepTimeMinutes: 10,
+              cookTimeMinutes: 20,
+              difficulty: "Easy",
+              ingredients: [{ name: "Chicken", quantity: "1", unit: "lb" }],
+              instructions: "Cook it",
+              dietTags: [],
+              caloriesPerServing: 450,
+              proteinPerServing: 40,
+              carbsPerServing: 50,
+              fatPerServing: 10,
+            },
+          ],
+        },
+      ],
+    };
+
+    it("returns 403 for free users", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+      } as never);
+
+      const res = await request(app)
+        .post("/api/meal-plan/generate-from-pantry")
+        .set("Authorization", "Bearer token")
+        .send({ days: 3, startDate: "2026-03-15" });
+
+      expect(res.status).toBe(403);
+    });
+
+    it("returns 400 for invalid days", async () => {
+      mockPremium();
+
+      const res = await request(app)
+        .post("/api/meal-plan/generate-from-pantry")
+        .set("Authorization", "Bearer token")
+        .send({ days: 10, startDate: "2026-03-15" });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when pantry is empty", async () => {
+      mockPremium();
+      vi.mocked(storage.getPantryItems).mockResolvedValue([]);
+
+      const res = await request(app)
+        .post("/api/meal-plan/generate-from-pantry")
+        .set("Authorization", "Bearer token")
+        .send({ days: 3, startDate: "2026-03-15" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("No pantry items");
+    });
+
+    it("generates meal plan successfully", async () => {
+      mockPremium();
+      vi.mocked(storage.getPantryItems).mockResolvedValue(
+        mockPantryItems as never,
+      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue({
+        dailyCalorieGoal: 2000,
+        dailyProteinGoal: 150,
+        dailyCarbsGoal: 250,
+        dailyFatGoal: 67,
+      } as never);
+      vi.mocked(generateMealPlanFromPantry).mockResolvedValue(
+        mockPlan as never,
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/generate-from-pantry")
+        .set("Authorization", "Bearer token")
+        .send({ days: 3, startDate: "2026-03-15" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.days).toHaveLength(1);
+      expect(generateMealPlanFromPantry).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns 400 for invalid date format", async () => {
+      mockPremium();
+
+      const res = await request(app)
+        .post("/api/meal-plan/generate-from-pantry")
+        .set("Authorization", "Bearer token")
+        .send({ days: 3, startDate: "March 15" });
+
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("POST /api/meal-plan/save-generated", () => {
+    const validMeal = {
+      mealType: "lunch",
+      title: "Chicken Rice",
+      description: "Simple dish",
+      servings: 1,
+      prepTimeMinutes: 10,
+      cookTimeMinutes: 20,
+      difficulty: "Easy",
+      ingredients: [{ name: "Chicken", quantity: "1", unit: "lb" }],
+      instructions: "Cook it",
+      dietTags: [],
+      caloriesPerServing: 450,
+      proteinPerServing: 40,
+      carbsPerServing: 50,
+      fatPerServing: 10,
+      plannedDate: "2026-03-15",
+    };
+
+    it("creates recipes and plan items", async () => {
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue({
+        id: 10,
+        userId: "1",
+      } as never);
+      vi.mocked(storage.addMealPlanItem).mockResolvedValue({
+        id: 20,
+      } as never);
+
+      const res = await request(app)
+        .post("/api/meal-plan/save-generated")
+        .set("Authorization", "Bearer token")
+        .send({ meals: [validMeal] });
+
+      expect(res.status).toBe(201);
+      expect(res.body.saved).toBe(1);
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.items[0].recipeId).toBe(10);
+      expect(res.body.items[0].mealPlanItemId).toBe(20);
+    });
+
+    it("returns 400 for empty meals array", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/save-generated")
+        .set("Authorization", "Bearer token")
+        .send({ meals: [] });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for invalid date", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/save-generated")
+        .set("Authorization", "Bearer token")
+        .send({
+          meals: [{ ...validMeal, plannedDate: "2026-02-30" }],
+        });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for invalid meal type", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/save-generated")
+        .set("Authorization", "Bearer token")
+        .send({
+          meals: [{ ...validMeal, mealType: "brunch" }],
+        });
+
+      expect(res.status).toBe(400);
     });
   });
 });

@@ -8,11 +8,13 @@ import { isValidCalendarDate } from "../utils/date-validation";
 import {
   mealPlanRateLimit,
   mealConfirmRateLimit,
+  pantryMealPlanRateLimit,
   checkPremiumFeature,
   formatZodError,
   parsePositiveIntParam,
   parseQueryString,
 } from "./_helpers";
+import { generateMealPlanFromPantry } from "../services/pantry-meal-plan";
 
 // Zod schemas for meal plan endpoints
 const createMealPlanRecipeSchema = z.object({
@@ -545,6 +547,227 @@ export function register(app: Express): void {
       } catch (error) {
         console.error("Meal confirmation error:", error);
         sendError(res, 500, "Failed to confirm meal", ErrorCode.INTERNAL_ERROR);
+      }
+    },
+  );
+
+  // ============================================================================
+  // PANTRY → MEAL PLAN GENERATION
+  // ============================================================================
+
+  // POST /api/meal-plan/generate-from-pantry — Generate a meal plan from pantry items
+  app.post(
+    "/api/meal-plan/generate-from-pantry",
+    requireAuth,
+    pantryMealPlanRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "aiMealSuggestions",
+          "AI meal plan generation",
+        );
+        if (!features) return;
+
+        const schema = z.object({
+          days: z.number().int().min(1).max(7),
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        });
+
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        if (!isValidCalendarDate(parsed.data.startDate)) {
+          sendError(
+            res,
+            400,
+            "Invalid calendar date",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        // Fetch pantry items
+        const pantryItems = await storage.getPantryItems(req.userId!);
+        if (pantryItems.length === 0) {
+          sendError(
+            res,
+            400,
+            "No pantry items available. Add items to your pantry first.",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        // Fetch user profile and goals
+        const [userProfile, user] = await Promise.all([
+          storage.getUserProfile(req.userId!),
+          storage.getUser(req.userId!),
+        ]);
+
+        const dailyTargets = {
+          calories: user?.dailyCalorieGoal ?? 2000,
+          protein: user?.dailyProteinGoal ?? 150,
+          carbs: user?.dailyCarbsGoal ?? 250,
+          fat: user?.dailyFatGoal ?? 67,
+        };
+
+        const householdSize =
+          (userProfile as { householdSize?: number } | null)?.householdSize ??
+          1;
+
+        const plan = await generateMealPlanFromPantry({
+          pantryItems,
+          userProfile: userProfile ?? null,
+          dailyTargets,
+          days: parsed.data.days,
+          householdSize,
+        });
+
+        res.json(plan);
+      } catch (error) {
+        console.error("Generate meal plan from pantry error:", error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to generate meal plan";
+        sendError(res, 500, message, ErrorCode.INTERNAL_ERROR);
+      }
+    },
+  );
+
+  // POST /api/meal-plan/save-generated — Batch-save a generated meal plan
+  app.post(
+    "/api/meal-plan/save-generated",
+    requireAuth,
+    mealPlanRateLimit,
+    async (req: Request, res: Response): Promise<void> => {
+      try {
+        const mealSchema = z.object({
+          mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
+          title: z.string().min(1).max(200),
+          description: z.string().max(2000).optional(),
+          servings: z.number().int().min(1).max(50),
+          prepTimeMinutes: z.number().int().min(0).max(1440),
+          cookTimeMinutes: z.number().int().min(0).max(1440),
+          difficulty: z.string().max(50).optional(),
+          ingredients: z.array(
+            z.object({
+              name: z.string().min(1).max(200),
+              quantity: z.coerce.string().optional().nullable(),
+              unit: z.string().max(50).optional().nullable(),
+            }),
+          ),
+          instructions: z.string().max(10000).optional(),
+          dietTags: z.array(z.string().max(50)).max(20).optional(),
+          caloriesPerServing: z.number().min(0),
+          proteinPerServing: z.number().min(0),
+          carbsPerServing: z.number().min(0),
+          fatPerServing: z.number().min(0),
+          plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        });
+
+        const schema = z.object({
+          meals: z.array(mealSchema).min(1).max(50),
+        });
+
+        const parsed = schema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        // Validate all dates
+        for (const meal of parsed.data.meals) {
+          if (!isValidCalendarDate(meal.plannedDate)) {
+            sendError(
+              res,
+              400,
+              `Invalid calendar date: ${meal.plannedDate}`,
+              ErrorCode.VALIDATION_ERROR,
+            );
+            return;
+          }
+        }
+
+        // Create recipes and plan items in sequence (each recipe needs its ID for the plan item)
+        const createdItems: { recipeId: number; mealPlanItemId: number }[] = [];
+
+        for (const meal of parsed.data.meals) {
+          const recipe = await storage.createMealPlanRecipe(
+            {
+              userId: req.userId!,
+              title: meal.title,
+              description: meal.description ?? null,
+              difficulty: meal.difficulty ?? null,
+              servings: meal.servings,
+              prepTimeMinutes: meal.prepTimeMinutes,
+              cookTimeMinutes: meal.cookTimeMinutes,
+              instructions: meal.instructions ?? null,
+              dietTags: meal.dietTags ?? [],
+              caloriesPerServing: String(meal.caloriesPerServing),
+              proteinPerServing: String(meal.proteinPerServing),
+              carbsPerServing: String(meal.carbsPerServing),
+              fatPerServing: String(meal.fatPerServing),
+              sourceType: "ai_suggestion",
+            },
+            meal.ingredients.map((ing) => ({
+              recipeId: 0, // Set by storage method
+              name: ing.name,
+              quantity: ing.quantity ?? null,
+              unit: ing.unit ?? null,
+            })),
+          );
+
+          const mealPlanItem = await storage.addMealPlanItem({
+            userId: req.userId!,
+            recipeId: recipe.id,
+            plannedDate: meal.plannedDate,
+            mealType: meal.mealType,
+            servings: String(meal.servings),
+          });
+
+          createdItems.push({
+            recipeId: recipe.id,
+            mealPlanItemId: mealPlanItem.id,
+          });
+        }
+
+        res.status(201).json({
+          saved: createdItems.length,
+          items: createdItems,
+        });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        console.error("Save generated meal plan error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to save meal plan",
+          ErrorCode.INTERNAL_ERROR,
+        );
       }
     },
   );

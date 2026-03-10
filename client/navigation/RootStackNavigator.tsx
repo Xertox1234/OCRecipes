@@ -19,6 +19,7 @@ import ReceiptReviewScreen from "@/screens/ReceiptReviewScreen";
 import CookSessionCaptureScreen from "@/screens/CookSessionCaptureScreen";
 import CookSessionReviewScreen from "@/screens/CookSessionReviewScreen";
 import SubstitutionResultScreen from "@/screens/SubstitutionResultScreen";
+import ReceiptMealPlanScreen from "@/screens/meal-plan/ReceiptMealPlanScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
@@ -69,6 +70,9 @@ export type RootStackParamList = {
     sessionId: string;
     result: SubstitutionResult;
     ingredients: CookingSessionIngredient[];
+  };
+  ReceiptMealPlan: {
+    startDate?: string;
   };
 };
 
@@ -232,6 +236,14 @@ export default function RootStackNavigator() {
             component={SubstitutionResultScreen}
             options={{
               headerTitle: "Substitution Suggestions",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="ReceiptMealPlan"
+            component={ReceiptMealPlanScreen}
+            options={{
+              headerTitle: "Plan Meals",
               presentation: "modal",
             }}
           />

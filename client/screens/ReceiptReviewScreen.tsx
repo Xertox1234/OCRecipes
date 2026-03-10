@@ -72,6 +72,7 @@ export default function ReceiptReviewScreen() {
 
   const [items, setItems] = useState<EditableItem[]>([]);
   const [isPartial, setIsPartial] = useState(false);
+  const [showMealPlanPrompt, setShowMealPlanPrompt] = useState(false);
 
   // Trigger scan on mount
   useEffect(() => {
@@ -129,8 +130,7 @@ export default function ReceiptReviewScreen() {
     confirmMutation.mutate(confirmItems, {
       onSuccess: () => {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
-        // Pop both ReceiptReview and ReceiptCapture modals to return to main app
-        navigation.popToTop();
+        setShowMealPlanPrompt(true);
       },
     });
   }, [items, haptics, confirmMutation, navigation]);
@@ -265,6 +265,48 @@ export default function ReceiptReviewScreen() {
         >
           <ThemedText style={{ color: theme.buttonText, fontWeight: "600" }}>
             Try Again
+          </ThemedText>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // Success — prompt to generate meal plan
+  if (showMealPlanPrompt) {
+    return (
+      <View
+        style={[
+          styles.centered,
+          { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },
+        ]}
+      >
+        <Feather name="check-circle" size={48} color={theme.link} />
+        <ThemedText style={[styles.errorText, { color: theme.text }]}>
+          Items added to pantry!
+        </ThemedText>
+        <ThemedText
+          style={[styles.errorSubtext, { color: theme.textSecondary }]}
+        >
+          Would you like to generate a meal plan from your groceries?
+        </ThemedText>
+        <Pressable
+          onPress={() => navigation.replace("ReceiptMealPlan", {})}
+          style={[styles.retryButton, { backgroundColor: theme.link }]}
+          accessibilityRole="button"
+          accessibilityLabel="Generate meal plan"
+        >
+          <ThemedText style={{ color: theme.buttonText, fontWeight: "600" }}>
+            Plan Meals
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          onPress={() => navigation.popToTop()}
+          style={[styles.skipButton]}
+          accessibilityRole="button"
+          accessibilityLabel="Skip and go home"
+        >
+          <ThemedText style={{ color: theme.textSecondary, fontWeight: "500" }}>
+            Skip
           </ThemedText>
         </Pressable>
       </View>
@@ -408,6 +450,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
+  },
+  skipButton: {
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.sm,
   },
   warningBanner: {
     flexDirection: "row",

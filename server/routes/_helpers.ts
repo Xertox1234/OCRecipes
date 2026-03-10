@@ -230,6 +230,12 @@ export const mealSuggestionRateLimit = createRateLimiter({
   message: "Too many suggestion requests. Please wait.",
 });
 
+export const pantryMealPlanRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 2,
+  message: "Too many meal plan generation requests. Please wait.",
+});
+
 export const recipeGenerationRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 3,
