@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
+import type { QuickLogScreenNavigationProp } from "@/types/navigation";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -39,7 +40,7 @@ export default function QuickLogScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const navigation = useNavigation();
+  const navigation = useNavigation<QuickLogScreenNavigationProp>();
   const queryClient = useQueryClient();
   const { isPremium } = usePremiumContext();
 

@@ -185,3 +185,21 @@ export type MenuScanResultScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "MenuScanResult"
 >;
+
+/**
+ * Navigation prop for QuickLogScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type QuickLogScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "QuickLog"
+>;
+
+/**
+ * Navigation prop for EditDietaryProfileScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type EditDietaryProfileScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "EditDietaryProfile"
+>;

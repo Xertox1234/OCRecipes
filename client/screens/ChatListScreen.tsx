@@ -39,6 +39,9 @@ type ChatListNavigationProp = NativeStackNavigationProp<
   "ChatList"
 >;
 
+// Icon (40) + paddingVertical (12 × 2) = 64, plus hairline border
+const ESTIMATED_ITEM_HEIGHT = 64 + StyleSheet.hairlineWidth;
+
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();
@@ -179,6 +182,15 @@ export default function ChatListScreen() {
     [handleOpenChat, handleDeleteChat, theme, reducedMotion],
   );
 
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<ChatConversation> | null | undefined, index: number) => ({
+      length: ESTIMATED_ITEM_HEIGHT,
+      offset: ESTIMATED_ITEM_HEIGHT * index,
+      index,
+    }),
+    [],
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <View
@@ -215,6 +227,7 @@ export default function ChatListScreen() {
         data={conversations}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}
+        getItemLayout={getItemLayout}
         contentContainerStyle={{
           paddingBottom: tabBarHeight + FAB_CLEARANCE,
           flexGrow: 1,

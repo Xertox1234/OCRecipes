@@ -679,7 +679,7 @@ export default function PhotoAnalysisScreen() {
       </View>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={headerHeight}
       >
         <ScrollView

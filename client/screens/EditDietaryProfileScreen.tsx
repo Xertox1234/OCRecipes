@@ -8,6 +8,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
+import type { EditDietaryProfileScreenNavigationProp } from "@/types/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -49,7 +50,7 @@ interface DietaryProfile {
 
 export default function EditDietaryProfileScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<EditDietaryProfileScreenNavigationProp>();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const queryClient = useQueryClient();
