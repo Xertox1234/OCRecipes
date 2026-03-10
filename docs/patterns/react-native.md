@@ -1,0 +1,1747 @@
+# React Native Patterns
+
+### Multi-Select Checkbox Pattern
+
+For lists where users can select/deselect individual items, use `Set<number>` for O(1) lookup:
+
+```typescript
+// State: Track selected indices with Set for efficient lookup
+const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
+
+// Initialize all items as selected when data arrives
+useEffect(() => {
+  if (items.length > 0) {
+    setSelectedItems(new Set(items.map((_, i) => i)));
+  }
+}, [items.length]); // See "Intentional useEffect Dependencies" pattern
+
+// Toggle with haptic feedback
+const toggleItemSelection = (index: number) => {
+  haptics.selection();
+  setSelectedItems((prev) => {
+    const updated = new Set(prev);
+    if (updated.has(index)) {
+      updated.delete(index);
+    } else {
+      updated.add(index);
+    }
+    return updated;
+  });
+};
+
+// In component - checkbox with accessibility
+<Pressable
+  onPress={() => toggleItemSelection(index)}
+  accessibilityRole="checkbox"
+  accessibilityState={{ checked: selectedItems.has(index) }}
+  hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }} // 44x44 touch target
+>
+  <Feather
+    name={selectedItems.has(index) ? "check-square" : "square"}
+    size={22}
+    color={selectedItems.has(index) ? theme.success : theme.textSecondary}
+  />
+</Pressable>
+
+// Visual dimming for unselected items
+<Card style={[styles.card, !isSelected && { opacity: 0.6 }]}>
+```
+
+**When to use:** Photo analysis results, batch operations, shopping lists.
+
+### Premium Feature Gating UI
+
+When a feature requires premium, extract the condition and provide clear feedback:
+
+```typescript
+// Extract condition to avoid repetition
+const isFeatureAvailable = features.someFeature && canUseFeature;
+
+// Button with lock badge and accessibility hint
+<Pressable
+  onPress={handleFeature}
+  accessibilityLabel={
+    isFeatureAvailable
+      ? "Use premium feature"
+      : "Premium feature locked"
+  }
+  accessibilityHint={
+    isFeatureAvailable
+      ? undefined
+      : "Upgrade to premium to unlock this feature"
+  }
+>
+  <Feather name="star" color={isFeatureAvailable ? theme.text : theme.textSecondary} />
+  <ThemedText style={{ color: isFeatureAvailable ? theme.text : theme.textSecondary }}>
+    Feature
+  </ThemedText>
+  {!isFeatureAvailable && (
+    <View style={[styles.lockBadge, { backgroundColor: withOpacity(theme.warning, 0.15) }]}>
+      <Feather name="lock" size={12} color={theme.warning} />
+    </View>
+  )}
+</Pressable>
+
+// Handler with warning haptic for locked state
+const handleFeature = () => {
+  if (isFeatureAvailable) {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    // Proceed with feature
+  } else {
+    haptics.notification(Haptics.NotificationFeedbackType.Warning);
+    // Optionally show upgrade prompt
+  }
+};
+```
+
+**Prefer `usePremiumFeature(key)` over raw context access** for checking a single feature flag in a component:
+
+```typescript
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+
+// Good: one-liner, boolean result
+const canShowMacros = usePremiumFeature("macroGoals");
+
+// Avoid: pulling the full context just to check one flag
+const { features } = usePremiumContext();
+const canShowMacros = features.macroGoals;
+```
+
+Use `usePremiumCamera()` only in camera screens where you need the combined bundle (barcode types, scan limits, quality, etc.).
+
+**Section-level gating — replace content with a lock row:**
+
+When an entire section is premium-only, show the content for premium users and replace it with a compact `Pressable` lock row for free users. The lock row should have full accessibility props and be tappable for a future upgrade modal.
+
+```typescript
+// ProfileScreen — NutritionGoalsSection
+const canShowMacros = usePremiumFeature("macroGoals");
+
+{canShowMacros ? (
+  <>
+    <View style={styles.macroGoalRow}>
+      {/* Protein progress bar */}
+    </View>
+    <View style={styles.macroGoalRow}>
+      {/* Carbs progress bar */}
+    </View>
+    <View style={[styles.macroGoalRow, styles.macroGoalRowLast]}>
+      {/* Fat progress bar */}
+    </View>
+  </>
+) : (
+  <Pressable
+    accessible
+    accessibilityRole="button"
+    accessibilityLabel="Detailed macro tracking requires Premium subscription"
+    accessibilityHint="Upgrade to premium to unlock macro goals"
+    onPress={() => {
+      // TODO: Show upgrade modal
+    }}
+    style={[styles.macroGoalRow, styles.macroGoalRowLast, styles.premiumLockRow]}
+  >
+    <Feather name="lock" size={16} color={theme.textSecondary} />
+    <ThemedText type="small" style={{ color: theme.textSecondary, flex: 1 }}>
+      Detailed macro tracking available with Premium
+    </ThemedText>
+  </Pressable>
+)}
+```
+
+**Key rules for section-level gating:**
+
+- Lock row uses `Pressable`, not `View` — keeps it tappable for upgrade prompts
+- Always set `accessible`, `accessibilityRole`, `accessibilityLabel`, and `accessibilityHint`
+- Use `theme.textSecondary` for lock icon and text (muted, not attention-grabbing)
+- Extract lock row layout into a named style (`premiumLockRow`) instead of inline
+
+**Disabled input gating — visible but non-editable:**
+
+When free users should _see_ calculated values but not _edit_ them, render the inputs as disabled with a lock icon overlay. This preserves layout and lets free users understand what premium offers.
+
+```typescript
+// GoalSetupScreen — macro goal inputs
+const canSetMacros = usePremiumFeature("macroGoals");
+
+<View style={[styles.goalItem, !canSetMacros && { opacity: 0.4 }]}>
+  <View>
+    <TextInput
+      style={[styles.goalInput, { backgroundColor: theme.backgroundSecondary, color: theme.proteinAccent }]}
+      value={manualProtein}
+      onChangeText={setManualProtein}
+      keyboardType="numeric"
+      editable={canSetMacros}
+      accessibilityLabel={
+        canSetMacros
+          ? "Daily protein target"
+          : "Daily protein target (Premium required)"
+      }
+    />
+    {!canSetMacros && (
+      <View style={styles.goalLockIcon}>
+        <Feather name="lock" size={12} color={theme.textSecondary} />
+      </View>
+    )}
+  </View>
+  <ThemedText type="small" style={{ color: theme.textSecondary }}>
+    Protein (g)
+  </ThemedText>
+</View>
+```
+
+**Key rules for disabled input gating:**
+
+- Set `editable={false}` on `TextInput` — prevents keyboard from opening
+- Apply `opacity: 0.4` to the wrapper — visually signals "unavailable"
+- Position a lock icon absolutely within the input area (`position: "absolute"`, top-right)
+- Append "(Premium required)" to `accessibilityLabel` so screen readers announce the restriction
+- The calculated server values still save normally — free users get defaults, premium users can override
+
+### Intentional useEffect Dependencies
+
+When you deliberately use a derived value (like `array.length`) instead of the array itself in a useEffect dependency, document WHY to prevent "fixes" that break the intended behavior:
+
+```typescript
+// Good: Clear comment explaining the intentional choice
+// Initialize all items as selected when foods array populates.
+// We intentionally only track foods.length (not the foods array reference) because:
+// 1. handleEditFood creates new array references but preserves length
+// 2. We only want to reset selections when AI analysis returns NEW foods
+// 3. This avoids resetting user's selections when they edit food names
+useEffect(() => {
+  if (foods.length > 0) {
+    setSelectedItems(new Set(foods.map((_, i) => i)));
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [foods.length]);
+```
+
+```typescript
+// Bad: Suppressing lint without explanation invites "fixes"
+useEffect(() => {
+  if (foods.length > 0) {
+    setSelectedItems(new Set(foods.map((_, i) => i)));
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [foods.length]); // Future dev: "Why not [foods]? Let me fix this..."
+```
+
+**Rule:** If you suppress `react-hooks/exhaustive-deps`, always explain WHY in a comment above the useEffect.
+
+### Conditional Pressable Rendering
+
+When building reusable wrapper components that may or may not be interactive, conditionally render as `View` or `Pressable` based on whether `onPress` is provided:
+
+```typescript
+// Good: Renders as View when not interactive
+export function Card({ children, onPress, style }: CardProps) {
+  const content = <>{children}</>;
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} style={[styles.card, style]}>
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <View style={[styles.card, style]}>{content}</View>;
+}
+
+// Usage - Card passes through touch events to parent
+<Pressable onPress={handleNavigate}>
+  <Card>  {/* Renders as View, doesn't block touches */}
+    <Text>Tap me</Text>
+  </Card>
+</Pressable>
+```
+
+```typescript
+// Bad: Always renders as Pressable
+export function Card({ children, onPress, style }: CardProps) {
+  return (
+    <Pressable onPress={onPress} style={[styles.card, style]}>
+      {children}
+    </Pressable>
+  );
+}
+
+// Problem - nested Pressables block touch events
+<Pressable onPress={handleNavigate}>  {/* This onPress never fires! */}
+  <Card>  {/* Inner Pressable captures and swallows the touch */}
+    <Text>Tap me</Text>
+  </Card>
+</Pressable>
+```
+
+**Why:** In React Native, nested `Pressable` components cause the inner one to capture touch events. If the inner `Pressable` has no `onPress` handler, the touch is swallowed and the parent never receives it.
+
+**When to use:** Any reusable component (Card, ListItem, Container) that wraps content and may optionally be tappable.
+
+### Route Params for Mode Toggling
+
+Use route params to toggle between screen modes instead of creating separate screens:
+
+```typescript
+// Good: Single screen with mode param (HistoryScreen.tsx)
+type HistoryScreenRouteProp = RouteProp<
+  { History: { showAll?: boolean } },
+  "History"
+>;
+
+export default function HistoryScreen() {
+  const route = useRoute<HistoryScreenRouteProp>();
+  const showAll = route.params?.showAll ?? false;
+
+  // Conditional rendering based on mode
+  if (showAll) {
+    return <FullHistoryView onBack={() => navigation.setParams({ showAll: false })} />;
+  }
+
+  return <DashboardView onViewAll={() => navigation.setParams({ showAll: true })} />;
+}
+```
+
+```typescript
+// Bad: Separate screens for each mode
+// HistoryDashboardScreen.tsx
+// FullHistoryScreen.tsx
+// Duplicates shared logic, state management, and navigation setup
+```
+
+**When to use:**
+
+- Dashboard + expanded view (Today dashboard vs full history)
+- List view + detail view in same context
+- Compact + expanded modes of same data
+
+**Benefits:**
+
+- Shared state and queries (no refetch when switching modes)
+- Cleaner navigation stack (back button works naturally)
+- Single source of truth for the data
+
+### CompositeNavigationProp for Cross-Stack Navigation
+
+When navigating from one tab stack to a screen in another tab stack, use `CompositeNavigationProp`:
+
+```typescript
+import {
+  CompositeNavigationProp,
+  useNavigation,
+} from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
+
+// Define the composite type for cross-tab navigation
+type HistoryScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<HistoryStackParamList, "History">,
+  BottomTabNavigationProp<MainTabParamList>
+>;
+
+export default function HistoryScreen() {
+  const navigation = useNavigation<HistoryScreenNavigationProp>();
+
+  const handleScanPress = () => {
+    // Navigate to ScanTab (different tab stack)
+    navigation.navigate("ScanTab");
+  };
+
+  const handleItemPress = (itemId: number) => {
+    // Navigate within current stack
+    navigation.navigate("ItemDetail", { itemId });
+  };
+}
+```
+
+**When to use:**
+
+- Dashboard with "Scan" CTA that navigates to camera tab
+- Profile screen navigating to history or settings in other tabs
+- Any cross-tab navigation from within a stack
+
+**Why:** Standard `NativeStackNavigationProp` only knows about screens in its own stack. `CompositeNavigationProp` combines the stack navigator's type with the tab navigator's type, enabling type-safe navigation across both.
+
+### Full-Screen Detail with transparentModal
+
+Use `presentation: "transparentModal"` with `slide_from_bottom` animation for full-screen detail views. The screen component fills the entire screen with its own background, close button, and scrollable content. The hero image extends to the very top with no native chrome.
+
+**Key learnings from iOS modal presentations:**
+
+| Presentation                | Background visible            | Native chrome        | Verdict          |
+| --------------------------- | ----------------------------- | -------------------- | ---------------- |
+| `modal` / `formSheet`       | Yes                           | Grabber bar, detents | Not customizable |
+| `containedTransparentModal` | Yes                           | Grabber bar          | Not customizable |
+| `fullScreenModal`           | No (detaches previous screen) | None                 | Black background |
+| `transparentModal`          | Yes                           | None                 | Use this one     |
+
+**Navigator config:**
+
+```typescript
+// RootStackNavigator.tsx
+<Stack.Screen
+  name="RecipeDetail"
+  component={RecipeDetailScreen}
+  options={{
+    headerShown: false,
+    presentation: "transparentModal",
+    animation: "slide_from_bottom",
+  }}
+/>
+```
+
+**Screen component:**
+
+```typescript
+// RecipeDetailScreen.tsx
+export default function RecipeDetailScreen() {
+  const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const navigation = useNavigation();
+  const dismiss = useCallback(() => navigation.goBack(), [navigation]);
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+      {/* Close button — floats over hero image */}
+      <View style={[styles.closeHeader, { top: insets.top + Spacing.xs }]}>
+        <Pressable
+          onPress={dismiss}
+          hitSlop={8}
+          style={styles.closeButton}
+          accessibilityLabel="Close"
+          accessibilityRole="button"
+        >
+          <Feather name="chevron-down" size={20} color="#fff" />
+        </Pressable>
+      </View>
+
+      <ScrollView
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.xl }}
+      >
+        <Image source={{ uri: imageUri }} style={styles.heroImage} />
+        {/* Content below image */}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  closeHeader: {
+    position: "absolute",
+    right: Spacing.md,
+    zIndex: 10,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.4)", // hardcoded
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroImage: {
+    width: "100%",
+    height: 250,
+  },
+});
+```
+
+**Critical ScrollView props:** On iOS, ScrollView inside a modal automatically adds content insets for the status bar. Set `contentInsetAdjustmentBehavior="never"` and `automaticallyAdjustContentInsets={false}` to prevent a gap above the hero image.
+
+**When to use:** Detail views, recipe cards, or any screen that slides up over the current content as a full-screen overlay.
+
+**When NOT to use:** Standard modals that benefit from native iOS sheet gestures (drag-to-dismiss detents). Use `presentation: "modal"` or `formSheet` for those.
+
+**Why:** `transparentModal` is the only native-stack presentation that both keeps the previous screen visible (no black/grey background flash) and adds no native chrome (no grabber bars or forced corner radius). The tradeoff is you must handle your own close button and cannot use native swipe-to-dismiss.
+
+### fullScreenModal Exception for Camera
+
+Use `presentation: "fullScreenModal"` instead of `transparentModal` for camera/scan screens. `transparentModal` has rendering issues on iOS that cause visual artifacts, and `fullScreenModal`'s black background is acceptable because the camera feed fills the screen immediately.
+
+```typescript
+<Stack.Screen
+  name="Scan"
+  component={ScanScreen}
+  options={{
+    headerShown: false,
+    // fullScreenModal intentional — transparentModal had rendering issues
+    presentation: "fullScreenModal",
+    animation: "slide_from_bottom",
+  }}
+/>
+```
+
+**When to use:** Camera screens, barcode scanners, or any full-screen view where the content fills the screen with a dark/opaque background.
+
+**When NOT to use:** Detail views or overlays where the previous screen should remain visible underneath. Use `transparentModal` for those.
+
+**Why:** `transparentModal` is the default recommendation for full-screen overlays, but it has rendering issues that cause visual artifacts on some iOS versions. Camera screens don't benefit from transparency anyway since the camera feed is opaque, so `fullScreenModal` is the better choice.
+
+### Two-Tap Expand-then-Navigate for List Items
+
+When list items have both a detail view and contextual actions (favourite, share, delete), use a two-tap interaction: first tap expands an animated action row, second tap navigates to detail. This avoids swipe gestures (which conflict with horizontal scrolling) and long-press (which has poor discoverability). The parent tracks a single `expandedItemId` (not a Set) for accordion behavior -- only one item expands at a time.
+
+**Key insight -- branch on expanded state in the child:**
+
+```typescript
+const handlePress = () => {
+  if (isExpanded) {
+    onNavigateToDetail(item.id); // Second tap: navigate
+  } else {
+    onToggleExpand(item.id); // First tap: expand actions
+  }
+};
+```
+
+**Key elements:**
+
+1. **Single-selection accordion** -- `expandedItemId` is a single `number | null`, toggled via `setExpandedItemId(prev => prev === itemId ? null : itemId)`
+2. **Collapse on refresh** -- reset `setExpandedItemId(null)` in `handleRefresh`
+3. **FlatList `extraData`** -- pass `expandedItemId` so FlatList re-renders when expansion state changes
+4. **Animated height** -- use `withTiming` on a `useSharedValue` for smooth expand/collapse
+
+**References:**
+
+- `client/screens/HistoryScreen.tsx:769` -- `handleToggleExpand`, `handleNavigateToDetail`
+- `client/components/HistoryItemActions.tsx` -- action button row
+- `client/constants/animations.ts:21` -- `expandTimingConfig`, `collapseTimingConfig`
+
+### FAB Overlay with Tab Bar Clearance
+
+When adding a Floating Action Button (FAB) as a sibling to `Tab.Navigator`, use static layout constants instead of `useBottomTabBarHeight()`. The hook requires Tab.Navigator context and crashes when called from a sibling component.
+
+**Layout constants** (defined in `client/constants/theme.ts`):
+
+```typescript
+export const TAB_BAR_HEIGHT = Platform.select({ ios: 88, android: 72 }) ?? 88;
+export const FAB_SIZE = 56;
+export const FAB_CLEARANCE = FAB_SIZE + 16; // FAB size + gap
+```
+
+**FAB positioning** (sibling to Tab.Navigator, not a child):
+
+```typescript
+// MainTabNavigator.tsx
+<View style={{ flex: 1 }}>
+  <Tab.Navigator>{/* tabs */}</Tab.Navigator>
+  <ScanFAB />  {/* sibling — cannot use useBottomTabBarHeight() here */}
+</View>
+```
+
+```typescript
+// ScanFAB.tsx — position relative to static tab bar height
+<AnimatedPressable
+  style={[styles.fab, { bottom: TAB_BAR_HEIGHT + Spacing.lg }]}
+>
+```
+
+**Content clearance** — every tab screen must add `FAB_CLEARANCE` to its bottom padding so scrollable content isn't obscured:
+
+```typescript
+import { FAB_CLEARANCE } from "@/constants/theme";
+
+<ScrollView
+  contentContainerStyle={{
+    paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+  }}
+/>
+```
+
+**Critical gotcha:** `useBottomTabBarHeight()` from `@react-navigation/bottom-tabs` only works inside components rendered as children of `Tab.Navigator` (tab screens). A FAB rendered as a sibling will crash with "No safe area value available" because the hook depends on Tab.Navigator context that doesn't exist at the sibling level.
+
+**When to use:** Any persistent overlay (FAB, mini-player, banner) positioned above the tab bar but outside the tab navigator's component tree.
+
+**Why:** Static constants are reliable across all component positions. The values must be kept in sync with `Tab.Navigator`'s `tabBarStyle.height` — both reference `TAB_BAR_HEIGHT` from `theme.ts` to ensure a single source of truth.
+
+### Coordinated Pull-to-Refresh for Multiple Queries
+
+When a screen fetches data from multiple endpoints, coordinate refresh with `Promise.all`:
+
+```typescript
+const {
+  data: summaryData,
+  refetch: refetchSummary,
+} = useQuery<DailySummaryResponse>({
+  queryKey: ["/api/daily-summary"],
+});
+
+const {
+  data: itemsData,
+  refetch: refetchItems,
+} = useInfiniteQuery<PaginatedResponse<ScannedItemResponse>>({
+  queryKey: ["/api/scanned-items"],
+});
+
+const [refreshing, setRefreshing] = useState(false);
+
+const handleRefresh = useCallback(async () => {
+  setRefreshing(true);
+  try {
+    // Refresh all queries in parallel
+    await Promise.all([refetchSummary(), refetchItems()]);
+  } finally {
+    setRefreshing(false);
+  }
+}, [refetchSummary, refetchItems]);
+
+return (
+  <FlatList
+    refreshing={refreshing}
+    onRefresh={handleRefresh}
+    // ...
+  />
+);
+```
+
+**When to use:**
+
+- Dashboard screens with stats + list data
+- Profile screens with user info + activity data
+- Any screen combining data from multiple API calls
+
+**Why:** Individual `refetch()` calls would cause jarring partial updates. Coordinated refresh ensures the UI updates atomically when all data is ready.
+
+### Safe Area Handling
+
+Always use `useSafeAreaInsets()` for screen layouts:
+
+```typescript
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+export default function MyScreen() {
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+
+  return (
+    <ScrollView
+      contentContainerStyle={{
+        paddingTop: headerHeight + Spacing.lg,
+        paddingBottom: insets.bottom + Spacing.xl,
+      }}
+    >
+      {/* Content */}
+    </ScrollView>
+  );
+}
+```
+
+**Why:** Handles iOS notch, Dynamic Island, and home indicator. Adding theme spacing (`Spacing.lg`, `Spacing.xl`) provides visual breathing room beyond the safe area.
+
+### useRef for Synchronous Checks in Callbacks
+
+When a callback needs to check mutable state synchronously (e.g., debouncing, rate limiting), use `useRef` instead of state. State values captured in closures become stale:
+
+```typescript
+// Good: useRef for synchronous checks
+export function useCamera() {
+  const [isScanning, setIsScanning] = useState(false);
+  const isScanningRef = useRef(false);
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleBarcodeScanned = useCallback((barcode: string) => {
+    // Use ref for synchronous check - always has current value
+    if (isScanningRef.current) return;
+
+    isScanningRef.current = true;
+    setIsScanning(true);
+
+    // Process barcode...
+
+    // Debounce: reset after delay
+    debounceTimeoutRef.current = setTimeout(() => {
+      isScanningRef.current = false;
+      setIsScanning(false);
+    }, 2000);
+  }, []); // Empty deps - refs don't need to be dependencies
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return { isScanning, handleBarcodeScanned };
+}
+```
+
+```typescript
+// Bad: State check in callback - always stale!
+export function useCamera() {
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleBarcodeScanned = useCallback(
+    (barcode: string) => {
+      // BUG: isScanning is captured at callback creation time
+      // It will always be the initial value (false)
+      if (isScanning) return; // This never blocks!
+
+      setIsScanning(true);
+      // Process barcode... but rapid scans all get through
+    },
+    [isScanning],
+  ); // Adding dependency recreates callback but doesn't fix the issue
+}
+```
+
+**Why this happens:** `useCallback` creates a closure that captures state values at creation time. Even with dependencies, the check happens against a potentially outdated snapshot.
+
+**When to use:**
+
+- Debouncing rapid events (barcode scans, button clicks)
+- Rate limiting (API calls, animations)
+- Any callback that needs to check "am I already processing?"
+
+**Pattern:** Keep both `useState` (for UI rendering) and `useRef` (for synchronous logic) when you need both reactive UI updates and reliable synchronous checks.
+
+---
+
+### Haptic Feedback on User Actions
+
+Provide haptic feedback for meaningful interactions:
+
+```typescript
+import * as Haptics from "expo-haptics";
+
+// Light impact for navigation/selection
+const handleItemPress = () => {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  navigation.navigate("Detail");
+};
+
+// Success notification for completed actions
+const handleSave = async () => {
+  await saveData();
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+};
+
+// Error notification for failures
+const handleError = () => {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+};
+```
+
+**When to use:** Navigation, successful saves, errors, toggle switches, barcode scan success.
+
+**When NOT to use:** Every tap, scrolling, or high-frequency interactions.
+
+### Accessibility Props Pattern
+
+Provide semantic accessibility information for screen readers (VoiceOver on iOS, TalkBack on Android). This is essential for WCAG 2.1 Level AA compliance.
+
+#### Core Accessibility Props
+
+```typescript
+// accessibilityLabel: Descriptive text read by screen readers
+// accessibilityRole: Semantic role (button, checkbox, radio, text, header, etc.)
+// accessibilityState: Current state (selected, checked, disabled, expanded)
+// accessibilityHint: Optional hint about what happens when activated
+
+<Pressable
+  accessibilityLabel="Add to favorites"
+  accessibilityRole="button"
+  accessibilityHint="Saves this item to your favorites list"
+  onPress={handleAddToFavorites}
+>
+  <Feather name="heart" size={24} />
+</Pressable>
+```
+
+#### Checkbox Pattern (Multi-Select Lists)
+
+Use for lists where users can select multiple items (allergies, health conditions):
+
+```typescript
+// Good: Combines title and description for context
+<Pressable
+  onPress={() => toggleSelection(item.id)}
+  accessibilityLabel={`${item.name}: ${item.description}`}
+  accessibilityRole="checkbox"
+  accessibilityState={{ checked: selectedIds.includes(item.id) }}
+>
+  <Text>{item.name}</Text>
+  <Text>{item.description}</Text>
+  <Feather name={isSelected ? "check-square" : "square"} />
+</Pressable>
+```
+
+**Why combine title and description:** Screen reader users hear the full context in one announcement, rather than having to navigate to separate elements.
+
+#### Radio Pattern (Single-Select Lists)
+
+Use for lists where users select exactly one option (diet type, goals):
+
+```typescript
+// Good: Uses radio role with selected state
+<Pressable
+  onPress={() => setSelectedOption(option.id)}
+  accessibilityLabel={`${option.name}: ${option.description}`}
+  accessibilityRole="radio"
+  accessibilityState={{ selected: selectedOption === option.id }}
+>
+  <Text>{option.name}</Text>
+  <Text>{option.description}</Text>
+  <View style={[styles.radioOuter, isSelected && styles.radioSelected]}>
+    {isSelected && <View style={styles.radioInner} />}
+  </View>
+</Pressable>
+```
+
+**Difference from checkbox:** Use `accessibilityRole="radio"` with `selected` state (not `checked`). This tells screen readers the selection is mutually exclusive.
+
+#### Icon-Only Button Pattern
+
+Icon buttons without visible text MUST have an `accessibilityLabel`:
+
+```typescript
+// Good: Descriptive label for icon button
+<Pressable
+  onPress={() => navigation.goBack()}
+  accessibilityLabel="Go back"
+  accessibilityRole="button"
+>
+  <Feather name="arrow-left" size={24} color={colors.text} />
+</Pressable>
+
+// Good: Toggle button with state-aware label
+<Pressable
+  onPress={() => setTorch(!torch)}
+  accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
+  accessibilityRole="button"
+  accessibilityState={{ checked: torch }}
+>
+  <Feather name={torch ? "zap" : "zap-off"} size={24} />
+</Pressable>
+```
+
+**Why state-aware labels:** Users know both the current state AND what will happen when they activate the button.
+
+#### Password Visibility Toggle Pattern
+
+```typescript
+<Pressable
+  onPress={() => setShowPassword(!showPassword)}
+  accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+  accessibilityRole="button"
+  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+>
+  <Feather name={showPassword ? "eye-off" : "eye"} size={20} />
+</Pressable>
+```
+
+#### Text Input Pattern
+
+```typescript
+<TextInput
+  value={username}
+  onChangeText={setUsername}
+  placeholder="Username"
+  accessibilityLabel="Username"
+  accessibilityHint="Enter your username to sign in"
+  autoCapitalize="none"
+  autoCorrect={false}
+/>
+```
+
+**When to add `accessibilityHint`:** When the purpose isn't obvious from the label alone, or when there are specific requirements (format, length, etc.).
+
+#### List Item Navigation Pattern
+
+For items that navigate to detail screens:
+
+```typescript
+// Good: Comprehensive label with action hint
+const HistoryItem = React.memo(function HistoryItem({
+  item,
+  onPress,
+}: HistoryItemProps) {
+  const calorieText = item.calories ? `${item.calories} calories` : "Calories unknown";
+
+  return (
+    <Pressable
+      onPress={() => onPress(item)}
+      accessibilityLabel={`${item.productName}${item.brandName ? ` by ${item.brandName}` : ""}, ${calorieText}. Tap to view details.`}
+      accessibilityRole="button"
+    >
+      <Text>{item.productName}</Text>
+      <Text>{item.brandName}</Text>
+      <Text>{item.calories} cal</Text>
+    </Pressable>
+  );
+});
+```
+
+**Why include "Tap to view details":** Informs users that activation will navigate somewhere, not perform an immediate action.
+
+### Touch Target Size Pattern
+
+Ensure interactive elements meet the minimum touch target size of 44x44 points (WCAG 2.1 Level AA requirement):
+
+```typescript
+// Good: Element meets minimum size naturally
+<Pressable
+  style={{ width: 48, height: 48, justifyContent: "center", alignItems: "center" }}
+  onPress={handlePress}
+>
+  <Feather name="settings" size={24} />
+</Pressable>
+
+// Good: Small visual element with expanded touch area using hitSlop
+<Pressable
+  onPress={handlePress}
+  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+  accessibilityLabel="Show password"
+>
+  <Feather name="eye" size={20} />
+</Pressable>
+```
+
+**When to use `hitSlop`:**
+
+- Icon buttons smaller than 44pt
+- Inline interactive elements (password toggle inside input)
+- Dense UIs where visual spacing is constrained
+
+**Calculating hitSlop:** If your touchable is 24pt, add hitSlop of 10pt on each side to reach 44pt total: `(24 + 10 + 10) = 44pt`.
+
+### Accessibility Grouping Pattern
+
+Group related elements so screen readers announce them together:
+
+```typescript
+// Good: Card announced as single unit
+<View
+  accessible={true}
+  accessibilityLabel={`${productName}, ${brandName}, ${calories} calories. Scanned ${relativeTime}`}
+>
+  <Text>{productName}</Text>
+  <Text>{brandName}</Text>
+  <Text>{calories} cal</Text>
+  <Text>{relativeTime}</Text>
+</View>
+```
+
+**When to use `accessible={true}`:**
+
+- Cards or list items with multiple text elements
+- Complex components that should be announced as one unit
+- When navigating element-by-element would be tedious
+
+**When NOT to use:** When child elements are independently interactive (buttons, links within the group).
+
+### Radio/Checkbox Group Container Pattern
+
+When rendering lists of radio buttons or checkboxes, wrap them in a container with the appropriate group role:
+
+```typescript
+// Good: Radio group with accessibilityRole
+<View accessibilityRole="radiogroup">
+  {OPTIONS.map((option) => (
+    <Pressable
+      key={option.id}
+      onPress={() => setSelected(option.id)}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: selected === option.id }}
+    >
+      {/* Radio button content */}
+    </Pressable>
+  ))}
+</View>
+
+// Good: Checkbox group (no special container role needed, but can use "list")
+<View accessibilityRole="list">
+  {OPTIONS.map((option) => (
+    <Pressable
+      key={option.id}
+      onPress={() => toggleOption(option.id)}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: selectedIds.includes(option.id) }}
+    >
+      {/* Checkbox content */}
+    </Pressable>
+  ))}
+</View>
+```
+
+**Why:** Screen readers use the `radiogroup` role to understand that only one option can be selected. This provides proper context and navigation behavior for assistive technology users.
+
+**When to use:**
+
+- Single-select option lists (diet type, goals, activity level)
+- Any UI where exactly one option must be selected
+
+### Dynamic Accessibility Announcements
+
+Announce important state changes that aren't reflected in focus:
+
+```typescript
+import { AccessibilityInfo } from "react-native";
+
+// Announce scan success
+const handleBarcodeScanned = async (barcode: string) => {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  AccessibilityInfo.announceForAccessibility("Barcode scanned successfully");
+  // Process barcode...
+};
+
+// Announce errors
+const handleError = (message: string) => {
+  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  AccessibilityInfo.announceForAccessibility(`Error: ${message}`);
+};
+```
+
+**When to use:**
+
+- Success/error states after async operations
+- Content updates not caused by user navigation
+- Timer-based notifications
+
+### useAccessibility Hook Pattern
+
+Centralize accessibility detection with a custom hook that provides reduced motion and screen reader status:
+
+```typescript
+// client/hooks/useAccessibility.ts
+import { useReducedMotion } from "react-native-reanimated";
+import { AccessibilityInfo } from "react-native";
+import { useState, useEffect } from "react";
+
+export function useAccessibility() {
+  const reducedMotion = useReducedMotion();
+  const [screenReaderEnabled, setScreenReaderEnabled] = useState(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isScreenReaderEnabled().then(setScreenReaderEnabled);
+    const subscription = AccessibilityInfo.addEventListener(
+      "screenReaderChanged",
+      setScreenReaderEnabled,
+    );
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  return {
+    reducedMotion: reducedMotion ?? false,
+    screenReaderEnabled,
+  };
+}
+```
+
+**Why:** Provides a single source of truth for accessibility settings across the app.
+
+**When to use:**
+
+- Components with animations that should respect reduced motion
+- Features that behave differently with screen readers
+- Any component needing accessibility context
+
+### Accessibility-Aware Haptics Pattern
+
+Wrap haptic feedback to automatically disable when reduced motion is preferred:
+
+```typescript
+// client/hooks/useHaptics.ts
+import * as Haptics from "expo-haptics";
+import { useCallback } from "react";
+import { useAccessibility } from "./useAccessibility";
+
+export function useHaptics() {
+  const { reducedMotion } = useAccessibility();
+
+  const impact = useCallback(
+    (
+      style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Medium,
+    ) => {
+      if (!reducedMotion) {
+        Haptics.impactAsync(style);
+      }
+    },
+    [reducedMotion],
+  );
+
+  const notification = useCallback(
+    (type: Haptics.NotificationFeedbackType) => {
+      if (!reducedMotion) {
+        Haptics.notificationAsync(type);
+      }
+    },
+    [reducedMotion],
+  );
+
+  const selection = useCallback(() => {
+    if (!reducedMotion) {
+      Haptics.selectionAsync();
+    }
+  }, [reducedMotion]);
+
+  return { impact, notification, selection, disabled: reducedMotion };
+}
+```
+
+**Usage:**
+
+```typescript
+const haptics = useHaptics();
+
+const handlePress = () => {
+  haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+  // ... action
+};
+```
+
+**Why:** Users who enable reduced motion often want reduced sensory feedback overall. This respects that preference while keeping haptic code unchanged.
+
+### Reduced Motion Animation Pattern
+
+Skip or simplify animations when the user has reduced motion enabled:
+
+```typescript
+import { useAccessibility } from "@/hooks/useAccessibility";
+import Animated, { FadeInDown } from "react-native-reanimated";
+
+function ListItem({ item, index }: { item: Item; index: number }) {
+  const { reducedMotion } = useAccessibility();
+
+  // Skip entrance animation when reduced motion is preferred
+  const enteringAnimation = reducedMotion
+    ? undefined
+    : FadeInDown.delay(index * 50).duration(300);
+
+  return (
+    <Animated.View entering={enteringAnimation}>
+      {/* content */}
+    </Animated.View>
+  );
+}
+```
+
+**For press animations:**
+
+```typescript
+const handlePressIn = () => {
+  if (!reducedMotion) {
+    scale.value = withSpring(0.98, pressSpringConfig);
+  }
+};
+
+const handlePressOut = () => {
+  if (!reducedMotion) {
+    scale.value = withSpring(1, pressSpringConfig);
+  }
+};
+```
+
+**Why:** WCAG 2.1 requires respecting the "prefers-reduced-motion" setting. This prevents motion sickness and cognitive overload for users who need it.
+
+**For continuous/looping animations:**
+
+Animations that run indefinitely (pulse, shimmer, breathing effects) need a different approach - set a static fallback value instead:
+
+```typescript
+const cornerOpacity = useSharedValue(0.6);
+const { reducedMotion } = useAccessibility();
+
+useEffect(() => {
+  if (reducedMotion) {
+    cornerOpacity.value = 0.8; // Static fallback value
+    return; // Skip animation setup entirely
+  }
+
+  // Only start continuous animation if reduced motion is disabled
+  cornerOpacity.value = withRepeat(
+    withSequence(
+      withTiming(1, { duration: 1000 }),
+      withTiming(0.6, { duration: 1000 }),
+    ),
+    -1, // Infinite repeat
+    true, // Reverse direction
+  );
+}, [reducedMotion]); // Re-run if preference changes
+```
+
+**Key differences from entrance/press animations:**
+
+| Animation Type              | Reduced Motion Approach         |
+| --------------------------- | ------------------------------- |
+| Entrance (`entering` prop)  | Set to `undefined`              |
+| Press (scale on tap)        | Skip `withSpring` call          |
+| Continuous (pulse, shimmer) | Set static value + early return |
+
+**When to use:** Pulse effects, shimmer loaders, breathing animations, any `withRepeat` with `-1` (infinite).
+
+### Skeleton Loader Pattern
+
+Create reusable skeleton components with shimmer animation and reduced motion support:
+
+```typescript
+// client/components/SkeletonLoader.tsx
+export function SkeletonBox({ width, height, borderRadius, style }: SkeletonBoxProps) {
+  const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
+  const shimmerValue = useSharedValue(0);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      shimmerValue.value = 0.5; // Static opacity for reduced motion
+      return;
+    }
+
+    shimmerValue.value = withRepeat(
+      withTiming(1, { duration: 1200 }),
+      -1,
+      false,
+    );
+
+    return () => cancelAnimation(shimmerValue);
+  }, [reducedMotion]);
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(shimmerValue.value, [0, 0.5, 1], [0.3, 0.7, 0.3]),
+  }));
+
+  return (
+    <Animated.View
+      style={[{ width, height, borderRadius, backgroundColor: theme.backgroundSecondary }, shimmerStyle, style]}
+    />
+  );
+}
+```
+
+**Hide skeletons from screen readers:**
+
+```typescript
+<FlatList
+  ListEmptyComponent={
+    isLoading ? (
+      <View accessibilityElementsHidden>
+        <SkeletonList count={5} />
+      </View>
+    ) : (
+      <EmptyState />
+    )
+  }
+/>
+```
+
+**Why:** Screen readers shouldn't announce loading placeholders. `accessibilityElementsHidden` hides the entire subtree from assistive technologies.
+
+### Dynamic Loading State Labels
+
+Update `accessibilityLabel` to reflect loading state for buttons and actions:
+
+```typescript
+<Button
+  onPress={handleSubmit}
+  disabled={isLoading}
+  accessibilityLabel={
+    isLoading
+      ? mode === "login" ? "Signing in" : "Creating account"
+      : mode === "login" ? "Sign In" : "Create Account"
+  }
+>
+  {isLoading ? <ActivityIndicator /> : mode === "login" ? "Sign In" : "Create Account"}
+</Button>
+```
+
+**For loading indicators:**
+
+```typescript
+function LoadingFooter() {
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      accessibilityLabel="Loading more items"
+    >
+      <ActivityIndicator size="small" />
+    </View>
+  );
+}
+```
+
+**Why:** Screen reader users need to know when an action is in progress. `accessibilityLiveRegion="polite"` announces the content when it appears without interrupting current speech.
+
+### Query Error Retry Pattern
+
+Provide retry functionality for failed data fetching with accessible controls:
+
+```typescript
+const { data, isLoading, isError, refetch } = useQuery({
+  queryKey: ["/api/dietary-profile"],
+  // ...
+});
+
+// In error UI
+{isError && (
+  <View style={styles.errorContainer}>
+    <ThemedText>Failed to load preferences</ThemedText>
+    <Pressable
+      onPress={() => refetch()}
+      accessibilityLabel="Retry loading dietary preferences"
+      accessibilityRole="button"
+      style={({ pressed }) => [
+        styles.retryButton,
+        { opacity: pressed ? 0.7 : 1 },
+      ]}
+    >
+      <Feather name="refresh-cw" size={14} />
+      <ThemedText>Retry</ThemedText>
+    </Pressable>
+  </View>
+)}
+```
+
+**Why:** Users should always have a way to recover from transient errors without navigating away. The retry button provides an immediate action rather than requiring a pull-to-refresh or screen reload.
+
+### Modal Focus Trapping
+
+Add `accessibilityViewIsModal` to the inner container of all modal components to prevent screen readers from accessing content behind the modal:
+
+```typescript
+<Modal visible={visible} transparent animationType="slide">
+  <View style={styles.overlay}>
+    <KeyboardAvoidingView
+      accessibilityViewIsModal   // ← on the inner focusable container
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      {/* modal content */}
+    </KeyboardAvoidingView>
+  </View>
+</Modal>
+```
+
+**Why:** Without this prop, VoiceOver/TalkBack can navigate to elements behind the modal overlay, confusing users and breaking the expected focus flow.
+
+### Inline Validation Errors
+
+Use the shared `<InlineError>` component for form validation instead of `Alert.alert()`:
+
+```typescript
+import { InlineError } from "@/components/InlineError";
+
+const [error, setError] = useState<string | null>(null);
+
+// Validate on submit
+const handleSubmit = () => {
+  if (isNaN(value) || value <= 0) {
+    setError("Please enter a valid value.");
+    return;
+  }
+  setError(null);
+  // proceed...
+};
+
+// Clear error on input change
+<TextInput onChangeText={(text) => {
+  setValue(text);
+  if (error) setError(null);
+}} />
+
+// Render after input
+<InlineError message={error} style={{ marginTop: Spacing.sm }} />
+```
+
+**Why:** Inline errors are visible alongside the input, accessible via `accessibilityRole="alert"`, and don't block interaction like `Alert.alert()` does.
+
+### KeyboardAvoidingView Android Behavior
+
+Always use `"height"` for Android, not `undefined`:
+
+```typescript
+<KeyboardAvoidingView
+  behavior={Platform.OS === "ios" ? "padding" : "height"}
+>
+```
+
+**Why:** `undefined` on Android causes the keyboard to overlap inputs. `"height"` shrinks the view to fit above the keyboard.
+
+### Keyboard Dismiss on Scroll
+
+Add `keyboardDismissMode` to scrollable views on screens with text inputs:
+
+```typescript
+// Form screens — dismiss on drag
+<ScrollView keyboardDismissMode="on-drag">
+
+// Chat screens — interactive dismiss (keyboard follows finger)
+<FlatList keyboardDismissMode="interactive" />
+```
+
+**Why:** Users expect the keyboard to dismiss when scrolling. Without this, they must tap outside the input to dismiss.
+
+### Cross-Platform Live Region Announcements
+
+`accessibilityLiveRegion` is Android-only in React Native. For cross-platform coverage, pair it with `AccessibilityInfo.announceForAccessibility()`:
+
+```typescript
+// Android: live region announces automatically
+<View accessibilityLiveRegion="polite">
+  <ThemedText>{statusText}</ThemedText>
+</View>
+
+// iOS: announce via useEffect when state changes
+useEffect(() => {
+  if (isScanning) {
+    AccessibilityInfo.announceForAccessibility("Scanning");
+  }
+}, [isScanning]);
+```
+
+**Why:** `accessibilityLiveRegion` has no effect on iOS. The explicit announcement ensures VoiceOver users get the same feedback as TalkBack users.
+
+### Input Error States with `aria-invalid`
+
+Use `aria-invalid` (not `accessibilityState={{ invalid: true }}`) to mark inputs in an error state:
+
+```tsx
+<RNTextInput
+  aria-invalid={error ? true : undefined}
+  accessibilityHint={error && errorMessage ? errorMessage : undefined}
+  {...props}
+/>
+```
+
+**Why:** React Native's `AccessibilityState` type does not include `invalid` — using `accessibilityState={{ invalid: true }}` causes a TypeScript error. The `aria-invalid` prop is the correct cross-platform ARIA prop supported since RN 0.71.
+
+**References:**
+
+- `client/components/TextInput.tsx` — shared input component with error state
+
+### `role` Prop for Unsupported ARIA Roles
+
+When `accessibilityRole` doesn't support a needed value (like `"group"`), use the `role` prop instead:
+
+```tsx
+// Bad: "group" is not in accessibilityRole's type union — TS error
+<View accessibilityRole="group" accessibilityLabel="Side effects">
+
+// Good: role prop supports all ARIA roles (RN 0.73+)
+<View role="group" accessibilityLabel="Side effects">
+```
+
+**When to use:** ARIA roles not in `accessibilityRole`'s type union: `"group"`, `"list"`, `"listitem"`, `"form"`, etc.
+
+**When NOT to use:** Roles that `accessibilityRole` already supports (`"button"`, `"radiogroup"`, `"checkbox"`, `"alert"`, etc.) — prefer `accessibilityRole` for consistency with the rest of the codebase.
+
+**References:**
+
+- `client/screens/GLP1CompanionScreen.tsx` — `role="group"` on checkbox group container
+
+### Cancel Running Animations on `reducedMotion` Change
+
+When `reducedMotion` toggles at runtime (user enables Reduce Motion while the app is open), actively cancel running `withRepeat` animations and reset shared values:
+
+```tsx
+const dot1 = useSharedValue(0);
+const { reducedMotion } = useAccessibility();
+
+useEffect(() => {
+  if (reducedMotion) {
+    cancelAnimation(dot1);
+    dot1.value = 0; // Reset to rest position
+    return;
+  }
+  dot1.value = withRepeat(withTiming(1, { duration: 600 }), -1, true);
+}, [dot1, reducedMotion]);
+```
+
+**Why:** Simply returning early from the effect doesn't stop already-running `withRepeat` animations. The shared values continue animating on the UI thread. `cancelAnimation()` explicitly stops them, and resetting to 0 (or 1, depending on the rest state) ensures a clean visual state.
+
+**When to use:** Any `useEffect` that starts `withRepeat` or continuous animations conditionally on `reducedMotion`.
+
+**When NOT to use:** One-shot entrance animations using the `entering` prop (these are handled by passing `undefined` when `reducedMotion` is true).
+
+**References:**
+
+- `client/components/ChatBubble.tsx` — typing indicator dots
+- `client/components/VoiceLogButton.tsx` — recording pulse
+
+### Ref Guard for One-Shot Effects
+
+When a `useEffect` should fire a side effect exactly once per boolean transition (e.g., show a toast when an error flag becomes `true`), use a ref to prevent duplicate firings. Without the guard, the effect re-runs whenever any dependency in the array changes — even if the triggering boolean hasn't toggled.
+
+```tsx
+// client/screens/ChatScreen.tsx — one-shot toast on stream error
+const shownStreamErrorRef = useRef(false);
+
+useEffect(() => {
+  if (streamError && !shownStreamErrorRef.current) {
+    shownStreamErrorRef.current = true;
+    toast.error("Response was interrupted.");
+  }
+  if (!streamError) {
+    shownStreamErrorRef.current = false;
+  }
+}, [streamError, toast]);
+```
+
+**Why:** React's `useEffect` fires whenever any value in the dependency array changes reference. If `toast` gets a new reference (e.g., context provider re-renders) while `streamError` is still `true`, the effect body runs again — showing a duplicate toast. The ref tracks whether the side effect has already been dispatched for the current `true` cycle and resets when the flag returns to `false`.
+
+**When to use:**
+
+- Showing a toast or alert in response to a boolean error/success flag
+- Triggering a one-time analytics event when a state condition is met
+- Any `useEffect` where a side effect should fire once per `false → true` transition, not on every re-render while the value remains `true`
+
+**When NOT to use:**
+
+- Effects that should legitimately re-run on every dependency change (e.g., updating derived state)
+- Effects gated on values that naturally reset immediately (no window for duplicate fires)
+
+**References:**
+
+- `client/screens/ChatScreen.tsx` — stream error toast with `shownStreamErrorRef`
+
+### WCAG Color Contrast
+
+Light mode color tokens must maintain at least 4.5:1 contrast ratio against white backgrounds (WCAG 2.1 AA). Current compliant values:
+
+| Token                           | Value     | Ratio  |
+| ------------------------------- | --------- | ------ |
+| `textSecondary`                 | `#717171` | ~4.5:1 |
+| `success` / `proteinAccent`     | `#008A38` | ~4.6:1 |
+| `calorieAccent` / `carbsAccent` | `#C94E1A` | ~4.6:1 |
+| `fatAccent`                     | `#8C6800` | ~5.1:1 |
+
+When adding new color tokens, verify contrast at [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/) before committing.
+
+### Multi-Section Accordion with Set State
+
+When multiple sections can be independently expanded/collapsed (unlike single-selection accordions that use `number | null`), use a `Set` for the expanded state. Initialize with a default via a factory function.
+
+```tsx
+// client/screens/meal-plan/MealPlanHomeScreen.tsx
+const [expandedSections, setExpandedSections] = useState<Set<MealType>>(
+  () => new Set([getAutoExpandedMealType()]),
+);
+
+const handleToggleSection = useCallback(
+  (mealType: MealType) => {
+    haptics.impact(ImpactFeedbackStyle.Light);
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(mealType)) {
+        next.delete(mealType);
+      } else {
+        next.add(mealType);
+      }
+      return next;
+    });
+  },
+  [haptics],
+);
+```
+
+**When to use:** Any multi-section layout where users should be able to have multiple sections open simultaneously (e.g., meal sections, settings groups).
+
+**When NOT to use:** Single-selection accordions (FAQ, detail panels) — use `string | null` state instead.
+
+**Key elements:**
+
+- `useState<Set<T>>` with factory initializer `() => new Set([default])`
+- Functional updater in toggle to avoid stale closures
+- `getAutoExpandedMealType()` auto-selects the contextually relevant section (time-of-day)
+- Section receives `isExpanded` boolean and `onToggle` callback
+
+**References:**
+
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — meal section expand/collapse
+- `client/screens/meal-plan/meal-plan-utils.ts` — `getAutoExpandedMealType()`
+
+### Measure-Then-Animate Collapsible Height
+
+For collapsible sections where content height is dynamic, measure via `onLayout` and animate between 0 and the measured height. Use a sentinel value (`-1`) to switch to `"auto"` after expand completes, so content reflows naturally.
+
+```tsx
+// client/screens/meal-plan/MealPlanHomeScreen.tsx — MealSlotSection
+const contentHeight = useRef(0);
+const animHeight = useSharedValue(isExpanded ? -1 : 0);
+
+// Measure content
+const handleContentLayout = useCallback((e: LayoutChangeEvent) => {
+  contentHeight.current = e.nativeEvent.layout.height;
+}, []);
+
+// Toggle animation
+useEffect(() => {
+  if (reducedMotion) {
+    animHeight.value = isExpanded ? -1 : 0;
+    return;
+  }
+  if (isExpanded) {
+    animHeight.value = withTiming(
+      contentHeight.current || 200,
+      expandTimingConfig,
+      () => {
+        animHeight.value = -1;
+      }, // Switch to auto after animation
+    );
+  } else {
+    if (animHeight.value === -1) {
+      animHeight.value = contentHeight.current || 200;
+    }
+    animHeight.value = withTiming(0, collapseTimingConfig);
+  }
+}, [isExpanded, reducedMotion]);
+
+const animStyle = useAnimatedStyle(() => ({
+  height: animHeight.value === -1 ? "auto" : animHeight.value,
+  overflow: animHeight.value === -1 ? "visible" : "hidden",
+}));
+```
+
+**Why:** Fixed-height animations clip content when items are added/removed. The `-1` sentinel means "use auto height" so the container can grow naturally between user interactions.
+
+**When to use:** Any collapsible section with dynamic-length content (lists, forms).
+
+**Key elements:**
+
+- `onLayout` measures natural height into a `ref` (not state, to avoid re-renders)
+- Animate to measured height, then switch to `auto` via `-1` sentinel in `withTiming` callback
+- On collapse: snapshot current height before animating to 0
+- Respect `reducedMotion` by setting final value instantly
+
+**References:**
+
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — `MealSlotSection` collapsible
+
+### Return-to-Origin Navigation Flow
+
+When a creation/import flow is triggered from an inline context (e.g., a bottom sheet), pass a `returnTo` param so the destination screen can auto-add the result and `popToTop()` back to the origin.
+
+```tsx
+// 1. Define the param in the navigator
+type MealPlanStackParamList = {
+  RecipeCreate: {
+    returnToMealPlan?: { mealType: string; plannedDate: string };
+  };
+};
+
+// 2. Pass it from the trigger (QuickAddSheet footer)
+onNavigateCreate(mealType, plannedDate);
+// → navigation.navigate("RecipeCreate", {
+//     returnToMealPlan: { mealType, plannedDate },
+//   });
+
+// 3. Consume in the destination screen
+const returnToMealPlan = route.params?.returnToMealPlan;
+
+const handleSave = async () => {
+  const newRecipe = await createMutation.mutateAsync(payload);
+  if (returnToMealPlan) {
+    await addItemMutation.mutateAsync({
+      recipeId: newRecipe.id,
+      mealType: returnToMealPlan.mealType,
+      plannedDate: returnToMealPlan.plannedDate,
+    });
+    navigation.popToTop(); // Back to origin
+  } else {
+    navigation.goBack(); // Normal flow
+  }
+};
+```
+
+**When to use:** Any flow where a screen can be reached from multiple contexts and should return differently based on origin (inline add vs standalone browse).
+
+**Key elements:**
+
+- Optional `returnTo` route param with the data needed to complete the action
+- Destination screen auto-performs the follow-up action (add to plan) on success
+- `popToTop()` instead of `goBack()` to clear the entire sub-stack
+- Both paths share the same save logic — only post-save behavior differs
+
+**References:**
+
+- `client/screens/meal-plan/RecipeCreateScreen.tsx` — auto-add + `popToTop` when `returnToMealPlan` set
+- `client/screens/meal-plan/RecipeImportScreen.tsx` — same pattern
+- `client/components/meal-plan/QuickAddSheet.tsx` — passes `returnToMealPlan` via footer buttons
+
+### Inline Quick-Add Bottom Sheet
+
+For lightweight add flows, use a `BottomSheetModal` with search + tap-to-add instead of navigating to a full-screen browser. This keeps the user's context visible and reduces navigation depth.
+
+```tsx
+// client/components/meal-plan/QuickAddSheet.tsx
+interface QuickAddSheetProps {
+  mealType: MealType | null; // null = sheet is closed
+  plannedDate: string;
+  onDismiss: () => void;
+  onNavigateCreate: (mealType: MealType, plannedDate: string) => void;
+  onNavigateImport: (mealType: MealType, plannedDate: string) => void;
+}
+
+// Parent state controls visibility
+const [quickAddMealType, setQuickAddMealType] = useState<MealType | null>(null);
+
+// Open: set meal type (sheet reads it in useEffect and calls .present())
+const handleAddItem = (mealType: MealType) => setQuickAddMealType(mealType);
+
+// Close: clear meal type
+const handleDismiss = () => setQuickAddMealType(null);
+```
+
+**Key elements:**
+
+- `mealType: null` = closed, non-null = open for that type. Sheet calls `present()`/`dismiss()` in a `useEffect` on `mealType`.
+- Debounced search (300ms) with `useUnifiedRecipes()` — shows personal recipes by default, combined results when searching
+- Tap anywhere on a result row → `addItemMutation` + dismiss (no confirm step)
+- Footer actions navigate to full create/import screens with `returnToMealPlan` param
+- `BottomSheetFlatList` + `BottomSheetTextInput` for proper scroll/keyboard handling inside sheets
+
+**References:**
+
+- `client/components/meal-plan/QuickAddSheet.tsx` — full implementation
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — integration with `quickAddMealType` state
+
+### Async Mutation Double-Tap Guard
+
+For mutation handlers in bottom sheets or modals where rapid taps can fire duplicate requests, use a `useRef(false)` guard instead of relying on button `disabled` state (which may not update fast enough).
+
+```tsx
+// client/components/meal-plan/QuickAddSheet.tsx
+const isAdding = useRef(false);
+
+const handleAdd = useCallback(
+  async (recipe: RecipeRow) => {
+    if (!mealType || isAdding.current) return;
+    isAdding.current = true;
+    haptics.impact(ImpactFeedbackStyle.Light);
+    try {
+      await addItemMutation.mutateAsync({
+        recipeId: recipe.id,
+        plannedDate,
+        mealType,
+      });
+      haptics.notification(NotificationFeedbackType.Success);
+      onDismiss();
+    } catch {
+      // Mutation errors handled by React Query
+    } finally {
+      isAdding.current = false;
+    }
+  },
+  [mealType, plannedDate, haptics, addItemMutation, onDismiss],
+);
+```
+
+**Why:** `disabled` prop relies on a state update → re-render cycle, which can lag behind rapid taps. A ref check is synchronous and prevents the second tap from ever entering the async path.
+
+**When to use:**
+
+- Tap-to-add in lists/sheets where each row triggers a mutation
+- Any `mutateAsync` handler without a loading spinner that disables the trigger
+
+**When NOT to use:**
+
+- Buttons that already show a loading state and are properly `disabled` during mutation
+- Forms with a single submit button (use `isPending` from mutation)
+
+**References:**
+
+- `client/components/meal-plan/QuickAddSheet.tsx` — `isAdding` ref guard on recipe add
