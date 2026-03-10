@@ -351,7 +351,7 @@ describe("useCookSession hooks", () => {
       await act(async () => {
         result.current.mutate({
           ingredientId: "ing-1",
-          updates: { name: "Roma Tomato", quantity: "3" },
+          updates: { name: "Roma Tomato", quantity: 3 },
         });
       });
 
@@ -362,7 +362,7 @@ describe("useCookSession hooks", () => {
       expect(mockApiRequest).toHaveBeenCalledWith(
         "PATCH",
         "/api/cooking/sessions/session-1/ingredients/ing-1",
-        { name: "Roma Tomato", quantity: "3" },
+        { name: "Roma Tomato", quantity: 3 },
       );
     });
 
