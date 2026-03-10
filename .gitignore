@@ -68,5 +68,9 @@ coverage/
 docs/brainstorms/
 docs/plans/
 todos/
+
+# Local tooling configs
+.replit
+.claude/agents/
 .claude/worktrees/
-.ui-design/reviews/
+.ui-design/
