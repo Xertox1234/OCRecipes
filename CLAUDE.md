@@ -131,18 +131,24 @@ Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, Goa
 
 ## Key Patterns
 
-**CRITICAL:** Follow established patterns in `docs/PATTERNS.md` for all code changes. This ensures consistency, prevents common issues, and maintains code quality across the project.
+**CRITICAL:** Follow established patterns in `docs/patterns/` for all code changes. This ensures consistency, prevents common issues, and maintains code quality across the project.
 
 ### Pattern Documentation
 
-- **`docs/PATTERNS.md`** - Comprehensive development patterns covering:
-  - TypeScript patterns (type guards, shared types, Express extensions)
-  - API patterns (error responses, auth, fail-fast validation)
-  - Client state patterns (in-memory caching, Authorization headers, 401 handling)
-  - Performance patterns (storage optimization, batching)
-  - React Native patterns (safe areas, haptics, platform-specific code)
-  - Camera patterns (react-native-vision-camera, scan debouncing, permissions)
-  - Documentation patterns (todos, design decisions)
+- **`docs/PATTERNS.md`** - Index linking to domain-specific pattern files in `docs/patterns/`:
+  - `security.md` - IDOR protection, SSRF, token versioning, AI input sanitization
+  - `typescript.md` - Type guards, Zod schemas, shared types, discriminated unions
+  - `api.md` - Error responses, auth, env validation, external API handling
+  - `database.md` - Drizzle ORM, caching, soft delete, transactions, JSONB safety
+  - `client-state.md` - In-memory caching, Authorization headers, TanStack Query
+  - `react-native.md` - Navigation, safe areas, accessibility, forms, bottom sheets
+  - `animation.md` - Reanimated configs, SVG arcs, gestures, layout animations
+  - `performance.md` - React.memo, FlatList optimization, useMemo, TTL caches
+  - `design-system.md` - Color opacity, semantic theme values, border radius
+  - `architecture.md` - Storage module decomposition, route/service patterns
+  - `hooks.md` - TanStack Query CRUD modules, FormData uploads, SSE streaming
+  - `testing.md` - Pure function extraction, pre-commit hooks, ESLint rules
+  - `documentation.md` - Todo structure, design decisions, form state hooks
 
 **Before implementing:** Check if a pattern exists. **After implementing:** Consider if your solution should become a pattern.
 
