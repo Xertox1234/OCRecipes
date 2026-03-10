@@ -699,8 +699,6 @@ export function useCamera() {
 
 **Pattern:** Keep both `useState` (for UI rendering) and `useRef` (for synchronous logic) when you need both reactive UI updates and reliable synchronous checks.
 
----
-
 ### Haptic Feedback on User Actions
 
 Provide haptic feedback for meaningful interactions:
