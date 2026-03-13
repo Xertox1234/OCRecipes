@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-NutriScan is a mobile nutrition tracking app built with Expo/React Native (frontend) and Express.js (backend). Users scan food barcodes/labels with their camera, track nutritional intake, plan meals with recipes, and receive AI-powered nutrition advice via chat.
+OCRecipes is a mobile nutrition tracking app built with Expo/React Native (frontend) and Express.js (backend). Users scan food barcodes/labels with their camera, track nutritional intake, plan meals with recipes, and receive AI-powered nutrition advice via chat.
 
 ## Development Commands
 
@@ -209,12 +209,12 @@ If tests fail or linting errors occur, the commit is blocked.
 - `APPLE_ISSUER_ID` - Apple App Store Connect issuer ID (for IAP receipt validation)
 - `APPLE_KEY_ID` - Apple App Store Connect API key ID
 - `APPLE_PRIVATE_KEY` - Apple App Store Connect private key (PEM)
-- `APPLE_BUNDLE_ID` - iOS app bundle identifier (e.g. `com.nutriscan.app`)
+- `APPLE_BUNDLE_ID` - iOS app bundle identifier (e.g. `com.ocrecipes.app`)
 - `APPLE_ENVIRONMENT` - Apple API environment (`sandbox` or `production`, defaults to `sandbox`)
 - `APPLE_APP_ID` - Numeric App Apple ID (required for production JWS verification)
 - `APPLE_ROOT_CA_DIR` - Override path for Apple root CA certificates directory (defaults to `server/certs/`)
 - `RECEIPT_VALIDATION_STUB` - Set `"true"` to enable stub mode in dev (auto-approves receipts when no credentials configured)
-- `GOOGLE_PACKAGE_NAME` - Android app package name (e.g. `com.nutriscan.app`)
+- `GOOGLE_PACKAGE_NAME` - Android app package name (e.g. `com.ocrecipes.app`)
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL` - Google service account email (for IAP receipt validation)
 - `GOOGLE_SERVICE_ACCOUNT_KEY` - Google service account private key (PEM, use `\n` for newlines)
 
@@ -315,22 +315,22 @@ The app requires a physical device for full camera functionality testing. **Your
 3. **Set up code signing in Xcode**:
 
    ```bash
-   open ios/NutriScan.xcworkspace
+   open ios/OCRecipes.xcworkspace
    ```
 
    In Xcode:
-   - Click **"NutriScan"** project (blue icon) in left sidebar
-   - Select **"NutriScan"** target under TARGETS
+   - Click **"OCRecipes"** project (blue icon) in left sidebar
+   - Select **"OCRecipes"** target under TARGETS
    - Click **"Signing & Capabilities"** tab
    - Enable **"Automatically manage signing"** checkbox
    - Select your **Team** (your Apple ID) from dropdown
-   - If bundle identifier conflict: change to `com.yourname.nutriscan`
-   - Also update `app.json` to match: `"bundleIdentifier": "com.yourname.nutriscan"`
+   - If bundle identifier conflict: change to `com.yourname.ocrecipes`
+   - Also update `app.json` to match: `"bundleIdentifier": "com.yourname.ocrecipes"`
 
 4. **Build and install** (takes 5-10 minutes first time):
 
    ```bash
-   xcodebuild -workspace ios/NutriScan.xcworkspace -scheme NutriScan \
+   xcodebuild -workspace ios/OCRecipes.xcworkspace -scheme OCRecipes \
      -configuration Debug -destination id=YOUR_DEVICE_ID \
      -allowProvisioningUpdates build
    ```
@@ -345,7 +345,7 @@ The app requires a physical device for full camera functionality testing. **Your
 
    ```bash
    xcrun devicectl device install app --device YOUR_DEVICE_ID \
-     /Users/YOUR_USERNAME/Library/Developer/Xcode/DerivedData/NutriScan-*/Build/Products/Debug-iphoneos/NutriScan.app
+     /Users/YOUR_USERNAME/Library/Developer/Xcode/DerivedData/OCRecipes-*/Build/Products/Debug-iphoneos/OCRecipes.app
    ```
 
 6. **Trust developer certificate on iPhone**:
@@ -368,7 +368,7 @@ The app requires a physical device for full camera functionality testing. **Your
    npx expo start --dev-client --lan
    ```
 
-3. **Open NutriScan app on iPhone**
+3. **Open OCRecipes app on iPhone**
    - If it shows "No development servers found":
      - Ensure iPhone and Mac are on **same WiFi network**
      - Tap **"Enter URL manually"**
@@ -396,7 +396,7 @@ npx expo start --dev-client --lan --clear
 
 **On your iPhone:**
 
-1. Open the NutriScan app
+1. Open the OCRecipes app
 2. If it shows "No development servers found":
    - Tap **"Enter URL manually"**
    - Enter: `http://192.168.137.175:8081`

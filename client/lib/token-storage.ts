@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const TOKEN_KEY = "@nutriscan_token";
+const TOKEN_KEY = "@ocrecipes_token";
 
 // In-memory cache to avoid AsyncStorage read on every request
 let cachedToken: string | null = null;

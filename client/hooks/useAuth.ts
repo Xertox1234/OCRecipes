@@ -10,7 +10,7 @@ interface AuthState {
   isAuthenticated: boolean;
 }
 
-const AUTH_STORAGE_KEY = "@nutriscan_auth";
+const AUTH_STORAGE_KEY = "@ocrecipes_auth";
 
 export function useAuth() {
   const [state, setState] = useState<AuthState>({

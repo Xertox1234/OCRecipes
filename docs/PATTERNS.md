@@ -1,6 +1,6 @@
 # Development Patterns
 
-This document captures established patterns for the NutriScan codebase. Follow these patterns for consistency across features.
+This document captures established patterns for the OCRecipes codebase. Follow these patterns for consistency across features.
 
 Patterns are organized into domain-specific files under `docs/patterns/`:
 

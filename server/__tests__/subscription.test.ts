@@ -18,7 +18,7 @@ describe("UpgradeRequestSchema", () => {
     const data = {
       receipt: "mock-receipt-123",
       platform: "ios",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-abc-123",
     };
     const result = UpgradeRequestSchema.safeParse(data);
@@ -28,7 +28,7 @@ describe("UpgradeRequestSchema", () => {
   it("rejects missing receipt", () => {
     const data = {
       platform: "ios",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-abc-123",
     };
     const result = UpgradeRequestSchema.safeParse(data);
@@ -39,7 +39,7 @@ describe("UpgradeRequestSchema", () => {
     const data = {
       receipt: "",
       platform: "ios",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-abc-123",
     };
     const result = UpgradeRequestSchema.safeParse(data);
@@ -52,7 +52,7 @@ describe("UpgradeRequestSchema", () => {
   it("rejects missing platform", () => {
     const data = {
       receipt: "mock-receipt-123",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-abc-123",
     };
     const result = UpgradeRequestSchema.safeParse(data);
@@ -63,7 +63,7 @@ describe("UpgradeRequestSchema", () => {
     const data = {
       receipt: "mock-receipt-123",
       platform: "windows",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-abc-123",
     };
     const result = UpgradeRequestSchema.safeParse(data);
@@ -74,7 +74,7 @@ describe("UpgradeRequestSchema", () => {
     const data = {
       receipt: "mock-receipt-123",
       platform: "ios",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "",
     };
     const result = UpgradeRequestSchema.safeParse(data);
@@ -102,7 +102,7 @@ describe("UpgradeRequestSchema", () => {
     const data = {
       receipt: "mock-receipt-123",
       platform: "android",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-abc-123",
     };
     const result = UpgradeRequestSchema.safeParse(data);

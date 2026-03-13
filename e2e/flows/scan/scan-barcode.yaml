@@ -1,4 +1,4 @@
-appId: com.nutriscan.app
+appId: com.ocrecipes.app
 name: "Scan - Barcode scanning flow"
 tags:
   - scan

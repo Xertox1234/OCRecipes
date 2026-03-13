@@ -489,7 +489,7 @@ export function parseQueryString(value: unknown): string | undefined {
 - Date query params (use `parseQueryDate` for automatic parsing)
 - Route params (use `parseStringParam`)
 
-**Enforcement:** The `nutriscan/no-as-string-req` ESLint rule flags `as string` casts on `req.query` in `server/routes/**/*.ts`.
+**Enforcement:** The `ocrecipes/no-as-string-req` ESLint rule flags `as string` casts on `req.query` in `server/routes/**/*.ts`.
 
 **References:**
 
@@ -532,7 +532,7 @@ export function parseStringParam(
 
 - Numeric params like `:id` (use `parsePositiveIntParam`)
 
-**Enforcement:** The `nutriscan/no-as-string-req` ESLint rule flags `as string` casts on `req.params` in `server/routes/**/*.ts`.
+**Enforcement:** The `ocrecipes/no-as-string-req` ESLint rule flags `as string` casts on `req.params` in `server/routes/**/*.ts`.
 
 **References:**
 

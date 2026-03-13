@@ -1,12 +1,12 @@
-# NutriScan Architecture
+# OCRecipes Architecture
 
 ## System Overview
 
-NutriScan is a mobile nutrition tracking application with a monorepo architecture consisting of three main components:
+OCRecipes is a mobile nutrition tracking application with a monorepo architecture consisting of three main components:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        NutriScan System                         │
+│                        OCRecipes System                         │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────┐    HTTPS/JSON    ┌──────────────────────────┐│
@@ -54,7 +54,7 @@ Meal Planning APIs:
 ## Directory Structure
 
 ```
-Nutri-Cam/
+OCRecipes/
 ├── client/                    # React Native/Expo Frontend
 │   ├── App.tsx                # Entry point with providers
 │   ├── camera/                # Camera module (components, hooks, types)

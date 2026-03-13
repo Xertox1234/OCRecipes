@@ -158,7 +158,7 @@ describe("Receipt Validation", () => {
       process.env.APPLE_ISSUER_ID = "test-issuer";
       process.env.APPLE_KEY_ID = "test-key-id";
       process.env.APPLE_PRIVATE_KEY = "test-private-key";
-      process.env.APPLE_BUNDLE_ID = "com.nutriscan.app";
+      process.env.APPLE_BUNDLE_ID = "com.ocrecipes.app";
     });
 
     it("validates a verified receipt with future expiry", async () => {
@@ -335,7 +335,7 @@ describe("Receipt Validation", () => {
         "test@project.iam.gserviceaccount.com";
       process.env.GOOGLE_SERVICE_ACCOUNT_KEY =
         "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----";
-      process.env.GOOGLE_PACKAGE_NAME = "com.nutriscan.app";
+      process.env.GOOGLE_PACKAGE_NAME = "com.ocrecipes.app";
     });
 
     it("validates an active Google subscription", async () => {

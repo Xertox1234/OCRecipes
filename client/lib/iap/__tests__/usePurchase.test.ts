@@ -107,7 +107,7 @@ describe("buildReceiptPayload", () => {
   it("builds correct payload structure", () => {
     const purchase = {
       transactionReceipt: "receipt-data-123",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-456",
     };
 
@@ -116,7 +116,7 @@ describe("buildReceiptPayload", () => {
     expect(payload).toEqual({
       receipt: "receipt-data-123",
       platform: "ios",
-      productId: "com.nutriscan.premium.annual",
+      productId: "com.ocrecipes.premium.annual",
       transactionId: "txn-456",
     });
   });

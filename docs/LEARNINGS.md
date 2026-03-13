@@ -631,9 +631,9 @@ function getOpenAI(): OpenAI {
 
 **Key Files:**
 
-- `/Users/williamtower/projects/Nutri-Cam/server/middleware/auth.ts` - JWT generation and validation
-- `/Users/williamtower/projects/Nutri-Cam/client/lib/token-storage.ts` - Token persistence with caching
-- `/Users/williamtower/projects/Nutri-Cam/shared/types/auth.ts` - Shared auth types
+- `/Users/williamtower/projects/OCRecipes/server/middleware/auth.ts` - JWT generation and validation
+- `/Users/williamtower/projects/OCRecipes/client/lib/token-storage.ts` - Token persistence with caching
+- `/Users/williamtower/projects/OCRecipes/shared/types/auth.ts` - Shared auth types
 
 **Commit:** `8e53d96 - Migrate from session-based auth to JWT for Expo Go compatibility`
 
@@ -811,7 +811,7 @@ export const tokenStorage = {
 
 **Performance gain:** First call takes 2-10ms, all subsequent calls take <1ms.
 
-**File:** `/Users/williamtower/projects/Nutri-Cam/client/lib/token-storage.ts`
+**File:** `/Users/williamtower/projects/OCRecipes/client/lib/token-storage.ts`
 
 ---
 
@@ -881,7 +881,7 @@ const handleBarcodeScanned = useCallback((barcode: string) => {
 - `useRef` for synchronous logic (debouncing, rate limiting)
 - `useState` for reactive UI updates (showing loading indicator)
 
-**File:** `/Users/williamtower/projects/Nutri-Cam/client/camera/hooks/useCamera.ts`
+**File:** `/Users/williamtower/projects/OCRecipes/client/camera/hooks/useCamera.ts`
 
 **Pattern:** See "useRef for Synchronous Checks in Callbacks" in PATTERNS.md
 
@@ -1142,7 +1142,7 @@ function handleSubmit(data: { username: string; password: string }) {
 
 **Warning:** Too many indexes slow down writes. Only index columns you actually query on.
 
-**File:** `/Users/williamtower/projects/Nutri-Cam/shared/schema.ts`
+**File:** `/Users/williamtower/projects/OCRecipes/shared/schema.ts`
 
 ---
 
@@ -1373,9 +1373,9 @@ if (cacheId) {
 
 **File References:**
 
-- `/Users/williamtower/projects/Nutri-Cam/shared/schema.ts` - Cache table definitions
-- `/Users/williamtower/projects/Nutri-Cam/server/storage.ts` - Cache storage methods
-- `/Users/williamtower/projects/Nutri-Cam/server/utils/profile-hash.ts` - Profile hash utility
+- `/Users/williamtower/projects/OCRecipes/shared/schema.ts` - Cache table definitions
+- `/Users/williamtower/projects/OCRecipes/server/storage.ts` - Cache storage methods
+- `/Users/williamtower/projects/OCRecipes/server/utils/profile-hash.ts` - Profile hash utility
 
 ---
 
@@ -1417,7 +1417,7 @@ export async function validateReceipt(receipt: string, platform: Platform) {
 
 **Pattern:** See "Stub Service with Production Safety Gate" in PATTERNS.md
 
-**File:** `/Users/williamtower/projects/Nutri-Cam/server/services/receipt-validation.ts`
+**File:** `/Users/williamtower/projects/OCRecipes/server/services/receipt-validation.ts`
 
 ---
 
@@ -1788,7 +1788,7 @@ const result = await db
 
 **Lesson:** When making a previously non-null foreign key nullable, audit all queries that JOIN on that column. INNER JOINs silently drop rows with NULL keys. This is especially dangerous in aggregation queries because the result looks correct (it's a valid number) — you just don't notice the missing rows.
 
-**File:** `/Users/williamtower/projects/Nutri-Cam/server/storage.ts` — `getDailySummary()`
+**File:** `/Users/williamtower/projects/OCRecipes/server/storage.ts` — `getDailySummary()`
 
 **Pattern Reference:** See "LEFT JOIN with COALESCE for Nullable Foreign Keys" in PATTERNS.md
 

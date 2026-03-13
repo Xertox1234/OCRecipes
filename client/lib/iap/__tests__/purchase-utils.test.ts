@@ -96,7 +96,7 @@ describe("buildReceiptPayload", () => {
   it("builds correct upgrade request shape", () => {
     const purchase = {
       transactionReceipt: "receipt-data-123",
-      productId: "com.nutriscan.premium.monthly",
+      productId: "com.ocrecipes.premium.monthly",
       transactionId: "txn-456",
     };
 
@@ -105,7 +105,7 @@ describe("buildReceiptPayload", () => {
     expect(result).toEqual({
       receipt: "receipt-data-123",
       platform: "ios",
-      productId: "com.nutriscan.premium.monthly",
+      productId: "com.ocrecipes.premium.monthly",
       transactionId: "txn-456",
     });
   });

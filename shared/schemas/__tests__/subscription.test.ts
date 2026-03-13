@@ -24,7 +24,7 @@ describe("UpgradeRequestSchema", () => {
   const validRequest = {
     receipt: "receipt-data-123",
     platform: "ios",
-    productId: "com.nutriscan.premium.monthly",
+    productId: "com.ocrecipes.premium.monthly",
     transactionId: "txn-abc-123",
   };
 

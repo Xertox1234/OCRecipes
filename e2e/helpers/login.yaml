@@ -1,4 +1,4 @@
-appId: com.nutriscan.app
+appId: com.ocrecipes.app
 
 # Reusable login helper — call with `runFlow` and provide env vars:
 #   USERNAME (default: testuser)

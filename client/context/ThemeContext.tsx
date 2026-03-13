@@ -23,7 +23,7 @@ interface ThemeContextType {
   setPreference: (pref: ThemePreference) => Promise<void>;
 }
 
-const THEME_STORAGE_KEY = "@nutriscan/theme-preference";
+const THEME_STORAGE_KEY = "@ocrecipes/theme-preference";
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 

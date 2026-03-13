@@ -366,7 +366,7 @@ export default function HealthKitSettingsScreen() {
           type="small"
           style={{ flex: 1, color: theme.textSecondary }}
         >
-          HealthKit data is read from your device and synced to your NutriScan
+          HealthKit data is read from your device and synced to your OCRecipes
           account. Your health data stays private and is never shared.
         </ThemedText>
       </Card>

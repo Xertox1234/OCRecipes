@@ -12,7 +12,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 // Create a test implementation of token storage
 // (Can't import actual module because it requires React Native)
 function createTokenStorage() {
-  const TOKEN_KEY = "@nutriscan_token";
+  const TOKEN_KEY = "@ocrecipes_token";
   let cachedToken: string | null = null;
   let cacheInitialized = false;
 
@@ -65,7 +65,7 @@ describe("Token Storage", () => {
 
       const token = await tokenStorage.get();
 
-      expect(mockAsyncStorage.getItem).toHaveBeenCalledWith("@nutriscan_token");
+      expect(mockAsyncStorage.getItem).toHaveBeenCalledWith("@ocrecipes_token");
       expect(token).toBe("stored-token");
     });
 
@@ -106,7 +106,7 @@ describe("Token Storage", () => {
       await tokenStorage.set("new-token");
 
       expect(mockAsyncStorage.setItem).toHaveBeenCalledWith(
-        "@nutriscan_token",
+        "@ocrecipes_token",
         "new-token",
       );
     });
@@ -153,7 +153,7 @@ describe("Token Storage", () => {
       await tokenStorage.clear();
 
       expect(mockAsyncStorage.removeItem).toHaveBeenCalledWith(
-        "@nutriscan_token",
+        "@ocrecipes_token",
       );
     });
 

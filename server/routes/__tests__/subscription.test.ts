@@ -115,7 +115,7 @@ describe("Subscription Routes", () => {
     const validBody = {
       receipt: "valid-receipt-data",
       platform: "ios",
-      productId: "com.nutriscan.premium",
+      productId: "com.ocrecipes.premium",
       transactionId: "txn-123",
     };
 

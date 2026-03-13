@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers everything needed to set up the NutriScan development environment. The project uses **tunneling** to allow mobile devices to connect to your local development server.
+This guide covers everything needed to set up the OCRecipes development environment. The project uses **tunneling** to allow mobile devices to connect to your local development server.
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ This guide covers everything needed to set up the NutriScan development environm
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd Nutri-Cam
+cd OCRecipes
 
 # Install dependencies
 npm install
@@ -40,7 +40,7 @@ Create a `.env` file in the project root:
 
 ```bash
 # Database
-DATABASE_URL=postgresql://username:password@localhost:5432/nutriscan
+DATABASE_URL=postgresql://username:password@localhost:5432/ocrecipes
 
 # JWT
 JWT_SECRET=your-secure-random-string-here
@@ -60,7 +60,7 @@ EXPO_PUBLIC_DOMAIN=https://your-tunnel.loca.lt
 brew services start postgresql  # macOS
 
 # Create database
-createdb nutriscan
+createdb ocrecipes
 
 # Push schema to database
 npm run db:push

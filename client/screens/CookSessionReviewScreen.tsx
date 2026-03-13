@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   StyleSheet,
   View,
@@ -67,7 +67,10 @@ export default function CookSessionReviewScreen() {
   const recipeMutation = useCookRecipe(sessionId);
   const substitutionsMutation = useCookSubstitutions(sessionId);
 
-  const ingredients = session?.ingredients ?? [];
+  const ingredients = useMemo(
+    () => session?.ingredients ?? [],
+    [session?.ingredients],
+  );
 
   // Fetch nutrition on mount and when ingredients change
   useEffect(() => {

@@ -1,5 +1,5 @@
 /**
- * Custom ESLint plugin for NutriScan server pattern enforcement.
+ * Custom ESLint plugin for OCRecipes server pattern enforcement.
  *
  * Rules:
  * - no-bare-error-response:  Ban `res.status(N).json({ error: ... })` — use `sendError()`.

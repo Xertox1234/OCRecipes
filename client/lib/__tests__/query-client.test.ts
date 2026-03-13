@@ -70,7 +70,7 @@ describe("getApiUrl", () => {
   });
 
   it("uses https protocol for non-localhost domains", () => {
-    process.env.EXPO_PUBLIC_DOMAIN = "api.nutriscan.com";
+    process.env.EXPO_PUBLIC_DOMAIN = "api.ocrecipes.com";
 
     function getApiUrl(): string {
       const host = process.env.EXPO_PUBLIC_DOMAIN;
@@ -85,7 +85,7 @@ describe("getApiUrl", () => {
       return url.href;
     }
 
-    expect(getApiUrl()).toBe("https://api.nutriscan.com/");
+    expect(getApiUrl()).toBe("https://api.ocrecipes.com/");
   });
 });
 

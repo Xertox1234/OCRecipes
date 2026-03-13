@@ -85,7 +85,7 @@ describe("ThemeContext", () => {
     });
 
     it("loads saved preference from AsyncStorage", async () => {
-      mockAsyncStorage["@nutriscan/theme-preference"] = "dark";
+      mockAsyncStorage["@ocrecipes/theme-preference"] = "dark";
 
       const wrapper = createWrapper();
       const { result } = renderHook(() => useThemePreference(), { wrapper });
@@ -99,7 +99,7 @@ describe("ThemeContext", () => {
     });
 
     it("ignores invalid stored preference", async () => {
-      mockAsyncStorage["@nutriscan/theme-preference"] = "invalid-value";
+      mockAsyncStorage["@ocrecipes/theme-preference"] = "invalid-value";
 
       const wrapper = createWrapper();
       const { result } = renderHook(() => useThemePreference(), { wrapper });
@@ -124,7 +124,7 @@ describe("ThemeContext", () => {
       expect(result.current.preference).toBe("dark");
       expect(result.current.colorScheme).toBe("dark");
       expect(result.current.isDark).toBe(true);
-      expect(mockAsyncStorage["@nutriscan/theme-preference"]).toBe("dark");
+      expect(mockAsyncStorage["@ocrecipes/theme-preference"]).toBe("dark");
     });
 
     it("explicit light preference overrides dark system scheme", async () => {

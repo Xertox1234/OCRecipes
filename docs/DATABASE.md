@@ -1,8 +1,8 @@
-# NutriScan Database Schema
+# OCRecipes Database Schema
 
 ## Overview
 
-NutriScan uses PostgreSQL with Drizzle ORM for database operations. The schema is defined in `shared/schema.ts` (31 tables) and is shared between the frontend and backend.
+OCRecipes uses PostgreSQL with Drizzle ORM for database operations. The schema is defined in `shared/schema.ts` (31 tables) and is shared between the frontend and backend.
 
 ## Schema Definition
 
@@ -842,7 +842,7 @@ export default {
 ### Environment Variable
 
 ```bash
-DATABASE_URL=postgresql://user:password@localhost:5432/nutriscan
+DATABASE_URL=postgresql://user:password@localhost:5432/ocrecipes
 ```
 
 ---

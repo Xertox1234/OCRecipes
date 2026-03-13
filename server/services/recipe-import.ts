@@ -396,7 +396,7 @@ async function safeFetch(
     const res = await fetch(currentUrl, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (compatible; NutriScan/1.0; +https://nutriscan.app)",
+          "Mozilla/5.0 (compatible; OCRecipes/1.0; +https://ocrecipes.app)",
         Accept: "text/html",
       },
       redirect: "manual",

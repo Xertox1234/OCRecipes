@@ -9,7 +9,7 @@
 
 ## Summary
 
-The NutriScan app demonstrates a well-structured UI foundation with a solid design system, consistent component patterns, and good accessibility awareness. The primary issues revolve around hardcoded light-mode colors breaking dark mode, missing accessibility roles on interactive elements, and some performance optimization opportunities with animation cleanup.
+The OCRecipes app demonstrates a well-structured UI foundation with a solid design system, consistent component patterns, and good accessibility awareness. The primary issues revolve around hardcoded light-mode colors breaking dark mode, missing accessibility roles on interactive elements, and some performance optimization opportunities with animation cleanup.
 
 **Issues Found:** 18
 

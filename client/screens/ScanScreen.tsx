@@ -292,7 +292,7 @@ export default function ScanScreen() {
           type="body"
           style={[styles.permissionText, { color: theme.textSecondary }]}
         >
-          NutriScan needs camera access to scan barcodes and nutrition labels
+          OCRecipes needs camera access to scan barcodes and nutrition labels
         </ThemedText>
 
         {permission?.status === "denied" && !permission.canAskAgain ? (

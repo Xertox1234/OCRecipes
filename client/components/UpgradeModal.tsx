@@ -148,7 +148,7 @@ export function UpgradeModal({
             >
               {state.status === "success"
                 ? "All premium features are now unlocked"
-                : "Unlock the full NutriScan experience"}
+                : "Unlock the full OCRecipes experience"}
             </ThemedText>
 
             {/* Benefits */}

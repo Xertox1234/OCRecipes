@@ -1,8 +1,8 @@
-# NutriScan Frontend Guide
+# OCRecipes Frontend Guide
 
 ## Overview
 
-The NutriScan frontend is built with Expo SDK 54, React Native 0.81, and React 19. It uses React Navigation for routing and TanStack Query for server state management.
+The OCRecipes frontend is built with Expo SDK 54, React Native 0.81, and React 19. It uses React Navigation for routing and TanStack Query for server state management.
 
 ## Project Structure
 

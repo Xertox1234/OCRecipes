@@ -104,7 +104,7 @@ describe("useAuth", () => {
           headers: { Authorization: "Bearer valid-token" },
         },
       );
-      expect(mockAsyncStorage["@nutriscan_auth"]).toBe(
+      expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(fakeUser),
       );
     });
@@ -127,7 +127,7 @@ describe("useAuth", () => {
     it("falls back to cached user on network error", async () => {
       mockTokenStorage.get.mockResolvedValue("valid-token");
       mockFetch.mockRejectedValue(new Error("Network error"));
-      mockAsyncStorage["@nutriscan_auth"] = JSON.stringify(fakeUser);
+      mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
 
       const { result } = renderHook(() => useAuth());
 
@@ -178,7 +178,7 @@ describe("useAuth", () => {
       expect(mockTokenStorage.set).toHaveBeenCalledWith("new-token");
       expect(result.current.isAuthenticated).toBe(true);
       expect(result.current.user).toEqual(fakeUser);
-      expect(mockAsyncStorage["@nutriscan_auth"]).toBe(
+      expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(fakeUser),
       );
     });
@@ -296,7 +296,7 @@ describe("useAuth", () => {
         username: "updatedname",
       });
       expect(result.current.user).toEqual(updatedUser);
-      expect(mockAsyncStorage["@nutriscan_auth"]).toBe(
+      expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(updatedUser),
       );
     });

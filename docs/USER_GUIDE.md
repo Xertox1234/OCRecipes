@@ -1,8 +1,8 @@
-# NutriScan User Guide
+# OCRecipes User Guide
 
 ## Getting Started
 
-NutriScan is a mobile nutrition tracking app that helps you scan food products, track your daily intake, and receive AI-powered recipe suggestions based on your dietary preferences.
+OCRecipes is a mobile nutrition tracking app that helps you scan food products, track your daily intake, and receive AI-powered recipe suggestions based on your dietary preferences.
 
 ## Installation
 
@@ -24,7 +24,7 @@ NutriScan is a mobile nutrition tracking app that helps you scan food products, 
 
 ### Registration
 
-1. Open NutriScan
+1. Open OCRecipes
 2. Tap **"Create Account"**
 3. Enter a username (must be unique)
 4. Create a password
@@ -32,7 +32,7 @@ NutriScan is a mobile nutrition tracking app that helps you scan food products, 
 
 ### Login
 
-1. Open NutriScan
+1. Open OCRecipes
 2. Enter your username and password
 3. Tap **"Sign In"**
 
@@ -44,7 +44,7 @@ After creating your account, you'll complete a 6-step onboarding process to pers
 
 ### Step 1: Welcome
 
-A brief introduction to NutriScan's features.
+A brief introduction to OCRecipes's features.
 
 ### Step 2: Allergies
 

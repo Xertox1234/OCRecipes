@@ -1,5 +1,5 @@
 /**
- * Shared API response types for the NutriScan client.
+ * Shared API response types for the OCRecipes client.
  * These types represent the JSON responses from the server API.
  *
  * Note: Dates come as ISO strings over JSON, not Date objects.

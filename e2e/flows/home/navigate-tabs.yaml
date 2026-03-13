@@ -1,4 +1,4 @@
-appId: com.nutriscan.app
+appId: com.ocrecipes.app
 name: "Home - Navigate between tabs"
 tags:
   - smoke

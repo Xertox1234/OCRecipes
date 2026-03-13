@@ -2,7 +2,7 @@
 const { defineConfig } = require("eslint/config");
 const expoConfig = require("eslint-config-expo/flat");
 const eslintPluginPrettierRecommended = require("eslint-plugin-prettier/recommended");
-const nutriscanPlugin = require("./eslint-plugin-nutriscan");
+const ocrecipesPlugin = require("./eslint-plugin-ocrecipes");
 
 module.exports = defineConfig([
   expoConfig,
@@ -19,12 +19,12 @@ module.exports = defineConfig([
   {
     files: ["server/routes/**/*.ts"],
     plugins: {
-      nutriscan: nutriscanPlugin,
+      ocrecipes: ocrecipesPlugin,
     },
     rules: {
-      "nutriscan/no-bare-error-response": "error",
-      "nutriscan/no-parseint-req": "error",
-      "nutriscan/no-as-string-req": "error",
+      "ocrecipes/no-bare-error-response": "error",
+      "ocrecipes/no-parseint-req": "error",
+      "ocrecipes/no-as-string-req": "error",
     },
   },
 ]);

@@ -1,6 +1,6 @@
-# NutriScan Documentation
+# OCRecipes Documentation
 
-Welcome to the NutriScan documentation. This guide covers everything you need to know about developing, deploying, and using NutriScan.
+Welcome to the OCRecipes documentation. This guide covers everything you need to know about developing, deploying, and using OCRecipes.
 
 ## Quick Links
 
@@ -15,9 +15,9 @@ Welcome to the NutriScan documentation. This guide covers everything you need to
 
 ---
 
-## What is NutriScan?
+## What is OCRecipes?
 
-NutriScan is a mobile nutrition tracking application that helps users:
+OCRecipes is a mobile nutrition tracking application that helps users:
 
 - **Scan food barcodes** to instantly view nutritional information
 - **Track daily intake** with automatic calorie and macro calculations
@@ -71,7 +71,7 @@ NutriScan is a mobile nutrition tracking application that helps users:
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd Nutri-Cam
+cd OCRecipes
 
 # Install dependencies
 npm install
@@ -96,7 +96,7 @@ See [DEV_SETUP.md](./DEV_SETUP.md) for detailed setup instructions.
 ## Project Structure
 
 ```
-Nutri-Cam/
+OCRecipes/
 ├── client/                 # React Native/Expo frontend
 │   ├── components/         # Reusable UI components
 │   ├── constants/          # Theme and configuration

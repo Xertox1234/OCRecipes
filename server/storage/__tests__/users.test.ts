@@ -279,7 +279,7 @@ describe("users storage", () => {
         userId: testUser.id,
         receipt: "receipt_data_here",
         platform: "apple",
-        productId: "com.nutriscan.premium.monthly",
+        productId: "com.ocrecipes.premium.monthly",
       });
 
       const result = await getTransaction("txn_abc_123");
@@ -287,7 +287,7 @@ describe("users storage", () => {
       expect(result!.transactionId).toBe("txn_abc_123");
       expect(result!.userId).toBe(testUser.id);
       expect(result!.platform).toBe("apple");
-      expect(result!.productId).toBe("com.nutriscan.premium.monthly");
+      expect(result!.productId).toBe("com.ocrecipes.premium.monthly");
       expect(result!.status).toBe("pending");
     });
 
@@ -304,12 +304,12 @@ describe("users storage", () => {
         userId: testUser.id,
         receipt: "receipt_payload",
         platform: "google",
-        productId: "com.nutriscan.premium.annual",
+        productId: "com.ocrecipes.premium.annual",
       });
       expect(txn).toBeDefined();
       expect(txn.transactionId).toBe("txn_new_456");
       expect(txn.platform).toBe("google");
-      expect(txn.productId).toBe("com.nutriscan.premium.annual");
+      expect(txn.productId).toBe("com.ocrecipes.premium.annual");
       expect(txn.status).toBe("pending");
       expect(txn.createdAt).toBeDefined();
     });
@@ -323,7 +323,7 @@ describe("users storage", () => {
         userId: otherUser.id,
         receipt: "other_receipt",
         platform: "apple",
-        productId: "com.nutriscan.premium.monthly",
+        productId: "com.ocrecipes.premium.monthly",
       });
 
       // getTransaction retrieves by transactionId, not userId,

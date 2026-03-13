@@ -13,7 +13,7 @@ describe("Auth Types", () => {
         tokenVersion: 0,
         iat: 1234567890,
         exp: 1234567890,
-        iss: "nutriscan",
+        iss: "ocrecipes",
       };
       expect(isAccessTokenPayload(payload)).toBe(true);
     });

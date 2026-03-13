@@ -424,15 +424,15 @@ The pre-commit hook (`.husky/pre-commit`) runs three stages in sequence:
 | `client/**/*.tsx` | `check-accessibility.js`, `check-hardcoded-colors.js` |
 | `*.{js,md}`       | `prettier --write`                                    |
 
-### Custom ESLint Rules (`eslint-plugin-nutriscan`)
+### Custom ESLint Rules (`eslint-plugin-ocrecipes`)
 
-Three custom rules in `eslint-plugin-nutriscan/index.js` enforce server-side patterns. They apply to `server/routes/**/*.ts` via `eslint.config.js`:
+Three custom rules in `eslint-plugin-ocrecipes/index.js` enforce server-side patterns. They apply to `server/routes/**/*.ts` via `eslint.config.js`:
 
 | Rule                               | Enforces                                | Error Flagged                                       |
 | ---------------------------------- | --------------------------------------- | --------------------------------------------------- |
-| `nutriscan/no-bare-error-response` | `sendError()` pattern                   | `res.status(4xx/5xx).json({ error: ... })`          |
-| `nutriscan/no-parseint-req`        | `parsePositiveIntParam`/`parseQueryInt` | `parseInt(req.params.*)` or `parseInt(req.query.*)` |
-| `nutriscan/no-as-string-req`       | `parseQueryString`/`parseStringParam`   | `req.params.* as string` or `req.query.* as string` |
+| `ocrecipes/no-bare-error-response` | `sendError()` pattern                   | `res.status(4xx/5xx).json({ error: ... })`          |
+| `ocrecipes/no-parseint-req`        | `parsePositiveIntParam`/`parseQueryInt` | `parseInt(req.params.*)` or `parseInt(req.query.*)` |
+| `ocrecipes/no-as-string-req`       | `parseQueryString`/`parseStringParam`   | `req.params.* as string` or `req.query.* as string` |
 
 ### Custom Lint Scripts
 

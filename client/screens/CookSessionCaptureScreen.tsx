@@ -99,7 +99,7 @@ export default function CookSessionCaptureScreen() {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         setIngredientCount(result.ingredients.length);
         setPhotos((prev) => [...prev, photoUri]);
-      } catch (error) {
+      } catch {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         Alert.alert(
           "Analysis Failed",

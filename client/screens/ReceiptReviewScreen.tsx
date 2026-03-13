@@ -133,7 +133,7 @@ export default function ReceiptReviewScreen() {
         setShowMealPlanPrompt(true);
       },
     });
-  }, [items, haptics, confirmMutation, navigation]);
+  }, [items, haptics, confirmMutation]);
 
   const renderItem = useCallback(
     ({ item }: { item: EditableItem }) => {

@@ -1,8 +1,8 @@
-# NutriScan API Reference
+# OCRecipes API Reference
 
 ## Overview
 
-The NutriScan API is a RESTful API built with Express.js 5.0 with 23 route modules and 107 endpoints. All endpoints use JSON for request/response bodies and JWT-based authentication.
+The OCRecipes API is a RESTful API built with Express.js 5.0 with 23 route modules and 107 endpoints. All endpoints use JSON for request/response bodies and JWT-based authentication.
 
 **Base URL**: `http://192.168.137.175:3000` (development) or your production domain
 
