@@ -298,6 +298,12 @@ export const foodParseRateLimit = createRateLimiter({
   message: "Too many food parse requests. Please wait.",
 });
 
+export const allergenCheckRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: "Too many allergen check requests. Please wait.",
+});
+
 // ============================================================================
 // MULTER UPLOAD CONFIG
 // ============================================================================

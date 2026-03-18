@@ -1,4 +1,9 @@
 import type { RecipeIngredient } from "@shared/schema";
+import {
+  detectAllergens,
+  type AllergenMatch,
+  type AllergySeverity,
+} from "@shared/constants/allergens";
 
 export const GROCERY_CATEGORIES = [
   "produce",
@@ -299,4 +304,27 @@ export function generateGroceryItems(
   );
 
   return items;
+}
+
+/**
+ * Annotates grocery items with allergen matches against the user's profile.
+ * Pure function — runs `detectAllergens` over item names.
+ */
+export function flagAllergenicGroceryItems(
+  items: AggregatedGroceryItem[],
+  userAllergies: { name: string; severity: AllergySeverity }[],
+): Map<string, AllergenMatch> {
+  if (userAllergies.length === 0) return new Map();
+
+  const names = items.map((i) => i.name);
+  const matches = detectAllergens(names, userAllergies);
+
+  // One match per item name (first match wins)
+  const flagMap = new Map<string, AllergenMatch>();
+  for (const m of matches) {
+    if (!flagMap.has(m.ingredientName)) {
+      flagMap.set(m.ingredientName, m);
+    }
+  }
+  return flagMap;
 }

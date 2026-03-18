@@ -4,6 +4,8 @@ import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { allergySchema } from "@shared/schema";
+import type { AllergenId } from "@shared/constants/allergens";
 import {
   generateFullRecipe,
   normalizeProductName,
@@ -25,6 +27,35 @@ import {
   getPremiumFeatures,
   parseQueryString,
 } from "./_helpers";
+
+/**
+ * Maps OCRecipes allergen IDs to Spoonacular intolerance parameter values.
+ * See: https://spoonacular.com/food-api/docs#Intolerances
+ */
+const SPOONACULAR_INTOLERANCE_MAP: Partial<Record<AllergenId, string>> = {
+  peanuts: "peanut",
+  tree_nuts: "tree nut",
+  milk: "dairy",
+  eggs: "egg",
+  wheat: "wheat",
+  soy: "soy",
+  fish: "seafood",
+  shellfish: "shellfish",
+  sesame: "sesame",
+};
+
+function buildIntolerancesParam(allergies: unknown): string | undefined {
+  if (!Array.isArray(allergies)) return undefined;
+  const values: string[] = [];
+  for (const item of allergies) {
+    const parsed = allergySchema.safeParse(item);
+    if (!parsed.success) continue;
+    const spoonacularValue =
+      SPOONACULAR_INTOLERANCE_MAP[parsed.data.name as AllergenId];
+    if (spoonacularValue) values.push(spoonacularValue);
+  }
+  return values.length > 0 ? values.join(",") : undefined;
+}
 
 // Zod schemas for recipe endpoints
 const recipeGenerationSchema = z.object({
@@ -484,7 +515,14 @@ export function register(app: Express): void {
           return;
         }
 
-        const results = await searchCatalogRecipes(parsed.data);
+        // Inject user's allergens as Spoonacular intolerances
+        const profile = await storage.getUserProfile(req.userId!);
+        const intolerances = buildIntolerancesParam(profile?.allergies);
+
+        const results = await searchCatalogRecipes({
+          ...parsed.data,
+          ...(intolerances && { intolerances }),
+        });
         res.json(results);
       } catch (error) {
         if (error instanceof CatalogQuotaError) {

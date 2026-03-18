@@ -10,6 +10,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
     getUser: vi.fn(),
+    getUserProfile: vi.fn().mockResolvedValue(null),
     getGroceryLists: vi.fn(),
     getMealPlanIngredientsForDateRange: vi.fn(),
     createGroceryList: vi.fn(),
@@ -24,9 +25,14 @@ vi.mock("../../storage", () => ({
   },
 }));
 
-vi.mock("../../services/grocery-generation", () => ({
-  generateGroceryItems: vi.fn(),
-}));
+vi.mock("../../services/grocery-generation", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../services/grocery-generation")>();
+  return {
+    generateGroceryItems: vi.fn(),
+    flagAllergenicGroceryItems: actual.flagAllergenicGroceryItems,
+  };
+});
 
 vi.mock("../../services/pantry-deduction", () => ({
   deductPantryFromGrocery: vi.fn(),
@@ -149,6 +155,41 @@ describe("Grocery Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
+    });
+
+    it("enriches response with allergenFlags when user has allergies", async () => {
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
+        ...mockList,
+        items: [{ id: 1, name: "whole milk" }],
+      } as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue({
+        allergies: [{ name: "milk", severity: "severe" }],
+      } as never);
+
+      const res = await request(app)
+        .get("/api/meal-plan/grocery-lists/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.allergenFlags).toBeDefined();
+      expect(res.body.allergenFlags["whole milk"]).toBeDefined();
+      expect(res.body.allergenFlags["whole milk"].allergenId).toBe("milk");
+      expect(res.body.allergenFlags["whole milk"].severity).toBe("severe");
+    });
+
+    it("returns empty allergenFlags when user has no allergies", async () => {
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
+        ...mockList,
+        items: [{ id: 1, name: "chicken breast" }],
+      } as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+
+      const res = await request(app)
+        .get("/api/meal-plan/grocery-lists/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.allergenFlags).toEqual({});
     });
 
     it("returns 404 for unknown list", async () => {

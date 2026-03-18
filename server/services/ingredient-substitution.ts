@@ -13,6 +13,10 @@ import {
   type SubstitutionSuggestion,
   type SubstitutionResult,
 } from "@shared/types/cook-session";
+import {
+  detectAllergens,
+  type AllergySeverity,
+} from "@shared/constants/allergens";
 import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 
@@ -192,13 +196,34 @@ function extractDietaryTags(profile: UserProfile | null | undefined): string[] {
   }
 
   if (profile.allergies && Array.isArray(profile.allergies)) {
+    const allergenToTag: Record<string, string[]> = {
+      peanuts: ["peanut-free"],
+      peanut: ["peanut-free"],
+      tree_nuts: ["nut-free"],
+      "tree nuts": ["nut-free"],
+      nut: ["nut-free"],
+      milk: ["dairy-free"],
+      dairy: ["dairy-free"],
+      "dairy/milk": ["dairy-free"],
+      lactose: ["dairy-free"],
+      eggs: ["egg-free"],
+      egg: ["egg-free"],
+      wheat: ["gluten-free"],
+      "wheat/gluten": ["gluten-free"],
+      gluten: ["gluten-free"],
+      soy: ["soy-free"],
+      soybean: ["soy-free"],
+      fish: ["fish-free"],
+      shellfish: ["shellfish-free"],
+      sesame: ["sesame-free"],
+    };
+
     for (const allergy of profile.allergies as { name: string }[]) {
-      const name = allergy.name.toLowerCase();
-      if (name.includes("dairy") || name.includes("milk"))
-        tags.push("dairy-free");
-      if (name.includes("gluten") || name.includes("wheat"))
-        tags.push("gluten-free");
-      if (name.includes("egg")) tags.push("egg-free");
+      const name = allergy.name.toLowerCase().trim();
+      const mapped = allergenToTag[name];
+      if (mapped) {
+        tags.push(...mapped);
+      }
     }
   }
 
@@ -290,6 +315,27 @@ Respond with JSON only:
 }
 
 // ============================================================================
+// CROSS-ALLERGY SAFETY FILTER
+// ============================================================================
+
+/**
+ * Removes substitution suggestions that themselves contain one of the user's
+ * allergens. Without this, a tree-nut-allergic user could be told to use
+ * "almond flour" as a wheat substitute — a dangerous recommendation.
+ */
+function filterSafeSubstitutions(
+  suggestions: SubstitutionSuggestion[],
+  userAllergies: { name: string; severity: AllergySeverity }[],
+): SubstitutionSuggestion[] {
+  if (userAllergies.length === 0) return suggestions;
+
+  return suggestions.filter((s) => {
+    const matches = detectAllergens([s.substitute], userAllergies);
+    return matches.length === 0;
+  });
+}
+
+// ============================================================================
 // PUBLIC API
 // ============================================================================
 
@@ -331,8 +377,23 @@ export async function getSubstitutions(
     }
   }
 
+  const allSuggestions = [...staticResults, ...aiResults];
+
+  // Safety: remove any suggestions that contain the user's own allergens
+  const userAllergies = (
+    (userProfile?.allergies as {
+      name: string;
+      severity: AllergySeverity;
+    }[]) ?? []
+  ).filter((a) => a.name && a.severity);
+
+  const safeSuggestions = filterSafeSubstitutions(
+    allSuggestions,
+    userAllergies,
+  );
+
   return {
-    suggestions: [...staticResults, ...aiResults],
+    suggestions: safeSuggestions,
     dietaryProfileSummary: profileSummary,
   };
 }
@@ -342,4 +403,5 @@ export const _testInternals = {
   findStaticSubstitutions,
   buildDietaryProfileSummary,
   extractDietaryTags,
+  filterSafeSubstitutions,
 };

@@ -87,6 +87,8 @@ export interface CatalogSearchParams {
   maxReadyTime?: number;
   offset?: number;
   number?: number;
+  /** Comma-separated Spoonacular intolerance values (e.g. "dairy,peanut"). */
+  intolerances?: string;
 }
 
 // ── Detail Cache (module-level singleton) ────────────────────────────
@@ -216,6 +218,8 @@ export async function searchCatalogRecipes(
   if (params.type) url.searchParams.set("type", params.type);
   if (params.maxReadyTime)
     url.searchParams.set("maxReadyTime", String(params.maxReadyTime));
+  if (params.intolerances)
+    url.searchParams.set("intolerances", params.intolerances);
 
   const res = await fetch(url.toString(), {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),

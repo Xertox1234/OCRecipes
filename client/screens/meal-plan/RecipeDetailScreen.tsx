@@ -7,7 +7,10 @@ import { Feather } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { AllergenBadge } from "@/components/AllergenBadge";
+import { AllergenWarningBanner } from "@/components/AllergenWarningBanner";
 import { useTheme } from "@/hooks/useTheme";
+import { useAllergenCheck } from "@/hooks/useAllergenCheck";
 import {
   Spacing,
   BorderRadius,
@@ -15,6 +18,10 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { useMealPlanRecipeDetail } from "@/hooks/useMealPlanRecipes";
+import {
+  ALLERGEN_INGREDIENT_MAP,
+  type AllergySeverity,
+} from "@shared/constants/allergens";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 
 type RecipeDetailRouteProp = RouteProp<MealPlanStackParamList, "RecipeDetail">;
@@ -51,6 +58,33 @@ export default function RecipeDetailScreen() {
   const { theme } = useTheme();
 
   const { data: recipe, isLoading, error } = useMealPlanRecipeDetail(recipeId);
+
+  // Extract ingredient names for allergen checking
+  const ingredientNames = useMemo(
+    () => (recipe?.ingredients ?? []).map((ing) => ing.name),
+    [recipe?.ingredients],
+  );
+  const { data: allergenResult } = useAllergenCheck(ingredientNames);
+
+  // Build a lookup: ingredient name → allergen match (for per-row badges)
+  const allergenMatchMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { allergenId: string; severity: AllergySeverity; label: string }
+    >();
+    if (!allergenResult?.matches) return map;
+    for (const m of allergenResult.matches) {
+      if (!map.has(m.ingredientName)) {
+        const def = ALLERGEN_INGREDIENT_MAP[m.allergenId];
+        map.set(m.ingredientName, {
+          allergenId: m.allergenId,
+          severity: m.severity,
+          label: def?.label ?? m.allergenId,
+        });
+      }
+    }
+    return map;
+  }, [allergenResult?.matches]);
 
   const timeDisplay = useMemo(() => {
     if (!recipe) return null;
@@ -216,24 +250,64 @@ export default function RecipeDetailScreen() {
         {recipe.ingredients && recipe.ingredients.length > 0 && (
           <View style={styles.section}>
             <ThemedText style={styles.sectionTitle}>Ingredients</ThemedText>
-            {recipe.ingredients.map((ing, idx) => (
-              <View key={ing.id || idx} style={styles.ingredientRow}>
-                <View
-                  style={[
-                    styles.ingredientBullet,
-                    { backgroundColor: theme.link },
-                  ]}
-                />
-                <ThemedText style={styles.ingredientText}>
-                  {ing.quantity && ing.unit
-                    ? `${ing.quantity} ${ing.unit} `
-                    : ing.quantity
-                      ? `${ing.quantity} `
-                      : ""}
-                  {ing.name}
-                </ThemedText>
+
+            {allergenResult?.matches && allergenResult.matches.length > 0 && (
+              <View style={{ marginBottom: Spacing.md }}>
+                <AllergenWarningBanner matches={allergenResult.matches} />
               </View>
-            ))}
+            )}
+
+            {recipe.ingredients.map((ing, idx) => {
+              const match = allergenMatchMap.get(ing.name);
+              const borderColor = match
+                ? match.severity === "severe"
+                  ? theme.error
+                  : match.severity === "moderate"
+                    ? theme.warning
+                    : theme.info
+                : undefined;
+
+              return (
+                <View
+                  key={ing.id || idx}
+                  style={[
+                    styles.ingredientRow,
+                    borderColor && {
+                      borderLeftWidth: 3,
+                      borderLeftColor: borderColor,
+                      paddingLeft: Spacing.sm,
+                    },
+                  ]}
+                >
+                  {!borderColor && (
+                    <View
+                      style={[
+                        styles.ingredientBullet,
+                        { backgroundColor: theme.link },
+                      ]}
+                    />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={styles.ingredientText}>
+                      {ing.quantity && ing.unit
+                        ? `${ing.quantity} ${ing.unit} `
+                        : ing.quantity
+                          ? `${ing.quantity} `
+                          : ""}
+                      {ing.name}
+                    </ThemedText>
+                    {match && (
+                      <View style={{ marginTop: 2 }}>
+                        <AllergenBadge
+                          allergenLabel={match.label}
+                          severity={match.severity}
+                        />
+                      </View>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
           </View>
         )}
 

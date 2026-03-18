@@ -6,8 +6,13 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { isValidCalendarDate } from "../utils/date-validation";
-import { generateGroceryItems } from "../services/grocery-generation";
+import {
+  generateGroceryItems,
+  flagAllergenicGroceryItems,
+} from "../services/grocery-generation";
 import { deductPantryFromGrocery } from "../services/pantry-deduction";
+import { allergySchema } from "@shared/schema";
+import type { AllergySeverity } from "@shared/constants/allergens";
 import {
   mealPlanRateLimit,
   pantryRateLimit,
@@ -218,7 +223,40 @@ export function register(app: Express): void {
           return;
         }
 
-        res.json(list);
+        // Enrich with allergen flags if user has allergies
+        const profile = await storage.getUserProfile(req.userId!);
+        const userAllergies: { name: string; severity: AllergySeverity }[] = [];
+        const rawAllergies = profile?.allergies;
+        if (Array.isArray(rawAllergies)) {
+          for (const item of rawAllergies) {
+            const parsed = allergySchema.safeParse(item);
+            if (parsed.success) userAllergies.push(parsed.data);
+          }
+        }
+
+        let allergenFlags: Record<
+          string,
+          { allergenId: string; severity: string }
+        > = {};
+        if (userAllergies.length > 0 && list.items) {
+          const flagMap = flagAllergenicGroceryItems(
+            list.items.map((i: { name: string }) => ({
+              name: i.name,
+              quantity: null,
+              unit: null,
+              category: "",
+            })),
+            userAllergies,
+          );
+          for (const [name, match] of flagMap) {
+            allergenFlags[name] = {
+              allergenId: match.allergenId,
+              severity: match.severity,
+            };
+          }
+        }
+
+        res.json({ ...list, allergenFlags });
       } catch (error) {
         console.error("Get grocery list error:", error);
         sendError(
