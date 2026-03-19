@@ -29,9 +29,14 @@ import {
 } from "../services/cooking-adjustment";
 import { generateRecipeContent } from "../services/recipe-generation";
 import { getSubstitutions } from "../services/ingredient-substitution";
+import {
+  detectAllergens,
+  type AllergenMatch,
+  type AllergySeverity,
+} from "@shared/constants/allergens";
+import { allergySchema, scannedItems, dailyLogs } from "@shared/schema";
 import { storage } from "../storage";
 import { db } from "../db";
-import { scannedItems, dailyLogs } from "@shared/schema";
 import multer from "multer";
 
 // ============================================================================
@@ -425,12 +430,34 @@ export function register(app: Express): void {
         session.photos.push({ id: photoId, addedAt: Date.now() });
         resetSessionTimeout(session.id);
 
+        // Auto-detect allergens in the session's ingredients
+        let allergenWarnings: AllergenMatch[] = [];
+        try {
+          const profile = await storage.getUserProfile(req.userId!);
+          const userAllergies: { name: string; severity: AllergySeverity }[] =
+            [];
+          const rawAllergies = profile?.allergies;
+          if (Array.isArray(rawAllergies)) {
+            for (const item of rawAllergies) {
+              const parsed = allergySchema.safeParse(item);
+              if (parsed.success) userAllergies.push(parsed.data);
+            }
+          }
+          if (userAllergies.length > 0) {
+            const ingredientNames = session.ingredients.map((i) => i.name);
+            allergenWarnings = detectAllergens(ingredientNames, userAllergies);
+          }
+        } catch {
+          // Non-critical — session still works without warnings
+        }
+
         res.json({
           id: session.id,
           ingredients: session.ingredients,
           photos: session.photos,
           createdAt: session.createdAt,
           newDetections: newIngredients.length,
+          allergenWarnings,
         });
       } catch (error) {
         console.error("Add cooking photo error:", error);

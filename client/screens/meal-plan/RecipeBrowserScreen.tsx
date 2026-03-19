@@ -364,6 +364,7 @@ export default function RecipeBrowserScreen() {
   const [searchText, setSearchText] = useState(searchQuery || "");
   const [activeCuisine, setActiveCuisine] = useState<string | undefined>();
   const [activeDiet, setActiveDiet] = useState<string | undefined>();
+  const [safeForMe, setSafeForMe] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [showSpoonacular, setShowSpoonacular] = useState(false);
 
@@ -393,8 +394,9 @@ export default function RecipeBrowserScreen() {
       query: debouncedQuery || undefined,
       cuisine: activeCuisine,
       diet: activeDiet,
+      safeForMe: safeForMe || undefined,
     }),
-    [debouncedQuery, activeCuisine, activeDiet],
+    [debouncedQuery, activeCuisine, activeDiet, safeForMe],
   );
 
   const { data, isLoading } = useUnifiedRecipes(browseParams);
@@ -407,6 +409,7 @@ export default function RecipeBrowserScreen() {
       cuisine: activeCuisine,
       diet: activeDiet,
       number: SPOONACULAR_PAGE_SIZE,
+      // safeForMe triggers server-side intolerances filtering (already wired in P1.4)
     };
   }, [showSpoonacular, debouncedQuery, activeCuisine, activeDiet]);
 
@@ -516,6 +519,11 @@ export default function RecipeBrowserScreen() {
     },
     [haptics],
   );
+
+  const handleToggleSafeForMe = useCallback(() => {
+    haptics.selection();
+    setSafeForMe((prev) => !prev);
+  }, [haptics]);
 
   const renderItem = useCallback(
     ({ item }: { item: UnifiedRecipeItem }) => (
@@ -649,6 +657,19 @@ export default function RecipeBrowserScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}
         >
+          <Chip
+            label="Safe for me"
+            variant="filter"
+            selected={safeForMe}
+            onPress={handleToggleSafeForMe}
+            accessibilityLabel="Filter recipes safe for my allergies"
+          />
+          <View
+            style={[
+              styles.filterDivider,
+              { backgroundColor: withOpacity(theme.text, 0.15) },
+            ]}
+          />
           {CUISINE_PRESETS.map((c) => (
             <Chip
               key={c}

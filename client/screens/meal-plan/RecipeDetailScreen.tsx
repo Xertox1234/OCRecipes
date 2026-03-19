@@ -9,6 +9,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { ThemedText } from "@/components/ThemedText";
 import { AllergenBadge } from "@/components/AllergenBadge";
 import { AllergenWarningBanner } from "@/components/AllergenWarningBanner";
+import { InlineSubstitution } from "@/components/InlineSubstitution";
 import { useTheme } from "@/hooks/useTheme";
 import { useAllergenCheck } from "@/hooks/useAllergenCheck";
 import {
@@ -85,6 +86,38 @@ export default function RecipeDetailScreen() {
     }
     return map;
   }, [allergenResult?.matches]);
+
+  // Build a lookup: ingredient name → substitution suggestions
+  // The allergen-check endpoint uses `allergen-check-{i}` IDs where i maps
+  // to the order of unique matched ingredient names
+  const substitutionsByName = useMemo(() => {
+    type SubArray = NonNullable<typeof allergenResult>["substitutions"];
+    const map = new Map<string, SubArray>();
+    if (!allergenResult?.substitutions || !allergenResult?.matches) return map;
+
+    // Rebuild the same uniqueIngredients order the endpoint used
+    const uniqueNames: string[] = [];
+    const seen = new Set<string>();
+    for (const m of allergenResult.matches) {
+      if (!seen.has(m.ingredientName)) {
+        seen.add(m.ingredientName);
+        uniqueNames.push(m.ingredientName);
+      }
+    }
+
+    for (const s of allergenResult.substitutions) {
+      // Extract index from "allergen-check-{i}"
+      const idxStr = s.originalIngredientId.replace("allergen-check-", "");
+      const idx = parseInt(idxStr, 10);
+      const name = !isNaN(idx) ? uniqueNames[idx] : undefined;
+      if (!name) continue;
+
+      const existing = map.get(name) ?? [];
+      existing.push(s);
+      map.set(name, existing);
+    }
+    return map;
+  }, [allergenResult]);
 
   const timeDisplay = useMemo(() => {
     if (!recipe) return null;
@@ -304,6 +337,17 @@ export default function RecipeDetailScreen() {
                         />
                       </View>
                     )}
+                    {/* Substitution suggestions for flagged ingredients */}
+                    {substitutionsByName.get(ing.name)?.map((sub, si) => (
+                      <InlineSubstitution
+                        key={`${ing.name}-sub-${si}`}
+                        substitute={sub.substitute}
+                        reason={sub.reason}
+                        ratio={sub.ratio}
+                        macroDelta={sub.macroDelta}
+                        confidence={sub.confidence}
+                      />
+                    ))}
                   </View>
                 </View>
               );

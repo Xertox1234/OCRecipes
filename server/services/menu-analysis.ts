@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { storage } from "../storage";
 import { openai } from "../lib/openai";
+import {
+  detectAllergens,
+  type AllergenMatch,
+  type AllergySeverity,
+} from "@shared/constants/allergens";
+import { allergySchema } from "@shared/schema";
 
 const menuItemSchema = z.object({
   name: z.string(),
@@ -22,7 +28,10 @@ const menuAnalysisSchema = z.object({
 });
 
 export type MenuAnalysisItem = z.infer<typeof menuItemSchema>;
-export type MenuAnalysisResult = z.infer<typeof menuAnalysisSchema>;
+export type MenuAnalysisResult = z.infer<typeof menuAnalysisSchema> & {
+  /** Per-item allergen flags keyed by item name. */
+  allergenFlags?: Record<string, AllergenMatch>;
+};
 
 const MENU_ANALYSIS_PROMPT = `You are a nutrition expert analyzing a restaurant menu photo.
 For each menu item visible:
@@ -153,5 +162,39 @@ export async function analyzeMenuPhoto(
       (order[b.recommendation || "okay"] ?? 2),
   );
 
-  return validated;
+  // Flag menu items containing user allergens
+  let allergenFlags: Record<string, AllergenMatch> | undefined;
+  try {
+    const profile = await storage.getUserProfile(userId);
+    const userAllergies: { name: string; severity: AllergySeverity }[] = [];
+    const rawAllergies = profile?.allergies;
+    if (Array.isArray(rawAllergies)) {
+      for (const item of rawAllergies) {
+        const parsed = allergySchema.safeParse(item);
+        if (parsed.success) userAllergies.push(parsed.data);
+      }
+    }
+    if (userAllergies.length > 0) {
+      // Check both item name and description for allergen keywords
+      const textToCheck = validated.menuItems.map(
+        (item) => `${item.name} ${item.description || ""}`,
+      );
+      const matches = detectAllergens(textToCheck, userAllergies);
+      if (matches.length > 0) {
+        allergenFlags = {};
+        for (const m of matches) {
+          // Map the combined text back to the item name
+          const idx = textToCheck.indexOf(m.ingredientName);
+          const itemName = idx >= 0 ? validated.menuItems[idx].name : undefined;
+          if (itemName && !allergenFlags[itemName]) {
+            allergenFlags[itemName] = m;
+          }
+        }
+      }
+    }
+  } catch {
+    // Non-critical — menu analysis still works without allergen flags
+  }
+
+  return { ...validated, allergenFlags };
 }
