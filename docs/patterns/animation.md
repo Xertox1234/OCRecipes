@@ -262,6 +262,52 @@ export const FastingTimer = React.memo(function FastingTimer({
 
 **Reference:** `client/components/FastingTimer.tsx`
 
+### Animated List Items with Independent Shared Values
+
+When rendering a `.map()` of items that each need their own Reanimated animation (e.g. progress bars, fade-ins), extract a child component. Each component instance gets its own `useSharedValue` through React's component model. Keeping `useSharedValue` inside a `.map()` callback violates the rules of hooks.
+
+```typescript
+// ❌ BAD — hooks inside .map()
+{macros.map((macro) => {
+  const width = useSharedValue(0); // Rules of hooks violation
+  return <Animated.View style={{ width }} />;
+})}
+
+// ✅ GOOD — extract component, each instance owns its shared value
+function MacroProgressBar({ macro }: { macro: MacroInfo }) {
+  const animatedWidth = useSharedValue(0);
+  const progress = macro.goal > 0
+    ? Math.min(macro.current / macro.goal, 1)
+    : 0;
+
+  useEffect(() => {
+    animatedWidth.value = reducedMotion
+      ? progress
+      : withTiming(progress, {
+          duration: 800,
+          easing: Easing.out(Easing.cubic),
+        });
+  }, [progress, reducedMotion, animatedWidth]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${animatedWidth.value * 100}%`,
+  }));
+
+  return (
+    <View style={styles.progressTrack}>
+      <Animated.View style={[styles.progressFill, fillStyle]} />
+    </View>
+  );
+}
+
+// Parent renders normally:
+{macros.map((m) => <MacroProgressBar key={m.label} macro={m} />)}
+```
+
+**When to use:** Any list of animated items — progress bars, staggered card entries, animated counters.
+
+**Reference:** `client/screens/DailyNutritionDetailScreen.tsx` (`MacroProgressBar`)
+
 ### Volume-Reactive Animation for Active State Indicators
 
 When a component has an "active" state driven by a continuous value (e.g. microphone volume), map the value to a scale factor using `withTiming` for smooth transitions. Cancel the animation cleanly when the state becomes inactive. Extract the mapping function to a shared utility (`client/lib/volume-scale.ts`) to avoid duplication.
