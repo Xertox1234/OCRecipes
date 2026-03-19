@@ -20,12 +20,14 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { VoiceLogButton } from "@/components/VoiceLogButton";
 import { ParsedFoodPreview } from "@/components/ParsedFoodPreview";
+import { AdaptiveGoalCard } from "@/components/AdaptiveGoalCard";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useParseFoodText, type ParsedFoodItem } from "@/hooks/useFoodParse";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { useAdaptiveGoals } from "@/hooks/useAdaptiveGoals";
 import { apiRequest } from "@/lib/query-client";
 import {
   Spacing,
@@ -42,6 +44,7 @@ export default function QuickLogScreen() {
   const navigation = useNavigation();
   const queryClient = useQueryClient();
   const { isPremium } = usePremiumContext();
+  const { data: adaptiveGoalData } = useAdaptiveGoals(isPremium);
 
   const [textInput, setTextInput] = useState("");
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
@@ -173,6 +176,21 @@ export default function QuickLogScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
+        {adaptiveGoalData?.hasRecommendation &&
+          adaptiveGoalData.recommendation && (
+            <View
+              style={{
+                marginHorizontal: Spacing.lg,
+                marginTop: Spacing.lg,
+                marginBottom: Spacing.sm,
+              }}
+            >
+              <AdaptiveGoalCard
+                recommendation={adaptiveGoalData.recommendation}
+              />
+            </View>
+          )}
+
         {/* Text Input */}
         <Card elevation={1} style={styles.inputCard}>
           <ThemedText type="h4" style={styles.sectionTitle}>
