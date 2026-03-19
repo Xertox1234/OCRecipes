@@ -1878,3 +1878,61 @@ const speedDialActions = useMemo(
 - `client/components/home/action-config.ts` — config array + `navigateAction()`
 - `client/screens/HomeScreen.tsx` — config-driven section rendering
 - `client/components/ScanFAB.tsx` — reuses config for speed dial menu
+
+### Progressive Disclosure via Usage Counting
+
+Transition UI elements from verbose (icon + label) to compact (icon-only) after the user has interacted with them enough times to learn what they mean. Track per-element usage counts in AsyncStorage with an in-memory cache, and apply a threshold to conditionally hide labels.
+
+```typescript
+// 1. Storage layer (home-actions-storage.ts) — same cache pattern as other storage
+const USAGE_COUNTS_KEY = "@ocrecipes_action_usage_counts";
+let usageCountsCache: Record<string, number> | null = null;
+
+export function getActionUsageCounts(): Record<string, number> {
+  return usageCountsCache ?? {};
+}
+
+export async function incrementActionUsage(actionId: string): Promise<void> {
+  const counts = getActionUsageCounts();
+  const updated = { ...counts, [actionId]: (counts[actionId] ?? 0) + 1 };
+  usageCountsCache = updated;
+  await AsyncStorage.setItem(USAGE_COUNTS_KEY, JSON.stringify(updated));
+}
+
+// 2. Component layer — threshold-based rendering
+const ICON_ONLY_THRESHOLD = 5;
+
+function ActionChip({ action, usageCounts }: Props) {
+  const iconOnly = (usageCounts[action.id] ?? 0) >= ICON_ONLY_THRESHOLD;
+
+  return (
+    <Pressable accessibilityLabel={action.label}>
+      <Feather name={action.icon} size={iconOnly ? 16 : 14} />
+      {!iconOnly && <ThemedText>{action.label}</ThemedText>}
+    </Pressable>
+  );
+}
+```
+
+**Key requirements:**
+
+- Always keep `accessibilityLabel` on icon-only elements for screen readers
+- Bump icon size slightly when removing label to maintain visual weight
+- Use a low threshold (5-10) so the transition happens naturally during normal use
+
+**When to use:**
+
+- Repeated-action toolbars or shortcut rows where space is limited
+- Any UI where familiarity reduces the need for text labels
+
+**When NOT to use:**
+
+- Primary navigation (tabs should always show labels)
+- Destructive or infrequent actions where clarity matters more than space
+- Actions where icons are ambiguous without labels
+
+**References:**
+
+- `client/components/home/RecentActionsRow.tsx` — `ICON_ONLY_THRESHOLD`, conditional label rendering
+- `client/lib/home-actions-storage.ts` — `usageCountsCache`, `incrementActionUsage()`
+- `client/hooks/useHomeActions.ts` — exposes `usageCounts` to components

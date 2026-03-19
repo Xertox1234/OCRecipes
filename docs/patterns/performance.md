@@ -343,3 +343,81 @@ function containsKeyword(text: string, keyword: string): boolean {
 **References:**
 
 - `shared/constants/allergens.ts` -- `keywordPatternCache`, `getKeywordPattern()`
+
+### Promise Memoization for Concurrent Call Deduplication
+
+When rapid user interactions can trigger the same async operation multiple times before the first call resolves, use promise memoization to collapse concurrent calls into a single execution. While a call is in-flight, subsequent callers receive the same promise. On settle (success or failure), the cache clears so future calls re-execute.
+
+```typescript
+import { createPromiseMemo } from "@/lib/promise-memo";
+
+// Create a memoized version of the async operation
+const sessionMemo = createPromiseMemo(async () => {
+  const response = await api.createSession();
+  return response.sessionId;
+});
+
+// In rapid-fire handler (e.g., photo capture button mashed 5 times):
+async function handleCapture() {
+  // All 5 calls return the same promise — only 1 API call is made
+  const sessionId = await sessionMemo.call();
+  await uploadPhoto(sessionId);
+}
+```
+
+**How it works:** The first `.call()` executes the factory and caches the resulting promise. Subsequent `.call()` invocations while the promise is pending return the same promise. On resolution or rejection, the cache clears so the next `.call()` creates a fresh promise.
+
+**When to use:**
+
+- Session/resource creation triggered by rapid user interactions (camera captures, button mashing)
+- Any idempotent initialization that multiple callers need concurrently
+
+**When NOT to use:**
+
+- Operations that should execute every time (e.g., incrementing a counter)
+- Operations with different parameters per call (this pattern is parameterless)
+
+**References:**
+
+- `client/lib/promise-memo.ts` — `createPromiseMemo<T>()` utility
+- `client/lib/__tests__/promise-memo.test.ts` — tests including concurrent call deduplication
+
+### Serial Queue for Sequential Async Processing
+
+When concurrent async operations must execute one at a time (e.g., to avoid race conditions on shared state), use a serial queue. Tasks are processed in FIFO order; errors in one task do not block subsequent tasks.
+
+```typescript
+import { createSerialQueue } from "@/lib/serial-queue";
+
+const analysisQueue = createSerialQueue();
+
+// Each photo analysis runs only after the previous one finishes
+async function handleNewPhoto(photoUri: string) {
+  const result = await analysisQueue.enqueue(async () => {
+    return await analyzePhoto(photoUri);
+  });
+  updateIngredients(result);
+}
+
+// Even if called rapidly, photos are analyzed sequentially:
+// Photo 1 → analyze → done → Photo 2 → analyze → done → ...
+```
+
+**How it works:** Each `.enqueue()` chains onto the previous task's promise. The returned promise resolves/rejects with the task's result, while the internal tail promise swallows errors so subsequent tasks still run.
+
+**When to use:**
+
+- Operations that mutate shared state and would corrupt it if run concurrently (e.g., merging AI-detected ingredients into a session)
+- Sequential processing where order matters (photo analysis results should apply in capture order)
+
+**When NOT to use:**
+
+- Independent operations that can safely run in parallel (use `Promise.all` instead)
+- Operations where you want to cancel/debounce instead of queue (use debounce/throttle)
+
+**Promise memo vs. serial queue:** These solve opposite problems. Promise memo collapses N concurrent calls into 1 (same operation, same result). Serial queue preserves all N calls but sequences them (different operations, different results).
+
+**References:**
+
+- `client/lib/serial-queue.ts` — `createSerialQueue()` utility
+- `client/lib/__tests__/serial-queue.test.ts` — tests including FIFO ordering and error isolation
