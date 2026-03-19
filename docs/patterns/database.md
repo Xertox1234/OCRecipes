@@ -1038,6 +1038,6 @@ const allergies = parseAllergies(profile.allergies);
 
 **References:**
 
-- `server/routes/allergen-check.ts` -- `parseAllergies()` canonical implementation
+- `shared/constants/allergens.ts` -- `parseUserAllergies()` canonical shared implementation (used by 5+ files)
 - `shared/schema.ts` -- `allergySchema` Zod definition
 - See also: [Shared Type Guards for JSONB Columns](#shared-type-guards-for-jsonb-columns) (the type guard approach, suitable when no Zod schema exists)

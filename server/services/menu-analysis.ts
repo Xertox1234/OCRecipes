@@ -3,10 +3,10 @@ import { storage } from "../storage";
 import { openai } from "../lib/openai";
 import {
   detectAllergens,
+  parseUserAllergies,
   type AllergenMatch,
   type AllergySeverity,
 } from "@shared/constants/allergens";
-import { allergySchema } from "@shared/schema";
 
 const menuItemSchema = z.object({
   name: z.string(),
@@ -63,19 +63,6 @@ Respond with JSON only:
     }
   ]
 }`;
-
-/** Parse allergies from JSONB safely, skipping invalid entries. */
-function parseUserAllergies(
-  raw: unknown,
-): { name: string; severity: AllergySeverity }[] {
-  if (!Array.isArray(raw)) return [];
-  const result: { name: string; severity: AllergySeverity }[] = [];
-  for (const item of raw) {
-    const parsed = allergySchema.safeParse(item);
-    if (parsed.success) result.push(parsed.data);
-  }
-  return result;
-}
 
 export async function analyzeMenuPhoto(
   imageBase64: string,

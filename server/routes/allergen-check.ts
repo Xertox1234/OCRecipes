@@ -4,8 +4,10 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
-import { detectAllergens } from "@shared/constants/allergens";
-import type { AllergySeverity } from "@shared/constants/allergens";
+import {
+  detectAllergens,
+  parseUserAllergies,
+} from "@shared/constants/allergens";
 import { allergenCheckRequestSchema } from "@shared/types/allergen-check";
 import type {
   AllergenCheckResult,
@@ -13,20 +15,6 @@ import type {
 } from "@shared/types/allergen-check";
 import { getSubstitutions } from "../services/ingredient-substitution";
 import type { CookingSessionIngredient } from "@shared/types/cook-session";
-import { allergySchema } from "@shared/schema";
-
-/** Runtime-safe extraction of allergies from JSONB column. */
-function parseAllergies(
-  raw: unknown,
-): { name: string; severity: AllergySeverity }[] {
-  if (!Array.isArray(raw)) return [];
-  const result: { name: string; severity: AllergySeverity }[] = [];
-  for (const item of raw) {
-    const parsed = allergySchema.safeParse(item);
-    if (parsed.success) result.push(parsed.data);
-  }
-  return result;
-}
 
 export function register(app: Express): void {
   /**
@@ -56,7 +44,7 @@ export function register(app: Express): void {
 
         // Fetch user profile to get allergy declarations
         const profile = await storage.getUserProfile(req.userId!);
-        const userAllergies = parseAllergies(profile?.allergies);
+        const userAllergies = parseUserAllergies(profile?.allergies);
 
         if (userAllergies.length === 0) {
           const result: AllergenCheckResult = {

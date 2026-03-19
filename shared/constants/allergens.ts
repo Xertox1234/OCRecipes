@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { allergySchema } from "@shared/schema";
 
 // ============================================================================
 // ALLERGEN ID & SEVERITY (matches COMMON_ALLERGENS in dietary-options.ts)
@@ -538,6 +539,29 @@ function ingredientContainsKeyword(
 
   // Single-word keyword — use pre-compiled word boundary pattern
   return getKeywordPattern(keyword).test(lowerIngredient);
+}
+
+// ============================================================================
+// SHARED JSONB PARSING (eliminates inline safeParse loops across 5+ files)
+// ============================================================================
+
+/**
+ * Safely parse the `userProfiles.allergies` JSONB column into typed allergy
+ * objects. Invalid entries are silently skipped — partial corruption doesn't
+ * crash the request.
+ *
+ * Use this instead of inline `as` casts or manual safeParse loops.
+ */
+export function parseUserAllergies(
+  raw: unknown,
+): { name: string; severity: AllergySeverity }[] {
+  if (!Array.isArray(raw)) return [];
+  const result: { name: string; severity: AllergySeverity }[] = [];
+  for (const item of raw) {
+    const parsed = allergySchema.safeParse(item);
+    if (parsed.success) result.push(parsed.data);
+  }
+  return result;
 }
 
 /** Exported for testing. */

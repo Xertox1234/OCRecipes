@@ -4,8 +4,10 @@ import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { allergySchema } from "@shared/schema";
-import type { AllergenId } from "@shared/constants/allergens";
+import {
+  parseUserAllergies,
+  type AllergenId,
+} from "@shared/constants/allergens";
 import {
   generateFullRecipe,
   normalizeProductName,
@@ -45,13 +47,12 @@ const SPOONACULAR_INTOLERANCE_MAP: Partial<Record<AllergenId, string>> = {
 };
 
 function buildIntolerancesParam(allergies: unknown): string | undefined {
-  if (!Array.isArray(allergies)) return undefined;
+  const parsed = parseUserAllergies(allergies);
+  if (parsed.length === 0) return undefined;
   const values: string[] = [];
-  for (const item of allergies) {
-    const parsed = allergySchema.safeParse(item);
-    if (!parsed.success) continue;
+  for (const allergy of parsed) {
     const spoonacularValue =
-      SPOONACULAR_INTOLERANCE_MAP[parsed.data.name as AllergenId];
+      SPOONACULAR_INTOLERANCE_MAP[allergy.name as AllergenId];
     if (spoonacularValue) values.push(spoonacularValue);
   }
   return values.length > 0 ? values.join(",") : undefined;

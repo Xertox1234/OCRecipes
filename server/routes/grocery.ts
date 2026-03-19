@@ -11,8 +11,7 @@ import {
   flagAllergenicGroceryItems,
 } from "../services/grocery-generation";
 import { deductPantryFromGrocery } from "../services/pantry-deduction";
-import { allergySchema } from "@shared/schema";
-import type { AllergySeverity } from "@shared/constants/allergens";
+import { parseUserAllergies } from "@shared/constants/allergens";
 import {
   mealPlanRateLimit,
   pantryRateLimit,
@@ -225,14 +224,7 @@ export function register(app: Express): void {
 
         // Enrich with allergen flags if user has allergies
         const profile = await storage.getUserProfile(req.userId!);
-        const userAllergies: { name: string; severity: AllergySeverity }[] = [];
-        const rawAllergies = profile?.allergies;
-        if (Array.isArray(rawAllergies)) {
-          for (const item of rawAllergies) {
-            const parsed = allergySchema.safeParse(item);
-            if (parsed.success) userAllergies.push(parsed.data);
-          }
-        }
+        const userAllergies = parseUserAllergies(profile?.allergies);
 
         let allergenFlags: Record<
           string,

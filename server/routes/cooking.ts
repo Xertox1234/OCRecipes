@@ -31,10 +31,10 @@ import { generateRecipeContent } from "../services/recipe-generation";
 import { getSubstitutions } from "../services/ingredient-substitution";
 import {
   detectAllergens,
+  parseUserAllergies,
   type AllergenMatch,
-  type AllergySeverity,
 } from "@shared/constants/allergens";
-import { allergySchema, scannedItems, dailyLogs } from "@shared/schema";
+import { scannedItems, dailyLogs } from "@shared/schema";
 import { storage } from "../storage";
 import { db } from "../db";
 import multer from "multer";
@@ -434,15 +434,7 @@ export function register(app: Express): void {
         let allergenWarnings: AllergenMatch[] = [];
         try {
           const profile = await storage.getUserProfile(req.userId!);
-          const userAllergies: { name: string; severity: AllergySeverity }[] =
-            [];
-          const rawAllergies = profile?.allergies;
-          if (Array.isArray(rawAllergies)) {
-            for (const item of rawAllergies) {
-              const parsed = allergySchema.safeParse(item);
-              if (parsed.success) userAllergies.push(parsed.data);
-            }
-          }
+          const userAllergies = parseUserAllergies(profile?.allergies);
           if (userAllergies.length > 0) {
             const ingredientNames = session.ingredients.map((i) => i.name);
             allergenWarnings = detectAllergens(ingredientNames, userAllergies);
