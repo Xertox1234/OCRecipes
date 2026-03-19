@@ -115,7 +115,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const recipes = await storage.getCookbookRecipes(id);
+        const recipes = await storage.getCookbookRecipes(id, req.userId!);
         res.json({ ...cookbook, recipes });
       } catch (error) {
         console.error("Get cookbook error:", error);
@@ -305,10 +305,15 @@ export function register(app: Express): void {
           return;
         }
 
-        const recipeType =
-          typeof req.query.recipeType === "string"
-            ? req.query.recipeType
-            : "mealPlan";
+        const recipeTypeParsed = z
+          .enum(["mealPlan", "community"])
+          .default("mealPlan")
+          .safeParse(req.query.recipeType);
+        if (!recipeTypeParsed.success) {
+          sendError(res, 400, "Invalid recipeType", ErrorCode.VALIDATION_ERROR);
+          return;
+        }
+        const recipeType = recipeTypeParsed.data;
 
         const removed = await storage.removeRecipeFromCookbook(
           id,

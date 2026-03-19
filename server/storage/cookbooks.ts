@@ -101,10 +101,18 @@ export async function removeRecipeFromCookbook(
 
 export async function getCookbookRecipes(
   cookbookId: number,
+  userId: string,
 ): Promise<CookbookRecipe[]> {
-  return db
-    .select()
+  const rows = await db
+    .select({ recipe: cookbookRecipes })
     .from(cookbookRecipes)
-    .where(eq(cookbookRecipes.cookbookId, cookbookId))
+    .innerJoin(cookbooks, eq(cookbookRecipes.cookbookId, cookbooks.id))
+    .where(
+      and(
+        eq(cookbookRecipes.cookbookId, cookbookId),
+        eq(cookbooks.userId, userId),
+      ),
+    )
     .orderBy(desc(cookbookRecipes.addedAt));
+  return rows.map((r) => r.recipe);
 }
