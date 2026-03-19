@@ -310,6 +310,7 @@ function buildExclusionList(
 
 async function getAiSubstitutions(
   ingredients: CookingSessionIngredient[],
+  allIngredients: CookingSessionIngredient[],
   profileSummary: string,
   userAllergies: { name: string; severity: AllergySeverity }[] = [],
 ): Promise<SubstitutionSuggestion[]> {
@@ -321,13 +322,23 @@ async function getAiSubstitutions(
     })
     .join("\n");
 
+  // Build recipe context from all ingredients so the AI can suggest
+  // substitutions that harmonize with the rest of the dish
+  const otherIngredients = allIngredients
+    .filter((a) => !ingredients.some((i) => i.id === a.id))
+    .map((a) => a.name);
+  const recipeContext =
+    otherIngredients.length > 0
+      ? `\nOther ingredients in this recipe (do NOT substitute these — use them as context): ${otherIngredients.join(", ")}\n`
+      : "";
+
   const sanitizedProfile = sanitizeUserInput(profileSummary);
   const exclusionList = buildExclusionList(userAllergies);
 
   const prompt = `Suggest healthy substitutions for these cooking ingredients:
 
 ${ingredientList}
-
+${recipeContext}
 User dietary profile: ${sanitizedProfile}
 ${exclusionList}
 For each ingredient, provide 1-2 substitutions that:
@@ -335,6 +346,7 @@ For each ingredient, provide 1-2 substitutions that:
 2. Preserve the ingredient's functional role in the recipe (e.g. a binder substitute must also bind)
 3. Do NOT contain any ingredient from the allergy exclusion list above
 4. Include estimated macro differences per serving
+5. Harmonize with the other ingredients already in the recipe — prefer substitutes whose flavor profile complements the dish
 
 ${SYSTEM_PROMPT_BOUNDARY}
 
@@ -495,6 +507,7 @@ export async function getSubstitutions(
     try {
       aiResults = await getAiSubstitutions(
         needsAiAfterSpoonacular,
+        ingredients,
         profileSummary,
         userAllergies,
       );
