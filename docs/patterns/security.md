@@ -44,7 +44,7 @@ Route-level ownership checks are the primary defense, but storage mutation metho
 
 **When to use:** Any `IStorage` method that updates or deletes a row in a user-owned table by primary key (`id`).
 
-**When NOT to use:** Read-only methods where the route already verifies ownership before returning data, or methods that operate on non-user-scoped resources (e.g., shared recipe catalog).
+**When NOT to use:** Methods that operate on non-user-scoped resources (e.g., shared recipe catalog). For read-only methods on junction/child tables without a `userId` column, see [Junction Table Reads](#junction-table-reads-innerjoin-through-parent-for-ownership) below.
 
 **Implementation:**
 
@@ -75,6 +75,55 @@ async endFastingLog(id: number, userId: string, ...): Promise<FastingLog | undef
 - `server/storage.ts` — `endFastingLog`, `deleteMenuScan`, `deleteMedicationLog`, `softDeleteScannedItem`
 - Related learning: "IDOR in Micronutrients and Chat Routes" in LEARNINGS.md
 - See also: [IDOR Protection: Auth + Ownership Check](#idor-protection-auth--ownership-check)
+
+#### Junction Table Reads: innerJoin Through Parent for Ownership
+
+When reading from a junction or child table that has **no `userId` column** (ownership is only on the parent), use `innerJoin` through the parent table and include `eq(parent.userId, userId)` in the WHERE clause. This extends the defense-in-depth principle to read methods on indirectly-owned data.
+
+**When to use:** Any read from a child/junction table where the child row's ownership is determined by its parent (cookbook recipes, grocery list items, recipe ingredients).
+
+**When NOT to use:** Child tables that have their own `userId` column — filter directly on the child.
+
+**Implementation:**
+
+```typescript
+// ❌ Bad: Junction table read with no ownership check
+export async function getCookbookRecipes(
+  cookbookId: number,
+): Promise<CookbookRecipe[]> {
+  return db
+    .select()
+    .from(cookbookRecipes)
+    .where(eq(cookbookRecipes.cookbookId, cookbookId)) // Any user's cookbookId works!
+    .orderBy(desc(cookbookRecipes.addedAt));
+}
+
+// ✅ Good: Join through parent to verify ownership
+export async function getCookbookRecipes(
+  cookbookId: number,
+  userId: string,
+): Promise<CookbookRecipe[]> {
+  const rows = await db
+    .select({ recipe: cookbookRecipes })
+    .from(cookbookRecipes)
+    .innerJoin(cookbooks, eq(cookbookRecipes.cookbookId, cookbooks.id))
+    .where(
+      and(
+        eq(cookbookRecipes.cookbookId, cookbookId),
+        eq(cookbooks.userId, userId), // Ownership enforced via parent
+      ),
+    )
+    .orderBy(desc(cookbookRecipes.addedAt));
+  return rows.map((r) => r.recipe);
+}
+```
+
+**Rationale:** A route calling this function may verify ownership separately (e.g., `getCookbook(id, userId)` before `getCookbookRecipes(id)`). But if a future code path calls the read function directly with an untrusted `cookbookId`, it would leak another user's data. The `innerJoin` approach makes the storage function independently safe with minimal overhead — the join uses the parent's primary key index.
+
+**References:**
+
+- `server/storage/cookbooks.ts` — `getCookbookRecipes(cookbookId, userId)`
+- See also: [Storage-Layer Defense-in-Depth](#storage-layer-defense-in-depth) (the parent pattern for direct-owned tables)
 
 ### SSRF Protection for Server-Side URL Fetching
 
