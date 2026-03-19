@@ -178,6 +178,15 @@ export type GroceryListScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
+ * Navigation prop for CookbookCreateScreen
+ * Can navigate within meal plan stack
+ */
+export type CookbookCreateScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList,
+  "CookbookCreate"
+>;
+
+/**
  * Navigation prop for MenuScanResultScreen
  * Can use goBack or navigate within RootStack
  */

@@ -40,7 +40,7 @@ describe("action-config", () => {
 
     it("returns only recipes actions", () => {
       const actions = getActionsByGroup("recipes");
-      expect(actions.length).toBe(3);
+      expect(actions.length).toBe(4);
       expect(actions.every((a) => a.group === "recipes")).toBe(true);
     });
 

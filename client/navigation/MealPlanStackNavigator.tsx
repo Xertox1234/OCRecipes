@@ -10,6 +10,7 @@ import RecipePhotoImportScreen from "@/screens/meal-plan/RecipePhotoImportScreen
 import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
 import GroceryListScreen from "@/screens/meal-plan/GroceryListScreen";
 import PantryScreen from "@/screens/meal-plan/PantryScreen";
+import CookbookCreateScreen from "@/screens/meal-plan/CookbookCreateScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
@@ -36,6 +37,7 @@ export type MealPlanStackParamList = {
   GroceryLists: undefined;
   GroceryList: { listId: number };
   Pantry: undefined;
+  CookbookCreate: undefined;
 };
 
 const Stack = createNativeStackNavigator<MealPlanStackParamList>();
@@ -118,6 +120,15 @@ export default function MealPlanStackNavigator() {
         component={PantryScreen}
         options={{
           headerTitle: () => <HeaderTitle title="Pantry" showIcon={false} />,
+        }}
+      />
+      <Stack.Screen
+        name="CookbookCreate"
+        component={CookbookCreateScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="New Cookbook" showIcon={false} />
+          ),
         }}
       />
     </Stack.Navigator>

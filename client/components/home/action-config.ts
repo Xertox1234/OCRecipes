@@ -67,6 +67,11 @@ export function navigateAction(
         screen: "RecipeImport",
       });
       break;
+    case "create-cookbook":
+      navigation.navigate("MealPlanTab", {
+        screen: "CookbookCreate",
+      });
+      break;
 
     // Planning
     case "meal-plan":
@@ -174,6 +179,13 @@ export const HOME_ACTIONS: HomeAction[] = [
     icon: "download",
     label: "Import Recipe",
     subtitle: "Import from a URL",
+  },
+  {
+    id: "create-cookbook",
+    group: "recipes",
+    icon: "book",
+    label: "Create Cookbook",
+    subtitle: "Organize your recipe collections",
   },
 
   // Planning

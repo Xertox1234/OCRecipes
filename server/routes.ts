@@ -27,6 +27,7 @@ import { register as registerMicronutrients } from "./routes/micronutrients";
 import { register as registerReceipt } from "./routes/receipt";
 import { register as registerCooking } from "./routes/cooking";
 import { register as registerAllergenCheck } from "./routes/allergen-check";
+import { register as registerCookbooks } from "./routes/cookbooks";
 
 export { isValidCalendarDate };
 
@@ -57,6 +58,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerReceipt(app);
   registerCooking(app);
   registerAllergenCheck(app);
+  registerCookbooks(app);
 
   // Multer error handler - returns 400 for file validation errors instead of 500
   app.use(

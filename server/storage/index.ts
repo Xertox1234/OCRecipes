@@ -18,6 +18,7 @@ import * as medication from "./medication";
 import * as fasting from "./fasting";
 import * as menu from "./menu";
 import * as receipt from "./receipt";
+import * as cookbooksStorage from "./cookbooks";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 
@@ -158,4 +159,14 @@ export const storage = {
   // Receipt scans
   createReceiptScan: receipt.createReceiptScan,
   getMonthlyReceiptScanCount: receipt.getMonthlyReceiptScanCount,
+
+  // Cookbooks
+  createCookbook: cookbooksStorage.createCookbook,
+  getUserCookbooks: cookbooksStorage.getUserCookbooks,
+  getCookbook: cookbooksStorage.getCookbook,
+  updateCookbook: cookbooksStorage.updateCookbook,
+  deleteCookbook: cookbooksStorage.deleteCookbook,
+  addRecipeToCookbook: cookbooksStorage.addRecipeToCookbook,
+  removeRecipeFromCookbook: cookbooksStorage.removeRecipeFromCookbook,
+  getCookbookRecipes: cookbooksStorage.getCookbookRecipes,
 };

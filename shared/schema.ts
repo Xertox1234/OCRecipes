@@ -1314,3 +1314,80 @@ export type InsertMedicationLog = typeof medicationLogs.$inferInsert;
 
 export type GoalAdjustmentLog = typeof goalAdjustmentLogs.$inferSelect;
 export type InsertGoalAdjustmentLog = typeof goalAdjustmentLogs.$inferInsert;
+
+// ============================================================================
+// COOKBOOKS
+// ============================================================================
+
+export const cookbooks = pgTable(
+  "cookbooks",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    coverImageUrl: text("cover_image_url"),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("cookbooks_user_id_idx").on(table.userId),
+  }),
+);
+
+export const cookbookRecipes = pgTable(
+  "cookbook_recipes",
+  {
+    id: serial("id").primaryKey(),
+    cookbookId: integer("cookbook_id")
+      .references(() => cookbooks.id, { onDelete: "cascade" })
+      .notNull(),
+    recipeId: integer("recipe_id").notNull(),
+    recipeType: text("recipe_type").notNull().default("mealPlan"), // 'mealPlan' | 'community'
+    addedAt: timestamp("added_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    cookbookRecipeTypeIdx: uniqueIndex("cookbook_recipes_unique_idx").on(
+      table.cookbookId,
+      table.recipeId,
+      table.recipeType,
+    ),
+  }),
+);
+
+export const cookbooksRelations = relations(cookbooks, ({ one, many }) => ({
+  user: one(users, {
+    fields: [cookbooks.userId],
+    references: [users.id],
+  }),
+  recipes: many(cookbookRecipes),
+}));
+
+export const cookbookRecipesRelations = relations(
+  cookbookRecipes,
+  ({ one }) => ({
+    cookbook: one(cookbooks, {
+      fields: [cookbookRecipes.cookbookId],
+      references: [cookbooks.id],
+    }),
+  }),
+);
+
+export const insertCookbookSchema = createInsertSchema(cookbooks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type Cookbook = typeof cookbooks.$inferSelect;
+export type InsertCookbook = z.infer<typeof insertCookbookSchema>;
+export type CookbookRecipe = typeof cookbookRecipes.$inferSelect;
+export type InsertCookbookRecipe = typeof cookbookRecipes.$inferInsert;
