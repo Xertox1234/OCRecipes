@@ -12,6 +12,7 @@ import GoalSetupScreen from "@/screens/GoalSetupScreen";
 import EditDietaryProfileScreen from "@/screens/EditDietaryProfileScreen";
 import FeaturedRecipeDetailScreen from "@/screens/FeaturedRecipeDetailScreen";
 import QuickLogScreen from "@/screens/QuickLogScreen";
+import DailyNutritionDetailScreen from "@/screens/DailyNutritionDetailScreen";
 import MenuScanResultScreen from "@/screens/MenuScanResultScreen";
 import LabelAnalysisScreen from "@/screens/LabelAnalysisScreen";
 import ReceiptCaptureScreen from "@/screens/ReceiptCaptureScreen";
@@ -54,6 +55,7 @@ export type RootStackParamList = {
   EditDietaryProfile: undefined;
   FeaturedRecipeDetail: { recipeId: number };
   QuickLog: undefined;
+  DailyNutritionDetail: undefined;
   MenuScanResult: {
     items: MenuAnalysisItem[];
     restaurantName?: string;
@@ -178,6 +180,14 @@ export default function RootStackNavigator() {
             component={QuickLogScreen}
             options={{
               headerTitle: "Quick Log",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="DailyNutritionDetail"
+            component={DailyNutritionDetailScreen}
+            options={{
+              headerTitle: "Today's Nutrition",
               presentation: "modal",
             }}
           />

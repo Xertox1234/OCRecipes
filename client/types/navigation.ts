@@ -48,6 +48,13 @@ export type HomeScreenNavigationProp = CompositeNavigationProp<
 >;
 
 /**
+ * Navigation prop for DailyNutritionDetailScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type DailyNutritionDetailScreenNavigationProp =
+  NativeStackNavigationProp<RootStackParamList, "DailyNutritionDetail">;
+
+/**
  * Navigation prop for ScanScreen
  * Now a RootStack modal — can navigate to NutritionDetail, goBack, etc.
  */

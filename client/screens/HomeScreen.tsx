@@ -62,7 +62,7 @@ export default function HomeScreen() {
 
   const handleCalorieTap = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate("ProfileTab", { screen: "Profile" });
+    navigation.navigate("DailyNutritionDetail");
   }, [haptics, navigation]);
 
   return (
