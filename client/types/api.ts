@@ -52,3 +52,14 @@ export type DailySummaryResponse = {
   plannedItemCount?: number;
   confirmedMealPlanItemIds?: number[];
 };
+
+/**
+ * Goals response from /api/goals.
+ * Contains daily macro and calorie targets.
+ */
+export type GoalsResponse = {
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+};

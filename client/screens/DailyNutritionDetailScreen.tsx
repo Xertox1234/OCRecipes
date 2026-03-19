@@ -1,8 +1,14 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { StyleSheet, View, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+  Easing,
+} from "react-native-reanimated";
 
 import { CalorieRing } from "@/components/CalorieRing";
 import { AdaptiveGoalCard } from "@/components/AdaptiveGoalCard";
@@ -13,33 +19,89 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { useAdaptiveGoals } from "@/hooks/useAdaptiveGoals";
 import { usePremiumContext } from "@/context/PremiumContext";
+import type { DailySummaryResponse, GoalsResponse } from "@/types/api";
 import {
+  Colors,
   Spacing,
   BorderRadius,
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
 
-interface DailySummaryResponse {
-  totalCalories: number;
-  totalProtein: number;
-  totalCarbs: number;
-  totalFat: number;
-  itemCount: number;
-}
-
-interface GoalsResponse {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-}
+type AppTheme = (typeof Colors)["light"];
 
 interface MacroInfo {
   label: string;
   current: number;
   goal: number;
   colorKey: "proteinAccent" | "carbsAccent" | "fatAccent";
+}
+
+function MacroProgressBar({
+  macro,
+  theme,
+  reducedMotion,
+}: {
+  macro: MacroInfo;
+  theme: AppTheme;
+  reducedMotion: boolean;
+}) {
+  const progress =
+    macro.goal > 0 ? Math.min(Math.max(macro.current / macro.goal, 0), 1) : 0;
+  const accentColor = theme[macro.colorKey];
+
+  const animatedWidth = useSharedValue(0);
+  React.useEffect(() => {
+    animatedWidth.value = reducedMotion
+      ? progress
+      : withTiming(progress, {
+          duration: 800,
+          easing: Easing.out(Easing.cubic),
+        });
+  }, [progress, reducedMotion, animatedWidth]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: `${animatedWidth.value * 100}%`,
+  }));
+
+  return (
+    <View
+      style={styles.macroRow}
+      accessibilityRole="progressbar"
+      accessibilityLabel={`${macro.label}: ${macro.current} grams of ${macro.goal} gram goal`}
+      accessibilityValue={{
+        min: 0,
+        max: macro.goal,
+        now: macro.current,
+        text: `${macro.current}g of ${macro.goal}g`,
+      }}
+    >
+      <View style={styles.macroHeader}>
+        <ThemedText style={[styles.macroLabel, { color: accentColor }]}>
+          {macro.label}
+        </ThemedText>
+        <ThemedText
+          style={[styles.macroValues, { color: theme.textSecondary }]}
+        >
+          {macro.current}g / {macro.goal}g
+        </ThemedText>
+      </View>
+      <View
+        style={[
+          styles.progressTrack,
+          { backgroundColor: withOpacity(theme.border, 0.3) },
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.progressFill,
+            { backgroundColor: accentColor },
+            fillStyle,
+          ]}
+        />
+      </View>
+    </View>
+  );
 }
 
 export default function DailyNutritionDetailScreen() {
@@ -72,21 +134,29 @@ export default function DailyNutritionDetailScreen() {
   const carbsGoal = goals?.carbs ?? 0;
   const fatGoal = goals?.fat ?? 0;
 
-  const macros: MacroInfo[] = [
-    {
-      label: "Protein",
-      current: protein,
-      goal: proteinGoal,
-      colorKey: "proteinAccent",
-    },
-    {
-      label: "Carbs",
-      current: carbs,
-      goal: carbsGoal,
-      colorKey: "carbsAccent",
-    },
-    { label: "Fat", current: fat, goal: fatGoal, colorKey: "fatAccent" },
-  ];
+  const macros: MacroInfo[] = useMemo(
+    () => [
+      {
+        label: "Protein",
+        current: protein,
+        goal: proteinGoal,
+        colorKey: "proteinAccent",
+      },
+      {
+        label: "Carbs",
+        current: carbs,
+        goal: carbsGoal,
+        colorKey: "carbsAccent",
+      },
+      { label: "Fat", current: fat, goal: fatGoal, colorKey: "fatAccent" },
+    ],
+    [protein, proteinGoal, carbs, carbsGoal, fat, fatGoal],
+  );
+
+  const contentContainerStyle = useMemo(
+    () => ({ paddingBottom: insets.bottom + Spacing.xl }),
+    [insets.bottom],
+  );
 
   if (isLoading) {
     return (
@@ -110,9 +180,7 @@ export default function DailyNutritionDetailScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      contentContainerStyle={{
-        paddingBottom: insets.bottom + Spacing.xl,
-      }}
+      contentContainerStyle={contentContainerStyle}
     >
       {/* CalorieRing hero section */}
       <View style={styles.ringSection}>
@@ -154,57 +222,14 @@ export default function DailyNutritionDetailScreen() {
         <ThemedText type="h4" style={styles.macroSectionTitle}>
           Macro Breakdown
         </ThemedText>
-        {macros.map((macro) => {
-          const progress =
-            macro.goal > 0
-              ? Math.min(Math.max(macro.current / macro.goal, 0), 1)
-              : 0;
-          const accentColor = theme[macro.colorKey];
-
-          return (
-            <View
-              key={macro.label}
-              style={styles.macroRow}
-              accessibilityRole="progressbar"
-              accessibilityLabel={`${macro.label}: ${macro.current} grams of ${macro.goal} gram goal`}
-              accessibilityValue={{
-                min: 0,
-                max: macro.goal,
-                now: macro.current,
-                text: `${macro.current}g of ${macro.goal}g`,
-              }}
-            >
-              <View style={styles.macroHeader}>
-                <ThemedText style={[styles.macroLabel, { color: accentColor }]}>
-                  {macro.label}
-                </ThemedText>
-                <ThemedText
-                  style={[styles.macroValues, { color: theme.textSecondary }]}
-                >
-                  {macro.current}g / {macro.goal}g
-                </ThemedText>
-              </View>
-              <View
-                style={[
-                  styles.progressTrack,
-                  {
-                    backgroundColor: withOpacity(theme.border, 0.3),
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      backgroundColor: accentColor,
-                      width: `${progress * 100}%`,
-                    },
-                  ]}
-                />
-              </View>
-            </View>
-          );
-        })}
+        {macros.map((macro) => (
+          <MacroProgressBar
+            key={macro.label}
+            macro={macro}
+            theme={theme}
+            reducedMotion={reducedMotion}
+          />
+        ))}
       </Animated.View>
 
       {/* Adaptive Goal Card (conditional on premium + recommendation) */}
