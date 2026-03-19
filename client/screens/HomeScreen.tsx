@@ -68,59 +68,61 @@ export default function HomeScreen() {
   }, [haptics, navigation]);
 
   return (
-    <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{
-        paddingTop: insets.top + Spacing.lg,
-        paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
-      }}
-      scrollIndicatorInsets={{ bottom: insets.bottom }}
-      refreshControl={
-        <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
-      }
-    >
-      <DailySummaryHeader onCalorieTap={handleCalorieTap} />
+    <>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingTop: insets.top + Spacing.lg,
+          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+        }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
+        refreshControl={
+          <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
+        }
+      >
+        <DailySummaryHeader onCalorieTap={handleCalorieTap} />
 
-      <RecentActionsRow
-        recentActionIds={recentActions}
-        allActions={HOME_ACTIONS}
-        onActionPress={handleActionPress}
-        usageCounts={usageCounts}
-      />
+        <RecentActionsRow
+          recentActionIds={recentActions}
+          allActions={HOME_ACTIONS}
+          onActionPress={handleActionPress}
+          usageCounts={usageCounts}
+        />
 
-      {SECTIONS.map(({ key, title, delay }) => (
-        <Animated.View
-          key={key}
-          entering={
-            reducedMotion ? undefined : FadeInDown.delay(delay).duration(400)
-          }
-        >
-          <CollapsibleSection
-            title={title}
-            isExpanded={sections[key]}
-            onToggle={() => toggleSection(key)}
+        {SECTIONS.map(({ key, title, delay }) => (
+          <Animated.View
+            key={key}
+            entering={
+              reducedMotion ? undefined : FadeInDown.delay(delay).duration(400)
+            }
           >
-            {getActionsByGroup(key).map((action) => (
-              <ActionRow
-                key={action.id}
-                icon={action.icon}
-                label={action.label}
-                subtitle={action.subtitle}
-                onPress={() => handleActionPress(action)}
-                isLocked={action.premium && !isPremium}
-              />
-            ))}
-          </CollapsibleSection>
-        </Animated.View>
-      ))}
+            <CollapsibleSection
+              title={title}
+              isExpanded={sections[key]}
+              onToggle={() => toggleSection(key)}
+            >
+              {getActionsByGroup(key).map((action) => (
+                <ActionRow
+                  key={action.id}
+                  icon={action.icon}
+                  label={action.label}
+                  subtitle={action.subtitle}
+                  onPress={() => handleActionPress(action)}
+                  isLocked={action.premium && !isPremium}
+                />
+              ))}
+            </CollapsibleSection>
+          </Animated.View>
+        ))}
 
-      <View style={styles.bottomSpacer} />
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
 
       <UpgradeModal
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
       />
-    </ScrollView>
+    </>
   );
 }
 

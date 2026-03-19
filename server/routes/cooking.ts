@@ -20,7 +20,10 @@ import {
   type CookSessionNutritionItem,
   type CookSessionNutritionSummary,
 } from "@shared/types/cook-session";
-import { mergeDetectedIngredients } from "../lib/cook-session-merge";
+import {
+  mergeDetectedIngredients,
+  MAX_INGREDIENTS_PER_SESSION,
+} from "../lib/cook-session-merge";
 import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { batchNutritionLookup } from "../services/nutrition-lookup";
@@ -95,7 +98,6 @@ const cookSessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 const userCookSessionCount = new Map<string, number>();
 
 const MAX_PHOTOS_PER_SESSION = 10;
-const MAX_INGREDIENTS_PER_SESSION = 20;
 const MAX_SESSIONS_PER_USER = 2;
 const MAX_SESSIONS_GLOBAL = 1000;
 const COOK_SESSION_TIMEOUT = 30 * 60 * 1000;

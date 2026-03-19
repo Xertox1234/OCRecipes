@@ -118,7 +118,7 @@ describe("cook-session-storage", () => {
     });
   });
 
-  describe("debounced persistence — rapid state changes batch into single write", () => {
+  describe("persistence — rapid state changes write sequentially", () => {
     it("multiple rapid saves result in multiple AsyncStorage.setItem calls", async () => {
       // The current implementation calls setItem on every save.
       // This test documents that behavior and verifies that each call

@@ -34,12 +34,12 @@ export function useHomeActions() {
   }, []);
 
   const recordAction = useCallback((actionId: string) => {
-    pushRecentAction(actionId).then(() => {
-      setRecentActions(getRecentActions());
-    });
-    incrementActionUsage(actionId).then(() => {
-      setUsageCounts(getActionUsageCounts());
-    });
+    pushRecentAction(actionId)
+      .then(() => setRecentActions(getRecentActions()))
+      .catch(console.error);
+    incrementActionUsage(actionId)
+      .then(() => setUsageCounts(getActionUsageCounts()))
+      .catch(console.error);
   }, []);
 
   return { sections, toggleSection, recentActions, recordAction, usageCounts };
