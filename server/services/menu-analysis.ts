@@ -64,17 +64,33 @@ Respond with JSON only:
   ]
 }`;
 
+/** Parse allergies from JSONB safely, skipping invalid entries. */
+function parseUserAllergies(
+  raw: unknown,
+): { name: string; severity: AllergySeverity }[] {
+  if (!Array.isArray(raw)) return [];
+  const result: { name: string; severity: AllergySeverity }[] = [];
+  for (const item of raw) {
+    const parsed = allergySchema.safeParse(item);
+    if (parsed.success) result.push(parsed.data);
+  }
+  return result;
+}
+
 export async function analyzeMenuPhoto(
   imageBase64: string,
   userId: string,
 ): Promise<MenuAnalysisResult> {
-  // Build user context for personalized recommendations
+  // Fetch user data once — reused for both AI context and allergen detection
   let userContext = "";
+  let userAllergies: { name: string; severity: AllergySeverity }[] = [];
   try {
     const [user, profile] = await Promise.all([
       storage.getUser(userId),
       storage.getUserProfile(userId),
     ]);
+
+    userAllergies = parseUserAllergies(profile?.allergies);
 
     if (user) {
       const parts: string[] = [];
@@ -84,12 +100,8 @@ export async function analyzeMenuPhoto(
         parts.push(`Daily protein goal: ${user.dailyProteinGoal}g`);
       if (profile?.dietType) parts.push(`Diet type: ${profile.dietType}`);
       if (profile?.primaryGoal) parts.push(`Goal: ${profile.primaryGoal}`);
-      const allergies = profile?.allergies as
-        | { name: string }[]
-        | null
-        | undefined;
-      if (allergies?.length) {
-        parts.push(`Allergies: ${allergies.map((a) => a.name).join(", ")}`);
+      if (userAllergies.length > 0) {
+        parts.push(`Allergies: ${userAllergies.map((a) => a.name).join(", ")}`);
       }
       const dislikes = profile?.foodDislikes as string[] | null | undefined;
       if (dislikes?.length) {
@@ -162,38 +174,33 @@ export async function analyzeMenuPhoto(
       (order[b.recommendation || "okay"] ?? 2),
   );
 
-  // Flag menu items containing user allergens
+  // Flag menu items containing user allergens (reuses profile from above)
   let allergenFlags: Record<string, AllergenMatch> | undefined;
-  try {
-    const profile = await storage.getUserProfile(userId);
-    const userAllergies: { name: string; severity: AllergySeverity }[] = [];
-    const rawAllergies = profile?.allergies;
-    if (Array.isArray(rawAllergies)) {
-      for (const item of rawAllergies) {
-        const parsed = allergySchema.safeParse(item);
-        if (parsed.success) userAllergies.push(parsed.data);
-      }
-    }
-    if (userAllergies.length > 0) {
-      // Check both item name and description for allergen keywords
-      const textToCheck = validated.menuItems.map(
-        (item) => `${item.name} ${item.description || ""}`,
-      );
+  if (userAllergies.length > 0) {
+    try {
+      // Build reverse lookup: combined text → item index
+      const textToIndex = new Map<string, number>();
+      const textToCheck = validated.menuItems.map((item, i) => {
+        const text = `${item.name} ${item.description || ""}`;
+        textToIndex.set(text, i);
+        return text;
+      });
+
       const matches = detectAllergens(textToCheck, userAllergies);
       if (matches.length > 0) {
         allergenFlags = {};
         for (const m of matches) {
-          // Map the combined text back to the item name
-          const idx = textToCheck.indexOf(m.ingredientName);
-          const itemName = idx >= 0 ? validated.menuItems[idx].name : undefined;
+          const idx = textToIndex.get(m.ingredientName);
+          const itemName =
+            idx !== undefined ? validated.menuItems[idx].name : undefined;
           if (itemName && !allergenFlags[itemName]) {
             allergenFlags[itemName] = m;
           }
         }
       }
+    } catch {
+      // Non-critical — menu analysis still works without allergen flags
     }
-  } catch {
-    // Non-critical — menu analysis still works without allergen flags
   }
 
   return { ...validated, allergenFlags };

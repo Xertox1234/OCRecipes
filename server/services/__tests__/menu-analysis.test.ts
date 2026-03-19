@@ -164,7 +164,7 @@ describe("Menu Analysis", () => {
       mockGetUserProfile.mockResolvedValue({
         dietType: "keto",
         primaryGoal: "weight_loss",
-        allergies: [{ name: "shellfish" }],
+        allergies: [{ name: "shellfish", severity: "severe" }],
         foodDislikes: ["olives"],
       } as any);
 

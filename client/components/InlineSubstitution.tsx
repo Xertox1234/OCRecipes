@@ -178,7 +178,7 @@ export const InlineSubstitution = React.memo(function InlineSubstitution({
   );
 });
 
-function MacroChip({
+const MacroChip = React.memo(function MacroChip({
   label,
   value,
   color,
@@ -201,7 +201,7 @@ function MacroChip({
       </ThemedText>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

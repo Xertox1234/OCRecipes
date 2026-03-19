@@ -117,7 +117,7 @@ export default function RecipeDetailScreen() {
       map.set(name, existing);
     }
     return map;
-  }, [allergenResult]);
+  }, [allergenResult?.substitutions, allergenResult?.matches]);
 
   const timeDisplay = useMemo(() => {
     if (!recipe) return null;
