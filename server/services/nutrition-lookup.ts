@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../db";
 import { nutritionCache } from "@shared/schema";
 import { and, gt, inArray } from "drizzle-orm";
+import { storage } from "../storage";
 import { getStandardizedFoodName } from "./cultural-food-map";
 
 // Rate limiting for parallel requests
@@ -783,7 +784,7 @@ function computeEAN13(digits: string): string {
  * Scanners may return different digit counts than what OFF stores
  * (e.g. 10-digit scan vs 12-digit UPC-A vs 13-digit EAN-13).
  */
-function barcodeVariants(code: string): string[] {
+export function barcodeVariants(code: string): string[] {
   const variants = new Set<string>();
   variants.add(code);
 
@@ -1055,6 +1056,23 @@ export async function lookupBarcode(
 
   const finalGrams = servingGrams || 100;
   const scale = finalGrams / 100;
+
+  // Populate barcodeNutrition table for Public API (fire-and-forget)
+  storage
+    .upsertBarcodeNutrition({
+      barcode: code,
+      productName: resolvedProductName || null,
+      brandName: resolvedBrandName || null,
+      servingSize: rawServing || `${finalGrams}g`,
+      calories: per100g.calories?.toFixed(2) ?? null,
+      protein: per100g.protein?.toFixed(2) ?? null,
+      carbs: per100g.carbs?.toFixed(2) ?? null,
+      fat: per100g.fat?.toFixed(2) ?? null,
+      source,
+    })
+    .catch((err) => {
+      console.error("Failed to upsert barcodeNutrition:", err);
+    });
 
   return {
     productName: resolvedProductName || "Unknown Product",

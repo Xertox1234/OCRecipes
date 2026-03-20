@@ -29,10 +29,18 @@ import { register as registerCooking } from "./routes/cooking";
 import { register as registerAllergenCheck } from "./routes/allergen-check";
 import { register as registerCookbooks } from "./routes/cookbooks";
 import { register as registerVerification } from "./routes/verification";
+import { register as registerPublicApi } from "./routes/public-api";
+import { register as registerAdminApiKeys } from "./routes/admin-api-keys";
+import { register as registerApiDocs } from "./routes/api-docs";
 
 export { isValidCalendarDate };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Public API (separate namespace, registered first to avoid auth conflicts)
+  registerApiDocs(app);
+  registerPublicApi(app);
+  registerAdminApiKeys(app);
+
   // Register all route modules
   registerAuth(app);
   registerProfile(app);
