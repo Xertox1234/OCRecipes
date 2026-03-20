@@ -17,12 +17,14 @@ import {
   analyzePhoto,
   analyzeLabelPhoto,
   analyzeRecipePhoto,
+  classifyAndAnalyze,
   refineAnalysis,
   needsFollowUp,
   getFollowUpQuestions,
   type AnalysisResult,
   type LabelExtractionResult,
 } from "../services/photo-analysis";
+import type { PhotoIntentOrAuto } from "@shared/constants/classification";
 import {
   batchNutritionLookup,
   countNonNullNutritionFields,
@@ -237,7 +239,89 @@ export function register(app: Express): void {
         }
 
         // Parse intent from multipart form parameters (default: "log")
-        const intentRaw = (req.body?.intent as string) || "log";
+        // Supports "auto" for smart scan classification
+        const intentRaw = ((req.body?.intent as string) ||
+          "log") as PhotoIntentOrAuto;
+
+        // Convert buffer to base64
+        const imageBase64 = req.file.buffer.toString("base64");
+
+        // ── Auto-classification flow ──────────────────────────────
+        if (intentRaw === "auto") {
+          const classified = await classifyAndAnalyze(imageBase64);
+
+          // If full analysis was performed (high confidence + mapped intent),
+          // look up nutrition and create a session
+          if (classified.analysisResult && classified.resolvedIntent) {
+            const intent = classified.resolvedIntent;
+            const intentConfig = INTENT_CONFIG[intent];
+            const analysisResult = classified.analysisResult;
+
+            let foodsWithNutrition;
+            if (intentConfig.needsNutrition) {
+              const foodNames = analysisResult.foods.map(
+                (f) => `${f.quantity} ${f.name}`,
+              );
+              const nutritionMap = await batchNutritionLookup(foodNames);
+              foodsWithNutrition = analysisResult.foods.map((food, index) => {
+                const query = foodNames[index];
+                const nutrition = nutritionMap.get(query);
+                return { ...food, nutrition: nutrition || null };
+              });
+            } else {
+              foodsWithNutrition = analysisResult.foods.map((food) => ({
+                ...food,
+                nutrition: null,
+              }));
+            }
+
+            const sessionId = crypto.randomUUID();
+            if (intentConfig.needsSession) {
+              const currentUserSessions =
+                userSessionCount.get(req.userId!) ?? 0;
+              analysisSessionStore.set(sessionId, {
+                userId: req.userId!,
+                result: analysisResult,
+                imageBase64,
+                createdAt: Date.now(),
+              });
+              userSessionCount.set(req.userId!, currentUserSessions + 1);
+              const timeoutId = setTimeout(() => {
+                clearSession(sessionId);
+              }, SESSION_TIMEOUT);
+              sessionTimeouts.set(sessionId, timeoutId);
+            }
+
+            return res.json({
+              sessionId,
+              intent,
+              contentType: classified.contentType,
+              confidence: classified.confidence,
+              resolvedIntent: classified.resolvedIntent,
+              barcode: classified.barcode,
+              foods: foodsWithNutrition,
+              overallConfidence: analysisResult.overallConfidence,
+              needsFollowUp: needsFollowUp(analysisResult),
+              followUpQuestions: getFollowUpQuestions(analysisResult),
+            });
+          }
+
+          // Low confidence or no mapped intent — return classification only
+          return res.json({
+            sessionId: null,
+            intent: "auto",
+            contentType: classified.contentType,
+            confidence: classified.confidence,
+            resolvedIntent: classified.resolvedIntent,
+            barcode: classified.barcode,
+            foods: [],
+            overallConfidence: classified.confidence,
+            needsFollowUp: false,
+            followUpQuestions: [],
+          });
+        }
+
+        // ── Standard intent flow (unchanged) ──────────────────────
         const intentParsed = photoIntentSchema.safeParse(intentRaw);
         const intent: PhotoIntent = intentParsed.success
           ? intentParsed.data
@@ -274,9 +358,6 @@ export function register(app: Express): void {
             );
           }
         }
-
-        // Convert buffer to base64
-        const imageBase64 = req.file.buffer.toString("base64");
 
         // Analyze photo with Vision API (intent-aware prompt)
         const analysisResult = await analyzePhoto(imageBase64, intent);
