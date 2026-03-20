@@ -38,15 +38,64 @@ export async function hasUserVerified(
   return !!existing;
 }
 
-/** Get the total number of verifications a user has submitted */
-export async function getUserVerificationCount(
+/**
+ * Get the user's verification stats: total count + current streak.
+ * Streak = consecutive calendar days (UTC) with at least one verification,
+ * counting backwards from today.
+ */
+export async function getUserVerificationStats(
   userId: string,
-): Promise<number> {
-  const [result] = await db
+): Promise<{ count: number; streak: number }> {
+  // Get count
+  const [countResult] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(verificationHistory)
     .where(eq(verificationHistory.userId, userId));
-  return result?.count ?? 0;
+  const count = countResult?.count ?? 0;
+
+  if (count === 0) return { count: 0, streak: 0 };
+
+  // Get distinct verification dates (UTC), ordered most recent first
+  const dates = await db
+    .select({
+      day: sql<string>`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`,
+    })
+    .from(verificationHistory)
+    .where(eq(verificationHistory.userId, userId))
+    .groupBy(sql`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`)
+    .orderBy(
+      sql`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC') DESC`,
+    );
+
+  // Walk backwards from today counting consecutive days
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  let streak = 0;
+  let expectedDate = new Date(today);
+
+  for (const row of dates) {
+    const verificationDate = new Date(row.day);
+    verificationDate.setUTCHours(0, 0, 0, 0);
+
+    const diffDays = Math.round(
+      (expectedDate.getTime() - verificationDate.getTime()) /
+        (1000 * 60 * 60 * 24),
+    );
+
+    if (diffDays === 0) {
+      streak++;
+      expectedDate.setUTCDate(expectedDate.getUTCDate() - 1);
+    } else if (diffDays === 1 && streak === 0) {
+      // Yesterday counts as start of streak (user hasn't verified today yet)
+      streak++;
+      expectedDate = new Date(verificationDate);
+      expectedDate.setUTCDate(expectedDate.getUTCDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  return { count, streak };
 }
 
 /**
