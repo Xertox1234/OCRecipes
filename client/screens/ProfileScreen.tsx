@@ -32,6 +32,10 @@ import { useAuthContext } from "@/context/AuthContext";
 
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
+  getTierLabel,
+  getNextTier,
+} from "@/components/verification-badge-utils";
+import {
   Spacing,
   BorderRadius,
   FontFamily,
@@ -793,6 +797,42 @@ export default function ProfileScreen() {
         />
       </Animated.View>
 
+      {/* Verification Tier Badge */}
+      {(() => {
+        const count = verificationData?.count ?? 0;
+        const tierLabel = getTierLabel(count);
+        const nextTier = getNextTier(count);
+        if (!tierLabel) return null;
+        return (
+          <View
+            style={[
+              styles.tierBadge,
+              { backgroundColor: withOpacity(theme.success, 0.08) },
+            ]}
+            accessibilityLabel={`Verification rank: ${tierLabel}. ${nextTier ? `${nextTier - count} more to reach next tier.` : "Maximum tier reached."}`}
+            accessibilityRole="text"
+          >
+            <Feather
+              name="award"
+              size={16}
+              color={theme.success}
+              accessible={false}
+            />
+            <ThemedText
+              type="body"
+              style={{ color: theme.success, fontWeight: "600" }}
+            >
+              {tierLabel}
+            </ThemedText>
+            {nextTier && (
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                {nextTier - count} more to next rank
+              </ThemedText>
+            )}
+          </View>
+        );
+      })()}
+
       {/* Action Buttons */}
       <Animated.View
         entering={
@@ -949,6 +989,17 @@ const styles = StyleSheet.create({
   },
 
   // Stats row
+  tierBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.full,
+  },
   statsRow: {
     flexDirection: "row",
     justifyContent: "center",
