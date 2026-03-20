@@ -176,5 +176,6 @@ export const storage = {
   getVerificationHistory: verification.getVerificationHistory,
   hasUserVerified: verification.hasUserVerified,
   getUserVerificationCount: verification.getUserVerificationCount,
+  getUserVerificationStats: verification.getUserVerificationStats,
   submitVerification: verification.submitVerification,
 };
