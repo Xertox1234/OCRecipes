@@ -3,6 +3,7 @@ import {
   getBadgeConfig,
   getVerificationTier,
   getNextTier,
+  getTierLabel,
 } from "../verification-badge-utils";
 
 describe("verification-badge-utils", () => {
@@ -69,6 +70,38 @@ describe("verification-badge-utils", () => {
     it("returns null when at max tier", () => {
       expect(getNextTier(100)).toBeNull();
       expect(getNextTier(200)).toBeNull();
+    });
+  });
+
+  describe("getTierLabel", () => {
+    it("returns null for 0 verifications", () => {
+      expect(getTierLabel(0)).toBeNull();
+    });
+
+    it("returns Newcomer for 1-4", () => {
+      expect(getTierLabel(1)).toBe("Newcomer");
+      expect(getTierLabel(4)).toBe("Newcomer");
+    });
+
+    it("returns Contributor for 5-9", () => {
+      expect(getTierLabel(5)).toBe("Contributor");
+    });
+
+    it("returns Bronze Verifier for 10-24", () => {
+      expect(getTierLabel(10)).toBe("Bronze Verifier");
+    });
+
+    it("returns Silver Verifier for 25-49", () => {
+      expect(getTierLabel(25)).toBe("Silver Verifier");
+    });
+
+    it("returns Gold Verifier for 50-99", () => {
+      expect(getTierLabel(50)).toBe("Gold Verifier");
+    });
+
+    it("returns Platinum Verifier for 100+", () => {
+      expect(getTierLabel(100)).toBe("Platinum Verifier");
+      expect(getTierLabel(500)).toBe("Platinum Verifier");
     });
   });
 });
