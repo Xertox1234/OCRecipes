@@ -55,3 +55,18 @@ export function getNextTier(
   }
   return null;
 }
+
+/** Tier label for gamification display */
+const TIER_LABELS: Record<(typeof BADGE_TIERS)[number], string> = {
+  1: "Newcomer",
+  5: "Contributor",
+  10: "Bronze Verifier",
+  25: "Silver Verifier",
+  50: "Gold Verifier",
+  100: "Platinum Verifier",
+};
+
+export function getTierLabel(count: number): string | null {
+  const tier = getVerificationTier(count);
+  return tier ? TIER_LABELS[tier] : null;
+}
