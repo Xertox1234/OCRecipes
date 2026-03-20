@@ -19,6 +19,7 @@ import * as fasting from "./fasting";
 import * as menu from "./menu";
 import * as receipt from "./receipt";
 import * as cookbooksStorage from "./cookbooks";
+import * as verification from "./verification";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 
@@ -169,4 +170,11 @@ export const storage = {
   addRecipeToCookbook: cookbooksStorage.addRecipeToCookbook,
   removeRecipeFromCookbook: cookbooksStorage.removeRecipeFromCookbook,
   getCookbookRecipes: cookbooksStorage.getCookbookRecipes,
+
+  // Barcode verification
+  getVerification: verification.getVerification,
+  getVerificationHistory: verification.getVerificationHistory,
+  hasUserVerified: verification.hasUserVerified,
+  getUserVerificationCount: verification.getUserVerificationCount,
+  submitVerification: verification.submitVerification,
 };

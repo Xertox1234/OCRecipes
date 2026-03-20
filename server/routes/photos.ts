@@ -68,7 +68,7 @@ interface AnalysisSession {
 const analysisSessionStore = new Map<string, AnalysisSession>();
 
 // In-memory store for label analysis sessions
-interface LabelSession {
+export interface LabelSession {
   userId: string;
   labelData: LabelExtractionResult;
   barcode?: string;
@@ -172,6 +172,9 @@ const confirmPhotoSchema = z.object({
  * Convention: prefix with underscore to signal non-public API.
  * See docs/PATTERNS.md "Test Internals Export Pattern".
  */
+/** Exported for use by the verification route (needs to read label session data) */
+export { labelSessionStore };
+
 export const _testInternals = {
   analysisSessionStore,
   userSessionCount,
