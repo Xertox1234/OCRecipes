@@ -213,8 +213,10 @@ const UserNameBio = React.memo(function UserNameBio({
 
 const StatsRow = React.memo(function StatsRow({
   todaySummary,
+  verifiedCount,
 }: {
   todaySummary: DailySummary | undefined;
+  verifiedCount: number;
 }) {
   const { theme } = useTheme();
   const calories = todaySummary ? Math.round(todaySummary.totalCalories) : 0;
@@ -247,8 +249,7 @@ const StatsRow = React.memo(function StatsRow({
       </View>
       <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
       <View style={styles.statItem}>
-        {/* TODO: fetch real verification count from /api/verification/user-count */}
-        <ThemedText style={styles.statNumber}>0</ThemedText>
+        <ThemedText style={styles.statNumber}>{verifiedCount}</ThemedText>
         <ThemedText style={[styles.statLabel, { color: theme.textSecondary }]}>
           Verified
         </ThemedText>
@@ -632,6 +633,11 @@ export default function ProfileScreen() {
     enabled: !!user,
   });
 
+  const { data: verificationData } = useQuery<{ count: number }>({
+    queryKey: ["/api/verification/user-count"],
+    enabled: !!user,
+  });
+
   const isInitialLoading = summaryLoading;
   const hasAnnouncedProfileRef = useRef(false);
   useEffect(() => {
@@ -772,7 +778,10 @@ export default function ProfileScreen() {
           reducedMotion ? undefined : FadeInDown.delay(200).duration(400)
         }
       >
-        <StatsRow todaySummary={todaySummary} />
+        <StatsRow
+          todaySummary={todaySummary}
+          verifiedCount={verificationData?.count ?? 0}
+        />
       </Animated.View>
 
       {/* Action Buttons */}

@@ -176,6 +176,29 @@ export function register(app: Express): void {
   );
 
   /**
+   * Get the authenticated user's verification count.
+   * Registered BEFORE /:barcode to avoid "user-count" matching as a barcode param.
+   */
+  app.get(
+    "/api/verification/user-count",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const count = await storage.getUserVerificationCount(req.userId!);
+        res.json({ count });
+      } catch (error) {
+        console.error("User verification count error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to get verification count",
+          ErrorCode.INTERNAL_ERROR,
+        );
+      }
+    },
+  );
+
+  /**
    * Get verification status for a barcode.
    */
   app.get(
