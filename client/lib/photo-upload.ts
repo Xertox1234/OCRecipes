@@ -3,6 +3,10 @@ import { tokenStorage } from "./token-storage";
 import { getApiUrl } from "./query-client";
 import { compressImage, cleanupImage } from "./image-compression";
 import type { PhotoIntent, FoodCategory } from "@shared/constants/preparation";
+import type {
+  PhotoIntentOrAuto,
+  ContentType,
+} from "@shared/constants/classification";
 
 // Import shared types for use in this file, and re-export for consumers
 import type { LabelAnalysisResponse } from "@shared/types/label-analysis";
@@ -33,12 +37,20 @@ export interface NutritionData {
 }
 
 export interface PhotoAnalysisResponse {
-  sessionId: string;
-  intent: PhotoIntent;
+  sessionId: string | null;
+  intent: PhotoIntent | "auto";
   foods: FoodItem[];
   overallConfidence: number;
   needsFollowUp: boolean;
   followUpQuestions: string[];
+  /** Present when intent is "auto" — the detected content type */
+  contentType?: ContentType;
+  /** Present when intent is "auto" — classification confidence */
+  confidence?: number;
+  /** Present when intent is "auto" — the intent resolved from classification */
+  resolvedIntent?: PhotoIntent | null;
+  /** Present when a barcode was detected in the image */
+  barcode?: string | null;
 }
 
 export interface PhotoConfirmRequest {
@@ -64,7 +76,7 @@ export interface PhotoConfirmRequest {
  */
 export async function uploadPhotoForAnalysis(
   uri: string,
-  intent: PhotoIntent = "log",
+  intent: PhotoIntentOrAuto = "log",
 ): Promise<PhotoAnalysisResponse> {
   const token = await tokenStorage.get();
   if (!token) {

@@ -547,7 +547,7 @@ export default function PhotoAnalysisScreen() {
 
     try {
       const refined = await submitFollowUp(
-        analysisResult.sessionId,
+        analysisResult.sessionId!,
         question,
         answer,
       );
@@ -593,7 +593,7 @@ export default function PhotoAnalysisScreen() {
     setIsConfirming(true);
     try {
       await confirmPhotoAnalysis({
-        sessionId: analysisResult.sessionId,
+        sessionId: analysisResult.sessionId!,
         foods: selectedFoods.map((f) => ({
           name: f.name,
           quantity: f.quantity,
