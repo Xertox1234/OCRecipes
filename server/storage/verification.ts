@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db";
 import { barcodeVerifications, verificationHistory } from "@shared/schema";
 import type { ConsensusNutritionData } from "@shared/types/verification";
@@ -42,11 +42,11 @@ export async function hasUserVerified(
 export async function getUserVerificationCount(
   userId: string,
 ): Promise<number> {
-  const results = await db
-    .select({ id: verificationHistory.id })
+  const [result] = await db
+    .select({ count: sql<number>`count(*)::int` })
     .from(verificationHistory)
     .where(eq(verificationHistory.userId, userId));
-  return results.length;
+  return result?.count ?? 0;
 }
 
 /**
