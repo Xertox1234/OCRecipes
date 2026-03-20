@@ -38,17 +38,6 @@ export async function hasUserVerified(
   return !!existing;
 }
 
-/** Get the total number of verifications a user has submitted */
-export async function getUserVerificationCount(
-  userId: string,
-): Promise<number> {
-  const [result] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(verificationHistory)
-    .where(eq(verificationHistory.userId, userId));
-  return result?.count ?? 0;
-}
-
 /**
  * Get the user's verification stats: total count + current streak.
  * Streak = consecutive calendar days (UTC) with at least one verification,
