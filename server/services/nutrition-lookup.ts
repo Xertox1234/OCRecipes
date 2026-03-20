@@ -1134,6 +1134,36 @@ export function mapLabelToNutritionData(labelData: {
 export { cacheNutrition };
 
 /**
+ * Cache nutrition data only if no entry exists for this query key.
+ * Uses onConflictDoNothing to prevent overwrites of existing data,
+ * guarding against cache poisoning via arbitrary barcode strings.
+ */
+async function cacheNutritionIfAbsent(
+  query: string,
+  data: NutritionData,
+): Promise<void> {
+  const key = normalizeForCache(query);
+  const expiresAt = new Date(Date.now() + CACHE_EXPIRY_MS);
+
+  try {
+    await db
+      .insert(nutritionCache)
+      .values({
+        queryKey: key,
+        normalizedName: data.name,
+        source: data.source === "cache" ? "usda" : data.source,
+        data: data,
+        expiresAt,
+      })
+      .onConflictDoNothing({ target: nutritionCache.queryKey });
+  } catch (error) {
+    console.error("Cache seed write error:", error);
+  }
+}
+
+export { cacheNutritionIfAbsent };
+
+/**
  * Reset the in-memory CNF food list cache. Used by tests only.
  */
 export function _resetCNFCacheForTesting(): void {
