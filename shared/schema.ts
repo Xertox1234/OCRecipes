@@ -1391,3 +1391,68 @@ export type Cookbook = typeof cookbooks.$inferSelect;
 export type InsertCookbook = z.infer<typeof insertCookbookSchema>;
 export type CookbookRecipe = typeof cookbookRecipes.$inferSelect;
 export type InsertCookbookRecipe = typeof cookbookRecipes.$inferInsert;
+
+// ============================================================================
+// Barcode Verification (Community-Verified Product Data)
+// ============================================================================
+
+export const barcodeVerifications = pgTable(
+  "barcode_verifications",
+  {
+    id: serial("id").primaryKey(),
+    barcode: text("barcode").notNull().unique(),
+    verificationLevel: text("verification_level")
+      .default("unverified")
+      .notNull(),
+    consensusNutritionData: jsonb("consensus_nutrition_data"),
+    verificationCount: integer("verification_count").default(0).notNull(),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    barcodeIdx: uniqueIndex("barcode_verifications_barcode_idx").on(
+      table.barcode,
+    ),
+    levelIdx: index("barcode_verifications_level_idx").on(
+      table.verificationLevel,
+    ),
+  }),
+);
+
+export const verificationHistory = pgTable(
+  "verification_history",
+  {
+    id: serial("id").primaryKey(),
+    barcode: text("barcode").notNull(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    extractedNutrition: jsonb("extracted_nutrition").notNull(),
+    ocrConfidence: decimal("ocr_confidence", {
+      precision: 3,
+      scale: 2,
+    }).notNull(),
+    isMatch: boolean("is_match"),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    barcodeIdx: index("verification_history_barcode_idx").on(table.barcode),
+    userIdx: index("verification_history_user_id_idx").on(table.userId),
+    uniqueUserBarcode: unique("verification_history_user_barcode").on(
+      table.barcode,
+      table.userId,
+    ),
+  }),
+);
+
+export type BarcodeVerification = typeof barcodeVerifications.$inferSelect;
+export type InsertBarcodeVerification =
+  typeof barcodeVerifications.$inferInsert;
+export type VerificationHistoryEntry = typeof verificationHistory.$inferSelect;
+export type InsertVerificationHistory = typeof verificationHistory.$inferInsert;
