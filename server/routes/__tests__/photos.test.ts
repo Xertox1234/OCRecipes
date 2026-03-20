@@ -44,8 +44,12 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+// Valid JPEG magic bytes (FF D8 FF) + minimal padding for magic-byte validation
+const VALID_JPEG_HEADER = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 const { mockFileBuffer } = vi.hoisted(() => ({
-  mockFileBuffer: { current: Buffer.from("fake-image") },
+  mockFileBuffer: {
+    current: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
+  },
 }));
 
 vi.mock("multer", () => {
@@ -82,6 +86,8 @@ describe("Photos Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset to valid JPEG buffer for magic-byte validation
+    mockFileBuffer.current = VALID_JPEG_HEADER;
     app = createApp();
   });
 
@@ -410,9 +416,12 @@ describe("Photos Routes", () => {
       setupAnalyzeMocks();
 
       const originalBuffer = mockFileBuffer.current;
-      mockFileBuffer.current = Buffer.alloc(
-        _testInternals.MAX_IMAGE_SIZE_BYTES + 1,
-      );
+      // Create oversized buffer with valid JPEG magic bytes
+      const oversized = Buffer.alloc(_testInternals.MAX_IMAGE_SIZE_BYTES + 1);
+      oversized[0] = 0xff;
+      oversized[1] = 0xd8;
+      oversized[2] = 0xff;
+      mockFileBuffer.current = oversized;
 
       try {
         const res = await request(app)

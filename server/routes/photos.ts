@@ -27,7 +27,7 @@ import {
   batchNutritionLookup,
   countNonNullNutritionFields,
   mapLabelToNutritionData,
-  cacheNutrition,
+  cacheNutritionIfAbsent,
 } from "../services/nutrition-lookup";
 import multer from "multer";
 import {
@@ -38,6 +38,7 @@ import {
   getPremiumFeatures,
   parseStringParam,
 } from "./_helpers";
+import { detectImageMimeType } from "../lib/image-mime";
 
 // Higher file size limit for label photos (5MB for text readability)
 const labelUpload = multer({
@@ -73,6 +74,29 @@ interface LabelSession {
 }
 const labelSessionStore = new Map<string, LabelSession>();
 const labelSessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+const userLabelSessionCount = new Map<string, number>();
+
+function decrementUserLabelCount(userId: string): void {
+  const count = userLabelSessionCount.get(userId) ?? 0;
+  if (count <= 1) {
+    userLabelSessionCount.delete(userId);
+  } else {
+    userLabelSessionCount.set(userId, count - 1);
+  }
+}
+
+function clearLabelSession(sessionId: string): void {
+  const session = labelSessionStore.get(sessionId);
+  const existingTimeout = labelSessionTimeouts.get(sessionId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+    labelSessionTimeouts.delete(sessionId);
+  }
+  labelSessionStore.delete(sessionId);
+  if (session) {
+    decrementUserLabelCount(session.userId);
+  }
+}
 
 // Track session timeout references to prevent memory leaks
 const sessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
@@ -155,6 +179,8 @@ export const _testInternals = {
   clearSession,
   labelSessionStore,
   labelSessionTimeouts,
+  userLabelSessionCount,
+  clearLabelSession,
 };
 
 export function register(app: Express): void {
@@ -196,6 +222,16 @@ export function register(app: Express): void {
             res,
             400,
             "No photo provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        // Validate image content via magic bytes (don't trust client mimetype)
+        if (!detectImageMimeType(req.file.buffer)) {
+          return sendError(
+            res,
+            400,
+            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
             ErrorCode.VALIDATION_ERROR,
           );
         }
@@ -494,6 +530,15 @@ export function register(app: Express): void {
           );
         }
 
+        if (!detectImageMimeType(req.file.buffer)) {
+          return sendError(
+            res,
+            400,
+            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
         const imageBase64 = req.file.buffer.toString("base64");
         const result = await analyzeRecipePhoto(imageBase64);
 
@@ -551,8 +596,37 @@ export function register(app: Express): void {
           );
         }
 
+        if (!detectImageMimeType(req.file.buffer)) {
+          return sendError(
+            res,
+            400,
+            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
         const imageBase64 = req.file.buffer.toString("base64");
         const barcode = (req.body?.barcode as string) || undefined;
+
+        // Check label session bounds before calling paid APIs
+        if (labelSessionStore.size >= MAX_SESSIONS_GLOBAL) {
+          return sendError(
+            res,
+            429,
+            "Server is busy, please try again later",
+            "SESSION_LIMIT_REACHED",
+          );
+        }
+        const currentUserLabelSessions =
+          userLabelSessionCount.get(req.userId!) ?? 0;
+        if (currentUserLabelSessions >= MAX_SESSIONS_PER_USER) {
+          return sendError(
+            res,
+            429,
+            "Too many active label sessions. Please confirm or wait for existing sessions to expire.",
+            "USER_SESSION_LIMIT",
+          );
+        }
 
         const labelData = await analyzeLabelPhoto(imageBase64);
 
@@ -564,11 +638,11 @@ export function register(app: Express): void {
           barcode,
           createdAt: Date.now(),
         });
+        userLabelSessionCount.set(req.userId!, currentUserLabelSessions + 1);
 
         // Auto-expire after 30 minutes
         const timeoutId = setTimeout(() => {
-          labelSessionStore.delete(sessionId);
-          labelSessionTimeouts.delete(sessionId);
+          clearLabelSession(sessionId);
         }, SESSION_TIMEOUT);
         labelSessionTimeouts.set(sessionId, timeoutId);
 
@@ -655,27 +729,24 @@ export function register(app: Express): void {
           return [item];
         });
 
-        // Silent cache improvement: if barcode was provided, compare label
-        // vs cached data field count — update cache if label is more complete
+        // Silent cache seeding: if barcode was provided and NO cache entry
+        // exists yet, seed the cache with label data. Never overwrite existing
+        // entries to prevent cache poisoning (any user could provide an
+        // arbitrary barcode string with their label confirmation).
         if (barcode) {
           try {
             const labelNutrition = mapLabelToNutritionData(labelData);
             const labelFieldCount = countNonNullNutritionFields(labelNutrition);
             if (labelFieldCount >= 4) {
-              await cacheNutrition(barcode, labelNutrition);
+              await cacheNutritionIfAbsent(barcode, labelNutrition);
             }
           } catch {
-            // Cache improvement is best-effort
+            // Cache seeding is best-effort
           }
         }
 
-        // Clean up session
-        const timeoutRef = labelSessionTimeouts.get(validated.sessionId);
-        if (timeoutRef) {
-          clearTimeout(timeoutRef);
-          labelSessionTimeouts.delete(validated.sessionId);
-        }
-        labelSessionStore.delete(validated.sessionId);
+        // Clean up session (also decrements per-user count)
+        clearLabelSession(validated.sessionId);
 
         res.status(201).json(scannedItem);
       } catch (error) {
