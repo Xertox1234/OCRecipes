@@ -214,9 +214,11 @@ const UserNameBio = React.memo(function UserNameBio({
 const StatsRow = React.memo(function StatsRow({
   todaySummary,
   verifiedCount,
+  verifyStreak,
 }: {
   todaySummary: DailySummary | undefined;
   verifiedCount: number;
+  verifyStreak: number;
 }) {
   const { theme } = useTheme();
   const calories = todaySummary ? Math.round(todaySummary.totalCalories) : 0;
@@ -234,8 +236,11 @@ const StatsRow = React.memo(function StatsRow({
       </View>
       <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
       <View style={styles.statItem}>
-        {/* TODO: fetch real streak from API — this is a placeholder */}
-        <ThemedText style={styles.statNumber}>7 Days</ThemedText>
+        <ThemedText style={styles.statNumber}>
+          {verifyStreak > 0
+            ? `${verifyStreak} ${verifyStreak === 1 ? "Day" : "Days"}`
+            : "—"}
+        </ThemedText>
         <ThemedText style={[styles.statLabel, { color: theme.textSecondary }]}>
           Streak
         </ThemedText>
@@ -633,7 +638,10 @@ export default function ProfileScreen() {
     enabled: !!user,
   });
 
-  const { data: verificationData } = useQuery<{ count: number }>({
+  const { data: verificationData } = useQuery<{
+    count: number;
+    streak: number;
+  }>({
     queryKey: ["/api/verification/user-count"],
     enabled: !!user,
   });
@@ -781,6 +789,7 @@ export default function ProfileScreen() {
         <StatsRow
           todaySummary={todaySummary}
           verifiedCount={verificationData?.count ?? 0}
+          verifyStreak={verificationData?.streak ?? 0}
         />
       </Animated.View>
 
