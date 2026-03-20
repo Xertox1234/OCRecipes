@@ -125,7 +125,14 @@ export function register(app: Express): void {
           sendError(res, 404, "Product not found", "NOT_IN_DATABASE");
           return;
         }
-        res.json(result);
+
+        // Include verification status alongside nutrition data
+        const verification = await storage.getVerification(code);
+        res.json({
+          ...result,
+          verificationLevel: verification?.verificationLevel ?? "unverified",
+          verificationCount: verification?.verificationCount ?? 0,
+        });
       } catch (error) {
         console.error("Barcode lookup error:", error);
         sendError(res, 500, "Barcode lookup failed", ErrorCode.INTERNAL_ERROR);

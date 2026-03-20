@@ -19,6 +19,7 @@ vi.mock("../../storage", () => ({
     getDailySummary: vi.fn(),
     getConfirmedMealPlanItemIds: vi.fn(),
     getPlannedNutritionSummary: vi.fn(),
+    getVerification: vi.fn().mockResolvedValue(null),
   },
 }));
 

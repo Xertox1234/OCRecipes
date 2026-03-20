@@ -28,6 +28,8 @@ import {
   confirmLabelAnalysis,
   type LabelExtractionResult,
 } from "@/lib/photo-upload";
+import { apiRequest } from "@/lib/query-client";
+import type { VerificationSubmitResponse } from "@shared/types/verification";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -39,6 +41,8 @@ type LabelAnalysisNavigationProp = NativeStackNavigationProp<
 type RouteParams = {
   imageUri: string;
   barcode?: string;
+  verificationMode?: boolean;
+  verifyBarcode?: string;
 };
 
 interface NutrientRow {
@@ -104,7 +108,7 @@ export default function LabelAnalysisScreen() {
   const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
   const queryClient = useQueryClient();
 
-  const { imageUri, barcode } = route.params;
+  const { imageUri, barcode, verificationMode, verifyBarcode } = route.params;
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [labelData, setLabelData] = useState<LabelExtractionResult | null>(
@@ -160,11 +164,42 @@ export default function LabelAnalysisScreen() {
     },
   });
 
+  const [verificationResult, setVerificationResult] =
+    useState<VerificationSubmitResponse | null>(null);
+
+  const verifyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/verification/submit", {
+        barcode: verifyBarcode,
+        sessionId,
+      });
+      return (await response.json()) as VerificationSubmitResponse;
+    },
+    onSuccess: (data) => {
+      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      setVerificationResult(data);
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    },
+  });
+
   const handleLog = useCallback(() => {
     if (!sessionId) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    confirmMutation.mutate();
-  }, [sessionId, haptics, confirmMutation]);
+    if (verificationMode && verifyBarcode) {
+      verifyMutation.mutate();
+    } else {
+      confirmMutation.mutate();
+    }
+  }, [
+    sessionId,
+    haptics,
+    verificationMode,
+    verifyBarcode,
+    confirmMutation,
+    verifyMutation,
+  ]);
 
   const adjustServings = useCallback(
     (delta: number) => {
@@ -412,7 +447,40 @@ export default function LabelAnalysisScreen() {
         )}
       </ScrollView>
 
-      {/* Fixed Log Button */}
+      {/* Verification success feedback */}
+      {verificationResult && (
+        <View
+          style={[
+            styles.verificationFeedback,
+            {
+              backgroundColor: withOpacity(
+                verificationResult.isMatch ? theme.success : theme.warning,
+                0.12,
+              ),
+            },
+          ]}
+          accessibilityRole="alert"
+        >
+          <Feather
+            name={verificationResult.isMatch ? "check-circle" : "info"}
+            size={20}
+            color={verificationResult.isMatch ? theme.success : theme.warning}
+          />
+          <ThemedText
+            type="body"
+            style={{
+              color: verificationResult.isMatch ? theme.success : theme.warning,
+              flex: 1,
+            }}
+          >
+            {verificationResult.isMatch
+              ? `Thanks for verifying! (${verificationResult.verificationCount}/3 confirmations)`
+              : "Values differ from other scans. We've recorded your data."}
+          </ThemedText>
+        </View>
+      )}
+
+      {/* Fixed Action Button */}
       <View
         style={[
           styles.bottomBar,
@@ -423,14 +491,26 @@ export default function LabelAnalysisScreen() {
           },
         ]}
       >
-        <Button
-          onPress={handleLog}
-          disabled={!sessionId || confirmMutation.isPending}
-          loading={confirmMutation.isPending}
-          style={{ flex: 1 }}
-        >
-          {`Log ${labelData?.calories != null ? Math.round(labelData.calories * servings) : "—"} cal`}
-        </Button>
+        {verificationResult ? (
+          <Button onPress={() => navigation.goBack()} style={{ flex: 1 }}>
+            Done
+          </Button>
+        ) : (
+          <Button
+            onPress={handleLog}
+            disabled={
+              !sessionId ||
+              confirmMutation.isPending ||
+              verifyMutation.isPending
+            }
+            loading={confirmMutation.isPending || verifyMutation.isPending}
+            style={{ flex: 1 }}
+          >
+            {verificationMode
+              ? "Submit Verification"
+              : `Log ${labelData?.calories != null ? Math.round(labelData.calories * servings) : "—"} cal`}
+          </Button>
+        )}
       </View>
     </ThemedView>
   );
@@ -533,5 +613,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  verificationFeedback: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.sm,
   },
 });

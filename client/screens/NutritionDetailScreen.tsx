@@ -30,6 +30,8 @@ import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { VerificationBadge } from "@/components/VerificationBadge";
+import type { VerificationLevel } from "@shared/types/verification";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
 import {
   validateAndNormalizeNutrition,
@@ -118,6 +120,8 @@ export default function NutritionDetailScreen() {
   const { barcode, imageUri, itemId } = route.params || {};
 
   const [nutrition, setNutrition] = useState<NutritionData | null>(null);
+  const [verificationLevel, setVerificationLevel] =
+    useState<VerificationLevel>("unverified");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPer100g, setIsPer100g] = useState(false);
@@ -274,6 +278,11 @@ export default function NutritionDetailScreen() {
             imageUrl: data.imageUrl,
             barcode: code,
           });
+
+          // Set verification level from barcode lookup response
+          if (data.verificationLevel) {
+            setVerificationLevel(data.verificationLevel as VerificationLevel);
+          }
           return;
         }
 
@@ -946,43 +955,43 @@ export default function NutritionDetailScreen() {
           </Animated.View>
         ) : null}
 
-        {/* Verify with label prompt — shown when 2+ nutrition fields are missing */}
-        {!itemId &&
-          barcode &&
-          nutrition &&
-          [
-            nutrition.calories,
-            nutrition.protein,
-            nutrition.carbs,
-            nutrition.fat,
-            nutrition.fiber,
-            nutrition.sugar,
-            nutrition.sodium,
-          ].filter((v) => v == null).length >= 2 && (
-            <Pressable
-              onPress={() => navigation.navigate("Scan", { mode: "label" })}
-              accessibilityLabel="Verify nutrition data with a label photo"
-              accessibilityRole="button"
-              style={[
-                styles.verifyPrompt,
-                { backgroundColor: withOpacity(theme.info, 0.08) },
-              ]}
-            >
-              <Feather name="camera" size={18} color={theme.info} />
-              <View style={{ flex: 1 }}>
-                <ThemedText
-                  type="body"
-                  style={{ color: theme.info, fontWeight: "600" }}
-                >
-                  Data seems incomplete
-                </ThemedText>
-                <ThemedText type="small" style={{ color: theme.info }}>
-                  Verify with a nutrition label photo
-                </ThemedText>
-              </View>
-              <Feather name="chevron-right" size={18} color={theme.info} />
-            </Pressable>
-          )}
+        {/* Verification badge + CTA */}
+        {!itemId && barcode && nutrition && (
+          <View style={styles.verificationSection}>
+            <VerificationBadge level={verificationLevel} />
+
+            {verificationLevel !== "verified" && (
+              <Pressable
+                onPress={() =>
+                  navigation.navigate("Scan", {
+                    mode: "label",
+                    verifyBarcode: barcode,
+                  })
+                }
+                accessibilityLabel="Verify nutrition data with a label photo"
+                accessibilityRole="button"
+                style={[
+                  styles.verifyPrompt,
+                  { backgroundColor: withOpacity(theme.info, 0.08) },
+                ]}
+              >
+                <Feather name="camera" size={18} color={theme.info} />
+                <View style={{ flex: 1 }}>
+                  <ThemedText
+                    type="body"
+                    style={{ color: theme.info, fontWeight: "600" }}
+                  >
+                    Help verify this product
+                  </ThemedText>
+                  <ThemedText type="small" style={{ color: theme.info }}>
+                    Scan the nutrition label to confirm data
+                  </ThemedText>
+                </View>
+                <Feather name="chevron-right" size={18} color={theme.info} />
+              </Pressable>
+            )}
+          </View>
+        )}
 
         {!itemId ? (
           <View style={styles.buttonContainer}>
@@ -1123,13 +1132,16 @@ const styles = StyleSheet.create({
   addButton: {
     marginBottom: Spacing.md,
   },
+  verificationSection: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
   verifyPrompt: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
     padding: Spacing.md,
     borderRadius: BorderRadius.sm,
-    marginBottom: Spacing.lg,
   },
   correctionContainer: {
     flexDirection: "row",

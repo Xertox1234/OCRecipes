@@ -245,6 +245,14 @@ const StatsRow = React.memo(function StatsRow({
           Logged
         </ThemedText>
       </View>
+      <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+      <View style={styles.statItem}>
+        {/* TODO: fetch real verification count from /api/verification/user-count */}
+        <ThemedText style={styles.statNumber}>0</ThemedText>
+        <ThemedText style={[styles.statLabel, { color: theme.textSecondary }]}>
+          Verified
+        </ThemedText>
+      </View>
     </View>
   );
 });

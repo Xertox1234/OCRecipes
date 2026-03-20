@@ -100,6 +100,7 @@ export default function ScanScreen() {
   const isFocused = useIsFocused();
 
   const isLabelMode = route.params?.mode === "label";
+  const verifyBarcode = route.params?.verifyBarcode;
   const frame = isLabelMode ? LABEL_FRAME : RETICLE;
   const {
     permission,
@@ -391,8 +392,13 @@ export default function ScanScreen() {
 
         if (photo?.uri) {
           if (isLabelMode) {
-            navigation.navigate("LabelAnalysis", { imageUri: photo.uri });
-            refreshScanCount();
+            navigation.navigate("LabelAnalysis", {
+              imageUri: photo.uri,
+              barcode: verifyBarcode,
+              verificationMode: !!verifyBarcode,
+              verifyBarcode,
+            });
+            if (!verifyBarcode) refreshScanCount();
           } else {
             handleSmartScan(photo.uri);
           }

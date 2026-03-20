@@ -37,8 +37,13 @@ export type RootStackParamList = {
   Login: undefined;
   Onboarding: undefined;
   Main: undefined;
-  Scan: { mode?: "label" } | undefined;
-  LabelAnalysis: { imageUri: string; barcode?: string };
+  Scan: { mode?: "label" | "front-label"; verifyBarcode?: string } | undefined;
+  LabelAnalysis: {
+    imageUri: string;
+    barcode?: string;
+    verificationMode?: boolean;
+    verifyBarcode?: string;
+  };
   NutritionDetail: {
     barcode?: string;
     imageUri?: string;
