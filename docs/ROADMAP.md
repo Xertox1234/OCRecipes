@@ -27,37 +27,25 @@ Includes:
 - Magic-byte validation on all photo upload endpoints
 - Label session store bounded capacity (per-user + global caps)
 
+### Front-of-Package Label Scanning — PR #21
+
+Optional enrichment step after back-label verification. Users scan the front of a product package to capture brand, product name, net weight, and dietary/marketing claims (e.g., "No Added Sugar", "Keto Friendly", "Gluten Free").
+
+Includes:
+
+- `front-label-analysis.ts` Vision API service (detail: "low" for cost efficiency)
+- `POST /api/verification/front-label` + `POST /api/verification/front-label/confirm` endpoints
+- FrontLabelConfirmScreen with extracted data review + "Looks Good" / "Retake"
+- ScanScreen front-label mode, LabelAnalysis post-verification CTA, NutritionDetail retroactive CTA
+- Composite gamification scoring (back-label = 1.0, front-label = 0.5 credit)
+- Enrichment JSONB on `barcodeVerifications` (latest scan overwrites, does not affect consensus)
+- 38 new tests (service + route + badge tier composite scores)
+
 ---
 
 ## Next Up
 
-### 1. Front-of-Package Label Scanning
-
-**Priority:** High — enriches verified product data, making the API more valuable
-**Effort:** Medium (new service + schema + screen)
-**Status:** Not yet planned
-
-**What it does:**
-
-- User scans the front of a product package
-- Vision API extracts: brand name, net weight/volume, dietary claims (organic, gluten-free), allergen statements, storage notes
-- Data stored alongside barcode verification data
-- Enriches the verified product record beyond just nutrition numbers
-
-**Why before the API:**
-API customers will pay more for rich product profiles (brand, allergens, claims) than just verified macros. Building front-label scanning now means the data is already flowing when the API launches.
-
-**Open questions:**
-
-- Should front-label data count toward the 3-verification consensus?
-- Store photos for API consumers to access?
-- Extract ingredient lists (for allergen cross-referencing)?
-
-**Brainstorm reference:** `docs/brainstorms/2026-03-19-verified-product-api-brainstorm.md`
-
----
-
-### 2. Public Verified Product API (Phase 2b)
+### Public Verified Product API (Phase 2b)
 
 **Priority:** High — the revenue product
 **Effort:** Large (new auth system, tiered responses, rate limiting, docs)
