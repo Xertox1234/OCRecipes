@@ -122,6 +122,7 @@ export default function NutritionDetailScreen() {
   const [nutrition, setNutrition] = useState<NutritionData | null>(null);
   const [verificationLevel, setVerificationLevel] =
     useState<VerificationLevel>("unverified");
+  const [hasFrontLabelData, setHasFrontLabelData] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPer100g, setIsPer100g] = useState(false);
@@ -282,6 +283,17 @@ export default function NutritionDetailScreen() {
           // Set verification level from barcode lookup response
           if (data.verificationLevel) {
             setVerificationLevel(data.verificationLevel as VerificationLevel);
+          }
+
+          // Fetch front-label status from verification endpoint
+          try {
+            const verRes = await apiRequest("GET", `/api/verification/${code}`);
+            if (verRes.ok) {
+              const verData = await verRes.json();
+              setHasFrontLabelData(verData.hasFrontLabelData ?? false);
+            }
+          } catch {
+            // Non-critical — front-label CTA just won't show
           }
           return;
         }
@@ -988,6 +1000,45 @@ export default function NutritionDetailScreen() {
                   </ThemedText>
                 </View>
                 <Feather name="chevron-right" size={18} color={theme.info} />
+              </Pressable>
+            )}
+
+            {/* Retroactive front-label CTA for verified products without front-label data */}
+            {verificationLevel !== "unverified" && !hasFrontLabelData && (
+              <Pressable
+                onPress={() =>
+                  navigation.navigate("Scan", {
+                    mode: "front-label",
+                    verifyBarcode: barcode,
+                  })
+                }
+                accessibilityLabel="Scan front of package to add product details"
+                accessibilityRole="button"
+                style={[
+                  styles.verifyPrompt,
+                  { backgroundColor: withOpacity(theme.textSecondary, 0.06) },
+                ]}
+              >
+                <Feather name="package" size={18} color={theme.textSecondary} />
+                <View style={{ flex: 1 }}>
+                  <ThemedText
+                    type="body"
+                    style={{ color: theme.textSecondary, fontWeight: "600" }}
+                  >
+                    Add product details
+                  </ThemedText>
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    Scan front of package
+                  </ThemedText>
+                </View>
+                <Feather
+                  name="chevron-right"
+                  size={18}
+                  color={theme.textSecondary}
+                />
               </Pressable>
             )}
           </View>

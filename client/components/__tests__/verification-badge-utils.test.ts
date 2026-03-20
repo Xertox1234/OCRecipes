@@ -55,6 +55,20 @@ describe("verification-badge-utils", () => {
       expect(getVerificationTier(100)).toBe(100);
       expect(getVerificationTier(500)).toBe(100);
     });
+
+    // Composite score tests (back-label=1.0, front-label=0.5)
+    it("handles decimal composite scores correctly", () => {
+      // 5 back-label + 2 front-label = 5 + 1.0 = 6.0 → tier 5
+      expect(getVerificationTier(6.0)).toBe(5);
+      // 9 back-label + 1 front-label = 9 + 0.5 = 9.5 → tier 5 (not 10)
+      expect(getVerificationTier(9.5)).toBe(5);
+      // 10 back-label + 0 front-label = 10.0 → tier 10
+      expect(getVerificationTier(10.0)).toBe(10);
+      // 4 back-label + 1 front-label = 4 + 0.5 = 4.5 → tier 1 (not 5)
+      expect(getVerificationTier(4.5)).toBe(1);
+      // 0 back-label + 1 front-label = 0.5 → null (below tier 1)
+      expect(getVerificationTier(0.5)).toBeNull();
+    });
   });
 
   describe("getNextTier", () => {

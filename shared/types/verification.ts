@@ -22,6 +22,7 @@ export interface VerificationStatusResponse {
   verificationLevel: VerificationLevel;
   verificationCount: number;
   consensusNutritionData: ConsensusNutritionData | null;
+  hasFrontLabelData: boolean;
 }
 
 /** Response from POST /api/verification/submit */
@@ -29,4 +30,13 @@ export interface VerificationSubmitResponse {
   isMatch: boolean;
   verificationLevel: VerificationLevel;
   verificationCount: number;
+  canScanFrontLabel: boolean;
+}
+
+/** Response from GET /api/verification/user-count */
+export interface UserVerificationStats {
+  count: number;
+  frontLabelCount: number;
+  compositeScore: number;
+  streak: number;
 }

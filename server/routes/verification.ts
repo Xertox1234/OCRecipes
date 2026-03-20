@@ -1,9 +1,12 @@
 import type { Express, Request, Response } from "express";
+import crypto from "crypto";
 import { z } from "zod";
+import multer from "multer";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { detectImageMimeType } from "../lib/image-mime";
 import { labelSessionStore } from "./photos";
 import {
   compareWithVerifications,
@@ -12,10 +15,12 @@ import {
   CONSENSUS_THRESHOLD,
   type VerificationNutrition,
 } from "../services/verification-comparison";
+import { analyzeFrontLabel } from "../services/front-label-analysis";
+import { consensusNutritionSchema } from "@shared/types/verification";
 import {
-  verificationLevelSchema,
-  consensusNutritionSchema,
-} from "@shared/types/verification";
+  frontLabelDataSchema,
+  type FrontLabelExtractionResult,
+} from "@shared/types/front-label";
 import { createRateLimiter } from "./_helpers";
 
 const verificationRateLimit = createRateLimiter({
@@ -24,10 +29,85 @@ const verificationRateLimit = createRateLimiter({
   message: "Too many verification requests, please try again later",
 });
 
+const frontLabelRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: "Too many front-label scan requests, please try again later",
+});
+
 const submitSchema = z.object({
   barcode: z.string().min(1),
   sessionId: z.string().min(1),
 });
+
+const frontLabelConfirmSchema = z.object({
+  barcode: z.string().min(1),
+  sessionId: z.string().min(1),
+});
+
+// Multer config for front-label photo uploads (5MB limit)
+const frontLabelUpload = multer({
+  limits: { fileSize: 5 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP allowed."));
+    }
+  },
+});
+
+// ============================================================================
+// Front-label session store (in-memory, same pattern as label sessions)
+// ============================================================================
+interface FrontLabelSession {
+  userId: string;
+  data: FrontLabelExtractionResult;
+  barcode: string;
+  createdAt: number;
+}
+
+const frontLabelSessionStore = new Map<string, FrontLabelSession>();
+const frontLabelSessionTimeouts = new Map<
+  string,
+  ReturnType<typeof setTimeout>
+>();
+const userFrontLabelSessionCount = new Map<string, number>();
+
+const FRONT_LABEL_SESSION_TIMEOUT = 15 * 60 * 1000; // 15 minutes
+const FRONT_LABEL_MAX_SESSIONS_PER_USER = 3;
+const FRONT_LABEL_MAX_SESSIONS_GLOBAL = 500;
+
+function decrementUserFrontLabelCount(userId: string): void {
+  const count = userFrontLabelSessionCount.get(userId) ?? 0;
+  if (count <= 1) {
+    userFrontLabelSessionCount.delete(userId);
+  } else {
+    userFrontLabelSessionCount.set(userId, count - 1);
+  }
+}
+
+function clearFrontLabelSession(sessionId: string): void {
+  const session = frontLabelSessionStore.get(sessionId);
+  const existingTimeout = frontLabelSessionTimeouts.get(sessionId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+    frontLabelSessionTimeouts.delete(sessionId);
+  }
+  frontLabelSessionStore.delete(sessionId);
+  if (session) {
+    decrementUserFrontLabelCount(session.userId);
+  }
+}
+
+// Exported for testing (grouped per docs/patterns/security.md Test Internals Export Pattern)
+export const _testInternals = {
+  frontLabelSessionStore,
+  userFrontLabelSessionCount,
+  clearFrontLabelSession,
+};
 
 export function register(app: Express): void {
   /**
@@ -150,10 +230,17 @@ export function register(app: Express): void {
           consensusData,
         );
 
+        // Check if user can scan front label (hasn't already done it for this barcode)
+        const canScanFrontLabel = !(await storage.hasUserFrontLabelScanned(
+          barcode,
+          req.userId!,
+        ));
+
         res.json({
           isMatch: comparison.isMatch,
           verificationLevel: newLevel,
           verificationCount: matchingCount,
+          canScanFrontLabel,
         });
       } catch (error) {
         if (error instanceof z.ZodError) {
@@ -169,6 +256,204 @@ export function register(app: Express): void {
           res,
           500,
           "Failed to submit verification",
+          ErrorCode.INTERNAL_ERROR,
+        );
+      }
+    },
+  );
+
+  /**
+   * Upload a front-of-package photo for extraction.
+   * Returns sessionId + extracted data for confirmation.
+   */
+  app.post(
+    "/api/verification/front-label",
+    requireAuth,
+    frontLabelRateLimit,
+    frontLabelUpload.single("photo"),
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.file) {
+          return sendError(
+            res,
+            400,
+            "No photo provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        if (!detectImageMimeType(req.file.buffer)) {
+          return sendError(
+            res,
+            400,
+            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        const barcode = req.body?.barcode as string;
+        if (!barcode) {
+          return sendError(
+            res,
+            400,
+            "Barcode is required",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        // Check session bounds
+        if (frontLabelSessionStore.size >= FRONT_LABEL_MAX_SESSIONS_GLOBAL) {
+          return sendError(
+            res,
+            429,
+            "Server is busy, please try again later",
+            "SESSION_LIMIT_REACHED",
+          );
+        }
+        const currentUserSessions =
+          userFrontLabelSessionCount.get(req.userId!) ?? 0;
+        if (currentUserSessions >= FRONT_LABEL_MAX_SESSIONS_PER_USER) {
+          return sendError(
+            res,
+            429,
+            "Too many active front-label sessions. Please confirm or wait for existing sessions to expire.",
+            "USER_SESSION_LIMIT",
+          );
+        }
+
+        // User must have back-label verified this barcode first
+        const hasVerified = await storage.hasUserVerified(barcode, req.userId!);
+        if (!hasVerified) {
+          return sendError(
+            res,
+            400,
+            "You must verify the nutrition label before scanning the front of the package",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        const imageBase64 = req.file.buffer.toString("base64");
+        const data = await analyzeFrontLabel(imageBase64);
+
+        // Store session for confirm step
+        const sessionId = crypto.randomUUID();
+        frontLabelSessionStore.set(sessionId, {
+          userId: req.userId!,
+          data,
+          barcode,
+          createdAt: Date.now(),
+        });
+        userFrontLabelSessionCount.set(req.userId!, currentUserSessions + 1);
+
+        // Auto-expire after 15 minutes
+        const timeoutId = setTimeout(() => {
+          clearFrontLabelSession(sessionId);
+        }, FRONT_LABEL_SESSION_TIMEOUT);
+        frontLabelSessionTimeouts.set(sessionId, timeoutId);
+
+        res.json({ sessionId, data });
+      } catch (error) {
+        console.error("Front label analysis error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to analyze front label",
+          ErrorCode.INTERNAL_ERROR,
+        );
+      }
+    },
+  );
+
+  /**
+   * Confirm front-label data and store on the barcode verification record.
+   * Awards 0.5 gamification credit on first scan per barcode per user.
+   */
+  app.post(
+    "/api/verification/front-label/confirm",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const validated = frontLabelConfirmSchema.parse(req.body);
+        const { barcode, sessionId } = validated;
+
+        // Get front-label session
+        const session = frontLabelSessionStore.get(sessionId);
+        if (!session) {
+          return sendError(
+            res,
+            404,
+            "Front-label session not found or expired",
+            ErrorCode.NOT_FOUND,
+          );
+        }
+
+        if (session.userId !== req.userId!) {
+          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
+        }
+
+        if (session.barcode !== barcode) {
+          return sendError(
+            res,
+            400,
+            "Barcode does not match session",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        // User must have back-label verified this barcode
+        const hasVerified = await storage.hasUserVerified(barcode, req.userId!);
+        if (!hasVerified) {
+          return sendError(
+            res,
+            400,
+            "You must verify the nutrition label first",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        // Build front-label data object
+        const frontLabelData = {
+          brand: session.data.brand,
+          productName: session.data.productName,
+          netWeight: session.data.netWeight,
+          claims: session.data.claims,
+          scannedByUserId: parseInt(req.userId!, 10),
+          scannedAt: new Date().toISOString(),
+        };
+
+        // Validate with Zod before storing
+        const parsed = frontLabelDataSchema.safeParse(frontLabelData);
+        if (!parsed.success) {
+          console.error("Front label data validation failed:", parsed.error);
+          return sendError(
+            res,
+            500,
+            "Failed to validate front label data",
+            ErrorCode.INTERNAL_ERROR,
+          );
+        }
+
+        // Store front-label data and mark user's history (transactional)
+        await storage.confirmFrontLabelData(barcode, req.userId!, parsed.data);
+
+        // Clean up session
+        clearFrontLabelSession(sessionId);
+
+        res.json({ success: true, frontLabelScanned: true });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return sendError(
+            res,
+            400,
+            "Invalid request body",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        console.error("Front label confirm error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to confirm front label data",
           ErrorCode.INTERNAL_ERROR,
         );
       }
@@ -226,6 +511,7 @@ export function register(app: Express): void {
             verificationLevel: "unverified",
             verificationCount: 0,
             consensusNutritionData: null,
+            hasFrontLabelData: false,
           });
         }
 
@@ -242,6 +528,7 @@ export function register(app: Express): void {
           consensusNutritionData: consensusParsed?.success
             ? consensusParsed.data
             : null,
+          hasFrontLabelData: verification.frontLabelData != null,
         });
       } catch (error) {
         console.error("Verification status error:", error);

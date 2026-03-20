@@ -32,6 +32,8 @@ import type {
   CookingSessionIngredient,
   SubstitutionResult,
 } from "@shared/types/cook-session";
+import type { FrontLabelExtractionResult } from "@shared/types/front-label";
+import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -80,6 +82,12 @@ export type RootStackParamList = {
   };
   ReceiptMealPlan: {
     startDate?: string;
+  };
+  FrontLabelConfirm: {
+    imageUri: string;
+    barcode: string;
+    sessionId: string;
+    data: FrontLabelExtractionResult;
   };
 };
 
@@ -259,6 +267,14 @@ export default function RootStackNavigator() {
             component={ReceiptMealPlanScreen}
             options={{
               headerTitle: "Plan Meals",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="FrontLabelConfirm"
+            component={FrontLabelConfirmScreen}
+            options={{
+              headerTitle: "Product Details",
               presentation: "modal",
             }}
           />

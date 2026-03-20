@@ -11,6 +11,10 @@ import type {
 // Import shared types for use in this file, and re-export for consumers
 import type { LabelAnalysisResponse } from "@shared/types/label-analysis";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
+import type {
+  FrontLabelAnalysisResponse,
+  FrontLabelConfirmResponse,
+} from "@shared/types/front-label";
 
 // Types matching server response
 export interface FoodItem {
@@ -414,4 +418,88 @@ export function calculateTotals(foods: FoodItem[]): {
     },
     { calories: 0, protein: 0, carbs: 0, fat: 0 },
   );
+}
+
+/**
+ * Upload a front-of-package photo for extraction.
+ * Smaller compression than back-label (1024px, 80% quality) since front text is larger.
+ */
+export async function uploadFrontLabelPhoto(
+  uri: string,
+  barcode: string,
+): Promise<FrontLabelAnalysisResponse> {
+  const token = await tokenStorage.get();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const compressed = await compressImage(uri, {
+    maxWidth: 1024,
+    maxHeight: 1024,
+    quality: 0.8,
+    targetSizeKB: 3000,
+  });
+
+  try {
+    const uploadResult = await uploadAsync(
+      `${getApiUrl()}/api/verification/front-label`,
+      compressed.uri,
+      {
+        httpMethod: "POST",
+        uploadType: FileSystemUploadType.MULTIPART,
+        fieldName: "photo",
+        parameters: { barcode },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    if (uploadResult.status !== 200) {
+      try {
+        const errorData = JSON.parse(uploadResult.body);
+        throw new Error(
+          errorData.error || `Upload failed: ${uploadResult.status}`,
+        );
+      } catch {
+        throw new Error(`Upload failed: ${uploadResult.status}`);
+      }
+    }
+
+    return JSON.parse(uploadResult.body) as FrontLabelAnalysisResponse;
+  } finally {
+    await cleanupImage(compressed.uri);
+  }
+}
+
+/**
+ * Confirm front-label data and store on the barcode verification record.
+ */
+export async function confirmFrontLabel(
+  sessionId: string,
+  barcode: string,
+): Promise<FrontLabelConfirmResponse> {
+  const token = await tokenStorage.get();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const response = await fetch(
+    `${getApiUrl()}/api/verification/front-label/confirm`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ sessionId, barcode }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || `Confirm failed: ${response.status}`);
+  }
+
+  return response.json();
 }

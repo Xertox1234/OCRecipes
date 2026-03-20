@@ -644,6 +644,8 @@ export default function ProfileScreen() {
 
   const { data: verificationData } = useQuery<{
     count: number;
+    frontLabelCount: number;
+    compositeScore: number;
     streak: number;
   }>({
     queryKey: ["/api/verification/user-count"],
@@ -799,9 +801,10 @@ export default function ProfileScreen() {
 
       {/* Verification Tier Badge */}
       {(() => {
-        const count = verificationData?.count ?? 0;
-        const tierLabel = getTierLabel(count);
-        const nextTier = getNextTier(count);
+        const score =
+          verificationData?.compositeScore ?? verificationData?.count ?? 0;
+        const tierLabel = getTierLabel(score);
+        const nextTier = getNextTier(score);
         if (!tierLabel) return null;
         return (
           <View
@@ -809,7 +812,7 @@ export default function ProfileScreen() {
               styles.tierBadge,
               { backgroundColor: withOpacity(theme.success, 0.08) },
             ]}
-            accessibilityLabel={`Verification rank: ${tierLabel}. ${nextTier ? `${nextTier - count} more to reach next tier.` : "Maximum tier reached."}`}
+            accessibilityLabel={`Verification rank: ${tierLabel}. ${nextTier ? `${Math.ceil(nextTier - score)} more to reach next tier.` : "Maximum tier reached."}`}
             accessibilityRole="text"
           >
             <Feather
@@ -826,7 +829,7 @@ export default function ProfileScreen() {
             </ThemedText>
             {nextTier && (
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {nextTier - count} more to next rank
+                {Math.ceil(nextTier - score)} more to next rank
               </ThemedText>
             )}
           </View>

@@ -1119,3 +1119,69 @@ for (const row of dates) {
 **References:**
 
 - `server/storage/verification.ts` -- `getUserVerificationStats()` for verification streaks
+
+### Multi-Source Streak Dates (UNION, Not GREATEST)
+
+When streak calculations need to consider multiple date sources from the same row (e.g., a `createdAt` date and a separate `frontLabelScannedAt` date), **do not use `GREATEST()`**. `GREATEST` picks one date and discards the other, which can erase an activity day from the distinct dates and retroactively break streaks.
+
+Instead, query each date source separately and merge in JS:
+
+```typescript
+// BAD: GREATEST collapses two dates into one, losing Monday if front-label was Wednesday
+const dates = await db.select({
+  day: sql`DATE(GREATEST(created_at, front_label_scanned_at) AT TIME ZONE 'UTC')`,
+})...
+
+// GOOD: Query both date sources, merge with Set for distinct days
+const backLabelDates = await db.select({
+  day: sql`DATE(${table.createdAt} AT TIME ZONE 'UTC')`,
+}).from(table).where(eq(table.userId, userId))
+  .groupBy(sql`DATE(${table.createdAt} AT TIME ZONE 'UTC')`);
+
+const frontLabelDates = await db.select({
+  day: sql`DATE(${table.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
+}).from(table).where(and(eq(table.userId, userId), sql`${table.frontLabelScannedAt} IS NOT NULL`))
+  .groupBy(sql`DATE(${table.frontLabelScannedAt} AT TIME ZONE 'UTC')`);
+
+const dateSet = new Set<string>();
+for (const row of backLabelDates) dateSet.add(row.day);
+for (const row of frontLabelDates) dateSet.add(row.day);
+const dates = [...dateSet].sort((a, b) => b.localeCompare(a)).map(day => ({ day }));
+```
+
+**Why not GREATEST:** A user verifies product A on Monday (`createdAt` = Monday). On Wednesday they front-label scan it (`frontLabelScannedAt` = Wednesday). `GREATEST` returns Wednesday — Monday vanishes. If Monday was the only activity that day, the streak breaks retroactively.
+
+**References:**
+
+- `server/storage/verification.ts` -- `getUserVerificationStats()` streak query
+
+### Enrichment JSONB on Shared Records
+
+When adding optional enrichment data to shared (product-level) records that doesn't affect the primary data model's integrity:
+
+```typescript
+// Schema: nullable JSONB column, default null
+frontLabelData: (jsonb("front_label_data"),
+  // Storage: overwrite with latest scan
+  await tx
+    .update(barcodeVerifications)
+    .set({
+      frontLabelData: data as unknown as Record<string, unknown>,
+      updatedAt: new Date(),
+    })
+    .where(eq(barcodeVerifications.barcode, barcode)));
+```
+
+**Key principles:**
+
+- **Separate from consensus/verification** — enrichment data doesn't gate or affect the primary data model
+- **Latest-wins overwrite** — no audit trail needed, any authorized user can contribute
+- **Track contributor in JSONB** — include `scannedByUserId` and `scannedAt` inside the JSONB since the parent row has no `userId` column (it's product-level)
+- **Validate with Zod before storing** — `frontLabelDataSchema.safeParse(data)` before write
+- **Always validate on read** — JSONB shape can't be trusted; use `safeParse` when reading back
+- **Wrap multi-table writes in transaction** — if enrichment also marks a per-user tracking boolean, use `db.transaction()` for atomicity
+
+**References:**
+
+- `server/storage/verification.ts` -- `confirmFrontLabelData()` for transactional enrichment storage
+- `shared/types/front-label.ts` -- `frontLabelDataSchema` Zod schema for JSONB shape

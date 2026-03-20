@@ -1406,6 +1406,7 @@ export const barcodeVerifications = pgTable(
       .notNull(),
     consensusNutritionData: jsonb("consensus_nutrition_data"),
     verificationCount: integer("verification_count").default(0).notNull(),
+    frontLabelData: jsonb("front_label_data"),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -1434,6 +1435,8 @@ export const verificationHistory = pgTable(
       scale: 2,
     }).notNull(),
     isMatch: boolean("is_match"),
+    frontLabelScanned: boolean("front_label_scanned").default(false).notNull(),
+    frontLabelScannedAt: timestamp("front_label_scanned_at"),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),

@@ -480,6 +480,34 @@ export default function LabelAnalysisScreen() {
         </View>
       )}
 
+      {/* Front-label CTA after verification */}
+      {verificationResult?.canScanFrontLabel && verifyBarcode && (
+        <View
+          style={[
+            styles.frontLabelCta,
+            { backgroundColor: withOpacity(theme.info, 0.08) },
+          ]}
+        >
+          <ThemedText type="body" style={{ color: theme.textSecondary }}>
+            Want to add more detail? Scan the front of the package to capture
+            brand, dietary claims, and more.
+          </ThemedText>
+          <Button
+            onPress={() =>
+              navigation.replace("Scan", {
+                mode: "front-label",
+                verifyBarcode,
+              })
+            }
+            variant="secondary"
+            style={{ marginTop: Spacing.sm }}
+            accessibilityLabel="Scan front of package label"
+          >
+            Scan Front Label
+          </Button>
+        </View>
+      )}
+
       {/* Fixed Action Button */}
       <View
         style={[
@@ -618,6 +646,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
+    padding: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+  },
+  frontLabelCta: {
     padding: Spacing.md,
     marginHorizontal: Spacing.lg,
     marginBottom: Spacing.sm,

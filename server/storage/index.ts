@@ -177,4 +177,7 @@ export const storage = {
   hasUserVerified: verification.hasUserVerified,
   getUserVerificationStats: verification.getUserVerificationStats,
   submitVerification: verification.submitVerification,
+  hasUserFrontLabelScanned: verification.hasUserFrontLabelScanned,
+  confirmFrontLabelData: verification.confirmFrontLabelData,
+  getUserCompositeScore: verification.getUserCompositeScore,
 };
