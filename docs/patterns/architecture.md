@@ -820,3 +820,51 @@ export async function batchLookupMicronutrients(
 **References:**
 
 - `server/services/micronutrient-lookup.ts` — `lookupMicronutrients` (private), `lookupMicronutrientsWithCache` (public), `batchLookupMicronutrients` (batch)
+
+### Public API Namespace Isolation
+
+When adding a public-facing API alongside internal app routes, mount it on a separate Express Router with its own middleware chain to avoid conflicts with `requireAuth` and other app-level middleware.
+
+```typescript
+// server/routes/public-api.ts
+export function register(app: Express): void {
+  const router = Router();
+
+  // Middleware scoped to public API only — does NOT use requireAuth
+  router.use(cors({ origin: "*", methods: ["GET"] }));
+  router.use(requireApiKey);    // API key auth, not JWT
+  router.use(apiRateLimiter);   // Monthly billing limiter, not express-rate-limit
+
+  router.get("/products/:barcode", async (req, res) => { ... });
+
+  // Mount at /api/v1 — separate from internal /api/* routes
+  app.use("/api/v1", router);
+}
+```
+
+**Registration order in `server/routes.ts`:**
+
+```typescript
+// Public API first (separate namespace, own auth middleware)
+registerApiDocs(app); // GET /api/v1/docs (unauthenticated)
+registerPublicApi(app); // GET /api/v1/products/:barcode (API key auth)
+registerAdminApiKeys(app); // /api/admin/api-keys (JWT + admin allowlist)
+
+// Internal app routes (all use requireAuth)
+registerAuth(app);
+registerProfile(app);
+// ...
+```
+
+**Key elements:**
+
+1. **Separate Router** — isolates middleware chain from internal routes
+2. **Different auth** — `requireApiKey` instead of `requireAuth`
+3. **Versioned prefix** — `/api/v1/` allows future breaking changes via `/api/v2/`
+4. **Scoped CORS** — public API may use `origin: "*"` (API key auth, not cookies); internal routes do not
+5. **Register before internal routes** — prevents internal `requireAuth` from intercepting public API paths
+
+**References:**
+
+- `server/routes/public-api.ts` — public API router with scoped middleware
+- `server/routes.ts` — registration order
