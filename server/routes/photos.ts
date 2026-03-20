@@ -248,6 +248,36 @@ export function register(app: Express): void {
 
         // ── Auto-classification flow ──────────────────────────────
         if (intentRaw === "auto") {
+          // Validate session bounds BEFORE calling paid APIs
+          if (req.file.buffer.length > MAX_IMAGE_SIZE_BYTES) {
+            return sendError(
+              res,
+              413,
+              "Image too large for analysis session",
+              "IMAGE_TOO_LARGE",
+            );
+          }
+
+          if (analysisSessionStore.size >= MAX_SESSIONS_GLOBAL) {
+            return sendError(
+              res,
+              429,
+              "Server is busy, please try again later",
+              "SESSION_LIMIT_REACHED",
+            );
+          }
+
+          const currentUserSessionsAuto =
+            userSessionCount.get(req.userId!) ?? 0;
+          if (currentUserSessionsAuto >= MAX_SESSIONS_PER_USER) {
+            return sendError(
+              res,
+              429,
+              "Too many active analysis sessions. Please confirm or wait for existing sessions to expire.",
+              "USER_SESSION_LIMIT",
+            );
+          }
+
           const classified = await classifyAndAnalyze(imageBase64);
 
           // If full analysis was performed (high confidence + mapped intent),
@@ -277,15 +307,13 @@ export function register(app: Express): void {
 
             const sessionId = crypto.randomUUID();
             if (intentConfig.needsSession) {
-              const currentUserSessions =
-                userSessionCount.get(req.userId!) ?? 0;
               analysisSessionStore.set(sessionId, {
                 userId: req.userId!,
                 result: analysisResult,
                 imageBase64,
                 createdAt: Date.now(),
               });
-              userSessionCount.set(req.userId!, currentUserSessions + 1);
+              userSessionCount.set(req.userId!, currentUserSessionsAuto + 1);
               const timeoutId = setTimeout(() => {
                 clearSession(sessionId);
               }, SESSION_TIMEOUT);

@@ -241,21 +241,42 @@ export default function ScanScreen() {
       return;
     }
 
-    const route = getRouteForContentType(
-      contentType,
-      imageUri,
-      result.resolvedIntent ?? null,
-      result.barcode ?? null,
-    );
+    const resolvedIntent = result.resolvedIntent ?? null;
+    const barcode = result.barcode ?? null;
 
-    if (route) {
-      navigation.navigate(
-        route.screen as keyof RootStackParamList,
-        route.params as never,
-      );
-    } else {
-      // non_food or has_barcode without barcode — show error
-      setClassifyState("error");
+    switch (contentType) {
+      case "prepared_meal":
+        navigation.navigate("PhotoAnalysis", {
+          imageUri,
+          intent: resolvedIntent ?? "log",
+        });
+        break;
+      case "nutrition_label":
+        navigation.navigate("LabelAnalysis", { imageUri });
+        break;
+      case "restaurant_menu":
+        navigation.navigate("PhotoAnalysis", { imageUri, intent: "menu" });
+        break;
+      case "raw_ingredients":
+        navigation.navigate("CookSessionCapture", {
+          initialPhotoUri: imageUri,
+        });
+        break;
+      case "grocery_receipt":
+      case "restaurant_receipt":
+        navigation.navigate("ReceiptCapture");
+        break;
+      case "has_barcode":
+        if (barcode) {
+          navigation.navigate("NutritionDetail", { barcode });
+        } else {
+          setClassifyState("error");
+        }
+        return;
+      case "non_food":
+      default:
+        setClassifyState("error");
+        return;
     }
   };
 
@@ -282,6 +303,10 @@ export default function ScanScreen() {
         clearTimeout(classifyTimeoutRef.current);
         classifyTimeoutRef.current = null;
       }
+
+      // Guard against race condition: if the 10s timeout already fired
+      // and navigated to PhotoIntentScreen, bail out to prevent double navigation
+      if (!isClassifyingRef.current) return;
 
       setClassifyResult(result);
       refreshScanCount();

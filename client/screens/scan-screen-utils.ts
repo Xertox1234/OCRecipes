@@ -61,14 +61,10 @@ export function getRouteForContentType(
         params: { initialPhotoUri: imageUri },
       };
     case "grocery_receipt":
-      return {
-        screen: "ReceiptCapture",
-        params: { receiptType: "grocery" },
-      };
     case "restaurant_receipt":
       return {
         screen: "ReceiptCapture",
-        params: { receiptType: "restaurant" },
+        params: {},
       };
     case "has_barcode":
       return barcode
