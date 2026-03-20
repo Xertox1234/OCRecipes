@@ -12,8 +12,7 @@ vi.mock("../../storage", () => ({
     getUserVerificationStats: vi.fn(),
     submitVerification: vi.fn(),
     hasUserFrontLabelScanned: vi.fn(),
-    storeFrontLabelData: vi.fn(),
-    markFrontLabelScanned: vi.fn(),
+    confirmFrontLabelData: vi.fn(),
     getUserCompositeScore: vi.fn(),
   },
 }));
@@ -197,8 +196,7 @@ describe("Verification Routes", () => {
       });
 
       vi.mocked(storage.hasUserVerified).mockResolvedValue(true);
-      vi.mocked(storage.storeFrontLabelData).mockResolvedValue();
-      vi.mocked(storage.markFrontLabelScanned).mockResolvedValue();
+      vi.mocked(storage.confirmFrontLabelData).mockResolvedValue();
 
       const res = await request(app)
         .post("/api/verification/front-label/confirm")
@@ -207,11 +205,7 @@ describe("Verification Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.frontLabelScanned).toBe(true);
-      expect(storage.storeFrontLabelData).toHaveBeenCalledOnce();
-      expect(storage.markFrontLabelScanned).toHaveBeenCalledWith(
-        "1234567890",
-        "1",
-      );
+      expect(storage.confirmFrontLabelData).toHaveBeenCalledOnce();
     });
 
     it("cleans up session after successful confirm", async () => {
@@ -229,8 +223,7 @@ describe("Verification Routes", () => {
       });
 
       vi.mocked(storage.hasUserVerified).mockResolvedValue(true);
-      vi.mocked(storage.storeFrontLabelData).mockResolvedValue();
-      vi.mocked(storage.markFrontLabelScanned).mockResolvedValue();
+      vi.mocked(storage.confirmFrontLabelData).mockResolvedValue();
 
       await request(app)
         .post("/api/verification/front-label/confirm")

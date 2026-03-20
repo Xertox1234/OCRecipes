@@ -433,9 +433,8 @@ export function register(app: Express): void {
           );
         }
 
-        // Store front-label data (overwrites previous) and mark user's history
-        await storage.storeFrontLabelData(barcode, parsed.data);
-        await storage.markFrontLabelScanned(barcode, req.userId!);
+        // Store front-label data and mark user's history (transactional)
+        await storage.confirmFrontLabelData(barcode, req.userId!, parsed.data);
 
         // Clean up session
         clearFrontLabelSession(sessionId);

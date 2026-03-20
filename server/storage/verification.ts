@@ -202,37 +202,39 @@ export async function hasUserFrontLabelScanned(
   return existing?.frontLabelScanned ?? false;
 }
 
-/** Store front-label data on the barcodeVerifications row (overwrites previous) */
-export async function storeFrontLabelData(
-  barcode: string,
-  data: FrontLabelData,
-): Promise<void> {
-  await db
-    .update(barcodeVerifications)
-    .set({
-      frontLabelData: data as unknown as Record<string, unknown>,
-      updatedAt: new Date(),
-    })
-    .where(eq(barcodeVerifications.barcode, barcode));
-}
-
-/** Mark a user's verification history entry as having completed a front-label scan */
-export async function markFrontLabelScanned(
+/**
+ * Store front-label data and mark user's history in a single transaction.
+ * Matches the atomicity pattern used by submitVerification.
+ */
+export async function confirmFrontLabelData(
   barcode: string,
   userId: string,
+  data: FrontLabelData,
 ): Promise<void> {
-  await db
-    .update(verificationHistory)
-    .set({
-      frontLabelScanned: true,
-      frontLabelScannedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(verificationHistory.barcode, barcode),
-        eq(verificationHistory.userId, userId),
-      ),
-    );
+  await db.transaction(async (tx) => {
+    // Store front-label data on the product-level record (overwrites previous)
+    await tx
+      .update(barcodeVerifications)
+      .set({
+        frontLabelData: data as unknown as Record<string, unknown>,
+        updatedAt: new Date(),
+      })
+      .where(eq(barcodeVerifications.barcode, barcode));
+
+    // Mark user's verification history entry as having completed a front-label scan
+    await tx
+      .update(verificationHistory)
+      .set({
+        frontLabelScanned: true,
+        frontLabelScannedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(verificationHistory.barcode, barcode),
+          eq(verificationHistory.userId, userId),
+        ),
+      );
+  });
 }
 
 /**
