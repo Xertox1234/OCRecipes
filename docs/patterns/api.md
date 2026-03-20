@@ -1499,3 +1499,46 @@ app.get("/api/verification/user-count", requireAuth, handler); // ← never reac
 **References:**
 
 - `server/routes/verification.ts` -- `user-count` registered before `/:barcode`
+
+### Persistent Monthly Rate Limiting
+
+For billing-period rate limits (monthly quotas per API key), use custom middleware with persistent DB counters instead of `express-rate-limit` (which uses in-memory sliding windows that reset on server restart).
+
+```typescript
+// Atomic upsert: INSERT or increment existing counter
+await db
+  .insert(apiKeyUsage)
+  .values({ apiKeyId, yearMonth, requestCount: 1, lastRequestAt: now })
+  .onConflictDoUpdate({
+    target: [apiKeyUsage.apiKeyId, apiKeyUsage.yearMonth],
+    set: {
+      requestCount: sql`${apiKeyUsage.requestCount} + 1`,
+      lastRequestAt: now,
+    },
+  });
+```
+
+**Middleware flow:**
+
+1. Read current usage from DB (or in-memory cache with 60s TTL)
+2. Compare against `TIER_FEATURES[tier].requestsPerMonth`
+3. Set headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+4. If over → 429 with `TIER_LIMIT_EXCEEDED`
+5. If under → increment counter (fire-and-forget), call `next()`
+
+**Key differences from `express-rate-limit`:**
+
+| Aspect   | `express-rate-limit`          | Persistent monthly limiter   |
+| -------- | ----------------------------- | ---------------------------- |
+| Window   | Short (60s–15min)             | Monthly billing period       |
+| Storage  | In-memory (resets on restart) | Database (survives restarts) |
+| Key      | `req.userId` or IP            | `req.apiKeyId`               |
+| Use case | Abuse prevention              | Billing enforcement          |
+
+**Fail-open policy:** If the DB is unreachable, let the request through. A few extra requests during an outage are better than blocking all API consumers. Log the error for investigation.
+
+**References:**
+
+- `server/middleware/api-rate-limit.ts` — `apiRateLimiter` middleware
+- `server/storage/api-keys.ts` — `incrementUsage`, `getUsage`
+- `shared/constants/api-tiers.ts` — `TIER_FEATURES` config

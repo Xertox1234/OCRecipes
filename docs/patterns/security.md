@@ -667,3 +667,78 @@ const safeSuggestions = filterSafeSubstitutions(allSuggestions, userAllergies);
 
 - `server/services/ingredient-substitution.ts` -- `filterSafeSubstitutions()`, `buildExclusionList()`
 - `shared/constants/allergens.ts` -- `detectAllergens()` pure function used for both detection and filtering
+
+### API Key Authentication (Stripe-Style Prefix + Hash)
+
+For public APIs where external developers authenticate with long-lived keys (not JWTs), use a split storage approach: a plaintext **prefix** for DB lookup and a **bcrypt hash** for verification. The full key is shown once at creation time, never again.
+
+```typescript
+// Key format: ocr_live_ + 32 hex chars (41 chars total)
+const randomPart = crypto.randomBytes(16).toString("hex");
+const plaintextKey = `ocr_live_${randomPart}`;
+
+// PREFIX for DB lookup (must include random chars, not just the static part!)
+const keyPrefix = plaintextKey.substring(0, KEY_PREFIX_LENGTH); // e.g., 16 chars
+
+// HASH for verification (bcrypt — same as passwords)
+const keyHash = await bcrypt.hash(plaintextKey, BCRYPT_ROUNDS);
+
+// Store prefix (indexed) + hash. Never store plaintext.
+await db.insert(apiKeys).values({ keyPrefix, keyHash, name, tier });
+```
+
+**Auth middleware flow:**
+
+1. Read key from `X-API-Key` header (reject query params — they get logged in URLs)
+2. Extract prefix → DB lookup by indexed `keyPrefix` column
+3. `bcrypt.compare(rawKey, keyRow.keyHash)` to verify
+4. Cache validated keys in-memory (60s TTL, bounded Map) to skip DB + bcrypt on repeat requests
+5. Set `req.apiKeyId` and `req.apiKeyTier` for downstream middleware
+
+**Critical gotcha:** The prefix MUST include characters from the random portion of the key, not just the static prefix. If `KEY_PREFIX_LENGTH` only captures the static part (e.g., `"ocr_live"` = 8 chars), every key gets the same prefix and only one can ever authenticate.
+
+**When to use:** Public-facing APIs with developer API keys (separate from user JWT auth).
+
+**References:**
+
+- `server/middleware/api-key-auth.ts` — `requireApiKey` middleware with in-memory cache
+- `server/storage/api-keys.ts` — `createApiKey`, `getApiKeyByPrefix`
+
+### PII Stripping in API Response Serialization
+
+When internal data models contain user-identifying fields (e.g., `scannedByUserId`, `scannedAt`) that must never be exposed to external API consumers, create explicit serializer functions that allowlist fields rather than blocklist:
+
+```typescript
+// ✅ GOOD — allowlist approach: only include what's safe
+function serializePaidResponse(row: BarcodeVerification): PaidProductResponse {
+  const rawFrontLabel = row.frontLabelData as FrontLabelData | null;
+  const frontLabel = rawFrontLabel
+    ? {
+        brand: rawFrontLabel.brand, // ← explicitly picked
+        productName: rawFrontLabel.productName,
+        netWeight: rawFrontLabel.netWeight,
+        claims: rawFrontLabel.claims,
+        // scannedByUserId: OMITTED
+        // scannedAt: OMITTED
+      }
+    : null;
+  return { ...data, frontLabel };
+}
+
+// ❌ BAD — blocklist approach: easy to miss new fields
+const { scannedByUserId, scannedAt, ...safeFrontLabel } = rawFrontLabel;
+```
+
+**Why:** Allowlisting is safer than blocklisting. If a new PII field is added to the schema later, the blocklist approach silently leaks it. The allowlist approach requires explicitly adding each new field, defaulting to omission.
+
+**Test pattern:** Assert the full JSON response body does NOT contain PII field names:
+
+```typescript
+const json = JSON.stringify(res.body);
+expect(json).not.toContain("scannedByUserId");
+expect(json).not.toContain("scannedAt");
+```
+
+**References:**
+
+- `server/routes/public-api.ts` — `serializePaidResponse()`, `serializeFreeResponse()`

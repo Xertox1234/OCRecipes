@@ -1,4 +1,4 @@
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { barcodeVerifications, verificationHistory } from "@shared/schema";
 import type { ConsensusNutritionData } from "@shared/types/verification";
@@ -12,6 +12,17 @@ export async function getVerification(barcode: string) {
     .from(barcodeVerifications)
     .where(eq(barcodeVerifications.barcode, barcode));
   return result ?? null;
+}
+
+/** Get verification by trying multiple barcode variants. Returns first match. */
+export async function getVerificationByBarcodes(variants: string[]) {
+  if (variants.length === 0) return null;
+  const results = await db
+    .select()
+    .from(barcodeVerifications)
+    .where(inArray(barcodeVerifications.barcode, variants))
+    .limit(1);
+  return results[0] ?? null;
 }
 
 /** Get all verification history entries for a barcode */

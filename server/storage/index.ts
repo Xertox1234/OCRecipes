@@ -20,6 +20,7 @@ import * as menu from "./menu";
 import * as receipt from "./receipt";
 import * as cookbooksStorage from "./cookbooks";
 import * as verification from "./verification";
+import * as apiKeysStorage from "./api-keys";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 
@@ -171,8 +172,22 @@ export const storage = {
   removeRecipeFromCookbook: cookbooksStorage.removeRecipeFromCookbook,
   getCookbookRecipes: cookbooksStorage.getCookbookRecipes,
 
+  // Public API (API keys + barcode nutrition)
+  createApiKey: apiKeysStorage.createApiKey,
+  getApiKeyByPrefix: apiKeysStorage.getApiKeyByPrefix,
+  getApiKey: apiKeysStorage.getApiKey,
+  revokeApiKey: apiKeysStorage.revokeApiKey,
+  updateApiKeyTier: apiKeysStorage.updateApiKeyTier,
+  listApiKeys: apiKeysStorage.listApiKeys,
+  incrementApiKeyUsage: apiKeysStorage.incrementUsage,
+  getApiKeyUsage: apiKeysStorage.getUsage,
+  getApiKeyUsageStats: apiKeysStorage.getUsageStats,
+  upsertBarcodeNutrition: apiKeysStorage.upsertBarcodeNutrition,
+  getBarcodeNutrition: apiKeysStorage.getBarcodeNutrition,
+
   // Barcode verification
   getVerification: verification.getVerification,
+  getVerificationByBarcodes: verification.getVerificationByBarcodes,
   getVerificationHistory: verification.getVerificationHistory,
   hasUserVerified: verification.hasUserVerified,
   getUserVerificationStats: verification.getUserVerificationStats,
