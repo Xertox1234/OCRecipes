@@ -102,8 +102,12 @@ function clearFrontLabelSession(sessionId: string): void {
   }
 }
 
-// Exported for testing
-export { frontLabelSessionStore as _testFrontLabelSessionStore };
+// Exported for testing (grouped per docs/patterns/security.md Test Internals Export Pattern)
+export const _testInternals = {
+  frontLabelSessionStore,
+  userFrontLabelSessionCount,
+  clearFrontLabelSession,
+};
 
 export function register(app: Express): void {
   /**

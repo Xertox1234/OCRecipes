@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import { storage } from "../../storage";
-import { register, _testFrontLabelSessionStore } from "../verification";
+import { register, _testInternals } from "../verification";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -92,7 +92,7 @@ describe("Verification Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    _testFrontLabelSessionStore.clear();
+    _testInternals.frontLabelSessionStore.clear();
     app = createApp();
   });
 
@@ -139,8 +139,10 @@ describe("Verification Routes", () => {
         .post("/api/verification/front-label")
         .send({ barcode: "1234567890" });
 
-      expect(_testFrontLabelSessionStore.size).toBe(1);
-      const session = _testFrontLabelSessionStore.get(res.body.sessionId);
+      expect(_testInternals.frontLabelSessionStore.size).toBe(1);
+      const session = _testInternals.frontLabelSessionStore.get(
+        res.body.sessionId,
+      );
       expect(session).toBeDefined();
       expect(session!.barcode).toBe("1234567890");
     });
@@ -157,7 +159,7 @@ describe("Verification Routes", () => {
 
     it("returns 400 when barcode does not match session", async () => {
       // Manually create a session
-      _testFrontLabelSessionStore.set("test-session", {
+      _testInternals.frontLabelSessionStore.set("test-session", {
         userId: "1",
         data: {
           brand: "Test",
@@ -181,7 +183,7 @@ describe("Verification Routes", () => {
     });
 
     it("stores front-label data and marks user on success", async () => {
-      _testFrontLabelSessionStore.set("test-session", {
+      _testInternals.frontLabelSessionStore.set("test-session", {
         userId: "1",
         data: {
           brand: "Kind",
@@ -213,7 +215,7 @@ describe("Verification Routes", () => {
     });
 
     it("cleans up session after successful confirm", async () => {
-      _testFrontLabelSessionStore.set("test-session", {
+      _testInternals.frontLabelSessionStore.set("test-session", {
         userId: "1",
         data: {
           brand: "Kind",
@@ -234,11 +236,11 @@ describe("Verification Routes", () => {
         .post("/api/verification/front-label/confirm")
         .send({ barcode: "1234567890", sessionId: "test-session" });
 
-      expect(_testFrontLabelSessionStore.size).toBe(0);
+      expect(_testInternals.frontLabelSessionStore.size).toBe(0);
     });
 
     it("returns 400 when user has not back-label verified", async () => {
-      _testFrontLabelSessionStore.set("test-session", {
+      _testInternals.frontLabelSessionStore.set("test-session", {
         userId: "1",
         data: {
           brand: "Test",
@@ -305,7 +307,7 @@ describe("Verification Routes", () => {
     });
 
     it("returns hasFrontLabelData false for unknown barcode", async () => {
-      vi.mocked(storage.getVerification).mockResolvedValue(null);
+      vi.mocked(storage.getVerification).mockResolvedValue(null as never);
 
       const res = await request(app).get("/api/verification/unknown");
 

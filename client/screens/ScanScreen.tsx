@@ -7,6 +7,7 @@ import {
   Linking,
   ActivityIndicator,
   AccessibilityInfo,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -408,6 +409,12 @@ export default function ScanScreen() {
               });
             } catch (err) {
               haptics.notification(Haptics.NotificationFeedbackType.Error);
+              Alert.alert(
+                "Upload Failed",
+                err instanceof Error
+                  ? err.message
+                  : "Could not analyze front label. Please try again.",
+              );
             }
           } else if (isLabelMode) {
             navigation.navigate("LabelAnalysis", {

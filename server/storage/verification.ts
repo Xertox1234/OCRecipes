@@ -66,28 +66,39 @@ export async function getUserVerificationStats(userId: string): Promise<{
     return { count: 0, frontLabelCount: 0, compositeScore: 0, streak: 0 };
 
   // Get distinct activity dates (UTC), ordered most recent first.
-  // Include both back-label verification dates AND front-label scan dates for streak.
-  const dates = await db
+  // Query back-label dates and front-label dates separately, then merge in JS.
+  // This ensures both verification day and front-label scan day count as
+  // separate activity days for streak purposes (GREATEST would collapse them).
+  const backLabelDates = await db
     .select({
-      day: sql<string>`DATE(COALESCE(
-        GREATEST(${verificationHistory.createdAt}, ${verificationHistory.frontLabelScannedAt}),
-        ${verificationHistory.createdAt}
-      ) AT TIME ZONE 'UTC')`,
+      day: sql<string>`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`,
     })
     .from(verificationHistory)
     .where(eq(verificationHistory.userId, userId))
-    .groupBy(
-      sql`DATE(COALESCE(
-      GREATEST(${verificationHistory.createdAt}, ${verificationHistory.frontLabelScannedAt}),
-      ${verificationHistory.createdAt}
-    ) AT TIME ZONE 'UTC')`,
+    .groupBy(sql`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`);
+
+  const frontLabelDates = await db
+    .select({
+      day: sql<string>`DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
+    })
+    .from(verificationHistory)
+    .where(
+      and(
+        eq(verificationHistory.userId, userId),
+        sql`${verificationHistory.frontLabelScannedAt} IS NOT NULL`,
+      ),
     )
-    .orderBy(
-      sql`DATE(COALESCE(
-        GREATEST(${verificationHistory.createdAt}, ${verificationHistory.frontLabelScannedAt}),
-        ${verificationHistory.createdAt}
-      ) AT TIME ZONE 'UTC') DESC`,
+    .groupBy(
+      sql`DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
     );
+
+  // Merge and deduplicate dates, sort descending
+  const dateSet = new Set<string>();
+  for (const row of backLabelDates) dateSet.add(row.day);
+  for (const row of frontLabelDates) dateSet.add(row.day);
+  const dates = [...dateSet]
+    .sort((a, b) => b.localeCompare(a))
+    .map((day) => ({ day }));
 
   // Walk backwards from today counting consecutive days
   const today = new Date();
