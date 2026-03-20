@@ -78,7 +78,7 @@ export function register(app: Express): void {
             res,
             409,
             "You have already verified this product",
-            "ALREADY_VERIFIED",
+            ErrorCode.CONFLICT,
           );
         }
 
