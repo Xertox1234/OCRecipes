@@ -1936,3 +1936,55 @@ function ActionChip({ action, usageCounts }: Props) {
 - `client/components/home/RecentActionsRow.tsx` — `ICON_ONLY_THRESHOLD`, conditional label rendering
 - `client/lib/home-actions-storage.ts` — `usageCountsCache`, `incrementActionUsage()`
 - `client/hooks/useHomeActions.ts` — exposes `usageCounts` to components
+
+### Async Operation with Timeout Fallback + Race Condition Guard
+
+When an async operation (API call) has a timeout fallback (navigate away), guard against the API response arriving after the timeout fires:
+
+```typescript
+const isProcessingRef = useRef(false);
+const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+const handleAsyncWithFallback = async (data: string) => {
+  if (isProcessingRef.current) return; // Prevent duplicate calls
+  isProcessingRef.current = true;
+
+  // Timeout → fallback navigation
+  timeoutRef.current = setTimeout(() => {
+    isProcessingRef.current = false;
+    navigation.navigate("Fallback");
+  }, 10000);
+
+  try {
+    const result = await apiCall(data);
+
+    // Clear timeout (no-op if already fired)
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    // CRITICAL: bail out if timeout already fired and navigated
+    if (!isProcessingRef.current) return;
+
+    // ... handle result (navigate, set state)
+  } catch {
+    isProcessingRef.current = false;
+    navigation.navigate("Fallback");
+  }
+};
+```
+
+**Key details:**
+
+- `useRef` (not `useState`) for the guard — synchronous reads, no re-render needed
+- `clearTimeout` on an already-fired timer is a no-op — it does NOT tell you the timer ran
+- The `if (!isProcessingRef.current) return` guard is the critical line that prevents double navigation
+- Always clean up timeout refs in a `useEffect` cleanup function
+
+**Why this matters:** Without the guard, if the API responds after the 10s timeout, both the timeout handler AND the success handler navigate — causing a double navigation crash or confusing UX.
+
+**References:**
+
+- `client/screens/ScanScreen.tsx` -- `handleSmartScan()` with classification timeout fallback
+- Bug found and fixed during PR #14 code review

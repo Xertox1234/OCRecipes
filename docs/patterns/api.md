@@ -1477,3 +1477,25 @@ await Promise.allSettled(items.slice(0, MAX).map(...));
 
 - `server/services/ingredient-substitution.ts` -- 3-tier substitution pipeline (Static -> Spoonacular -> AI)
 - See also: [Static-First with AI Fallback](#static-first-with-ai-fallback) in Architecture Patterns
+
+### Static Routes Before Parameterized Routes
+
+In Express, register static path routes BEFORE parameterized routes that share the same prefix. Otherwise the static path matches as a parameter value:
+
+```typescript
+// CORRECT order: static first, then parameterized
+app.get("/api/verification/user-count", requireAuth, handler); // ← static
+app.get("/api/verification/:barcode", requireAuth, handler); // ← parameterized
+
+// WRONG order: "user-count" matches as barcode param
+app.get("/api/verification/:barcode", requireAuth, handler); // ← matches first
+app.get("/api/verification/user-count", requireAuth, handler); // ← never reached
+```
+
+**When to use:** Any time a route file has both `/path/static-segment` and `/path/:param` routes under the same prefix.
+
+**Why:** Express matches routes in registration order. `/:barcode` matches any string — including `user-count`. Add a comment documenting the ordering requirement to prevent future reordering.
+
+**References:**
+
+- `server/routes/verification.ts` -- `user-count` registered before `/:barcode`
