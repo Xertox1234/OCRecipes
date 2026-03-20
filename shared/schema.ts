@@ -1456,3 +1456,73 @@ export type InsertBarcodeVerification =
   typeof barcodeVerifications.$inferInsert;
 export type VerificationHistoryEntry = typeof verificationHistory.$inferSelect;
 export type InsertVerificationHistory = typeof verificationHistory.$inferInsert;
+
+// ── Public API ──────────────────────────────────────────────────────
+
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: serial("id").primaryKey(),
+    keyPrefix: varchar("key_prefix", { length: 16 }).notNull(),
+    keyHash: text("key_hash").notNull(),
+    name: text("name").notNull(),
+    tier: text("tier").default("free").notNull(),
+    status: text("status").default("active").notNull(),
+    ownerId: varchar("owner_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (table) => ({
+    prefixIdx: index("api_keys_prefix_idx").on(table.keyPrefix),
+    statusIdx: index("api_keys_status_idx").on(table.status),
+  }),
+);
+
+export const apiKeyUsage = pgTable(
+  "api_key_usage",
+  {
+    id: serial("id").primaryKey(),
+    apiKeyId: integer("api_key_id")
+      .references(() => apiKeys.id, { onDelete: "cascade" })
+      .notNull(),
+    yearMonth: varchar("year_month", { length: 7 }).notNull(),
+    requestCount: integer("request_count").default(0).notNull(),
+    lastRequestAt: timestamp("last_request_at"),
+  },
+  (table) => ({
+    usageUniqueIdx: uniqueIndex("api_key_usage_unique_idx").on(
+      table.apiKeyId,
+      table.yearMonth,
+    ),
+  }),
+);
+
+export const barcodeNutrition = pgTable("barcode_nutrition", {
+  id: serial("id").primaryKey(),
+  barcode: text("barcode").notNull().unique(),
+  productName: text("product_name"),
+  brandName: text("brand_name"),
+  servingSize: text("serving_size"),
+  calories: decimal("calories", { precision: 10, scale: 2 }),
+  protein: decimal("protein", { precision: 10, scale: 2 }),
+  carbs: decimal("carbs", { precision: 10, scale: 2 }),
+  fat: decimal("fat", { precision: 10, scale: 2 }),
+  source: text("source").notNull(),
+  createdAt: timestamp("created_at")
+    .default(sql`CURRENT_TIMESTAMP`)
+    .notNull(),
+  updatedAt: timestamp("updated_at")
+    .default(sql`CURRENT_TIMESTAMP`)
+    .notNull(),
+});
+
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type InsertApiKey = typeof apiKeys.$inferInsert;
+export type ApiKeyUsage = typeof apiKeyUsage.$inferSelect;
+export type InsertApiKeyUsage = typeof apiKeyUsage.$inferInsert;
+export type BarcodeNutrition = typeof barcodeNutrition.$inferSelect;
+export type InsertBarcodeNutrition = typeof barcodeNutrition.$inferInsert;

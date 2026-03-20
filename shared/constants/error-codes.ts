@@ -13,6 +13,9 @@ export const ErrorCode = {
   UNAUTHORIZED: "UNAUTHORIZED",
   CONFLICT: "CONFLICT",
   INTERNAL_ERROR: "INTERNAL_ERROR",
+  API_KEY_INVALID: "API_KEY_INVALID",
+  API_KEY_REVOKED: "API_KEY_REVOKED",
+  TIER_LIMIT_EXCEEDED: "TIER_LIMIT_EXCEEDED",
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- intentional: merging value + type
