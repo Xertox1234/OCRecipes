@@ -480,6 +480,32 @@ Use `presentation: "fullScreenModal"` instead of `transparentModal` for camera/s
 
 **Why:** `transparentModal` is the default recommendation for full-screen overlays, but it has rendering issues that cause visual artifacts on some iOS versions. Camera screens don't benefit from transparency anyway since the camera feed is opaque, so `fullScreenModal` is the better choice.
 
+### Dismiss-then-Navigate: Modal to Another Screen
+
+When a button inside a modal needs to open a different screen (not a child of the modal), dismiss the modal first with `goBack()`, then use `InteractionManager.runAfterInteractions()` before navigating. Without this, `navigate()` fires against a stale navigator state mid-animation, causing unpredictable behavior.
+
+```typescript
+import { InteractionManager } from "react-native";
+
+const handleOpenScan = useCallback(() => {
+  navigation.goBack(); // dismiss modal
+  InteractionManager.runAfterInteractions(() => {
+    navigation.navigate("Scan"); // navigate after dismissal completes
+  });
+}, [navigation]);
+```
+
+**Do NOT use `navigation.replace()`** for this pattern. `replace` swaps one screen for another in the stack, but modal-to-modal replacement has undefined presentation behavior — the replacement screen's presentation mode (`fullScreenModal` vs `modal`) may conflict with the replaced screen's animation context.
+
+**When to use:** A button inside a modal (Quick Log, settings sheet, etc.) that opens a different root-level screen.
+
+**When NOT to use:** Standard in-stack navigation where `navigate()` or `push()` adds to the current stack.
+
+**References:**
+
+- `client/screens/QuickLogScreen.tsx` — camera button dismisses Quick Log then opens Scan
+- `client/screens/meal-plan/RecipeCreateScreen.tsx` — uses `InteractionManager` for bottom sheet transitions
+
 ### Two-Tap Expand-then-Navigate for List Items
 
 When list items have both a detail view and contextual actions (favourite, share, delete), use a two-tap interaction: first tap expands an animated action row, second tap navigates to detail. This avoids swipe gestures (which conflict with horizontal scrolling) and long-press (which has poor discoverability). The parent tracks a single `expandedItemId` (not a Set) for accordion behavior -- only one item expands at a time.

@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Quick Log Enhancements Review (2026-03-21)](#quick-log-enhancements-review-2026-03-21)
 - [HomeScreen Redesign Simplicity Review (2026-03-19)](#homescreen-redesign-simplicity-review-2026-03-19)
 - [Allergen Substitution Safety Findings (2026-03-18)](#allergen-substitution-safety-findings-2026-03-18)
 - [Receipt-to-Meal-Plan Code Review Findings (2026-03-10)](#receipt-to-meal-plan-code-review-findings-2026-03-10)
@@ -22,6 +23,42 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-03-21] Quick Log Enhancements Review
+
+**Category:** Code Review Findings / Runtime Safety
+
+### Context
+
+Added Previous Items, Camera Shortcut, and Tip Cards to the Quick Log modal. Multi-agent review (DHH, Kieran TypeScript, Simplicity) caught issues before merge.
+
+### Key Findings
+
+#### 1. Drizzle `sql<Date>` is a type lie — PG driver returns strings for timestamps
+
+Used `sql<Date>\`max(${dailyLogs.loggedAt})\``in a Drizzle select, then called`.toISOString()`on the result. This compiles fine but crashes at runtime because node-postgres returns timestamp values as ISO strings, not Date objects.`sql<T>` is a compile-time type assertion only — it does not coerce values.
+
+**Fix:** Use `sql<string>` for timestamp aggregations. See `docs/patterns/database.md` for the full reference table.
+
+**Severity:** Critical — silent compile, runtime crash on first real request.
+
+#### 2. `navigation.goBack()` + `navigate()` is a race condition
+
+Calling `goBack()` to dismiss a modal then immediately calling `navigate("Scan")` fires the second navigation against a stale navigator state. The modal dismissal animation hasn't completed, so React Navigation may not process the navigate correctly.
+
+**Fix:** Use `InteractionManager.runAfterInteractions()` between the two calls. See `docs/patterns/react-native.md` for the "Dismiss-then-Navigate" pattern.
+
+#### 3. `navigation.replace()` in modals is fragile
+
+Plan originally proposed `navigation.replace("Scan")` to swap one modal for another. This couples behavior to stack state assumptions and has undefined presentation behavior when the replaced screen and replacement have different `presentation` modes (`modal` vs `fullScreenModal`).
+
+**Fix:** Dismiss explicitly then navigate. Two explicit steps beat one clever one.
+
+#### 4. Module-level mutable state is a React smell
+
+A `let tipCounter = 0` at module level persists across Fast Refresh in dev (stale counter) and is shared mutable state outside React's control. For non-critical UI cycling, `Math.random()` inside `useState` initializer is simpler and has no side effects.
 
 ---
 

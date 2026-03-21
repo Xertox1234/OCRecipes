@@ -448,6 +448,40 @@ const result = await db
 - `server/storage.ts` — `getDailySummary()` method
 - Related learning: "getDailySummary LEFT JOIN Rewrite" in LEARNINGS.md
 
+### Drizzle `sql<T>` Is a Type Hint, Not a Runtime Coercion
+
+Drizzle's `sql<T>` generic parameter is a **compile-time type assertion** — it tells TypeScript what type to expect, but does **not** coerce the value at runtime. The PostgreSQL driver (node-postgres) determines the actual runtime type.
+
+Common gotcha: `sql<Date>` on a `max(timestamp)` or `min(timestamp)` expression. The PG driver returns timestamp values as **ISO strings**, not `Date` objects. Calling `.toISOString()` on the result will throw `TypeError: .toISOString is not a function`.
+
+```typescript
+// BAD: sql<Date> lies — PG driver returns a string
+const rows = await db.select({
+  lastLogged: sql<Date>`max(${dailyLogs.loggedAt})`,
+});
+rows[0].lastLogged.toISOString(); // 💥 TypeError at runtime
+
+// GOOD: Match the type to what the driver actually returns
+const rows = await db.select({
+  lastLogged: sql<string>`max(${dailyLogs.loggedAt})`,
+});
+// Already a string — use directly or wrap in new Date() if needed
+```
+
+**Safe types for common SQL expressions:**
+
+| Expression                         | `sql<T>` type | Why                                    |
+| ---------------------------------- | ------------- | -------------------------------------- |
+| `count(*)`, `cast(... as int)`     | `sql<number>` | PG returns numeric types as JS numbers |
+| `max(timestamp)`, `min(timestamp)` | `sql<string>` | PG returns timestamps as ISO strings   |
+| `COALESCE(SUM(...), 0)`            | `sql<number>` | Numeric aggregation with fallback      |
+| `DATE(... AT TIME ZONE ...)`       | `sql<string>` | Date formatting returns strings        |
+
+**References:**
+
+- `server/storage/nutrition.ts` — `getFrequentItems()` uses `sql<string>` for `max(loggedAt)`
+- `server/storage/nutrition.ts` — `getDailySummary()` uses `sql<number>` for aggregations
+
 ### Pre-Fetched IDs to Avoid Redundant Queries
 
 When a route handler needs data that is also needed by a called function, fetch it once and pass it in rather than letting the function query it again.
