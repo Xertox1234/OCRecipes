@@ -91,7 +91,7 @@ export type RootStackParamList = {
     sessionId: string;
     data: FrontLabelExtractionResult;
   };
-  BatchScan: { mode: "barcode" | "receipt" };
+  BatchScan: undefined;
   BatchSummary: undefined;
 };
 

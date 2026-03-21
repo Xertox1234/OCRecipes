@@ -14,15 +14,13 @@ import type { BatchItem, ResolvedBatchItem } from "@shared/types/batch-scan";
 // ---------------------------------------------------------------------------
 
 type BatchAction =
-  | { type: "START_SESSION"; mode: "barcode" }
+  | { type: "START_SESSION" }
   | { type: "ADD_ITEM"; item: BatchItem }
   | { type: "REMOVE_ITEM"; wasPending: boolean }
-  | { type: "INCREMENT_QTY"; toastText: string }
   | { type: "RESOLVE_ITEM" }
   | { type: "FAIL_ITEM" }
   | { type: "RETRY_ITEM" }
   | { type: "SET_SAVING"; isSaving: boolean }
-  | { type: "SET_TOAST"; text: string }
   | { type: "CLEAR" };
 
 // ---------------------------------------------------------------------------
@@ -30,18 +28,14 @@ type BatchAction =
 // ---------------------------------------------------------------------------
 
 interface BatchState {
-  sessionMode: "barcode" | null;
   itemCount: number;
   pendingCount: number;
-  latestToast: string | null;
   isSaving: boolean;
 }
 
 const initialState: BatchState = {
-  sessionMode: null,
   itemCount: 0,
   pendingCount: 0,
-  latestToast: null,
   isSaving: false,
 };
 
@@ -52,11 +46,9 @@ const initialState: BatchState = {
 interface BatchScanContextValue {
   itemCount: number;
   pendingCount: number;
-  latestToast: string | null;
-  sessionMode: "barcode" | null;
   isSaving: boolean;
   getItems: () => BatchItem[];
-  startSession: (mode: "barcode") => void;
+  startSession: () => void;
   addItemAndLookup: (barcode: string) => void;
   incrementQuantity: (barcode: string) => void;
   removeItem: (id: string) => void;
@@ -87,7 +79,7 @@ function generateItemId(): string {
 function reducer(state: BatchState, action: BatchAction): BatchState {
   switch (action.type) {
     case "START_SESSION":
-      return { ...initialState, sessionMode: action.mode };
+      return initialState;
     case "ADD_ITEM":
       return {
         ...state,
@@ -96,7 +88,6 @@ function reducer(state: BatchState, action: BatchAction): BatchState {
           action.item.status === "pending"
             ? state.pendingCount + 1
             : state.pendingCount,
-        latestToast: `${action.item.productName || "Item"} scanned`,
       };
     case "REMOVE_ITEM":
       return {
@@ -106,8 +97,6 @@ function reducer(state: BatchState, action: BatchAction): BatchState {
           ? Math.max(0, state.pendingCount - 1)
           : state.pendingCount,
       };
-    case "INCREMENT_QTY":
-      return { ...state, latestToast: action.toastText };
     case "RESOLVE_ITEM":
       return { ...state, pendingCount: Math.max(0, state.pendingCount - 1) };
     case "FAIL_ITEM":
@@ -116,8 +105,6 @@ function reducer(state: BatchState, action: BatchAction): BatchState {
       return { ...state, pendingCount: state.pendingCount + 1 };
     case "SET_SAVING":
       return { ...state, isSaving: action.isSaving };
-    case "SET_TOAST":
-      return { ...state, latestToast: action.text };
     case "CLEAR":
       return initialState;
     default:
@@ -214,9 +201,9 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
     [processQueue],
   );
 
-  const startSession = useCallback((mode: "barcode") => {
+  const startSession = useCallback(() => {
     itemsRef.current = [];
-    dispatch({ type: "START_SESSION", mode });
+    dispatch({ type: "START_SESSION" });
   }, []);
 
   const addItemAndLookup = useCallback(
@@ -248,10 +235,6 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
     const item = itemsRef.current.find((i) => i.barcode === barcode);
     if (item && item.quantity < 99) {
       item.quantity += 1;
-      dispatch({
-        type: "INCREMENT_QTY",
-        toastText: `Quantity increased to ${item.quantity}`,
-      });
     }
   }, []);
 
@@ -270,21 +253,20 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
 
   const retryItem = useCallback(
     (id: string) => {
-      const item = itemsRef.current.find((i) => i.id === id);
-      if (!item || !item.barcode) return;
-
       const idx = itemsRef.current.findIndex((i) => i.id === id);
-      if (idx !== -1) {
-        itemsRef.current[idx] = {
-          id: item.id,
-          barcode: item.barcode,
-          productName: item.productName,
-          brandName: item.brandName,
-          servingSize: item.servingSize,
-          quantity: item.quantity,
-          status: "pending",
-        };
-      }
+      if (idx === -1) return;
+      const item = itemsRef.current[idx];
+      if (!item.barcode) return;
+
+      itemsRef.current[idx] = {
+        id: item.id,
+        barcode: item.barcode,
+        productName: item.productName,
+        brandName: item.brandName,
+        servingSize: item.servingSize,
+        quantity: item.quantity,
+        status: "pending",
+      };
 
       dispatch({ type: "RETRY_ITEM" });
       void performLookup(id, item.barcode);
@@ -311,8 +293,6 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
     () => ({
       itemCount: state.itemCount,
       pendingCount: state.pendingCount,
-      latestToast: state.latestToast,
-      sessionMode: state.sessionMode,
       isSaving: state.isSaving,
       getItems,
       startSession,

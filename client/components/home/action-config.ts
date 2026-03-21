@@ -32,7 +32,7 @@ export function navigateAction(
       navigation.navigate("Scan", { mode: "label" });
       break;
     case "batch-scan":
-      navigation.navigate("BatchScan", { mode: "barcode" });
+      navigation.navigate("BatchScan");
       break;
 
     // Nutrition & Health

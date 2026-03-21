@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../batch-scan";
+import { BatchStorageError } from "../../storage/batch";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -196,7 +197,7 @@ describe("Batch Scan Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("VALIDATION_ERROR");
-      expect(res.body.error).toContain("Invalid barcode format");
+      expect(res.body.error).toContain("invalid barcode format");
     });
 
     it("returns 400 for barcode with too few digits", async () => {
@@ -214,7 +215,7 @@ describe("Batch Scan Routes", () => {
 
     it("returns 404 when grocery list not found", async () => {
       vi.mocked(storage.batchCreateGroceryItems).mockRejectedValue(
-        new Error("Grocery list not found"),
+        new BatchStorageError("Grocery list not found", "NOT_FOUND"),
       );
 
       const res = await request(app)
@@ -232,7 +233,10 @@ describe("Batch Scan Routes", () => {
 
     it("returns 400 when grocery list limit reached", async () => {
       vi.mocked(storage.batchCreateGroceryItems).mockRejectedValue(
-        new Error("Item limit reached for this grocery list"),
+        new BatchStorageError(
+          "Maximum grocery list limit reached (50). Delete an existing list first.",
+          "LIMIT_REACHED",
+        ),
       );
 
       const res = await request(app)

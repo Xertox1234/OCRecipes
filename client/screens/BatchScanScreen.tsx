@@ -57,7 +57,7 @@ export default function BatchScanScreen() {
 
   // Start session on mount
   useEffect(() => {
-    startSession("barcode");
+    startSession();
     announcementCountRef.current = 0;
   }, [startSession]);
 

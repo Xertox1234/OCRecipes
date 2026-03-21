@@ -13,6 +13,16 @@ import {
 } from "@shared/schema";
 import type { ResolvedBatchItem } from "@shared/types/batch-scan";
 
+export class BatchStorageError extends Error {
+  constructor(
+    message: string,
+    public code: "NOT_FOUND" | "LIMIT_REACHED",
+  ) {
+    super(message);
+    this.name = "BatchStorageError";
+  }
+}
+
 /**
  * Batch create scanned items and corresponding daily logs in a single transaction.
  * Insert ordering: scannedItems first (dailyLogs.scannedItemId is a FK).
@@ -107,7 +117,7 @@ export async function batchCreateGroceryItems(
           and(eq(groceryLists.id, listId), eq(groceryLists.userId, userId)),
         );
       if (!list) {
-        throw new Error("Grocery list not found or access denied");
+        throw new BatchStorageError("Grocery list not found", "NOT_FOUND");
       }
     } else {
       // Auto-create grocery list
@@ -116,8 +126,9 @@ export async function batchCreateGroceryItems(
         .from(groceryLists)
         .where(eq(groceryLists.userId, userId));
       if (countResult.count >= 50) {
-        throw new Error(
+        throw new BatchStorageError(
           "Maximum grocery list limit reached (50). Delete an existing list first.",
+          "LIMIT_REACHED",
         );
       }
 

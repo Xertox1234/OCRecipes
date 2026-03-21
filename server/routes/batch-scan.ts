@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
+import { BatchStorageError } from "../storage/batch";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { batchSaveRequestSchema } from "@shared/types/batch-scan";
@@ -39,7 +40,7 @@ export function register(app: Express): void {
             return sendError(
               res,
               400,
-              `Invalid barcode format: ${item.barcode}`,
+              "One or more items contain an invalid barcode format",
               ErrorCode.VALIDATION_ERROR,
             );
           }
@@ -82,21 +83,23 @@ export function register(app: Express): void {
                 groceryListId: result.groceryListId,
               });
             } catch (error) {
-              const message =
-                error instanceof Error ? error.message : "Unknown error";
-              if (
-                message.includes("not found") ||
-                message.includes("access denied")
-              ) {
-                return sendError(
-                  res,
-                  404,
-                  "Grocery list not found",
-                  ErrorCode.NOT_FOUND,
-                );
-              }
-              if (message.includes("limit reached")) {
-                return sendError(res, 400, message, ErrorCode.VALIDATION_ERROR);
+              if (error instanceof BatchStorageError) {
+                if (error.code === "NOT_FOUND") {
+                  return sendError(
+                    res,
+                    404,
+                    "Grocery list not found",
+                    ErrorCode.NOT_FOUND,
+                  );
+                }
+                if (error.code === "LIMIT_REACHED") {
+                  return sendError(
+                    res,
+                    400,
+                    error.message,
+                    ErrorCode.VALIDATION_ERROR,
+                  );
+                }
               }
               throw error;
             }

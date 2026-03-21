@@ -31,17 +31,35 @@ type BatchSummaryNavProp = NativeStackNavigationProp<
   "BatchSummary"
 >;
 
-const DESTINATIONS: { key: BatchDestination; label: string; icon: string }[] = [
-  { key: "daily_log", label: "Log to Daily Intake", icon: "plus-circle" },
-  { key: "pantry", label: "Add to Pantry", icon: "package" },
-  { key: "grocery_list", label: "Add to Grocery List", icon: "shopping-cart" },
+const DESTINATIONS: {
+  key: BatchDestination;
+  label: string;
+  shortLabel: string;
+  icon: string;
+}[] = [
+  {
+    key: "daily_log",
+    label: "Log to Daily Intake",
+    shortLabel: "Daily Intake",
+    icon: "plus-circle",
+  },
+  {
+    key: "pantry",
+    label: "Add to Pantry",
+    shortLabel: "Pantry",
+    icon: "package",
+  },
+  {
+    key: "grocery_list",
+    label: "Add to Grocery List",
+    shortLabel: "Grocery List",
+    icon: "shopping-cart",
+  },
 ];
 
-const DESTINATION_LABELS: Record<BatchDestination, string> = {
-  daily_log: "Daily Intake",
-  pantry: "Pantry",
-  grocery_list: "Grocery List",
-};
+function getDestinationLabel(key: BatchDestination): string {
+  return DESTINATIONS.find((d) => d.key === key)!.shortLabel;
+}
 
 export default function BatchSummaryScreen() {
   const navigation = useNavigation<BatchSummaryNavProp>();
@@ -150,7 +168,7 @@ export default function BatchSummaryScreen() {
       });
 
       const count = resolvedItems.length;
-      const destLabel = DESTINATION_LABELS[destination];
+      const destLabel = getDestinationLabel(destination);
       AccessibilityInfo.announceForAccessibility(
         `${count} item${count !== 1 ? "s" : ""} saved to ${destLabel}`,
       );
@@ -333,7 +351,7 @@ export default function BatchSummaryScreen() {
         accessibilityLabel={
           pendingCount > 0
             ? `Waiting for ${pendingCount} item${pendingCount !== 1 ? "s" : ""} to load`
-            : `Add ${resolvedItems.length} item${resolvedItems.length !== 1 ? "s" : ""} to ${DESTINATION_LABELS[destination]}`
+            : `Add ${resolvedItems.length} item${resolvedItems.length !== 1 ? "s" : ""} to ${getDestinationLabel(destination)}`
         }
         accessibilityState={{ disabled: !canConfirm, busy: isSaving }}
       >
@@ -343,7 +361,7 @@ export default function BatchSummaryScreen() {
           <Text style={[styles.confirmText, { color: theme.buttonText }]}>
             {pendingCount > 0
               ? `Waiting for ${pendingCount} item${pendingCount !== 1 ? "s" : ""}...`
-              : `Add ${resolvedItems.length} item${resolvedItems.length !== 1 ? "s" : ""} to ${DESTINATION_LABELS[destination]}`}
+              : `Add ${resolvedItems.length} item${resolvedItems.length !== 1 ? "s" : ""} to ${getDestinationLabel(destination)}`}
           </Text>
         )}
       </Pressable>
