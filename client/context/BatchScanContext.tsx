@@ -51,6 +51,7 @@ interface BatchScanContextValue {
   startSession: () => void;
   addItemAndLookup: (barcode: string) => void;
   incrementQuantity: (barcode: string) => void;
+  updateItemQuantity: (id: string, quantity: number) => void;
   removeItem: (id: string) => void;
   retryItem: (id: string) => void;
   clearSession: () => void;
@@ -238,6 +239,14 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const updateItemQuantity = useCallback((id: string, quantity: number) => {
+    const clamped = Math.max(1, Math.min(99, quantity));
+    const item = itemsRef.current.find((i) => i.id === id);
+    if (item) {
+      item.quantity = clamped;
+    }
+  }, []);
+
   const removeItem = useCallback((id: string) => {
     const controller = abortControllersRef.current.get(id);
     if (controller) {
@@ -298,6 +307,7 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
       startSession,
       addItemAndLookup,
       incrementQuantity,
+      updateItemQuantity,
       removeItem,
       retryItem,
       clearSession,
@@ -309,6 +319,7 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
       startSession,
       addItemAndLookup,
       incrementQuantity,
+      updateItemQuantity,
       removeItem,
       retryItem,
       clearSession,

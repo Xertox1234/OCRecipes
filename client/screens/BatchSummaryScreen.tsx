@@ -71,6 +71,7 @@ export default function BatchSummaryScreen() {
     itemCount,
     removeItem,
     retryItem,
+    updateItemQuantity,
     clearSession,
     isSaving,
     setSaving,
@@ -190,6 +191,20 @@ export default function BatchSummaryScreen() {
     navigation,
   ]);
 
+  const handleQuantityChange = useCallback(
+    (id: string, quantity: number) => {
+      updateItemQuantity(id, quantity);
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === id
+            ? { ...i, quantity: Math.max(1, Math.min(99, quantity)) }
+            : i,
+        ),
+      );
+    },
+    [updateItemQuantity],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: BatchItem }) => (
       <BatchItemRow
@@ -197,9 +212,10 @@ export default function BatchSummaryScreen() {
         theme={theme}
         onRemove={handleRemove}
         onRetry={handleRetry}
+        onQuantityChange={handleQuantityChange}
       />
     ),
-    [theme, handleRemove, handleRetry],
+    [theme, handleRemove, handleRetry, handleQuantityChange],
   );
 
   const keyExtractor = useCallback((item: BatchItem) => item.id, []);
@@ -378,11 +394,13 @@ const BatchItemRow = React.memo(function BatchItemRow({
   theme,
   onRemove,
   onRetry,
+  onQuantityChange,
 }: {
   item: BatchItem;
   theme: ReturnType<typeof useTheme>["theme"];
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
+  onQuantityChange: (id: string, quantity: number) => void;
 }) {
   const accessibilityActions = useMemo(() => {
     const actions = [{ name: "delete", label: "Delete item" }];
@@ -437,11 +455,46 @@ const BatchItemRow = React.memo(function BatchItemRow({
             >
               {item.productName}
             </Text>
-            {item.quantity > 1 && (
-              <Text style={[styles.quantity, { color: theme.textSecondary }]}>
-                x{item.quantity}
+            <View style={styles.quantityStepper}>
+              <Pressable
+                onPress={() => onQuantityChange(item.id, item.quantity - 1)}
+                disabled={item.quantity <= 1}
+                accessibilityRole="button"
+                accessibilityLabel={`Decrease quantity, currently ${item.quantity}`}
+                hitSlop={8}
+                style={[
+                  styles.stepperButton,
+                  {
+                    borderColor: theme.border,
+                    opacity: item.quantity <= 1 ? 0.3 : 1,
+                  },
+                ]}
+              >
+                <Feather name="minus" size={14} color={theme.text} />
+              </Pressable>
+              <Text
+                style={[styles.quantityText, { color: theme.text }]}
+                accessibilityLabel={`Quantity ${item.quantity}`}
+              >
+                {item.quantity}
               </Text>
-            )}
+              <Pressable
+                onPress={() => onQuantityChange(item.id, item.quantity + 1)}
+                disabled={item.quantity >= 99}
+                accessibilityRole="button"
+                accessibilityLabel={`Increase quantity, currently ${item.quantity}`}
+                hitSlop={8}
+                style={[
+                  styles.stepperButton,
+                  {
+                    borderColor: theme.border,
+                    opacity: item.quantity >= 99 ? 0.3 : 1,
+                  },
+                ]}
+              >
+                <Feather name="plus" size={14} color={theme.text} />
+              </Pressable>
+            </View>
           </View>
           {item.brandName && (
             <Text
@@ -583,9 +636,24 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
   },
-  quantity: {
-    fontSize: 13,
-    fontWeight: "500",
+  quantityStepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+  },
+  stepperButton: {
+    width: 28,
+    height: 28,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  quantityText: {
+    fontSize: 14,
+    fontWeight: "600",
+    minWidth: 20,
+    textAlign: "center",
   },
   brandName: {
     fontSize: 13,

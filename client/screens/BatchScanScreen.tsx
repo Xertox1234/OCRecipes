@@ -200,14 +200,16 @@ export default function BatchScanScreen() {
 
   return (
     <View style={styles.container} accessibilityViewIsModal>
-      {/* Camera */}
-      <CameraView
-        ref={cameraRef}
-        style={StyleSheet.absoluteFill}
-        barcodeTypes={availableBarcodeTypes}
-        isActive={isFocused && itemCount < MAX_ITEMS}
-        onBarcodeScanned={handleBarcodeScanned}
-      />
+      {/* Camera — wrapped in View with accessible={false} to keep VoiceOver off the preview */}
+      <View accessible={false} style={StyleSheet.absoluteFill}>
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          barcodeTypes={availableBarcodeTypes}
+          isActive={isFocused && itemCount < MAX_ITEMS}
+          onBarcodeScanned={handleBarcodeScanned}
+        />
+      </View>
 
       {/* Close button (top-left) */}
       <Pressable
