@@ -113,6 +113,14 @@ export default function ReceiptCaptureScreen() {
         style={[styles.centered, { backgroundColor: theme.backgroundDefault }]}
       >
         <ActivityIndicator size="large" color={theme.link} />
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={styles.backLink}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ThemedText style={{ color: theme.link }}>Go Back</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -378,12 +386,22 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   topButton: {
-    padding: Spacing.sm,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.4)", // hardcoded — ensures visibility on light camera fallback
+    justifyContent: "center",
+    alignItems: "center",
   },
   topTitle: {
     color: "#FFFFFF", // hardcoded
     fontSize: 17,
     fontWeight: "600",
+    backgroundColor: "rgba(0,0,0,0.4)", // hardcoded — ensures visibility on light camera fallback
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    overflow: "hidden",
   },
   scanCounter: {
     backgroundColor: "rgba(0,0,0,0.5)",
