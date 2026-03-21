@@ -355,18 +355,60 @@ export default function QuickLogScreen() {
         {/* Tip card + suggestions (when no parsed items) */}
         {parsedItems.length === 0 && !isParsing && (
           <View style={styles.helpSection}>
+            {/* Previous Items or Examples */}
+            <ThemedText
+              type="caption"
+              accessibilityRole="header"
+              style={[styles.helpText, { color: theme.textSecondary }]}
+            >
+              {hasPreviousItems ? "Previous Items:" : "Examples:"}
+            </ThemedText>
+            {(hasPreviousItems
+              ? (frequentItems ?? []).map((item) => ({
+                  key: item.productName,
+                  label: item.productName,
+                  a11yPrefix: "Use previous item",
+                }))
+              : EXAMPLE_ITEMS.map((example) => ({
+                  key: example,
+                  label: example,
+                  a11yPrefix: "Use example",
+                }))
+            ).map(({ key, label, a11yPrefix }) => (
+              <Pressable
+                key={key}
+                onPress={() => handleChipPress(label)}
+                accessibilityLabel={`${a11yPrefix}: ${label}`}
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.exampleChip,
+                  {
+                    backgroundColor: withOpacity(theme.link, 0.1),
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <ThemedText style={[styles.exampleText, { color: theme.link }]}>
+                  {label}
+                </ThemedText>
+              </Pressable>
+            ))}
+
             {/* Instructional tip */}
             <View
               style={[
                 styles.tipCard,
-                { backgroundColor: withOpacity(theme.link, 0.08) },
+                {
+                  backgroundColor: withOpacity(theme.link, 0.15),
+                  borderColor: withOpacity(theme.link, 0.25),
+                },
               ]}
-              accessibilityRole="text"
+              accessible={true}
               accessibilityLabel={tip.text}
             >
               <Feather
                 name={tip.icon}
-                size={16}
+                size={20}
                 color={theme.link}
                 style={styles.tipIcon}
               />
@@ -377,58 +419,6 @@ export default function QuickLogScreen() {
                 {tip.text}
               </ThemedText>
             </View>
-
-            {/* Previous Items or Examples */}
-            <ThemedText
-              type="caption"
-              accessibilityRole="header"
-              style={[styles.helpText, { color: theme.textSecondary }]}
-            >
-              {hasPreviousItems ? "Previous Items:" : "Examples:"}
-            </ThemedText>
-            {hasPreviousItems
-              ? frequentItems!.map((item) => (
-                  <Pressable
-                    key={item.productName}
-                    onPress={() => handleChipPress(item.productName)}
-                    accessibilityLabel={`Use previous item: ${item.productName}`}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [
-                      styles.exampleChip,
-                      {
-                        backgroundColor: withOpacity(theme.link, 0.1),
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <ThemedText
-                      style={[styles.exampleText, { color: theme.link }]}
-                    >
-                      {item.productName}
-                    </ThemedText>
-                  </Pressable>
-                ))
-              : EXAMPLE_ITEMS.map((example) => (
-                  <Pressable
-                    key={example}
-                    onPress={() => handleChipPress(example)}
-                    accessibilityLabel={`Use example: ${example}`}
-                    accessibilityRole="button"
-                    style={({ pressed }) => [
-                      styles.exampleChip,
-                      {
-                        backgroundColor: withOpacity(theme.link, 0.1),
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                  >
-                    <ThemedText
-                      style={[styles.exampleText, { color: theme.link }]}
-                    >
-                      {example}
-                    </ThemedText>
-                  </Pressable>
-                ))}
           </View>
         )}
       </ScrollView>
@@ -472,7 +462,7 @@ const styles = StyleSheet.create({
   cameraButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: BorderRadius.full,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -497,18 +487,19 @@ const styles = StyleSheet.create({
   tipCard: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.xs,
-    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginTop: Spacing.lg,
   },
   tipIcon: {
-    marginRight: Spacing.sm,
+    marginRight: Spacing.md,
   },
   tipText: {
     flex: 1,
-    fontSize: 13,
-    fontFamily: FontFamily.regular,
+    fontSize: 14,
+    fontFamily: FontFamily.medium,
   },
   helpText: {
     marginBottom: Spacing.sm,
