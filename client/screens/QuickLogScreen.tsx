@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   AccessibilityInfo,
+  InteractionManager,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -52,13 +53,8 @@ const QUICK_LOG_TIPS = [
   { text: "You can log multiple items at once", icon: "list" as const },
 ];
 
-// Module-level counter persists across modal opens within a session
-let tipCounter = 0;
-
-function getNextTip() {
-  const tip = QUICK_LOG_TIPS[tipCounter % QUICK_LOG_TIPS.length];
-  tipCounter++;
-  return tip;
+function randomTip() {
+  return QUICK_LOG_TIPS[Math.floor(Math.random() * QUICK_LOG_TIPS.length)];
 }
 
 // ── Examples ──────────────────────────────────────────────────────────────────
@@ -85,7 +81,7 @@ export default function QuickLogScreen() {
 
   const [textInput, setTextInput] = useState("");
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
-  const [tip] = useState(() => getNextTip());
+  const [tip] = useState(randomTip);
 
   const {
     isListening,
@@ -109,11 +105,7 @@ export default function QuickLogScreen() {
         "/api/scanned-items/frequent?limit=5",
       );
       const data = (await res.json()) as {
-        items: {
-          productName: string;
-          logCount: number;
-          lastLogged: string;
-        }[];
+        items: { productName: string }[];
       };
       return data.items;
     },
@@ -188,7 +180,9 @@ export default function QuickLogScreen() {
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.goBack();
-    navigation.navigate("Scan");
+    InteractionManager.runAfterInteractions(() => {
+      navigation.navigate("Scan");
+    });
   }, [haptics, navigation]);
 
   const logAllItems = useMutation({
@@ -291,6 +285,7 @@ export default function QuickLogScreen() {
             <Pressable
               onPress={handleCameraPress}
               accessibilityLabel="Take a photo to log food"
+              accessibilityHint="Closes quick log and opens the camera"
               accessibilityRole="button"
               style={({ pressed }) => [
                 styles.cameraButton,
@@ -395,34 +390,49 @@ export default function QuickLogScreen() {
             >
               {hasPreviousItems ? "Previous Items:" : "Examples:"}
             </ThemedText>
-            {(hasPreviousItems ? frequentItems! : EXAMPLE_ITEMS).map((item) => {
-              const text = typeof item === "string" ? item : item.productName;
-              return (
-                <Pressable
-                  key={text}
-                  onPress={() => handleChipPress(text)}
-                  accessibilityLabel={
-                    hasPreviousItems
-                      ? `Use previous item: ${text}`
-                      : `Use example: ${text}`
-                  }
-                  accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.exampleChip,
-                    {
-                      backgroundColor: withOpacity(theme.link, 0.1),
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                >
-                  <ThemedText
-                    style={[styles.exampleText, { color: theme.link }]}
+            {hasPreviousItems
+              ? frequentItems!.map((item) => (
+                  <Pressable
+                    key={item.productName}
+                    onPress={() => handleChipPress(item.productName)}
+                    accessibilityLabel={`Use previous item: ${item.productName}`}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [
+                      styles.exampleChip,
+                      {
+                        backgroundColor: withOpacity(theme.link, 0.1),
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
                   >
-                    {text}
-                  </ThemedText>
-                </Pressable>
-              );
-            })}
+                    <ThemedText
+                      style={[styles.exampleText, { color: theme.link }]}
+                    >
+                      {item.productName}
+                    </ThemedText>
+                  </Pressable>
+                ))
+              : EXAMPLE_ITEMS.map((example) => (
+                  <Pressable
+                    key={example}
+                    onPress={() => handleChipPress(example)}
+                    accessibilityLabel={`Use example: ${example}`}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [
+                      styles.exampleChip,
+                      {
+                        backgroundColor: withOpacity(theme.link, 0.1),
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                    ]}
+                  >
+                    <ThemedText
+                      style={[styles.exampleText, { color: theme.link }]}
+                    >
+                      {example}
+                    </ThemedText>
+                  </Pressable>
+                ))}
           </View>
         )}
       </ScrollView>

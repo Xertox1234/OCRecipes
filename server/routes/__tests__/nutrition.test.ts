@@ -499,12 +499,12 @@ describe("Nutrition Routes", () => {
         {
           productName: "2 eggs and toast",
           logCount: 12,
-          lastLogged: new Date("2026-03-20T10:00:00Z"),
+          lastLogged: "2026-03-20T10:00:00.000Z",
         },
         {
           productName: "chicken salad",
           logCount: 8,
-          lastLogged: new Date("2026-03-19T12:00:00Z"),
+          lastLogged: "2026-03-19T12:00:00.000Z",
         },
       ];
       vi.mocked(storage.getFrequentItems).mockResolvedValue(mockFrequentItems);

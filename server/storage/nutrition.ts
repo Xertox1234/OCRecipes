@@ -215,12 +215,12 @@ export async function toggleFavouriteScannedItem(
 export async function getFrequentItems(
   userId: string,
   limit = 5,
-): Promise<{ productName: string; logCount: number; lastLogged: Date }[]> {
+): Promise<{ productName: string; logCount: number; lastLogged: string }[]> {
   const rows = await db
     .select({
       productName: scannedItems.productName,
       logCount: sql<number>`cast(count(${dailyLogs.id}) as int)`,
-      lastLogged: sql<Date>`max(${dailyLogs.loggedAt})`,
+      lastLogged: sql<string>`max(${dailyLogs.loggedAt})`,
     })
     .from(dailyLogs)
     .innerJoin(scannedItems, eq(dailyLogs.scannedItemId, scannedItems.id))

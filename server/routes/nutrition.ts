@@ -154,13 +154,7 @@ export function register(app: Express): void {
         });
 
         const items = await storage.getFrequentItems(req.userId!, limit);
-        res.json({
-          items: items.map((item) => ({
-            productName: item.productName,
-            logCount: item.logCount,
-            lastLogged: item.lastLogged.toISOString(),
-          })),
-        });
+        res.json({ items });
       } catch (error) {
         console.error("Error fetching frequent items:", error);
         sendError(
