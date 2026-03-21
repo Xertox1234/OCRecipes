@@ -189,6 +189,8 @@ export default function QuickLogScreen() {
     mutationFn: async (items: ParsedFoodItem[]) => {
       const results = [];
       for (const item of items) {
+        // POST /api/scanned-items creates both the scanned item
+        // AND a daily log entry in a single transaction
         const res = await apiRequest("POST", "/api/scanned-items", {
           productName: `${item.quantity} ${item.unit} ${item.name}`,
           sourceType: "voice",
@@ -198,13 +200,7 @@ export default function QuickLogScreen() {
           fat: item.fat?.toString(),
           servingSize: item.servingSize,
         });
-        const scannedItem = await res.json();
-        // Create daily log
-        await apiRequest("POST", "/api/daily-summary", {
-          scannedItemId: scannedItem.id,
-          source: "voice",
-        });
-        results.push(scannedItem);
+        results.push(await res.json());
       }
       return results;
     },
