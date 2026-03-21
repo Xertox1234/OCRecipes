@@ -194,6 +194,14 @@ export default function BatchScanScreen() {
             Grant Permission
           </Text>
         </Pressable>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={styles.closeLink}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Text style={{ color: theme.link }}>Go Back</Text>
+        </Pressable>
       </View>
     );
   }
@@ -333,6 +341,10 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     fontSize: 16,
     fontWeight: "600",
+  },
+  closeLink: {
+    marginTop: Spacing.lg,
+    padding: Spacing.sm,
   },
   closeButton: {
     position: "absolute",

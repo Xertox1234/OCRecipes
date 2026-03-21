@@ -193,6 +193,14 @@ export default function CookSessionCaptureScreen() {
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       >
         <ActivityIndicator size="large" color={theme.success} />
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={styles.closeLink}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ThemedText style={{ color: theme.link }}>Go Back</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -236,6 +244,14 @@ export default function CookSessionCaptureScreen() {
                 ? "Open Settings"
                 : "Grant Permission"}
             </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => navigation.goBack()}
+            style={styles.closeLink}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <ThemedText style={{ color: theme.link }}>Go Back</ThemedText>
           </Pressable>
         </View>
       </View>
@@ -505,5 +521,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.full,
+  },
+  closeLink: {
+    marginTop: Spacing.lg,
+    padding: Spacing.sm,
   },
 });

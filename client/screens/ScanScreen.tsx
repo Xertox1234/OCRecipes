@@ -457,6 +457,14 @@ export default function ScanScreen() {
           color={theme.success}
           accessibilityLabel="Loading camera"
         />
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={styles.closeLink}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ThemedText style={{ color: theme.link }}>Go Back</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -525,6 +533,14 @@ export default function ScanScreen() {
             </ThemedText>
           </Pressable>
         )}
+        <Pressable
+          onPress={() => navigation.goBack()}
+          style={styles.closeLink}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ThemedText style={{ color: theme.link }}>Go Back</ThemedText>
+        </Pressable>
       </View>
     );
   }
@@ -897,6 +913,10 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     color: "#FFFFFF", // hardcoded — white text on colored button
     fontWeight: "600",
+  },
+  closeLink: {
+    marginTop: Spacing.lg,
+    padding: Spacing.sm,
   },
   webNote: {
     textAlign: "center",
