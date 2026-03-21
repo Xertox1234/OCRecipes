@@ -28,7 +28,7 @@ describe("action-config", () => {
   describe("getActionsByGroup", () => {
     it("returns only scanning actions", () => {
       const actions = getActionsByGroup("scanning");
-      expect(actions.length).toBe(5);
+      expect(actions.length).toBe(6);
       expect(actions.every((a) => a.group === "scanning")).toBe(true);
     });
 

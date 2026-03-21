@@ -377,3 +377,129 @@ describe("useCamera callback handling", () => {
     expect(setIsScanning).toHaveBeenCalledWith(true);
   });
 });
+
+describe("batch mode debouncing", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function createBatchHandler(options?: { debounceMs?: number }) {
+    const debounceMs = options?.debounceMs ?? 2000;
+    const onBarcodeScanned = vi.fn();
+    const scannedBarcodesRef = { current: new Map<string, number>() };
+    const isActiveRef = { current: true };
+    const setIsScanning = vi.fn();
+    const setLastScannedData = vi.fn();
+
+    const handleBarcodeScanned = (result: { data: string; type: string }) => {
+      if (!isActiveRef.current) return;
+      const now = Date.now();
+      const lastTime = scannedBarcodesRef.current.get(result.data);
+      if (lastTime !== undefined && now - lastTime < debounceMs) return;
+      const isRepeat = lastTime !== undefined;
+      scannedBarcodesRef.current.set(result.data, now);
+      setLastScannedData(result.data);
+      setIsScanning(true);
+      onBarcodeScanned(result, isRepeat);
+    };
+
+    return {
+      handleBarcodeScanned,
+      onBarcodeScanned,
+      scannedBarcodesRef,
+      isActiveRef,
+      setIsScanning,
+      setLastScannedData,
+    };
+  }
+
+  it("allows different barcodes immediately without global lock", () => {
+    const { handleBarcodeScanned, onBarcodeScanned } = createBatchHandler();
+
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    handleBarcodeScanned({ data: "9876543210987", type: "ean13" });
+    handleBarcodeScanned({ data: "1111111111111", type: "ean13" });
+
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(3);
+    expect(onBarcodeScanned).toHaveBeenNthCalledWith(
+      1,
+      { data: "1234567890123", type: "ean13" },
+      false,
+    );
+    expect(onBarcodeScanned).toHaveBeenNthCalledWith(
+      2,
+      { data: "9876543210987", type: "ean13" },
+      false,
+    );
+    expect(onBarcodeScanned).toHaveBeenNthCalledWith(
+      3,
+      { data: "1111111111111", type: "ean13" },
+      false,
+    );
+  });
+
+  it("ignores same barcode within 2s debounce window", () => {
+    const { handleBarcodeScanned, onBarcodeScanned } = createBatchHandler();
+
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    // Advance 500ms (within debounce window)
+    vi.advanceTimersByTime(500);
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    // Advance another 1000ms (still within 2s from first scan)
+    vi.advanceTimersByTime(1000);
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires callback with isRepeat=true for same barcode after debounce", () => {
+    const { handleBarcodeScanned, onBarcodeScanned } = createBatchHandler();
+
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+    expect(onBarcodeScanned).toHaveBeenLastCalledWith(
+      { data: "1234567890123", type: "ean13" },
+      false,
+    );
+
+    // Advance past the 2s debounce window
+    vi.advanceTimersByTime(2000);
+
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
+    expect(onBarcodeScanned).toHaveBeenLastCalledWith(
+      { data: "1234567890123", type: "ean13" },
+      true,
+    );
+  });
+
+  it("ignores events when isActiveRef is false", () => {
+    const { handleBarcodeScanned, onBarcodeScanned, isActiveRef } =
+      createBatchHandler();
+
+    isActiveRef.current = false;
+
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    handleBarcodeScanned({ data: "9876543210987", type: "ean13" });
+
+    expect(onBarcodeScanned).not.toHaveBeenCalled();
+  });
+
+  it("resumes processing when isActiveRef is set back to true", () => {
+    const { handleBarcodeScanned, onBarcodeScanned, isActiveRef } =
+      createBatchHandler();
+
+    isActiveRef.current = false;
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    expect(onBarcodeScanned).not.toHaveBeenCalled();
+
+    isActiveRef.current = true;
+    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+  });
+});

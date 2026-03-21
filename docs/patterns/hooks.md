@@ -462,3 +462,40 @@ queryKey: ["/api/allergen-check", stableKey],
 **References:**
 
 - `client/hooks/useAllergenCheck.ts` — canonical implementation
+
+### Map-Based Per-Key Debounce
+
+When debouncing events that arrive for multiple different keys (e.g., different barcodes in rapid succession), use a `Map<key, timestamp>` instead of a single `setTimeout` lock. This allows different keys immediately while debouncing repeated same-key events.
+
+```typescript
+const scannedBarcodesRef = useRef(new Map<string, number>());
+
+const handleBarcodeScanned = useCallback(
+  (result: BarcodeResult, isRepeat?: boolean) => {
+    const now = Date.now();
+    const lastTime = scannedBarcodesRef.current.get(result.data);
+
+    // Same key within debounce window → ignore
+    if (lastTime !== undefined && now - lastTime < debounceMs) return;
+
+    // Same key after debounce window → callback with isRepeat=true
+    const isRepeat = lastTime !== undefined;
+    scannedBarcodesRef.current.set(result.data, now);
+    onBarcodeScanned(result, isRepeat);
+  },
+  [debounceMs, onBarcodeScanned],
+);
+```
+
+**Why this is better than `setTimeout`:**
+
+- No timer races — the Map IS the debounce, no cleanup needed
+- No stale closures — timestamps are checked synchronously
+- Different keys process immediately (no global lock)
+- Same key after window triggers `isRepeat` callback (e.g., increment quantity)
+
+**When to use:** Any scenario where rapid events arrive for multiple distinct keys and you need per-key deduplication (batch scanning, multi-input forms, multi-touch gestures).
+
+**References:**
+
+- `client/camera/hooks/useCamera.ts` — `batch: true` mode uses Map-based debounce

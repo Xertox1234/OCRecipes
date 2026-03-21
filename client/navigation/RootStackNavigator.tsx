@@ -34,6 +34,8 @@ import type {
 } from "@shared/types/cook-session";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
+import BatchScanScreen from "@/screens/BatchScanScreen";
+import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -89,6 +91,8 @@ export type RootStackParamList = {
     sessionId: string;
     data: FrontLabelExtractionResult;
   };
+  BatchScan: undefined;
+  BatchSummary: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -275,6 +279,23 @@ export default function RootStackNavigator() {
             component={FrontLabelConfirmScreen}
             options={{
               headerTitle: "Product Details",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="BatchScan"
+            component={BatchScanScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="BatchSummary"
+            component={BatchSummaryScreen}
+            options={{
+              headerTitle: "Batch Summary",
               presentation: "modal",
             }}
           />

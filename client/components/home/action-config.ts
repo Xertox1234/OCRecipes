@@ -31,6 +31,9 @@ export function navigateAction(
     case "scan-nutrition-label":
       navigation.navigate("Scan", { mode: "label" });
       break;
+    case "batch-scan":
+      navigation.navigate("BatchScan");
+      break;
 
     // Nutrition & Health
     case "quick-log":
@@ -123,6 +126,13 @@ export const HOME_ACTIONS: HomeAction[] = [
     group: "scanning",
     icon: "file-text",
     label: "Scan Nutrition Label",
+  },
+  {
+    id: "batch-scan",
+    group: "scanning",
+    icon: "layers",
+    label: "Batch Scan",
+    subtitle: "Scan multiple barcodes",
   },
 
   // Nutrition & Health

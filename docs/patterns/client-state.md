@@ -411,3 +411,56 @@ if (verified) {
 
 - `client/screens/ScanScreen.tsx` — barcode verification before navigation
 - Related pattern: "Fetch Timeout with AbortSignal for External APIs" (server-side equivalent)
+
+### Ref-Based Context for High-Frequency Updates
+
+When a context manages data that updates rapidly (e.g., barcode scans at 1/second), store the full data in `useRef` and only expose derived counts in reducer state. Consumers that need the full list call `getItems()` on-demand (e.g., on mount). Consumers that need live counts (camera overlay badge) subscribe to the minimal state.
+
+```typescript
+// Context stores items in ref, counts in state
+const itemsRef = useRef<BatchItem[]>([]);
+const [state, dispatch] = useReducer(reducer, {
+  itemCount: 0,
+  pendingCount: 0,
+});
+
+// Camera screen only re-renders for itemCount (not 50 nutrition lookups resolving)
+const { itemCount } = useBatchScan();
+
+// Summary screen reads full list once on mount
+const items = getItems(); // returns [...itemsRef.current]
+```
+
+**Context owns fetch lifecycle with AbortController:**
+
+```typescript
+// AbortControllers stored per-item in a Map
+const abortControllersRef = useRef(new Map<string, AbortController>());
+
+// Lookups continue across navigation (context persists at app root)
+// clearSession() aborts all pending lookups
+const clearSession = useCallback(() => {
+  for (const controller of abortControllersRef.current.values()) {
+    controller.abort();
+  }
+  abortControllersRef.current.clear();
+  itemsRef.current = [];
+  dispatch({ type: "CLEAR" });
+}, []);
+```
+
+**Concurrency throttle with queue:**
+
+```typescript
+const MAX_CONCURRENT = 3;
+const inFlightRef = useRef(0);
+const queueRef = useRef<{ id: string; barcode: string }[]>([]);
+
+// processQueue() drains queue when a slot opens (called in finally block)
+```
+
+**When to use:** Context that manages async operations producing rapid state changes where most consumers only need aggregate values (counts, totals, latest status), not the full dataset.
+
+**References:**
+
+- `client/context/BatchScanContext.tsx` — ref-based items with reducer counts

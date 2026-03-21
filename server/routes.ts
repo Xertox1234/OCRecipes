@@ -29,6 +29,7 @@ import { register as registerCooking } from "./routes/cooking";
 import { register as registerAllergenCheck } from "./routes/allergen-check";
 import { register as registerCookbooks } from "./routes/cookbooks";
 import { register as registerVerification } from "./routes/verification";
+import { register as registerBatchScan } from "./routes/batch-scan";
 import { register as registerPublicApi } from "./routes/public-api";
 import { register as registerAdminApiKeys } from "./routes/admin-api-keys";
 import { register as registerApiDocs } from "./routes/api-docs";
@@ -69,6 +70,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAllergenCheck(app);
   registerCookbooks(app);
   registerVerification(app);
+  registerBatchScan(app);
 
   // Multer error handler - returns 400 for file validation errors instead of 500
   app.use(

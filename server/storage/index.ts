@@ -21,6 +21,7 @@ import * as receipt from "./receipt";
 import * as cookbooksStorage from "./cookbooks";
 import * as verification from "./verification";
 import * as apiKeysStorage from "./api-keys";
+import * as batch from "./batch";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 
@@ -184,6 +185,11 @@ export const storage = {
   getApiKeyUsageStats: apiKeysStorage.getUsageStats,
   upsertBarcodeNutrition: apiKeysStorage.upsertBarcodeNutrition,
   getBarcodeNutrition: apiKeysStorage.getBarcodeNutrition,
+
+  // Batch scan
+  batchCreateScannedItemsWithLogs: batch.batchCreateScannedItemsWithLogs,
+  batchCreatePantryItems: batch.batchCreatePantryItems,
+  batchCreateGroceryItems: batch.batchCreateGroceryItems,
 
   // Barcode verification
   getVerification: verification.getVerification,

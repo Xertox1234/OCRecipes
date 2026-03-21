@@ -868,3 +868,49 @@ registerProfile(app);
 
 - `server/routes/public-api.ts` — public API router with scoped middleware
 - `server/routes.ts` — registration order
+
+### Cross-Domain Storage Modules
+
+When a feature spans multiple domain tables (e.g., batch scan creates `scannedItems` + `dailyLogs` + `pantryItems` + `groceryListItems`), create a dedicated cross-domain storage module rather than adding methods to an existing domain module. Use `db.transaction()` to maintain atomicity.
+
+```typescript
+// server/storage/batch.ts — cross-domain module
+import { db } from "../db";
+import { scannedItems, dailyLogs, pantryItems } from "@shared/schema";
+
+export async function batchCreateScannedItemsWithLogs(
+  items: ResolvedBatchItem[],
+  userId: string,
+): Promise<{ scannedCount: number; logCount: number }> {
+  return db.transaction(async (tx) => {
+    // Step 1: Batch INSERT scannedItems → .returning({ id })
+    const scannedRows = await tx.insert(scannedItems).values(...).returning({ id: scannedItems.id });
+    // Step 2: Batch INSERT dailyLogs using returned IDs (FK dependency)
+    const logRows = await tx.insert(dailyLogs).values(...).returning({ id: dailyLogs.id });
+    return { scannedCount: scannedRows.length, logCount: logRows.length };
+  });
+}
+```
+
+**Use typed errors for domain-specific failures:**
+
+```typescript
+export class BatchStorageError extends Error {
+  constructor(
+    message: string,
+    public code: "NOT_FOUND" | "LIMIT_REACHED",
+  ) {
+    super(message);
+    this.name = "BatchStorageError";
+  }
+}
+```
+
+The route handler checks `instanceof BatchStorageError` + `error.code` — never string-match on `error.message`.
+
+**When to use:** Any feature that writes to 2+ tables from different domain modules in a single operation.
+
+**References:**
+
+- `server/storage/batch.ts` — cross-domain batch scan storage
+- `server/routes/batch-scan.ts` — typed error handling in route
