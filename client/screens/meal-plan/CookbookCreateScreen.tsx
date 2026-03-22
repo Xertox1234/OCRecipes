@@ -10,6 +10,7 @@ import {
   Platform,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -43,6 +44,7 @@ export default function CookbookCreateScreen() {
   const isEditMode = !!cookbookId;
 
   const headerHeight = useHeaderHeight();
+  const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -135,7 +137,7 @@ export default function CookbookCreateScreen() {
           flex: 1,
           paddingTop: headerHeight + Spacing.xl,
           paddingHorizontal: Spacing.lg,
-          paddingBottom: insets.bottom + Spacing.xl,
+          paddingBottom: tabBarHeight + Spacing.xl,
         }}
       >
         <ThemedText style={styles.label}>Name</ThemedText>
