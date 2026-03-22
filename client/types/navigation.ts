@@ -187,6 +187,30 @@ export type CookbookCreateScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
+ * Navigation prop for CookbookListScreen
+ * Can navigate within meal plan stack
+ */
+export type CookbookListScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList,
+  "CookbookList"
+>;
+
+/**
+ * Navigation prop for CookbookDetailScreen
+ * Uses CompositeNavigationProp to navigate across stacks:
+ * - Navigate within MealPlanStack (RecipeDetail, CookbookEdit)
+ * - Navigate to other tabs (MainTab)
+ * - Navigate to RootStack screens (FeaturedRecipeDetail modal for community recipes)
+ */
+export type CookbookDetailScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<MealPlanStackParamList, "CookbookDetail">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
+>;
+
+/**
  * Navigation prop for MenuScanResultScreen
  * Can use goBack or navigate within RootStack
  */

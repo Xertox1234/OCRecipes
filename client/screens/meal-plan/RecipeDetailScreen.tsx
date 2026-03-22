@@ -1,5 +1,11 @@
-import React, { useMemo } from "react";
-import { StyleSheet, View, ScrollView, ActivityIndicator } from "react-native";
+import React, { useMemo, useState } from "react";
+import {
+  StyleSheet,
+  View,
+  ScrollView,
+  ActivityIndicator,
+  Pressable,
+} from "react-native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute } from "@react-navigation/native";
@@ -10,6 +16,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { AllergenBadge } from "@/components/AllergenBadge";
 import { AllergenWarningBanner } from "@/components/AllergenWarningBanner";
 import { InlineSubstitution } from "@/components/InlineSubstitution";
+import { CookbookPickerModal } from "@/components/CookbookPickerModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useAllergenCheck } from "@/hooks/useAllergenCheck";
 import {
@@ -59,6 +66,7 @@ export default function RecipeDetailScreen() {
   const { theme } = useTheme();
 
   const { data: recipe, isLoading, error } = useMealPlanRecipeDetail(recipeId);
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   // Extract ingredient names for allergen checking
   const ingredientNames = useMemo(
@@ -235,6 +243,22 @@ export default function RecipeDetailScreen() {
               </View>
             )}
           </View>
+
+          {/* Save to Cookbook */}
+          <Pressable
+            onPress={() => setPickerVisible(true)}
+            style={[
+              styles.saveButton,
+              { backgroundColor: withOpacity(theme.link, 0.1) },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Save to cookbook"
+          >
+            <Feather name="bookmark" size={14} color={theme.link} />
+            <ThemedText style={[styles.saveButtonText, { color: theme.link }]}>
+              Save to Cookbook
+            </ThemedText>
+          </Pressable>
         </View>
 
         {/* Nutrition */}
@@ -388,6 +412,13 @@ export default function RecipeDetailScreen() {
           </View>
         )}
       </ScrollView>
+
+      <CookbookPickerModal
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        recipeId={recipeId}
+        recipeType="mealPlan"
+      />
     </View>
   );
 }
@@ -494,6 +525,20 @@ const styles = StyleSheet.create({
   },
   tagText: {
     fontSize: 12,
+    fontFamily: FontFamily.medium,
+  },
+  saveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    marginTop: Spacing.md,
+  },
+  saveButtonText: {
+    fontSize: 13,
     fontFamily: FontFamily.medium,
   },
 });

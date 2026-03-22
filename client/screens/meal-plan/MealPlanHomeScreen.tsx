@@ -846,6 +846,11 @@ export default function MealPlanHomeScreen() {
     navigation.navigate("Pantry");
   }, [haptics, navigation]);
 
+  const handleCookbooks = useCallback(() => {
+    haptics.selection();
+    navigation.navigate("CookbookList");
+  }, [haptics, navigation]);
+
   const handleRefresh = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
   }, [queryClient]);
@@ -1002,6 +1007,23 @@ export default function MealPlanHomeScreen() {
               style={[styles.groceryButtonText, { color: theme.link }]}
             >
               Grocery Lists
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={handleCookbooks}
+            hitSlop={8}
+            style={[
+              styles.groceryButton,
+              { backgroundColor: withOpacity(theme.link, 0.1) },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Cookbooks"
+          >
+            <Feather name="book" size={16} color={theme.link} />
+            <ThemedText
+              style={[styles.groceryButtonText, { color: theme.link }]}
+            >
+              Cookbooks
             </ThemedText>
           </Pressable>
         </View>
@@ -1232,6 +1254,7 @@ const styles = StyleSheet.create({
   },
   topActions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "flex-end",
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.sm,

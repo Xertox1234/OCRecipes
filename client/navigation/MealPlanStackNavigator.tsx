@@ -11,6 +11,8 @@ import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
 import GroceryListScreen from "@/screens/meal-plan/GroceryListScreen";
 import PantryScreen from "@/screens/meal-plan/PantryScreen";
 import CookbookCreateScreen from "@/screens/meal-plan/CookbookCreateScreen";
+import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
+import CookbookDetailScreen from "@/screens/meal-plan/CookbookDetailScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
@@ -37,7 +39,9 @@ export type MealPlanStackParamList = {
   GroceryLists: undefined;
   GroceryList: { listId: number };
   Pantry: undefined;
-  CookbookCreate: undefined;
+  CookbookCreate: { cookbookId?: number } | undefined;
+  CookbookList: undefined;
+  CookbookDetail: { cookbookId: number };
 };
 
 const Stack = createNativeStackNavigator<MealPlanStackParamList>();
@@ -123,13 +127,32 @@ export default function MealPlanStackNavigator() {
         }}
       />
       <Stack.Screen
+        name="CookbookList"
+        component={CookbookListScreen}
+        options={{
+          headerTitle: () => <HeaderTitle title="Cookbooks" showIcon={false} />,
+        }}
+      />
+      <Stack.Screen
+        name="CookbookDetail"
+        component={CookbookDetailScreen}
+        options={{
+          headerTitle: () => <HeaderTitle title="Cookbook" showIcon={false} />,
+        }}
+      />
+      <Stack.Screen
         name="CookbookCreate"
         component={CookbookCreateScreen}
-        options={{
+        options={({ route }) => ({
           headerTitle: () => (
-            <HeaderTitle title="New Cookbook" showIcon={false} />
+            <HeaderTitle
+              title={
+                route.params?.cookbookId ? "Edit Cookbook" : "New Cookbook"
+              }
+              showIcon={false}
+            />
           ),
-        }}
+        })}
       />
     </Stack.Navigator>
   );

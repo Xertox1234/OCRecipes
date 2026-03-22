@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -16,6 +16,7 @@ import type { RouteProp } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { CookbookPickerModal } from "@/components/CookbookPickerModal";
 import { useTheme } from "@/hooks/useTheme";
 import { resolveImageUrl } from "@/lib/query-client";
 import {
@@ -67,6 +68,7 @@ export default function FeaturedRecipeDetailScreen() {
   });
 
   const dismiss = useCallback(() => navigation.goBack(), [navigation]);
+  const [pickerVisible, setPickerVisible] = useState(false);
 
   const imageUri = useMemo(
     () => resolveImageUrl(recipe?.imageUrl),
@@ -171,6 +173,24 @@ export default function FeaturedRecipeDetailScreen() {
               ) : null}
             </View>
 
+            {/* Save to Cookbook */}
+            <Pressable
+              onPress={() => setPickerVisible(true)}
+              style={[
+                styles.saveButton,
+                { backgroundColor: withOpacity(theme.link, 0.1) },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Save to cookbook"
+            >
+              <Feather name="bookmark" size={14} color={theme.link} />
+              <ThemedText
+                style={[styles.saveButtonText, { color: theme.link }]}
+              >
+                Save to Cookbook
+              </ThemedText>
+            </Pressable>
+
             {/* Diet tags */}
             {uniqueTags.length > 0 ? (
               <View style={styles.tagRow}>
@@ -204,6 +224,13 @@ export default function FeaturedRecipeDetailScreen() {
           </View>
         </ScrollView>
       )}
+
+      <CookbookPickerModal
+        visible={pickerVisible}
+        onClose={() => setPickerVisible(false)}
+        recipeId={recipeId}
+        recipeType="community"
+      />
     </View>
   );
 }
@@ -294,5 +321,19 @@ const styles = StyleSheet.create({
   instructions: {
     fontSize: 15,
     lineHeight: 24,
+  },
+  saveButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    marginTop: Spacing.md,
+  },
+  saveButtonText: {
+    fontSize: 13,
+    fontFamily: FontFamily.medium,
   },
 });
