@@ -175,13 +175,14 @@ export const FastingTimer = React.memo(function FastingTimer({
   // Stable milestone props — passedHours only changes once per hour
   const passedHours = Math.floor(elapsedMinutes / 60);
 
-  // Build an accessible summary of milestones
-  const milestones = getMilestoneHours(targetHours);
-  const passedMilestones = milestones.filter((h) => passedHours >= h);
-  const milestoneSummary =
-    milestones.length > 0
-      ? `. Milestones: ${passedMilestones.length} of ${milestones.length} reached`
+  // Build an accessible summary of milestones (stable per hour bucket)
+  const milestoneSummary = useMemo(() => {
+    const milestones = getMilestoneHours(targetHours);
+    const passedCount = milestones.filter((h) => passedHours >= h).length;
+    return milestones.length > 0
+      ? `. Milestones: ${passedCount} of ${milestones.length} reached`
       : "";
+  }, [targetHours, passedHours]);
 
   return (
     <View
@@ -221,7 +222,7 @@ export const FastingTimer = React.memo(function FastingTimer({
           strokeWidth={strokeWidth}
           successColor={theme.success}
           mutedColor={withOpacity(theme.text, 0.3)}
-          mutedLabelColor={withOpacity(theme.text, 0.5)}
+          mutedLabelColor={theme.textSecondary}
         />
       </Svg>
       {/* Center text overlay */}

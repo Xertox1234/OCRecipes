@@ -52,12 +52,12 @@ import {
   getNextPhaseBoundary,
   FASTING_TIPS,
 } from "@/components/fasting-display-utils";
+import * as Notifications from "expo-notifications";
 import { requestNotificationPermission } from "@/lib/notifications";
 import {
   scheduleMilestoneNotifications,
   scheduleCheckInNotifications,
   scheduleEatingWindowNotifications,
-  cancelAllFastingNotifications,
 } from "@/lib/fasting-notifications";
 import type { FastingScreenNavigationProp } from "@/types/navigation";
 
@@ -245,9 +245,6 @@ export default function FastingScreen() {
     prevPhaseRef.current = currentPhase.name;
   }, [currentPhase]);
 
-  // Track scheduled notification IDs for cancellation
-  const notificationIdsRef = useRef<string[]>([]);
-
   // Random idle tip — stable per mount (LEARNINGS.md:59)
   const [idleTip] = useState(
     () => FASTING_TIPS[Math.floor(Math.random() * FASTING_TIPS.length)],
@@ -299,31 +296,29 @@ export default function FastingScreen() {
         }
 
         const startedAt = new Date(log.startedAt);
-        const ids: string[] = [];
+        const batches: Promise<string[]>[] = [];
 
         if (s?.notifyMilestones ?? true) {
-          const milestoneIds = await scheduleMilestoneNotifications(
-            startedAt,
-            log.targetDurationHours,
+          batches.push(
+            scheduleMilestoneNotifications(startedAt, log.targetDurationHours),
           );
-          ids.push(...milestoneIds);
         }
         if (s?.notifyCheckIns ?? true) {
-          const checkInIds = await scheduleCheckInNotifications(startedAt);
-          ids.push(...checkInIds);
+          batches.push(scheduleCheckInNotifications(startedAt));
         }
         if (
           (s?.notifyEatingWindow ?? true) &&
           s?.eatingWindowStart &&
           s?.eatingWindowEnd
         ) {
-          const windowIds = await scheduleEatingWindowNotifications(
-            s.eatingWindowStart,
-            s.eatingWindowEnd,
+          batches.push(
+            scheduleEatingWindowNotifications(
+              s.eatingWindowStart,
+              s.eatingWindowEnd,
+            ),
           );
-          ids.push(...windowIds);
         }
-        notificationIdsRef.current = ids;
+        await Promise.all(batches);
       },
       onError: (err) => {
         Alert.alert("Error", err.message || "Failed to start fast");
@@ -340,11 +335,8 @@ export default function FastingScreen() {
         onPress: () => {
           haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
 
-          // Cancel any pending notifications
-          if (notificationIdsRef.current.length > 0) {
-            cancelAllFastingNotifications(notificationIdsRef.current);
-            notificationIdsRef.current = [];
-          }
+          // Cancel all pending fasting notifications (survives unmount/crash)
+          Notifications.cancelAllScheduledNotificationsAsync();
 
           endFast.mutate(undefined, {
             onSuccess: (result) => {
@@ -549,9 +541,17 @@ export default function FastingScreen() {
       >
         {isFasting && currentPhase ? (
           <Card elevation={1} style={styles.phaseCard}>
-            <View accessibilityLiveRegion="polite">
+            <View
+              accessible
+              accessibilityLabel={`Current phase: ${currentPhase.name}. ${currentPhase.description}${nextPhaseBoundary ? `. Next phase: ${nextPhaseBoundary.phase.name} in ${formatDuration(nextPhaseBoundary.minutes - elapsedMinutes)}` : ""}`}
+            >
               <View style={styles.phaseHeader}>
-                <Feather name="activity" size={18} color={theme.link} />
+                <Feather
+                  name="activity"
+                  size={18}
+                  color={theme.link}
+                  importantForAccessibility="no"
+                />
                 <ThemedText style={[styles.phaseName, { color: theme.link }]}>
                   {currentPhase.name}
                 </ThemedText>
@@ -578,8 +578,14 @@ export default function FastingScreen() {
           </Card>
         ) : (
           <Card elevation={1} style={styles.phaseCard}>
-            <View style={styles.tipRow}>
-              <ThemedText style={styles.tipIcon}>{idleTip.icon}</ThemedText>
+            <View
+              style={styles.tipRow}
+              accessible
+              accessibilityLabel={idleTip.text}
+            >
+              <ThemedText style={styles.tipIcon} importantForAccessibility="no">
+                {idleTip.icon}
+              </ThemedText>
               <ThemedText
                 type="small"
                 style={[styles.tipText, { color: theme.textSecondary }]}
@@ -620,6 +626,7 @@ export default function FastingScreen() {
                 name="chatbubble-outline"
                 size={16}
                 color={theme.link}
+                importantForAccessibility="no"
               />
               <ThemedText
                 style={[styles.coachQuestionText, { color: theme.text }]}
@@ -631,6 +638,7 @@ export default function FastingScreen() {
                 name="chevron-forward"
                 size={16}
                 color={theme.textSecondary}
+                importantForAccessibility="no"
               />
             </Pressable>
           ))}
