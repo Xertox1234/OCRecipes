@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useLayoutEffect } from "react";
 import { StyleSheet, View, Pressable, FlatList, Alert } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -27,6 +27,26 @@ export default function CookbookListScreen() {
   const haptics = useHaptics();
   const { data: cookbooks, isLoading } = useCookbooks();
   const { mutate: deleteCookbook } = useDeleteCookbook();
+
+  // Add "+" button in header instead of a FAB (avoids collision with Scan FAB)
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => {
+            haptics.impact();
+            navigation.navigate("CookbookCreate");
+          }}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Create new cookbook"
+          style={{ marginRight: Spacing.md }}
+        >
+          <Feather name="plus" size={24} color={theme.link} />
+        </Pressable>
+      ),
+    });
+  }, [navigation, haptics, theme.link]);
 
   const handleDelete = useCallback(
     (id: number, name: string) => {
@@ -125,7 +145,7 @@ export default function CookbookListScreen() {
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.md,
           paddingHorizontal: Spacing.lg,
-          paddingBottom: tabBarHeight + Spacing.xl + 56,
+          paddingBottom: tabBarHeight + Spacing.xl,
         }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
@@ -142,25 +162,23 @@ export default function CookbookListScreen() {
             >
               Create a cookbook to organize your favorite recipes.
             </ThemedText>
+            <Pressable
+              onPress={() => {
+                haptics.impact();
+                navigation.navigate("CookbookCreate");
+              }}
+              style={[styles.createButton, { backgroundColor: theme.link }]}
+              accessibilityRole="button"
+              accessibilityLabel="Create cookbook"
+            >
+              <Feather name="plus" size={16} color={theme.buttonText} />
+              <ThemedText style={styles.createButtonText}>
+                Create Cookbook
+              </ThemedText>
+            </Pressable>
           </View>
         }
       />
-
-      {/* FAB */}
-      <Pressable
-        onPress={() => {
-          haptics.impact();
-          navigation.navigate("CookbookCreate");
-        }}
-        style={[
-          styles.fab,
-          { backgroundColor: theme.link, bottom: tabBarHeight + Spacing.md },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Create new cookbook"
-      >
-        <Feather name="plus" size={24} color={theme.buttonText} />
-      </Pressable>
     </View>
   );
 }
@@ -212,19 +230,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
+    marginBottom: Spacing.xl,
   },
-  fab: {
-    position: "absolute",
-    right: Spacing.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  createButton: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    elevation: 4,
-    shadowColor: "#000", // hardcoded
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+  },
+  createButtonText: {
+    color: "#FFFFFF", // hardcoded — always white text on colored button
+    fontSize: 15,
+    fontFamily: FontFamily.semiBold,
   },
 });
