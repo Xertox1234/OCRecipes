@@ -194,3 +194,18 @@ export type MenuScanResultScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "MenuScanResult"
 >;
+
+/**
+ * Navigation prop for FastingScreen
+ * Uses CompositeNavigationProp to navigate across stacks:
+ * - Navigate within HomeStack
+ * - Navigate to other tabs (CoachTab for Ask Coach)
+ * - Navigate to RootStack screens
+ */
+export type FastingScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<HomeStackParamList, "Fasting">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
+>;

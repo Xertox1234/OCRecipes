@@ -6,7 +6,7 @@ import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type ChatStackParamList = {
   ChatList: undefined;
-  Chat: { conversationId: number } | undefined;
+  Chat: { conversationId: number } | { initialMessage: string } | undefined;
 };
 
 const Stack = createNativeStackNavigator<ChatStackParamList>();

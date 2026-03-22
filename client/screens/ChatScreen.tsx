@@ -164,7 +164,14 @@ export default function ChatScreen() {
     transform: [{ scale: sendButtonScale.value }],
   }));
 
-  const conversationId = route.params?.conversationId ?? null;
+  const conversationId =
+    route.params && "conversationId" in route.params
+      ? route.params.conversationId
+      : null;
+  const initialMessage =
+    route.params && "initialMessage" in route.params
+      ? route.params.initialMessage
+      : undefined;
 
   const { data: messages, isLoading } = useChatMessages(conversationId);
   const { sendMessage, streamingContent, isStreaming, streamError } =
@@ -193,6 +200,16 @@ export default function ChatScreen() {
       shownStreamErrorRef.current = false;
     }
   }, [streamError, toast]);
+
+  // Auto-send initial message from cross-tab navigation (e.g. Ask Coach)
+  const didSendInitialRef = useRef(false);
+  useEffect(() => {
+    if (initialMessage && !didSendInitialRef.current) {
+      didSendInitialRef.current = true;
+      handleSend(initialMessage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage]);
 
   // Build display messages: fetched messages + optimistic user message + streaming assistant
   const displayMessages = useMemo(() => {

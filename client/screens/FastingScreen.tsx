@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   StyleSheet,
   View,
@@ -6,10 +12,12 @@ import {
   Pressable,
   Alert,
   RefreshControl,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { Feather } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
@@ -38,6 +46,21 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { formatDuration, formatDateShort as formatDate } from "@/lib/format";
+import {
+  getFastingPhase,
+  getNextPhaseBoundary,
+  FASTING_TIPS,
+} from "@/components/fasting-display-utils";
+import type { FastingScreenNavigationProp } from "@/types/navigation";
+
+const COACH_QUESTIONS = [
+  "Does coffee break my fast?",
+  "How do I handle hunger during a fast?",
+  "What are the benefits of 16:8 fasting?",
+  "Is it safe to exercise while fasting?",
+  "What should I eat to break my fast?",
+  "How does fasting affect metabolism?",
+];
 
 /** Compute elapsed minutes from a start time to now */
 function getElapsedMinutes(startedAt: string): number {
@@ -159,6 +182,8 @@ export default function FastingScreen() {
   const startFast = useStartFast();
   const endFast = useEndFast();
 
+  const navigation = useNavigation<FastingScreenNavigationProp>();
+
   const isFasting = currentFast != null;
   const stats = historyData?.stats;
   const logs = useMemo(() => historyData?.logs ?? [], [historyData?.logs]);
@@ -179,6 +204,54 @@ export default function FastingScreen() {
   }, [currentFast]);
 
   const weeklyData = useMemo(() => buildWeeklyData(logs), [logs]);
+
+  // Phase computation — stable per hour bucket (review #7)
+  const phaseHourBucket = Math.floor(elapsedMinutes / 60);
+  const currentPhase = useMemo(
+    () => (isFasting ? getFastingPhase(elapsedMinutes) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [phaseHourBucket, isFasting],
+  );
+  const nextPhaseBoundary = useMemo(
+    () => (isFasting ? getNextPhaseBoundary(elapsedMinutes) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [phaseHourBucket, isFasting],
+  );
+
+  // Phase transition — haptic + a11y announcement
+  const prevPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!currentPhase) {
+      prevPhaseRef.current = null;
+      return;
+    }
+    if (
+      prevPhaseRef.current !== null &&
+      currentPhase.name !== prevPhaseRef.current
+    ) {
+      AccessibilityInfo.announceForAccessibility(
+        `You've entered the ${currentPhase.name} phase`,
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    prevPhaseRef.current = currentPhase.name;
+  }, [currentPhase]);
+
+  // Random idle tip — stable per mount (LEARNINGS.md:59)
+  const [idleTip] = useState(
+    () => FASTING_TIPS[Math.floor(Math.random() * FASTING_TIPS.length)],
+  );
+
+  const handleCoachQuestion = useCallback(
+    (question: string) => {
+      haptics.selection();
+      navigation.navigate("CoachTab", {
+        screen: "Chat",
+        params: { initialMessage: question },
+      });
+    },
+    [haptics, navigation],
+  );
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([refetchCurrent(), refetchHistory()]);
@@ -396,11 +469,107 @@ export default function FastingScreen() {
         </Card>
       </Animated.View>
 
+      {/* Phase Info Card */}
+      <Animated.View
+        entering={
+          reducedMotion ? undefined : FadeInDown.delay(200).duration(400)
+        }
+      >
+        {isFasting && currentPhase ? (
+          <Card elevation={1} style={styles.phaseCard}>
+            <View accessibilityLiveRegion="polite">
+              <View style={styles.phaseHeader}>
+                <Feather name="activity" size={18} color={theme.link} />
+                <ThemedText style={[styles.phaseName, { color: theme.link }]}>
+                  {currentPhase.name}
+                </ThemedText>
+              </View>
+              <ThemedText
+                type="small"
+                style={[
+                  styles.phaseDescription,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                {currentPhase.description}
+              </ThemedText>
+              {nextPhaseBoundary && (
+                <ThemedText
+                  type="caption"
+                  style={[styles.phaseNext, { color: theme.text }]}
+                >
+                  Next: {nextPhaseBoundary.phase.name} in{" "}
+                  {formatDuration(nextPhaseBoundary.minutes - elapsedMinutes)}
+                </ThemedText>
+              )}
+            </View>
+          </Card>
+        ) : (
+          <Card elevation={1} style={styles.phaseCard}>
+            <View style={styles.tipRow}>
+              <ThemedText style={styles.tipIcon}>{idleTip.icon}</ThemedText>
+              <ThemedText
+                type="small"
+                style={[styles.tipText, { color: theme.textSecondary }]}
+              >
+                {idleTip.text}
+              </ThemedText>
+            </View>
+          </Card>
+        )}
+      </Animated.View>
+
+      {/* Ask Coach */}
+      <Animated.View
+        entering={
+          reducedMotion ? undefined : FadeInDown.delay(300).duration(400)
+        }
+      >
+        <Card elevation={1} style={styles.askCoachCard}>
+          <ThemedText type="h4" style={styles.sectionTitle}>
+            Ask Coach
+          </ThemedText>
+          {COACH_QUESTIONS.map((question) => (
+            <Pressable
+              key={question}
+              onPress={() => handleCoachQuestion(question)}
+              style={({ pressed }) => [
+                styles.coachQuestionRow,
+                {
+                  borderBottomColor: theme.border,
+                  opacity: pressed ? 0.6 : 1,
+                },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={question}
+              accessibilityHint="Opens coach chat and asks this question"
+            >
+              <Ionicons
+                name="chatbubble-outline"
+                size={16}
+                color={theme.link}
+              />
+              <ThemedText
+                style={[styles.coachQuestionText, { color: theme.text }]}
+                numberOfLines={1}
+              >
+                {question}
+              </ThemedText>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={theme.textSecondary}
+              />
+            </Pressable>
+          ))}
+        </Card>
+      </Animated.View>
+
       {/* Schedule Info Card */}
       {schedule && (
         <Animated.View
           entering={
-            reducedMotion ? undefined : FadeInDown.delay(200).duration(400)
+            reducedMotion ? undefined : FadeInDown.delay(400).duration(400)
           }
         >
           <Card elevation={1} style={styles.scheduleCard}>
@@ -449,7 +618,7 @@ export default function FastingScreen() {
       {logs.length > 0 && (
         <Animated.View
           entering={
-            reducedMotion ? undefined : FadeInDown.delay(300).duration(400)
+            reducedMotion ? undefined : FadeInDown.delay(500).duration(400)
           }
         >
           <Card elevation={1} style={styles.chartCard}>
@@ -500,7 +669,7 @@ export default function FastingScreen() {
       {stats && stats.totalFasts > 0 && (
         <Animated.View
           entering={
-            reducedMotion ? undefined : FadeInDown.delay(400).duration(400)
+            reducedMotion ? undefined : FadeInDown.delay(600).duration(400)
           }
         >
           <Card elevation={1} style={styles.statsCard}>
@@ -565,7 +734,7 @@ export default function FastingScreen() {
       {logs.length > 0 && (
         <Animated.View
           entering={
-            reducedMotion ? undefined : FadeInDown.delay(500).duration(400)
+            reducedMotion ? undefined : FadeInDown.delay(700).duration(400)
           }
         >
           <Card elevation={1} style={styles.historyCard}>
@@ -831,5 +1000,58 @@ const styles = StyleSheet.create({
   emptyText: {
     textAlign: "center",
     paddingHorizontal: Spacing.xl,
+  },
+  // Phase Info Card
+  phaseCard: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  phaseHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  phaseName: {
+    fontSize: 16,
+    fontFamily: FontFamily.semiBold,
+    fontWeight: "600",
+  },
+  phaseDescription: {
+    lineHeight: 20,
+  },
+  phaseNext: {
+    marginTop: Spacing.sm,
+    fontFamily: FontFamily.medium,
+    fontWeight: "500",
+  },
+  tipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  tipIcon: {
+    fontSize: 24,
+  },
+  tipText: {
+    flex: 1,
+    lineHeight: 20,
+  },
+  // Ask Coach
+  askCoachCard: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  coachQuestionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+  },
+  coachQuestionText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: FontFamily.regular,
   },
 });
