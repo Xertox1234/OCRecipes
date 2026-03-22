@@ -22,6 +22,7 @@ import CookSessionReviewScreen from "@/screens/CookSessionReviewScreen";
 import SubstitutionResultScreen from "@/screens/SubstitutionResultScreen";
 import ReceiptMealPlanScreen from "@/screens/meal-plan/ReceiptMealPlanScreen";
 import OnboardingNavigator from "@/navigation/OnboardingNavigator";
+import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -36,6 +37,7 @@ import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
+import WeightTrackingScreen from "@/screens/WeightTrackingScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -93,6 +95,7 @@ export type RootStackParamList = {
   };
   BatchScan: undefined;
   BatchSummary: undefined;
+  WeightTracking: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -296,6 +299,16 @@ export default function RootStackNavigator() {
             component={BatchSummaryScreen}
             options={{
               headerTitle: "Batch Summary",
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="WeightTracking"
+            component={WeightTrackingScreen}
+            options={{
+              headerTitle: () => (
+                <HeaderTitle title="Weight Tracking" showIcon={false} />
+              ),
               presentation: "modal",
             }}
           />
