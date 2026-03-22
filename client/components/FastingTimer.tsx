@@ -59,24 +59,30 @@ const MilestoneMarkers = React.memo(function MilestoneMarkers({
   mutedLabelColor,
 }: MilestoneMarkersProps) {
   const milestones = getMilestoneHours(targetHours);
-  const tickLength = strokeWidth + 4;
-  const labelOffset = strokeWidth + 18;
+  const tickInward = 6; // tick extends inward from ring
+  const tickOutward = 4; // tick extends outward from ring
+  const labelOutward = strokeWidth / 2 + 14; // label sits outside the ring
 
   return (
     <>
       {milestones.map((hour) => {
         const angle = milestoneToAngle(hour, targetHours);
-        const outer = polarToCartesian(center, center, radius, angle);
+        const outer = polarToCartesian(
+          center,
+          center,
+          radius + tickOutward,
+          angle,
+        );
         const inner = polarToCartesian(
           center,
           center,
-          radius - tickLength,
+          radius - tickInward,
           angle,
         );
         const labelPos = polarToCartesian(
           center,
           center,
-          radius - labelOffset,
+          radius + labelOutward,
           angle,
         );
         const isPassed = passedHours >= hour;
@@ -139,7 +145,8 @@ export const FastingTimer = React.memo(function FastingTimer({
   const isComplete = progress >= 1;
 
   const strokeWidth = 12;
-  const radius = (size - strokeWidth) / 2;
+  const labelMargin = 20; // space outside the ring for milestone labels
+  const radius = (size - strokeWidth) / 2 - labelMargin;
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
 
