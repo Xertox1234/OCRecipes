@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { InlineError } from "@/components/InlineError";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -38,6 +39,7 @@ function formatWeight(weight: string): string {
 
 export default function WeightTrackingScreen() {
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { isPremium } = usePremiumContext();
@@ -120,6 +122,7 @@ export default function WeightTrackingScreen() {
       <ScrollView
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
         contentContainerStyle={{
+          paddingTop: headerHeight + Spacing.lg,
           paddingBottom: insets.bottom + Spacing.xl,
         }}
         keyboardDismissMode="on-drag"

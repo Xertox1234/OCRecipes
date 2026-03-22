@@ -46,7 +46,7 @@ export function navigateAction(
       navigation.navigate("Fasting");
       break;
     case "log-weight":
-      navigation.navigate("ProfileTab", { screen: "WeightTracking" });
+      navigation.navigate("WeightTracking");
       break;
     case "ai-coach":
       navigation.navigate("CoachTab", { screen: "ChatList" });
