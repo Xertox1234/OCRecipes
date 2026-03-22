@@ -13,7 +13,6 @@ import PantryScreen from "@/screens/meal-plan/PantryScreen";
 import CookbookCreateScreen from "@/screens/meal-plan/CookbookCreateScreen";
 import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
 import CookbookDetailScreen from "@/screens/meal-plan/CookbookDetailScreen";
-import CookbookEditScreen from "@/screens/meal-plan/CookbookEditScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
@@ -40,10 +39,9 @@ export type MealPlanStackParamList = {
   GroceryLists: undefined;
   GroceryList: { listId: number };
   Pantry: undefined;
-  CookbookCreate: undefined;
+  CookbookCreate: { cookbookId?: number } | undefined;
   CookbookList: undefined;
   CookbookDetail: { cookbookId: number };
-  CookbookEdit: { cookbookId: number };
 };
 
 const Stack = createNativeStackNavigator<MealPlanStackParamList>();
@@ -131,11 +129,16 @@ export default function MealPlanStackNavigator() {
       <Stack.Screen
         name="CookbookCreate"
         component={CookbookCreateScreen}
-        options={{
+        options={({ route }) => ({
           headerTitle: () => (
-            <HeaderTitle title="New Cookbook" showIcon={false} />
+            <HeaderTitle
+              title={
+                route.params?.cookbookId ? "Edit Cookbook" : "New Cookbook"
+              }
+              showIcon={false}
+            />
           ),
-        }}
+        })}
       />
       <Stack.Screen
         name="CookbookList"
@@ -149,15 +152,6 @@ export default function MealPlanStackNavigator() {
         component={CookbookDetailScreen}
         options={{
           headerTitle: () => <HeaderTitle title="Cookbook" showIcon={false} />,
-        }}
-      />
-      <Stack.Screen
-        name="CookbookEdit"
-        component={CookbookEditScreen}
-        options={{
-          headerTitle: () => (
-            <HeaderTitle title="Edit Cookbook" showIcon={false} />
-          ),
         }}
       />
     </Stack.Navigator>

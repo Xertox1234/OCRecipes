@@ -42,7 +42,7 @@ const mockCookbook = {
 
 const mockResolvedRecipe = {
   recipeId: 10,
-  recipeType: "mealPlan",
+  recipeType: "mealPlan" as const,
   title: "Pasta Carbonara",
   description: "Classic Roman pasta",
   imageUrl: null,

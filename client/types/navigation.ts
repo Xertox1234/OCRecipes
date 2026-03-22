@@ -211,15 +211,6 @@ export type CookbookDetailScreenNavigationProp = CompositeNavigationProp<
 >;
 
 /**
- * Navigation prop for CookbookEditScreen
- * Can navigate within meal plan stack
- */
-export type CookbookEditScreenNavigationProp = NativeStackNavigationProp<
-  MealPlanStackParamList,
-  "CookbookEdit"
->;
-
-/**
  * Navigation prop for MenuScanResultScreen
  * Can use goBack or navigate within RootStack
  */

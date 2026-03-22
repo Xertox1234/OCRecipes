@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -11,14 +11,19 @@ import {
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
 import { NotificationFeedbackType } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import { useCreateCookbook } from "@/hooks/useCookbooks";
+import {
+  useCreateCookbook,
+  useCookbookDetail,
+  useUpdateCookbook,
+} from "@/hooks/useCookbooks";
 import {
   Spacing,
   BorderRadius,
@@ -26,54 +31,98 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import type { CookbookCreateScreenNavigationProp } from "@/types/navigation";
+import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 
 const NAME_MAX = 100;
 const DESCRIPTION_MAX = 500;
 
 export default function CookbookCreateScreen() {
   const navigation = useNavigation<CookbookCreateScreenNavigationProp>();
+  const route = useRoute<RouteProp<MealPlanStackParamList, "CookbookCreate">>();
+  const cookbookId = route.params?.cookbookId;
+  const isEditMode = !!cookbookId;
+
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const createMutation = useCreateCookbook();
+  const updateMutation = useUpdateCookbook();
+  const { data: existingCookbook } = useCookbookDetail(cookbookId ?? 0);
+
+  const mutation = isEditMode ? updateMutation : createMutation;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  // Pre-populate form when editing
+  useEffect(() => {
+    if (isEditMode && existingCookbook && !initialized) {
+      setName(existingCookbook.name);
+      setDescription(existingCookbook.description || "");
+      setInitialized(true);
+    }
+  }, [isEditMode, existingCookbook, initialized]);
 
   const trimmedName = name.trim();
-  const canSubmit = trimmedName.length > 0 && !createMutation.isPending;
+  const canSubmit = trimmedName.length > 0 && !mutation.isPending;
 
-  const handleCreate = useCallback(() => {
+  const handleSubmit = useCallback(() => {
     if (!trimmedName) return;
     setError(null);
 
-    createMutation.mutate(
-      {
-        name: trimmedName,
-        description: description.trim() || undefined,
-      },
-      {
-        onSuccess: () => {
-          haptics.notification(NotificationFeedbackType.Success);
-          if (Platform.OS === "ios") {
-            AccessibilityInfo.announceForAccessibility("Cookbook created");
-          }
-          navigation.goBack();
+    const onSuccess = () => {
+      haptics.notification(NotificationFeedbackType.Success);
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(
+          isEditMode ? "Cookbook updated" : "Cookbook created",
+        );
+      }
+      navigation.goBack();
+    };
+
+    const onError = (err: Error) => {
+      haptics.notification(NotificationFeedbackType.Error);
+      const msg =
+        err instanceof Error
+          ? err.message
+          : `Failed to ${isEditMode ? "update" : "create"} cookbook`;
+      setError(msg);
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(`Error: ${msg}`);
+      }
+    };
+
+    if (isEditMode && cookbookId) {
+      updateMutation.mutate(
+        {
+          id: cookbookId,
+          name: trimmedName,
+          description: description.trim() || null,
         },
-        onError: (err) => {
-          haptics.notification(NotificationFeedbackType.Error);
-          const msg =
-            err instanceof Error ? err.message : "Failed to create cookbook";
-          setError(msg);
-          if (Platform.OS === "ios") {
-            AccessibilityInfo.announceForAccessibility(`Error: ${msg}`);
-          }
+        { onSuccess, onError },
+      );
+    } else {
+      createMutation.mutate(
+        {
+          name: trimmedName,
+          description: description.trim() || undefined,
         },
-      },
-    );
-  }, [trimmedName, description, haptics, createMutation, navigation]);
+        { onSuccess, onError },
+      );
+    }
+  }, [
+    trimmedName,
+    description,
+    isEditMode,
+    cookbookId,
+    haptics,
+    createMutation,
+    updateMutation,
+    navigation,
+  ]);
 
   return (
     <KeyboardAvoidingView
@@ -107,7 +156,7 @@ export default function CookbookCreateScreen() {
           accessibilityLabel="Cookbook name"
           aria-invalid={!!error && !trimmedName}
           returnKeyType="next"
-          autoFocus
+          autoFocus={!isEditMode}
         />
         <ThemedText style={[styles.charCount, { color: theme.textSecondary }]}>
           {name.length}/{NAME_MAX}
@@ -150,10 +199,10 @@ export default function CookbookCreateScreen() {
         <View style={styles.spacer} />
 
         <Pressable
-          onPress={handleCreate}
+          onPress={handleSubmit}
           disabled={!canSubmit}
           style={[
-            styles.createButton,
+            styles.submitButton,
             {
               backgroundColor: canSubmit
                 ? theme.link
@@ -161,14 +210,14 @@ export default function CookbookCreateScreen() {
             },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Create cookbook"
+          accessibilityLabel={isEditMode ? "Save changes" : "Create cookbook"}
           accessibilityState={{ disabled: !canSubmit }}
         >
-          {createMutation.isPending ? (
+          {mutation.isPending ? (
             <ActivityIndicator size="small" color={theme.buttonText} />
           ) : (
-            <ThemedText style={styles.createButtonText}>
-              Create Cookbook
+            <ThemedText style={styles.submitButtonText}>
+              {isEditMode ? "Save Changes" : "Create Cookbook"}
             </ThemedText>
           )}
         </Pressable>
@@ -206,12 +255,12 @@ const styles = StyleSheet.create({
   spacer: {
     flex: 1,
   },
-  createButton: {
+  submitButton: {
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.card,
     alignItems: "center",
   },
-  createButtonText: {
+  submitButtonText: {
     color: "#FFFFFF", // hardcoded — always white text on colored button
     fontSize: 16,
     fontFamily: FontFamily.semiBold,

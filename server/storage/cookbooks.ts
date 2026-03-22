@@ -88,26 +88,29 @@ export async function deleteCookbook(
 export async function addRecipeToCookbook(
   cookbookId: number,
   recipeId: number,
-  recipeType: string,
+  recipeType: "mealPlan" | "community",
 ): Promise<CookbookRecipe | undefined> {
-  // Bump cookbook's updatedAt so it sorts to the top of the list
-  await db
-    .update(cookbooks)
-    .set({ updatedAt: sql`CURRENT_TIMESTAMP` })
-    .where(eq(cookbooks.id, cookbookId));
-
   const [added] = await db
     .insert(cookbookRecipes)
     .values({ cookbookId, recipeId, recipeType })
     .onConflictDoNothing()
     .returning();
+
+  // Only bump updatedAt if the insert actually succeeded (not a duplicate)
+  if (added) {
+    await db
+      .update(cookbooks)
+      .set({ updatedAt: sql`CURRENT_TIMESTAMP` })
+      .where(eq(cookbooks.id, cookbookId));
+  }
+
   return added || undefined;
 }
 
 export async function removeRecipeFromCookbook(
   cookbookId: number,
   recipeId: number,
-  recipeType: string,
+  recipeType: "mealPlan" | "community",
 ): Promise<boolean> {
   const result = await db
     .delete(cookbookRecipes)

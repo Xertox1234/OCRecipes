@@ -48,14 +48,14 @@ export function CookbookPickerModal({
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const { data: cookbooks, isLoading } = useCookbooks();
-  const createCookbook = useCreateCookbook();
-  const addRecipe = useAddRecipeToCookbook();
+  const { mutate: createCookbookMutate, isPending: isCreating } =
+    useCreateCookbook();
+  const { mutate: addRecipeMutate, isPending: isAdding } =
+    useAddRecipeToCookbook();
 
   const [showNewInput, setShowNewInput] = useState(false);
   const [newName, setNewName] = useState("");
   const [addingToId, setAddingToId] = useState<number | null>(null);
-
-  const isAdding = addRecipe.isPending;
 
   // Reset local state when modal is dismissed
   useEffect(() => {
@@ -70,7 +70,7 @@ export function CookbookPickerModal({
     (cookbookId: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setAddingToId(cookbookId);
-      addRecipe.mutate(
+      addRecipeMutate(
         { cookbookId, recipeId, recipeType },
         {
           onSuccess: () => {
@@ -94,13 +94,13 @@ export function CookbookPickerModal({
         },
       );
     },
-    [haptics, addRecipe, recipeId, recipeType, onClose],
+    [haptics, addRecipeMutate, recipeId, recipeType, onClose],
   );
 
   const handleCreateAndAdd = useCallback(() => {
     const name = newName.trim() || "My Cookbook";
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    createCookbook.mutate(
+    createCookbookMutate(
       { name },
       {
         onSuccess: (cookbook) => {
@@ -114,11 +114,9 @@ export function CookbookPickerModal({
         },
       },
     );
-  }, [haptics, createCookbook, newName, handleAddToCookbook]);
+  }, [haptics, createCookbookMutate, newName, handleAddToCookbook]);
 
   const handleClose = useCallback(() => {
-    setShowNewInput(false);
-    setNewName("");
     setAddingToId(null);
     onClose();
   }, [onClose]);
@@ -251,18 +249,18 @@ export function CookbookPickerModal({
             />
             <Pressable
               onPress={handleCreateAndAdd}
-              disabled={createCookbook.isPending}
+              disabled={isCreating}
               style={[
                 styles.createButton,
                 {
                   backgroundColor: theme.link,
-                  opacity: createCookbook.isPending ? 0.6 : 1,
+                  opacity: isCreating ? 0.6 : 1,
                 },
               ]}
               accessibilityRole="button"
               accessibilityLabel="Create cookbook and save recipe"
             >
-              {createCookbook.isPending ? (
+              {isCreating ? (
                 <ActivityIndicator size="small" color={theme.buttonText} />
               ) : (
                 <ThemedText style={{ color: theme.buttonText }}>

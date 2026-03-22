@@ -26,7 +26,7 @@ export default function CookbookListScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { data: cookbooks, isLoading } = useCookbooks();
-  const deleteMutation = useDeleteCookbook();
+  const { mutate: deleteCookbook } = useDeleteCookbook();
 
   const handleDelete = useCallback(
     (id: number, name: string) => {
@@ -40,13 +40,13 @@ export default function CookbookListScreen() {
             style: "destructive",
             onPress: () => {
               haptics.impact();
-              deleteMutation.mutate(id);
+              deleteCookbook(id);
             },
           },
         ],
       );
     },
-    [haptics, deleteMutation],
+    [haptics, deleteCookbook],
   );
 
   const renderItem = useCallback(

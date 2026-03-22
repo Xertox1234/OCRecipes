@@ -43,8 +43,8 @@ export default function CookbookDetailScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { data: cookbook, isLoading } = useCookbookDetail(cookbookId);
-  const deleteMutation = useDeleteCookbook();
-  const removeMutation = useRemoveRecipeFromCookbook();
+  const { mutate: deleteCookbook } = useDeleteCookbook();
+  const { mutate: removeRecipe } = useRemoveRecipeFromCookbook();
   const isRemovingRef = useRef(false);
 
   const handleRemoveRecipe = useCallback(
@@ -52,7 +52,7 @@ export default function CookbookDetailScreen() {
       if (isRemovingRef.current) return;
       isRemovingRef.current = true;
 
-      removeMutation.mutate(
+      removeRecipe(
         {
           cookbookId,
           recipeId: recipe.recipeId,
@@ -65,7 +65,7 @@ export default function CookbookDetailScreen() {
         },
       );
     },
-    [cookbookId, removeMutation],
+    [cookbookId, removeRecipe],
   );
 
   const handleRecipePress = useCallback(
@@ -83,7 +83,7 @@ export default function CookbookDetailScreen() {
   );
 
   const handleEdit = useCallback(() => {
-    navigation.navigate("CookbookEdit", { cookbookId });
+    navigation.navigate("CookbookCreate", { cookbookId });
   }, [navigation, cookbookId]);
 
   const handleDelete = useCallback(() => {
@@ -98,14 +98,14 @@ export default function CookbookDetailScreen() {
           style: "destructive",
           onPress: () => {
             haptics.impact();
-            deleteMutation.mutate(cookbookId, {
+            deleteCookbook(cookbookId, {
               onSuccess: () => navigation.goBack(),
             });
           },
         },
       ],
     );
-  }, [cookbook, haptics, deleteMutation, cookbookId, navigation]);
+  }, [cookbook, haptics, deleteCookbook, cookbookId, navigation]);
 
   const handleOverflowMenu = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
