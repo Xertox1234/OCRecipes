@@ -1395,6 +1395,21 @@ export type InsertCookbook = z.infer<typeof insertCookbookSchema>;
 export type CookbookRecipe = typeof cookbookRecipes.$inferSelect;
 export type InsertCookbookRecipe = typeof cookbookRecipes.$inferInsert;
 
+/** Cookbook with recipe count for list views */
+export type CookbookWithCount = Cookbook & { recipeCount: number };
+
+/** Resolved recipe data for cookbook detail — normalized from mealPlanRecipes or communityRecipes */
+export interface ResolvedCookbookRecipe {
+  recipeId: number;
+  recipeType: "mealPlan" | "community";
+  title: string;
+  description: string | null;
+  imageUrl: string | null;
+  servings: number | null;
+  difficulty: string | null;
+  addedAt: string;
+}
+
 // ============================================================================
 // Barcode Verification (Community-Verified Product Data)
 // ============================================================================

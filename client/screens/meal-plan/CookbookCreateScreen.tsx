@@ -12,20 +12,19 @@ import {
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import { useQueryClient } from "@tanstack/react-query";
 import { NotificationFeedbackType } from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useCreateCookbook } from "@/hooks/useCookbooks";
 import {
   Spacing,
   BorderRadius,
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import { apiRequest } from "@/lib/query-client";
 import type { CookbookCreateScreenNavigationProp } from "@/types/navigation";
 
 const NAME_MAX = 100;
@@ -37,47 +36,44 @@ export default function CookbookCreateScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const queryClient = useQueryClient();
+  const createMutation = useCreateCookbook();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const trimmedName = name.trim();
-  const canSubmit = trimmedName.length > 0 && !isSubmitting;
+  const canSubmit = trimmedName.length > 0 && !createMutation.isPending;
 
-  const handleCreate = useCallback(async () => {
+  const handleCreate = useCallback(() => {
     if (!trimmedName) return;
-
     setError(null);
-    setIsSubmitting(true);
 
-    try {
-      await apiRequest("POST", "/api/cookbooks", {
+    createMutation.mutate(
+      {
         name: trimmedName,
         description: description.trim() || undefined,
-      });
-
-      haptics.notification(NotificationFeedbackType.Success);
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility("Cookbook created");
-      }
-
-      await queryClient.invalidateQueries({ queryKey: ["cookbooks"] });
-      navigation.goBack();
-    } catch (err) {
-      haptics.notification(NotificationFeedbackType.Error);
-      const msg =
-        err instanceof Error ? err.message : "Failed to create cookbook";
-      setError(msg);
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(`Error: ${msg}`);
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [trimmedName, description, haptics, queryClient, navigation]);
+      },
+      {
+        onSuccess: () => {
+          haptics.notification(NotificationFeedbackType.Success);
+          if (Platform.OS === "ios") {
+            AccessibilityInfo.announceForAccessibility("Cookbook created");
+          }
+          navigation.goBack();
+        },
+        onError: (err) => {
+          haptics.notification(NotificationFeedbackType.Error);
+          const msg =
+            err instanceof Error ? err.message : "Failed to create cookbook";
+          setError(msg);
+          if (Platform.OS === "ios") {
+            AccessibilityInfo.announceForAccessibility(`Error: ${msg}`);
+          }
+        },
+      },
+    );
+  }, [trimmedName, description, haptics, createMutation, navigation]);
 
   return (
     <KeyboardAvoidingView
@@ -168,7 +164,7 @@ export default function CookbookCreateScreen() {
           accessibilityLabel="Create cookbook"
           accessibilityState={{ disabled: !canSubmit }}
         >
-          {isSubmitting ? (
+          {createMutation.isPending ? (
             <ActivityIndicator size="small" color={theme.buttonText} />
           ) : (
             <ThemedText style={styles.createButtonText}>

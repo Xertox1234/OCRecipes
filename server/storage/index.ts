@@ -173,6 +173,7 @@ export const storage = {
   addRecipeToCookbook: cookbooksStorage.addRecipeToCookbook,
   removeRecipeFromCookbook: cookbooksStorage.removeRecipeFromCookbook,
   getCookbookRecipes: cookbooksStorage.getCookbookRecipes,
+  getResolvedCookbookRecipes: cookbooksStorage.getResolvedCookbookRecipes,
 
   // Public API (API keys + barcode nutrition)
   createApiKey: apiKeysStorage.createApiKey,

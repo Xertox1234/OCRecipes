@@ -115,7 +115,10 @@ export function register(app: Express): void {
           return;
         }
 
-        const recipes = await storage.getCookbookRecipes(id, req.userId!);
+        const recipes = await storage.getResolvedCookbookRecipes(
+          id,
+          req.userId!,
+        );
         res.json({ ...cookbook, recipes });
       } catch (error) {
         console.error("Get cookbook error:", error);
