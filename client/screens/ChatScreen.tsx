@@ -194,12 +194,13 @@ export default function ChatScreen() {
   useEffect(() => {
     if (streamError && !shownStreamErrorRef.current) {
       shownStreamErrorRef.current = true;
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error("Response was interrupted. Partial response may be visible.");
     }
     if (!streamError) {
       shownStreamErrorRef.current = false;
     }
-  }, [streamError, toast]);
+  }, [streamError, toast, haptics]);
 
   // Auto-send initial message from cross-tab navigation (e.g. Ask Coach)
   const didSendInitialRef = useRef(false);
@@ -260,6 +261,7 @@ export default function ChatScreen() {
           await sendMessage(content);
         }
       } catch (e) {
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
         const message =
           e instanceof Error ? e.message : "Failed to send message";
         if (

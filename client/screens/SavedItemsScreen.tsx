@@ -16,6 +16,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { EmptyState } from "@/components/EmptyState";
 import { SavedItemCard } from "@/components/SavedItemCard";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useSavedItems, useSavedItemCount } from "@/hooks/useSavedItems";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -31,6 +32,7 @@ export default function SavedItemsScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const { isPremium, features } = usePremiumContext();
 
@@ -135,7 +137,7 @@ export default function SavedItemsScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={refetch}
+            onRefresh={() => refetch().then(() => haptics.impact())}
             tintColor={theme.link}
             progressViewOffset={headerHeight}
           />

@@ -263,7 +263,8 @@ export default function FastingScreen() {
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([refetchCurrent(), refetchHistory()]);
-  }, [refetchCurrent, refetchHistory]);
+    haptics.impact();
+  }, [refetchCurrent, refetchHistory, haptics]);
 
   const handleStartFast = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);

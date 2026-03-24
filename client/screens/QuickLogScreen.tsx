@@ -129,6 +129,7 @@ export default function QuickLogScreen() {
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
         onError: () => {
+          haptics.notification(Haptics.NotificationFeedbackType.Error);
           toast.error("Failed to parse food text. Please try again.");
         },
       });
@@ -138,9 +139,10 @@ export default function QuickLogScreen() {
   // Show speech errors
   useEffect(() => {
     if (speechError) {
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error(speechError);
     }
-  }, [speechError, toast]);
+  }, [speechError, toast, haptics]);
 
   const handleTextSubmit = useCallback(() => {
     if (!textInput.trim()) return;
@@ -151,6 +153,7 @@ export default function QuickLogScreen() {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
       onError: () => {
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
         toast.error("Failed to parse food text. Please try again.");
       },
     });
@@ -216,6 +219,7 @@ export default function QuickLogScreen() {
       navigation.goBack();
     },
     onError: () => {
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error("Failed to log some items. Please try again.");
     },
   });

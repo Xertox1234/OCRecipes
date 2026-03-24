@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
 import { Spacing } from "@/constants/theme";
@@ -45,6 +46,7 @@ const COMMON_SIDE_EFFECTS = [
 
 export default function GLP1CompanionScreen() {
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const { data: logs, isLoading, refetch } = useMedicationLogs();
   const { data: insights } = useMedicationInsights();
@@ -218,7 +220,10 @@ export default function GLP1CompanionScreen() {
           paddingBottom: insets.bottom + Spacing.xl,
         }}
         refreshControl={
-          <RefreshControl refreshing={isLoading} onRefresh={refetch} />
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={() => refetch().then(() => haptics.impact())}
+          />
         }
       >
         {insightsCards}

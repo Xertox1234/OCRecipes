@@ -222,7 +222,7 @@ export default function ChatListScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={refetch}
+            onRefresh={() => refetch().then(() => haptics.impact())}
             tintColor={theme.link}
           />
         }

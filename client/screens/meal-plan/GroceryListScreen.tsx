@@ -345,7 +345,7 @@ export default function GroceryListScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={() => refetch()}
+            onRefresh={() => refetch().then(() => haptics.impact())}
             progressViewOffset={headerHeight}
             tintColor={theme.link}
           />

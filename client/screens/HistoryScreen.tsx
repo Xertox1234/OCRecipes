@@ -763,9 +763,10 @@ export default function HistoryScreen() {
         queryClient.refetchQueries({ queryKey: QUERY_KEYS.scannedItems }),
       ]);
     } else {
-      refetch();
+      await refetch();
     }
-  }, [showAll, queryClient, refetch]);
+    haptics.impact();
+  }, [showAll, queryClient, refetch, haptics]);
 
   const handleToggleExpand = useCallback(
     (itemId: number) => {

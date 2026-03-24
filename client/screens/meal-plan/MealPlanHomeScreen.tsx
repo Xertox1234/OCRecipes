@@ -851,9 +851,10 @@ export default function MealPlanHomeScreen() {
     navigation.navigate("CookbookList");
   }, [haptics, navigation]);
 
-  const handleRefresh = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
-  }, [queryClient]);
+  const handleRefresh = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
+    haptics.impact();
+  }, [queryClient, haptics]);
 
   // Date strip swipe gesture
   const dateStripPanGesture = useMemo(

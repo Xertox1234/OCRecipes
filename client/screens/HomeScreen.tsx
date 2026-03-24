@@ -77,7 +77,10 @@ export default function HomeScreen() {
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={() => refetch().then(() => haptics.impact())}
+          />
         }
       >
         <DailySummaryHeader onCalorieTap={handleCalorieTap} />
