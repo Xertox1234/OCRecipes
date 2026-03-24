@@ -3,6 +3,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useMemo,
   useRef,
   type ReactNode,
 } from "react";
@@ -62,8 +63,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [show],
   );
 
+  const value = useMemo(
+    () => ({ success, error, info }),
+    [success, error, info],
+  );
+
   return (
-    <ToastContext.Provider value={{ success, error, info }}>
+    <ToastContext.Provider value={value}>
       {children}
       {toasts.length > 0 && (
         <Toast

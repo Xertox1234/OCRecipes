@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import NetInfo from "@react-native-community/netinfo";
 
 /**
@@ -14,9 +14,8 @@ export function useNetworkStatus() {
   useEffect(() => {
     // addEventListener fires immediately with current state, then on changes
     const unsubscribe = NetInfo.addEventListener((state) => {
-      const offline = !(
-        state.isConnected && state.isInternetReachable !== false
-      );
+      const offline =
+        state.isConnected === false || state.isInternetReachable === false;
 
       if (!offline && previouslyOffline.current) {
         // Just came back online — signal "was offline" briefly
@@ -30,7 +29,7 @@ export function useNetworkStatus() {
     return unsubscribe;
   }, []);
 
-  const clearWasOffline = () => setWasOffline(false);
+  const clearWasOffline = useCallback(() => setWasOffline(false), []);
 
   return { isOffline, wasOffline, clearWasOffline };
 }
