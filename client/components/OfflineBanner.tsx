@@ -13,6 +13,7 @@ import {
   Spacing,
   BorderRadius,
   FontFamily,
+  Shadows,
   withOpacity,
 } from "@/constants/theme";
 
@@ -54,6 +55,7 @@ export function OfflineBanner() {
       exiting={exiting}
       style={[
         styles.container,
+        Shadows.medium,
         {
           top: insets.top + Spacing.sm,
           backgroundColor: withOpacity(theme.text, 0.9),
@@ -92,7 +94,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.card,
-    zIndex: 9999,
+    zIndex: 9998,
   },
   message: {
     flex: 1,

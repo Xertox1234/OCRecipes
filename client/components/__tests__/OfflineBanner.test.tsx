@@ -4,10 +4,13 @@ import { screen } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { OfflineBanner } from "../OfflineBanner";
 
-const { mockUseNetworkStatus, mockToast } = vi.hoisted(() => ({
-  mockUseNetworkStatus: vi.fn(),
-  mockToast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+const { mockUseNetworkStatus, mockToast, mockUseAccessibility } = vi.hoisted(
+  () => ({
+    mockUseNetworkStatus: vi.fn(),
+    mockToast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+    mockUseAccessibility: vi.fn(),
+  }),
+);
 
 vi.mock("@/hooks/useNetworkStatus", () => ({
   useNetworkStatus: mockUseNetworkStatus,
@@ -15,6 +18,10 @@ vi.mock("@/hooks/useNetworkStatus", () => ({
 
 vi.mock("@/context/ToastContext", () => ({
   useToast: () => mockToast,
+}));
+
+vi.mock("@/hooks/useAccessibility", () => ({
+  useAccessibility: mockUseAccessibility,
 }));
 
 describe("OfflineBanner", () => {
@@ -25,6 +32,7 @@ describe("OfflineBanner", () => {
       wasOffline: false,
       clearWasOffline: vi.fn(),
     });
+    mockUseAccessibility.mockReturnValue({ reducedMotion: false });
   });
 
   it("returns null when online", () => {
@@ -77,6 +85,20 @@ describe("OfflineBanner", () => {
 
     renderComponent(<OfflineBanner />);
     expect(mockToast.success).toHaveBeenCalledWith("Back online");
+  });
+
+  it("renders correctly with reducedMotion enabled", () => {
+    mockUseAccessibility.mockReturnValue({ reducedMotion: true });
+    mockUseNetworkStatus.mockReturnValue({
+      isOffline: true,
+      wasOffline: false,
+      clearWasOffline: vi.fn(),
+    });
+
+    renderComponent(<OfflineBanner />);
+    expect(
+      screen.getByText("You're offline. Some features may be unavailable."),
+    ).toBeDefined();
   });
 
   it("calls clearWasOffline after showing toast", () => {

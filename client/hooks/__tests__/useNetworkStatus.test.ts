@@ -56,6 +56,16 @@ describe("useNetworkStatus", () => {
     expect(result.current.isOffline).toBe(true);
   });
 
+  it("does NOT set isOffline when isConnected is null (initial state)", () => {
+    const { result } = renderHook(() => useNetworkStatus());
+
+    act(() => {
+      listener({ isConnected: null, isInternetReachable: null });
+    });
+
+    expect(result.current.isOffline).toBe(false);
+  });
+
   it("does NOT set isOffline when isConnected=true and isInternetReachable=null", () => {
     const { result } = renderHook(() => useNetworkStatus());
 
