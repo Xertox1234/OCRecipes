@@ -961,6 +961,45 @@ Icon buttons without visible text MUST have an `accessibilityLabel`:
 </Pressable>
 ```
 
+#### Decorative Icons Inside Interactive Elements
+
+Icons inside a `Pressable` or `TouchableOpacity` that serve only as visual decoration (leading icons, trailing chevrons, status indicators) must be marked `accessible={false}`. Without this, VoiceOver on iOS announces each icon as a separate focusable element, forcing users to swipe through redundant items.
+
+```typescript
+// Good: Decorative icons hidden from screen readers
+<Pressable
+  onPress={handlePress}
+  accessibilityLabel="GLP-1 Companion"
+  accessibilityRole="button"
+>
+  <Feather name="activity" size={20} color={theme.text} accessible={false} />
+  <ThemedText>GLP-1 Companion</ThemedText>
+  <Feather name="chevron-right" size={16} color={theme.textSecondary} accessible={false} />
+</Pressable>
+
+// Bad: Icons are focusable — VoiceOver announces "activity image", then "GLP-1 Companion", then "chevron-right image"
+<Pressable onPress={handlePress} accessibilityLabel="GLP-1 Companion">
+  <Feather name="activity" size={20} color={theme.text} />
+  <ThemedText>GLP-1 Companion</ThemedText>
+  <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+</Pressable>
+```
+
+**When to mark `accessible={false}`:**
+
+- Leading icons in settings rows, list items, action rows
+- Trailing chevrons or arrow indicators
+- Lock badge icons (the parent `Pressable` already has the accessibility label)
+- Status icons next to text that already describes the status
+- Emoji or decorative `Image` components inside labeled containers
+
+**When NOT to mark `accessible={false}`:**
+
+- Icon-only buttons with no visible text (these need `accessibilityLabel` instead)
+- Icons that convey information not present in the text label (e.g., an error icon when the label doesn't mention the error)
+
+**References:** `client/screens/ProfileScreen.tsx` (SettingsItem), `client/components/home/ActionRow.tsx`, `client/components/HistoryItemActions.tsx`, `client/components/EmptyState.tsx`, `client/components/Toast.tsx`
+
 #### Text Input Pattern
 
 ```typescript
