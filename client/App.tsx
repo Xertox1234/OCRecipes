@@ -24,6 +24,7 @@ import { PremiumProvider } from "@/context/PremiumContext";
 import { ThemeProvider, useThemePreference } from "@/context/ThemeContext";
 import { ToastProvider } from "@/context/ToastContext";
 import { BatchScanProvider } from "@/context/BatchScanContext";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
 
 function AppContent() {
@@ -39,6 +40,7 @@ function AppContent() {
                 <RootStackNavigator />
               </NavigationContainer>
             </BatchScanProvider>
+            <OfflineBanner />
           </ToastProvider>
         </BottomSheetModalProvider>
         <StatusBar style={isDark ? "light" : "dark"} />
