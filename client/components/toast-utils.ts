@@ -2,6 +2,11 @@ import type { Colors } from "@/constants/theme";
 
 export type ToastVariant = "success" | "error" | "info";
 
+export interface ToastAction {
+  label: string;
+  onPress: () => void;
+}
+
 type Theme = (typeof Colors)["light"];
 
 export function getToastColors(

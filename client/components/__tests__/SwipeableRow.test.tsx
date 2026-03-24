@@ -63,7 +63,7 @@ describe("SwipeableRow", () => {
     expect(screen.getByText("Both actions")).toBeDefined();
   });
 
-  it("renders plain View when reducedMotion is true", () => {
+  it("renders inline action buttons when reducedMotion is true", () => {
     mockReducedMotion.reducedMotion = true;
     renderComponent(
       <SwipeableRow
@@ -79,6 +79,44 @@ describe("SwipeableRow", () => {
     );
     // Content should still render, just without gesture wrapper
     expect(screen.getByText("Reduced motion content")).toBeDefined();
+    // Action button should be visible as an accessible button
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDefined();
+  });
+
+  it("renders both action buttons when reducedMotion is true with left and right actions", () => {
+    mockReducedMotion.reducedMotion = true;
+    const leftHandler = vi.fn();
+    const rightHandler = vi.fn();
+    renderComponent(
+      <SwipeableRow
+        leftAction={{
+          icon: "heart",
+          label: "Favorite",
+          backgroundColor: "#2196F3",
+          onAction: leftHandler,
+        }}
+        rightAction={{
+          icon: "trash-2",
+          label: "Delete",
+          backgroundColor: "#D32F2F",
+          onAction: rightHandler,
+        }}
+      >
+        <Text>Both actions content</Text>
+      </SwipeableRow>,
+    );
+    expect(screen.getByRole("button", { name: "Favorite" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDefined();
+  });
+
+  it("renders plain View when reducedMotion is true with no actions", () => {
+    mockReducedMotion.reducedMotion = true;
+    renderComponent(
+      <SwipeableRow>
+        <Text>No actions content</Text>
+      </SwipeableRow>,
+    );
+    expect(screen.getByText("No actions content")).toBeDefined();
   });
 
   it("renders without any actions", () => {

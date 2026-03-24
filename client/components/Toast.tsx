@@ -1,5 +1,10 @@
-import React, { useEffect } from "react";
-import { StyleSheet, AccessibilityInfo, Platform } from "react-native";
+import React, { useEffect, useCallback } from "react";
+import {
+  StyleSheet,
+  Pressable,
+  AccessibilityInfo,
+  Platform,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
   useSharedValue,
@@ -20,7 +25,7 @@ import {
   toastExitTimingConfig,
 } from "@/constants/animations";
 import { getToastColors, getToastAccessibilityRole } from "./toast-utils";
-import type { ToastVariant } from "./toast-utils";
+import type { ToastVariant, ToastAction } from "./toast-utils";
 import type { Colors } from "@/constants/theme";
 
 type Theme = (typeof Colors)["light"];
@@ -30,24 +35,41 @@ interface ToastProps {
   variant: ToastVariant;
   theme: Theme;
   onDismiss: () => void;
+  action?: ToastAction;
 }
 
 const AUTO_DISMISS_MS = 3000;
+const ACTION_DISMISS_MS = 5000;
 const SWIPE_DISMISS_THRESHOLD = -50;
 
-export function Toast({ message, variant, theme, onDismiss }: ToastProps) {
+export function Toast({
+  message,
+  variant,
+  theme,
+  onDismiss,
+  action,
+}: ToastProps) {
   const insets = useSafeAreaInsets();
   const { reducedMotion } = useAccessibility();
   const translateY = useSharedValue(0);
   const opacity = useSharedValue(1);
   const colors = getToastColors(variant, theme);
   const a11yRole = getToastAccessibilityRole(variant);
+  const dismissMs = action ? ACTION_DISMISS_MS : AUTO_DISMISS_MS;
+
+  const handleAction = useCallback(() => {
+    action?.onPress();
+    onDismiss();
+  }, [action, onDismiss]);
 
   useEffect(() => {
     if (Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(message);
+      const announcement = action
+        ? `${message}. ${action.label} available.`
+        : message;
+      AccessibilityInfo.announceForAccessibility(announcement);
     }
-  }, [message]);
+  }, [message, action]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -58,9 +80,9 @@ export function Toast({ message, variant, theme, onDismiss }: ToastProps) {
           if (finished) runOnJS(onDismiss)();
         });
       }
-    }, AUTO_DISMISS_MS);
+    }, dismissMs);
     return () => clearTimeout(timer);
-  }, [onDismiss, opacity, reducedMotion]);
+  }, [onDismiss, opacity, reducedMotion, dismissMs]);
 
   const swipeGesture = Gesture.Pan()
     .onUpdate((e) => {
@@ -119,6 +141,25 @@ export function Toast({ message, variant, theme, onDismiss }: ToastProps) {
         >
           {message}
         </ThemedText>
+        {action && (
+          <Pressable
+            onPress={handleAction}
+            accessibilityRole="button"
+            accessibilityLabel={action.label}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.actionButton,
+              { opacity: pressed ? 0.7 : 1 },
+            ]}
+          >
+            <ThemedText
+              type="small"
+              style={[styles.actionLabel, { color: colors.text }]}
+            >
+              {action.label}
+            </ThemedText>
+          </Pressable>
+        )}
       </Animated.View>
     </GestureDetector>
   );
@@ -140,5 +181,17 @@ const styles = StyleSheet.create({
   message: {
     flex: 1,
     fontFamily: FontFamily.medium,
+  },
+  actionButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.xs,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    minHeight: 32,
+    justifyContent: "center",
+  },
+  actionLabel: {
+    fontFamily: FontFamily.semiBold,
+    fontSize: 13,
   },
 });
