@@ -118,6 +118,36 @@ export function register(app: Express): void {
     },
   );
 
+  // GET /api/micronutrients/lookup — Lookup micronutrients by food name (no saved item required)
+  app.get(
+    "/api/micronutrients/lookup",
+    requireAuth,
+    micronutrientRateLimit,
+    async (req: Request, res: Response) => {
+      try {
+        const name = parseQueryString(req.query.name);
+        if (!name)
+          return sendError(
+            res,
+            400,
+            "Missing required query parameter: name",
+            ErrorCode.VALIDATION_ERROR,
+          );
+
+        const micronutrients = await lookupMicronutrientsWithCache(name);
+        res.json({ foodName: name, micronutrients });
+      } catch (error) {
+        console.error("Lookup micronutrients error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to lookup micronutrients",
+          ErrorCode.INTERNAL_ERROR,
+        );
+      }
+    },
+  );
+
   // GET /api/micronutrients/reference — Get daily value reference
   app.get(
     "/api/micronutrients/reference",

@@ -185,6 +185,63 @@ describe("Micronutrients Routes", () => {
     });
   });
 
+  describe("GET /api/micronutrients/lookup", () => {
+    it("returns micronutrients for valid food name", async () => {
+      const mockMicros = [
+        {
+          nutrientName: "Vitamin C",
+          amount: 4.6,
+          unit: "mg",
+          percentDailyValue: 5,
+        },
+      ];
+      vi.mocked(lookupMicronutrientsWithCache).mockResolvedValue(mockMicros);
+
+      const res = await request(app)
+        .get("/api/micronutrients/lookup?name=chicken+breast")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.foodName).toBe("chicken breast");
+      expect(res.body.micronutrients).toHaveLength(1);
+      expect(res.body.micronutrients[0].nutrientName).toBe("Vitamin C");
+      expect(lookupMicronutrientsWithCache).toHaveBeenCalledWith(
+        "chicken breast",
+      );
+    });
+
+    it("returns 400 for missing name param", async () => {
+      const res = await request(app)
+        .get("/api/micronutrients/lookup")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 400 for empty name param", async () => {
+      const res = await request(app)
+        .get("/api/micronutrients/lookup?name=")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 500 when lookup service fails", async () => {
+      vi.mocked(lookupMicronutrientsWithCache).mockRejectedValue(
+        new Error("Service unavailable"),
+      );
+
+      const res = await request(app)
+        .get("/api/micronutrients/lookup?name=chicken+breast")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(500);
+      expect(res.body.code).toBe("INTERNAL_ERROR");
+    });
+  });
+
   describe("GET /api/micronutrients/reference", () => {
     it("returns daily value reference data", async () => {
       const ref = { "Vitamin C": { unit: "mg", dailyValue: 90 } };

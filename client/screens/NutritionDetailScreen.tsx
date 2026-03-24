@@ -30,6 +30,8 @@ import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { MicronutrientSection } from "@/components/MicronutrientSection";
+import type { MicronutrientData } from "@/components/MicronutrientSection";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import type { VerificationLevel } from "@shared/types/verification";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
@@ -226,6 +228,24 @@ export default function NutritionDetailScreen() {
     queryKey: ["/api/scanned-items", itemId],
     enabled: !!itemId,
   });
+
+  const { data: micronutrientData, isLoading: micronutrientsLoading } =
+    useQuery<{ foodName: string; micronutrients: MicronutrientData[] }>({
+      queryKey: ["micronutrients", "lookup", nutrition?.productName],
+      queryFn: async () => {
+        const res = await apiRequest(
+          "GET",
+          `/api/micronutrients/lookup?name=${encodeURIComponent(nutrition!.productName)}`,
+        );
+        return res.json();
+      },
+      enabled:
+        !!nutrition?.productName &&
+        nutrition.productName !== "Unknown Product" &&
+        nutrition.productName !== "Product Not Found" &&
+        nutrition.productName !== "Manual Entry" &&
+        !isLoading,
+    });
 
   const fetchBarcodeData = useCallback(async (code: string) => {
     try {
@@ -967,6 +987,24 @@ export default function NutritionDetailScreen() {
           </Animated.View>
         ) : null}
 
+        {/* Micronutrients — collapsible section */}
+        {nutrition?.productName &&
+        nutrition.productName !== "Unknown Product" &&
+        nutrition.productName !== "Product Not Found" ? (
+          <Animated.View
+            entering={
+              reducedMotion ? undefined : FadeInUp.delay(600).duration(400)
+            }
+            style={styles.micronutrientSection}
+          >
+            <MicronutrientSection
+              micronutrients={micronutrientData?.micronutrients ?? []}
+              isLoading={micronutrientsLoading}
+              reducedMotion={reducedMotion}
+            />
+          </Animated.View>
+        ) : null}
+
         {/* Verification badge + CTA */}
         {!itemId && barcode && nutrition && (
           <View style={styles.verificationSection}>
@@ -1182,6 +1220,9 @@ const styles = StyleSheet.create({
   },
   addButton: {
     marginBottom: Spacing.md,
+  },
+  micronutrientSection: {
+    marginBottom: Spacing["2xl"],
   },
   verificationSection: {
     gap: Spacing.sm,
