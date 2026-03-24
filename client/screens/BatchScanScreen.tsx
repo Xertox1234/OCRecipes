@@ -158,7 +158,7 @@ export default function BatchScanScreen() {
 
   // Handle "Done" press
   const handleDone = useCallback(() => {
-    navigation.navigate("BatchSummary");
+    navigation.replace("BatchSummary");
   }, [navigation]);
 
   // Handle close

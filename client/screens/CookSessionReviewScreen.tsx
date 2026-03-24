@@ -150,7 +150,7 @@ export default function CookSessionReviewScreen() {
   const handleSubstitutions = useCallback(async () => {
     try {
       const result = await substitutionsMutation.mutateAsync({});
-      navigation.navigate("SubstitutionResult", {
+      navigation.replace("SubstitutionResult", {
         sessionId,
         result,
         ingredients,
