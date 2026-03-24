@@ -68,11 +68,11 @@ npm run expo:static:build  # Build static Expo bundle
 
 ### Navigation Flow
 
-1. **Login** → 2. **Onboarding** (6 screens) → 3. **Main App** (5 tabs + Scan FAB)
+1. **Login** → 2. **Onboarding** (6 screens) → 3. **Main App** (4 tabs + Scan FAB)
 
-Main tabs: **Home**, **Plan**, **Activity**, **Coach**, **Profile** — Scan is a floating action button (FAB) that opens a fullScreenModal, not a tab.
+Main tabs: **Home**, **Plan**, **Coach**, **Profile** — Scan is a floating action button (FAB) that opens a fullScreenModal, not a tab.
 
-Navigator files: `HomeStackNavigator`, `MealPlanStackNavigator`, `ActivityStackNavigator`, `ChatStackNavigator`, `ProfileStackNavigator`
+Navigator files: `HomeStackNavigator`, `MealPlanStackNavigator`, `ChatStackNavigator`, `ProfileStackNavigator`
 
 Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, GoalSetup, EditDietaryProfile, FeaturedRecipeDetail, QuickLog, MenuScanResult
 

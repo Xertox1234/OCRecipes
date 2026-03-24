@@ -124,7 +124,12 @@ function FeatureItem({
           { backgroundColor: withOpacity(theme.success, 0.08) },
         ]}
       >
-        <Feather name={icon} size={20} color={theme.success} />
+        <Feather
+          name={icon}
+          size={20}
+          color={theme.success}
+          accessible={false}
+        />
       </View>
       <View style={styles.featureText}>
         <ThemedText type="body" style={{ fontWeight: "600" }}>

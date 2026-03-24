@@ -93,11 +93,7 @@ export default function FeaturedRecipeDetailScreen() {
           accessibilityRole="button"
           style={styles.closeButton}
         >
-          <Feather
-            name="chevron-down"
-            size={20}
-            color="#fff" // hardcoded — white icon on dark overlay
-          />
+          <Feather name="chevron-down" size={20} color={theme.buttonText} />
         </Pressable>
       </View>
 
