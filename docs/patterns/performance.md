@@ -489,3 +489,47 @@ const handleFavourite = useCallback(
 
 - TanStack Query v5 mutation result stability
 - Related: "Parameterized ID Callbacks for Memoized List Items" pattern
+
+### Memoize Context Provider Value Objects
+
+When a context provider constructs its `value` as an inline object literal, every render creates a new object reference — causing all consumers to re-render even if the individual properties haven't changed. Wrap the value in `useMemo` with the individual properties as dependencies.
+
+```typescript
+// ❌ BAD: New object every render — all consumers re-render
+function ToastProvider({ children }: { children: ReactNode }) {
+  const success = useCallback((...) => ..., []);
+  const error = useCallback((...) => ..., []);
+  const info = useCallback((...) => ..., []);
+
+  return (
+    <ToastContext.Provider value={{ success, error, info }}>
+      {children}
+    </ToastContext.Provider>
+  );
+}
+
+// ✅ GOOD: Stable reference — consumers only re-render when callbacks change
+function ToastProvider({ children }: { children: ReactNode }) {
+  const success = useCallback((...) => ..., []);
+  const error = useCallback((...) => ..., []);
+  const info = useCallback((...) => ..., []);
+
+  const value = useMemo(() => ({ success, error, info }), [success, error, info]);
+
+  return (
+    <ToastContext.Provider value={value}>
+      {children}
+    </ToastContext.Provider>
+  );
+}
+```
+
+**When to use:** Every `Context.Provider` that passes an object as `value`. This is especially important for providers near the root of the component tree (theme, toast, auth) where consumer count is high.
+
+**When NOT to use:** Providers that pass a single primitive value (rare in practice).
+
+**Why:** React uses referential equality (`===`) to determine if context value changed. `{ a, b }` creates a new object every render, even if `a` and `b` are stable. This is easy to miss because each property may be individually memoized with `useCallback`/`useMemo`, but the containing object is not.
+
+**References:**
+
+- `client/context/ToastContext.tsx` — `useMemo` on provider value object
