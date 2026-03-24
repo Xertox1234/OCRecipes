@@ -582,6 +582,107 @@ import { FAB_CLEARANCE } from "@/constants/theme";
 
 **Why:** Static constants are reliable across all component positions. The values must be kept in sync with `Tab.Navigator`'s `tabBarStyle.height` — both reference `TAB_BAR_HEIGHT` from `theme.ts` to ensure a single source of truth.
 
+**No FAB on screens inside tab stacks:** The Scan FAB is rendered at the root level and floats over all tab content. Any screen that adds its own FAB in the same bottom-right position will overlap with the Scan FAB. Use header buttons, inline CTAs, or positioned differently (e.g., top-right) instead of adding a second FAB to screens within tab stacks.
+
+### `useBottomTabBarHeight()` for Tab Screen Bottom Padding
+
+Screens rendered inside a tab navigator must use `useBottomTabBarHeight()` from `@react-navigation/bottom-tabs` for bottom content padding — not `useSafeAreaInsets().bottom`. The tab bar is significantly taller than the safe area inset (88pt vs ~34pt on iPhone with home indicator), so using `insets.bottom` leaves content hidden behind the tab bar.
+
+```typescript
+// ✅ GOOD: Correct bottom padding inside tab screens
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { FAB_CLEARANCE, Spacing } from "@/constants/theme";
+
+function MyTabScreen() {
+  const tabBarHeight = useBottomTabBarHeight();
+
+  return (
+    <ScrollView
+      contentContainerStyle={{
+        paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+      }}
+    />
+  );
+}
+```
+
+```typescript
+// ❌ BAD: Content hidden behind tab bar
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+function MyTabScreen() {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <ScrollView
+      contentContainerStyle={{
+        paddingBottom: insets.bottom + Spacing.xl, // ~34pt — tab bar is 88pt!
+      }}
+    />
+  );
+}
+```
+
+**When to use:** Any screen rendered as a direct child of `Tab.Navigator` that has scrollable content.
+
+**When NOT to use:** Screens inside modal stacks or root-level stacks that don't have a tab bar. Also cannot be used in FAB siblings — see "FAB Overlay with Tab Bar Clearance" above for that case.
+
+**Why:** `useBottomTabBarHeight()` returns the actual measured tab bar height including safe area padding. `useSafeAreaInsets().bottom` only returns the hardware safe area (home indicator), which is a subset of the tab bar height.
+
+### Unified Create/Edit Screen via Optional Param
+
+Instead of separate `CreateScreen` and `EditScreen` with 90% duplication, use a single screen with an optional ID param. If the ID is present, fetch and pre-populate the form for editing; if absent, render a blank form for creation.
+
+```typescript
+// Navigation types
+type CookbookFormParams = {
+  CookbookForm: { cookbookId?: number };
+};
+
+// Single screen handles both create and edit
+export default function CookbookFormScreen() {
+  const route = useRoute<RouteProp<CookbookFormParams, "CookbookForm">>();
+  const cookbookId = route.params?.cookbookId;
+  const isEditing = cookbookId != null;
+
+  // Fetch existing data only when editing
+  const { data: existing } = useCookbook(cookbookId!, {
+    enabled: isEditing,
+  });
+
+  // Pre-populate form when data arrives
+  useEffect(() => {
+    if (existing) {
+      setName(existing.name);
+      setDescription(existing.description ?? "");
+    }
+  }, [existing]);
+
+  const handleSave = () => {
+    if (isEditing) {
+      updateMutation.mutate({ id: cookbookId!, name, description });
+    } else {
+      createMutation.mutate({ name, description });
+    }
+  };
+
+  return (
+    <View>
+      <ThemedText type="title">
+        {isEditing ? "Edit Cookbook" : "New Cookbook"}
+      </ThemedText>
+      {/* Form fields — identical for both modes */}
+    </View>
+  );
+}
+```
+
+**When to use:** Any CRUD resource where the create and edit forms share the same fields and layout (cookbooks, recipes, grocery lists, profiles).
+
+**When NOT to use:** When create and edit have substantially different fields, validation rules, or layouts (e.g., onboarding vs profile editing).
+
+**Why:** Eliminates duplication of form state, validation, layout, and styling. Changes to the form only need to happen in one place. The `isEditing` boolean provides a clear branch point for the few differences (title text, save handler, initial data).
+
 ### Coordinated Pull-to-Refresh for Multiple Queries
 
 When a screen fetches data from multiple endpoints, coordinate refresh with `Promise.all`:

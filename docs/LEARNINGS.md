@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Screen Registration Order in React Navigation Native Stacks (2026-03-24)](#screen-registration-order-in-react-navigation-native-stacks-2026-03-24)
 - [Drizzle sql Template Parameterizes Column Refs in Subqueries (2026-03-23)](#drizzle-sql-template-parameterizes-column-refs-in-subqueries-2026-03-23)
 - [Fasting Timer Enhancements Review (2026-03-21)](#fasting-timer-enhancements-review-2026-03-21)
 - [Quick Log Enhancements Review (2026-03-21)](#quick-log-enhancements-review-2026-03-21)
@@ -25,6 +26,57 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-03-24] Screen Registration Order in React Navigation Native Stacks
+
+**Category:** Gotcha
+
+### Context
+
+Implementing the cookbook browsing feature with a `CookbookList` screen and a `CookbookCreate` screen in the same native stack navigator. The user flow is: List → tap "Create" button → Create screen.
+
+### Problem
+
+Navigating from `CookbookList` to `CookbookCreate` appeared to pop backwards instead of pushing forward — the Create screen had no back button, and the transition animation played in reverse. The Create screen was functionally correct but felt broken.
+
+### Investigation
+
+The issue was the order of `<Stack.Screen>` registration in the navigator. `CookbookCreate` was registered **before** `CookbookList`:
+
+```typescript
+// ❌ BAD: Create registered before List
+<Stack.Screen name="CookbookCreate" component={CookbookCreateScreen} />
+<Stack.Screen name="CookbookList" component={CookbookListScreen} />
+```
+
+React Navigation's native stack uses screen registration order to determine the "depth" of each screen. When `navigation.navigate("CookbookCreate")` is called from `CookbookList`, the navigator sees that `CookbookCreate` is at index 0 (above/before `CookbookList` at index 1) and interprets this as a "pop back" rather than a "push forward."
+
+### Solution
+
+Register screens in the order they will be navigated to:
+
+```typescript
+// ✅ GOOD: Screens in navigation flow order
+<Stack.Screen name="CookbookList" component={CookbookListScreen} />
+<Stack.Screen name="CookbookCreate" component={CookbookCreateScreen} />
+```
+
+### Outcome
+
+Forward push animation, back button appears correctly, navigation feels natural.
+
+### Takeaways
+
+- Always register `Stack.Screen` components in the order they will be navigated to (parent before child, list before detail, list before create)
+- If a screen navigation feels like it's going "backwards," check the registration order before investigating animation or gesture configuration
+- This only affects native stack navigators — JS stack navigators don't have this behavior
+
+### References
+
+- React Navigation native-stack behavior with `navigate()` vs `push()`
+- `client/navigation/MealPlanStackNavigator.tsx` — cookbook screen registration
 
 ---
 

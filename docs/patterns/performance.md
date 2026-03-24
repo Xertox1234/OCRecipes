@@ -458,3 +458,34 @@ This also works for `React.memo` sub-components that receive timer-derived data:
 - `client/screens/FastingScreen.tsx` — `phaseHourBucket` for phase memoization
 - `client/components/FastingTimer.tsx` — `passedHours` prop for `MilestoneMarkers`
 - Discovered during PR #25 performance review
+
+### Destructure `mutate` from TanStack Query Mutations for Stable Deps
+
+The object returned by `useMutation()` is a new reference on every render. If you use the mutation object itself in a `useCallback` dependency array, the callback is recreated every render, defeating memoization. Destructure `{ mutate }` (or `{ mutateAsync }`) at the call site — in TanStack Query v5, the `mutate` function reference is stable across renders.
+
+```typescript
+// ❌ BAD: toggleFavourite is a new object every render → handleFavourite recreated every render
+const toggleFavourite = useToggleFavourite();
+const handleFavourite = useCallback(
+  (itemId: number) => toggleFavourite.mutate(itemId),
+  [toggleFavourite], // new reference every render!
+);
+
+// ✅ GOOD: mutate is stable in TQ v5 → handleFavourite is truly memoized
+const { mutate: toggleFavourite } = useToggleFavourite();
+const handleFavourite = useCallback(
+  (itemId: number) => toggleFavourite(itemId),
+  [toggleFavourite], // stable reference
+);
+```
+
+**When to use:** Any `useCallback` or `useMemo` that depends on a TanStack Query mutation, especially callbacks passed as props to `React.memo` list items.
+
+**When NOT to use:** Inline event handlers that don't need memoization (e.g., a button `onPress` in a non-memoized component).
+
+**Why:** This is particularly impactful in FlatList scenarios where `React.memo` items receive action callbacks. If the callback reference changes every render, every list item re-renders on every parent render, negating the benefit of `React.memo`.
+
+**References:**
+
+- TanStack Query v5 mutation result stability
+- Related: "Parameterized ID Callbacks for Memoized List Items" pattern

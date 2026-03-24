@@ -499,3 +499,46 @@ const handleBarcodeScanned = useCallback(
 **References:**
 
 - `client/camera/hooks/useCamera.ts` — `batch: true` mode uses Map-based debounce
+
+### `refetchOnMount: "always"` for Cross-Screen Data Freshness
+
+When a query's data can be modified from a deeper screen in a native stack (e.g., adding a recipe to a cookbook from the recipe detail screen), set `refetchOnMount: "always"` on the query. Native stack navigators keep screens mounted when pushing new screens on top — when the user navigates back, the screen remounts from cache but the underlying data may have changed. Without this option, TanStack Query serves stale cached data.
+
+```typescript
+// ✅ GOOD: Always refetch when screen comes back into view
+export function useCookbookRecipes(cookbookId: number) {
+  return useQuery<CookbookRecipe[]>({
+    queryKey: [`/api/cookbooks/${cookbookId}/recipes`],
+    refetchOnMount: "always", // data changes from RecipeDetailScreen
+  });
+}
+```
+
+```typescript
+// ❌ BAD: Default behavior serves stale data after navigating back
+export function useCookbookRecipes(cookbookId: number) {
+  return useQuery<CookbookRecipe[]>({
+    queryKey: [`/api/cookbooks/${cookbookId}/recipes`],
+    // Default refetchOnMount: true only refetches if data is stale per staleTime
+  });
+}
+```
+
+**When to use:**
+
+- List screens where items can be added/removed/modified from detail screens deeper in the stack
+- Any query whose data changes via mutations triggered on screens that don't have access to the same `queryClient.invalidateQueries()` call (e.g., a recipe detail screen adding to a cookbook doesn't know to invalidate the cookbook's recipe list query)
+- Dashboard/summary screens that aggregate data modified elsewhere
+
+**When NOT to use:**
+
+- Queries where the mutating screen already calls `invalidateQueries` for the relevant key (redundant)
+- Expensive queries where staleTime-based refetching is intentional (e.g., large recipe catalogs)
+- Queries for data that never changes from other screens (user profile viewed but not edited from child screens)
+
+**Why:** The default `refetchOnMount: true` only triggers a refetch if the data is considered stale (per `staleTime`, default 0). But in practice, the query observer may still serve cached data briefly before the refetch completes. `"always"` forces an unconditional network request every time the component mounts, guaranteeing fresh data. The trade-off is more network requests, but for queries behind navigation this is typically one extra fetch per screen visit.
+
+**References:**
+
+- TanStack Query v5 `refetchOnMount` documentation
+- Related: "TanStack Query CRUD Hook Module" pattern — mutations should still invalidate queries where possible
