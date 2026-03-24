@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
-    minHeight: 32,
+    minHeight: 44,
   },
   reducedMotionLabel: {
     fontSize: 12,

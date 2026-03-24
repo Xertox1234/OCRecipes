@@ -19,7 +19,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { Spacing, BorderRadius, FontFamily, Shadows } from "@/constants/theme";
+import {
+  Spacing,
+  BorderRadius,
+  FontFamily,
+  Shadows,
+  withOpacity,
+} from "@/constants/theme";
 import {
   toastSpringConfig,
   toastExitTimingConfig,
@@ -149,7 +155,10 @@ export function Toast({
             hitSlop={8}
             style={({ pressed }) => [
               styles.actionButton,
-              { opacity: pressed ? 0.7 : 1 },
+              {
+                backgroundColor: withOpacity(colors.text, 0.2),
+                opacity: pressed ? 0.7 : 1,
+              },
             ]}
           >
             <ThemedText
@@ -186,7 +195,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.xs,
-    backgroundColor: "rgba(255,255,255,0.2)",
     minHeight: 32,
     justifyContent: "center",
   },
