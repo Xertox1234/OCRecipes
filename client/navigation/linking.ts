@@ -12,14 +12,6 @@ export const linking: LinkingOptions<RootStackParamList> = {
     screens: {
       Main: {
         screens: {
-          MealPlanTab: {
-            screens: {
-              RecipeDetail: {
-                path: "recipe/:recipeId",
-                parse: { recipeId: parseIntOrZero },
-              },
-            },
-          },
           CoachTab: {
             screens: {
               Chat: {
@@ -29,6 +21,10 @@ export const linking: LinkingOptions<RootStackParamList> = {
             },
           },
         },
+      },
+      FeaturedRecipeDetail: {
+        path: "recipe/:recipeId",
+        parse: { recipeId: parseIntOrZero },
       },
       NutritionDetail: "nutrition/:barcode",
       Scan: "scan",

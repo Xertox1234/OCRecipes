@@ -7,10 +7,12 @@ describe("linking config", () => {
     expect(linking.prefixes).toContain("https://ocrecipes.app");
   });
 
-  it("configures RecipeDetail path with numeric parse", () => {
-    const recipeDetail =
-      // @ts-expect-error — nested screen config typing is loosely indexed
-      linking.config!.screens.Main.screens.MealPlanTab.screens.RecipeDetail;
+  it("configures FeaturedRecipeDetail path with numeric parse", () => {
+    const recipeDetail = linking.config!.screens
+      .FeaturedRecipeDetail as unknown as {
+      path: string;
+      parse: Record<string, (v: string) => number>;
+    };
 
     expect(recipeDetail.path).toBe("recipe/:recipeId");
     expect(recipeDetail.parse.recipeId("42")).toBe(42);
@@ -34,9 +36,11 @@ describe("linking config", () => {
   });
 
   it("returns 0 when recipeId parse receives a non-numeric string", () => {
-    const recipeDetail =
-      // @ts-expect-error — nested screen config typing is loosely indexed
-      linking.config!.screens.Main.screens.MealPlanTab.screens.RecipeDetail;
+    const recipeDetail = linking.config!.screens
+      .FeaturedRecipeDetail as unknown as {
+      path: string;
+      parse: Record<string, (v: string) => number>;
+    };
 
     expect(recipeDetail.parse.recipeId("abc")).toBe(0);
   });

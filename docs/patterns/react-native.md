@@ -327,12 +327,12 @@ Deep linking is configured in `client/navigation/linking.ts` and wired into `Nav
 
 **Supported URLs:**
 
-| URL pattern                        | Screen          | Stack path                        |
-| ---------------------------------- | --------------- | --------------------------------- |
-| `ocrecipes://recipe/:recipeId`     | RecipeDetail    | Main → MealPlanTab → RecipeDetail |
-| `ocrecipes://chat/:conversationId` | Chat            | Main → CoachTab → Chat            |
-| `ocrecipes://nutrition/:barcode`   | NutritionDetail | Root modal                        |
-| `ocrecipes://scan`                 | Scan            | Root modal                        |
+| URL pattern                        | Screen               | Stack path                                               |
+| ---------------------------------- | -------------------- | -------------------------------------------------------- |
+| `ocrecipes://recipe/:recipeId`     | FeaturedRecipeDetail | Root modal (uses community endpoint, works for any user) |
+| `ocrecipes://chat/:conversationId` | Chat                 | Main → CoachTab → Chat                                   |
+| `ocrecipes://nutrition/:barcode`   | NutritionDetail      | Root modal                                               |
+| `ocrecipes://scan`                 | Scan                 | Root modal                                               |
 
 Universal link prefix `https://ocrecipes.app` is also registered (requires server-side AASA file for iOS).
 
