@@ -482,6 +482,30 @@ const rows = await db.select({
 - `server/storage/nutrition.ts` — `getFrequentItems()` uses `sql<string>` for `max(loggedAt)`
 - `server/storage/nutrition.ts` — `getDailySummary()` uses `sql<number>` for aggregations
 
+### Drizzle `sql` Template Treats `${column}` as Bound Parameters
+
+Drizzle's `sql` template tag parameterizes **all** `${}` interpolations as bound values (`$1`, `$2`). This is safe for user input but **breaks column references** in correlated subqueries:
+
+```typescript
+// ❌ BAD: ${cookbooks.id} becomes a bound parameter, not a column reference
+sql<number>`(SELECT COUNT(*) FROM cookbook_recipes WHERE cookbook_id = ${cookbooks.id})`;
+// Generates: ... WHERE cookbook_id = $1  (always returns 0)
+
+// ✅ GOOD: Use Drizzle's query builder for column-to-column comparisons
+import { count } from "drizzle-orm";
+db.select({ recipeCount: count(cookbookRecipes.id) })
+  .from(cookbooks)
+  .leftJoin(cookbookRecipes, eq(cookbookRecipes.cookbookId, cookbooks.id))
+  .groupBy(cookbooks.id);
+```
+
+**Rule:** Never interpolate `table.column` inside `sql` template strings. Use JOINs via the query builder instead.
+
+**References:**
+
+- `server/storage/cookbooks.ts` — `getUserCookbooks()` uses LEFT JOIN + `count()` for recipe counts
+- `docs/LEARNINGS.md` — Full post-mortem under "Drizzle sql Template Parameterizes Column Refs"
+
 ### Pre-Fetched IDs to Avoid Redundant Queries
 
 When a route handler needs data that is also needed by a called function, fetch it once and pass it in rather than letting the function query it again.

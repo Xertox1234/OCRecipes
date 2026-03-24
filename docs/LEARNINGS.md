@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Drizzle sql Template Parameterizes Column Refs in Subqueries (2026-03-23)](#drizzle-sql-template-parameterizes-column-refs-in-subqueries-2026-03-23)
 - [Fasting Timer Enhancements Review (2026-03-21)](#fasting-timer-enhancements-review-2026-03-21)
 - [Quick Log Enhancements Review (2026-03-21)](#quick-log-enhancements-review-2026-03-21)
 - [HomeScreen Redesign Simplicity Review (2026-03-19)](#homescreen-redesign-simplicity-review-2026-03-19)
@@ -24,6 +25,50 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-03-23] Drizzle sql Template Parameterizes Column Refs in Subqueries
+
+### Correlated Subqueries with `sql` Template Return Wrong Results
+
+**Problem:** A correlated COUNT subquery using Drizzle's `sql` template tag always returned 0, even though the same SQL run directly against PostgreSQL returned the correct count.
+
+```typescript
+// ❌ BAD: Drizzle treats ${cookbooks.id} as a bound parameter ($1), not a column reference
+const rows = await db
+  .select({
+    recipeCount:
+      sql<number>`(SELECT COUNT(*) FROM cookbook_recipes WHERE cookbook_id = ${cookbooks.id})`.as(
+        "recipe_count",
+      ),
+  })
+  .from(cookbooks);
+// Generated SQL: ... WHERE cookbook_id = $1  (where $1 is the column object, not the column value)
+```
+
+**Root cause:** Drizzle's `sql` template tag treats all `${}` interpolations as **bound parameters** — it generates `$1`, `$2`, etc. and passes the values separately. This is correct for user-provided values (prevents SQL injection), but when you interpolate a Drizzle column reference like `cookbooks.id`, it serializes the column object as a parameter instead of emitting the column name in the SQL. PostgreSQL then compares `cookbook_id` against a nonsensical value, matching nothing, returning COUNT 0.
+
+**Fix:** Use Drizzle's query builder (JOIN + `count()`) instead of raw SQL with column references:
+
+```typescript
+// ✅ GOOD: Drizzle generates correct column references in JOIN conditions
+import { count } from "drizzle-orm";
+
+const rows = await db
+  .select({
+    id: cookbooks.id,
+    // ... other fields ...
+    recipeCount: count(cookbookRecipes.id),
+  })
+  .from(cookbooks)
+  .leftJoin(cookbookRecipes, eq(cookbookRecipes.cookbookId, cookbooks.id))
+  .groupBy(cookbooks.id);
+```
+
+**Rule:** Never use `${table.column}` inside `sql` template strings to reference columns from the outer query. Use JOINs, subqueries via Drizzle's query builder, or `sql.raw()` with hardcoded column names if unavoidable.
+
+**Severity:** HIGH — returns plausible-looking zero values instead of obviously wrong results. Passes type checking and compiles without error. Only caught during physical device testing.
 
 ---
 
