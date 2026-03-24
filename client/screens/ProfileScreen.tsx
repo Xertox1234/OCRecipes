@@ -31,6 +31,7 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 
 import { usePremiumContext } from "@/context/PremiumContext";
+import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import {
   getTierLabel,
   getNextTier,
@@ -394,6 +395,7 @@ const SettingsItem = React.memo(function SettingsItem({
   onPress,
   showChevron = true,
   danger = false,
+  locked = false,
 }: {
   icon: FeatherIconName;
   label: string;
@@ -401,35 +403,56 @@ const SettingsItem = React.memo(function SettingsItem({
   onPress?: () => void;
   showChevron?: boolean;
   danger?: boolean;
+  locked?: boolean;
 }) {
   const { theme } = useTheme();
 
   return (
     <Pressable
       onPress={onPress}
-      accessibilityLabel={value ? `${label}: ${value}` : label}
+      accessibilityLabel={
+        locked
+          ? `${label}, premium feature`
+          : value
+            ? `${label}: ${value}`
+            : label
+      }
       accessibilityRole="button"
-      accessibilityHint={showChevron ? "Tap to open" : undefined}
+      accessibilityHint={
+        locked ? "Tap to upgrade" : showChevron ? "Tap to open" : undefined
+      }
       style={({ pressed }) => [
         styles.settingsItem,
         { opacity: pressed ? 0.7 : 1 },
       ]}
     >
-      <View
-        style={[
-          styles.settingsIcon,
-          {
-            backgroundColor: danger
-              ? withOpacity(theme.error, 0.12)
-              : theme.backgroundSecondary,
-          },
-        ]}
-      >
-        <Feather
-          name={icon}
-          size={20}
-          color={danger ? theme.error : theme.text}
-        />
+      <View style={styles.settingsIconWrapper}>
+        <View
+          style={[
+            styles.settingsIcon,
+            {
+              backgroundColor: danger
+                ? withOpacity(theme.error, 0.12)
+                : theme.backgroundSecondary,
+            },
+          ]}
+        >
+          <Feather
+            name={icon}
+            size={20}
+            color={danger ? theme.error : theme.text}
+          />
+        </View>
+        {locked && (
+          <View
+            style={[
+              styles.lockBadge,
+              { backgroundColor: theme.backgroundRoot },
+            ]}
+          >
+            <Feather name="lock" size={10} color={theme.textSecondary} />
+          </View>
+        )}
       </View>
       <View style={styles.settingsContent}>
         <ThemedText type="body" style={[danger && { color: theme.error }]}>
@@ -460,6 +483,7 @@ const SettingsSection = React.memo(function SettingsSection({
   onThemeToggle,
   onSubscription,
   onLogout,
+  onLockedPress,
 }: {
   themePreference: ThemePreference;
   onWeightTracking: () => void;
@@ -472,9 +496,14 @@ const SettingsSection = React.memo(function SettingsSection({
   onThemeToggle: () => void;
   onSubscription: () => void;
   onLogout: () => void;
+  onLockedPress: () => void;
 }) {
   const { theme } = useTheme();
   const { data: healthKitSettings } = useHealthKitSettings();
+  const weightTrendUnlocked = usePremiumFeature("weightTrend");
+  const healthKitUnlocked = usePremiumFeature("healthKitSync");
+  const glp1Unlocked = usePremiumFeature("glp1Companion");
+  const adaptiveGoalsUnlocked = usePremiumFeature("adaptiveGoals");
 
   return (
     <View style={styles.settingsSection}>
@@ -485,7 +514,8 @@ const SettingsSection = React.memo(function SettingsSection({
         <SettingsItem
           icon="trending-down"
           label="Weight Tracking"
-          onPress={onWeightTracking}
+          locked={!weightTrendUnlocked}
+          onPress={weightTrendUnlocked ? onWeightTracking : onLockedPress}
         />
         <View style={[styles.divider, { backgroundColor: theme.border }]} />
         <View style={styles.healthKitRow}>
@@ -493,7 +523,8 @@ const SettingsSection = React.memo(function SettingsSection({
             <SettingsItem
               icon="heart"
               label="Apple Health"
-              onPress={onHealthKit}
+              locked={!healthKitUnlocked}
+              onPress={healthKitUnlocked ? onHealthKit : onLockedPress}
             />
           </View>
           {healthKitSettings && healthKitSettings.length > 0 && (
@@ -510,13 +541,15 @@ const SettingsSection = React.memo(function SettingsSection({
         <SettingsItem
           icon="activity"
           label="GLP-1 Companion"
-          onPress={onGLP1Companion}
+          locked={!glp1Unlocked}
+          onPress={glp1Unlocked ? onGLP1Companion : onLockedPress}
         />
         <View style={[styles.divider, { backgroundColor: theme.border }]} />
         <SettingsItem
           icon="target"
           label="Nutrition Goals"
-          onPress={onNutritionGoals}
+          locked={!adaptiveGoalsUnlocked}
+          onPress={adaptiveGoalsUnlocked ? onNutritionGoals : onLockedPress}
         />
         <View style={[styles.divider, { backgroundColor: theme.border }]} />
         <SettingsItem icon="bookmark" label="My Library" onPress={onLibrary} />
@@ -914,6 +947,10 @@ export default function ProfileScreen() {
             }
           }}
           onLogout={handleLogout}
+          onLockedPress={() => {
+            haptics.notification(Haptics.NotificationFeedbackType.Warning);
+            setShowUpgradeModal(true);
+          }}
         />
       </Animated.View>
 
@@ -1131,10 +1168,23 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     gap: Spacing.md,
   },
+  settingsIconWrapper: {
+    position: "relative",
+  },
   settingsIcon: {
     width: 40,
     height: 40,
     borderRadius: BorderRadius.xs,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  lockBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
   },
