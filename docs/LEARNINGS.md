@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [NetInfo isConnected: null on Cold Start Causes False Offline State (2026-03-24)](#netinfo-isconnected-null-on-cold-start-causes-false-offline-state-2026-03-24)
 - [Screen Registration Order in React Navigation Native Stacks (2026-03-24)](#screen-registration-order-in-react-navigation-native-stacks-2026-03-24)
 - [Drizzle sql Template Parameterizes Column Refs in Subqueries (2026-03-23)](#drizzle-sql-template-parameterizes-column-refs-in-subqueries-2026-03-23)
 - [Fasting Timer Enhancements Review (2026-03-21)](#fasting-timer-enhancements-review-2026-03-21)
@@ -28,6 +29,52 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
 
 ---
+
+## [2026-03-24] NetInfo isConnected: null on Cold Start Causes False Offline State
+
+**Category:** Gotcha
+
+### Context
+
+Implementing an offline state indicator using `@react-native-community/netinfo`. The `useNetworkStatus` hook subscribes to NetInfo's `addEventListener` callback and derives an `isOffline` boolean.
+
+### Problem
+
+On app cold start, the offline banner briefly flashed even when the device had connectivity. Users saw a "You're offline" banner for ~200ms before it disappeared.
+
+### Investigation
+
+NetInfo's initial callback fires with `isConnected: null` (not `false`) while it determines actual connectivity. The original check used a truthy/falsy pattern:
+
+```typescript
+// ❌ BAD: null is falsy, so !(null && ...) evaluates to true → "offline"
+const isOffline = !(state.isConnected && state.isInternetReachable);
+```
+
+Since `null` is falsy in JavaScript, `!(null && ...)` evaluates to `true`, incorrectly signaling offline status before NetInfo has determined the actual state.
+
+### Solution
+
+Use explicit `=== false` checks to distinguish "unknown" (`null`) from "confirmed offline" (`false`):
+
+```typescript
+// ✅ GOOD: Only report offline when explicitly confirmed
+const isOffline =
+  state.isConnected === false || state.isInternetReachable === false;
+```
+
+This treats `null` (unknown) as "not yet determined" rather than "offline," preventing the false banner flash.
+
+### Takeaways
+
+- NetInfo's `isConnected` and `isInternetReachable` are `boolean | null`, not just `boolean` — always handle the `null` (indeterminate) state explicitly
+- Truthy/falsy checks on nullable booleans are a common source of false positives — prefer `=== false` when the "unknown" state should be treated as "not triggered"
+- Write a test for the `isConnected: null` initial state to catch regressions
+
+### References
+
+- `client/hooks/useNetworkStatus.ts` — explicit `=== false` checks
+- `@react-native-community/netinfo` `NetInfoState` type definition
 
 ## [2026-03-24] Screen Registration Order in React Navigation Native Stacks
 
