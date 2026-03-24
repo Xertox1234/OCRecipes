@@ -2210,3 +2210,91 @@ Three things to get right:
 
 - `client/components/FastingTimer.tsx` — time display overlay on SVG circular progress ring
 - Discovered during PR #25 physical device testing
+
+### Error Feedback: toast.error + Haptics
+
+For transient error states (failed API calls, network issues), use `toast.error()` with error haptics. Never use `Alert.alert("Error", ...)` for non-interactive error feedback — it blocks the UI and requires a tap to dismiss.
+
+```typescript
+// ✅ GOOD — non-blocking, auto-dismisses, physical feedback
+haptics.notification(Haptics.NotificationFeedbackType.Error);
+toast.error("Failed to save recipe. Please try again.");
+
+// ❌ BAD — blocks UI, no haptic feedback, inconsistent styling
+Alert.alert("Error", "Failed to save recipe. Please try again.");
+```
+
+**When to use Alert.alert:** Only for destructive confirmations that need explicit user consent (delete, discard, end fast). These require Cancel/Confirm buttons.
+
+**References:**
+
+- `client/screens/FastingScreen.tsx` — error haptics on mutation failure
+- `client/screens/CookSessionReviewScreen.tsx` — 3 mutation error paths
+- `client/screens/ChatListScreen.tsx` — conversation creation error
+
+### Toast with Action Button (Undo)
+
+The Toast system supports an optional action button for recoverable operations. Pass `action: { label, onPress }` to any toast method. Auto-dismiss extends from 3s to 5s when an action is present. iOS VoiceOver announces the action availability.
+
+```typescript
+const toast = useToast();
+
+// After a destructive action that can be undone:
+toast.success("Item removed", {
+  action: { label: "Undo", onPress: () => restoreItem(itemId) },
+});
+```
+
+**References:**
+
+- `client/components/Toast.tsx` — action button rendering, 5s dismiss
+- `client/components/toast-utils.ts` — `ToastAction` interface
+- `client/context/ToastContext.tsx` — `ToastOptions` with action support
+
+### Pull-to-Refresh Completion Haptics
+
+Add a light haptic impact when pull-to-refresh completes so users know data has finished loading:
+
+```typescript
+// For screens using refetch directly:
+<RefreshControl
+  refreshing={isRefetching}
+  onRefresh={() => refetch().then(() => haptics.impact())}
+/>
+
+// For screens with custom handleRefresh:
+const handleRefresh = useCallback(async () => {
+  await Promise.all([refetchA(), refetchB()]);
+  haptics.impact(); // Light tap on completion
+}, [refetchA, refetchB, haptics]);
+```
+
+`haptics.impact()` defaults to `ImpactFeedbackStyle.Medium` — a subtle confirmation without being jarring.
+
+**References:**
+
+- All 9 refreshable screens: HomeScreen, SavedItemsScreen, HistoryScreen, MealPlanHomeScreen, FastingScreen, ChatListScreen, GroceryListScreen, PantryScreen, GLP1CompanionScreen
+
+### navigate() vs replace() in Modal Flows
+
+Use `navigation.replace()` instead of `navigate()` when the current modal step is "done" and going back to it makes no sense. This prevents deep modal stacking.
+
+```typescript
+// ✅ GOOD — capture is done, move to review (back skips capture)
+navigation.replace("CookSessionReview", { sessionId });
+
+// ❌ BAD — stacks review on top of capture (back returns to capture)
+navigation.navigate("CookSessionReview", { sessionId });
+```
+
+**When to use `replace()`:** Sequential flows where each step consumes the previous (Capture→Review, Scan→Summary, Review→Result).
+
+**When to keep `navigate()`:** Flows where the user might want to go back and retry (Scan→PhotoIntent, PhotoIntent→PhotoAnalysis — user might want to re-scan or pick a different intent).
+
+**References:**
+
+- `client/screens/ReceiptCaptureScreen.tsx` → ReceiptReview
+- `client/screens/CookSessionCaptureScreen.tsx` → CookSessionReview
+- `client/screens/CookSessionReviewScreen.tsx` → SubstitutionResult
+- `client/screens/BatchScanScreen.tsx` → BatchSummary
+- Existing correct usage: `FrontLabelConfirmScreen`, `LabelAnalysisScreen`, `ReceiptReviewScreen`
