@@ -16,7 +16,6 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
-import { SwipeableRow } from "@/components/SwipeableRow";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -121,95 +120,108 @@ export default function CookbookDetailScreen() {
     ]);
   }, [haptics, handleEdit, handleDelete]);
 
+  const handleConfirmRemove = useCallback(
+    (recipe: ResolvedCookbookRecipe) => {
+      Alert.alert(
+        "Remove Recipe",
+        `Remove "${recipe.title}" from this cookbook?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Remove",
+            style: "destructive",
+            onPress: () => handleRemoveRecipe(recipe),
+          },
+        ],
+      );
+    },
+    [handleRemoveRecipe],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: ResolvedCookbookRecipe }) => (
-      <SwipeableRow
-        rightAction={{
-          icon: "trash-2",
-          label: "Remove",
-          backgroundColor: theme.error,
-          onAction: () => handleRemoveRecipe(item),
-        }}
+      <Pressable
+        onPress={() => handleRecipePress(item)}
+        style={[
+          styles.recipeCard,
+          { backgroundColor: withOpacity(theme.text, 0.04) },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}`}
       >
-        <Pressable
-          onPress={() => handleRecipePress(item)}
-          style={[
-            styles.recipeCard,
-            { backgroundColor: withOpacity(theme.text, 0.04) },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}`}
-        >
-          {item.imageUrl ? (
-            <Image
-              source={{ uri: item.imageUrl }}
-              style={styles.recipeImage}
-              accessibilityIgnoresInvertColors
+        {item.imageUrl ? (
+          <Image
+            source={{ uri: item.imageUrl }}
+            style={styles.recipeImage}
+            accessibilityIgnoresInvertColors
+          />
+        ) : (
+          <View
+            style={[
+              styles.recipeImage,
+              styles.recipePlaceholder,
+              { backgroundColor: withOpacity(theme.text, 0.08) },
+            ]}
+          >
+            <Feather
+              name="image"
+              size={20}
+              color={withOpacity(theme.text, 0.3)}
             />
-          ) : (
+          </View>
+        )}
+        <View style={styles.recipeContent}>
+          <ThemedText style={styles.recipeTitle} numberOfLines={2}>
+            {item.title}
+          </ThemedText>
+          <View style={styles.recipeMeta}>
             <View
               style={[
-                styles.recipeImage,
-                styles.recipePlaceholder,
-                { backgroundColor: withOpacity(theme.text, 0.08) },
+                styles.typeBadge,
+                {
+                  backgroundColor: withOpacity(
+                    item.recipeType === "community"
+                      ? theme.link
+                      : theme.success,
+                    0.12,
+                  ),
+                },
               ]}
             >
-              <Feather
-                name="image"
-                size={20}
-                color={withOpacity(theme.text, 0.3)}
-              />
-            </View>
-          )}
-          <View style={styles.recipeContent}>
-            <ThemedText style={styles.recipeTitle} numberOfLines={2}>
-              {item.title}
-            </ThemedText>
-            <View style={styles.recipeMeta}>
-              <View
+              <ThemedText
                 style={[
-                  styles.typeBadge,
+                  styles.typeBadgeText,
                   {
-                    backgroundColor: withOpacity(
+                    color:
                       item.recipeType === "community"
                         ? theme.link
                         : theme.success,
-                      0.12,
-                    ),
                   },
                 ]}
               >
-                <ThemedText
-                  style={[
-                    styles.typeBadgeText,
-                    {
-                      color:
-                        item.recipeType === "community"
-                          ? theme.link
-                          : theme.success,
-                    },
-                  ]}
-                >
-                  {item.recipeType === "community" ? "Community" : "Personal"}
-                </ThemedText>
-              </View>
-              {item.difficulty && (
-                <ThemedText
-                  style={[
-                    styles.recipeMetaText,
-                    { color: theme.textSecondary },
-                  ]}
-                >
-                  {item.difficulty}
-                </ThemedText>
-              )}
+                {item.recipeType === "community" ? "Community" : "Personal"}
+              </ThemedText>
             </View>
+            {item.difficulty && (
+              <ThemedText
+                style={[styles.recipeMetaText, { color: theme.textSecondary }]}
+              >
+                {item.difficulty}
+              </ThemedText>
+            )}
           </View>
-          <Feather name="chevron-right" size={18} color={theme.textSecondary} />
+        </View>
+        <Pressable
+          onPress={() => handleConfirmRemove(item)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${item.title}`}
+        >
+          <Feather name="trash-2" size={16} color={theme.textSecondary} />
         </Pressable>
-      </SwipeableRow>
+      </Pressable>
     ),
-    [theme, handleRecipePress, handleRemoveRecipe],
+    [theme, handleRecipePress, handleConfirmRemove],
   );
 
   if (isLoading) {
