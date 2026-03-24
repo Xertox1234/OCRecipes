@@ -439,38 +439,45 @@ function OnboardingStack() {
 
 ### Gesture Interaction with Reduced Motion Component Fallback
 
-When a component's primary interaction is gesture-based (swipe, drag, pan), provide a **structurally different fallback** when reduced motion is enabled — don't just skip the animation.
+When a component's primary interaction is gesture-based (swipe, drag, pan), provide a **structurally different fallback** with visible action buttons when reduced motion is enabled — don't just skip the animation and hide the actions.
 
 ```typescript
-function SwipeableRow({ children, rightAction }: Props) {
+function SwipeableRow({ children, rightAction, leftAction }: Props) {
   const { reducedMotion } = useAccessibility();
 
-  // Reduced motion: render plain View — actions are available via buttons
+  // Reduced motion: render inline action buttons (visible, tappable)
   if (reducedMotion) {
-    return <View>{children}</View>;
+    const hasActions = leftAction || rightAction;
+    if (!hasActions) return <View>{children}</View>;
+
+    return (
+      <View>
+        {children}
+        <ReducedMotionActions leftAction={leftAction} rightAction={rightAction} />
+      </View>
+    );
   }
 
   // Full interaction: gesture-driven swipeable with animations
   return (
-    <ReanimatedSwipeable
-      renderRightActions={...}
-      onSwipeableOpen={handleSwipeableOpen}
-    >
+    <ReanimatedSwipeable ...>
       {children}
     </ReanimatedSwipeable>
   );
 }
 ```
 
+The `ReducedMotionActions` component renders small pill buttons with the action's icon, label, color, and `accessibilityRole="button"`. Buttons must meet the 44pt minimum touch target (`minHeight: 44`).
+
 **When to use:** Components where the gesture IS the feature (swipe-to-delete, drag-to-reorder, swipe navigation). The gesture wrapper adds complexity and native gesture recognizers that serve no purpose when motion is reduced.
 
 **When NOT to use:** Simple press animations or entrance animations — use the existing `reducedMotion ? undefined : animation` guard pattern instead.
 
-**Key principle:** Ensure all actions reachable via gesture are also reachable via buttons. SwipeableRow's delete action has a fallback X button; DraggableList's drag has tap + chevron buttons.
+**Key principle:** Ensure all actions reachable via gesture are also reachable via visible buttons. Never hide actions behind a gesture with no fallback — screen reader users and motion-sensitive users must have an equivalent path.
 
 **References:**
 
-- `client/components/SwipeableRow.tsx` — falls back to plain `<View>` wrapper
+- `client/components/SwipeableRow.tsx` — inline `ReducedMotionActions` buttons
 - `client/components/DraggableList.tsx` — tap-to-activate reorder with chevron buttons (no drag gesture)
 
 ### Toast Context with Single-Toast Replacement
