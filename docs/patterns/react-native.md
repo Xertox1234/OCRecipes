@@ -354,7 +354,7 @@ function parseIntOrZero(value: string): number {
 }
 
 // Usage in config
-RecipeDetail: {
+FeaturedRecipeDetail: {
   path: "recipe/:recipeId",
   parse: { recipeId: parseIntOrZero },
 },
