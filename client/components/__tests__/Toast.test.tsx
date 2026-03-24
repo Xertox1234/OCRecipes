@@ -81,4 +81,38 @@ describe("Toast", () => {
     // With mocked reanimated, the withTiming callback fires synchronously
     expect(mockDismiss).toHaveBeenCalled();
   });
+
+  it("renders action button when action prop is provided", () => {
+    const mockAction = vi.fn();
+    renderComponent(
+      <Toast
+        message="Item removed"
+        variant="success"
+        theme={Colors.light}
+        onDismiss={mockDismiss}
+        action={{ label: "Undo", onPress: mockAction }}
+      />,
+    );
+    expect(screen.getByText("Item removed")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDefined();
+  });
+
+  it("auto-dismisses after 5 seconds when action is present", () => {
+    renderComponent(
+      <Toast
+        message="Item removed"
+        variant="success"
+        theme={Colors.light}
+        onDismiss={mockDismiss}
+        action={{ label: "Undo", onPress: vi.fn() }}
+      />,
+    );
+    expect(mockDismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(3000);
+    // Should NOT have dismissed at 3s when action is present
+    expect(mockDismiss).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(2000);
+    // Should dismiss at 5s
+    expect(mockDismiss).toHaveBeenCalled();
+  });
 });
