@@ -30,6 +30,7 @@ import { IngredientsSheet } from "@/components/recipe-builder/IngredientsSheet";
 import { InstructionsSheet } from "@/components/recipe-builder/InstructionsSheet";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useRecipeForm } from "@/hooks/useRecipeForm";
 import {
   Spacing,
@@ -62,6 +63,7 @@ export default function RecipeCreateScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
 
   const prefill = route.params?.prefill;
   const returnToMealPlan = route.params?.returnToMealPlan;
@@ -212,11 +214,13 @@ export default function RecipeCreateScreen() {
       }
     } catch {
       sheetState.current = "IDLE";
-      Alert.alert("Error", "Failed to save recipe. Please try again.");
+      haptics.notification(NotificationFeedbackType.Error);
+      toast.error("Failed to save recipe. Please try again.");
     }
   }, [
     form,
     haptics,
+    toast,
     createMutation,
     addItemMutation,
     returnToMealPlan,

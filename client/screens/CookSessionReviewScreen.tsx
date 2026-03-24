@@ -22,6 +22,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
@@ -48,6 +49,7 @@ export default function CookSessionReviewScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "CookSessionReview">>();
@@ -130,18 +132,20 @@ export default function CookSessionReviewScreen() {
       AccessibilityInfo.announceForAccessibility("Meal logged successfully");
       navigation.popTo("Main");
     } catch {
-      Alert.alert("Error", "Failed to log meal. Please try again.");
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      toast.error("Failed to log meal. Please try again.");
     }
-  }, [logSession, haptics, navigation]);
+  }, [logSession, haptics, toast, navigation]);
 
   const handleGenerateRecipe = useCallback(async () => {
     try {
       const recipe = await recipeMutation.mutateAsync();
       Alert.alert(recipe.title, recipe.description);
     } catch {
-      Alert.alert("Error", "Failed to generate recipe. Please try again.");
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      toast.error("Failed to generate recipe. Please try again.");
     }
-  }, [recipeMutation]);
+  }, [recipeMutation, haptics, toast]);
 
   const handleSubstitutions = useCallback(async () => {
     try {
@@ -152,9 +156,17 @@ export default function CookSessionReviewScreen() {
         ingredients,
       });
     } catch {
-      Alert.alert("Error", "Failed to get substitutions. Please try again.");
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      toast.error("Failed to get substitutions. Please try again.");
     }
-  }, [substitutionsMutation, navigation, sessionId, ingredients]);
+  }, [
+    substitutionsMutation,
+    haptics,
+    toast,
+    navigation,
+    sessionId,
+    ingredients,
+  ]);
 
   const getConfidenceColor = (confidence: number) => {
     if (confidence >= 0.8) return theme.success;

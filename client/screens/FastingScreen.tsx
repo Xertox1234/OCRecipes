@@ -30,6 +30,7 @@ import { FastingSetupModal } from "@/components/FastingSetupModal";
 import { FastingStreakBadge } from "@/components/FastingStreakBadge";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   useFastingSchedule,
@@ -174,6 +175,7 @@ export default function FastingScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { reducedMotion } = useAccessibility();
 
   const [showSetup, setShowSetup] = useState(false);
@@ -322,10 +324,11 @@ export default function FastingScreen() {
         await Promise.all(batches);
       },
       onError: (err) => {
-        Alert.alert("Error", err.message || "Failed to start fast");
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        toast.error(err.message || "Failed to start fast");
       },
     });
-  }, [haptics, startFast, schedule]);
+  }, [haptics, toast, startFast, schedule]);
 
   const handleEndFast = useCallback(() => {
     Alert.alert("End Fast", "Are you sure you want to end your current fast?", [
@@ -353,13 +356,14 @@ export default function FastingScreen() {
               }
             },
             onError: (err) => {
-              Alert.alert("Error", err.message || "Failed to end fast");
+              haptics.notification(Haptics.NotificationFeedbackType.Error);
+              toast.error(err.message || "Failed to end fast");
             },
           });
         },
       },
     ]);
-  }, [haptics, endFast]);
+  }, [haptics, toast, endFast]);
 
   const handleSaveSchedule = useCallback(
     (data: {
@@ -378,11 +382,12 @@ export default function FastingScreen() {
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
         onError: (err) => {
-          Alert.alert("Error", err.message || "Failed to save schedule");
+          haptics.notification(Haptics.NotificationFeedbackType.Error);
+          toast.error(err.message || "Failed to save schedule");
         },
       });
     },
-    [updateSchedule, haptics],
+    [updateSchedule, haptics, toast],
   );
 
   return (

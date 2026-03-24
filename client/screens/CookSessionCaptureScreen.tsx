@@ -24,6 +24,7 @@ import {
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CameraView, useCameraPermissions, type CameraRef } from "@/camera";
 import { useCreateCookSession, useAddCookPhoto } from "@/hooks/useCookSession";
@@ -36,6 +37,7 @@ export default function CookSessionCaptureScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "CookSessionCapture">>();
@@ -101,15 +103,12 @@ export default function CookSessionCaptureScreen() {
         setPhotos((prev) => [...prev, photoUri]);
       } catch {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
-        Alert.alert(
-          "Analysis Failed",
-          "Could not analyze this photo. Please try again.",
-        );
+        toast.error("Could not analyze this photo. Please try again.");
       } finally {
         setIsAnalyzing(false);
       }
     },
-    [ensureSession, addPhoto, haptics],
+    [ensureSession, addPhoto, haptics, toast],
   );
 
   const handleCapture = useCallback(async () => {

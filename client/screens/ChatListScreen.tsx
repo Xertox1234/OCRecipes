@@ -17,6 +17,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   useChatConversations,
@@ -62,6 +63,7 @@ export default function ChatListScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<ChatListNavigationProp>();
 
@@ -91,9 +93,10 @@ export default function ChatListScreen() {
       } else {
         userMessage = "Could not create conversation. Please try again.";
       }
-      Alert.alert("Error", userMessage);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      toast.error(userMessage);
     }
-  }, [haptics, createConversation, navigation]);
+  }, [haptics, toast, createConversation, navigation]);
 
   const handleOpenChat = useCallback(
     (conversationId: number) => {
