@@ -103,7 +103,7 @@ export default function ReceiptCaptureScreen() {
   const handleDone = useCallback(() => {
     if (photos.length === 0) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.navigate("ReceiptReview", { photoUris: photos });
+    navigation.replace("ReceiptReview", { photoUris: photos });
   }, [photos, haptics, navigation]);
 
   // Permission states

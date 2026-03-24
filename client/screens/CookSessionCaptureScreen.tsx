@@ -160,7 +160,7 @@ export default function CookSessionCaptureScreen() {
     }
 
     // Navigate to review
-    navigation.navigate("CookSessionReview", {
+    navigation.replace("CookSessionReview", {
       sessionId,
       ingredients: [], // Will be fetched by the review screen
     });
