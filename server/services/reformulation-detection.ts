@@ -3,7 +3,7 @@ import { nutritionMatches } from "./verification-comparison";
 import type { ConsensusNutritionData } from "@shared/types/verification";
 
 /**
- * Number of consecutive divergent scans (from distinct users) needed
+ * Number of total divergent scans (from distinct users) needed
  * to flag a product as possibly reformulated.
  */
 export const REFORMULATION_THRESHOLD = 3;

@@ -15,10 +15,7 @@ import {
   CONSENSUS_THRESHOLD,
   type VerificationNutrition,
 } from "../services/verification-comparison";
-import {
-  detectReformulation,
-  REFORMULATION_THRESHOLD,
-} from "../services/reformulation-detection";
+import { detectReformulation } from "../services/reformulation-detection";
 import { analyzeFrontLabel } from "../services/front-label-analysis";
 import { consensusNutritionSchema } from "@shared/types/verification";
 import {
@@ -31,6 +28,14 @@ import {
   parseQueryString,
   parseStringParam,
 } from "./_helpers";
+
+// Admin check — same allowlist pattern as admin-api-keys.ts
+function isAdmin(userId: string): boolean {
+  const adminIds = (process.env.ADMIN_USER_IDS ?? "")
+    .split(",")
+    .filter(Boolean);
+  return adminIds.includes(userId);
+}
 
 const verificationRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
@@ -227,6 +232,16 @@ export function register(app: Express): void {
           consensusData = computeConsensus(allMatching);
         }
 
+        // ── Snapshot pre-submit state for reformulation detection ─────
+        // Must read BEFORE submitVerification() mutates the row, otherwise
+        // we'd compare against post-mutation state (race condition).
+        let preSubmitVerification: Awaited<
+          ReturnType<typeof storage.getVerification>
+        > | null = null;
+        if (!comparison.isMatch) {
+          preSubmitVerification = await storage.getVerification(barcode);
+        }
+
         // Record verification (transactional)
         await storage.submitVerification(
           barcode,
@@ -242,55 +257,51 @@ export function register(app: Express): void {
         // ── Reformulation detection ──────────────────────────────────
         // When a scan doesn't match on a previously-verified product,
         // check if enough divergent scans have accumulated to flag it.
-        if (!comparison.isMatch) {
-          const existingVerification = await storage.getVerification(barcode);
-          if (
-            existingVerification &&
-            existingVerification.verificationLevel === "verified" &&
-            existingVerification.consensusNutritionData
-          ) {
-            const consensusParsed = consensusNutritionSchema.safeParse(
-              existingVerification.consensusNutritionData,
+        if (
+          !comparison.isMatch &&
+          preSubmitVerification &&
+          preSubmitVerification.verificationLevel === "verified" &&
+          preSubmitVerification.consensusNutritionData
+        ) {
+          const consensusParsed = consensusNutritionSchema.safeParse(
+            preSubmitVerification.consensusNutritionData,
+          );
+          const existingFlag = await storage.getReformulationFlag(barcode);
+
+          if (consensusParsed.success && !existingFlag) {
+            // Get full history including this new scan
+            const fullHistory = await storage.getVerificationHistory(barcode);
+            const historyForDetection = fullHistory.map((h) => {
+              const n = h.extractedNutrition as Record<string, unknown>;
+              return {
+                extractedNutrition: {
+                  calories: typeof n.calories === "number" ? n.calories : null,
+                  protein: typeof n.protein === "number" ? n.protein : null,
+                  totalCarbs:
+                    typeof n.totalCarbs === "number" ? n.totalCarbs : null,
+                  totalFat: typeof n.totalFat === "number" ? n.totalFat : null,
+                },
+                userId: h.userId,
+                isMatch: h.isMatch ?? true,
+              };
+            });
+
+            const detection = detectReformulation(
+              consensusParsed.data,
+              historyForDetection,
             );
-            const existingFlag = await storage.getReformulationFlag(barcode);
 
-            if (consensusParsed.success && !existingFlag) {
-              // Get full history including this new scan
-              const fullHistory = await storage.getVerificationHistory(barcode);
-              const historyForDetection = fullHistory.map((h) => {
-                const n = h.extractedNutrition as Record<string, unknown>;
-                return {
-                  extractedNutrition: {
-                    calories:
-                      typeof n.calories === "number" ? n.calories : null,
-                    protein: typeof n.protein === "number" ? n.protein : null,
-                    totalCarbs:
-                      typeof n.totalCarbs === "number" ? n.totalCarbs : null,
-                    totalFat:
-                      typeof n.totalFat === "number" ? n.totalFat : null,
-                  },
-                  userId: h.userId,
-                  isMatch: h.isMatch ?? true,
-                };
-              });
-
-              const detection = detectReformulation(
-                consensusParsed.data,
-                historyForDetection,
+            if (detection.shouldFlag) {
+              console.warn(
+                `[REFORMULATION] Product ${barcode} flagged: ${detection.divergentCount} divergent scans from ${detection.distinctUsers} users`,
               );
-
-              if (detection.shouldFlag) {
-                console.warn(
-                  `[REFORMULATION] Product ${barcode} flagged: ${detection.divergentCount} divergent scans from ${detection.distinctUsers} users`,
-                );
-                await storage.flagReformulation(
-                  barcode,
-                  detection.divergentCount,
-                  consensusParsed.data,
-                  existingVerification.verificationLevel,
-                  existingVerification.verificationCount,
-                );
-              }
+              await storage.flagReformulation(
+                barcode,
+                detection.divergentCount,
+                consensusParsed.data,
+                preSubmitVerification.verificationLevel,
+                preSubmitVerification.verificationCount,
+              );
             }
           }
         }
@@ -526,14 +537,24 @@ export function register(app: Express): void {
   );
 
   /**
-   * Get reformulation-flagged products.
+   * Get reformulation-flagged products (admin only).
    * Registered BEFORE /:barcode to avoid route collision.
    */
   app.get(
     "/api/verification/reformulation-flags",
     requireAuth,
+    verificationRateLimit,
     async (req: Request, res: Response) => {
       try {
+        if (!req.userId || !isAdmin(req.userId)) {
+          return sendError(
+            res,
+            403,
+            "Admin access required",
+            ErrorCode.UNAUTHORIZED,
+          );
+        }
+
         const statusParam = parseQueryString(req.query.status);
         const status =
           statusParam === "flagged" || statusParam === "resolved"
@@ -547,7 +568,7 @@ export function register(app: Express): void {
 
         const [flags, totalCount] = await Promise.all([
           storage.getReformulationFlags(status, limit, offset),
-          storage.getReformulationFlagCount(),
+          storage.getReformulationFlagCount(status),
         ]);
 
         res.json({ flags, total: totalCount, limit, offset });
@@ -564,13 +585,23 @@ export function register(app: Express): void {
   );
 
   /**
-   * Resolve a reformulation flag (mark as reviewed).
+   * Resolve a reformulation flag (admin only).
    */
   app.post(
     "/api/verification/reformulation-flags/:flagId/resolve",
     requireAuth,
+    verificationRateLimit,
     async (req: Request, res: Response) => {
       try {
+        if (!req.userId || !isAdmin(req.userId)) {
+          return sendError(
+            res,
+            403,
+            "Admin access required",
+            ErrorCode.UNAUTHORIZED,
+          );
+        }
+
         const flagId = parseInt(parseStringParam(req.params.flagId) ?? "", 10);
         if (isNaN(flagId)) {
           return sendError(
@@ -581,7 +612,16 @@ export function register(app: Express): void {
           );
         }
 
-        await storage.resolveReformulationFlag(flagId);
+        const resolved = await storage.resolveReformulationFlag(flagId);
+        if (!resolved) {
+          return sendError(
+            res,
+            404,
+            "Reformulation flag not found",
+            ErrorCode.NOT_FOUND,
+          );
+        }
+
         res.json({ success: true });
       } catch (error) {
         console.error("Resolve reformulation flag error:", error);

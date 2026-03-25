@@ -27,7 +27,6 @@ vi.mock("../../services/reformulation-detection", () => ({
     divergentCount: 0,
     distinctUsers: 0,
   }),
-  REFORMULATION_THRESHOLD: 3,
 }));
 
 vi.mock("../../services/front-label-analysis", () => ({
@@ -105,6 +104,8 @@ describe("Verification Routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _testInternals.frontLabelSessionStore.clear();
+    // Set mock user "1" as admin for reformulation endpoint tests
+    process.env.ADMIN_USER_IDS = "1";
     app = createApp();
   });
 
@@ -466,7 +467,7 @@ describe("Verification Routes", () => {
 
   describe("POST /api/verification/reformulation-flags/:flagId/resolve", () => {
     it("returns success when resolving a valid flag", async () => {
-      vi.mocked(storage.resolveReformulationFlag).mockResolvedValue();
+      vi.mocked(storage.resolveReformulationFlag).mockResolvedValue(true);
 
       const res = await request(app).post(
         "/api/verification/reformulation-flags/42/resolve",
@@ -477,6 +478,17 @@ describe("Verification Routes", () => {
       expect(storage.resolveReformulationFlag).toHaveBeenCalledWith(42);
     });
 
+    it("returns 404 when flag does not exist", async () => {
+      vi.mocked(storage.resolveReformulationFlag).mockResolvedValue(false);
+
+      const res = await request(app).post(
+        "/api/verification/reformulation-flags/999/resolve",
+      );
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("not found");
+    });
+
     it("returns 400 for non-numeric flagId", async () => {
       const res = await request(app).post(
         "/api/verification/reformulation-flags/abc/resolve",
@@ -485,6 +497,54 @@ describe("Verification Routes", () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("Invalid flag ID");
       expect(storage.resolveReformulationFlag).not.toHaveBeenCalled();
+    });
+
+    it("returns 403 for non-admin user", async () => {
+      process.env.ADMIN_USER_IDS = "999";
+
+      const res = await request(app).post(
+        "/api/verification/reformulation-flags/42/resolve",
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain("Admin access required");
+    });
+  });
+
+  describe("reformulation-flags admin auth", () => {
+    it("GET returns 403 for non-admin user", async () => {
+      process.env.ADMIN_USER_IDS = "999";
+
+      const res = await request(app).get(
+        "/api/verification/reformulation-flags",
+      );
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toContain("Admin access required");
+    });
+  });
+
+  describe("GET /api/verification/reformulation-flags count filter", () => {
+    it("passes status to count function", async () => {
+      vi.mocked(storage.getReformulationFlags).mockResolvedValue([]);
+      vi.mocked(storage.getReformulationFlagCount).mockResolvedValue(0);
+
+      await request(app).get(
+        "/api/verification/reformulation-flags?status=resolved",
+      );
+
+      expect(storage.getReformulationFlagCount).toHaveBeenCalledWith(
+        "resolved",
+      );
+    });
+
+    it("passes undefined to count when no status filter", async () => {
+      vi.mocked(storage.getReformulationFlags).mockResolvedValue([]);
+      vi.mocked(storage.getReformulationFlagCount).mockResolvedValue(0);
+
+      await request(app).get("/api/verification/reformulation-flags");
+
+      expect(storage.getReformulationFlagCount).toHaveBeenCalledWith(undefined);
     });
   });
 });

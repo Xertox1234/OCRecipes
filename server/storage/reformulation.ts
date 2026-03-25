@@ -84,22 +84,29 @@ export async function flagReformulation(
   });
 }
 
-/** Resolve a reformulation flag (e.g., after manual review or re-verification) */
-export async function resolveReformulationFlag(flagId: number): Promise<void> {
-  await db
+/** Resolve a reformulation flag. Returns true if the flag existed, false if not found. */
+export async function resolveReformulationFlag(
+  flagId: number,
+): Promise<boolean> {
+  const rows = await db
     .update(reformulationFlags)
     .set({
       status: "resolved",
       resolvedAt: new Date(),
     })
-    .where(eq(reformulationFlags.id, flagId));
+    .where(eq(reformulationFlags.id, flagId))
+    .returning({ id: reformulationFlags.id });
+  return rows.length > 0;
 }
 
-/** Count flagged products */
-export async function getReformulationFlagCount(): Promise<number> {
+/** Count reformulation flags, optionally filtered by status */
+export async function getReformulationFlagCount(
+  status?: "flagged" | "resolved",
+): Promise<number> {
+  const conditions = status ? eq(reformulationFlags.status, status) : undefined;
   const [result] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(reformulationFlags)
-    .where(eq(reformulationFlags.status, "flagged"));
+    .where(conditions);
   return result?.count ?? 0;
 }
