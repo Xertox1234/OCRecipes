@@ -1,18 +1,12 @@
 import React, { useCallback, useState } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  FlatList,
-  Alert,
-  TextInput,
-} from "react-native";
+import { StyleSheet, View, Pressable, FlatList, TextInput } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -37,6 +31,7 @@ export default function GroceryListsScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { confirm, ConfirmationModal } = useConfirmationModal();
   const { data: lists, isLoading } = useGroceryLists();
   const createMutation = useCreateGroceryList();
   const deleteMutation = useDeleteGroceryList();
@@ -67,19 +62,15 @@ export default function GroceryListsScreen() {
 
   const handleDelete = useCallback(
     (id: number) => {
-      Alert.alert("Delete List", "Are you sure you want to delete this list?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            haptics.impact();
-            deleteMutation.mutate(id);
-          },
-        },
-      ]);
+      confirm({
+        title: "Delete List",
+        message: "Are you sure you want to delete this list?",
+        confirmLabel: "Delete",
+        destructive: true,
+        onConfirm: () => deleteMutation.mutate(id),
+      });
     },
-    [haptics, deleteMutation],
+    [confirm, deleteMutation],
   );
 
   const renderItem = useCallback(
@@ -272,6 +263,7 @@ export default function GroceryListsScreen() {
           <Feather name="plus" size={24} color={theme.buttonText} />
         </Pressable>
       )}
+      <ConfirmationModal />
     </View>
   );
 }

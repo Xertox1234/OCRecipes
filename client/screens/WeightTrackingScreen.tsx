@@ -5,12 +5,12 @@ import {
   ScrollView,
   Pressable,
   TextInput,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   AccessibilityInfo,
 } from "react-native";
 import { InlineError } from "@/components/InlineError";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
@@ -43,6 +43,7 @@ export default function WeightTrackingScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { isPremium } = usePremiumContext();
+  const { confirm, ConfirmationModal } = useConfirmationModal();
 
   const [weightInput, setWeightInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
@@ -82,19 +83,15 @@ export default function WeightTrackingScreen() {
 
   const handleDeleteLog = useCallback(
     (log: ApiWeightLog) => {
-      Alert.alert("Delete Entry", `Remove ${formatWeight(log.weight)} entry?`, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-            deleteLog.mutate(log.id);
-          },
-        },
-      ]);
+      confirm({
+        title: "Delete Entry",
+        message: `Remove ${formatWeight(log.weight)} entry?`,
+        confirmLabel: "Delete",
+        destructive: true,
+        onConfirm: () => deleteLog.mutate(log.id),
+      });
     },
-    [haptics, deleteLog],
+    [confirm, deleteLog],
   );
 
   const handleSetGoal = useCallback(() => {
@@ -115,284 +112,290 @@ export default function WeightTrackingScreen() {
   }, [goalInput, haptics, setGoalWeight]);
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <ScrollView
-        style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-        contentContainerStyle={{
-          paddingTop: headerHeight + Spacing.lg,
-          paddingBottom: insets.bottom + Spacing.xl,
-        }}
-        keyboardDismissMode="on-drag"
+    <>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        {/* Log Weight Card */}
-        <Card elevation={1} style={styles.inputCard}>
-          <ThemedText type="h4" style={styles.sectionTitle}>
-            Log Weight
-          </ThemedText>
-          <View style={styles.inputRow}>
+        <ScrollView
+          style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+          contentContainerStyle={{
+            paddingTop: headerHeight + Spacing.lg,
+            paddingBottom: insets.bottom + Spacing.xl,
+          }}
+          keyboardDismissMode="on-drag"
+        >
+          {/* Log Weight Card */}
+          <Card elevation={1} style={styles.inputCard}>
+            <ThemedText type="h4" style={styles.sectionTitle}>
+              Log Weight
+            </ThemedText>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[
+                  styles.weightInput,
+                  {
+                    backgroundColor: theme.backgroundSecondary,
+                    color: theme.text,
+                    borderColor: theme.border,
+                  },
+                ]}
+                placeholder="Weight (kg)"
+                placeholderTextColor={theme.textSecondary}
+                keyboardType="decimal-pad"
+                value={weightInput}
+                onChangeText={(text) => {
+                  setWeightInput(text);
+                  if (weightError) setWeightError(null);
+                }}
+                accessibilityLabel="Weight in kilograms"
+              />
+              <Pressable
+                onPress={handleLogWeight}
+                disabled={logWeight.isPending || !weightInput}
+                accessibilityLabel="Log weight"
+                accessibilityRole="button"
+                accessibilityState={{
+                  disabled: logWeight.isPending || !weightInput,
+                  busy: logWeight.isPending,
+                }}
+                style={({ pressed }) => [
+                  styles.logButton,
+                  {
+                    backgroundColor: theme.link,
+                    opacity:
+                      pressed || logWeight.isPending || !weightInput ? 0.6 : 1,
+                  },
+                ]}
+              >
+                <Feather name="plus" size={20} color={theme.buttonText} />
+              </Pressable>
+            </View>
             <TextInput
               style={[
-                styles.weightInput,
+                styles.noteInput,
                 {
                   backgroundColor: theme.backgroundSecondary,
                   color: theme.text,
                   borderColor: theme.border,
                 },
               ]}
-              placeholder="Weight (kg)"
+              placeholder="Note (optional)"
               placeholderTextColor={theme.textSecondary}
-              keyboardType="decimal-pad"
-              value={weightInput}
-              onChangeText={(text) => {
-                setWeightInput(text);
-                if (weightError) setWeightError(null);
-              }}
-              accessibilityLabel="Weight in kilograms"
+              value={noteInput}
+              onChangeText={setNoteInput}
+              accessibilityLabel="Optional note"
             />
-            <Pressable
-              onPress={handleLogWeight}
-              disabled={logWeight.isPending || !weightInput}
-              accessibilityLabel="Log weight"
-              accessibilityRole="button"
-              accessibilityState={{
-                disabled: logWeight.isPending || !weightInput,
-                busy: logWeight.isPending,
-              }}
-              style={({ pressed }) => [
-                styles.logButton,
-                {
-                  backgroundColor: theme.link,
-                  opacity:
-                    pressed || logWeight.isPending || !weightInput ? 0.6 : 1,
-                },
-              ]}
-            >
-              <Feather name="plus" size={20} color={theme.buttonText} />
-            </Pressable>
-          </View>
-          <TextInput
-            style={[
-              styles.noteInput,
-              {
-                backgroundColor: theme.backgroundSecondary,
-                color: theme.text,
-                borderColor: theme.border,
-              },
-            ]}
-            placeholder="Note (optional)"
-            placeholderTextColor={theme.textSecondary}
-            value={noteInput}
-            onChangeText={setNoteInput}
-            accessibilityLabel="Optional note"
-          />
-          <InlineError
-            message={weightError}
-            style={{ marginTop: Spacing.sm }}
-          />
-        </Card>
+            <InlineError
+              message={weightError}
+              style={{ marginTop: Spacing.sm }}
+            />
+          </Card>
 
-        {/* Trend Summary */}
-        {trend && trend.currentWeight != null && (
-          <Card elevation={1} style={styles.trendCard}>
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Trend
-            </ThemedText>
-            <View style={styles.trendRow}>
-              <View style={styles.trendItem}>
-                <ThemedText style={styles.trendValue}>
-                  {trend.currentWeight.toFixed(1)}
-                </ThemedText>
-                <ThemedText
-                  type="caption"
-                  style={{ color: theme.textSecondary }}
-                >
-                  Current (kg)
-                </ThemedText>
-              </View>
-              {trend.weeklyRateOfChange != null && (
-                <View style={styles.trendItem}>
-                  <ThemedText
-                    style={[
-                      styles.trendValue,
-                      {
-                        color:
-                          trend.weeklyRateOfChange < 0
-                            ? theme.success
-                            : trend.weeklyRateOfChange > 0
-                              ? theme.error
-                              : theme.text,
-                      },
-                    ]}
-                  >
-                    {trend.weeklyRateOfChange > 0 ? "+" : ""}
-                    {trend.weeklyRateOfChange.toFixed(2)}
-                  </ThemedText>
-                  <ThemedText
-                    type="caption"
-                    style={{ color: theme.textSecondary }}
-                  >
-                    kg/week
-                  </ThemedText>
-                </View>
-              )}
-              {isPremium && trend.avg7Day != null && (
+          {/* Trend Summary */}
+          {trend && trend.currentWeight != null && (
+            <Card elevation={1} style={styles.trendCard}>
+              <ThemedText type="h4" style={styles.sectionTitle}>
+                Trend
+              </ThemedText>
+              <View style={styles.trendRow}>
                 <View style={styles.trendItem}>
                   <ThemedText style={styles.trendValue}>
-                    {trend.avg7Day.toFixed(1)}
+                    {trend.currentWeight.toFixed(1)}
                   </ThemedText>
                   <ThemedText
                     type="caption"
                     style={{ color: theme.textSecondary }}
                   >
-                    7-day avg
+                    Current (kg)
                   </ThemedText>
                 </View>
-              )}
-            </View>
-            {isPremium && trend.projectedGoalDate && (
-              <ThemedText
-                type="caption"
-                style={[styles.goalProjection, { color: theme.success }]}
-              >
-                Projected goal date: {trend.projectedGoalDate}
-              </ThemedText>
-            )}
-          </Card>
-        )}
-
-        {/* Chart (premium) */}
-        {isPremium && logs.length > 1 && (
-          <Card elevation={1} style={styles.chartCard}>
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Weight History
-            </ThemedText>
-            <WeightChart data={logs} goalWeight={trend?.goalWeight} />
-          </Card>
-        )}
-
-        {/* Goal Weight */}
-        <Card elevation={1} style={styles.goalCard}>
-          <View style={styles.goalHeader}>
-            <ThemedText type="h4">Goal Weight</ThemedText>
-            <Pressable
-              onPress={() => {
-                const closing = showGoalInput;
-                setShowGoalInput(!showGoalInput);
-                if (closing) setGoalError(null);
-              }}
-              accessibilityLabel="Set goal weight"
-              accessibilityRole="button"
-              hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
-            >
-              <Feather name="edit-2" size={18} color={theme.link} />
-            </Pressable>
-          </View>
-          {trend?.goalWeight ? (
-            <ThemedText style={styles.goalValue}>
-              {trend.goalWeight.toFixed(1)} kg
-            </ThemedText>
-          ) : (
-            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-              No goal set
-            </ThemedText>
-          )}
-          {showGoalInput && (
-            <View style={styles.goalInputRow}>
-              <TextInput
-                style={[
-                  styles.weightInput,
-                  {
-                    flex: 1,
-                    backgroundColor: theme.backgroundSecondary,
-                    color: theme.text,
-                    borderColor: theme.border,
-                  },
-                ]}
-                placeholder="Goal weight (kg)"
-                placeholderTextColor={theme.textSecondary}
-                keyboardType="decimal-pad"
-                value={goalInput}
-                onChangeText={(text) => {
-                  setGoalInput(text);
-                  if (goalError) setGoalError(null);
-                }}
-                accessibilityLabel="Goal weight in kilograms"
-              />
-              <Pressable
-                onPress={handleSetGoal}
-                disabled={!goalInput}
-                accessibilityLabel="Save goal weight"
-                accessibilityRole="button"
-                style={({ pressed }) => [
-                  styles.logButton,
-                  {
-                    backgroundColor: theme.success,
-                    opacity: pressed || !goalInput ? 0.6 : 1,
-                  },
-                ]}
-              >
-                <Feather name="check" size={20} color={theme.buttonText} />
-              </Pressable>
-            </View>
-          )}
-          <InlineError message={goalError} style={{ marginTop: Spacing.sm }} />
-        </Card>
-
-        {/* History List */}
-        <Card elevation={1} style={styles.historyCard}>
-          <ThemedText type="h4" style={styles.sectionTitle}>
-            History
-          </ThemedText>
-          {logs.length === 0 ? (
-            <ThemedText
-              type="caption"
-              style={{ color: theme.textSecondary, textAlign: "center" }}
-            >
-              No weight entries yet
-            </ThemedText>
-          ) : (
-            logs.map((log) => (
-              <Pressable
-                key={log.id}
-                onLongPress={() => handleDeleteLog(log)}
-                accessibilityLabel={`${formatWeight(log.weight)} on ${formatDate(log.loggedAt)}`}
-                accessibilityHint="Long press to delete"
-                style={({ pressed }) => [
-                  styles.historyItem,
-                  {
-                    borderBottomColor: theme.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <View>
-                  <ThemedText style={styles.historyWeight}>
-                    {formatWeight(log.weight)}
-                  </ThemedText>
-                  {log.note ? (
+                {trend.weeklyRateOfChange != null && (
+                  <View style={styles.trendItem}>
+                    <ThemedText
+                      style={[
+                        styles.trendValue,
+                        {
+                          color:
+                            trend.weeklyRateOfChange < 0
+                              ? theme.success
+                              : trend.weeklyRateOfChange > 0
+                                ? theme.error
+                                : theme.text,
+                        },
+                      ]}
+                    >
+                      {trend.weeklyRateOfChange > 0 ? "+" : ""}
+                      {trend.weeklyRateOfChange.toFixed(2)}
+                    </ThemedText>
                     <ThemedText
                       type="caption"
                       style={{ color: theme.textSecondary }}
                     >
-                      {log.note}
+                      kg/week
                     </ThemedText>
-                  ) : null}
-                </View>
+                  </View>
+                )}
+                {isPremium && trend.avg7Day != null && (
+                  <View style={styles.trendItem}>
+                    <ThemedText style={styles.trendValue}>
+                      {trend.avg7Day.toFixed(1)}
+                    </ThemedText>
+                    <ThemedText
+                      type="caption"
+                      style={{ color: theme.textSecondary }}
+                    >
+                      7-day avg
+                    </ThemedText>
+                  </View>
+                )}
+              </View>
+              {isPremium && trend.projectedGoalDate && (
                 <ThemedText
                   type="caption"
-                  style={{ color: theme.textSecondary }}
+                  style={[styles.goalProjection, { color: theme.success }]}
                 >
-                  {formatDate(log.loggedAt)}
+                  Projected goal date: {trend.projectedGoalDate}
                 </ThemedText>
-              </Pressable>
-            ))
+              )}
+            </Card>
           )}
-        </Card>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+          {/* Chart (premium) */}
+          {isPremium && logs.length > 1 && (
+            <Card elevation={1} style={styles.chartCard}>
+              <ThemedText type="h4" style={styles.sectionTitle}>
+                Weight History
+              </ThemedText>
+              <WeightChart data={logs} goalWeight={trend?.goalWeight} />
+            </Card>
+          )}
+
+          {/* Goal Weight */}
+          <Card elevation={1} style={styles.goalCard}>
+            <View style={styles.goalHeader}>
+              <ThemedText type="h4">Goal Weight</ThemedText>
+              <Pressable
+                onPress={() => {
+                  const closing = showGoalInput;
+                  setShowGoalInput(!showGoalInput);
+                  if (closing) setGoalError(null);
+                }}
+                accessibilityLabel="Set goal weight"
+                accessibilityRole="button"
+                hitSlop={{ top: 13, bottom: 13, left: 13, right: 13 }}
+              >
+                <Feather name="edit-2" size={18} color={theme.link} />
+              </Pressable>
+            </View>
+            {trend?.goalWeight ? (
+              <ThemedText style={styles.goalValue}>
+                {trend.goalWeight.toFixed(1)} kg
+              </ThemedText>
+            ) : (
+              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                No goal set
+              </ThemedText>
+            )}
+            {showGoalInput && (
+              <View style={styles.goalInputRow}>
+                <TextInput
+                  style={[
+                    styles.weightInput,
+                    {
+                      flex: 1,
+                      backgroundColor: theme.backgroundSecondary,
+                      color: theme.text,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                  placeholder="Goal weight (kg)"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="decimal-pad"
+                  value={goalInput}
+                  onChangeText={(text) => {
+                    setGoalInput(text);
+                    if (goalError) setGoalError(null);
+                  }}
+                  accessibilityLabel="Goal weight in kilograms"
+                />
+                <Pressable
+                  onPress={handleSetGoal}
+                  disabled={!goalInput}
+                  accessibilityLabel="Save goal weight"
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.logButton,
+                    {
+                      backgroundColor: theme.success,
+                      opacity: pressed || !goalInput ? 0.6 : 1,
+                    },
+                  ]}
+                >
+                  <Feather name="check" size={20} color={theme.buttonText} />
+                </Pressable>
+              </View>
+            )}
+            <InlineError
+              message={goalError}
+              style={{ marginTop: Spacing.sm }}
+            />
+          </Card>
+
+          {/* History List */}
+          <Card elevation={1} style={styles.historyCard}>
+            <ThemedText type="h4" style={styles.sectionTitle}>
+              History
+            </ThemedText>
+            {logs.length === 0 ? (
+              <ThemedText
+                type="caption"
+                style={{ color: theme.textSecondary, textAlign: "center" }}
+              >
+                No weight entries yet
+              </ThemedText>
+            ) : (
+              logs.map((log) => (
+                <Pressable
+                  key={log.id}
+                  onLongPress={() => handleDeleteLog(log)}
+                  accessibilityLabel={`${formatWeight(log.weight)} on ${formatDate(log.loggedAt)}`}
+                  accessibilityHint="Long press to delete"
+                  style={({ pressed }) => [
+                    styles.historyItem,
+                    {
+                      borderBottomColor: theme.border,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <View>
+                    <ThemedText style={styles.historyWeight}>
+                      {formatWeight(log.weight)}
+                    </ThemedText>
+                    {log.note ? (
+                      <ThemedText
+                        type="caption"
+                        style={{ color: theme.textSecondary }}
+                      >
+                        {log.note}
+                      </ThemedText>
+                    ) : null}
+                  </View>
+                  <ThemedText
+                    type="caption"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    {formatDate(log.loggedAt)}
+                  </ThemedText>
+                </Pressable>
+              ))
+            )}
+          </Card>
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <ConfirmationModal />
+    </>
   );
 }
 

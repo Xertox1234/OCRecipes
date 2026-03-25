@@ -4,7 +4,6 @@ import {
   View,
   FlatList,
   Pressable,
-  Alert,
   RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -15,6 +14,7 @@ import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
@@ -65,6 +65,7 @@ export default function ChatListScreen() {
   const haptics = useHaptics();
   const toast = useToast();
   const { reducedMotion } = useAccessibility();
+  const { confirm, ConfirmationModal } = useConfirmationModal();
   const navigation = useNavigation<ChatListNavigationProp>();
 
   const {
@@ -108,17 +109,15 @@ export default function ChatListScreen() {
 
   const handleDeleteChat = useCallback(
     (id: number, title: string) => {
-      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-      Alert.alert("Delete Chat", `Delete "${title}"?`, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteConversation.mutate(id),
-        },
-      ]);
+      confirm({
+        title: "Delete Chat",
+        message: `Delete "${title}"?`,
+        confirmLabel: "Delete",
+        destructive: true,
+        onConfirm: () => deleteConversation.mutate(id),
+      });
     },
-    [haptics, deleteConversation],
+    [confirm, deleteConversation],
   );
 
   const renderItem = useCallback(
@@ -269,6 +268,7 @@ export default function ChatListScreen() {
           )
         }
       />
+      <ConfirmationModal />
     </View>
   );
 }

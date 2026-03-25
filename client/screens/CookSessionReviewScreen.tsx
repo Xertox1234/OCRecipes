@@ -18,6 +18,7 @@ import {
 } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
@@ -50,6 +51,7 @@ export default function CookSessionReviewScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
+  const { confirm, ConfirmationModal } = useConfirmationModal();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "CookSessionReview">>();
@@ -96,20 +98,18 @@ export default function CookSessionReviewScreen() {
 
   const handleDelete = useCallback(
     (ingredientId: string, name: string) => {
-      haptics.notification(Haptics.NotificationFeedbackType.Warning);
-      Alert.alert("Remove Ingredient", `Remove ${name}?`, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: async () => {
-            await deleteIngredient.mutateAsync(ingredientId);
-            AccessibilityInfo.announceForAccessibility(`${name} removed`);
-          },
+      confirm({
+        title: "Remove Ingredient",
+        message: `Remove ${name}?`,
+        confirmLabel: "Remove",
+        destructive: true,
+        onConfirm: async () => {
+          await deleteIngredient.mutateAsync(ingredientId);
+          AccessibilityInfo.announceForAccessibility(`${name} removed`);
         },
-      ]);
+      });
     },
-    [deleteIngredient, haptics],
+    [confirm, deleteIngredient],
   );
 
   const handlePreparationChange = useCallback(
@@ -238,126 +238,133 @@ export default function CookSessionReviewScreen() {
     substitutionsMutation.isPending;
 
   return (
-    <ThemedView style={styles.container} accessibilityViewIsModal={true}>
-      <FlatList
-        data={ingredients}
-        keyExtractor={(item) => item.id}
-        renderItem={renderIngredient}
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: insets.bottom + 200 },
-        ]}
-        ListHeaderComponent={
-          <View style={styles.header}>
-            <ThemedText type="h2">
-              {ingredients.length} Ingredient
-              {ingredients.length !== 1 ? "s" : ""}
-            </ThemedText>
-          </View>
-        }
-        ListFooterComponent={
-          nutrition ? (
-            <NutritionSummaryCard nutrition={nutrition} theme={theme} />
-          ) : isLoadingNutrition ? (
-            <View style={styles.nutritionLoading}>
-              <ActivityIndicator size="small" color={theme.success} />
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                Calculating nutrition...
+    <>
+      <ThemedView style={styles.container} accessibilityViewIsModal={true}>
+        <FlatList
+          data={ingredients}
+          keyExtractor={(item) => item.id}
+          renderItem={renderIngredient}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: insets.bottom + 200 },
+          ]}
+          ListHeaderComponent={
+            <View style={styles.header}>
+              <ThemedText type="h2">
+                {ingredients.length} Ingredient
+                {ingredients.length !== 1 ? "s" : ""}
               </ThemedText>
             </View>
-          ) : null
-        }
-      />
+          }
+          ListFooterComponent={
+            nutrition ? (
+              <NutritionSummaryCard nutrition={nutrition} theme={theme} />
+            ) : isLoadingNutrition ? (
+              <View style={styles.nutritionLoading}>
+                <ActivityIndicator size="small" color={theme.success} />
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  Calculating nutrition...
+                </ThemedText>
+              </View>
+            ) : null
+          }
+        />
 
-      {/* Action Hub */}
-      <View
-        style={[
-          styles.actionHub,
-          {
-            paddingBottom: insets.bottom + Spacing.md,
-            backgroundColor: theme.backgroundDefault,
-            borderTopColor: withOpacity(theme.border, 0.3),
-          },
-        ]}
-      >
-        <Pressable
-          style={[styles.actionButton, { backgroundColor: theme.success }]}
-          onPress={handleLogMeal}
-          disabled={isActionLoading || ingredients.length === 0}
-          accessibilityLabel="Log meal"
-          accessibilityRole="button"
+        {/* Action Hub */}
+        <View
+          style={[
+            styles.actionHub,
+            {
+              paddingBottom: insets.bottom + Spacing.md,
+              backgroundColor: theme.backgroundDefault,
+              borderTopColor: withOpacity(theme.border, 0.3),
+            },
+          ]}
         >
-          {logSession.isPending ? (
-            <ActivityIndicator size="small" color={theme.buttonText} />
-          ) : (
-            <>
-              <Feather name="check-circle" size={20} color={theme.buttonText} />
-              <ThemedText type="body" style={styles.actionText}>
-                Log Meal
-              </ThemedText>
-            </>
-          )}
-        </Pressable>
-
-        <View style={styles.secondaryActions}>
           <Pressable
-            style={[
-              styles.secondaryButton,
-              { borderColor: theme.border },
-              !features.recipeGeneration && { opacity: 0.5 },
-            ]}
-            onPress={handleGenerateRecipe}
-            disabled={
-              isActionLoading ||
-              !features.recipeGeneration ||
-              ingredients.length === 0
-            }
-            accessibilityLabel={
-              features.recipeGeneration
-                ? "Generate recipe"
-                : "Generate recipe (premium)"
-            }
-            accessibilityRole="button"
-          >
-            {recipeMutation.isPending ? (
-              <ActivityIndicator size="small" color={theme.link} />
-            ) : (
-              <>
-                <Feather name="book-open" size={18} color={theme.link} />
-                <ThemedText
-                  type="small"
-                  style={{ color: theme.link, fontWeight: "600" }}
-                >
-                  Recipe
-                </ThemedText>
-              </>
-            )}
-          </Pressable>
-
-          <Pressable
-            style={[styles.secondaryButton, { borderColor: theme.border }]}
-            onPress={handleSubstitutions}
+            style={[styles.actionButton, { backgroundColor: theme.success }]}
+            onPress={handleLogMeal}
             disabled={isActionLoading || ingredients.length === 0}
-            accessibilityLabel="Get substitution suggestions"
+            accessibilityLabel="Log meal"
             accessibilityRole="button"
           >
-            {substitutionsMutation.isPending ? (
-              <ActivityIndicator size="small" color={theme.link} />
+            {logSession.isPending ? (
+              <ActivityIndicator size="small" color={theme.buttonText} />
             ) : (
               <>
-                <Feather name="repeat" size={18} color={theme.link} />
-                <ThemedText
-                  type="small"
-                  style={{ color: theme.link, fontWeight: "600" }}
-                >
-                  Substitutes
+                <Feather
+                  name="check-circle"
+                  size={20}
+                  color={theme.buttonText}
+                />
+                <ThemedText type="body" style={styles.actionText}>
+                  Log Meal
                 </ThemedText>
               </>
             )}
           </Pressable>
+
+          <View style={styles.secondaryActions}>
+            <Pressable
+              style={[
+                styles.secondaryButton,
+                { borderColor: theme.border },
+                !features.recipeGeneration && { opacity: 0.5 },
+              ]}
+              onPress={handleGenerateRecipe}
+              disabled={
+                isActionLoading ||
+                !features.recipeGeneration ||
+                ingredients.length === 0
+              }
+              accessibilityLabel={
+                features.recipeGeneration
+                  ? "Generate recipe"
+                  : "Generate recipe (premium)"
+              }
+              accessibilityRole="button"
+            >
+              {recipeMutation.isPending ? (
+                <ActivityIndicator size="small" color={theme.link} />
+              ) : (
+                <>
+                  <Feather name="book-open" size={18} color={theme.link} />
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.link, fontWeight: "600" }}
+                  >
+                    Recipe
+                  </ThemedText>
+                </>
+              )}
+            </Pressable>
+
+            <Pressable
+              style={[styles.secondaryButton, { borderColor: theme.border }]}
+              onPress={handleSubstitutions}
+              disabled={isActionLoading || ingredients.length === 0}
+              accessibilityLabel="Get substitution suggestions"
+              accessibilityRole="button"
+            >
+              {substitutionsMutation.isPending ? (
+                <ActivityIndicator size="small" color={theme.link} />
+              ) : (
+                <>
+                  <Feather name="repeat" size={18} color={theme.link} />
+                  <ThemedText
+                    type="small"
+                    style={{ color: theme.link, fontWeight: "600" }}
+                  >
+                    Substitutes
+                  </ThemedText>
+                </>
+              )}
+            </Pressable>
+          </View>
         </View>
-      </View>
-    </ThemedView>
+      </ThemedView>
+      <ConfirmationModal />
+    </>
   );
 }
 

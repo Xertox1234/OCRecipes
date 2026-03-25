@@ -6,7 +6,6 @@ import {
   SectionList,
   TextInput,
   RefreshControl,
-  Alert,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,6 +16,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -122,6 +122,7 @@ export default function PantryScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { features } = usePremiumContext();
+  const { confirm, ConfirmationModal } = useConfirmationModal();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -146,17 +147,15 @@ export default function PantryScreen() {
 
   const handleDelete = useCallback(
     (id: number) => {
-      haptics.selection();
-      Alert.alert("Remove Item", "Remove this item from your pantry?", [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Remove",
-          style: "destructive",
-          onPress: () => deleteMutation.mutate(id),
-        },
-      ]);
+      confirm({
+        title: "Remove Item",
+        message: "Remove this item from your pantry?",
+        confirmLabel: "Remove",
+        destructive: true,
+        onConfirm: () => deleteMutation.mutate(id),
+      });
     },
-    [haptics, deleteMutation],
+    [confirm, deleteMutation],
   );
 
   // Group by category
@@ -373,6 +372,7 @@ export default function PantryScreen() {
         }
         stickySectionHeadersEnabled
       />
+      <ConfirmationModal />
     </View>
   );
 }
