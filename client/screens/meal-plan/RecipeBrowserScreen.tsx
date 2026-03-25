@@ -7,7 +7,6 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
-  Image,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -20,6 +19,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { ThemedText } from "@/components/ThemedText";
 import { Chip } from "@/components/Chip";
 import { SkeletonBox } from "@/components/SkeletonLoader";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -151,27 +151,14 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
           : `Add ${item.title} to meal plan`
       }
     >
-      {imageUri ? (
-        <Image
-          source={{ uri: imageUri }}
-          style={styles.recipeCardThumbnail}
-          accessible={false}
-        />
-      ) : (
-        <View
-          style={[
-            styles.recipeCardThumbnail,
-            { backgroundColor: withOpacity(theme.text, 0.08) },
-          ]}
-        >
-          <Feather
-            name="image"
-            size={20}
-            color={theme.textSecondary}
-            accessible={false}
-          />
-        </View>
-      )}
+      <FallbackImage
+        source={{ uri: imageUri ?? undefined }}
+        style={styles.recipeCardThumbnail}
+        fallbackStyle={{ backgroundColor: withOpacity(theme.text, 0.08) }}
+        fallbackIcon="image"
+        fallbackIconSize={20}
+        accessible={false}
+      />
       <View style={styles.recipeCardContent}>
         <ThemedText style={styles.recipeCardTitle} numberOfLines={2}>
           {item.title}

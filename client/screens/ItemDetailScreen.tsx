@@ -1,11 +1,5 @@
 import React from "react";
-import {
-  AccessibilityInfo,
-  StyleSheet,
-  View,
-  ScrollView,
-  Image,
-} from "react-native";
+import { AccessibilityInfo, StyleSheet, View, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute, RouteProp } from "@react-navigation/native";
@@ -16,6 +10,7 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { SkeletonBox } from "@/components/SkeletonLoader";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -189,27 +184,17 @@ export default function ItemDetailScreen() {
       >
         <Card elevation={2} style={styles.headerCard}>
           <View style={styles.headerContent}>
-            {item.imageUrl ? (
-              <Image
-                source={{ uri: item.imageUrl }}
-                style={styles.productImage}
-                accessibilityLabel={`Photo of ${item.productName}`}
-              />
-            ) : (
-              <View
-                style={[
-                  styles.imagePlaceholder,
-                  { backgroundColor: theme.backgroundSecondary },
-                ]}
-              >
-                <Feather
-                  name="package"
-                  size={40}
-                  color={theme.textSecondary}
-                  accessible={false}
-                />
-              </View>
-            )}
+            <FallbackImage
+              source={{ uri: item.imageUrl ?? undefined }}
+              style={styles.productImage}
+              fallbackStyle={{
+                ...styles.imagePlaceholder,
+                backgroundColor: theme.backgroundSecondary,
+              }}
+              fallbackIcon="package"
+              fallbackIconSize={40}
+              accessibilityLabel={`Photo of ${item.productName}`}
+            />
             <View style={styles.headerInfo}>
               <ThemedText type="h3" style={styles.productName}>
                 {item.productName}

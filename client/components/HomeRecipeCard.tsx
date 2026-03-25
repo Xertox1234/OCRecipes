@@ -1,10 +1,11 @@
 import React, { useCallback } from "react";
-import { StyleSheet, View, Image } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import {
@@ -56,28 +57,18 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
       >
         {/* Image section */}
         <View style={styles.imageContainer}>
-          {imageUri ? (
-            <Image
-              source={{ uri: imageUri }}
-              style={styles.image}
-              resizeMode="cover"
-              accessible={false}
-            />
-          ) : (
-            <View
-              style={[
-                styles.imagePlaceholder,
-                { backgroundColor: theme.backgroundSecondary },
-              ]}
-            >
-              <Feather
-                name="image"
-                size={40}
-                color={theme.textSecondary}
-                accessible={false}
-              />
-            </View>
-          )}
+          <FallbackImage
+            source={{ uri: imageUri ?? undefined }}
+            style={styles.image}
+            fallbackStyle={{
+              backgroundColor: theme.backgroundSecondary,
+            }}
+            fallbackIcon="image"
+            fallbackIconSize={40}
+            resizeMode="cover"
+            accessible={false}
+            accessibilityLabel={`Photo of ${recipe.title}`}
+          />
 
           {/* Difficulty badge */}
           {recipe.difficulty ? (

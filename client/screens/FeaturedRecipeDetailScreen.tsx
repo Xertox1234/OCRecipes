@@ -4,7 +4,6 @@ import {
   StyleSheet,
   View,
   ScrollView,
-  Image,
   Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +17,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { CookbookPickerModal } from "@/components/CookbookPickerModal";
 import { SkeletonBox } from "@/components/SkeletonLoader";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { resolveImageUrl } from "@/lib/query-client";
@@ -171,28 +171,18 @@ export default function FeaturedRecipeDetailScreen() {
           automaticallyAdjustContentInsets={false}
         >
           {/* Hero image */}
-          {imageUri ? (
-            <Image
-              source={{ uri: imageUri }}
-              style={styles.heroImage}
-              resizeMode="cover"
-              accessibilityLabel={`Photo of ${recipe.title}`}
-            />
-          ) : (
-            <View
-              style={[
-                styles.heroPlaceholder,
-                { backgroundColor: theme.backgroundSecondary },
-              ]}
-            >
-              <Feather
-                name="image"
-                size={48}
-                color={theme.textSecondary}
-                accessible={false}
-              />
-            </View>
-          )}
+          <FallbackImage
+            source={{ uri: imageUri ?? undefined }}
+            style={styles.heroImage}
+            fallbackStyle={{
+              backgroundColor: theme.backgroundSecondary,
+              height: HERO_PLACEHOLDER_HEIGHT,
+            }}
+            fallbackIcon="image"
+            fallbackIconSize={48}
+            resizeMode="cover"
+            accessibilityLabel={`Photo of ${recipe.title}`}
+          />
 
           <View style={styles.content}>
             {/* Title */}

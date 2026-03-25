@@ -1,10 +1,11 @@
 import React from "react";
-import { View, Image, Pressable, StyleSheet } from "react-native";
+import { View, Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
@@ -39,27 +40,14 @@ export function DailySummaryHeader({ onCalorieTap }: DailySummaryHeaderProps) {
         style={styles.greetingRow}
       >
         <View style={styles.greetingLeft}>
-          {user?.avatarUrl ? (
-            <Image
-              source={{ uri: resolveImageUrl(user.avatarUrl) ?? undefined }}
-              style={styles.avatar}
-              accessibilityLabel={`${displayName}'s profile photo`}
-            />
-          ) : (
-            <View
-              style={[
-                styles.avatarPlaceholder,
-                { backgroundColor: theme.backgroundSecondary },
-              ]}
-            >
-              <Feather
-                name="user"
-                size={14}
-                color={theme.textSecondary}
-                accessible={false}
-              />
-            </View>
-          )}
+          <FallbackImage
+            source={{ uri: resolveImageUrl(user?.avatarUrl) ?? undefined }}
+            style={styles.avatar}
+            fallbackStyle={styles.avatarPlaceholder}
+            fallbackIcon="user"
+            fallbackIconSize={14}
+            accessibilityLabel={`${displayName}'s profile photo`}
+          />
           <ThemedText type="body" style={styles.greeting}>
             Hello {displayName}
           </ThemedText>

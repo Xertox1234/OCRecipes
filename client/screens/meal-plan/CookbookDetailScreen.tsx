@@ -1,12 +1,5 @@
 import React, { useCallback, useRef } from "react";
-import {
-  StyleSheet,
-  View,
-  Pressable,
-  FlatList,
-  Alert,
-  Image,
-} from "react-native";
+import { StyleSheet, View, Pressable, FlatList, Alert } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -16,6 +9,7 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -149,27 +143,17 @@ export default function CookbookDetailScreen() {
         accessibilityRole="button"
         accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}`}
       >
-        {item.imageUrl ? (
-          <Image
-            source={{ uri: item.imageUrl }}
-            style={styles.recipeImage}
-            accessibilityIgnoresInvertColors
-          />
-        ) : (
-          <View
-            style={[
-              styles.recipeImage,
-              styles.recipePlaceholder,
-              { backgroundColor: withOpacity(theme.text, 0.08) },
-            ]}
-          >
-            <Feather
-              name="image"
-              size={20}
-              color={withOpacity(theme.text, 0.3)}
-            />
-          </View>
-        )}
+        <FallbackImage
+          source={{ uri: item.imageUrl ?? undefined }}
+          style={styles.recipeImage}
+          fallbackStyle={{
+            ...styles.recipePlaceholder,
+            backgroundColor: withOpacity(theme.text, 0.08),
+          }}
+          fallbackIcon="image"
+          fallbackIconSize={20}
+          accessibilityIgnoresInvertColors
+        />
         <View style={styles.recipeContent}>
           <ThemedText style={styles.recipeTitle} numberOfLines={2}>
             {item.title}

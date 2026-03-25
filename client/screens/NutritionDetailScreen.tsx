@@ -6,7 +6,6 @@ import {
   StyleSheet,
   View,
   ScrollView,
-  Image,
   Pressable,
   TextInput as RNTextInput,
 } from "react-native";
@@ -23,6 +22,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { SkeletonBox } from "@/components/SkeletonLoader";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -630,9 +630,11 @@ export default function NutritionDetailScreen() {
             entering={reducedMotion ? undefined : FadeIn.duration(400)}
             style={styles.imageContainer}
           >
-            <Image
+            <FallbackImage
               source={{ uri: nutrition.imageUrl }}
               style={styles.productImage}
+              fallbackIcon="package"
+              fallbackIconSize={40}
               resizeMode="contain"
               accessibilityLabel={`Image of ${nutrition.productName || "product"}`}
             />

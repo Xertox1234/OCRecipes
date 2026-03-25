@@ -25,6 +25,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -163,21 +164,18 @@ const AvatarWithRing = React.memo(function AvatarWithRing({
     >
       {isUploading ? (
         <ActivityIndicator size="small" color={theme.link} />
-      ) : user?.avatarUrl ? (
-        <Image
-          source={{ uri: resolveImageUrl(user.avatarUrl) ?? undefined }}
+      ) : (
+        <FallbackImage
+          source={{ uri: resolveImageUrl(user?.avatarUrl) ?? undefined }}
           style={styles.avatarImage}
+          fallbackStyle={{
+            ...styles.avatarPlaceholder,
+            backgroundColor: withOpacity(theme.link, 0.12),
+          }}
+          fallbackIcon="user"
+          fallbackIconSize={28}
           accessible={false}
         />
-      ) : (
-        <View
-          style={[
-            styles.avatarPlaceholder,
-            { backgroundColor: withOpacity(theme.link, 0.12) },
-          ]}
-        >
-          <Feather name="user" size={28} color={theme.link} />
-        </View>
       )}
       <View
         style={[
@@ -342,17 +340,17 @@ const PhotoGridItem = React.memo(function PhotoGridItem({
         },
       ]}
     >
-      {imageUri ? (
-        <Image
-          source={{ uri: imageUri }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={styles.gridItemContent}>
-          <Feather name="image" size={32} color={theme.textSecondary} />
-        </View>
-      )}
+      <FallbackImage
+        source={{ uri: imageUri ?? undefined }}
+        style={StyleSheet.absoluteFill}
+        fallback={
+          <View style={styles.gridItemContent}>
+            <Feather name="image" size={32} color={theme.textSecondary} />
+          </View>
+        }
+        resizeMode="cover"
+        accessibilityLabel={`Photo of ${item.title}`}
+      />
       <LinearGradient
         colors={["transparent", withOpacity("#000000", 0.6)]} // hardcoded — dark overlay for white text
         style={styles.gridItemGradient}

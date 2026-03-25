@@ -11,7 +11,6 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
-  Image,
   ActivityIndicator,
   ScrollView,
   AccessibilityInfo,
@@ -45,6 +44,7 @@ import { SkeletonList, SkeletonBox } from "@/components/SkeletonLoader";
 import { HistoryItemActions } from "@/components/HistoryItemActions";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { GroceryListPickerModal } from "@/components/GroceryListPickerModal";
+import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -215,27 +215,17 @@ const HistoryItem = React.memo(function HistoryItem({
               accessibilityRole="button"
             >
               <View style={styles.itemContent}>
-                {item.imageUrl ? (
-                  <Image
-                    source={{ uri: item.imageUrl }}
-                    style={styles.itemImage}
-                    accessible={false}
-                  />
-                ) : (
-                  <View
-                    style={[
-                      styles.itemPlaceholder,
-                      { backgroundColor: theme.backgroundSecondary },
-                    ]}
-                  >
-                    <Feather
-                      name="package"
-                      size={24}
-                      color={theme.textSecondary}
-                      accessible={false}
-                    />
-                  </View>
-                )}
+                <FallbackImage
+                  source={{ uri: item.imageUrl ?? undefined }}
+                  style={styles.itemImage}
+                  fallbackStyle={{
+                    ...styles.itemPlaceholder,
+                    backgroundColor: theme.backgroundSecondary,
+                  }}
+                  fallbackIcon="package"
+                  fallbackIconSize={24}
+                  accessible={false}
+                />
 
                 <View style={styles.itemInfo}>
                   <ThemedText
