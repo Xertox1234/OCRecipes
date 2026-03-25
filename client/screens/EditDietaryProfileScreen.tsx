@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import {
+  AccessibilityInfo,
   View,
   StyleSheet,
   ScrollView,
   Pressable,
-  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -15,6 +15,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
+import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { apiRequest } from "@/lib/query-client";
@@ -45,6 +46,138 @@ interface DietaryProfile {
   cuisinePreferences?: string[];
   cookingSkillLevel?: string | null;
   cookingTimeAvailable?: string | null;
+}
+
+function DietaryProfileSkeleton() {
+  React.useEffect(() => {
+    AccessibilityInfo.announceForAccessibility("Loading");
+  }, []);
+
+  return (
+    <View
+      accessibilityElementsHidden
+      style={{ padding: Spacing.lg, gap: Spacing.xl }}
+    >
+      {/* Allergies section - chip grid */}
+      <View style={{ gap: Spacing.md }}>
+        <SkeletonBox width={100} height={20} />
+        <View
+          style={{ flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm }}
+        >
+          <SkeletonBox
+            width={80}
+            height={36}
+            borderRadius={BorderRadius.full}
+          />
+          <SkeletonBox
+            width={60}
+            height={36}
+            borderRadius={BorderRadius.full}
+          />
+          <SkeletonBox
+            width={90}
+            height={36}
+            borderRadius={BorderRadius.full}
+          />
+          <SkeletonBox
+            width={70}
+            height={36}
+            borderRadius={BorderRadius.full}
+          />
+          <SkeletonBox
+            width={85}
+            height={36}
+            borderRadius={BorderRadius.full}
+          />
+        </View>
+      </View>
+      {/* Diet Type section - chip grid */}
+      <View style={{ gap: Spacing.md }}>
+        <SkeletonBox width={90} height={20} />
+        <View
+          style={{ flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm }}
+        >
+          <SkeletonBox
+            width={75}
+            height={36}
+            borderRadius={BorderRadius.full}
+          />
+          <SkeletonBox
+            width={95}
+            height={36}
+            borderRadius={BorderRadius.full}
+          />
+          <SkeletonBox
+            width={65}
+            height={36}
+            borderRadius={BorderRadius.full}
+          />
+        </View>
+      </View>
+      {/* Activity Level section - list rows */}
+      <View style={{ gap: Spacing.md }}>
+        <SkeletonBox width={130} height={20} />
+        <View style={{ gap: Spacing.sm }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <SkeletonBox width="70%" height={16} />
+            <SkeletonBox width={20} height={20} borderRadius={10} />
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <SkeletonBox width="60%" height={16} />
+            <SkeletonBox width={20} height={20} borderRadius={10} />
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <SkeletonBox width="75%" height={16} />
+            <SkeletonBox width={20} height={20} borderRadius={10} />
+          </View>
+        </View>
+      </View>
+      {/* Cooking Skill section - list rows */}
+      <View style={{ gap: Spacing.md }}>
+        <SkeletonBox width={120} height={20} />
+        <View style={{ gap: Spacing.sm }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <SkeletonBox width="55%" height={16} />
+            <SkeletonBox width={20} height={20} borderRadius={10} />
+          </View>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <SkeletonBox width="65%" height={16} />
+            <SkeletonBox width={20} height={20} borderRadius={10} />
+          </View>
+        </View>
+      </View>
+    </View>
+  );
 }
 
 export default function EditDietaryProfileScreen() {
@@ -161,12 +294,13 @@ export default function EditDietaryProfileScreen() {
   if (isLoading) {
     return (
       <View
-        style={[
-          styles.loadingContainer,
-          { backgroundColor: theme.backgroundRoot },
-        ]}
+        style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       >
-        <ActivityIndicator size="large" color={theme.success} />
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        >
+          <DietaryProfileSkeleton />
+        </ScrollView>
       </View>
     );
   }
@@ -697,11 +831,6 @@ export default function EditDietaryProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
   },
   scrollView: {
     flex: 1,

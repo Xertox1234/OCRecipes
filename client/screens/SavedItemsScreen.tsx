@@ -1,10 +1,10 @@
 import React, { useCallback } from "react";
 import {
+  AccessibilityInfo,
   StyleSheet,
   View,
   FlatList,
   RefreshControl,
-  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -15,18 +15,81 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { EmptyState } from "@/components/EmptyState";
 import { SavedItemCard } from "@/components/SavedItemCard";
+import { SkeletonBox, SkeletonList } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useSavedItems, useSavedItemCount } from "@/hooks/useSavedItems";
 import { usePremiumContext } from "@/context/PremiumContext";
-import { Spacing, withOpacity } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { SavedItem } from "@shared/schema";
 
 const ITEM_SEPARATOR_HEIGHT = Spacing.md;
 
 /** Cap staggered animation index to avoid slow entrance on long lists */
 const MAX_ANIMATED_INDEX = 10;
+
+function SavedItemsSkeleton() {
+  React.useEffect(() => {
+    AccessibilityInfo.announceForAccessibility("Loading");
+  }, []);
+
+  return (
+    <View accessibilityElementsHidden>
+      <SkeletonList
+        count={4}
+        renderItem={(i) => (
+          <View
+            key={i}
+            style={{
+              padding: Spacing.lg,
+              gap: Spacing.sm,
+              opacity: 1 - i * 0.1,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: Spacing.md,
+              }}
+            >
+              <SkeletonBox
+                width={32}
+                height={32}
+                borderRadius={BorderRadius.md}
+              />
+              <View style={{ flex: 1, gap: Spacing.xs }}>
+                <SkeletonBox width="70%" height={16} />
+                <SkeletonBox width="40%" height={14} />
+              </View>
+            </View>
+            <SkeletonBox width="90%" height={14} />
+            <SkeletonBox width="60%" height={14} />
+            <View
+              style={{
+                flexDirection: "row",
+                gap: Spacing.sm,
+                marginTop: Spacing.xs,
+              }}
+            >
+              <SkeletonBox
+                width={70}
+                height={24}
+                borderRadius={BorderRadius.xs}
+              />
+              <SkeletonBox
+                width={60}
+                height={24}
+                borderRadius={BorderRadius.xs}
+              />
+            </View>
+          </View>
+        )}
+      />
+    </View>
+  );
+}
 
 export default function SavedItemsScreen() {
   const insets = useSafeAreaInsets();
@@ -109,14 +172,6 @@ export default function SavedItemsScreen() {
     </View>
   );
 
-  if (isLoading) {
-    return (
-      <ThemedView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.link} />
-      </ThemedView>
-    );
-  }
-
   return (
     <ThemedView style={styles.container}>
       <FlatList
@@ -125,7 +180,7 @@ export default function SavedItemsScreen() {
         keyExtractor={(item) => item.id.toString()}
         ItemSeparatorComponent={renderSeparator}
         ListHeaderComponent={renderHeader}
-        ListEmptyComponent={renderEmpty}
+        ListEmptyComponent={isLoading ? <SavedItemsSkeleton /> : renderEmpty()}
         contentContainerStyle={[
           styles.listContent,
           {
@@ -151,11 +206,6 @@ export default function SavedItemsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
   },
   listContent: {
     paddingHorizontal: Spacing.lg,

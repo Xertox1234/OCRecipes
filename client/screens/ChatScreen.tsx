@@ -29,6 +29,7 @@ import Animated, {
 
 import { ChatBubble } from "@/components/ChatBubble";
 import { ThemedText } from "@/components/ThemedText";
+import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -149,6 +150,72 @@ function SuggestedPrompts({
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function ChatSkeleton() {
+  React.useEffect(() => {
+    AccessibilityInfo.announceForAccessibility("Loading");
+  }, []);
+
+  return (
+    <View
+      accessibilityElementsHidden
+      style={{
+        flex: 1,
+        justifyContent: "flex-end",
+        padding: Spacing.lg,
+        gap: Spacing.lg,
+      }}
+    >
+      {/* Left-aligned bubble (assistant) */}
+      <View style={{ alignSelf: "flex-start", gap: Spacing.xs }}>
+        <SkeletonBox
+          width={200}
+          height={16}
+          borderRadius={BorderRadius["2xl"]}
+        />
+        <SkeletonBox
+          width={140}
+          height={16}
+          borderRadius={BorderRadius["2xl"]}
+        />
+      </View>
+      {/* Right-aligned bubble (user) */}
+      <View style={{ alignSelf: "flex-end" }}>
+        <SkeletonBox
+          width={180}
+          height={16}
+          borderRadius={BorderRadius["2xl"]}
+        />
+      </View>
+      {/* Left-aligned bubble (assistant, longer) */}
+      <View style={{ alignSelf: "flex-start", gap: Spacing.xs }}>
+        <SkeletonBox
+          width={240}
+          height={16}
+          borderRadius={BorderRadius["2xl"]}
+        />
+        <SkeletonBox
+          width={200}
+          height={16}
+          borderRadius={BorderRadius["2xl"]}
+        />
+        <SkeletonBox
+          width={160}
+          height={16}
+          borderRadius={BorderRadius["2xl"]}
+        />
+      </View>
+      {/* Right-aligned bubble (user, short) */}
+      <View style={{ alignSelf: "flex-end" }}>
+        <SkeletonBox
+          width={120}
+          height={16}
+          borderRadius={BorderRadius["2xl"]}
+        />
+      </View>
+    </View>
+  );
+}
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
@@ -316,9 +383,7 @@ export default function ChatScreen() {
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color={theme.link} size="large" />
-        </View>
+        <ChatSkeleton />
       ) : isEmpty ? (
         <FlatList
           ref={flatListRef}
@@ -421,11 +486,6 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
   },
   messagesContent: {
     paddingTop: Spacing.md,

@@ -1,11 +1,11 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
   StyleSheet,
   View,
   ScrollView,
   Image,
   Pressable,
-  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, useNavigation } from "@react-navigation/native";
@@ -17,6 +17,7 @@ import type { RouteProp } from "@react-navigation/native";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { CookbookPickerModal } from "@/components/CookbookPickerModal";
+import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { resolveImageUrl } from "@/lib/query-client";
@@ -48,6 +49,56 @@ function InfoChip({ icon, text }: { icon: FeatherIconName; text: string }) {
       <ThemedText style={[styles.chipText, { color: theme.textSecondary }]}>
         {text}
       </ThemedText>
+    </View>
+  );
+}
+
+function RecipeDetailSkeleton() {
+  React.useEffect(() => {
+    AccessibilityInfo.announceForAccessibility("Loading");
+  }, []);
+
+  return (
+    <View accessibilityElementsHidden>
+      {/* Hero image placeholder */}
+      <SkeletonBox width="100%" height={HERO_IMAGE_HEIGHT} borderRadius={0} />
+      <View style={{ padding: Spacing.lg, gap: Spacing.md }}>
+        {/* Title */}
+        <SkeletonBox width="75%" height={22} />
+        {/* Description lines */}
+        <SkeletonBox width="100%" height={15} />
+        <SkeletonBox width="85%" height={15} />
+        {/* Info chips */}
+        <View
+          style={{
+            flexDirection: "row",
+            gap: Spacing.sm,
+            marginTop: Spacing.xs,
+          }}
+        >
+          <SkeletonBox width={80} height={28} borderRadius={BorderRadius.xs} />
+          <SkeletonBox width={70} height={28} borderRadius={BorderRadius.xs} />
+          <SkeletonBox width={90} height={28} borderRadius={BorderRadius.xs} />
+        </View>
+        {/* Save button */}
+        <SkeletonBox
+          width={140}
+          height={36}
+          borderRadius={BorderRadius.full}
+          style={{ marginTop: Spacing.xs }}
+        />
+        {/* Instructions title */}
+        <SkeletonBox
+          width={120}
+          height={20}
+          style={{ marginTop: Spacing.md }}
+        />
+        {/* Instruction text lines */}
+        <SkeletonBox width="100%" height={15} />
+        <SkeletonBox width="90%" height={15} />
+        <SkeletonBox width="95%" height={15} />
+        <SkeletonBox width="70%" height={15} />
+      </View>
     </View>
   );
 }
@@ -98,9 +149,9 @@ export default function FeaturedRecipeDetailScreen() {
       </View>
 
       {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={theme.link} />
-        </View>
+        <ScrollView contentInsetAdjustmentBehavior="never">
+          <RecipeDetailSkeleton />
+        </ScrollView>
       ) : error || !recipe ? (
         <View style={styles.center}>
           <Feather name="alert-circle" size={32} color={theme.textSecondary} />

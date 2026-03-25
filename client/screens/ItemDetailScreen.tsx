@@ -1,10 +1,10 @@
 import React from "react";
 import {
+  AccessibilityInfo,
   StyleSheet,
   View,
   ScrollView,
   Image,
-  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -15,6 +15,7 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -56,6 +57,73 @@ function NutritionRow({
   );
 }
 
+function ItemDetailSkeleton() {
+  React.useEffect(() => {
+    AccessibilityInfo.announceForAccessibility("Loading");
+  }, []);
+
+  return (
+    <View accessibilityElementsHidden style={{ padding: Spacing.lg }}>
+      {/* Header card */}
+      <View
+        style={{
+          flexDirection: "row",
+          gap: Spacing.lg,
+          marginBottom: Spacing.xl,
+        }}
+      >
+        <SkeletonBox width={100} height={100} borderRadius={BorderRadius.lg} />
+        <View style={{ flex: 1, justifyContent: "center", gap: Spacing.sm }}>
+          <SkeletonBox width="80%" height={20} />
+          <SkeletonBox width="50%" height={16} />
+          <SkeletonBox width="40%" height={14} />
+        </View>
+      </View>
+      {/* Section title */}
+      <SkeletonBox
+        width={140}
+        height={22}
+        style={{ marginBottom: Spacing.md }}
+      />
+      {/* Nutrition card */}
+      <View style={{ gap: Spacing.md }}>
+        <SkeletonBox width="50%" height={14} />
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <SkeletonBox width={80} height={16} />
+          <SkeletonBox width={50} height={28} />
+        </View>
+        <SkeletonBox width="100%" height={1} />
+        <View style={{ gap: Spacing.sm }}>
+          <View
+            style={{ flexDirection: "row", justifyContent: "space-between" }}
+          >
+            <SkeletonBox width={80} height={16} />
+            <SkeletonBox width={40} height={16} />
+          </View>
+          <View
+            style={{ flexDirection: "row", justifyContent: "space-between" }}
+          >
+            <SkeletonBox width={100} height={16} />
+            <SkeletonBox width={40} height={16} />
+          </View>
+          <View
+            style={{ flexDirection: "row", justifyContent: "space-between" }}
+          >
+            <SkeletonBox width={40} height={16} />
+            <SkeletonBox width={40} height={16} />
+          </View>
+          <View
+            style={{ flexDirection: "row", justifyContent: "space-between" }}
+          >
+            <SkeletonBox width={50} height={16} />
+            <SkeletonBox width={40} height={16} />
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function ItemDetailScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -75,15 +143,13 @@ export default function ItemDetailScreen() {
   if (isLoading) {
     return (
       <View
-        style={[
-          styles.loadingContainer,
-          {
-            backgroundColor: theme.backgroundRoot,
-            paddingTop: headerHeight + Spacing.xl,
-          },
-        ]}
+        style={{
+          flex: 1,
+          backgroundColor: theme.backgroundRoot,
+          paddingTop: headerHeight + Spacing.xl,
+        }}
       >
-        <ActivityIndicator size="large" color={theme.success} />
+        <ItemDetailSkeleton />
       </View>
     );
   }
@@ -229,11 +295,6 @@ export default function ItemDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: Spacing.lg,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
   },
   errorContainer: {
     flex: 1,
