@@ -54,10 +54,14 @@ export const BottomSheetView = React.forwardRef<
 export const BottomSheetModal = React.forwardRef<
   unknown,
   Record<string, unknown>
->(({ children, ...rest }, ref) => {
+>(({ children, onDismiss, ...rest }, ref) => {
   React.useImperativeHandle(ref, () => ({
     present: () => {},
-    dismiss: () => {},
+    dismiss: () => {
+      if (typeof onDismiss === "function") {
+        (onDismiss as () => void)();
+      }
+    },
     snapToIndex: () => {},
     close: () => {},
   }));
