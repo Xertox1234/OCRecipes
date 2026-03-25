@@ -1437,6 +1437,42 @@ export function SkeletonBox({ width, height, borderRadius, style }: SkeletonBoxP
 
 **Why:** Screen readers shouldn't announce loading placeholders. `accessibilityElementsHidden` hides the entire subtree from assistive technologies.
 
+**Announce loading for VoiceOver:** Since `accessibilityElementsHidden` makes skeletons invisible to screen readers, add an explicit announcement so users know content is loading:
+
+```typescript
+function MySkeleton() {
+  React.useEffect(() => {
+    AccessibilityInfo.announceForAccessibility("Loading");
+  }, []);
+
+  return (
+    <View accessibilityElementsHidden>
+      <SkeletonBox width="80%" height={20} />
+      {/* ... */}
+    </View>
+  );
+}
+```
+
+**FlatList screens — prefer `ListEmptyComponent` over early return:** For screens using `FlatList`, render the skeleton via `ListEmptyComponent` rather than an early-return `if (isLoading)` block. This keeps the `FlatList` mounted so `RefreshControl` works even during initial load:
+
+```typescript
+// ✅ Good — FlatList mounts immediately, pull-to-refresh works during load
+<FlatList
+  data={items}
+  ListEmptyComponent={isLoading ? <MySkeleton /> : <EmptyState />}
+  refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
+/>
+
+// ❌ Avoid — FlatList never mounts during load, no pull-to-refresh
+if (isLoading) return <MySkeleton />;
+return <FlatList data={items} ... />;
+```
+
+**Screen-specific skeletons:** Define skeleton components inline in each screen file (not centralized), matching the screen's actual content layout. Skeletons are tightly coupled to their screen — they change when the layout changes. See `DashboardSkeleton` in `HistoryScreen.tsx` for the established pattern.
+
+**Skeletons trigger on `isLoading` only** (not `isFetching`). TanStack Query's `isLoading` is true only on first load with no cached data. Using `isFetching` would flash the skeleton on every pull-to-refresh or refetch.
+
 ### Dynamic Loading State Labels
 
 Update `accessibilityLabel` to reflect loading state for buttons and actions:
