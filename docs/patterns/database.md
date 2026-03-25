@@ -1243,3 +1243,116 @@ frontLabelData: (jsonb("front_label_data"),
 
 - `server/storage/verification.ts` -- `confirmFrontLabelData()` for transactional enrichment storage
 - `shared/types/front-label.ts` -- `frontLabelDataSchema` Zod schema for JSONB shape
+
+### `.returning()` to Detect Missing Resources on UPDATE
+
+When an UPDATE targets a specific row by ID (resolve, approve, archive operations), the query silently succeeds with 0 affected rows if the ID doesn't exist. Use `.returning()` and check the result length to distinguish "updated" from "not found."
+
+```typescript
+// ✅ GOOD: Detect missing resource
+export async function resolveReformulationFlag(
+  id: number,
+  resolution: string,
+  resolvedBy: string,
+): Promise<ReformulationFlag | undefined> {
+  const [updated] = await db
+    .update(reformulationFlags)
+    .set({ status: "resolved", resolution, resolvedBy, resolvedAt: new Date() })
+    .where(eq(reformulationFlags.id, id))
+    .returning();
+  return updated; // undefined if id doesn't exist
+}
+
+// Route handler:
+const flag = await storage.resolveReformulationFlag(
+  id,
+  resolution,
+  req.userId!,
+);
+if (!flag) {
+  return sendError(res, 404, "Reformulation flag not found", "NOT_FOUND");
+}
+res.json(flag);
+```
+
+```typescript
+// ❌ BAD: Silent success on missing resource
+export async function resolveReformulationFlag(id: number, ...): Promise<void> {
+  await db
+    .update(reformulationFlags)
+    .set({ status: "resolved", ... })
+    .where(eq(reformulationFlags.id, id));
+  // No .returning() — caller has no way to know if the row existed
+}
+
+// Route handler returns 200 even when id=999999 doesn't exist:
+await storage.resolveReformulationFlag(id, resolution, req.userId!);
+res.json({ message: "Resolved" }); // misleading
+```
+
+**When to use:**
+
+- Any storage method that updates a specific row by primary key (resolve, archive, approve, reject)
+- Admin operations on resources that may have been deleted concurrently
+- Any endpoint where returning 200 for a nonexistent resource would be misleading
+
+**When NOT to use:**
+
+- Bulk updates where 0 affected rows is a valid outcome (e.g., "mark all as read")
+- Updates that include `userId` in the WHERE clause and already use the "return undefined for IDOR" pattern
+
+**Key insight:** Drizzle's `.update().where()` never throws on 0 matches — it silently succeeds. Without `.returning()`, the only way to detect this is a separate SELECT, which adds a round-trip and a TOCTOU window.
+
+**References:**
+
+- `server/storage/reformulation.ts` — `resolveReformulationFlag()`
+- See also: [Storage-Layer Defense-in-Depth](../patterns/security.md#storage-layer-defense-in-depth) in security patterns
+
+### Pagination Count Must Match List Query Filters
+
+When a paginated endpoint returns both `items` and `total`, the count query must apply the same WHERE conditions as the list query. A mismatch causes the client to show incorrect page counts or request pages that return empty.
+
+```typescript
+// ✅ GOOD: Count and list share the same filter conditions
+const conditions = [eq(flags.barcode, barcode)];
+if (status) {
+  conditions.push(eq(flags.status, status));
+}
+const where = and(...conditions);
+
+const [items, [{ count }]] = await Promise.all([
+  db.select().from(flags).where(where).limit(limit).offset(offset),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(flags)
+    .where(where),
+]);
+
+res.json({ items, total: Number(count), page, limit });
+```
+
+```typescript
+// ❌ BAD: Count ignores the status filter
+const items = await db
+  .select()
+  .from(flags)
+  .where(and(eq(flags.barcode, barcode), eq(flags.status, status)))
+  .limit(limit)
+  .offset(offset);
+
+// Count query doesn't include status filter — total is wrong
+const [{ count }] = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(flags)
+  .where(eq(flags.barcode, barcode));
+
+res.json({ items, total: Number(count), page, limit });
+```
+
+**When to use:** Every paginated list endpoint that returns a `total` count alongside `items`.
+
+**Why:** Extract the shared `where` clause into a variable and pass it to both queries. This makes it impossible for the filters to diverge.
+
+**References:**
+
+- `server/routes/verification.ts` — reformulation flag list endpoint

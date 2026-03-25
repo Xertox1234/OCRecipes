@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Read-Then-Write-Then-Check: Snapshot State Before Mutation (2026-03-25)](#read-then-write-then-check-snapshot-state-before-mutation-2026-03-25)
 - [NetInfo isConnected: null on Cold Start Causes False Offline State (2026-03-24)](#netinfo-isconnected-null-on-cold-start-causes-false-offline-state-2026-03-24)
 - [Screen Registration Order in React Navigation Native Stacks (2026-03-24)](#screen-registration-order-in-react-navigation-native-stacks-2026-03-24)
 - [Drizzle sql Template Parameterizes Column Refs in Subqueries (2026-03-23)](#drizzle-sql-template-parameterizes-column-refs-in-subqueries-2026-03-23)
@@ -29,6 +30,47 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
 
 ---
+
+## [2026-03-25] Read-Then-Write-Then-Check: Snapshot State Before Mutation
+
+**Category:** Race Condition / Gotcha
+
+### Context
+
+The product reformulation detection feature needed to compare a barcode's nutritional data before and after a new verification submission. The detection logic checks whether the new submission diverges significantly from the existing consensus.
+
+### Problem
+
+The original implementation called `submitVerification()` (which mutated the DB row), then read the verification row back to compare with the new data. Since the row was already updated, the "before" and "after" values were identical, and the detection logic never triggered.
+
+```typescript
+// ❌ BAD: Reads post-mutation state — detection never fires
+await submitVerification(barcode, data);
+const current = await getVerification(barcode); // Already mutated!
+const flags = detectReformulation(current, data); // current === data → no flags
+```
+
+### Solution
+
+Snapshot the pre-mutation state BEFORE calling the mutating function:
+
+```typescript
+// ✅ GOOD: Snapshot before mutation
+const preSubmitState = await getVerification(barcode); // Read BEFORE write
+await submitVerification(barcode, data); // Mutates the row
+const flags = detectReformulation(preSubmitState, data); // Compares old vs new
+```
+
+### Takeaways
+
+- When a route handler needs to detect changes caused by its own mutation, **always read state before the write**. The variable naming convention `preSubmitX` or `snapshotX` signals this intent.
+- This is distinct from optimistic locking (which prevents concurrent writes). Here, the goal is to compare previous and new values within a single request.
+- The bug is invisible in happy-path testing because the detection simply produces zero flags — there is no error, no crash, just silent no-ops. Only a test that asserts "flag WAS created" would catch it.
+
+### References
+
+- `server/routes/verification.ts` — `preSubmitVerification` snapshot before `submitVerification()` call
+- `server/services/reformulation-detection.ts` — pure detection logic that receives the snapshot
 
 ## [2026-03-24] NetInfo isConnected: null on Cold Start Causes False Offline State
 
