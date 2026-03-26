@@ -776,8 +776,14 @@ export default function ProfileScreen() {
         );
 
         if (uploadResult.status !== 200) {
-          const errorData = JSON.parse(uploadResult.body || "{}");
-          throw new Error(errorData.error || "Failed to upload avatar");
+          let errorMessage = "Failed to upload avatar";
+          try {
+            const errorData = JSON.parse(uploadResult.body || "{}");
+            if (errorData.error) errorMessage = errorData.error;
+          } catch {
+            // Malformed response body — use default message
+          }
+          throw new Error(errorMessage);
         }
 
         await checkAuth();

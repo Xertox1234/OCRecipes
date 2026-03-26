@@ -809,6 +809,8 @@ export async function lookupBarcode(
   code: string,
 ): Promise<BarcodeLookupResult | null> {
   // ── Step 1: Fetch Open Food Facts (try padding variants) ─────────
+  // Open Food Facts returns deeply nested, loosely-typed product objects.
+  // Using `any` here is pragmatic — a full interface would be brittle and unmaintainable.
   let offProduct: Record<string, any> | null = null;
   const codesToTry = barcodeVariants(code);
 

@@ -41,8 +41,8 @@ import {
 } from "@shared/constants/beverages";
 import {
   hasModifiers,
-  isZeroCal,
   isNumericCalorieInput,
+  capitalize,
 } from "./beverage-picker-utils";
 import type { BeverageSheetOptions } from "@/hooks/useBeverageSheet";
 
@@ -51,6 +51,8 @@ type Step = "beverage" | "modifier" | "size" | "custom";
 const SELECTABLE_BEVERAGES = BEVERAGE_TYPES.filter((t) => t !== "custom");
 const SIZE_KEYS: BeverageSize[] = ["small", "medium", "large"];
 const MAX_DYNAMIC_HEIGHT = 480;
+const MAX_CUSTOM_NAME_LENGTH = 100;
+const MAX_CUSTOM_CALORIES = 5000;
 
 export interface BeveragePickerSheetProps {
   sheetRef: React.RefObject<BottomSheetModal | null>;
@@ -158,9 +160,25 @@ export function BeveragePickerSheet({
 
       if (isCustom) {
         if (isCalories) {
-          body.customCalories = parseFloat(customInput.trim());
+          const parsed = parseFloat(customInput.trim());
+          if (isNaN(parsed) || parsed < 0 || parsed > MAX_CUSTOM_CALORIES) {
+            setError(`Calories must be between 0 and ${MAX_CUSTOM_CALORIES}`);
+            setIsLogging(false);
+            isActioning.current = false;
+            return;
+          }
+          body.customCalories = parsed;
         } else {
-          body.customName = customInput.trim();
+          const trimmed = customInput.trim();
+          if (trimmed.length > MAX_CUSTOM_NAME_LENGTH) {
+            setError(
+              `Name must be ${MAX_CUSTOM_NAME_LENGTH} characters or less`,
+            );
+            setIsLogging(false);
+            isActioning.current = false;
+            return;
+          }
+          body.customName = trimmed;
         }
       }
 
@@ -220,17 +238,9 @@ export function BeveragePickerSheet({
   const handleCustomSubmit = useCallback(() => {
     if (!customInput.trim()) return;
     haptics.impact(ImpactFeedbackStyle.Light);
-
-    // If water-like (0 cal), skip directly to size
-    if (isZeroCal(selectedBeverage!)) {
-      setStep("size");
-      AccessibilityInfo.announceForAccessibility("Select size");
-      return;
-    }
-
     setStep("size");
     AccessibilityInfo.announceForAccessibility("Select size");
-  }, [customInput, selectedBeverage, haptics]);
+  }, [customInput, haptics]);
 
   // --- Back navigation ---
 
@@ -409,9 +419,7 @@ export function BeveragePickerSheet({
                       key={mod}
                       onPress={() => toggleModifier(mod)}
                       accessibilityRole="switch"
-                      accessibilityLabel={
-                        mod.charAt(0).toUpperCase() + mod.slice(1)
-                      }
+                      accessibilityLabel={capitalize(mod)}
                       accessibilityState={{ checked: isSelected }}
                       style={[
                         styles.modifierChip,
@@ -435,7 +443,7 @@ export function BeveragePickerSheet({
                           { color: isSelected ? theme.link : theme.text },
                         ]}
                       >
-                        {mod.charAt(0).toUpperCase() + mod.slice(1)}
+                        {capitalize(mod)}
                       </ThemedText>
                     </Pressable>
                   );
@@ -536,6 +544,7 @@ export function BeveragePickerSheet({
                 returnKeyType="next"
                 onSubmitEditing={handleCustomSubmit}
                 autoFocus
+                maxLength={MAX_CUSTOM_NAME_LENGTH}
                 accessibilityLabel="Beverage name or calories"
                 style={[
                   styles.customInput,

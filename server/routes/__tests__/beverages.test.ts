@@ -161,6 +161,7 @@ describe("Beverages Routes", () => {
 
       expect(res.status).toBe(422);
       expect(res.body.error).toContain("Could not find nutrition data");
+      expect(res.body.code).toBe("NUTRITION_LOOKUP_FAILED");
     });
 
     it("returns 400 for custom beverage with no name or calories", async () => {

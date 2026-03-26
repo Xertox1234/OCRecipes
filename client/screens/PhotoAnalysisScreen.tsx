@@ -433,16 +433,19 @@ export default function PhotoAnalysisScreen() {
   const beverageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { open: openBeverageSheet, BeverageSheet } = useBeverageSheet();
 
-  const handleBeverageLogged = useCallback((name: string, size: string) => {
-    const msg = formatBeverageConfirmation(name, size as BeverageSize);
-    setBeverageConfirmation(msg);
-    // Clear after 3 seconds
-    if (beverageTimerRef.current) clearTimeout(beverageTimerRef.current);
-    beverageTimerRef.current = setTimeout(
-      () => setBeverageConfirmation(null),
-      3000,
-    );
-  }, []);
+  const handleBeverageLogged = useCallback(
+    (name: string, size: BeverageSize) => {
+      const msg = formatBeverageConfirmation(name, size);
+      setBeverageConfirmation(msg);
+      // Clear after 3 seconds
+      if (beverageTimerRef.current) clearTimeout(beverageTimerRef.current);
+      beverageTimerRef.current = setTimeout(
+        () => setBeverageConfirmation(null),
+        3000,
+      );
+    },
+    [],
+  );
 
   // Announce beverage confirmation to iOS VoiceOver
   // (accessibilityLiveRegion is Android-only, so pair with announceForAccessibility)

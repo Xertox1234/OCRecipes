@@ -2,10 +2,11 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 
 import { BeveragePickerSheet } from "@/components/BeveragePickerSheet";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import type { BeverageSize } from "@shared/constants/beverages";
 
 export interface BeverageSheetOptions {
   mealType: string | null;
-  onLogged?: (beverageName: string, size: string) => void;
+  onLogged?: (beverageName: string, size: BeverageSize) => void;
 }
 
 const defaults: BeverageSheetOptions = { mealType: null };

@@ -104,6 +104,7 @@ export function register(app: Express): void {
               res,
               422,
               "Could not find nutrition data for this beverage. Try entering calories manually.",
+              "NUTRITION_LOOKUP_FAILED",
             );
           }
           calories = nutrition.calories;

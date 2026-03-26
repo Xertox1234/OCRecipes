@@ -1,35 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildNutritionQuery,
   isNumericCalorieInput,
   hasModifiers,
-  isZeroCal,
   formatBeverageConfirmation,
+  capitalize,
 } from "../beverage-picker-utils";
-
-describe("buildNutritionQuery", () => {
-  it("builds query with size and beverage name", () => {
-    expect(buildNutritionQuery("coffee", "medium", [])).toBe("12oz coffee");
-  });
-
-  it("builds query with single modifier", () => {
-    expect(buildNutritionQuery("coffee", "large", ["cream"])).toBe(
-      "16oz coffee with cream",
-    );
-  });
-
-  it("builds query with multiple modifiers", () => {
-    expect(buildNutritionQuery("tea", "small", ["cream", "sugar"])).toBe(
-      "8oz tea with cream and sugar",
-    );
-  });
-
-  it("uses correct oz for each size", () => {
-    expect(buildNutritionQuery("milk", "small", [])).toBe("8oz milk");
-    expect(buildNutritionQuery("milk", "medium", [])).toBe("12oz milk");
-    expect(buildNutritionQuery("milk", "large", [])).toBe("16oz milk");
-  });
-});
 
 describe("isNumericCalorieInput", () => {
   it("returns true for whole numbers", () => {
@@ -73,18 +48,6 @@ describe("hasModifiers", () => {
   });
 });
 
-describe("isZeroCal", () => {
-  it("returns true for water", () => {
-    expect(isZeroCal("water")).toBe(true);
-  });
-
-  it("returns false for caloric beverages", () => {
-    expect(isZeroCal("coffee")).toBe(false);
-    expect(isZeroCal("milk")).toBe(false);
-    expect(isZeroCal("soda")).toBe(false);
-  });
-});
-
 describe("formatBeverageConfirmation", () => {
   it("formats confirmation with size initial", () => {
     expect(formatBeverageConfirmation("Coffee", "medium")).toBe(
@@ -95,5 +58,20 @@ describe("formatBeverageConfirmation", () => {
   it("capitalizes size initial", () => {
     expect(formatBeverageConfirmation("Tea", "small")).toBe("Tea (S) added");
     expect(formatBeverageConfirmation("Milk", "large")).toBe("Milk (L) added");
+  });
+});
+
+describe("capitalize", () => {
+  it("capitalizes the first letter", () => {
+    expect(capitalize("cream")).toBe("Cream");
+    expect(capitalize("sugar")).toBe("Sugar");
+  });
+
+  it("handles single character", () => {
+    expect(capitalize("a")).toBe("A");
+  });
+
+  it("handles empty string", () => {
+    expect(capitalize("")).toBe("");
   });
 });
