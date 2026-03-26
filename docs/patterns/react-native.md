@@ -2555,3 +2555,84 @@ confirm({
 
 - `client/hooks/useConfirmationModal.ts` — owns warning haptic on destructive confirm
 - Related: "Haptic Feedback on User Actions" and "Accessibility-Aware Haptics Pattern" in this file
+
+### FallbackImage for Remote Image Loading
+
+Remote images (recipe photos, avatars, scanned item thumbnails) can fail to load due to 404s, network errors, or corrupted URLs. Use the `FallbackImage` component to automatically show a themed placeholder on failure, preventing blank/broken image states.
+
+```typescript
+import { FallbackImage } from "@/components/FallbackImage";
+
+// Basic usage — default icon placeholder
+<FallbackImage
+  source={{ uri: recipe.imageUrl ?? undefined }}
+  style={styles.recipeImage}
+  fallbackIcon="image"
+  fallbackIconSize={24}
+  accessibilityLabel={`Photo of ${recipe.title}`}
+/>
+
+// Custom icon color — when the original design uses an accent color
+<FallbackImage
+  source={{ uri: user.avatarUrl ?? undefined }}
+  style={styles.avatar}
+  fallbackStyle={{ backgroundColor: withOpacity(theme.link, 0.12) }}
+  fallbackIcon="user"
+  fallbackIconColor={theme.link}
+/>
+
+// Custom fallback element — when you need a non-standard placeholder
+<FallbackImage
+  source={{ uri: imageUri ?? undefined }}
+  style={StyleSheet.absoluteFill}
+  fallback={
+    <View style={styles.customPlaceholder}>
+      <Feather name="image" size={32} color={theme.textSecondary} />
+    </View>
+  }
+/>
+```
+
+**Key details:**
+
+- Always convert nullable strings with `?? undefined` before passing to `source` — `FallbackImage` handles `undefined` but nullable `string | null` types should be explicit
+- `fallbackIconColor` defaults to `theme.textSecondary` — override when the original design used an accent color (e.g., `theme.link` for avatars)
+- `fallbackStyle` merges with `style` on the fallback `View` — use it for different background colors without duplicating dimensions
+- `hasError` state resets automatically when the source URI changes, so dynamic updates (e.g., user uploads new avatar) work without remounting
+- The companion `FallbackImage-utils.ts` exports `hasValidUri()` as a pure testable type guard
+
+**When to use:** Any `<Image>` that loads a remote URL (recipe images, avatars, product photos, community content). NOT needed for locally-captured images (camera photos, image picker results) which are guaranteed to exist.
+
+**References:**
+
+- `client/components/FallbackImage.tsx` — component implementation
+- `client/components/FallbackImage-utils.ts` — `hasValidUri()` type guard
+- `client/screens/ProfileScreen.tsx` — avatar with `fallbackIconColor={theme.link}`
+- `client/screens/HistoryScreen.tsx` — scanned item thumbnails with "package" icon
+
+### Reset Derived State on Prop Change
+
+When a component tracks internal state derived from props (e.g., error states, loading flags, selection), that state can become stale when props change without the component remounting. Use a `useEffect` keyed on the relevant prop to reset:
+
+```typescript
+// ❌ BAD — hasError persists even after source changes
+const [hasError, setHasError] = useState(false);
+// User updates avatar → new URI arrives → still shows fallback
+
+// ✅ GOOD — reset when the driving prop changes
+const [hasError, setHasError] = useState(false);
+const sourceUri = source?.uri;
+useEffect(() => {
+  setHasError(false);
+}, [sourceUri]);
+```
+
+**Key details:**
+
+- Extract the primitive value from the prop (`source?.uri` not `source`) to avoid unnecessary resets from object reference changes
+- This is different from the "Intentional useEffect Dependencies" pattern — here the goal IS to react to the specific prop change
+- Alternative: use `key={sourceUri}` on the component to force a full remount, but this is heavier and destroys all internal state
+
+**When to use:** Any component where internal state (error flags, validation results, expanded/collapsed) should reset when a key prop changes identity.
+
+**When NOT to use:** State that should survive prop changes (scroll position, user input in a form that receives new defaults).

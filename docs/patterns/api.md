@@ -1542,3 +1542,32 @@ await db
 - `server/middleware/api-rate-limit.ts` — `apiRateLimiter` middleware
 - `server/storage/api-keys.ts` — `incrementUsage`, `getUsage`
 - `shared/constants/api-tiers.ts` — `TIER_FEATURES` config
+
+### Process-Level Error Handlers
+
+Register `uncaughtException` and `unhandledRejection` handlers at the top of `server/index.ts` (after imports, before app setup) to catch fatal errors that bypass Express middleware:
+
+```typescript
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+  process.exit(1); // Process is in undefined state — exit and let PM restart
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason);
+  // Log but don't exit — Node.js may recover
+});
+```
+
+**Key details:**
+
+- `uncaughtException` MUST exit with code 1 — after an uncaught exception the process is in an undefined state (half-written files, leaked connections). The process manager (PM2, Docker, systemd) handles restarts
+- `unhandledRejection` logs but does NOT exit — these are often recoverable (e.g., a forgotten `.catch()` on a fire-and-forget promise)
+- No restart logic in the handlers — that's the process manager's job
+- These catch errors from outside Express: database connection drops, timer callbacks, event emitter errors, `setTimeout` throws
+
+**When to use:** Every production Node.js server. These are a baseline for observability — without them, crashes produce no log output.
+
+**References:**
+
+- `server/index.ts` — lines 8-15
