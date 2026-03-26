@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   Image,
   View,
@@ -26,6 +26,8 @@ interface FallbackImageProps extends Omit<ImageProps, "source"> {
   fallbackIcon?: FeatherIconName;
   /** Size of the default fallback icon. Defaults to 24. */
   fallbackIconSize?: number;
+  /** Color of the default fallback icon. Defaults to theme.textSecondary. */
+  fallbackIconColor?: string;
   /** Style applied to the image and fallback container. Must include dimensions. */
   style?: StyleProp<ImageStyle>;
   /** Style applied only to the fallback container (merged with style). */
@@ -49,6 +51,7 @@ export function FallbackImage({
   fallback,
   fallbackIcon = "image",
   fallbackIconSize = 24,
+  fallbackIconColor,
   style,
   fallbackStyle,
   accessibilityLabel,
@@ -58,6 +61,11 @@ export function FallbackImage({
   const { theme } = useTheme();
   const [hasError, setHasError] = useState(false);
 
+  const sourceUri = source?.uri;
+  useEffect(() => {
+    setHasError(false);
+  }, [sourceUri]);
+
   const handleError = useCallback(
     (event: NativeSyntheticEvent<ImageErrorEventData>) => {
       setHasError(true);
@@ -66,7 +74,8 @@ export function FallbackImage({
     [onError],
   );
 
-  const showFallback = !hasValidUri(source) || hasError;
+  const validSource = hasValidUri(source) ? source : null;
+  const showFallback = !validSource || hasError;
 
   if (showFallback) {
     if (fallback) {
@@ -90,7 +99,7 @@ export function FallbackImage({
         <Feather
           name={fallbackIcon}
           size={fallbackIconSize}
-          color={theme.textSecondary}
+          color={fallbackIconColor ?? theme.textSecondary}
           accessible={false}
         />
       </View>
@@ -99,7 +108,7 @@ export function FallbackImage({
 
   return (
     <Image
-      source={{ uri: source!.uri! }}
+      source={{ uri: validSource.uri }}
       style={style}
       accessibilityLabel={accessibilityLabel}
       onError={handleError}

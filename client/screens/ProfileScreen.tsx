@@ -174,6 +174,7 @@ const AvatarWithRing = React.memo(function AvatarWithRing({
           }}
           fallbackIcon="user"
           fallbackIconSize={28}
+          fallbackIconColor={theme.link}
           accessible={false}
         />
       )}

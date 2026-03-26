@@ -631,7 +631,7 @@ export default function NutritionDetailScreen() {
             style={styles.imageContainer}
           >
             <FallbackImage
-              source={{ uri: nutrition.imageUrl }}
+              source={{ uri: nutrition.imageUrl ?? undefined }}
               style={styles.productImage}
               fallbackIcon="package"
               fallbackIconSize={40}

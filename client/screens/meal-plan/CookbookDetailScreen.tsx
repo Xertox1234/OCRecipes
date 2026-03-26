@@ -152,6 +152,7 @@ export default function CookbookDetailScreen() {
           }}
           fallbackIcon="image"
           fallbackIconSize={20}
+          fallbackIconColor={withOpacity(theme.text, 0.3)}
           accessibilityIgnoresInvertColors
         />
         <View style={styles.recipeContent}>

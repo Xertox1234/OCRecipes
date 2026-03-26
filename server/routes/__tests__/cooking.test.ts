@@ -140,6 +140,14 @@ describe("Cooking Routes", () => {
     app = createApp();
   });
 
+  afterEach(() => {
+    // Clean up any timeouts created during tests to prevent leaks
+    for (const [, timeout] of _testInternals.cookSessionTimeouts) {
+      clearTimeout(timeout);
+    }
+    _testInternals.cookSessionTimeouts.clear();
+  });
+
   describe("POST /api/cooking/sessions", () => {
     it("creates a cooking session for premium user", async () => {
       setupPremiumMock();
