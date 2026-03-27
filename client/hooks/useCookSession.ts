@@ -7,8 +7,8 @@ import type {
   CookSessionNutritionSummary,
   SubstitutionResult,
   IngredientEdit,
+  RecipeContent,
 } from "@shared/types/cook-session";
-import type { RecipeContent } from "../../server/services/recipe-generation";
 
 // ============================================================================
 // Session queries

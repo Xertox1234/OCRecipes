@@ -27,6 +27,7 @@ vi.mock("../../lib/openai", () => ({
       },
     },
   },
+  isAiConfigured: true,
 }));
 
 vi.mock("../../middleware/auth");
@@ -105,10 +106,8 @@ describe("Suggestions Routes", () => {
     });
 
     it("returns 404 for item not owned by user", async () => {
-      vi.mocked(storage.getScannedItem).mockResolvedValue({
-        ...mockItem,
-        userId: "2",
-      } as never);
+      // Storage layer now filters by userId, so mismatched user returns undefined
+      vi.mocked(storage.getScannedItem).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/items/1/suggestions")
@@ -183,10 +182,8 @@ describe("Suggestions Routes", () => {
     });
 
     it("returns 404 for item not owned by user", async () => {
-      vi.mocked(storage.getScannedItem).mockResolvedValue({
-        ...mockItem,
-        userId: "2",
-      } as never);
+      // Storage layer now filters by userId, so mismatched user returns undefined
+      vi.mocked(storage.getScannedItem).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/items/1/suggestions/0/instructions")

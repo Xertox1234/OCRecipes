@@ -414,6 +414,14 @@ export async function createGroceryList(
   return created;
 }
 
+export async function getGroceryListCount(userId: string): Promise<number> {
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(groceryLists)
+    .where(eq(groceryLists.userId, userId));
+  return Number(result[0]?.count ?? 0);
+}
+
 export async function getGroceryLists(
   userId: string,
   limit = 100,

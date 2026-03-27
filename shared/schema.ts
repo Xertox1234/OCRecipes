@@ -620,6 +620,11 @@ export const mealPlanItems = pgTable(
       table.userId,
       table.plannedDate,
     ),
+    // Prevent orphan items with no nutrition source
+    hasNutritionSource: check(
+      "meal_plan_items_has_source",
+      sql`recipe_id IS NOT NULL OR scanned_item_id IS NOT NULL`,
+    ),
   }),
 );
 

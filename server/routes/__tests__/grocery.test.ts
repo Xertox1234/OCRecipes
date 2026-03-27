@@ -11,6 +11,7 @@ vi.mock("../../storage", () => ({
     getSubscriptionStatus: vi.fn(),
     getUser: vi.fn(),
     getUserProfile: vi.fn().mockResolvedValue(null),
+    getGroceryListCount: vi.fn(),
     getGroceryLists: vi.fn(),
     getMealPlanIngredientsForDateRange: vi.fn(),
     createGroceryList: vi.fn(),
@@ -70,7 +71,7 @@ describe("Grocery Routes", () => {
       vi.mocked(storage.getUser).mockResolvedValue({
         subscriptionTier: "premium",
       } as never);
-      vi.mocked(storage.getGroceryLists).mockResolvedValue([] as never);
+      vi.mocked(storage.getGroceryListCount).mockResolvedValue(0);
       vi.mocked(storage.getMealPlanIngredientsForDateRange).mockResolvedValue(
         [] as never,
       );
@@ -117,9 +118,7 @@ describe("Grocery Routes", () => {
       vi.mocked(storage.getUser).mockResolvedValue({
         subscriptionTier: "free",
       } as never);
-      vi.mocked(storage.getGroceryLists).mockResolvedValue(
-        Array(50).fill(mockList) as never,
-      );
+      vi.mocked(storage.getGroceryListCount).mockResolvedValue(50);
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists")

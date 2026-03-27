@@ -9,7 +9,7 @@
 import "dotenv/config";
 import { db, pool } from "../db";
 import { scannedItems, barcodeNutrition } from "@shared/schema";
-import { isNotNull, sql } from "drizzle-orm";
+import { isNotNull } from "drizzle-orm";
 
 async function main() {
   console.log("Starting barcodeNutrition backfill...");

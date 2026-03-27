@@ -28,6 +28,7 @@ vi.mock("../../lib/openai", () => ({
       },
     },
   },
+  isAiConfigured: true,
   OPENAI_TIMEOUT_HEAVY_MS: 30000,
 }));
 

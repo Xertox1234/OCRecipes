@@ -11,6 +11,7 @@ import {
   instructionsRateLimit,
   suggestionsRateLimit,
   parsePositiveIntParam,
+  checkAiConfigured,
 } from "./_helpers";
 import { openai } from "../lib/openai";
 
@@ -19,6 +20,19 @@ const instructionsRequestSchema = z.object({
   suggestionTitle: z.string().min(1).max(200),
   suggestionType: z.enum(["recipe", "craft", "pairing"]),
   cacheId: z.number().int().positive().optional(),
+});
+
+// Zod schema for AI suggestion response
+const suggestionItemSchema = z.object({
+  type: z.enum(["recipe", "craft", "pairing"]),
+  title: z.string(),
+  description: z.string().default(""),
+  difficulty: z.string().optional(),
+  timeEstimate: z.string().optional(),
+});
+
+const suggestionsResponseSchema = z.object({
+  suggestions: z.array(suggestionItemSchema).min(1),
 });
 
 export function register(app: Express): void {
@@ -38,10 +52,8 @@ export function register(app: Express): void {
           );
         }
 
-        const item = await storage.getScannedItem(itemId);
-
-        // IDOR protection: verify user owns the item
-        if (!item || item.userId !== req.userId) {
+        const item = await storage.getScannedItem(itemId, req.userId!);
+        if (!item) {
           return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
 
@@ -65,6 +77,9 @@ export function register(app: Express): void {
             cacheId: cached.id,
           });
         }
+
+        // Cache miss — need AI to generate suggestions
+        if (!checkAiConfigured(res)) return;
 
         let dietaryContext = "";
         if (userProfile) {
@@ -138,7 +153,17 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
         });
 
         const responseText = completion.choices[0]?.message?.content || "{}";
-        const suggestions = JSON.parse(responseText);
+        const parsed = suggestionsResponseSchema.safeParse(
+          JSON.parse(responseText),
+        );
+        if (!parsed.success) {
+          return sendError(
+            res,
+            502,
+            "AI returned an unexpected response format",
+            ErrorCode.INTERNAL_ERROR,
+          );
+        }
 
         // Cache the result (30 days TTL)
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
@@ -146,12 +171,12 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
           itemId,
           req.userId!,
           profileHash,
-          suggestions.suggestions,
+          parsed.data.suggestions,
           expiresAt,
         );
 
         res.json({
-          suggestions: suggestions.suggestions,
+          suggestions: parsed.data.suggestions,
           cacheId: cacheEntry.id,
         });
       } catch (error) {
@@ -196,8 +221,8 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
           );
         }
 
-        const item = await storage.getScannedItem(itemId);
-        if (!item || item.userId !== req.userId) {
+        const item = await storage.getScannedItem(itemId, req.userId!);
+        if (!item) {
           return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
 
@@ -228,6 +253,9 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
             return res.json({ instructions: cachedInstruction.instructions });
           }
         }
+
+        // Cache miss — need AI to generate instructions
+        if (!checkAiConfigured(res)) return;
 
         const userProfile = await storage.getUserProfile(req.userId!);
 

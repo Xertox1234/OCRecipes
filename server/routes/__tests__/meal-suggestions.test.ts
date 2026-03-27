@@ -21,6 +21,8 @@ vi.mock("../../storage", () => ({
   },
 }));
 
+vi.mock("../../lib/openai", () => ({ isAiConfigured: true }));
+
 vi.mock("../../services/meal-suggestions", () => ({
   generateMealSuggestions: vi.fn(),
   buildSuggestionCacheKey: vi.fn(() => "cache-key"),

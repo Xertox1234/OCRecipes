@@ -21,7 +21,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
-import { useAccessibility } from "@/hooks/useAccessibility";
+
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { confirmFrontLabel } from "@/lib/photo-upload";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -38,7 +38,6 @@ export default function FrontLabelConfirmScreen() {
   const route = useRoute<ScreenRoute>();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { reducedMotion } = useAccessibility();
   const { imageUri, barcode, sessionId, data } = route.params;
 
   const [error, setError] = useState<string | null>(null);

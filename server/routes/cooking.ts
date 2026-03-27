@@ -7,6 +7,8 @@ import { type FoodCategory } from "@shared/constants/preparation";
 import {
   formatZodError,
   checkPremiumFeature,
+  checkAiConfigured,
+  createImageUpload,
   parseStringParam,
   createRateLimiter,
 } from "./_helpers";
@@ -41,24 +43,12 @@ import {
 import { scannedItems, dailyLogs } from "@shared/schema";
 import { storage } from "../storage";
 import { db } from "../db";
-import multer from "multer";
 
 // ============================================================================
 // MULTER CONFIG (5MB for ingredient photos)
 // ============================================================================
 
-const cookingUpload = multer({
-  limits: { fileSize: 5 * 1024 * 1024 },
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP allowed."));
-    }
-  },
-});
+const cookingUpload = createImageUpload(5 * 1024 * 1024);
 
 // ============================================================================
 // RATE LIMITERS
@@ -334,6 +324,8 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+
+        if (!checkAiConfigured(res)) return;
 
         const imageBase64 = req.file.buffer.toString("base64");
         const photoId = crypto.randomUUID();
@@ -842,6 +834,8 @@ export function register(app: Express): void {
         const ingredientList = session.ingredients
           .map((i) => `${i.quantity} ${i.unit} ${i.name}`)
           .join(", ");
+
+        if (!checkAiConfigured(res)) return;
 
         // Get user profile for dietary context
         const userProfile = await storage.getUserProfile(req.userId!);

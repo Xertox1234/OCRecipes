@@ -511,10 +511,8 @@ describe("Meal Plan Routes", () => {
     });
 
     it("POST /api/meal-plan/items returns 404 for scanned item not owned by user", async () => {
-      vi.mocked(storage.getScannedItem).mockResolvedValue({
-        id: 1,
-        userId: "2",
-      } as never);
+      // Storage layer now filters by userId, so mismatched user returns undefined
+      vi.mocked(storage.getScannedItem).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/items")

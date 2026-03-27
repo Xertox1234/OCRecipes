@@ -17,6 +17,8 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+vi.mock("../../lib/openai", () => ({ isAiConfigured: true }));
+
 vi.mock("../../services/food-nlp", () => ({
   parseNaturalLanguageFood: vi.fn(),
 }));

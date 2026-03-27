@@ -6,25 +6,15 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { analyzeMenuPhoto } from "../services/menu-analysis";
 import {
   checkPremiumFeature,
+  checkAiConfigured,
+  createImageUpload,
   menuRateLimit,
   parsePositiveIntParam,
   parseQueryInt,
 } from "./_helpers";
 import { detectImageMimeType } from "../lib/image-mime";
-import multer from "multer";
 
-const menuUpload = multer({
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB for menu photos (larger than food photos)
-  storage: multer.memoryStorage(),
-  fileFilter: (_req, file, cb) => {
-    const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP allowed."));
-    }
-  },
-});
+const menuUpload = createImageUpload(5 * 1024 * 1024);
 
 export function register(app: Express): void {
   // POST /api/menu/scan
@@ -61,6 +51,8 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+
+        if (!checkAiConfigured(res)) return;
 
         const imageBase64 = req.file.buffer.toString("base64");
         const result = await analyzeMenuPhoto(imageBase64, req.userId!);

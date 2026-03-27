@@ -5,6 +5,16 @@ import { foodCategorySchema } from "@shared/constants/preparation";
 // SHARED TYPES
 // ============================================================================
 
+/** AI-generated recipe content returned by the recipe generation service. */
+export interface RecipeContent {
+  title: string;
+  description: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  timeEstimate: string;
+  instructions: string;
+  dietTags: string[];
+}
+
 /** Signed calorie/macro difference (can be negative for reductions). */
 export interface MacroDelta {
   calories: number;

@@ -166,21 +166,21 @@ describe("nutrition storage", () => {
   describe("getScannedItem", () => {
     it("returns the item by id", async () => {
       const created = await insertScannedItem(testUser.id);
-      const result = await getScannedItem(created.id);
+      const result = await getScannedItem(created.id, testUser.id);
       expect(result).toBeDefined();
       expect(result!.id).toBe(created.id);
       expect(result!.productName).toBe("Test Food");
     });
 
     it("returns undefined for non-existent id", async () => {
-      const result = await getScannedItem(999999);
+      const result = await getScannedItem(999999, testUser.id);
       expect(result).toBeUndefined();
     });
 
     it("excludes soft-deleted items", async () => {
       const created = await insertScannedItem(testUser.id);
       await softDeleteScannedItem(created.id, testUser.id);
-      const result = await getScannedItem(created.id);
+      const result = await getScannedItem(created.id, testUser.id);
       expect(result).toBeUndefined();
     });
   });
@@ -349,7 +349,7 @@ describe("nutrition storage", () => {
       expect(result).toBe(true);
 
       // Verify it's gone from normal queries
-      const fetched = await getScannedItem(item.id);
+      const fetched = await getScannedItem(item.id, testUser.id);
       expect(fetched).toBeUndefined();
     });
 
@@ -374,8 +374,8 @@ describe("nutrition storage", () => {
       const result = await softDeleteScannedItem(item.id, testUser.id);
       expect(result).toBe(false);
 
-      // Original item is still accessible
-      const fetched = await getScannedItem(item.id);
+      // Original item is still accessible by its owner
+      const fetched = await getScannedItem(item.id, otherUser.id);
       expect(fetched).toBeDefined();
     });
 

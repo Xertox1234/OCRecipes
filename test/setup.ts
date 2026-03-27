@@ -19,7 +19,7 @@ if (
 
 // Ensure JWT_SECRET is always set for auth-related tests
 process.env.JWT_SECRET =
-  process.env.JWT_SECRET || "test-jwt-secret-for-testing";
+  process.env.JWT_SECRET || "test-jwt-secret-for-testing-minimum-32chars";
 
 // React Native expects __DEV__ to be defined globally
 (globalThis as Record<string, unknown>).__DEV__ = true;

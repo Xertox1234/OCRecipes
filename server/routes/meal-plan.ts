@@ -383,8 +383,11 @@ export function register(app: Express): void {
           }
         }
         if (parsed.data.scannedItemId) {
-          const item = await storage.getScannedItem(parsed.data.scannedItemId);
-          if (!item || item.userId !== req.userId) {
+          const item = await storage.getScannedItem(
+            parsed.data.scannedItemId,
+            req.userId!,
+          );
+          if (!item) {
             sendError(res, 404, "Scanned item not found", ErrorCode.NOT_FOUND);
             return;
           }

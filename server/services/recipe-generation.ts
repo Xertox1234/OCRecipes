@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { UserProfile } from "@shared/schema";
+import type { RecipeContent } from "@shared/types/cook-session";
 import {
   openai,
   dalleClient,
@@ -44,7 +45,8 @@ const recipeContentSchema = z.object({
   dietTags: z.array(z.string()).default([]),
 });
 
-export type RecipeContent = z.infer<typeof recipeContentSchema>;
+// RecipeContent type is defined in @shared/types/cook-session and re-exported here
+export type { RecipeContent };
 
 export interface RecipeGenerationInput {
   productName: string;

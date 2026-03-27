@@ -7,6 +7,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import {
   formatZodError,
   checkPremiumFeature,
+  checkAiConfigured,
   foodParseRateLimit,
 } from "./_helpers";
 import { parseNaturalLanguageFood } from "../services/food-nlp";
@@ -25,10 +26,7 @@ const audioUpload = multer({
       "audio/aac",
       "audio/ogg",
     ];
-    if (
-      allowedTypes.includes(file.mimetype) ||
-      file.originalname.match(/\.(m4a|mp4|mp3|wav|aac|ogg)$/i)
-    ) {
+    if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error("Invalid file type. Only audio files are accepted."));
@@ -48,6 +46,7 @@ export function register(app: Express): void {
     foodParseRateLimit,
     async (req: Request, res: Response) => {
       try {
+        if (!checkAiConfigured(res)) return;
         const validated = parseTextSchema.parse(req.body);
         const items = await parseNaturalLanguageFood(validated.text);
         res.json({ items });
@@ -96,6 +95,8 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+
+        if (!checkAiConfigured(res)) return;
 
         const transcription = await transcribeAudio(
           req.file.buffer,

@@ -19,6 +19,12 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+vi.mock("../../lib/openai", () => ({ isAiConfigured: true }));
+
+vi.mock("../../lib/image-mime", () => ({
+  detectImageMimeType: vi.fn(() => "image/jpeg"),
+}));
+
 vi.mock("../../services/receipt-analysis", () => ({
   analyzeReceiptPhotos: vi.fn(),
 }));

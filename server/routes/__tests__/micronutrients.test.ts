@@ -92,11 +92,8 @@ describe("Micronutrients Routes", () => {
 
     it("returns 404 when item belongs to different user", async () => {
       mockPremium();
-      vi.mocked(storage.getScannedItem).mockResolvedValue({
-        id: 1,
-        userId: "other-user",
-        productName: "Apple",
-      } as never);
+      // Storage layer now filters by userId, so mismatched user returns undefined
+      vi.mocked(storage.getScannedItem).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/micronutrients/item/1")

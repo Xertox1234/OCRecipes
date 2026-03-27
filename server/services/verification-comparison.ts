@@ -8,8 +8,6 @@ const COMPARISON_FIELDS = [
   "totalFat",
 ] as const;
 
-type ComparisonField = (typeof COMPARISON_FIELDS)[number];
-
 /** Extracted nutrition values relevant to verification */
 export interface VerificationNutrition {
   calories: number | null;

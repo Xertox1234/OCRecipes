@@ -76,6 +76,7 @@ export const storage = {
   removeMealPlanItem: mealPlans.removeMealPlanItem,
   reorderMealPlanItems: mealPlans.reorderMealPlanItems,
   createGroceryList: mealPlans.createGroceryList,
+  getGroceryListCount: mealPlans.getGroceryListCount,
   getGroceryLists: mealPlans.getGroceryLists,
   getGroceryListWithItems: mealPlans.getGroceryListWithItems,
   deleteGroceryList: mealPlans.deleteGroceryList,

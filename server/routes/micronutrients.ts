@@ -41,10 +41,8 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
-        const item = await storage.getScannedItem(itemId);
+        const item = await storage.getScannedItem(itemId, req.userId!);
         if (!item)
-          return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
-        if (item.userId !== req.userId)
           return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
 
         const micronutrients = await lookupMicronutrientsWithCache(

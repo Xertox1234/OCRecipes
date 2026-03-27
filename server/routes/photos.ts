@@ -30,11 +30,11 @@ import {
   mapLabelToNutritionData,
   cacheNutritionIfAbsent,
 } from "../services/nutrition-lookup";
-import multer from "multer";
 import {
   photoRateLimit,
   formatZodError,
   upload,
+  createImageUpload,
   checkPremiumFeature,
   checkAiConfigured,
   getPremiumFeatures,
@@ -43,18 +43,7 @@ import {
 import { detectImageMimeType } from "../lib/image-mime";
 
 // Higher file size limit for label photos (5MB for text readability)
-const labelUpload = multer({
-  limits: { fileSize: 5 * 1024 * 1024 },
-  storage: multer.memoryStorage(),
-  fileFilter: (req, file, cb) => {
-    const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP allowed."));
-    }
-  },
-});
+const labelUpload = createImageUpload(5 * 1024 * 1024);
 
 // Zod schema for follow-up input validation
 const followUpSchema = z.object({

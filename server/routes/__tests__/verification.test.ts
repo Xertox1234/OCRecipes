@@ -33,6 +33,8 @@ vi.mock("../../services/reformulation-detection", () => ({
   }),
 }));
 
+vi.mock("../../lib/openai", () => ({ isAiConfigured: true }));
+
 vi.mock("../../services/front-label-analysis", () => ({
   analyzeFrontLabel: vi.fn().mockResolvedValue({
     brand: "TestBrand",

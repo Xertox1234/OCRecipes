@@ -65,11 +65,18 @@ export async function getScannedItems(
 
 export async function getScannedItem(
   id: number,
+  userId: string,
 ): Promise<ScannedItem | undefined> {
   const [item] = await db
     .select()
     .from(scannedItems)
-    .where(and(eq(scannedItems.id, id), isNull(scannedItems.discardedAt)));
+    .where(
+      and(
+        eq(scannedItems.id, id),
+        eq(scannedItems.userId, userId),
+        isNull(scannedItems.discardedAt),
+      ),
+    );
   return item || undefined;
 }
 

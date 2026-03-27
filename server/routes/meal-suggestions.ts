@@ -18,6 +18,7 @@ import {
   mealSuggestionRateLimit,
   formatZodError,
   checkPremiumFeature,
+  checkAiConfigured,
 } from "./_helpers";
 
 async function fetchDeduplicatedPopularPicks(
@@ -182,6 +183,8 @@ export function register(app: Express): void {
           carbs: Math.max(0, dailyTargets.carbs - consumedCarbs),
           fat: Math.max(0, dailyTargets.fat - consumedFat),
         };
+
+        if (!checkAiConfigured(res)) return;
 
         const suggestions = await generateMealSuggestions({
           userId: req.userId!,

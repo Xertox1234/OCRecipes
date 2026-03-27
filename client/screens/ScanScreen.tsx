@@ -42,7 +42,6 @@ import {
   type PhotoAnalysisResponse,
 } from "@/lib/photo-upload";
 import {
-  getRouteForContentType,
   shouldAutoRoute,
   getConfirmationMessage,
   getContentTypeLabel,

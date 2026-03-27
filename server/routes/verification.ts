@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from "express";
 import crypto from "crypto";
 import { z } from "zod";
-import multer from "multer";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -22,6 +21,8 @@ import {
   type FrontLabelExtractionResult,
 } from "@shared/types/front-label";
 import {
+  checkAiConfigured,
+  createImageUpload,
   createRateLimiter,
   parseQueryInt,
   parseQueryString,
@@ -59,18 +60,7 @@ const frontLabelConfirmSchema = z.object({
 });
 
 // Multer config for front-label photo uploads (5MB limit)
-const frontLabelUpload = multer({
-  limits: { fileSize: 5 * 1024 * 1024 },
-  storage: multer.memoryStorage(),
-  fileFilter: (_req, file, cb) => {
-    const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP allowed."));
-    }
-  },
-});
+const frontLabelUpload = createImageUpload(5 * 1024 * 1024);
 
 // ============================================================================
 // Front-label session store (in-memory, same pattern as label sessions)
@@ -406,6 +396,8 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+
+        if (!checkAiConfigured(res)) return;
 
         const imageBase64 = req.file.buffer.toString("base64");
         const data = await analyzeFrontLabel(imageBase64);

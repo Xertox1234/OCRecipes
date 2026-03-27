@@ -1,6 +1,5 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import multer from "multer";
 import { requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
@@ -11,9 +10,12 @@ import {
 } from "../services/receipt-analysis";
 import {
   checkPremiumFeature,
+  checkAiConfigured,
   createRateLimiter,
+  createImageUpload,
   formatZodError,
 } from "./_helpers";
+import { detectImageMimeType } from "../lib/image-mime";
 
 const receiptRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
@@ -21,18 +23,7 @@ const receiptRateLimit = createRateLimiter({
   message: "Too many receipt scan requests. Please wait.",
 });
 
-const receiptUpload = multer({
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB per photo
-  storage: multer.memoryStorage(),
-  fileFilter: (_req, file, cb) => {
-    const allowedMimes = ["image/jpeg", "image/png", "image/webp"];
-    if (allowedMimes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP allowed."));
-    }
-  },
-});
+const receiptUpload = createImageUpload(5 * 1024 * 1024);
 
 const confirmItemSchema = z.object({
   name: z.string().min(1).max(200),
@@ -86,6 +77,20 @@ export function register(app: Express): void {
             ErrorCode.RATE_LIMITED,
           );
         }
+
+        // Validate magic bytes for all uploaded images
+        for (const file of files) {
+          if (!detectImageMimeType(file.buffer)) {
+            return sendError(
+              res,
+              400,
+              "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+              ErrorCode.VALIDATION_ERROR,
+            );
+          }
+        }
+
+        if (!checkAiConfigured(res)) return;
 
         const imagesBase64 = files.map((f) => f.buffer.toString("base64"));
 

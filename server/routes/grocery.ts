@@ -102,8 +102,8 @@ export function register(app: Express): void {
         }
 
         // Enforce per-user grocery list limit (max 50)
-        const existingLists = await storage.getGroceryLists(req.userId!);
-        if (existingLists.length >= 50) {
+        const listCount = await storage.getGroceryListCount(req.userId!);
+        if (listCount >= 50) {
           sendError(
             res,
             400,
