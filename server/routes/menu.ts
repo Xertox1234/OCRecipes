@@ -10,6 +10,7 @@ import {
   parsePositiveIntParam,
   parseQueryInt,
 } from "./_helpers";
+import { detectImageMimeType } from "../lib/image-mime";
 import multer from "multer";
 
 const menuUpload = multer({
@@ -47,6 +48,16 @@ export function register(app: Express): void {
             res,
             400,
             "No photo provided",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        // Validate actual file content via magic bytes (do not trust client header)
+        if (!detectImageMimeType(req.file.buffer)) {
+          return sendError(
+            res,
+            400,
+            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
             ErrorCode.VALIDATION_ERROR,
           );
         }

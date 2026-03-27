@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: Spacing.sm,
     left: Spacing.sm,
-    backgroundColor: "#9372F1", // hardcoded — accent purple for badge visibility
+    backgroundColor: "#7C5CBF", // hardcoded — accent purple for badge visibility
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.chip,

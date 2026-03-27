@@ -23,6 +23,10 @@ vi.mock("../../services/menu-analysis", () => ({
   analyzeMenuPhoto: vi.fn(),
 }));
 
+vi.mock("../../lib/image-mime", () => ({
+  detectImageMimeType: vi.fn(() => "image/jpeg"),
+}));
+
 // Module-level flag to control whether multer mock attaches a file
 let simulateNoFile = false;
 

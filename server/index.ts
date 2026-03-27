@@ -5,6 +5,7 @@ import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import * as path from "path";
 import { pool } from "./db";
+import { startCacheCleanupJob } from "./storage/cache";
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception:", error);
@@ -75,10 +76,24 @@ function setupBodyParsing(app: express.Application) {
   app.use(express.urlencoded({ extended: false, limit: "2mb" }));
 }
 
+// Endpoints whose response bodies should never be logged (tokens, medical data)
+const SENSITIVE_PATHS = [
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/account",
+  "/api/medication",
+];
+
+function isSensitivePath(reqPath: string): boolean {
+  return SENSITIVE_PATHS.some(
+    (p) => reqPath === p || reqPath.startsWith(p + "/"),
+  );
+}
+
 function setupRequestLogging(app: express.Application) {
   app.use((req, res, next) => {
     const start = Date.now();
-    const path = req.path;
+    const reqPath = req.path;
     let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
 
     const originalResJson = res.json;
@@ -88,12 +103,12 @@ function setupRequestLogging(app: express.Application) {
     };
 
     res.on("finish", () => {
-      if (!path.startsWith("/api")) return;
+      if (!reqPath.startsWith("/api")) return;
 
       const duration = Date.now() - start;
 
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse && !isSensitivePath(reqPath)) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
@@ -180,9 +195,13 @@ function setupErrorHandler(app: express.Application) {
     },
   );
 
+  // Start periodic cache cleanup (every 6 hours)
+  const cacheCleanupInterval = startCacheCleanupJob();
+
   // Graceful shutdown
   function shutdown(signal: string) {
     log(`${signal} received, shutting down gracefully`);
+    clearInterval(cacheCleanupInterval);
     server.close(() => {
       pool.end().then(() => {
         process.exit(0);

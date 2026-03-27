@@ -66,23 +66,25 @@ export async function createChatMessage(
   content: string,
   metadata?: unknown,
 ): Promise<ChatMessage> {
-  const [message] = await db
-    .insert(chatMessages)
-    .values({
-      conversationId,
-      role,
-      content,
-      metadata: metadata ?? null,
-    })
-    .returning();
+  return db.transaction(async (tx) => {
+    const [message] = await tx
+      .insert(chatMessages)
+      .values({
+        conversationId,
+        role,
+        content,
+        metadata: metadata ?? null,
+      })
+      .returning();
 
-  // Update conversation timestamp
-  await db
-    .update(chatConversations)
-    .set({ updatedAt: new Date() })
-    .where(eq(chatConversations.id, conversationId));
+    // Update conversation timestamp atomically
+    await tx
+      .update(chatConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(chatConversations.id, conversationId));
 
-  return message;
+    return message;
+  });
 }
 
 export async function deleteChatConversation(

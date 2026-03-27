@@ -1,6 +1,7 @@
 import {
   type SuggestionData,
   type MealSuggestionCacheEntry,
+  nutritionCache,
   suggestionCache,
   instructionCache,
   mealSuggestionCache,
@@ -9,7 +10,7 @@ import {
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { db } from "../db";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { eq, and, gte, gt, lt, sql } from "drizzle-orm";
+import { eq, and, gte, gt, lt, lte, sql } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 
 // ============================================================================
@@ -226,4 +227,50 @@ export async function setMicronutrientCache(
       target: micronutrientCache.queryKey,
       set: { data, expiresAt, hitCount: 0 },
     });
+}
+
+// ============================================================================
+// EXPIRED CACHE CLEANUP
+// ============================================================================
+
+const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/**
+ * Delete expired rows from all cache tables.
+ * Called periodically via setInterval to prevent unbounded table growth.
+ */
+export async function purgeExpiredCacheRows(): Promise<number> {
+  const now = new Date();
+  const tables = [
+    nutritionCache,
+    micronutrientCache,
+    suggestionCache,
+    mealSuggestionCache,
+  ] as const;
+
+  let totalDeleted = 0;
+  for (const table of tables) {
+    const result = await db
+      .delete(table)
+      .where(lte(table.expiresAt, now))
+      .returning({ id: table.id });
+    totalDeleted += result.length;
+  }
+
+  // instructionCache cascades from suggestionCache, but clean orphans just in case
+  if (totalDeleted > 0) {
+    console.warn(`Cache cleanup: purged ${totalDeleted} expired rows`);
+  }
+  return totalDeleted;
+}
+
+/**
+ * Start the periodic cache cleanup job. Returns the interval ID for cleanup.
+ */
+export function startCacheCleanupJob(): ReturnType<typeof setInterval> {
+  return setInterval(() => {
+    purgeExpiredCacheRows().catch((err) => {
+      console.error("Cache cleanup error:", err);
+    });
+  }, CLEANUP_INTERVAL_MS);
 }

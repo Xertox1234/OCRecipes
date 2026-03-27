@@ -12,7 +12,7 @@ const lightTheme = {
   warning: "#F57C00",
   error: "#D32F2F",
   info: "#2196F3",
-  link: "#9372F1",
+  link: "#7C5CBF",
 };
 
 describe("card-utils", () => {
@@ -59,7 +59,7 @@ describe("card-utils", () => {
 
     it("returns link colors for default variant", () => {
       const result = getBadgeColors("default", lightTheme);
-      expect(result.text).toBe("#9372F1");
+      expect(result.text).toBe("#7C5CBF");
     });
   });
 });

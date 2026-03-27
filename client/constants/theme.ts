@@ -8,10 +8,10 @@ export const Colors = {
     buttonText: "#FFFFFF",
     // Navigation
     tabIconDefault: "#6B6B6B",
-    tabIconSelected: "#9372F1",
-    // Links - purple accent
-    link: "#9372F1",
-    linkPressed: "#6B42DE",
+    tabIconSelected: "#7C5CBF",
+    // Links - purple accent (WCAG AA: 4.6:1 on #FFFFFF)
+    link: "#7C5CBF",
+    linkPressed: "#5C3FA3",
     // Backgrounds - from Figma light mode
     backgroundRoot: "#FFFFFF",
     backgroundDefault: "#FFFFFF",
@@ -37,10 +37,10 @@ export const Colors = {
     buttonText: "#FFFFFF",
     // Navigation
     tabIconDefault: "#C4C4C4",
-    tabIconSelected: "#9372F1",
-    // Links - purple accent
-    link: "#9372F1",
-    linkPressed: "#6B42DE",
+    tabIconSelected: "#A88BF5",
+    // Links - purple accent (WCAG AA: 5.0:1 on #212832)
+    link: "#A88BF5",
+    linkPressed: "#8A6BDB",
     // Backgrounds - from Figma dark mode (warm navy)
     backgroundRoot: "#212832",
     backgroundDefault: "#212832",

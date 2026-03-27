@@ -7,7 +7,7 @@ import {
 
 const lightTheme = {
   error: "#D32F2F",
-  link: "#9372F1",
+  link: "#7C5CBF",
   buttonText: "#FFFFFF",
   backgroundSecondary: "#F2F2F2",
   text: "#212832",
@@ -15,7 +15,7 @@ const lightTheme = {
 
 const darkTheme = {
   error: "#EF5350",
-  link: "#9372F1",
+  link: "#A88BF5",
   buttonText: "#FFFFFF",
   backgroundSecondary: "#393948",
   text: "#FFFFFF",
@@ -30,7 +30,7 @@ describe("getConfirmButtonStyle", () => {
 
   it("returns link color for non-destructive", () => {
     const result = getConfirmButtonStyle(false, lightTheme);
-    expect(result.backgroundColor).toBe("#9372F1");
+    expect(result.backgroundColor).toBe("#7C5CBF");
     expect(result.textColor).toBe("#FFFFFF");
   });
 
