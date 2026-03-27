@@ -1,0 +1,41 @@
+# Audit Changelog
+
+Append-only history of all code audits performed on this project. Each entry links to the full audit manifest with detailed findings and resolutions.
+
+## Format
+
+```
+### YYYY-MM-DD — Audit Title
+- **Trigger:** Why the audit was run
+- **Manifest:** [link to manifest file]
+- **Findings:** X critical, Y high, Z medium, W low
+- **Resolved:** N fixed, M deferred, P false-positive
+- **Commit(s):** git SHA(s) of fix commits
+```
+
+---
+
+## 2026-03-27 — Full Audit
+
+- **Trigger:** Full codebase audit across all domains
+- **Manifest:** [docs/audits/2026-03-27-full.md](2026-03-27-full.md)
+- **Findings:** 0 critical, 6 high, 14 medium, 10 low (30 total)
+- **Resolved:** 0 fixed, 30 deferred (all tracked in `todos/001-030`)
+- **Note:** Code quality agent hit rate limit; findings from 4/5 domains (security, performance, data-integrity, architecture)
+
+## 2026-03-27 — Launch Readiness Audit (Round 2)
+
+- **Trigger:** Second-pass audit after first round left unfixed items
+- **Manifest:** No structured manifest (pre-workflow). Findings tracked in conversation only.
+- **Findings:** 3 critical, 9 high, 7 medium, 1 low (net-new after dedup)
+- **Resolved:** 11 fixed, 0 deferred, 0 false-positive
+- **Commit:** `0a6c43c` fix: resolve verified audit findings with per-fix test verification
+
+## 2026-03-27 — Launch Readiness Audit (Round 1)
+
+- **Trigger:** Pre-launch readiness check
+- **Manifest:** No structured manifest (pre-workflow). Findings were in agent output.
+- **Findings:** ~30+ across 5 domains (security, performance, data, architecture, quality)
+- **Resolved:** ~15 fixed, 3 deferred to todos, ~12 silently dropped (root cause of round 2)
+- **Commits:** `cb1fc6a`..`16f8d6f` (6 commits)
+- **Lesson:** Bulk fix without per-item verification led to incomplete resolution. This triggered creation of the structured audit workflow.
