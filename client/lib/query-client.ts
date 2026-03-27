@@ -108,7 +108,12 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,
-      retry: 2,
+      retry: (failureCount, error) => {
+        // Don't retry client errors (4xx) — only retry transient/server errors
+        if (error instanceof Error && /^4\d\d:/.test(error.message))
+          return false;
+        return failureCount < 2;
+      },
     },
     mutations: {
       retry: false,

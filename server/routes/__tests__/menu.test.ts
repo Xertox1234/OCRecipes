@@ -134,6 +134,19 @@ describe("Menu Routes", () => {
       expect(res.status).toBe(400);
       expect(res.body.code).toBe("VALIDATION_ERROR");
     });
+
+    it("rejects non-image files via magic-byte validation", async () => {
+      mockPremium();
+      const { detectImageMimeType } = await import("../../lib/image-mime");
+      vi.mocked(detectImageMimeType).mockReturnValueOnce(null);
+
+      const res = await request(app)
+        .post("/api/menu/scan")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Invalid image content");
+    });
   });
 
   describe("GET /api/menu/history", () => {
