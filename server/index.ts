@@ -6,6 +6,10 @@ import { registerRoutes } from "./routes";
 import * as path from "path";
 import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
+import { validateEnv } from "./lib/env";
+
+// Validate all environment variables before anything else
+validateEnv();
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception:", error);

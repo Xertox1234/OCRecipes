@@ -385,16 +385,22 @@ export async function reorderMealPlanItems(
   userId: string,
   items: { id: number; sortOrder: number }[],
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    for (const item of items) {
-      await tx
-        .update(mealPlanItems)
-        .set({ sortOrder: item.sortOrder })
-        .where(
-          and(eq(mealPlanItems.id, item.id), eq(mealPlanItems.userId, userId)),
-        );
-    }
-  });
+  if (items.length === 0) return;
+
+  // Build a single UPDATE with CASE expression instead of N round-trips
+  const ids = items.map((i) => i.id);
+  const caseFragments = items.map(
+    (i) => sql`WHEN ${mealPlanItems.id} = ${i.id} THEN ${i.sortOrder}`,
+  );
+
+  await db
+    .update(mealPlanItems)
+    .set({
+      sortOrder: sql`CASE ${sql.join(caseFragments, sql` `)} END`,
+    })
+    .where(
+      and(eq(mealPlanItems.userId, userId), inArray(mealPlanItems.id, ids)),
+    );
 }
 
 // ============================================================================
@@ -805,6 +811,11 @@ export async function getPopularPicksByMealType(
         eq(mealPlanItems.mealType, mealType),
         eq(mealPlanRecipes.sourceType, "ai_suggestion"),
         ne(mealPlanRecipes.userId, userId),
+        // Limit scan window to recent items to prevent full table scan at scale
+        gte(
+          mealPlanItems.createdAt,
+          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        ),
       ),
     )
     .groupBy(

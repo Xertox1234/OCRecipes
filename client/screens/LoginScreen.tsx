@@ -132,6 +132,9 @@ export default function LoginScreen() {
           <TextInput
             leftIcon="lock"
             rightIcon={showPassword ? "eye-off" : "eye"}
+            rightIconAccessibilityLabel={
+              showPassword ? "Hide password" : "Show password"
+            }
             onRightIconPress={() => setShowPassword(!showPassword)}
             placeholder="Password"
             value={password}

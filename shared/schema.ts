@@ -1443,7 +1443,9 @@ export const verificationHistory = pgTable(
   "verification_history",
   {
     id: serial("id").primaryKey(),
-    barcode: text("barcode").notNull(),
+    barcode: text("barcode")
+      .references(() => barcodeVerifications.barcode, { onDelete: "cascade" })
+      .notNull(),
     userId: varchar("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
