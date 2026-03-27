@@ -4,6 +4,7 @@ import helmet from "helmet";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import * as path from "path";
+import { pool } from "./db";
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception:", error);
@@ -116,13 +117,17 @@ function setupErrorHandler(app: express.Application) {
     };
 
     const status = error.status || error.statusCode || 500;
-    const message = error.message || "Internal Server Error";
 
     console.error("Internal Server Error:", err);
 
     if (res.headersSent) {
       return next(err);
     }
+
+    // Only expose error messages for client errors (4xx).
+    // For server errors (5xx), return a generic message to avoid leaking internals.
+    const message =
+      status < 500 ? error.message || "Bad Request" : "Internal Server Error";
 
     return res.status(status).json({ error: message });
   });
@@ -148,6 +153,18 @@ function setupErrorHandler(app: express.Application) {
     }),
   );
 
+  // Health check endpoint (registered before routes for fast response)
+  app.get("/api/health", async (_req, res) => {
+    try {
+      await pool.query("SELECT 1");
+      res.json({ status: "ok" });
+    } catch {
+      res
+        .status(503)
+        .json({ status: "unhealthy", error: "Database unreachable" });
+    }
+  });
+
   const server = await registerRoutes(app);
 
   setupErrorHandler(app);
@@ -162,4 +179,19 @@ function setupErrorHandler(app: express.Application) {
       log(`express server serving on port ${port}`);
     },
   );
+
+  // Graceful shutdown
+  function shutdown(signal: string) {
+    log(`${signal} received, shutting down gracefully`);
+    server.close(() => {
+      pool.end().then(() => {
+        process.exit(0);
+      });
+    });
+    // Force exit after 10 seconds if graceful shutdown hangs
+    setTimeout(() => process.exit(1), 10_000);
+  }
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 })();

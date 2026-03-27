@@ -353,7 +353,6 @@ describe("Photos Routes", () => {
     const dummySession = {
       userId: "1",
       result: { foods: [], overallConfidence: 0.9, followUpQuestions: [] },
-      imageBase64: "abc",
       createdAt: Date.now(),
     };
 

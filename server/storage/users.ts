@@ -57,6 +57,18 @@ export async function updateUser(
   return user || undefined;
 }
 
+/**
+ * Permanently delete a user and all associated data.
+ * Relies on ON DELETE CASCADE foreign keys to clean up child tables.
+ */
+export async function deleteUser(id: string): Promise<boolean> {
+  const result = await db
+    .delete(users)
+    .where(eq(users.id, id))
+    .returning({ id: users.id });
+  return result.length > 0;
+}
+
 // ============================================================================
 // USER PROFILES
 // ============================================================================
@@ -154,6 +166,31 @@ export async function createTransaction(
 ): Promise<Transaction> {
   const [txn] = await db.insert(transactions).values(data).returning();
   return txn;
+}
+
+/**
+ * Atomically record a transaction and update the user's subscription tier.
+ * Both operations succeed or both are rolled back.
+ */
+export async function createTransactionAndUpgrade(
+  data: InsertTransaction,
+  tier: SubscriptionTier,
+  expiresAt: Date | null,
+): Promise<{ transaction: Transaction; user: User }> {
+  return db.transaction(async (tx) => {
+    const [txn] = await tx.insert(transactions).values(data).returning();
+    const [user] = await tx
+      .update(users)
+      .set({ subscriptionTier: tier, subscriptionExpiresAt: expiresAt })
+      .where(eq(users.id, data.userId))
+      .returning();
+    if (!user) {
+      throw new Error(
+        `User ${data.userId} not found during subscription upgrade`,
+      );
+    }
+    return { transaction: txn, user };
+  });
 }
 
 // ============================================================================

@@ -96,13 +96,14 @@ describe("API Rate Limiter Middleware", () => {
     expect(storage.incrementApiKeyUsage).not.toHaveBeenCalled();
   });
 
-  it("fails open when DB is unavailable", async () => {
+  it("fails closed when DB is unavailable", async () => {
     vi.mocked(storage.getApiKeyUsage).mockRejectedValue(new Error("DB error"));
 
     const app = createApp("free");
     const res = await request(app).get("/test");
 
-    // Should pass through, not 500
-    expect(res.status).toBe(200);
+    // Should return 503 Service Unavailable, not pass through
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe("Service temporarily unavailable");
   });
 });

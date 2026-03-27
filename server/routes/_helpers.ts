@@ -175,6 +175,13 @@ export const registerLimiter = createRateLimiter({
   keyByUser: false,
 });
 
+export const accountDeletionLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: "Too many account deletion attempts, please try again later",
+  keyByUser: false,
+});
+
 // --- User-keyed rate limiters ---
 export const photoRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
@@ -346,6 +353,11 @@ export const registerSchema = z.object({
     .string()
     .min(8, "Password must be at least 8 characters")
     .max(200),
+});
+
+// Account deletion validation schema
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, "Password is required"),
 });
 
 // Profile update validation schema

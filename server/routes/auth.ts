@@ -16,9 +16,11 @@ import {
   registerLimiter,
   loginLimiter,
   avatarRateLimit,
+  accountDeletionLimiter,
   formatZodError,
   loginSchema,
   registerSchema,
+  deleteAccountSchema,
   profileUpdateSchema,
   upload,
 } from "./_helpers";
@@ -246,6 +248,63 @@ export function register(app: Express): void {
           res,
           500,
           "Failed to update profile",
+          ErrorCode.INTERNAL_ERROR,
+        );
+      }
+    },
+  );
+
+  // Account deletion (GDPR/CCPA compliance)
+  app.delete(
+    "/api/auth/account",
+    requireAuth,
+    accountDeletionLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const validated = deleteAccountSchema.parse(req.body);
+
+        const user = await storage.getUser(req.userId!);
+        if (!user) {
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+        }
+
+        const isValidPassword = await bcrypt.compare(
+          validated.password,
+          user.password,
+        );
+        if (!isValidPassword) {
+          return sendError(
+            res,
+            401,
+            "Invalid credentials",
+            ErrorCode.UNAUTHORIZED,
+          );
+        }
+
+        // Delete user (cascades to all child tables via FK constraints)
+        await storage.deleteUser(req.userId!);
+
+        // Invalidate token cache so any in-flight requests are rejected
+        invalidateTokenVersionCache(req.userId!);
+
+        // Clean up avatar file after successful deletion
+        deleteOldAvatarFile(user.avatarUrl);
+
+        res.json({ success: true });
+      } catch (error) {
+        if (error instanceof ZodError) {
+          return sendError(
+            res,
+            400,
+            formatZodError(error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        console.error("Account deletion error:", error);
+        sendError(
+          res,
+          500,
+          "Failed to delete account",
           ErrorCode.INTERNAL_ERROR,
         );
       }

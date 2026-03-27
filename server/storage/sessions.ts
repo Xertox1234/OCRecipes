@@ -18,7 +18,6 @@ import type {
 export interface AnalysisSession {
   userId: string;
   result: AnalysisResult;
-  imageBase64?: string;
   /** Timestamp used for diagnostics and future LRU eviction when migrating to Redis */
   createdAt: number;
 }
@@ -33,7 +32,7 @@ export interface LabelSession {
 // ── Constants ────────────────────────────────────────────────────────────
 
 export const MAX_SESSIONS_PER_USER = 3;
-export const MAX_SESSIONS_GLOBAL = 1000;
+export const MAX_SESSIONS_GLOBAL = 500;
 export const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB decoded
 export const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
@@ -89,13 +88,11 @@ export function canCreateAnalysisSession(userId: string): SessionCheckResult {
 export function createAnalysisSession(
   userId: string,
   result: AnalysisResult,
-  imageBase64?: string,
 ): string {
   const sessionId = crypto.randomUUID();
   analysisSessionStore.set(sessionId, {
     userId,
     result,
-    imageBase64,
     createdAt: Date.now(),
   });
   userSessionCount.set(userId, (userSessionCount.get(userId) ?? 0) + 1);

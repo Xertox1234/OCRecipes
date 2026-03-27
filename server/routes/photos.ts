@@ -185,11 +185,7 @@ export function register(app: Express): void {
             }
 
             const sessionId = intentConfig.needsSession
-              ? storage.createAnalysisSession(
-                  req.userId!,
-                  analysisResult,
-                  imageBase64,
-                )
+              ? storage.createAnalysisSession(req.userId!, analysisResult)
               : crypto.randomUUID();
 
             return res.json({
@@ -269,11 +265,7 @@ export function register(app: Express): void {
 
         // Generate session ID (needed for follow-ups and confirm)
         const sessionId = intentConfig.needsSession
-          ? storage.createAnalysisSession(
-              req.userId!,
-              analysisResult,
-              imageBase64,
-            )
+          ? storage.createAnalysisSession(req.userId!, analysisResult)
           : crypto.randomUUID();
 
         const response = {
