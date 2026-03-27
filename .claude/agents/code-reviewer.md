@@ -47,6 +47,8 @@ export function isAccessTokenPayload(
 - [ ] Environment variables validated at module load time (fail-fast)
 - [ ] Premium feature gates use `checkPremiumFeature()` helper — not inline duplication
 - [ ] Multi-mutation client actions use a single atomic server endpoint
+- [ ] Routes calling OpenAI (directly or via service) have `checkAiConfigured()` guard before the AI call
+- [ ] Image upload routes use `createImageUpload()` factory from `_helpers.ts` — no inline multer configs
 
 **Pattern Reference:**
 
@@ -182,6 +184,7 @@ const insets = useSafeAreaInsets();
 - [ ] Cache-first pattern used for expensive operations (AI APIs, external services)
 - [ ] Fire-and-forget used for non-critical operations (hit counts, invalidation) with `.catch(console.error)`
 - [ ] **IDOR protection on cache lookups** - verify ownership before returning cached data
+- [ ] **IDOR at storage layer** - storage functions that fetch by ID must also filter by userId (not fetch-then-check at the route level)
 - [ ] Cache entries indexed on lookup columns (itemId + userId composite index)
 - [ ] TTL expiry checked inline in query (`gt(expiresAt, new Date())`)
 - [ ] Profile hash used for user-preference-dependent cache content

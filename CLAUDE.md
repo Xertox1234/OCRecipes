@@ -154,6 +154,17 @@ Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, Goa
 
 **Before implementing:** Check if a pattern exists. **After implementing:** Consider if your solution should become a pattern.
 
+### Code Audits
+
+Use `/audit [scope]` to run a structured audit (skill in `.claude/skills/audit/SKILL.md`). This enforces:
+
+- **Manifest tracking** — every finding is serialized to `docs/audits/YYYY-MM-DD-[scope].md`
+- **Per-fix verification** — each fix is confirmed by re-reading code + running tests before marking `verified`
+- **Dedup against previous audits** — checks `docs/audits/CHANGELOG.md` to avoid re-reporting fixed items
+- **Zero open findings at close** — everything must be verified, deferred (with todo), or marked false-positive
+
+Scopes: `full`, `pre-launch`, `security`, `performance`, `data-integrity`, `architecture`, `code-quality`
+
 ### Quick Pattern Reference
 
 #### API Calls
