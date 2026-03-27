@@ -13,6 +13,7 @@ vi.mock("../../storage", () => ({
     getTransaction: vi.fn(),
     createTransaction: vi.fn(),
     updateSubscription: vi.fn(),
+    createTransactionAndUpgrade: vi.fn(),
   },
 }));
 
@@ -125,8 +126,10 @@ describe("Subscription Routes", () => {
         valid: true,
         expiresAt: new Date("2025-12-31"),
       } as never);
-      vi.mocked(storage.createTransaction).mockResolvedValue({} as never);
-      vi.mocked(storage.updateSubscription).mockResolvedValue({} as never);
+      vi.mocked(storage.createTransactionAndUpgrade).mockResolvedValue({
+        transaction: {},
+        user: {},
+      } as never);
 
       const res = await request(app)
         .post("/api/subscription/upgrade")
@@ -182,8 +185,10 @@ describe("Subscription Routes", () => {
         valid: true,
         expiresAt: new Date("2025-12-31"),
       } as never);
-      vi.mocked(storage.createTransaction).mockResolvedValue({} as never);
-      vi.mocked(storage.updateSubscription).mockResolvedValue({} as never);
+      vi.mocked(storage.createTransactionAndUpgrade).mockResolvedValue({
+        transaction: {},
+        user: {},
+      } as never);
 
       const res = await request(app)
         .post("/api/subscription/restore")

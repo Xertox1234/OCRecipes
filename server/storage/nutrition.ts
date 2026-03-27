@@ -9,13 +9,13 @@ import {
   savedItems,
   favouriteScannedItems,
   mealPlanRecipes,
+  users,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, isNull, inArray } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
-import { getSubscriptionStatus } from "./users";
 
 // ============================================================================
 // SCANNED ITEMS
@@ -368,22 +368,35 @@ export async function createSavedItem(
   userId: string,
   itemData: CreateSavedItemInput,
 ): Promise<SavedItem | null> {
-  const count = await getSavedItemCount(userId);
-  const subscription = await getSubscriptionStatus(userId);
-  const tierValue = subscription?.tier || "free";
-  const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
-  const limit = TIER_FEATURES[tier].maxSavedItems;
+  // Wrap in transaction to prevent TOCTOU race on tier limit check
+  return db.transaction(async (tx) => {
+    const countResult = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(savedItems)
+      .where(eq(savedItems.userId, userId));
+    const count = countResult[0]?.count ?? 0;
 
-  if (count >= limit) {
-    return null; // Signal limit reached
-  }
+    const [subRow] = await tx
+      .select({
+        tier: users.subscriptionTier,
+      })
+      .from(users)
+      .where(eq(users.id, userId));
+    const tierValue = subRow?.tier || "free";
+    const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
+    const limit = TIER_FEATURES[tier].maxSavedItems;
 
-  const [item] = await db
-    .insert(savedItems)
-    .values({ ...itemData, userId })
-    .returning();
+    if (count >= limit) {
+      return null; // Signal limit reached
+    }
 
-  return item;
+    const [item] = await tx
+      .insert(savedItems)
+      .values({ ...itemData, userId })
+      .returning();
+
+    return item;
+  });
 }
 
 export async function deleteSavedItem(

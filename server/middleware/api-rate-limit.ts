@@ -63,8 +63,13 @@ export async function apiRateLimiter(
       currentCount = await storage.getApiKeyUsage(apiKeyId, yearMonth);
     } catch (err) {
       console.error("Rate limit check error:", err);
-      // Fail open — let the request through if we can't check
-      next();
+      // Fail closed — reject request when we can't verify limits
+      sendError(
+        res,
+        503,
+        "Service temporarily unavailable",
+        "SERVICE_UNAVAILABLE",
+      );
       return;
     }
   }

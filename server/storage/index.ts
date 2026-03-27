@@ -33,6 +33,7 @@ export const storage = {
   getUserByUsername: users.getUserByUsername,
   createUser: users.createUser,
   updateUser: users.updateUser,
+  deleteUser: users.deleteUser,
   getUserProfile: users.getUserProfile,
   createUserProfile: users.createUserProfile,
   updateUserProfile: users.updateUserProfile,
@@ -40,6 +41,7 @@ export const storage = {
   updateSubscription: users.updateSubscription,
   getTransaction: users.getTransaction,
   createTransaction: users.createTransaction,
+  createTransactionAndUpgrade: users.createTransactionAndUpgrade,
 
   // Nutrition (scanned items, daily logs, saved items)
   getScannedItems: nutrition.getScannedItems,

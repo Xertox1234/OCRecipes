@@ -129,18 +129,20 @@ export function register(app: Express): void {
           });
         }
 
-        // Store transaction and upgrade user
-        await storage.createTransaction({
-          userId: req.userId!,
-          transactionId,
-          receipt,
-          platform,
-          productId,
-          status: "completed",
-        });
-
+        // Atomically store transaction and upgrade user
         const expiresAt = validation.expiresAt || null;
-        await storage.updateSubscription(req.userId!, "premium", expiresAt);
+        await storage.createTransactionAndUpgrade(
+          {
+            userId: req.userId!,
+            transactionId,
+            receipt,
+            platform,
+            productId,
+            status: "completed",
+          },
+          "premium",
+          expiresAt,
+        );
 
         res.json({
           success: true,
@@ -186,17 +188,19 @@ export function register(app: Express): void {
         }
 
         const restoreId = `restore-${Date.now()}-${req.userId}`;
-        await storage.createTransaction({
-          userId: req.userId!,
-          transactionId: restoreId,
-          receipt,
-          platform,
-          productId: "restore",
-          status: "completed",
-        });
-
         const expiresAt = validation.expiresAt || null;
-        await storage.updateSubscription(req.userId!, "premium", expiresAt);
+        await storage.createTransactionAndUpgrade(
+          {
+            userId: req.userId!,
+            transactionId: restoreId,
+            receipt,
+            platform,
+            productId: "restore",
+            status: "completed",
+          },
+          "premium",
+          expiresAt,
+        );
 
         res.json({
           success: true,
