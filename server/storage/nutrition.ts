@@ -289,7 +289,7 @@ export async function createScannedItemWithLog(
       scannedItemId: scannedItem.id,
       servings: "1",
       mealType: logOverrides?.mealType ?? null,
-      source: logOverrides?.source,
+      source: logOverrides?.source ?? "scan",
     });
 
     return scannedItem;

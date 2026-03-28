@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
+import { storage } from "../../storage";
 import { register } from "../beverages";
 import { lookupNutrition } from "../../services/nutrition-lookup";
 
@@ -73,6 +74,13 @@ describe("Beverages Routes", () => {
 
       expect(res.status).toBe(201);
       expect(lookupNutrition).toHaveBeenCalledWith("12oz coffee");
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "1",
+          sourceType: "beverage",
+        }),
+        expect.objectContaining({ source: "beverage" }),
+      );
     });
 
     it("includes modifiers in nutrition query for coffee", async () => {

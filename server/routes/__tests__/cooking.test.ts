@@ -743,6 +743,13 @@ describe("Cooking Routes", () => {
 
       expect(res.status).toBe(201);
       expect(res.body.sourceType).toBe("cook_session");
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "1",
+          sourceType: "cook_session",
+        }),
+        expect.objectContaining({ mealType: "dinner" }),
+      );
       // Session should be cleared
       expect(_testInternals.cookSessionStore.has(sessionId)).toBe(false);
     });
