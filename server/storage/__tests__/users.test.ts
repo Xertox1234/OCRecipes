@@ -17,7 +17,7 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { users } from "@shared/schema";
+import { users, userProfiles } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("../../db", () => ({
@@ -38,6 +38,7 @@ const {
   updateSubscription,
   getTransaction,
   createTransaction,
+  upsertProfileWithOnboarding,
 } = await import("../users");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -333,6 +334,81 @@ describe("users storage", () => {
       expect(result).toBeDefined();
       expect(result!.userId).toBe(otherUser.id);
       expect(result!.userId).not.toBe(testUser.id);
+    });
+  });
+
+  // ==========================================================================
+  // UPSERT PROFILE WITH ONBOARDING
+  // ==========================================================================
+
+  describe("upsertProfileWithOnboarding", () => {
+    it("creates a new profile and marks onboarding complete when no profile exists", async () => {
+      // Verify testUser starts with onboardingCompleted = false
+      const [before] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, testUser.id));
+      expect(before.onboardingCompleted).toBe(false);
+
+      const profile = await upsertProfileWithOnboarding(testUser.id, {
+        dietType: "vegan",
+        activityLevel: "moderate",
+      });
+
+      expect(profile).toBeDefined();
+      expect(profile.userId).toBe(testUser.id);
+      expect(profile.dietType).toBe("vegan");
+      expect(profile.activityLevel).toBe("moderate");
+
+      // Verify onboardingCompleted is now true
+      const [after] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, testUser.id));
+      expect(after.onboardingCompleted).toBe(true);
+    });
+
+    it("updates an existing profile and marks onboarding complete", async () => {
+      // Create an initial profile
+      await createTestUserProfile(tx, testUser.id, { dietType: "vegan" });
+
+      const profile = await upsertProfileWithOnboarding(testUser.id, {
+        dietType: "keto",
+        activityLevel: "high",
+      });
+
+      expect(profile).toBeDefined();
+      expect(profile.dietType).toBe("keto");
+      expect(profile.activityLevel).toBe("high");
+
+      // Verify onboardingCompleted is true
+      const [updated] = await tx
+        .select()
+        .from(users)
+        .where(eq(users.id, testUser.id));
+      expect(updated.onboardingCompleted).toBe(true);
+
+      // Verify only 1 profile row exists (no duplicate)
+      const allProfiles = await tx
+        .select()
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, testUser.id));
+      expect(allProfiles).toHaveLength(1);
+    });
+
+    it("returns a UserProfile with correct shape", async () => {
+      const profile = await upsertProfileWithOnboarding(testUser.id, {
+        dietType: "balanced",
+        activityLevel: "low",
+      });
+
+      expect(profile).toMatchObject({
+        id: expect.any(Number),
+        userId: testUser.id,
+        dietType: "balanced",
+        activityLevel: "low",
+      });
+      expect(profile.createdAt).toBeDefined();
     });
   });
 });

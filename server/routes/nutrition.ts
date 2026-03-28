@@ -229,6 +229,7 @@ export function register(app: Express): void {
           userId: req.userId!,
         });
 
+        // No logOverrides needed — defaults to source: "scan", mealType: null
         const item = await storage.createScannedItemWithLog({
           userId: validated.userId,
           barcode: validated.barcode,

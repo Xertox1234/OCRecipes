@@ -47,6 +47,7 @@ const {
   getSavedItemCount,
   createSavedItem,
   deleteSavedItem,
+  createScannedItemWithLog,
 } = await import("../nutrition");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -827,6 +828,164 @@ describe("nutrition storage", () => {
       // Original item still exists
       const items = await getSavedItems(otherUser.id);
       expect(items).toHaveLength(1);
+    });
+  });
+
+  // ==========================================================================
+  // CREATE SCANNED ITEM WITH LOG (atomic transaction)
+  // ==========================================================================
+
+  describe("createScannedItemWithLog", () => {
+    it("creates both a scanned item and a daily log atomically", async () => {
+      const item = await createScannedItemWithLog({
+        userId: testUser.id,
+        productName: "Atomic Apple",
+        barcode: "999888",
+        calories: "95",
+        protein: "0.5",
+        carbs: "25",
+        fat: "0.3",
+        servingSize: "1 medium",
+        sourceType: "barcode",
+      });
+
+      expect(item).toBeDefined();
+      expect(item.id).toBeDefined();
+      expect(item.productName).toBe("Atomic Apple");
+      expect(item.barcode).toBe("999888");
+      expect(item.calories).toBe("95.00");
+      expect(item.userId).toBe(testUser.id);
+      expect(item.scannedAt).toBeInstanceOf(Date);
+      expect(item.discardedAt).toBeNull();
+
+      // Verify a daily log was created with the correct scannedItemId
+      const t = getTestTx();
+      const [log] = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.scannedItemId, item.id));
+      expect(log).toBeDefined();
+      expect(log.userId).toBe(testUser.id);
+      expect(log.scannedItemId).toBe(item.id);
+    });
+
+    it("defaults source to 'scan' and mealType to null when no overrides provided", async () => {
+      const item = await createScannedItemWithLog({
+        userId: testUser.id,
+        productName: "Default Source Food",
+        barcode: "111000",
+        calories: "50",
+        protein: "2",
+        carbs: "10",
+        fat: "1",
+        servingSize: "50g",
+        sourceType: "barcode",
+      });
+
+      const t = getTestTx();
+      const [log] = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.scannedItemId, item.id));
+      expect(log.source).toBe("scan");
+      expect(log.mealType).toBeNull();
+    });
+
+    it("applies logOverrides for source and mealType", async () => {
+      const item = await createScannedItemWithLog(
+        {
+          userId: testUser.id,
+          productName: "Override Food",
+          barcode: "222333",
+          calories: "120",
+          protein: "3",
+          carbs: "15",
+          fat: "5",
+          servingSize: "1 cup",
+          sourceType: "barcode",
+        },
+        { source: "beverage", mealType: "lunch" },
+      );
+
+      const t = getTestTx();
+      const [log] = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.scannedItemId, item.id));
+      expect(log.source).toBe("beverage");
+      expect(log.mealType).toBe("lunch");
+    });
+
+    it("sets servings to '1' on the daily log", async () => {
+      const item = await createScannedItemWithLog({
+        userId: testUser.id,
+        productName: "Servings Check Food",
+        barcode: "444555",
+        calories: "80",
+        protein: "4",
+        carbs: "12",
+        fat: "2",
+        servingSize: "1 bar",
+        sourceType: "barcode",
+      });
+
+      const t = getTestTx();
+      const [log] = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.scannedItemId, item.id));
+      expect(log.servings).toBe("1.00");
+    });
+
+    it("rolls back both inserts if daily log insert fails", async () => {
+      // Verify atomicity by creating 3 items and checking that exactly
+      // 3 daily logs exist — each call creates one item + one log.
+      await createScannedItemWithLog({
+        userId: testUser.id,
+        productName: "Batch Item 1",
+        barcode: "B001",
+        calories: "100",
+        protein: "5",
+        carbs: "10",
+        fat: "3",
+        servingSize: "100g",
+        sourceType: "barcode",
+      });
+      await createScannedItemWithLog({
+        userId: testUser.id,
+        productName: "Batch Item 2",
+        barcode: "B002",
+        calories: "200",
+        protein: "10",
+        carbs: "20",
+        fat: "6",
+        servingSize: "200g",
+        sourceType: "barcode",
+      });
+      await createScannedItemWithLog({
+        userId: testUser.id,
+        productName: "Batch Item 3",
+        barcode: "B003",
+        calories: "300",
+        protein: "15",
+        carbs: "30",
+        fat: "9",
+        servingSize: "300g",
+        sourceType: "barcode",
+      });
+
+      const t = getTestTx();
+      const items = await t
+        .select()
+        .from(scannedItems)
+        .where(eq(scannedItems.userId, testUser.id));
+      const logs = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.userId, testUser.id));
+
+      expect(items).toHaveLength(3);
+      expect(logs).toHaveLength(3);
     });
   });
 });

@@ -15,6 +15,7 @@ import {
   getTestTx,
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { eq } from "drizzle-orm";
 import type * as schema from "@shared/schema";
 import {
   recipeIngredients,
@@ -60,6 +61,7 @@ const {
   getPlannedNutritionSummary,
   getMealPlanIngredientsForDateRange,
   getFrequentRecipesForMealType,
+  createMealPlanFromSuggestions,
 } = await import("../meal-plans");
 
 // Widen the insert type to allow passing `createdAt` for ordering tests.
@@ -1645,6 +1647,166 @@ describe("meal-plans storage", () => {
         3,
       );
       expect(result).toHaveLength(3);
+    });
+  });
+
+  // ==========================================================================
+  // BULK MEAL PLAN CREATION
+  // ==========================================================================
+
+  describe("createMealPlanFromSuggestions", () => {
+    it("creates a single meal with recipe, ingredients, and plan item", async () => {
+      const result = await createMealPlanFromSuggestions([
+        {
+          recipe: {
+            userId: testUser.id,
+            title: "Chicken Rice",
+            sourceType: "ai_suggestion",
+            servings: 2,
+            caloriesPerServing: "400",
+            proteinPerServing: "30",
+            carbsPerServing: "40",
+            fatPerServing: "15",
+            dietTags: ["high-protein"],
+          },
+          ingredients: [
+            { name: "Chicken", quantity: "200", unit: "g", displayOrder: 0 },
+            { name: "Rice", quantity: "150", unit: "g", displayOrder: 1 },
+          ],
+          planItem: {
+            userId: testUser.id,
+            plannedDate: "2026-03-28",
+            mealType: "lunch",
+            servings: "2",
+          },
+        },
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].recipeId).toBeDefined();
+      expect(result[0].mealPlanItemId).toBeDefined();
+
+      // Verify recipe was created
+      const recipe = await getMealPlanRecipe(result[0].recipeId);
+      expect(recipe).toBeDefined();
+      expect(recipe!.title).toBe("Chicken Rice");
+
+      // Verify ingredients were created
+      const t = getTestTx();
+      const ings = await t
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, result[0].recipeId));
+      expect(ings).toHaveLength(2);
+      expect(ings[0].name).toBe("Chicken");
+      expect(ings[1].name).toBe("Rice");
+
+      // Verify plan item was created
+      const planItem = await getMealPlanItemById(
+        result[0].mealPlanItemId,
+        testUser.id,
+      );
+      expect(planItem).toBeDefined();
+    });
+
+    it("creates multiple meals atomically", async () => {
+      const result = await createMealPlanFromSuggestions([
+        {
+          recipe: {
+            userId: testUser.id,
+            title: "Meal 1",
+            sourceType: "ai_suggestion",
+            servings: 1,
+            caloriesPerServing: "300",
+            proteinPerServing: "20",
+            carbsPerServing: "30",
+            fatPerServing: "10",
+            dietTags: [],
+          },
+          ingredients: [
+            {
+              name: "Ingredient A",
+              quantity: "100",
+              unit: "g",
+              displayOrder: 0,
+            },
+          ],
+          planItem: {
+            userId: testUser.id,
+            plannedDate: "2026-03-28",
+            mealType: "breakfast",
+            servings: "1",
+          },
+        },
+        {
+          recipe: {
+            userId: testUser.id,
+            title: "Meal 2",
+            sourceType: "ai_suggestion",
+            servings: 1,
+            caloriesPerServing: "500",
+            proteinPerServing: "35",
+            carbsPerServing: "50",
+            fatPerServing: "20",
+            dietTags: [],
+          },
+          ingredients: [
+            {
+              name: "Ingredient B",
+              quantity: "200",
+              unit: "g",
+              displayOrder: 0,
+            },
+          ],
+          planItem: {
+            userId: testUser.id,
+            plannedDate: "2026-03-28",
+            mealType: "dinner",
+            servings: "1",
+          },
+        },
+      ]);
+
+      expect(result).toHaveLength(2);
+      // Verify both recipes exist
+      const recipe1 = await getMealPlanRecipe(result[0].recipeId);
+      const recipe2 = await getMealPlanRecipe(result[1].recipeId);
+      expect(recipe1!.title).toBe("Meal 1");
+      expect(recipe2!.title).toBe("Meal 2");
+    });
+
+    it("handles meals with no ingredients", async () => {
+      const result = await createMealPlanFromSuggestions([
+        {
+          recipe: {
+            userId: testUser.id,
+            title: "Simple Meal",
+            sourceType: "ai_suggestion",
+            servings: 1,
+            caloriesPerServing: "200",
+            proteinPerServing: "15",
+            carbsPerServing: "20",
+            fatPerServing: "8",
+            dietTags: [],
+          },
+          ingredients: [],
+          planItem: {
+            userId: testUser.id,
+            plannedDate: "2026-03-29",
+            mealType: "snack",
+            servings: "1",
+          },
+        },
+      ]);
+
+      expect(result).toHaveLength(1);
+      // Verify no ingredients
+      const t = getTestTx();
+      const ings = await t
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, result[0].recipeId));
+      expect(ings).toHaveLength(0);
     });
   });
 });
