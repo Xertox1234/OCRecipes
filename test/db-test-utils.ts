@@ -23,6 +23,9 @@ function getPool(): pg.Pool {
     testPool = new Pool({
       connectionString: process.env.DATABASE_URL,
       max: 2, // Only need 1 active + 1 buffer per worker
+      // Match server/db.ts: force UTC so CURRENT_TIMESTAMP defaults align
+      // with Drizzle's UTC-based timestamp handling.
+      options: "-c timezone=UTC",
     });
   }
   return testPool;

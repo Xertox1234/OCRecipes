@@ -507,7 +507,7 @@ describe("nutrition storage", () => {
       await insertDailyLog(testUser.id, { scannedItemId: item.id });
 
       const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
       const logs = await getDailyLogs(testUser.id, yesterday);
       expect(logs).toHaveLength(0);
     });
@@ -613,7 +613,7 @@ describe("nutrition storage", () => {
 
     it("returns 0 when no scans exist for the date", async () => {
       const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
       const count = await getDailyScanCount(testUser.id, yesterday);
       expect(count).toBe(0);
     });

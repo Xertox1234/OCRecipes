@@ -198,6 +198,9 @@ export default function SavedItemsScreen() {
           />
         }
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={15}
+        windowSize={5}
       />
     </ThemedView>
   );

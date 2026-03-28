@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
-import crypto from "crypto";
 import { z } from "zod";
 import { storage } from "../storage";
+import { createSessionStore } from "../storage/sessions";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -56,7 +56,7 @@ const frontLabelConfirmSchema = z.object({
 const frontLabelUpload = createImageUpload(5 * 1024 * 1024);
 
 // ============================================================================
-// Front-label session store (in-memory, same pattern as label sessions)
+// Front-label session store (uses generic factory from storage/sessions.ts)
 // ============================================================================
 interface FrontLabelSession {
   userId: string;
@@ -65,44 +65,17 @@ interface FrontLabelSession {
   createdAt: number;
 }
 
-const frontLabelSessionStore = new Map<string, FrontLabelSession>();
-const frontLabelSessionTimeouts = new Map<
-  string,
-  ReturnType<typeof setTimeout>
->();
-const userFrontLabelSessionCount = new Map<string, number>();
-
-const FRONT_LABEL_SESSION_TIMEOUT = 15 * 60 * 1000; // 15 minutes
-const FRONT_LABEL_MAX_SESSIONS_PER_USER = 3;
-const FRONT_LABEL_MAX_SESSIONS_GLOBAL = 500;
-
-function decrementUserFrontLabelCount(userId: string): void {
-  const count = userFrontLabelSessionCount.get(userId) ?? 0;
-  if (count <= 1) {
-    userFrontLabelSessionCount.delete(userId);
-  } else {
-    userFrontLabelSessionCount.set(userId, count - 1);
-  }
-}
-
-function clearFrontLabelSession(sessionId: string): void {
-  const session = frontLabelSessionStore.get(sessionId);
-  const existingTimeout = frontLabelSessionTimeouts.get(sessionId);
-  if (existingTimeout) {
-    clearTimeout(existingTimeout);
-    frontLabelSessionTimeouts.delete(sessionId);
-  }
-  frontLabelSessionStore.delete(sessionId);
-  if (session) {
-    decrementUserFrontLabelCount(session.userId);
-  }
-}
+const frontLabelStore = createSessionStore<FrontLabelSession>({
+  maxPerUser: 3,
+  maxGlobal: 500,
+  timeoutMs: 15 * 60 * 1000, // 15 minutes
+});
 
 // Exported for testing (grouped per docs/patterns/security.md Test Internals Export Pattern)
 export const _testInternals = {
-  frontLabelSessionStore,
-  userFrontLabelSessionCount,
-  clearFrontLabelSession,
+  frontLabelSessionStore: frontLabelStore._internals.store,
+  userFrontLabelSessionCount: frontLabelStore._internals.userCount,
+  clearFrontLabelSession: frontLabelStore.clear,
 };
 
 export function register(app: Express): void {
@@ -360,23 +333,9 @@ export function register(app: Express): void {
         }
 
         // Check session bounds
-        if (frontLabelSessionStore.size >= FRONT_LABEL_MAX_SESSIONS_GLOBAL) {
-          return sendError(
-            res,
-            429,
-            "Server is busy, please try again later",
-            "SESSION_LIMIT_REACHED",
-          );
-        }
-        const currentUserSessions =
-          userFrontLabelSessionCount.get(req.userId!) ?? 0;
-        if (currentUserSessions >= FRONT_LABEL_MAX_SESSIONS_PER_USER) {
-          return sendError(
-            res,
-            429,
-            "Too many active front-label sessions. Please confirm or wait for existing sessions to expire.",
-            "USER_SESSION_LIMIT",
-          );
+        const check = frontLabelStore.canCreate(req.userId!);
+        if (!check.allowed) {
+          return sendError(res, 429, check.reason, check.code);
         }
 
         // User must have back-label verified this barcode first
@@ -395,21 +354,13 @@ export function register(app: Express): void {
         const imageBase64 = req.file.buffer.toString("base64");
         const data = await analyzeFrontLabel(imageBase64);
 
-        // Store session for confirm step
-        const sessionId = crypto.randomUUID();
-        frontLabelSessionStore.set(sessionId, {
+        // Store session for confirm step (factory handles timeout + user count)
+        const sessionId = frontLabelStore.create({
           userId: req.userId!,
           data,
           barcode,
           createdAt: Date.now(),
         });
-        userFrontLabelSessionCount.set(req.userId!, currentUserSessions + 1);
-
-        // Auto-expire after 15 minutes
-        const timeoutId = setTimeout(() => {
-          clearFrontLabelSession(sessionId);
-        }, FRONT_LABEL_SESSION_TIMEOUT);
-        frontLabelSessionTimeouts.set(sessionId, timeoutId);
 
         res.json({ sessionId, data });
       } catch (error) {
@@ -437,7 +388,7 @@ export function register(app: Express): void {
         const { barcode, sessionId } = validated;
 
         // Get front-label session
-        const session = frontLabelSessionStore.get(sessionId);
+        const session = frontLabelStore.get(sessionId);
         if (!session) {
           return sendError(
             res,
@@ -497,7 +448,7 @@ export function register(app: Express): void {
         await storage.confirmFrontLabelData(barcode, req.userId!, parsed.data);
 
         // Clean up session
-        clearFrontLabelSession(sessionId);
+        frontLabelStore.clear(sessionId);
 
         res.json({ success: true, frontLabelScanned: true });
       } catch (error) {

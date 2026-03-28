@@ -99,7 +99,7 @@ describe("community storage", () => {
       await logRecipeGeneration(testUser.id, recipe.id);
 
       const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
       const count = await getDailyRecipeGenerationCount(testUser.id, yesterday);
       expect(count).toBe(0);
     });

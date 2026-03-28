@@ -1,5 +1,4 @@
 import type { Express, Request, Response } from "express";
-import crypto from "crypto";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -42,6 +41,7 @@ import {
 } from "@shared/constants/allergens";
 import { scannedItems, dailyLogs } from "@shared/schema";
 import { storage } from "../storage";
+import { createSessionStore } from "../storage/sessions";
 import { db } from "../db";
 
 // ============================================================================
@@ -83,41 +83,21 @@ interface CookingSession {
   createdAt: number;
 }
 
-const cookSessionStore = new Map<string, CookingSession>();
-const cookSessionTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
-const userCookSessionCount = new Map<string, number>();
-
 const MAX_PHOTOS_PER_SESSION = 10;
 const MAX_SESSIONS_PER_USER = 2;
 const MAX_SESSIONS_GLOBAL = 1000;
 const COOK_SESSION_TIMEOUT = 30 * 60 * 1000;
 
-function clearCookSession(sessionId: string): void {
-  const session = cookSessionStore.get(sessionId);
-  const timeout = cookSessionTimeouts.get(sessionId);
-  if (timeout) {
-    clearTimeout(timeout);
-    cookSessionTimeouts.delete(sessionId);
-  }
-  cookSessionStore.delete(sessionId);
-  if (session) {
-    const count = userCookSessionCount.get(session.userId) || 0;
-    if (count > 1) {
-      userCookSessionCount.set(session.userId, count - 1);
-    } else {
-      userCookSessionCount.delete(session.userId);
-    }
-  }
-}
+const cookStore = createSessionStore<CookingSession>({
+  maxPerUser: MAX_SESSIONS_PER_USER,
+  maxGlobal: MAX_SESSIONS_GLOBAL,
+  timeoutMs: COOK_SESSION_TIMEOUT,
+});
 
-function resetSessionTimeout(sessionId: string): void {
-  const existing = cookSessionTimeouts.get(sessionId);
-  if (existing) clearTimeout(existing);
-  const timeoutId = setTimeout(() => {
-    clearCookSession(sessionId);
-  }, COOK_SESSION_TIMEOUT);
-  cookSessionTimeouts.set(sessionId, timeoutId);
-}
+// Aliases for backward compatibility with route code and tests
+const cookSessionStore = cookStore._internals.store;
+const clearCookSession = cookStore.clear;
+const resetSessionTimeout = cookStore.resetTimeout;
 
 function getSessionForUser(
   req: Request,
@@ -128,7 +108,7 @@ function getSessionForUser(
     sendError(res, 400, "Session ID is required", ErrorCode.VALIDATION_ERROR);
     return null;
   }
-  const session = cookSessionStore.get(sessionId);
+  const session = cookStore.get(sessionId);
   if (!session) {
     sendError(res, 404, "Cooking session not found", "SESSION_NOT_FOUND");
     return null;
@@ -179,11 +159,11 @@ Respond with JSON only matching this schema:
 // ============================================================================
 
 export const _testInternals = {
-  cookSessionStore,
-  cookSessionTimeouts,
-  userCookSessionCount,
-  clearCookSession,
-  resetSessionTimeout,
+  cookSessionStore: cookStore._internals.store,
+  cookSessionTimeouts: cookStore._internals.timeouts,
+  userCookSessionCount: cookStore._internals.userCount,
+  clearCookSession: cookStore.clear,
+  resetSessionTimeout: cookStore.resetTimeout,
   MAX_PHOTOS_PER_SESSION,
   MAX_INGREDIENTS_PER_SESSION,
   MAX_SESSIONS_PER_USER,
@@ -211,37 +191,22 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        if (cookSessionStore.size >= MAX_SESSIONS_GLOBAL) {
-          return sendError(
-            res,
-            429,
-            "Server is busy, please try again later",
-            "SESSION_LIMIT_REACHED",
-          );
+        const check = cookStore.canCreate(req.userId!);
+        if (!check.allowed) {
+          return sendError(res, 429, check.reason, check.code);
         }
 
-        const currentUserSessions = userCookSessionCount.get(req.userId!) ?? 0;
-        if (currentUserSessions >= MAX_SESSIONS_PER_USER) {
-          return sendError(
-            res,
-            429,
-            "Too many active cooking sessions. Please finish or wait for existing sessions to expire.",
-            "USER_SESSION_LIMIT",
-          );
-        }
-
-        const sessionId = crypto.randomUUID();
-        const session: CookingSession = {
-          id: sessionId,
+        const sessionId = cookStore.create({
+          id: "", // will be overwritten below
           userId: req.userId!,
           ingredients: [],
           photos: [],
           createdAt: Date.now(),
-        };
+        });
 
-        cookSessionStore.set(sessionId, session);
-        userCookSessionCount.set(req.userId!, currentUserSessions + 1);
-        resetSessionTimeout(sessionId);
+        // Patch the session's id field to match the store key
+        const session = cookStore.get(sessionId)!;
+        session.id = sessionId;
 
         res.status(201).json({
           id: sessionId,

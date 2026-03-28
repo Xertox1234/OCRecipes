@@ -142,6 +142,9 @@ export default function GroceryListsScreen() {
         data={lists || []}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={15}
+        windowSize={5}
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.md,
           paddingHorizontal: Spacing.lg,

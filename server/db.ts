@@ -10,7 +10,14 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Drizzle ORM interprets timestamp (without timezone) columns as UTC
+  // (appends +0000 on read, sends toISOString() on write). We must ensure
+  // PostgreSQL's session timezone matches so that CURRENT_TIMESTAMP defaults
+  // also produce UTC values, preventing day-boundary mismatches.
+  options: "-c timezone=UTC",
+});
 
 pool.on("error", (err) => {
   console.error("Unexpected database pool error:", err);

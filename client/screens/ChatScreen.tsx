@@ -403,6 +403,9 @@ export default function ChatScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.messagesContent}
           keyboardDismissMode="interactive"
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={15}
+          windowSize={5}
           onContentSizeChange={() => {
             flatListRef.current?.scrollToEnd({ animated: true });
           }}

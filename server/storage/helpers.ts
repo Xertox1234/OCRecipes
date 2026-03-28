@@ -12,9 +12,9 @@ export function getDayBounds(date: Date): {
   endOfDay: Date;
 } {
   const startOfDay = new Date(date);
-  startOfDay.setHours(0, 0, 0, 0);
+  startOfDay.setUTCHours(0, 0, 0, 0);
   const endOfDay = new Date(date);
-  endOfDay.setHours(23, 59, 59, 999);
+  endOfDay.setUTCHours(23, 59, 59, 999);
   return { startOfDay, endOfDay };
 }
 
@@ -26,9 +26,11 @@ export function getMonthBounds(date: Date): {
   startOfMonth: Date;
   endOfMonth: Date;
 } {
-  const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
-  startOfMonth.setHours(0, 0, 0, 0);
-  const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-  endOfMonth.setHours(23, 59, 59, 999);
+  const startOfMonth = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1),
+  );
+  const endOfMonth = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 23, 59, 59, 999),
+  );
   return { startOfMonth, endOfMonth };
 }

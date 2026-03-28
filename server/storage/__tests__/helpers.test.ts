@@ -32,50 +32,50 @@ describe("escapeLike", () => {
 });
 
 describe("getDayBounds", () => {
-  it("returns start of day at midnight", () => {
-    const date = new Date(2024, 5, 15, 14, 30, 45, 500);
+  it("returns start of day at UTC midnight", () => {
+    const date = new Date("2024-06-15T14:30:45.500Z");
     const { startOfDay } = getDayBounds(date);
 
-    expect(startOfDay.getHours()).toBe(0);
-    expect(startOfDay.getMinutes()).toBe(0);
-    expect(startOfDay.getSeconds()).toBe(0);
-    expect(startOfDay.getMilliseconds()).toBe(0);
+    expect(startOfDay.getUTCHours()).toBe(0);
+    expect(startOfDay.getUTCMinutes()).toBe(0);
+    expect(startOfDay.getUTCSeconds()).toBe(0);
+    expect(startOfDay.getUTCMilliseconds()).toBe(0);
   });
 
-  it("returns end of day at 23:59:59.999", () => {
-    const date = new Date(2024, 5, 15, 14, 30, 45, 500);
+  it("returns end of day at UTC 23:59:59.999", () => {
+    const date = new Date("2024-06-15T14:30:45.500Z");
     const { endOfDay } = getDayBounds(date);
 
-    expect(endOfDay.getHours()).toBe(23);
-    expect(endOfDay.getMinutes()).toBe(59);
-    expect(endOfDay.getSeconds()).toBe(59);
-    expect(endOfDay.getMilliseconds()).toBe(999);
+    expect(endOfDay.getUTCHours()).toBe(23);
+    expect(endOfDay.getUTCMinutes()).toBe(59);
+    expect(endOfDay.getUTCSeconds()).toBe(59);
+    expect(endOfDay.getUTCMilliseconds()).toBe(999);
   });
 
-  it("preserves the date (year, month, day)", () => {
-    const date = new Date(2024, 11, 25, 8, 0, 0); // Dec 25, 2024
+  it("preserves the UTC date (year, month, day)", () => {
+    const date = new Date("2024-12-25T08:00:00Z");
     const { startOfDay, endOfDay } = getDayBounds(date);
 
-    expect(startOfDay.getFullYear()).toBe(2024);
-    expect(startOfDay.getMonth()).toBe(11);
-    expect(startOfDay.getDate()).toBe(25);
-    expect(endOfDay.getFullYear()).toBe(2024);
-    expect(endOfDay.getMonth()).toBe(11);
-    expect(endOfDay.getDate()).toBe(25);
+    expect(startOfDay.getUTCFullYear()).toBe(2024);
+    expect(startOfDay.getUTCMonth()).toBe(11);
+    expect(startOfDay.getUTCDate()).toBe(25);
+    expect(endOfDay.getUTCFullYear()).toBe(2024);
+    expect(endOfDay.getUTCMonth()).toBe(11);
+    expect(endOfDay.getUTCDate()).toBe(25);
   });
 
   it("does not mutate the input date", () => {
-    const date = new Date(2024, 5, 15, 14, 30, 45, 500);
+    const date = new Date("2024-06-15T14:30:45.500Z");
     const originalTime = date.getTime();
     getDayBounds(date);
     expect(date.getTime()).toBe(originalTime);
   });
 
-  it("handles midnight input", () => {
-    const date = new Date(2024, 0, 1, 0, 0, 0, 0);
+  it("handles UTC midnight input", () => {
+    const date = new Date("2024-01-01T00:00:00.000Z");
     const { startOfDay, endOfDay } = getDayBounds(date);
 
-    expect(startOfDay.getHours()).toBe(0);
-    expect(endOfDay.getHours()).toBe(23);
+    expect(startOfDay.getUTCHours()).toBe(0);
+    expect(endOfDay.getUTCHours()).toBe(23);
   });
 });
