@@ -849,33 +849,30 @@ DATABASE_URL=postgresql://user:password@localhost:5432/ocrecipes
 
 ## Migration Strategy
 
-Currently using **push** mode (schema synchronization) rather than formal migrations. For production, consider switching to migration files:
+Currently using **push** mode (schema synchronization) rather than formal migrations:
 
 ```bash
-# Generate migration
-npx drizzle-kit generate:pg
-
-# Apply migrations
-npx drizzle-kit push:pg
+npm run db:push    # Drizzle Kit pushes shared/schema.ts to PostgreSQL
 ```
 
----
+### Required Extensions
 
-## Indexes (Recommended)
+The schema depends on PostgreSQL extensions that `db:push` cannot create automatically. Run these **before** pushing the schema (one-time per database):
 
-For production performance, consider adding:
-
-```sql
--- Speed up user lookups by username
-CREATE INDEX idx_users_username ON users(username);
-
--- Speed up scanned items queries
-CREATE INDEX idx_scanned_items_user_id ON scanned_items(user_id);
-CREATE INDEX idx_scanned_items_scanned_at ON scanned_items(scanned_at DESC);
-
--- Speed up daily log queries
-CREATE INDEX idx_daily_logs_user_id_logged_at ON daily_logs(user_id, logged_at);
-
--- Speed up profile lookups
-CREATE INDEX idx_user_profiles_user_id ON user_profiles(user_id);
+```bash
+psql $DATABASE_URL -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 ```
+
+A migration script is also provided at `migrations/0001_enable_pg_trgm.sql`.
+
+| Extension | Purpose                                         | Used By                               |
+| --------- | ----------------------------------------------- | ------------------------------------- |
+| `pg_trgm` | GIN trigram indexes for `ILIKE '%term%'` search | Recipe search (community + meal plan) |
+
+### Indexes
+
+All indexes are declared in `shared/schema.ts` and managed by `db:push`. Notable performance indexes:
+
+- **GIN trigram indexes** (`gin_trgm_ops`) on `community_recipes.normalized_product_name`, `.title`, `.description` and `meal_plan_recipes.title`, `.description` — enable efficient substring search via `ILIKE`
+- **B-tree indexes** on foreign keys, timestamps, and lookup columns across all tables
+- **Unique indexes** for deduplication (e.g., `meal_plan_recipes(user_id, external_id)`)

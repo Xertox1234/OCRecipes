@@ -62,9 +62,14 @@ brew services start postgresql  # macOS
 # Create database
 createdb ocrecipes
 
+# Enable required extensions
+psql ocrecipes -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
 # Push schema to database
 npm run db:push
 ```
+
+> **Note:** The `pg_trgm` extension is required for GIN trigram indexes used by recipe search. It must be enabled before `db:push` or the index creation will fail.
 
 ## Port Configuration
 
