@@ -160,6 +160,7 @@ export function register(app: Express): void {
         if (error instanceof ZodError) {
           return sendError(res, 400, formatZodError(error));
         }
+        console.error("Beverage logging failed:", error);
         sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
       }
     },

@@ -1,4 +1,4 @@
-import { isAccessTokenPayload } from "../../server/lib/jwt-types";
+import { isAccessTokenPayload } from "../jwt-types";
 
 describe("Auth Types", () => {
   describe("isAccessTokenPayload", () => {

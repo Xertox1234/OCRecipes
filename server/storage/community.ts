@@ -171,22 +171,22 @@ export async function getFeaturedRecipes(
 export async function deleteCommunityRecipe(
   recipeId: number,
   authorId: string,
+  /** Allow deleting orphaned recipes (NULL authorId). Callers must verify admin status. */
+  allowOrphanDelete = false,
 ): Promise<boolean> {
-  // IDOR protection: only delete if owned by user OR orphaned (author deleted).
-  // When a user is deleted, authorId is set to NULL via onDelete: "set null".
-  // Without the isNull check, orphaned recipes become permanently undeletable
-  // because SQL NULL != NULL makes the eq() condition always false.
+  // IDOR protection: only delete if owned by the requesting user.
+  // Orphan deletion (NULL authorId from cascaded user delete) is opt-in
+  // and should only be enabled for admin callers.
+  const ownershipCondition = allowOrphanDelete
+    ? or(
+        eq(communityRecipes.authorId, authorId),
+        sql`${communityRecipes.authorId} IS NULL`,
+      )
+    : eq(communityRecipes.authorId, authorId);
+
   const result = await db
     .delete(communityRecipes)
-    .where(
-      and(
-        eq(communityRecipes.id, recipeId),
-        or(
-          eq(communityRecipes.authorId, authorId),
-          sql`${communityRecipes.authorId} IS NULL`,
-        ),
-      ),
-    )
+    .where(and(eq(communityRecipes.id, recipeId), ownershipCondition))
     .returning({ id: communityRecipes.id });
 
   return result.length > 0;

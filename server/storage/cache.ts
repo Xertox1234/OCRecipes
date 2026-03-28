@@ -174,7 +174,7 @@ export async function createMealSuggestionCacheWithLimitCheck(
     const { startOfDay, endOfDay } = getDayBounds(new Date());
 
     const countResult = await tx
-      .select({ count: sql<number>`count(*)::int` })
+      .select({ count: sql<number>`count(*)` })
       .from(mealSuggestionCache)
       .where(
         and(
@@ -183,7 +183,7 @@ export async function createMealSuggestionCacheWithLimitCheck(
           lt(mealSuggestionCache.createdAt, endOfDay),
         ),
       );
-    const count = countResult[0]?.count ?? 0;
+    const count = Number(countResult[0]?.count ?? 0);
 
     if (count >= dailyLimit) {
       return null;

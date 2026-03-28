@@ -315,8 +315,9 @@ export const savedItems = pgTable(
     }),
     sourceProductName: text("source_product_name"),
 
-    // Metadata
-    createdAt: timestamp("created_at")
+    // Metadata — withTimezone intentionally kept to preserve existing timestamptz column.
+    // TODO: Migrate all timestamp columns to withTimezone for consistency (see todo 010).
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
