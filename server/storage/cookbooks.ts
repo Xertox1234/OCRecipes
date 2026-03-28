@@ -90,21 +90,23 @@ export async function addRecipeToCookbook(
   recipeId: number,
   recipeType: "mealPlan" | "community",
 ): Promise<CookbookRecipe | undefined> {
-  const [added] = await db
-    .insert(cookbookRecipes)
-    .values({ cookbookId, recipeId, recipeType })
-    .onConflictDoNothing()
-    .returning();
+  return db.transaction(async (tx) => {
+    const [added] = await tx
+      .insert(cookbookRecipes)
+      .values({ cookbookId, recipeId, recipeType })
+      .onConflictDoNothing()
+      .returning();
 
-  // Only bump updatedAt if the insert actually succeeded (not a duplicate)
-  if (added) {
-    await db
-      .update(cookbooks)
-      .set({ updatedAt: sql`CURRENT_TIMESTAMP` })
-      .where(eq(cookbooks.id, cookbookId));
-  }
+    // Only bump updatedAt if the insert actually succeeded (not a duplicate)
+    if (added) {
+      await tx
+        .update(cookbooks)
+        .set({ updatedAt: sql`CURRENT_TIMESTAMP` })
+        .where(eq(cookbooks.id, cookbookId));
+    }
 
-  return added || undefined;
+    return added || undefined;
+  });
 }
 
 export async function removeRecipeFromCookbook(

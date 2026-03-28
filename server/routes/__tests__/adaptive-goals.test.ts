@@ -12,6 +12,8 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     updateUser: vi.fn(),
     createGoalAdjustmentLog: vi.fn(),
+    applyAdaptiveGoalsAtomically: vi.fn(),
+    dismissAdaptiveGoalsAtomically: vi.fn(),
     getGoalAdjustmentLogs: vi.fn(),
   },
 }));
@@ -113,8 +115,9 @@ describe("Adaptive Goals Routes", () => {
       vi.mocked(computeAdaptiveGoals).mockResolvedValue(
         mockRecommendation as never,
       );
-      vi.mocked(storage.updateUser).mockResolvedValue({} as never);
-      vi.mocked(storage.createGoalAdjustmentLog).mockResolvedValue({} as never);
+      vi.mocked(storage.applyAdaptiveGoalsAtomically).mockResolvedValue(
+        {} as never,
+      );
 
       const res = await request(app)
         .post("/api/goals/adaptive/accept")
@@ -123,14 +126,12 @@ describe("Adaptive Goals Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.appliedGoals.calories).toBe(2200);
-      expect(storage.updateUser).toHaveBeenCalledWith(
+      expect(storage.applyAdaptiveGoalsAtomically).toHaveBeenCalledWith(
         "1",
         expect.objectContaining({
           dailyCalorieGoal: 2200,
           dailyProteinGoal: 120,
         }),
-      );
-      expect(storage.createGoalAdjustmentLog).toHaveBeenCalledWith(
         expect.objectContaining({ acceptedByUser: true }),
       );
     });
@@ -153,8 +154,9 @@ describe("Adaptive Goals Routes", () => {
       vi.mocked(computeAdaptiveGoals).mockResolvedValue(
         mockRecommendation as never,
       );
-      vi.mocked(storage.createGoalAdjustmentLog).mockResolvedValue({} as never);
-      vi.mocked(storage.updateUser).mockResolvedValue({} as never);
+      vi.mocked(storage.dismissAdaptiveGoalsAtomically).mockResolvedValue(
+        undefined as never,
+      );
 
       const res = await request(app)
         .post("/api/goals/adaptive/dismiss")
@@ -162,7 +164,8 @@ describe("Adaptive Goals Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(storage.createGoalAdjustmentLog).toHaveBeenCalledWith(
+      expect(storage.dismissAdaptiveGoalsAtomically).toHaveBeenCalledWith(
+        "1",
         expect.objectContaining({ acceptedByUser: false }),
       );
     });
@@ -177,7 +180,7 @@ describe("Adaptive Goals Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(storage.createGoalAdjustmentLog).not.toHaveBeenCalled();
+      expect(storage.dismissAdaptiveGoalsAtomically).not.toHaveBeenCalled();
     });
   });
 

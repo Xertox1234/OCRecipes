@@ -4,16 +4,7 @@ import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { z } from "zod";
 import { API_TIERS } from "@shared/constants/api-tiers";
-
-// For Phase 2b, admin check is a simple allowlist.
-// Replace with RBAC when user roles are implemented.
-// Read env on each call so it can be updated without restart.
-function isAdmin(userId: string): boolean {
-  const adminIds = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",")
-    .filter(Boolean);
-  return adminIds.includes(userId);
-}
+import { isAdmin } from "./_helpers";
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),

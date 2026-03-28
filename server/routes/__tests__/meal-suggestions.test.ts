@@ -17,6 +17,7 @@ vi.mock("../../storage", () => ({
     incrementMealSuggestionCacheHit: vi.fn(),
     getDailySummary: vi.fn(),
     createMealSuggestionCache: vi.fn(),
+    createMealSuggestionCacheWithLimitCheck: vi.fn(),
     getPopularPicksByMealType: vi.fn(),
   },
 }));
@@ -80,9 +81,9 @@ describe("Meal Suggestions Routes", () => {
       vi.mocked(generateMealSuggestions).mockResolvedValue(
         suggestions as never,
       );
-      vi.mocked(storage.createMealSuggestionCache).mockResolvedValue(
-        {} as never,
-      );
+      vi.mocked(
+        storage.createMealSuggestionCacheWithLimitCheck,
+      ).mockResolvedValue({} as never);
 
       const res = await request(app)
         .post("/api/meal-plan/suggest")
@@ -221,9 +222,9 @@ describe("Meal Suggestions Routes", () => {
         [] as never,
       );
       vi.mocked(generateMealSuggestions).mockResolvedValue([] as never);
-      vi.mocked(storage.createMealSuggestionCache).mockResolvedValue(
-        {} as never,
-      );
+      vi.mocked(
+        storage.createMealSuggestionCacheWithLimitCheck,
+      ).mockResolvedValue({} as never);
     }
 
     it("accounts for existing meal plan items with recipe data in budget", async () => {

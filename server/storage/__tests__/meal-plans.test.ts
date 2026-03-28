@@ -341,12 +341,12 @@ describe("meal-plans storage", () => {
       expect(withIngredients!.ingredients[2].displayOrder).toBe(2);
     });
 
-    it("auto-infers mealTypes from title when not provided", async () => {
+    it("defaults to empty mealTypes when not provided (inference moved to route layer)", async () => {
       const recipe = await createMealPlanRecipe({
         userId: testUser.id,
         title: "Blueberry Pancakes",
       });
-      expect(recipe.mealTypes).toContain("breakfast");
+      expect(recipe.mealTypes).toEqual([]);
     });
 
     it("preserves explicitly provided mealTypes", async () => {

@@ -14,7 +14,7 @@ vi.mock("../storage", () => ({
 // Mock the auth module to control JWT_SECRET
 vi.mock("../middleware/auth", async () => {
   const jwtModule = await import("jsonwebtoken");
-  const { isAccessTokenPayload } = await import("@shared/types/auth");
+  const { isAccessTokenPayload } = await import("../lib/jwt-types");
   const { storage } = await import("../storage");
   const JWT_SECRET = "test-jwt-secret";
 

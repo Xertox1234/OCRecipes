@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "node:http";
 import { MulterError } from "multer";
-import { isValidCalendarDate } from "./utils/date-validation";
 import { register as registerAuth } from "./routes/auth";
 import { register as registerProfile } from "./routes/profile";
 import { register as registerNutrition } from "./routes/nutrition";
@@ -34,8 +33,6 @@ import { register as registerBeverages } from "./routes/beverages";
 import { register as registerPublicApi } from "./routes/public-api";
 import { register as registerAdminApiKeys } from "./routes/admin-api-keys";
 import { register as registerApiDocs } from "./routes/api-docs";
-
-export { isValidCalendarDate };
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Public API (separate namespace, registered first to avoid auth conflicts)

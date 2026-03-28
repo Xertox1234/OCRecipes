@@ -1,9 +1,11 @@
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { barcodeVerifications, verificationHistory } from "@shared/schema";
-import type { ConsensusNutritionData } from "@shared/types/verification";
+import type {
+  ConsensusNutritionData,
+  VerificationNutrition,
+} from "@shared/types/verification";
 import type { FrontLabelData } from "@shared/types/front-label";
-import type { VerificationNutrition } from "../services/verification-comparison";
 
 /** Get the verification status for a barcode */
 export async function getVerification(barcode: string) {
@@ -76,37 +78,25 @@ export async function getUserVerificationStats(userId: string): Promise<{
   if (count === 0)
     return { count: 0, frontLabelCount: 0, compositeScore: 0, streak: 0 };
 
-  // Get distinct activity dates (UTC), ordered most recent first.
-  // Query back-label dates and front-label dates separately, then merge in JS.
-  // This ensures both verification day and front-label scan day count as
-  // separate activity days for streak purposes (GREATEST would collapse them).
-  const backLabelDates = await db
+  // Get distinct activity dates (UTC) in a single query.
+  // Both back-label and front-label scan days count as activity days,
+  // so we retrieve both date columns and merge/dedup in JS.
+  const activityRows = await db
     .select({
-      day: sql<string>`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`,
+      backDay: sql<string>`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`,
+      frontDay: sql<
+        string | null
+      >`DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
     })
     .from(verificationHistory)
-    .where(eq(verificationHistory.userId, userId))
-    .groupBy(sql`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`);
+    .where(eq(verificationHistory.userId, userId));
 
-  const frontLabelDates = await db
-    .select({
-      day: sql<string>`DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
-    })
-    .from(verificationHistory)
-    .where(
-      and(
-        eq(verificationHistory.userId, userId),
-        sql`${verificationHistory.frontLabelScannedAt} IS NOT NULL`,
-      ),
-    )
-    .groupBy(
-      sql`DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
-    );
-
-  // Merge and deduplicate dates, sort descending
+  // Collect unique dates from both columns
   const dateSet = new Set<string>();
-  for (const row of backLabelDates) dateSet.add(row.day);
-  for (const row of frontLabelDates) dateSet.add(row.day);
+  for (const row of activityRows) {
+    dateSet.add(row.backDay);
+    if (row.frontDay) dateSet.add(row.frontDay);
+  }
   const dates = [...dateSet]
     .sort((a, b) => b.localeCompare(a))
     .map((day) => ({ day }));

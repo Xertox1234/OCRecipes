@@ -224,6 +224,20 @@ export async function createWeightLog(
   return created;
 }
 
+/** Create weight log and update user's current weight atomically */
+export async function createWeightLogAndUpdateUser(
+  log: InsertWeightLog,
+): Promise<WeightLog> {
+  return db.transaction(async (tx) => {
+    const [created] = await tx.insert(weightLogs).values(log).returning();
+    await tx
+      .update(users)
+      .set({ weight: log.weight })
+      .where(eq(users.id, log.userId));
+    return created;
+  });
+}
+
 export async function deleteWeightLog(
   id: number,
   userId: string,

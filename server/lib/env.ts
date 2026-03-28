@@ -85,8 +85,8 @@ export function validateEnv(): Env {
     validated.RECEIPT_VALIDATION_STUB === "true" &&
     validated.NODE_ENV === "production"
   ) {
-    warnings.push(
-      "RECEIPT_VALIDATION_STUB=true in production — receipts auto-approved!",
+    throw new Error(
+      "RECEIPT_VALIDATION_STUB=true is not allowed in production — receipts would be auto-approved!",
     );
   }
 

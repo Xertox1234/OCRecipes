@@ -14,6 +14,7 @@ vi.mock("../../storage", () => ({
     getChatConversation: vi.fn(),
     getChatMessages: vi.fn(),
     createChatMessage: vi.fn(),
+    createChatMessageWithLimitCheck: vi.fn(),
     getDailyChatMessageCount: vi.fn(),
     getUser: vi.fn(),
     getUserProfile: vi.fn(),
@@ -166,7 +167,9 @@ describe("Chat Routes", () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "free",
       } as never);
-      vi.mocked(storage.getDailyChatMessageCount).mockResolvedValue(3 as never);
+      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+        null as never,
+      );
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -184,8 +187,8 @@ describe("Chat Routes", () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
       } as never);
-      vi.mocked(storage.getDailyChatMessageCount).mockResolvedValue(
-        999999 as never,
+      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+        null as never,
       );
 
       const res = await request(app)
@@ -210,7 +213,9 @@ describe("Chat Routes", () => {
         dailyCarbsGoal: 250,
         dailyFatGoal: 65,
       } as never);
-      vi.mocked(storage.getDailyChatMessageCount).mockResolvedValue(0 as never);
+      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+        {} as never,
+      );
       vi.mocked(storage.createChatMessage).mockResolvedValue({} as never);
       vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
@@ -386,7 +391,6 @@ describe("Chat Routes", () => {
         tier: "premium",
       } as never);
       vi.mocked(storage.getUser).mockResolvedValue(null as never);
-      vi.mocked(storage.getDailyChatMessageCount).mockResolvedValue(0 as never);
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")

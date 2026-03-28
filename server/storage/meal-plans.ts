@@ -40,7 +40,6 @@ import {
   notInArray,
 } from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
-import { inferMealTypes } from "../services/meal-type-inference";
 
 // ============================================================================
 // MEAL PLAN RECIPES
@@ -114,20 +113,14 @@ export async function createMealPlanRecipe(
   recipe: InsertMealPlanRecipe,
   ingredients?: InsertRecipeIngredient[],
 ): Promise<MealPlanRecipe> {
-  const mealTypes =
-    recipe.mealTypes && recipe.mealTypes.length > 0
-      ? recipe.mealTypes
-      : inferMealTypes(
-          recipe.title,
-          ingredients?.map((i) => i.name),
-        );
-  const recipeWithMealTypes = { ...recipe, mealTypes };
+  // mealTypes should be set by the caller (route/service layer).
+  // Storage is a pure data-access layer and should not call service functions.
 
   if (ingredients && ingredients.length > 0) {
     return db.transaction(async (tx) => {
       const [created] = await tx
         .insert(mealPlanRecipes)
-        .values(recipeWithMealTypes)
+        .values(recipe)
         .returning();
       await tx.insert(recipeIngredients).values(
         ingredients.map((ing, idx) => ({
@@ -140,10 +133,7 @@ export async function createMealPlanRecipe(
     });
   }
 
-  const [created] = await db
-    .insert(mealPlanRecipes)
-    .values(recipeWithMealTypes)
-    .returning();
+  const [created] = await db.insert(mealPlanRecipes).values(recipe).returning();
   return created;
 }
 
@@ -476,6 +466,42 @@ export async function addGroceryListItems(
 ): Promise<GroceryListItem[]> {
   if (items.length === 0) return [];
   return db.insert(groceryListItems).values(items).returning();
+}
+
+/** Atomically check list count limit, create list, and insert items (TOCTOU-safe) */
+export async function createGroceryListWithLimitCheck(
+  list: InsertGroceryList,
+  items: Omit<InsertGroceryListItem, "groceryListId">[],
+  maxLists: number,
+): Promise<{ list: GroceryList; items: GroceryListItem[] } | null> {
+  return db.transaction(async (tx) => {
+    const countResult = await tx
+      .select({ count: sql<number>`count(*)` })
+      .from(groceryLists)
+      .where(eq(groceryLists.userId, list.userId));
+    const listCount = Number(countResult[0]?.count ?? 0);
+    if (listCount >= maxLists) return null;
+
+    const [createdList] = await tx
+      .insert(groceryLists)
+      .values(list)
+      .returning();
+
+    const createdItems =
+      items.length > 0
+        ? await tx
+            .insert(groceryListItems)
+            .values(
+              items.map((item) => ({
+                ...item,
+                groceryListId: createdList.id,
+              })),
+            )
+            .returning()
+        : [];
+
+    return { list: createdList, items: createdItems };
+  });
 }
 
 export async function updateGroceryListItemChecked(

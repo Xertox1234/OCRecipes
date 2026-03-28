@@ -1,4 +1,4 @@
-import { isAccessTokenPayload } from "../types/auth";
+import { isAccessTokenPayload } from "../../server/lib/jwt-types";
 
 describe("Auth Types", () => {
   describe("isAccessTokenPayload", () => {
@@ -65,10 +65,9 @@ describe("Auth Types", () => {
       expect(isAccessTokenPayload(payload)).toBe(false);
     });
 
-    it("returns true for empty string sub (valid format)", () => {
-      // Empty string is technically a string type
+    it("returns false for empty string sub", () => {
       const payload = { sub: "", tokenVersion: 0 };
-      expect(isAccessTokenPayload(payload)).toBe(true);
+      expect(isAccessTokenPayload(payload)).toBe(false);
     });
   });
 });

@@ -139,3 +139,60 @@ export async function getDailyChatMessageCount(
 
   return Number(result[0]?.count ?? 0);
 }
+
+/**
+ * Atomically check the daily message limit and create a chat message.
+ * Wraps count-check + insert in a single transaction to prevent TOCTOU races
+ * where concurrent requests could bypass the daily limit.
+ *
+ * Returns the created message, or null if the daily limit has been reached.
+ */
+export async function createChatMessageWithLimitCheck(
+  conversationId: number,
+  userId: string,
+  content: string,
+  dailyLimit: number,
+): Promise<ChatMessage | null> {
+  return db.transaction(async (tx) => {
+    const { startOfDay, endOfDay } = getDayBounds(new Date());
+
+    const countResult = await tx
+      .select({ count: sql<number>`count(*)` })
+      .from(chatMessages)
+      .innerJoin(
+        chatConversations,
+        eq(chatMessages.conversationId, chatConversations.id),
+      )
+      .where(
+        and(
+          eq(chatConversations.userId, userId),
+          eq(chatMessages.role, "user"),
+          gte(chatMessages.createdAt, startOfDay),
+          lt(chatMessages.createdAt, endOfDay),
+        ),
+      );
+
+    const currentCount = Number(countResult[0]?.count ?? 0);
+    if (currentCount >= dailyLimit) {
+      return null;
+    }
+
+    const [message] = await tx
+      .insert(chatMessages)
+      .values({
+        conversationId,
+        role: "user",
+        content,
+        metadata: null,
+      })
+      .returning();
+
+    // Update conversation timestamp atomically
+    await tx
+      .update(chatConversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(chatConversations.id, conversationId));
+
+    return message;
+  });
+}

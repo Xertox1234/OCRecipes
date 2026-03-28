@@ -80,6 +80,7 @@ export const storage = {
   getGroceryLists: mealPlans.getGroceryLists,
   getGroceryListWithItems: mealPlans.getGroceryListWithItems,
   deleteGroceryList: mealPlans.deleteGroceryList,
+  createGroceryListWithLimitCheck: mealPlans.createGroceryListWithLimitCheck,
   addGroceryListItem: mealPlans.addGroceryListItem,
   addGroceryListItems: mealPlans.addGroceryListItems,
   updateGroceryListItemChecked: mealPlans.updateGroceryListItemChecked,
@@ -102,6 +103,7 @@ export const storage = {
   // Weight & HealthKit
   getWeightLogs: users.getWeightLogs,
   createWeightLog: users.createWeightLog,
+  createWeightLogAndUpdateUser: users.createWeightLogAndUpdateUser,
   deleteWeightLog: users.deleteWeightLog,
   getLatestWeight: users.getLatestWeight,
   getHealthKitSyncSettings: users.getHealthKitSyncSettings,
@@ -117,6 +119,7 @@ export const storage = {
   deleteChatConversation: chat.deleteChatConversation,
   updateChatConversationTitle: chat.updateChatConversationTitle,
   getDailyChatMessageCount: chat.getDailyChatMessageCount,
+  createChatMessageWithLimitCheck: chat.createChatMessageWithLimitCheck,
 
   // Cache (suggestions, instructions, meal suggestions, micronutrients)
   getSuggestionCache: cache.getSuggestionCache,
@@ -128,6 +131,8 @@ export const storage = {
   invalidateSuggestionCacheForUser: cache.invalidateSuggestionCacheForUser,
   getMealSuggestionCache: cache.getMealSuggestionCache,
   createMealSuggestionCache: cache.createMealSuggestionCache,
+  createMealSuggestionCacheWithLimitCheck:
+    cache.createMealSuggestionCacheWithLimitCheck,
   incrementMealSuggestionCacheHit: cache.incrementMealSuggestionCacheHit,
   getDailyMealSuggestionCount: cache.getDailyMealSuggestionCount,
   getMicronutrientCache: cache.getMicronutrientCache,
@@ -138,6 +143,7 @@ export const storage = {
   logRecipeGeneration: community.logRecipeGeneration,
   getCommunityRecipes: community.getCommunityRecipes,
   createCommunityRecipe: community.createCommunityRecipe,
+  createRecipeWithLimitCheck: community.createRecipeWithLimitCheck,
   updateRecipePublicStatus: community.updateRecipePublicStatus,
   getCommunityRecipe: community.getCommunityRecipe,
   getFeaturedRecipes: community.getFeaturedRecipes,
@@ -150,6 +156,8 @@ export const storage = {
   updateMedicationLog: medication.updateMedicationLog,
   deleteMedicationLog: medication.deleteMedicationLog,
   createGoalAdjustmentLog: medication.createGoalAdjustmentLog,
+  applyAdaptiveGoalsAtomically: medication.applyAdaptiveGoalsAtomically,
+  dismissAdaptiveGoalsAtomically: medication.dismissAdaptiveGoalsAtomically,
   getGoalAdjustmentLogs: medication.getGoalAdjustmentLogs,
 
   // Fasting

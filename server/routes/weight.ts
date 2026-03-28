@@ -111,16 +111,13 @@ export function register(app: Express): void {
     async (req: Request, res: Response) => {
       try {
         const validated = createWeightLogSchema.parse(req.body);
-        const log = await storage.createWeightLog({
+
+        // Create weight log and update user's current weight atomically
+        const log = await storage.createWeightLogAndUpdateUser({
           userId: req.userId!,
           weight: validated.weight.toString(),
           source: validated.source,
           note: validated.note,
-        });
-
-        // Also update the user's weight field
-        await storage.updateUser(req.userId!, {
-          weight: validated.weight.toString(),
         });
 
         res.status(201).json(log);

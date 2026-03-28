@@ -14,6 +14,7 @@ import {
   checkAiConfigured,
 } from "./_helpers";
 import { openai } from "../lib/openai";
+import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 
 // Zod schema for instructions request
 const instructionsRequestSchema = z.object({
@@ -101,7 +102,12 @@ export function register(app: Express): void {
           }
         }
 
-        const prompt = `Given this food item: "${item.productName}"${item.brandName ? ` by ${item.brandName}` : ""}, generate creative suggestions.
+        const safeName = sanitizeUserInput(item.productName || "");
+        const safeBrand = item.brandName
+          ? sanitizeUserInput(item.brandName)
+          : "";
+
+        const prompt = `Given this food item: "${safeName}"${safeBrand ? ` by ${safeBrand}` : ""}, generate creative suggestions.
 
 ${dietaryContext ? `User preferences: ${dietaryContext}` : ""}
 
@@ -143,8 +149,7 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
           messages: [
             {
               role: "system",
-              content:
-                "You are a helpful culinary and crafts assistant. Always respond with valid JSON only, no markdown formatting.",
+              content: `You are a helpful culinary and crafts assistant. Always respond with valid JSON only, no markdown formatting. ${SYSTEM_PROMPT_BOUNDARY}`,
             },
             { role: "user", content: prompt },
           ],
@@ -276,11 +281,17 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
           }
         }
 
+        const safeItemName = sanitizeUserInput(item.productName || "");
+        const safeItemBrand = item.brandName
+          ? sanitizeUserInput(item.brandName)
+          : "";
+        const safeTitle = sanitizeUserInput(suggestionTitle);
+
         let prompt: string;
         if (suggestionType === "recipe") {
-          prompt = `Write detailed cooking instructions for: "${suggestionTitle}"
+          prompt = `Write detailed cooking instructions for: "${safeTitle}"
 
-This recipe uses "${item.productName}"${item.brandName ? ` by ${item.brandName}` : ""} as a main ingredient.
+This recipe uses "${safeItemName}"${safeItemBrand ? ` by ${safeItemBrand}` : ""} as a main ingredient.
 
 ${dietaryContext ? `User preferences: ${dietaryContext}` : ""}
 
@@ -292,9 +303,9 @@ Provide clear, numbered step-by-step instructions. Include:
 
 Keep instructions practical and easy to follow. Format as plain text with clear sections.`;
         } else if (suggestionType === "craft") {
-          prompt = `Write detailed instructions for the kid-friendly activity: "${suggestionTitle}"
+          prompt = `Write detailed instructions for the kid-friendly activity: "${safeTitle}"
 
-This activity is inspired by "${item.productName}".
+This activity is inspired by "${safeItemName}".
 
 Provide clear, numbered step-by-step instructions. Include:
 1. Materials needed
@@ -306,9 +317,9 @@ Provide clear, numbered step-by-step instructions. Include:
 Keep instructions simple and safe for children. Format as plain text with clear sections.`;
         } else {
           // pairing
-          prompt = `Explain in detail why these foods pair well: "${suggestionTitle}"
+          prompt = `Explain in detail why these foods pair well: "${safeTitle}"
 
-Based on "${item.productName}"${item.brandName ? ` by ${item.brandName}` : ""}.
+Based on "${safeItemName}"${safeItemBrand ? ` by ${safeItemBrand}` : ""}.
 
 ${dietaryContext ? `User preferences: ${dietaryContext}` : ""}
 
@@ -326,8 +337,7 @@ Format as plain text with clear sections.`;
           messages: [
             {
               role: "system",
-              content:
-                "You are a helpful culinary and crafts assistant. Provide clear, practical instructions.",
+              content: `You are a helpful culinary and crafts assistant. Provide clear, practical instructions. ${SYSTEM_PROMPT_BOUNDARY}`,
             },
             { role: "user", content: prompt },
           ],

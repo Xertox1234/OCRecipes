@@ -1,4 +1,4 @@
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { apiKeys, apiKeyUsage, barcodeNutrition } from "@shared/schema";
 import bcrypt from "bcrypt";
@@ -158,12 +158,21 @@ export async function upsertBarcodeNutrition(data: {
  * Returns the first match found, or null.
  */
 export async function getBarcodeNutrition(variants: string[]) {
-  for (const variant of variants) {
-    const [result] = await db
-      .select()
-      .from(barcodeNutrition)
-      .where(eq(barcodeNutrition.barcode, variant));
-    if (result) return result;
-  }
-  return null;
+  if (variants.length === 0) return null;
+
+  const results = await db
+    .select()
+    .from(barcodeNutrition)
+    .where(inArray(barcodeNutrition.barcode, variants));
+
+  if (results.length === 0) return null;
+
+  // Return the result matching the highest-priority variant (earliest in the array)
+  const indexMap = new Map(variants.map((v, i) => [v, i]));
+  results.sort(
+    (a, b) =>
+      (indexMap.get(a.barcode) ?? Infinity) -
+      (indexMap.get(b.barcode) ?? Infinity),
+  );
+  return results[0];
 }

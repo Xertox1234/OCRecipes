@@ -24,18 +24,11 @@ import {
   checkAiConfigured,
   createImageUpload,
   createRateLimiter,
+  isAdmin,
   parseQueryInt,
   parseQueryString,
   parseStringParam,
 } from "./_helpers";
-
-// Admin check — same allowlist pattern as admin-api-keys.ts
-function isAdmin(userId: string): boolean {
-  const adminIds = (process.env.ADMIN_USER_IDS ?? "")
-    .split(",")
-    .filter(Boolean);
-  return adminIds.includes(userId);
-}
 
 const verificationRateLimit = createRateLimiter({
   windowMs: 60 * 1000,

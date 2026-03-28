@@ -8,6 +8,14 @@ export const verificationLevels = [
 export const verificationLevelSchema = z.enum(verificationLevels);
 export type VerificationLevel = z.infer<typeof verificationLevelSchema>;
 
+/** Extracted nutrition values relevant to verification comparison */
+export interface VerificationNutrition {
+  calories: number | null;
+  protein: number | null;
+  totalCarbs: number | null;
+  totalFat: number | null;
+}
+
 /** Nutrition data shape stored as consensus in barcodeVerifications JSONB */
 export const consensusNutritionSchema = z.object({
   calories: z.number(),

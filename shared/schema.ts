@@ -124,6 +124,16 @@ export const scannedItems = pgTable(
       .on(table.userId, table.scannedAt)
       .where(sql`discarded_at IS NULL`),
     scannedAtIdx: index("scanned_items_scanned_at_idx").on(table.scannedAt),
+    caloriesNonNeg: check(
+      "scanned_items_calories_gte0",
+      sql`${table.calories} >= 0`,
+    ),
+    proteinNonNeg: check(
+      "scanned_items_protein_gte0",
+      sql`${table.protein} >= 0`,
+    ),
+    carbsNonNeg: check("scanned_items_carbs_gte0", sql`${table.carbs} >= 0`),
+    fatNonNeg: check("scanned_items_fat_gte0", sql`${table.fat} >= 0`),
   }),
 );
 
@@ -167,6 +177,10 @@ export const dailyLogs = pgTable(
     hasNutritionSource: check(
       "daily_logs_has_source",
       sql`scanned_item_id IS NOT NULL OR recipe_id IS NOT NULL`,
+    ),
+    servingsPositive: check(
+      "daily_logs_servings_gt0",
+      sql`${table.servings} > 0`,
     ),
   }),
 );
@@ -302,7 +316,7 @@ export const savedItems = pgTable(
     sourceProductName: text("source_product_name"),
 
     // Metadata
-    createdAt: timestamp("created_at", { withTimezone: true })
+    createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -572,6 +586,17 @@ export const mealPlanRecipes = pgTable(
       table.userId,
       table.externalId,
     ),
+    caloriesNonNeg: check(
+      "mpr_calories_gte0",
+      sql`${table.caloriesPerServing} >= 0`,
+    ),
+    proteinNonNeg: check(
+      "mpr_protein_gte0",
+      sql`${table.proteinPerServing} >= 0`,
+    ),
+    carbsNonNeg: check("mpr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
+    fatNonNeg: check("mpr_fat_gte0", sql`${table.fatPerServing} >= 0`),
+    servingsPositive: check("mpr_servings_gt0", sql`${table.servings} > 0`),
   }),
 );
 
@@ -624,6 +649,10 @@ export const mealPlanItems = pgTable(
     hasNutritionSource: check(
       "meal_plan_items_has_source",
       sql`recipe_id IS NOT NULL OR scanned_item_id IS NOT NULL`,
+    ),
+    servingsPositive: check(
+      "meal_plan_items_servings_gt0",
+      sql`${table.servings} > 0`,
     ),
   }),
 );

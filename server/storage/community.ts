@@ -85,6 +85,48 @@ export async function createCommunityRecipe(
   return recipe;
 }
 
+/**
+ * Atomically checks the daily generation limit and creates a recipe + log entry.
+ * Prevents TOCTOU race where concurrent requests both pass the limit check.
+ * Returns the created recipe, or null if the daily limit has been reached.
+ */
+export async function createRecipeWithLimitCheck(
+  userId: string,
+  dailyLimit: number,
+  data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
+): Promise<CommunityRecipe | null> {
+  return db.transaction(async (tx) => {
+    // Check daily limit inside transaction
+    const { startOfDay, endOfDay } = getDayBounds(new Date());
+    const result = await tx
+      .select({ count: sql<number>`count(*)` })
+      .from(recipeGenerationLog)
+      .where(
+        and(
+          eq(recipeGenerationLog.userId, userId),
+          gte(recipeGenerationLog.generatedAt, startOfDay),
+          lt(recipeGenerationLog.generatedAt, endOfDay),
+        ),
+      );
+
+    const generationsToday = Number(result[0]?.count ?? 0);
+    if (generationsToday >= dailyLimit) {
+      return null;
+    }
+
+    // Create recipe
+    const [recipe] = await tx.insert(communityRecipes).values(data).returning();
+
+    // Log the generation
+    await tx.insert(recipeGenerationLog).values({
+      userId,
+      recipeId: recipe.id,
+    });
+
+    return recipe;
+  });
+}
+
 export async function updateRecipePublicStatus(
   recipeId: number,
   authorId: string,
@@ -130,13 +172,19 @@ export async function deleteCommunityRecipe(
   recipeId: number,
   authorId: string,
 ): Promise<boolean> {
-  // IDOR protection: only delete if owned by user
+  // IDOR protection: only delete if owned by user OR orphaned (author deleted).
+  // When a user is deleted, authorId is set to NULL via onDelete: "set null".
+  // Without the isNull check, orphaned recipes become permanently undeletable
+  // because SQL NULL != NULL makes the eq() condition always false.
   const result = await db
     .delete(communityRecipes)
     .where(
       and(
         eq(communityRecipes.id, recipeId),
-        eq(communityRecipes.authorId, authorId),
+        or(
+          eq(communityRecipes.authorId, authorId),
+          sql`${communityRecipes.authorId} IS NULL`,
+        ),
       ),
     )
     .returning({ id: communityRecipes.id });

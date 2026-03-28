@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
-import { isAccessTokenPayload } from "@shared/types/auth";
+import { isAccessTokenPayload } from "../lib/jwt-types";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 

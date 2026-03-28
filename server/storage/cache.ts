@@ -158,6 +158,45 @@ export async function createMealSuggestionCache(
   return created;
 }
 
+/**
+ * Atomically check daily limit and create cache entry in a single transaction.
+ * Prevents TOCTOU race where concurrent requests bypass the daily limit.
+ * Returns null if the daily limit has been reached.
+ */
+export async function createMealSuggestionCacheWithLimitCheck(
+  cacheKey: string,
+  userId: string,
+  suggestions: MealSuggestion[],
+  expiresAt: Date,
+  dailyLimit: number,
+): Promise<MealSuggestionCacheEntry | null> {
+  return db.transaction(async (tx) => {
+    const { startOfDay, endOfDay } = getDayBounds(new Date());
+
+    const countResult = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(mealSuggestionCache)
+      .where(
+        and(
+          eq(mealSuggestionCache.userId, userId),
+          gte(mealSuggestionCache.createdAt, startOfDay),
+          lt(mealSuggestionCache.createdAt, endOfDay),
+        ),
+      );
+    const count = countResult[0]?.count ?? 0;
+
+    if (count >= dailyLimit) {
+      return null;
+    }
+
+    const [created] = await tx
+      .insert(mealSuggestionCache)
+      .values({ cacheKey, userId, suggestions, expiresAt })
+      .returning();
+    return created;
+  });
+}
+
 export async function incrementMealSuggestionCacheHit(
   id: number,
 ): Promise<void> {
@@ -250,11 +289,8 @@ export async function purgeExpiredCacheRows(): Promise<number> {
 
   let totalDeleted = 0;
   for (const table of tables) {
-    const result = await db
-      .delete(table)
-      .where(lte(table.expiresAt, now))
-      .returning({ id: table.id });
-    totalDeleted += result.length;
+    const result = await db.delete(table).where(lte(table.expiresAt, now));
+    totalDeleted += result.rowCount ?? 0;
   }
 
   // instructionCache cascades from suggestionCache, but clean orphans just in case

@@ -20,6 +20,7 @@ vi.mock("../../storage", () => ({
     getDailyRecipeGenerationCount: vi.fn(),
     getUserProfile: vi.fn(),
     createCommunityRecipe: vi.fn(),
+    createRecipeWithLimitCheck: vi.fn(),
     logRecipeGeneration: vi.fn(),
     updateRecipePublicStatus: vi.fn(),
     getUserRecipes: vi.fn(),
@@ -234,11 +235,10 @@ describe("Recipes Routes", () => {
         instructions: "Cook pasta...",
         imageUrl: null,
       } as never);
-      vi.mocked(storage.createCommunityRecipe).mockResolvedValue({
+      vi.mocked(storage.createRecipeWithLimitCheck).mockResolvedValue({
         id: 2,
         title: "Pasta Bowl",
       } as never);
-      vi.mocked(storage.logRecipeGeneration).mockResolvedValue({} as never);
 
       const res = await request(app)
         .post("/api/recipes/generate")

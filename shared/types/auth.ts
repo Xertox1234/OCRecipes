@@ -1,22 +1,5 @@
-import { JwtPayload } from "jsonwebtoken";
-
-// JWT payload structure
-export interface AccessTokenPayload extends JwtPayload {
-  sub: string; // User ID
-  tokenVersion: number; // Token version for revocation
-}
-
-// Type guard for payload validation
-export function isAccessTokenPayload(
-  payload: string | JwtPayload,
-): payload is AccessTokenPayload {
-  return (
-    typeof payload === "object" &&
-    payload !== null &&
-    typeof payload.sub === "string" &&
-    typeof (payload as Record<string, unknown>).tokenVersion === "number"
-  );
-}
+// JWT types (AccessTokenPayload, isAccessTokenPayload) are server-only.
+// Import from server/lib/jwt-types.ts instead to avoid pulling jsonwebtoken into client bundles.
 
 // User type for client-side auth
 export interface User {

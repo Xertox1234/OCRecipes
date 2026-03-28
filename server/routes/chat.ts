@@ -162,15 +162,20 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        // Fetch user and daily count in parallel
-        const [user, dailyCount] = await Promise.all([
-          storage.getUser(req.userId!),
-          storage.getDailyChatMessageCount(req.userId!, new Date()),
-        ]);
+        const user = await storage.getUser(req.userId!);
         if (!user)
           return sendError(res, 401, "Unauthorized", ErrorCode.UNAUTHORIZED);
 
-        if (dailyCount >= features.dailyCoachMessages) {
+        // Atomically check daily limit and create message in a single
+        // transaction to prevent TOCTOU races bypassing the limit.
+        const message = await storage.createChatMessageWithLimitCheck(
+          id,
+          req.userId!,
+          parsed.data.content,
+          features.dailyCoachMessages,
+        );
+
+        if (!message) {
           return sendError(
             res,
             429,
@@ -179,11 +184,10 @@ export function register(app: Express): void {
           );
         }
 
-        // Save user message and build context in parallel
+        // Build context in parallel
         const today = new Date();
-        const [, profile, dailySummary, latestWeight, history] =
+        const [profile, dailySummary, latestWeight, history] =
           await Promise.all([
-            storage.createChatMessage(id, "user", parsed.data.content),
             storage.getUserProfile(req.userId!),
             storage.getDailySummary(req.userId!, today),
             storage.getLatestWeight(req.userId!),

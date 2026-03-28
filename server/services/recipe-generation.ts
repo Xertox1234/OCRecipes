@@ -7,6 +7,7 @@ import {
   OPENAI_TIMEOUT_HEAVY_MS,
   OPENAI_TIMEOUT_IMAGE_MS,
 } from "../lib/openai";
+import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 
 // Zod schemas for recipe generation
 const instructionItemSchema = z.union([
@@ -121,7 +122,9 @@ export async function generateRecipeContent(
     ? `The recipe should take ${input.timeConstraint} or less.`
     : "";
 
-  const prompt = `Create a delicious recipe using "${input.productName}" as the main ingredient ${servingsText}.
+  const sanitizedProductName = sanitizeUserInput(input.productName);
+
+  const prompt = `Create a delicious recipe using "${sanitizedProductName}" as the main ingredient ${servingsText}.
 
 ${dietaryContext ? `User dietary requirements: ${dietaryContext}` : ""}
 ${timeText}
@@ -153,8 +156,7 @@ Respond with JSON only:
         messages: [
           {
             role: "system",
-            content:
-              "You are a professional chef and recipe developer. Create delicious, practical recipes that are easy to follow. Always respond with valid JSON only.",
+            content: `You are a professional chef and recipe developer. Create delicious, practical recipes that are easy to follow. Always respond with valid JSON only. ${SYSTEM_PROMPT_BOUNDARY}`,
           },
           { role: "user", content: prompt },
         ],

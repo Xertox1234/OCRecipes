@@ -152,8 +152,13 @@ export function register(app: Express): void {
         }
 
         const { ingredients, sourceType, ...recipeData } = parsed.data;
+        // Infer meal types from title + ingredients (moved from storage layer to maintain layering)
+        const mealTypes = inferMealTypes(
+          recipeData.title,
+          ingredients?.map((i) => i.name),
+        );
         const recipe = await storage.createMealPlanRecipe(
-          { ...recipeData, userId: req.userId!, sourceType },
+          { ...recipeData, userId: req.userId!, sourceType, mealTypes },
           ingredients?.map((ing) => ({
             ...ing,
             recipeId: 0, // Will be set by storage method

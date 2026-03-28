@@ -1,4 +1,10 @@
-import type { ConsensusNutritionData } from "@shared/types/verification";
+import type {
+  ConsensusNutritionData,
+  VerificationNutrition,
+} from "@shared/types/verification";
+
+// Re-export so existing consumers continue to work
+export type { VerificationNutrition } from "@shared/types/verification";
 
 /** Core macro fields compared for verification (5% tolerance) */
 const COMPARISON_FIELDS = [
@@ -7,14 +13,6 @@ const COMPARISON_FIELDS = [
   "totalCarbs",
   "totalFat",
 ] as const;
-
-/** Extracted nutrition values relevant to verification */
-export interface VerificationNutrition {
-  calories: number | null;
-  protein: number | null;
-  totalCarbs: number | null;
-  totalFat: number | null;
-}
 
 /**
  * Check if two numeric values match within 5% relative tolerance.

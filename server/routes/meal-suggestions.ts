@@ -66,7 +66,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        // Daily limit check
+        // Early daily limit check (authoritative check happens in transaction below)
         const dailyCount = await storage.getDailyMealSuggestionCount(
           req.userId!,
           new Date(),
@@ -196,14 +196,27 @@ export function register(app: Express): void {
           remainingBudget,
         });
 
-        // Cache result (expires in 6 hours)
+        // Cache result with transactional limit check (expires in 6 hours)
+        // Re-checks daily count inside a transaction to prevent TOCTOU race
         const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
-        await storage.createMealSuggestionCache(
-          cacheKey,
-          req.userId!,
-          suggestions,
-          expiresAt,
-        );
+        const cacheEntry =
+          await storage.createMealSuggestionCacheWithLimitCheck(
+            cacheKey,
+            req.userId!,
+            suggestions,
+            expiresAt,
+            features.dailyAiSuggestions,
+          );
+
+        if (!cacheEntry) {
+          sendError(
+            res,
+            429,
+            "Daily AI suggestion limit reached",
+            "DAILY_LIMIT_REACHED",
+          );
+          return;
+        }
 
         const remaining = features.dailyAiSuggestions - dailyCount - 1;
         const popularPicks = await fetchDeduplicatedPopularPicks(

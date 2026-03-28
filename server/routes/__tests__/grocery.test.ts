@@ -12,6 +12,7 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     getUserProfile: vi.fn().mockResolvedValue(null),
     getGroceryListCount: vi.fn(),
+    createGroceryListWithLimitCheck: vi.fn(),
     getGroceryLists: vi.fn(),
     getMealPlanIngredientsForDateRange: vi.fn(),
     createGroceryList: vi.fn(),
@@ -71,17 +72,16 @@ describe("Grocery Routes", () => {
       vi.mocked(storage.getUser).mockResolvedValue({
         subscriptionTier: "premium",
       } as never);
-      vi.mocked(storage.getGroceryListCount).mockResolvedValue(0);
       vi.mocked(storage.getMealPlanIngredientsForDateRange).mockResolvedValue(
         [] as never,
       );
       vi.mocked(generateGroceryItems).mockReturnValue([
         { name: "Milk", quantity: 1, unit: "gallon", category: "dairy" },
       ] as never);
-      vi.mocked(storage.createGroceryList).mockResolvedValue(mockList as never);
-      vi.mocked(storage.addGroceryListItems).mockResolvedValue([
-        { id: 1, name: "Milk" },
-      ] as never);
+      vi.mocked(storage.createGroceryListWithLimitCheck).mockResolvedValue({
+        list: mockList,
+        items: [{ id: 1, name: "Milk" }],
+      } as never);
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists")
@@ -118,7 +118,13 @@ describe("Grocery Routes", () => {
       vi.mocked(storage.getUser).mockResolvedValue({
         subscriptionTier: "free",
       } as never);
-      vi.mocked(storage.getGroceryListCount).mockResolvedValue(50);
+      vi.mocked(storage.getMealPlanIngredientsForDateRange).mockResolvedValue(
+        [] as never,
+      );
+      vi.mocked(generateGroceryItems).mockReturnValue([] as never);
+      vi.mocked(storage.createGroceryListWithLimitCheck).mockResolvedValue(
+        null as never,
+      );
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists")

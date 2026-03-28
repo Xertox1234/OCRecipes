@@ -5,6 +5,7 @@ import {
   type InsertGoalAdjustmentLog,
   medicationLogs,
   goalAdjustmentLogs,
+  users,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, gte, lte } from "drizzle-orm";
@@ -68,6 +69,45 @@ export async function createGoalAdjustmentLog(
 ): Promise<GoalAdjustmentLog> {
   const [result] = await db.insert(goalAdjustmentLogs).values(log).returning();
   return result;
+}
+
+/** Apply adaptive goals + create audit log atomically */
+export async function applyAdaptiveGoalsAtomically(
+  userId: string,
+  goals: {
+    dailyCalorieGoal: number;
+    dailyProteinGoal: number;
+    dailyCarbsGoal: number;
+    dailyFatGoal: number;
+  },
+  log: InsertGoalAdjustmentLog,
+): Promise<GoalAdjustmentLog> {
+  return db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ ...goals, lastGoalAdjustmentAt: new Date() })
+      .where(eq(users.id, userId));
+
+    const [result] = await tx
+      .insert(goalAdjustmentLogs)
+      .values(log)
+      .returning();
+    return result;
+  });
+}
+
+/** Dismiss adaptive goals + log + update timestamp atomically */
+export async function dismissAdaptiveGoalsAtomically(
+  userId: string,
+  log: InsertGoalAdjustmentLog,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.insert(goalAdjustmentLogs).values(log);
+    await tx
+      .update(users)
+      .set({ lastGoalAdjustmentAt: new Date() })
+      .where(eq(users.id, userId));
+  });
 }
 
 export async function getGoalAdjustmentLogs(

@@ -11,6 +11,7 @@ vi.mock("../../storage", () => ({
     updateUser: vi.fn(),
     getWeightLogs: vi.fn(),
     createWeightLog: vi.fn(),
+    createWeightLogAndUpdateUser: vi.fn(),
     deleteWeightLog: vi.fn(),
     getSubscriptionStatus: vi.fn(),
   },
@@ -136,10 +137,9 @@ describe("Weight Routes", () => {
 
   describe("POST /api/weight", () => {
     it("creates a weight log and updates user weight", async () => {
-      vi.mocked(storage.createWeightLog).mockResolvedValue(
+      vi.mocked(storage.createWeightLogAndUpdateUser).mockResolvedValue(
         mockWeightLog as never,
       );
-      vi.mocked(storage.updateUser).mockResolvedValue({} as never);
 
       const res = await request(app)
         .post("/api/weight")
@@ -147,14 +147,11 @@ describe("Weight Routes", () => {
         .send({ weight: 75.5 });
 
       expect(res.status).toBe(201);
-      expect(storage.createWeightLog).toHaveBeenCalledWith({
+      expect(storage.createWeightLogAndUpdateUser).toHaveBeenCalledWith({
         userId: "1",
         weight: "75.5",
         source: "manual",
         note: undefined,
-      });
-      expect(storage.updateUser).toHaveBeenCalledWith("1", {
-        weight: "75.5",
       });
     });
 
@@ -177,10 +174,9 @@ describe("Weight Routes", () => {
     });
 
     it("accepts optional source and note", async () => {
-      vi.mocked(storage.createWeightLog).mockResolvedValue(
+      vi.mocked(storage.createWeightLogAndUpdateUser).mockResolvedValue(
         mockWeightLog as never,
       );
-      vi.mocked(storage.updateUser).mockResolvedValue({} as never);
 
       const res = await request(app)
         .post("/api/weight")

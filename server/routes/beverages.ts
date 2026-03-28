@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { db } from "../db";
 import { requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { formatZodError } from "./_helpers";
 import { scannedItems, dailyLogs } from "@shared/schema";
 import { lookupNutrition } from "../services/nutrition-lookup";
@@ -159,7 +160,7 @@ export function register(app: Express): void {
         if (error instanceof ZodError) {
           return sendError(res, 400, formatZodError(error));
         }
-        throw error;
+        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
       }
     },
   );

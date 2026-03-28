@@ -12,6 +12,7 @@ import {
   generateFullRecipe,
   normalizeProductName,
 } from "../services/recipe-generation";
+import { inferMealTypes } from "../services/meal-type-inference";
 import {
   searchCatalogRecipes,
   getCatalogRecipeDetail,
@@ -258,7 +259,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        // Check daily limit
+        // Early limit check (non-transactional fast path to avoid expensive AI call)
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId!,
           new Date(),
@@ -297,7 +298,7 @@ export function register(app: Express): void {
         // Get user profile for dietary context
         const userProfile = await storage.getUserProfile(req.userId!);
 
-        // Generate the recipe
+        // Generate the recipe (expensive AI call, done before transaction)
         const generatedRecipe = await generateFullRecipe({
           productName,
           barcode,
@@ -307,24 +308,36 @@ export function register(app: Express): void {
           userProfile,
         });
 
-        // Save to database (initially private - user must explicitly share)
-        const recipe = await storage.createCommunityRecipe({
-          authorId: req.userId!,
-          barcode: barcode || null,
-          normalizedProductName: normalizeProductName(productName),
-          title: generatedRecipe.title,
-          description: generatedRecipe.description,
-          difficulty: generatedRecipe.difficulty,
-          timeEstimate: generatedRecipe.timeEstimate,
-          servings: servings || 2,
-          dietTags: generatedRecipe.dietTags,
-          instructions: generatedRecipe.instructions,
-          imageUrl: generatedRecipe.imageUrl,
-          isPublic: false, // Private until user shares
-        });
+        // Atomically re-check limit + create recipe + log generation in a transaction
+        // This prevents TOCTOU race where concurrent requests both pass the early check
+        const recipe = await storage.createRecipeWithLimitCheck(
+          req.userId!,
+          features.dailyRecipeGenerations,
+          {
+            authorId: req.userId!,
+            barcode: barcode || null,
+            normalizedProductName: normalizeProductName(productName),
+            title: generatedRecipe.title,
+            description: generatedRecipe.description,
+            difficulty: generatedRecipe.difficulty,
+            timeEstimate: generatedRecipe.timeEstimate,
+            servings: servings || 2,
+            dietTags: generatedRecipe.dietTags,
+            instructions: generatedRecipe.instructions,
+            imageUrl: generatedRecipe.imageUrl,
+            isPublic: false, // Private until user shares
+          },
+        );
 
-        // Log the generation for rate limiting
-        await storage.logRecipeGeneration(req.userId!, recipe.id);
+        if (!recipe) {
+          sendError(
+            res,
+            429,
+            "Daily recipe generation limit reached",
+            "DAILY_LIMIT_REACHED",
+          );
+          return;
+        }
 
         res.status(201).json(recipe);
       } catch (error) {
@@ -617,8 +630,14 @@ export function register(app: Express): void {
           return;
         }
 
-        // Set the userId and save
+        // Set the userId and infer meal types if not provided
         detail.recipe.userId = req.userId!;
+        if (!detail.recipe.mealTypes || detail.recipe.mealTypes.length === 0) {
+          detail.recipe.mealTypes = inferMealTypes(
+            detail.recipe.title,
+            detail.ingredients?.map((i) => i.name),
+          );
+        }
         const saved = await storage.createMealPlanRecipe(
           detail.recipe,
           detail.ingredients,
@@ -680,6 +699,14 @@ export function register(app: Express): void {
 
         // Save to DB
         const { data } = result;
+        const ingredientData = data.ingredients.map((ing, idx) => ({
+          recipeId: 0,
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          category: "other" as const,
+          displayOrder: idx,
+        }));
         const recipe = await storage.createMealPlanRecipe(
           {
             userId: req.userId!,
@@ -694,19 +721,16 @@ export function register(app: Express): void {
             imageUrl: data.imageUrl,
             instructions: data.instructions,
             dietTags: data.dietTags,
+            mealTypes: inferMealTypes(
+              data.title,
+              data.ingredients.map((i) => i.name),
+            ),
             caloriesPerServing: data.caloriesPerServing,
             proteinPerServing: data.proteinPerServing,
             carbsPerServing: data.carbsPerServing,
             fatPerServing: data.fatPerServing,
           },
-          data.ingredients.map((ing, idx) => ({
-            recipeId: 0,
-            name: ing.name,
-            quantity: ing.quantity,
-            unit: ing.unit,
-            category: "other",
-            displayOrder: idx,
-          })),
+          ingredientData,
         );
 
         res.status(201).json(recipe);

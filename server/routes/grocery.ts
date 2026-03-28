@@ -101,18 +101,6 @@ export function register(app: Express): void {
           return;
         }
 
-        // Enforce per-user grocery list limit (max 50)
-        const listCount = await storage.getGroceryListCount(req.userId!);
-        if (listCount >= 50) {
-          sendError(
-            res,
-            400,
-            "Maximum of 50 grocery lists reached. Delete old lists first.",
-            "LIST_LIMIT_REACHED",
-          );
-          return;
-        }
-
         // Fetch ingredients from planned meals
         const ingredients = await storage.getMealPlanIngredientsForDateRange(
           req.userId!,
@@ -140,26 +128,34 @@ export function register(app: Express): void {
           parsed.data.title ||
           `Grocery List ${parsed.data.startDate} to ${parsed.data.endDate}`;
 
-        // Create list
-        const list = await storage.createGroceryList({
-          userId: req.userId!,
-          title,
-          dateRangeStart: parsed.data.startDate,
-          dateRangeEnd: parsed.data.endDate,
-        });
-
-        // Create items (batch insert)
-        const items = await storage.addGroceryListItems(
+        // Atomically check count + create list + insert items (TOCTOU-safe)
+        const result = await storage.createGroceryListWithLimitCheck(
+          {
+            userId: req.userId!,
+            title,
+            dateRangeStart: parsed.data.startDate,
+            dateRangeEnd: parsed.data.endDate,
+          },
           aggregated.map((agg) => ({
-            groceryListId: list.id,
             name: agg.name,
             quantity: agg.quantity?.toString() || null,
             unit: agg.unit,
             category: agg.category,
           })),
+          50,
         );
 
-        res.status(201).json({ ...list, items });
+        if (!result) {
+          sendError(
+            res,
+            400,
+            "Maximum of 50 grocery lists reached",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        res.status(201).json({ ...result.list, items: result.items });
       } catch (error) {
         if (error instanceof ZodError) {
           sendError(

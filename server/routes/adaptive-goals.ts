@@ -66,30 +66,30 @@ export function register(app: Express): void {
           );
         }
 
-        // Apply the new goals
-        await storage.updateUser(req.userId!, {
-          dailyCalorieGoal: recommendation.newCalories,
-          dailyProteinGoal: recommendation.newProtein,
-          dailyCarbsGoal: recommendation.newCarbs,
-          dailyFatGoal: recommendation.newFat,
-          lastGoalAdjustmentAt: new Date(),
-        });
-
-        // Log the adjustment
-        await storage.createGoalAdjustmentLog({
-          userId: req.userId!,
-          previousCalories: recommendation.previousCalories,
-          newCalories: recommendation.newCalories,
-          previousProtein: recommendation.previousProtein,
-          newProtein: recommendation.newProtein,
-          previousCarbs: recommendation.previousCarbs,
-          newCarbs: recommendation.newCarbs,
-          previousFat: recommendation.previousFat,
-          newFat: recommendation.newFat,
-          reason: recommendation.reason,
-          weightTrendRate: recommendation.weightTrendRate?.toString(),
-          acceptedByUser: true,
-        });
+        // Apply goals + audit log atomically
+        await storage.applyAdaptiveGoalsAtomically(
+          req.userId!,
+          {
+            dailyCalorieGoal: recommendation.newCalories,
+            dailyProteinGoal: recommendation.newProtein,
+            dailyCarbsGoal: recommendation.newCarbs,
+            dailyFatGoal: recommendation.newFat,
+          },
+          {
+            userId: req.userId!,
+            previousCalories: recommendation.previousCalories,
+            newCalories: recommendation.newCalories,
+            previousProtein: recommendation.previousProtein,
+            newProtein: recommendation.newProtein,
+            previousCarbs: recommendation.previousCarbs,
+            newCarbs: recommendation.newCarbs,
+            previousFat: recommendation.previousFat,
+            newFat: recommendation.newFat,
+            reason: recommendation.reason,
+            weightTrendRate: recommendation.weightTrendRate?.toString(),
+            acceptedByUser: true,
+          },
+        );
 
         res.json({
           success: true,
@@ -129,8 +129,8 @@ export function register(app: Express): void {
 
         const recommendation = await computeAdaptiveGoals(req.userId!);
         if (recommendation) {
-          // Log the dismissed adjustment
-          await storage.createGoalAdjustmentLog({
+          // Log dismissed adjustment + update timestamp atomically
+          await storage.dismissAdaptiveGoalsAtomically(req.userId!, {
             userId: req.userId!,
             previousCalories: recommendation.previousCalories,
             newCalories: recommendation.newCalories,
@@ -143,11 +143,6 @@ export function register(app: Express): void {
             reason: recommendation.reason,
             weightTrendRate: recommendation.weightTrendRate?.toString(),
             acceptedByUser: false,
-          });
-
-          // Update last adjustment time to prevent re-showing immediately
-          await storage.updateUser(req.userId!, {
-            lastGoalAdjustmentAt: new Date(),
           });
         }
 
