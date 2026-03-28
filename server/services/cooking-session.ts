@@ -6,7 +6,6 @@ import {
   type CookSessionNutritionItem,
   type CookSessionNutritionSummary,
 } from "@shared/types/cook-session";
-import { type FoodCategory } from "@shared/constants/preparation";
 import { batchNutritionLookup } from "./nutrition-lookup";
 import {
   calculateCookedNutrition,
@@ -118,7 +117,7 @@ export async function analyzeIngredientPhoto(
     quantity: detected.quantity,
     unit: detected.unit,
     confidence: detected.confidence,
-    category: detected.category as FoodCategory,
+    category: detected.category,
     photoId: "",
     userEdited: false,
   }));
@@ -279,6 +278,12 @@ export async function calculateSessionMacros(
       totals.fat += nutrition.fat;
     }
   }
+
+  // Round consistently with calculateSessionNutrition
+  totals.calories = Math.round(totals.calories);
+  totals.protein = Math.round(totals.protein * 10) / 10;
+  totals.carbs = Math.round(totals.carbs * 10) / 10;
+  totals.fat = Math.round(totals.fat * 10) / 10;
 
   return totals;
 }

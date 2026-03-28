@@ -29,20 +29,15 @@ vi.mock("../../lib/openai", () => ({
   isAiConfigured: true,
 }));
 
-// Mock only analyzeIngredientPhoto; let calculateSessionNutrition and
-// calculateSessionMacros call through to real implementations (which use
-// the mocked batchNutritionLookup and cooking-adjustment modules).
+// Mock only analyzeIngredientPhoto; let calculateSessionNutrition,
+// calculateSessionMacros, and IngredientAnalysisError pass through to real
+// implementations (nutrition functions use the mocked batchNutritionLookup
+// and cooking-adjustment modules).
 vi.mock("../../services/cooking-session", async () => {
   const actual = await vi.importActual("../../services/cooking-session");
   return {
     ...actual,
     analyzeIngredientPhoto: vi.fn(),
-    IngredientAnalysisError: class IngredientAnalysisError extends Error {
-      constructor(message: string) {
-        super(message);
-        this.name = "IngredientAnalysisError";
-      }
-    },
   };
 });
 
