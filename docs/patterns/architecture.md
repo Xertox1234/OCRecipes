@@ -178,6 +178,41 @@ export function register(app: Express): void {
 
 **Reference files:** `server/routes/medication.ts`, `server/routes/fasting.ts`, `server/routes/weight.ts`, `server/routes/micronutrients.ts`, `server/routes/menu.ts`, `server/routes/chat.ts`
 
+### Routes Must Not Import `db`
+
+Route files (`server/routes/*.ts`) must never import `db` from `../db`. All database access — including transactions — goes through the `storage` facade. This enforces a clean dependency direction and keeps routes as thin HTTP handlers.
+
+```
+✅ routes → storage → db
+❌ routes → db (bypasses storage abstraction)
+```
+
+```typescript
+// ✅ Good: Route calls storage
+import { storage } from "../storage";
+
+const item = await storage.createScannedItemWithLog(itemData, { mealType });
+```
+
+```typescript
+// ❌ Bad: Route imports db directly
+import { db } from "../db";
+import { scannedItems, dailyLogs } from "@shared/schema";
+
+const item = await db.transaction(async (tx) => { ... });
+```
+
+**Why:**
+
+- **Single responsibility** — routes handle HTTP concerns (parsing, validation, responses); storage handles data access
+- **Testability** — mocking `storage.functionName()` is one line; mocking `db.transaction()` requires building fake transaction objects
+- **Reuse** — when multiple routes need the same multi-table operation, a storage function eliminates duplication
+- **Enforcement** — `grep -r 'from "../db"' server/routes/` should return zero results (excluding `__tests__/`)
+
+**When to use:** Always. This is a mandatory architectural rule.
+
+**Reference files:** All route files import from `"../storage"`, never from `"../db"`. See `server/routes/nutrition.ts`, `server/routes/photos.ts`, `server/routes/beverages.ts` for examples.
+
 ### SSE Streaming for AI Responses
 
 When an endpoint streams a response from an LLM (e.g., the nutrition coach chat), use Server-Sent Events (SSE) with a consistent event format. Accumulate the full response for persistence, then send a terminal `done` event.
