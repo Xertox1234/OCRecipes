@@ -468,8 +468,16 @@ export const communityRecipes = pgTable(
   },
   (table) => ({
     barcodeIdx: index("community_recipes_barcode_idx").on(table.barcode),
-    normalizedNameIdx: index("community_recipes_normalized_name_idx").on(
-      table.normalizedProductName,
+    normalizedNameTrgmIdx: index(
+      "community_recipes_normalized_name_trgm_idx",
+    ).using("gin", table.normalizedProductName.op("gin_trgm_ops")),
+    titleTrgmIdx: index("community_recipes_title_trgm_idx").using(
+      "gin",
+      table.title.op("gin_trgm_ops"),
+    ),
+    descriptionTrgmIdx: index("community_recipes_description_trgm_idx").using(
+      "gin",
+      table.description.op("gin_trgm_ops"),
     ),
     authorIdx: index("community_recipes_author_idx").on(table.authorId),
   }),
@@ -586,6 +594,14 @@ export const mealPlanRecipes = pgTable(
     userExternalIdIdx: uniqueIndex("meal_plan_recipes_user_external_id_idx").on(
       table.userId,
       table.externalId,
+    ),
+    titleTrgmIdx: index("meal_plan_recipes_title_trgm_idx").using(
+      "gin",
+      table.title.op("gin_trgm_ops"),
+    ),
+    descriptionTrgmIdx: index("meal_plan_recipes_description_trgm_idx").using(
+      "gin",
+      table.description.op("gin_trgm_ops"),
     ),
     caloriesNonNeg: check(
       "mpr_calories_gte0",
