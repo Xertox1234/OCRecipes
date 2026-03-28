@@ -309,6 +309,14 @@ describe("Photos Routes", () => {
 
       expect(res.status).toBe(201);
       expect(res.body.productName).toBe("Apple");
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "1",
+          productName: "Apple",
+          sourceType: "photo",
+        }),
+        expect.objectContaining({ mealType: "snack" }),
+      );
     });
 
     it("returns 500 when storage call fails", async () => {

@@ -300,6 +300,13 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(201);
       expect(res.body.productName).toBe("Greek Yogurt");
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "1",
+          productName: "Greek Yogurt",
+          brandName: "Fage",
+        }),
+      );
     });
 
     it("returns 400 when Zod validation fails", async () => {
