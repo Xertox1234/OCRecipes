@@ -914,3 +914,126 @@ The route handler checks `instanceof BatchStorageError` + `error.code` — never
 
 - `server/storage/batch.ts` — cross-domain batch scan storage
 - `server/routes/batch-scan.ts` — typed error handling in route
+
+### Generic In-Memory Session Store Factory
+
+When multiple route modules need in-memory session stores with the same lifecycle pattern (Map storage + per-user limits + global limit + auto-expiry timeouts), use the `createSessionStore<T>()` factory instead of duplicating the Map+timeout+userCount boilerplate.
+
+```typescript
+// server/storage/sessions.ts — factory function
+import { createSessionStore } from "../storage/sessions";
+
+interface CookingSession {
+  userId: string;
+  ingredients: Ingredient[];
+  photos: string[];
+  createdAt: number;
+}
+
+const cookStore = createSessionStore<CookingSession>({
+  maxPerUser: 2,
+  maxGlobal: 1000,
+  timeoutMs: 30 * 60 * 1000, // 30 min TTL
+  label: "active cooking", // Used in error messages
+});
+
+// Route handler usage:
+const check = cookStore.canCreate(req.userId!);
+if (!check.allowed) {
+  return sendError(res, 429, check.reason, check.code);
+}
+const sessionId = cookStore.create({
+  userId: req.userId!,
+  ingredients: [],
+  photos: [],
+  createdAt: Date.now(),
+});
+const session = cookStore.get(sessionId)!;
+```
+
+**Test access via `_internals`:**
+
+```typescript
+// Exported for testing — gives direct access to internal Maps
+export const _testInternals = {
+  cookSessionStore: cookStore._internals.store,
+  cookSessionTimeouts: cookStore._internals.timeouts,
+  userCookSessionCount: cookStore._internals.userCount,
+  clearCookSession: cookStore.clear,
+  resetSessionTimeout: cookStore.resetTimeout,
+};
+```
+
+The `_internals` property exposes the underlying `Map` instances so tests can inspect or reset state without going through the public API. This avoids making internal state public while still enabling thorough testing.
+
+**Key elements:**
+
+1. **Type parameter `T extends { userId: string; createdAt: number }`** — ensures every session has the fields needed for user-count tracking and diagnostics
+2. **`canCreate()` returns a discriminated union** — `{ allowed: true }` or `{ allowed: false; reason: string; code: string }` so the caller can forward the error message directly to `sendError()`
+3. **`create()` auto-generates UUID and auto-sets timeout** — no manual `crypto.randomUUID()` + `setTimeout()` boilerplate
+4. **`_internals` for test access** — exposes the three internal Maps without polluting the public interface
+
+**When to use:**
+
+- Any in-memory session store that needs per-user + global limits + auto-expiry
+- When 2+ route modules implement the same Map+timeout+count pattern
+
+**When NOT to use:**
+
+- Database-backed sessions (use `db.transaction()` instead)
+- Single-use session stores with no limits or timeouts (a plain `Map` suffices)
+
+**References:**
+
+- `server/storage/sessions.ts` — `createSessionStore<T>()` factory + `analysisStore`, `labelStore` instances
+- `server/routes/cooking.ts` — `cookStore` instance
+- `server/routes/verification.ts` — `frontLabelStore` instance
+
+### Storage Layer Purity: No Service Dependencies
+
+Storage modules (`server/storage/*.ts`) must only depend on the database (`db`), the schema (`@shared/schema`), and shared helpers (`./helpers.ts`). They must **not** import from `server/services/` or `server/routes/`. This maintains a clean dependency direction: routes -> services -> storage.
+
+```
+✅ routes → services → storage → db/schema
+❌ storage → services (creates circular risk, hides business logic in data layer)
+```
+
+**Example: `inferMealTypes` moved from storage to routes:**
+
+```typescript
+// ❌ BAD: storage calls a service function
+// server/storage/meal-plans.ts
+import { inferMealTypes } from "../services/meal-type-inference";
+
+export async function createMealPlanRecipe(recipe, ingredients) {
+  const mealTypes = recipe.mealTypes?.length
+    ? recipe.mealTypes
+    : inferMealTypes(
+        recipe.title,
+        ingredients?.map((i) => i.name),
+      );
+  // ...
+}
+
+// ✅ GOOD: route layer infers, passes result to storage
+// server/routes/meal-plan.ts
+import { inferMealTypes } from "../services/meal-type-inference";
+
+const mealTypes = inferMealTypes(
+  recipeData.title,
+  ingredients?.map((i) => i.name),
+);
+const recipe = await storage.createMealPlanRecipe(
+  { ...recipeData, mealTypes },
+  ingredients,
+);
+```
+
+**When to use:** Always. Every storage method should be a pure data-access layer that takes fully-resolved parameters and returns database results.
+
+**When NOT to use:** Never violate this rule. If a storage method needs derived data, compute it in the route/service layer and pass it as a parameter.
+
+**References:**
+
+- `server/storage/meal-plans.ts` — `createMealPlanRecipe()` (no longer imports from services)
+- `server/routes/meal-plan.ts`, `server/routes/recipes.ts` — callers that now compute `mealTypes` before calling storage

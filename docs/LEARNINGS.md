@@ -4,6 +4,8 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [PostgreSQL Session Timezone + Drizzle UTC Mismatch (2026-03-27)](#postgresql-session-timezone--drizzle-utc-mismatch-2026-03-27)
+- [JWT Types in Shared Code Bundle Into React Native Client (2026-03-27)](#jwt-types-in-shared-code-bundle-into-react-native-client-2026-03-27)
 - [Launch Readiness Audit — Security and Data Integrity Findings (2026-03-27)](#launch-readiness-audit--security-and-data-integrity-findings-2026-03-27)
 - [Mixing Real and Mocked Implementations in vi.mock Storage Facade (2026-03-26)](#mixing-real-and-mocked-implementations-in-vimock-storage-facade-2026-03-26)
 - [React.memo + Ref-Only Props = Component That Never Updates (2026-03-25)](#reactmemo--ref-only-props--component-that-never-updates-2026-03-25)
@@ -33,6 +35,87 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-03-27] PostgreSQL Session Timezone + Drizzle UTC Mismatch
+
+**Category:** Gotcha
+
+### Context
+
+Drizzle ORM interprets `timestamp` (without timezone) columns as UTC: it appends `+0000` when reading values and sends `toISOString()` (which is UTC) when writing. This means Drizzle assumes all timestamp values in the database are UTC.
+
+### Problem
+
+PostgreSQL's `CURRENT_TIMESTAMP` and `now()` use the **session timezone** to produce values for `timestamp` columns. If the PostgreSQL server or the connection's session timezone is set to a non-UTC zone (e.g., `America/Toronto`), then `CURRENT_TIMESTAMP` default values will be written in local time while Drizzle reads them as UTC. This causes day-boundary queries (`getDayBounds`, `getDailyLogs`) to return wrong results: items logged at 11 PM Eastern would appear as the next UTC day.
+
+The same issue affected `getDayBounds()` and `getMonthBounds()` helpers, which used `setHours()` (local time) instead of `setUTCHours()`. Tests passed because CI and most dev machines are in UTC, but they would fail on any machine in a non-UTC timezone.
+
+### Solution
+
+Two changes:
+
+1. Force the PostgreSQL session timezone to UTC at the connection pool level:
+
+```typescript
+// server/db.ts
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  options: "-c timezone=UTC",
+});
+```
+
+2. Convert all date helpers from local-time methods to UTC methods:
+
+```typescript
+// server/storage/helpers.ts
+startOfDay.setUTCHours(0, 0, 0, 0); // was: setHours(0, 0, 0, 0)
+endOfDay.setUTCHours(23, 59, 59, 999); // was: setHours(23, 59, 59, 999)
+```
+
+### Takeaways
+
+- When using Drizzle ORM with `timestamp` (not `timestamptz`), the PostgreSQL session timezone **must** be UTC — Drizzle silently assumes this
+- Use `setUTCHours`/`getUTCDate`/`Date.UTC()` everywhere in server code that computes date boundaries — `setHours()` uses the runtime's local timezone
+- Tests in UTC-timezone CI environments will not catch this bug — test with `TZ=America/New_York` if timezone correctness matters
+- The `options: "-c timezone=UTC"` approach sets the timezone per-connection in the pool, so it works even when the PostgreSQL server default is different
+
+### References
+
+- `server/db.ts` — `options: "-c timezone=UTC"` on Pool constructor
+- `server/storage/helpers.ts` — `getDayBounds()`, `getMonthBounds()` now use UTC methods
+- `server/storage/__tests__/helpers.test.ts` — tests updated to use UTC assertions
+
+---
+
+## [2026-03-27] JWT Types in Shared Code Bundle Into React Native Client
+
+**Category:** Gotcha
+
+### Context
+
+The `AccessTokenPayload` interface and `isAccessTokenPayload` type guard were defined in `shared/types/auth.ts`. This file imported from the `jsonwebtoken` package to extend `JwtPayload`.
+
+### Problem
+
+Because `shared/` is aliased as `@shared/` and used by both the server and client, the Metro bundler followed the import chain: `shared/types/auth.ts` -> `jsonwebtoken` -> Node.js `crypto` module. This pulled the entire `jsonwebtoken` package (and its Node.js dependencies) into the React Native client bundle. While it did not crash at runtime (Metro can polyfill or stub some Node modules), it increased bundle size unnecessarily and created a confusing dependency graph.
+
+### Solution
+
+Moved the JWT-specific types and type guard to `server/lib/jwt-types.ts` (server-only). The `shared/types/auth.ts` file was cleaned to only export types that both client and server genuinely need (e.g., `AuthResponse`, `LoginInput`), with no `jsonwebtoken` dependency.
+
+### Takeaways
+
+- Files in `shared/` must never import server-only packages (`jsonwebtoken`, `bcrypt`, `pg`, etc.) — Metro will try to bundle them
+- When a type extends a library-specific base type (like `JwtPayload`), that type belongs in the server, not in shared
+- Watch for transitive dependencies: a single `import type` that also pulls in a runtime `import` can cascade
+
+### References
+
+- `server/lib/jwt-types.ts` — new home for `AccessTokenPayload` and `isAccessTokenPayload`
+- `shared/types/auth.ts` — cleaned of `jsonwebtoken` dependency
+- `server/middleware/auth.ts` — updated import path
 
 ---
 

@@ -533,3 +533,42 @@ function ToastProvider({ children }: { children: ReactNode }) {
 **References:**
 
 - `client/context/ToastContext.tsx` — `useMemo` on provider value object
+
+### Shared FlatList Virtualization Defaults
+
+When multiple FlatList screens need the same virtualization tuning (which they almost always do), import a shared constant instead of duplicating props across screens. This ensures consistent behavior and makes it easy to tune all lists from one place.
+
+```typescript
+// client/constants/performance.ts
+/** Default FlatList virtualization props for long-scrolling screens */
+export const FLATLIST_DEFAULTS = {
+  removeClippedSubviews: true,
+  maxToRenderPerBatch: 15,
+  windowSize: 5,
+} as const;
+
+// Usage in any screen with a FlatList
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
+
+<FlatList
+  data={items}
+  renderItem={renderItem}
+  keyExtractor={(item) => item.id.toString()}
+  {...FLATLIST_DEFAULTS}
+/>
+```
+
+**When to use:** Every `FlatList` that renders more than ~20 items or where scroll performance matters (chat, history, grocery lists, saved items).
+
+**When NOT to use:** Short lists (<10 items) where the virtualization overhead is not needed, or lists that require custom `windowSize`/`maxToRenderPerBatch` values for their specific use case.
+
+**Why centralize:**
+
+- `removeClippedSubviews`, `maxToRenderPerBatch`, and `windowSize` are commonly copy-pasted with inconsistent values across screens
+- Tuning these values (e.g., increasing `maxToRenderPerBatch` for devices with more RAM) requires touching every screen without centralization
+- The spread syntax `{...FLATLIST_DEFAULTS}` is overridable — a screen can override individual props after the spread if needed
+
+**References:**
+
+- `client/constants/performance.ts` — `FLATLIST_DEFAULTS`
+- Used in: `ChatScreen.tsx`, `SavedItemsScreen.tsx`, `GroceryListsScreen.tsx`
