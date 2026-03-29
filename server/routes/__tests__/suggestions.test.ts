@@ -10,6 +10,7 @@ import {
   createMockUserProfile,
   createMockSuggestionCache,
   createMockInstructionCache,
+  createMockChatCompletion,
 } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
@@ -45,12 +46,6 @@ function createApp() {
   app.use(express.json());
   register(app);
   return app;
-}
-
-/** Helper to build a partial OpenAI chat completion response for mocking. */
-
-function mockChatCompletion(content: string): any {
-  return { choices: [{ message: { content } }] };
 }
 
 const mockItem = createMockScannedItem({
@@ -100,7 +95,7 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getSuggestionCache).mockResolvedValue(undefined);
       vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        mockChatCompletion(
+        createMockChatCompletion(
           JSON.stringify({
             suggestions: [{ type: "recipe", title: "Yogurt Bowl" }],
           }),
@@ -180,7 +175,7 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getInstructionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        mockChatCompletion("Step 1: Mix..."),
+        createMockChatCompletion("Step 1: Mix..."),
       );
       vi.mocked(storage.createInstructionCache).mockResolvedValue(undefined);
 
@@ -254,7 +249,7 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getInstructionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        mockChatCompletion("Step 1: Gather materials..."),
+        createMockChatCompletion("Step 1: Gather materials..."),
       );
       vi.mocked(storage.createInstructionCache).mockResolvedValue(undefined);
 
@@ -276,7 +271,7 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getInstructionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        mockChatCompletion("These pair well because..."),
+        createMockChatCompletion("These pair well because..."),
       );
 
       const res = await request(app)
@@ -295,7 +290,7 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        mockChatCompletion("Step 1: Mix..."),
+        createMockChatCompletion("Step 1: Mix..."),
       );
 
       const res = await request(app)
@@ -343,7 +338,7 @@ describe("Suggestions Routes", () => {
       );
       vi.mocked(storage.getSuggestionCache).mockResolvedValue(undefined);
       vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        mockChatCompletion(
+        createMockChatCompletion(
           JSON.stringify({
             suggestions: [{ type: "recipe", title: "Veggie Bowl" }],
           }),

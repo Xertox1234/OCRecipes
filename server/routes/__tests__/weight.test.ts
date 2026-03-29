@@ -68,7 +68,7 @@ describe("Weight Routes", () => {
     });
 
     it("limits free users to 7 entries", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
       vi.mocked(storage.getWeightLogs).mockResolvedValue([]);
 
       await request(app)
@@ -107,7 +107,7 @@ describe("Weight Routes", () => {
         createMockUser({ goalWeight: "70" }),
       );
       vi.mocked(storage.getWeightLogs).mockResolvedValue([]);
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/weight/trend")

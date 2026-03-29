@@ -148,7 +148,9 @@ describe("Admin API Keys Routes", () => {
     });
 
     it("returns 404 for non-existent key", async () => {
-      vi.mocked(storage.getApiKey).mockResolvedValue(null);
+      vi.mocked(storage.getApiKey).mockResolvedValue(
+        null as unknown as Awaited<ReturnType<typeof storage.getApiKey>>,
+      );
 
       const res = await request(app).delete("/api/admin/api-keys/999");
 

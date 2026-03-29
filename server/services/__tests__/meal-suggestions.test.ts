@@ -334,7 +334,7 @@ describe("meal-suggestions", () => {
         ...baseInput,
         userProfile: createMockUserProfile({
           dietType: "vegan",
-          allergies: [{ name: "gluten" }],
+          allergies: [{ name: "gluten", severity: "moderate" as const }],
         }),
       };
 

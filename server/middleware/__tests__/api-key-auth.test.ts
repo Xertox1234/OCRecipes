@@ -64,7 +64,11 @@ describe("API Key Auth Middleware", () => {
   });
 
   it("returns 401 when API key prefix not found in DB", async () => {
-    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(undefined);
+    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(
+      undefined as unknown as Awaited<
+        ReturnType<typeof storage.getApiKeyByPrefix>
+      >,
+    );
 
     const res = await request(app).get("/test").set("X-API-Key", TEST_KEY);
     expect(res.status).toBe(401);
