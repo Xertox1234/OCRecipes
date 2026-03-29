@@ -9,9 +9,11 @@ import { requireApiKey, clearApiKeyCache } from "../api-key-auth";
 // We need bcrypt for the hash comparison. Create a real hash for testing.
 import bcrypt from "bcrypt";
 
+import { createMockApiKey } from "../../__tests__/factories";
+
 vi.mock("../../storage", () => ({
   storage: {
-    getApiKeyByPrefix: vi.fn().mockResolvedValue(null),
+    getApiKeyByPrefix: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -62,7 +64,7 @@ describe("API Key Auth Middleware", () => {
   });
 
   it("returns 401 when API key prefix not found in DB", async () => {
-    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(null as never);
+    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(undefined);
 
     const res = await request(app).get("/test").set("X-API-Key", TEST_KEY);
     expect(res.status).toBe(401);
@@ -70,34 +72,29 @@ describe("API Key Auth Middleware", () => {
   });
 
   it("returns 401 when API key hash does not match", async () => {
-    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue({
-      id: 1,
-      keyPrefix: TEST_PREFIX,
-      keyHash: await bcrypt.hash("wrong_key", 10),
-      name: "Test",
-      tier: "free",
-      status: "active",
-      ownerId: "1",
-      createdAt: new Date(),
-      revokedAt: null,
-    });
+    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(
+      createMockApiKey({
+        keyPrefix: TEST_PREFIX,
+        keyHash: await bcrypt.hash("wrong_key", 10),
+        name: "Test",
+        tier: "free",
+      }),
+    );
 
     const res = await request(app).get("/test").set("X-API-Key", TEST_KEY);
     expect(res.status).toBe(401);
   });
 
   it("returns 401 when API key is revoked", async () => {
-    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue({
-      id: 1,
-      keyPrefix: TEST_PREFIX,
-      keyHash: testKeyHash,
-      name: "Test",
-      tier: "free",
-      status: "revoked",
-      ownerId: "1",
-      createdAt: new Date(),
-      revokedAt: new Date(),
-    });
+    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(
+      createMockApiKey({
+        keyPrefix: TEST_PREFIX,
+        keyHash: testKeyHash,
+        name: "Test",
+        status: "revoked",
+        revokedAt: new Date(),
+      }),
+    );
 
     const res = await request(app).get("/test").set("X-API-Key", TEST_KEY);
     expect(res.status).toBe(401);
@@ -105,17 +102,15 @@ describe("API Key Auth Middleware", () => {
   });
 
   it("sets apiKeyId and apiKeyTier on valid key", async () => {
-    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue({
-      id: 42,
-      keyPrefix: TEST_PREFIX,
-      keyHash: testKeyHash,
-      name: "Test",
-      tier: "starter",
-      status: "active",
-      ownerId: "1",
-      createdAt: new Date(),
-      revokedAt: null,
-    });
+    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(
+      createMockApiKey({
+        id: 42,
+        keyPrefix: TEST_PREFIX,
+        keyHash: testKeyHash,
+        name: "Test",
+        tier: "starter",
+      }),
+    );
 
     const res = await request(app).get("/test").set("X-API-Key", TEST_KEY);
     expect(res.status).toBe(200);
@@ -124,17 +119,13 @@ describe("API Key Auth Middleware", () => {
   });
 
   it("caches validated keys and skips DB on subsequent requests", async () => {
-    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue({
-      id: 1,
-      keyPrefix: TEST_PREFIX,
-      keyHash: testKeyHash,
-      name: "Test",
-      tier: "free",
-      status: "active",
-      ownerId: "1",
-      createdAt: new Date(),
-      revokedAt: null,
-    });
+    vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(
+      createMockApiKey({
+        keyPrefix: TEST_PREFIX,
+        keyHash: testKeyHash,
+        name: "Test",
+      }),
+    );
 
     // First request — cache miss
     await request(app).get("/test").set("X-API-Key", TEST_KEY);

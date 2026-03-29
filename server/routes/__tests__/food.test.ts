@@ -3,7 +3,10 @@ import express from "express";
 import request from "supertest";
 
 import { register } from "../food";
-import { parseNaturalLanguageFood } from "../../services/food-nlp";
+import {
+  parseNaturalLanguageFood,
+  type ParsedFoodItem,
+} from "../../services/food-nlp";
 import { transcribeAudio } from "../../services/voice-transcription";
 import { storage } from "../../storage";
 
@@ -34,22 +37,26 @@ function createApp() {
   return app;
 }
 
-const mockParsedItems = [
+const mockParsedItems: ParsedFoodItem[] = [
   {
     name: "chicken breast",
-    quantity: "200g",
+    quantity: 200,
+    unit: "g",
     calories: 330,
     protein: 62,
     carbs: 0,
     fat: 7,
+    servingSize: "200g",
   },
   {
     name: "brown rice",
-    quantity: "1 cup",
+    quantity: 1,
+    unit: "cup",
     calories: 216,
     protein: 5,
     carbs: 45,
     fat: 2,
+    servingSize: "1 cup",
   },
 ];
 
@@ -62,9 +69,7 @@ describe("Food Routes", () => {
 
   describe("POST /api/food/parse-text", () => {
     it("parses natural language food text", async () => {
-      vi.mocked(parseNaturalLanguageFood).mockResolvedValue(
-        mockParsedItems as never,
-      );
+      vi.mocked(parseNaturalLanguageFood).mockResolvedValue(mockParsedItems);
 
       const res = await request(app)
         .post("/api/food/parse-text")
@@ -120,7 +125,7 @@ describe("Food Routes", () => {
 
   describe("POST /api/food/transcribe", () => {
     it("returns 403 for non-premium users", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/food/transcribe")
@@ -137,7 +142,8 @@ describe("Food Routes", () => {
     it("returns 400 when no audio file provided", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
 
       const res = await request(app)
         .post("/api/food/transcribe")
@@ -150,11 +156,10 @@ describe("Food Routes", () => {
     it("transcribes and parses audio for premium users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(transcribeAudio).mockResolvedValue("chicken breast and rice");
-      vi.mocked(parseNaturalLanguageFood).mockResolvedValue(
-        mockParsedItems as never,
-      );
+      vi.mocked(parseNaturalLanguageFood).mockResolvedValue(mockParsedItems);
 
       const res = await request(app)
         .post("/api/food/transcribe")
@@ -172,7 +177,8 @@ describe("Food Routes", () => {
     it("returns 400 for empty transcription", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(transcribeAudio).mockResolvedValue("   ");
 
       const res = await request(app)

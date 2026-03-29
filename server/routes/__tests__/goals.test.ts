@@ -4,6 +4,10 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../goals";
+import {
+  createMockUser,
+  createMockUserProfile,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -26,15 +30,13 @@ function createApp() {
   return app;
 }
 
-const mockUser = {
-  id: 1,
-  username: "testuser",
+const mockUser = createMockUser({
   dailyCalorieGoal: 2000,
   dailyProteinGoal: 150,
   dailyCarbsGoal: 250,
   dailyFatGoal: 67,
   goalsCalculatedAt: new Date("2024-01-01"),
-};
+});
 
 describe("Goals Routes", () => {
   let app: express.Express;
@@ -45,7 +47,7 @@ describe("Goals Routes", () => {
 
   describe("GET /api/goals", () => {
     it("returns current goals", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
 
       const res = await request(app)
         .get("/api/goals")
@@ -59,7 +61,7 @@ describe("Goals Routes", () => {
     });
 
     it("returns 404 if user not found", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/goals")
@@ -71,9 +73,11 @@ describe("Goals Routes", () => {
 
   describe("POST /api/goals/calculate", () => {
     it("calculates goals from physical profile", async () => {
-      vi.mocked(storage.updateUser).mockResolvedValue(mockUser as never);
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
-      vi.mocked(storage.createUserProfile).mockResolvedValue({} as never);
+      vi.mocked(storage.updateUser).mockResolvedValue(mockUser);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.createUserProfile).mockResolvedValue(
+        createMockUserProfile(),
+      );
 
       const res = await request(app)
         .post("/api/goals/calculate")
@@ -96,9 +100,13 @@ describe("Goals Routes", () => {
     });
 
     it("updates existing profile if one exists", async () => {
-      vi.mocked(storage.updateUser).mockResolvedValue(mockUser as never);
-      vi.mocked(storage.getUserProfile).mockResolvedValue({ id: 1 } as never);
-      vi.mocked(storage.updateUserProfile).mockResolvedValue({} as never);
+      vi.mocked(storage.updateUser).mockResolvedValue(mockUser);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile(),
+      );
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(
+        createMockUserProfile(),
+      );
 
       const res = await request(app)
         .post("/api/goals/calculate")
@@ -145,8 +153,8 @@ describe("Goals Routes", () => {
 
   describe("PUT /api/goals", () => {
     it("updates calorie goal", async () => {
-      const updated = { ...mockUser, dailyCalorieGoal: 2500 };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      const updated = createMockUser({ ...mockUser, dailyCalorieGoal: 2500 });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .put("/api/goals")
@@ -158,8 +166,12 @@ describe("Goals Routes", () => {
     });
 
     it("updates multiple macro goals", async () => {
-      const updated = { ...mockUser, dailyProteinGoal: 200, dailyFatGoal: 80 };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      const updated = createMockUser({
+        ...mockUser,
+        dailyProteinGoal: 200,
+        dailyFatGoal: 80,
+      });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .put("/api/goals")
@@ -190,7 +202,7 @@ describe("Goals Routes", () => {
     });
 
     it("returns 404 if user not found", async () => {
-      vi.mocked(storage.updateUser).mockResolvedValue(null as never);
+      vi.mocked(storage.updateUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .put("/api/goals")

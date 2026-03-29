@@ -13,6 +13,11 @@ import {
   calculateCookedNutrition,
   preparationToCookingMethod,
 } from "../cooking-adjustment";
+import {
+  createMockNutritionData,
+  createMockCookedNutrition,
+  createMockChatCompletion,
+} from "../../__tests__/factories";
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 
@@ -74,32 +79,28 @@ beforeEach(() => {
 
 describe("analyzeIngredientPhoto", () => {
   it("returns parsed ingredients from a valid OpenAI response", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue({
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              ingredients: [
-                {
-                  name: "chicken breast",
-                  quantity: 200,
-                  unit: "g",
-                  confidence: 0.9,
-                  category: "protein",
-                },
-                {
-                  name: "broccoli",
-                  quantity: 100,
-                  unit: "g",
-                  confidence: 0.8,
-                  category: "vegetable",
-                },
-              ],
-            }),
-          },
-        },
-      ],
-    } as never);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      createMockChatCompletion(
+        JSON.stringify({
+          ingredients: [
+            {
+              name: "chicken breast",
+              quantity: 200,
+              unit: "g",
+              confidence: 0.9,
+              category: "protein",
+            },
+            {
+              name: "broccoli",
+              quantity: 100,
+              unit: "g",
+              confidence: 0.8,
+              category: "vegetable",
+            },
+          ],
+        }),
+      ),
+    );
 
     const result = await analyzeIngredientPhoto("base64data", "image/jpeg", 0);
 
@@ -114,15 +115,9 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("uses low detail for photos when count >= 4", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue({
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({ ingredients: [] }),
-          },
-        },
-      ],
-    } as never);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      createMockChatCompletion(JSON.stringify({ ingredients: [] })),
+    );
 
     await analyzeIngredientPhoto("base64data", "image/jpeg", 4);
 
@@ -135,15 +130,9 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("uses high detail for photos when count < 4", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue({
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({ ingredients: [] }),
-          },
-        },
-      ],
-    } as never);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      createMockChatCompletion(JSON.stringify({ ingredients: [] })),
+    );
 
     await analyzeIngredientPhoto("base64data", "image/jpeg", 3);
 
@@ -156,9 +145,9 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("throws IngredientAnalysisError when OpenAI returns no content", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue({
-      choices: [{ message: { content: null } }],
-    } as never);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      createMockChatCompletion(null),
+    );
 
     await expect(
       analyzeIngredientPhoto("base64data", "image/jpeg", 0),
@@ -169,9 +158,9 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("throws IngredientAnalysisError when OpenAI returns invalid JSON", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue({
-      choices: [{ message: { content: "not json {{{" } }],
-    } as never);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      createMockChatCompletion("not json {{{"),
+    );
 
     await expect(
       analyzeIngredientPhoto("base64data", "image/jpeg", 0),
@@ -182,15 +171,9 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("throws IngredientAnalysisError when response fails Zod validation", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue({
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({ wrong_key: "bad schema" }),
-          },
-        },
-      ],
-    } as never);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      createMockChatCompletion(JSON.stringify({ wrong_key: "bad schema" })),
+    );
 
     await expect(
       analyzeIngredientPhoto("base64data", "image/jpeg", 0),
@@ -201,32 +184,28 @@ describe("analyzeIngredientPhoto", () => {
   });
 
   it("assigns unique IDs to each detected ingredient", async () => {
-    vi.mocked(openai.chat.completions.create).mockResolvedValue({
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({
-              ingredients: [
-                {
-                  name: "a",
-                  quantity: 1,
-                  unit: "g",
-                  confidence: 0.9,
-                  category: "other",
-                },
-                {
-                  name: "b",
-                  quantity: 2,
-                  unit: "g",
-                  confidence: 0.9,
-                  category: "other",
-                },
-              ],
-            }),
-          },
-        },
-      ],
-    } as never);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(
+      createMockChatCompletion(
+        JSON.stringify({
+          ingredients: [
+            {
+              name: "a",
+              quantity: 1,
+              unit: "g",
+              confidence: 0.9,
+              category: "other",
+            },
+            {
+              name: "b",
+              quantity: 2,
+              unit: "g",
+              confidence: 0.9,
+              category: "other",
+            },
+          ],
+        }),
+      ),
+    );
 
     const result = await analyzeIngredientPhoto("base64data", "image/jpeg", 0);
     expect(result[0].id).not.toBe(result[1].id);
@@ -239,7 +218,7 @@ describe("analyzeIngredientPhoto", () => {
 
 describe("calculateSessionNutrition", () => {
   it("returns zeroed items when no nutrition data is found", async () => {
-    vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+    vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
 
     const result = await calculateSessionNutrition([chicken]);
 
@@ -255,7 +234,7 @@ describe("calculateSessionNutrition", () => {
       new Map([
         [
           "200 g chicken breast",
-          {
+          createMockNutritionData({
             calories: 330,
             protein: 62,
             carbs: 0,
@@ -263,11 +242,11 @@ describe("calculateSessionNutrition", () => {
             fiber: 0,
             sugar: 0,
             sodium: 120,
-          },
+          }),
         ],
         [
           "150 g white rice",
-          {
+          createMockNutritionData({
             calories: 195,
             protein: 3.6,
             carbs: 43.5,
@@ -275,9 +254,9 @@ describe("calculateSessionNutrition", () => {
             fiber: 0.6,
             sugar: 0,
             sodium: 1,
-          },
+          }),
         ],
-      ]) as never,
+      ]),
     );
 
     const result = await calculateSessionNutrition([chicken, rice]);
@@ -295,7 +274,7 @@ describe("calculateSessionNutrition", () => {
       new Map([
         [
           "200 g chicken breast",
-          {
+          createMockNutritionData({
             calories: 330.7,
             protein: 62.15,
             carbs: 0.33,
@@ -303,9 +282,9 @@ describe("calculateSessionNutrition", () => {
             fiber: 0.04,
             sugar: 0.06,
             sodium: 120.4,
-          },
+          }),
         ],
-      ]) as never,
+      ]),
     );
 
     const result = await calculateSessionNutrition([chicken]);
@@ -324,7 +303,7 @@ describe("calculateSessionNutrition", () => {
       new Map([
         [
           "200 g chicken breast",
-          {
+          createMockNutritionData({
             calories: 330,
             protein: 62,
             carbs: 0,
@@ -332,21 +311,23 @@ describe("calculateSessionNutrition", () => {
             fiber: 0,
             sugar: 0,
             sodium: 120,
-          },
+          }),
         ],
-      ]) as never,
+      ]),
     );
     vi.mocked(preparationToCookingMethod).mockReturnValue("grilled");
-    vi.mocked(calculateCookedNutrition).mockReturnValue({
-      calories: 280,
-      protein: 58,
-      carbs: 0,
-      fat: 6,
-      fiber: 0,
-      sugar: 0,
-      sodium: 100,
-      adjustmentApplied: true,
-    } as never);
+    vi.mocked(calculateCookedNutrition).mockReturnValue(
+      createMockCookedNutrition({
+        calories: 280,
+        protein: 58,
+        carbs: 0,
+        fat: 6,
+        fiber: 0,
+        sugar: 0,
+        sodium: 100,
+        adjustmentApplied: true,
+      }),
+    );
 
     const result = await calculateSessionNutrition([chicken], "grilled");
 
@@ -360,7 +341,7 @@ describe("calculateSessionNutrition", () => {
       new Map([
         [
           "200 g chicken breast",
-          {
+          createMockNutritionData({
             calories: 330,
             protein: 62,
             carbs: 0,
@@ -368,9 +349,9 @@ describe("calculateSessionNutrition", () => {
             fiber: 0,
             sugar: 0,
             sodium: 120,
-          },
+          }),
         ],
-      ]) as never,
+      ]),
     );
 
     const result = await calculateSessionNutrition([chicken], "raw");
@@ -385,7 +366,7 @@ describe("calculateSessionNutrition", () => {
       new Map([
         [
           "200 g chicken breast",
-          {
+          createMockNutritionData({
             calories: 330,
             protein: 62,
             carbs: 0,
@@ -393,9 +374,9 @@ describe("calculateSessionNutrition", () => {
             fiber: 0,
             sugar: 0,
             sodium: 120,
-          },
+          }),
         ],
-      ]) as never,
+      ]),
     );
 
     const result = await calculateSessionNutrition([chicken], "As Served");
@@ -414,7 +395,7 @@ describe("calculateSessionNutrition", () => {
       new Map([
         [
           "200 g chicken breast",
-          {
+          createMockNutritionData({
             calories: 330,
             protein: 62,
             carbs: 0,
@@ -422,21 +403,23 @@ describe("calculateSessionNutrition", () => {
             fiber: 0,
             sugar: 0,
             sodium: 120,
-          },
+          }),
         ],
-      ]) as never,
+      ]),
     );
     vi.mocked(preparationToCookingMethod).mockReturnValue("deep_fried");
-    vi.mocked(calculateCookedNutrition).mockReturnValue({
-      calories: 400,
-      protein: 55,
-      carbs: 5,
-      fat: 20,
-      fiber: 0,
-      sugar: 0,
-      sodium: 150,
-      adjustmentApplied: true,
-    } as never);
+    vi.mocked(calculateCookedNutrition).mockReturnValue(
+      createMockCookedNutrition({
+        calories: 400,
+        protein: 55,
+        carbs: 5,
+        fat: 20,
+        fiber: 0,
+        sugar: 0,
+        sodium: 150,
+        adjustmentApplied: true,
+      }),
+    );
 
     const result = await calculateSessionNutrition(
       [chickenWithPrep],
@@ -453,7 +436,7 @@ describe("calculateSessionNutrition", () => {
       new Map([
         [
           "200 g chicken breast",
-          {
+          createMockNutritionData({
             calories: 330,
             protein: 62,
             carbs: 0,
@@ -461,10 +444,10 @@ describe("calculateSessionNutrition", () => {
             fiber: 0,
             sugar: 0,
             sodium: 120,
-          },
+          }),
         ],
         // rice has no entry — simulates lookup failure
-      ]) as never,
+      ]),
     );
 
     const result = await calculateSessionNutrition([chicken, rice]);
@@ -483,7 +466,7 @@ describe("calculateSessionNutrition", () => {
 
 describe("calculateSessionMacros", () => {
   it("returns zeroed totals for empty ingredients array", async () => {
-    vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+    vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
 
     const result = await calculateSessionMacros([]);
 
@@ -495,13 +478,23 @@ describe("calculateSessionMacros", () => {
       new Map([
         [
           "200 g chicken breast",
-          { calories: 330, protein: 62, carbs: 0, fat: 7.2 },
+          createMockNutritionData({
+            calories: 330,
+            protein: 62,
+            carbs: 0,
+            fat: 7.2,
+          }),
         ],
         [
           "150 g white rice",
-          { calories: 195, protein: 3.6, carbs: 43.5, fat: 0.3 },
+          createMockNutritionData({
+            calories: 195,
+            protein: 3.6,
+            carbs: 43.5,
+            fat: 0.3,
+          }),
         ],
-      ]) as never,
+      ]),
     );
 
     const result = await calculateSessionMacros([chicken, rice]);
@@ -517,9 +510,14 @@ describe("calculateSessionMacros", () => {
       new Map([
         [
           "200 g chicken breast",
-          { calories: 330.7, protein: 62.15, carbs: 0.33, fat: 7.27 },
+          createMockNutritionData({
+            calories: 330.7,
+            protein: 62.15,
+            carbs: 0.33,
+            fat: 7.27,
+          }),
         ],
-      ]) as never,
+      ]),
     );
 
     const result = await calculateSessionMacros([chicken]);
@@ -535,10 +533,15 @@ describe("calculateSessionMacros", () => {
       new Map([
         [
           "200 g chicken breast",
-          { calories: 330, protein: 62, carbs: 0, fat: 7.2 },
+          createMockNutritionData({
+            calories: 330,
+            protein: 62,
+            carbs: 0,
+            fat: 7.2,
+          }),
         ],
         // rice missing
-      ]) as never,
+      ]),
     );
 
     const result = await calculateSessionMacros([chicken, rice]);

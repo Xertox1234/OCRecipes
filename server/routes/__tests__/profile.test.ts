@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../profile";
+import { createMockUserProfile } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -26,20 +27,16 @@ function createApp() {
   return app;
 }
 
-const mockProfile = {
-  id: 1,
-  userId: "1",
-  allergies: ["peanuts"],
-  healthConditions: [],
+const mockProfile = createMockUserProfile({
+  allergies: [{ name: "peanuts", severity: "mild" as const }],
   dietType: "omnivore",
-  foodDislikes: [],
   primaryGoal: "maintain",
   activityLevel: "moderate",
   householdSize: 2,
   cuisinePreferences: ["italian"],
   cookingSkillLevel: "intermediate",
   cookingTimeAvailable: "30min",
-};
+});
 
 describe("Profile Routes", () => {
   let app: express.Express;
@@ -50,7 +47,7 @@ describe("Profile Routes", () => {
 
   describe("GET /api/user/dietary-profile", () => {
     it("returns dietary profile", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue(mockProfile as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(mockProfile);
 
       const res = await request(app)
         .get("/api/user/dietary-profile")
@@ -58,11 +55,14 @@ describe("Profile Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.dietType).toBe("omnivore");
-      expect(res.body.allergies).toContain("peanuts");
+      expect(res.body.allergies).toContainEqual({
+        name: "peanuts",
+        severity: "mild",
+      });
     });
 
     it("returns null if no profile set", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/user/dietary-profile")
@@ -75,8 +75,11 @@ describe("Profile Routes", () => {
 
   describe("PUT /api/user/dietary-profile", () => {
     it("updates dietary profile fields", async () => {
-      const updated = { ...mockProfile, dietType: "vegetarian" };
-      vi.mocked(storage.updateUserProfile).mockResolvedValue(updated as never);
+      const updated = createMockUserProfile({
+        ...mockProfile,
+        dietType: "vegetarian",
+      });
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(updated);
 
       const res = await request(app)
         .put("/api/user/dietary-profile")
@@ -88,9 +91,7 @@ describe("Profile Routes", () => {
     });
 
     it("invalidates suggestion cache when cache-affecting fields change", async () => {
-      vi.mocked(storage.updateUserProfile).mockResolvedValue(
-        mockProfile as never,
-      );
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(mockProfile);
 
       await request(app)
         .put("/api/user/dietary-profile")
@@ -106,9 +107,7 @@ describe("Profile Routes", () => {
     });
 
     it("does not invalidate cache for non-affecting fields", async () => {
-      vi.mocked(storage.updateUserProfile).mockResolvedValue(
-        mockProfile as never,
-      );
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(mockProfile);
 
       await request(app)
         .put("/api/user/dietary-profile")
@@ -119,7 +118,7 @@ describe("Profile Routes", () => {
     });
 
     it("returns 404 if profile not found", async () => {
-      vi.mocked(storage.updateUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(undefined);
 
       const res = await request(app)
         .put("/api/user/dietary-profile")
@@ -169,7 +168,7 @@ describe("Profile Routes", () => {
   describe("POST /api/user/dietary-profile", () => {
     it("creates profile via transaction and returns 201", async () => {
       vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
-        mockProfile as never,
+        mockProfile,
       );
 
       const res = await request(app)

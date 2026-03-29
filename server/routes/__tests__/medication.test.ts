@@ -5,6 +5,12 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { analyzeGlp1Insights } from "../../services/glp1-insights";
 import { register } from "../medication";
+import {
+  createMockMedicationLog,
+  createMockUser,
+  createMockUserProfile,
+} from "../../__tests__/factories";
+import type { Glp1Insights } from "@shared/types/medication";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -37,20 +43,19 @@ function createApp() {
 function mockPremium() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
     tier: "premium",
-  } as never);
+    expiresAt: null,
+  });
 }
 
-const mockLog = {
-  id: 1,
-  userId: "1",
+const mockLog = createMockMedicationLog({
   medicationName: "Ozempic",
   dosage: "0.5mg",
   brandName: "Novo Nordisk",
   sideEffects: ["nausea"],
   appetiteLevel: 2,
   notes: "First dose",
-  createdAt: new Date(),
-};
+  takenAt: new Date(),
+});
 
 describe("Medication Routes", () => {
   let app: express.Express;
@@ -63,9 +68,7 @@ describe("Medication Routes", () => {
   describe("GET /api/medication/logs", () => {
     it("returns medication logs", async () => {
       mockPremium();
-      vi.mocked(storage.getMedicationLogs).mockResolvedValue([
-        mockLog,
-      ] as never);
+      vi.mocked(storage.getMedicationLogs).mockResolvedValue([mockLog]);
 
       const res = await request(app)
         .get("/api/medication/logs")
@@ -76,7 +79,7 @@ describe("Medication Routes", () => {
     });
 
     it("returns 403 for free tier", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/medication/logs")
@@ -103,9 +106,7 @@ describe("Medication Routes", () => {
   describe("POST /api/medication/log", () => {
     it("creates a medication log", async () => {
       mockPremium();
-      vi.mocked(storage.createMedicationLog).mockResolvedValue(
-        mockLog as never,
-      );
+      vi.mocked(storage.createMedicationLog).mockResolvedValue(mockLog);
 
       const res = await request(app)
         .post("/api/medication/log")
@@ -131,10 +132,16 @@ describe("Medication Routes", () => {
   describe("PUT /api/medication/log/:id", () => {
     it("updates a medication log", async () => {
       mockPremium();
-      vi.mocked(storage.updateMedicationLog).mockResolvedValue({
-        ...mockLog,
-        dosage: "1.0mg",
-      } as never);
+      vi.mocked(storage.updateMedicationLog).mockResolvedValue(
+        createMockMedicationLog({
+          medicationName: "Ozempic",
+          dosage: "1.0mg",
+          brandName: "Novo Nordisk",
+          sideEffects: ["nausea"],
+          appetiteLevel: 2,
+          notes: "First dose",
+        }),
+      );
 
       const res = await request(app)
         .put("/api/medication/log/1")
@@ -147,7 +154,7 @@ describe("Medication Routes", () => {
 
     it("returns 404 when log not found", async () => {
       mockPremium();
-      vi.mocked(storage.updateMedicationLog).mockResolvedValue(null as never);
+      vi.mocked(storage.updateMedicationLog).mockResolvedValue(undefined);
 
       const res = await request(app)
         .put("/api/medication/log/999")
@@ -172,7 +179,7 @@ describe("Medication Routes", () => {
   describe("DELETE /api/medication/log/:id", () => {
     it("deletes a medication log", async () => {
       mockPremium();
-      vi.mocked(storage.deleteMedicationLog).mockResolvedValue(true as never);
+      vi.mocked(storage.deleteMedicationLog).mockResolvedValue(true);
 
       const res = await request(app)
         .delete("/api/medication/log/1")
@@ -183,7 +190,7 @@ describe("Medication Routes", () => {
 
     it("returns 404 when not found", async () => {
       mockPremium();
-      vi.mocked(storage.deleteMedicationLog).mockResolvedValue(false as never);
+      vi.mocked(storage.deleteMedicationLog).mockResolvedValue(false);
 
       const res = await request(app)
         .delete("/api/medication/log/999")
@@ -196,8 +203,17 @@ describe("Medication Routes", () => {
   describe("GET /api/medication/insights", () => {
     it("returns GLP-1 insights", async () => {
       mockPremium();
-      const insights = { totalDoses: 5, averageAppetite: 2.5 };
-      vi.mocked(analyzeGlp1Insights).mockResolvedValue(insights as never);
+      const insights: Glp1Insights = {
+        totalDoses: 5,
+        daysSinceStart: null,
+        averageAppetiteLevel: 2.5,
+        appetiteTrend: null,
+        commonSideEffects: [],
+        weightChangeSinceStart: null,
+        lastDoseAt: null,
+        nextDoseEstimate: null,
+      };
+      vi.mocked(analyzeGlp1Insights).mockResolvedValue(insights);
 
       const res = await request(app)
         .get("/api/medication/insights")
@@ -211,15 +227,19 @@ describe("Medication Routes", () => {
   describe("GET /api/medication/protein-suggestions", () => {
     it("returns protein suggestions based on appetite", async () => {
       mockPremium();
-      vi.mocked(storage.getUser).mockResolvedValue({
-        dailyProteinGoal: 120,
-      } as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ dailyProteinGoal: 120 }),
+      );
       vi.mocked(storage.getDailySummary).mockResolvedValue({
-        totalProtein: "40",
-      } as never);
+        totalCalories: 0,
+        totalProtein: 40,
+        totalCarbs: 0,
+        totalFat: 0,
+        itemCount: 0,
+      });
       vi.mocked(storage.getMedicationLogs).mockResolvedValue([
-        { appetiteLevel: 2 },
-      ] as never);
+        createMockMedicationLog({ appetiteLevel: 2 }),
+      ]);
 
       const res = await request(app)
         .get("/api/medication/protein-suggestions")
@@ -233,11 +253,15 @@ describe("Medication Routes", () => {
 
     it("uses default protein goal when not set", async () => {
       mockPremium();
-      vi.mocked(storage.getUser).mockResolvedValue({} as never);
+      vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
       vi.mocked(storage.getDailySummary).mockResolvedValue({
-        totalProtein: "0",
-      } as never);
-      vi.mocked(storage.getMedicationLogs).mockResolvedValue([] as never);
+        totalCalories: 0,
+        totalProtein: 0,
+        totalCarbs: 0,
+        totalFat: 0,
+        itemCount: 0,
+      });
+      vi.mocked(storage.getMedicationLogs).mockResolvedValue([]);
 
       const res = await request(app)
         .get("/api/medication/protein-suggestions")
@@ -249,15 +273,19 @@ describe("Medication Routes", () => {
 
     it("returns high-appetite suggestions when appetite > 3", async () => {
       mockPremium();
-      vi.mocked(storage.getUser).mockResolvedValue({
-        dailyProteinGoal: 120,
-      } as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ dailyProteinGoal: 120 }),
+      );
       vi.mocked(storage.getDailySummary).mockResolvedValue({
-        totalProtein: "20",
-      } as never);
+        totalCalories: 0,
+        totalProtein: 20,
+        totalCarbs: 0,
+        totalFat: 0,
+        itemCount: 0,
+      });
       vi.mocked(storage.getMedicationLogs).mockResolvedValue([
-        { appetiteLevel: 4 },
-      ] as never);
+        createMockMedicationLog({ appetiteLevel: 4 }),
+      ]);
 
       const res = await request(app)
         .get("/api/medication/protein-suggestions")
@@ -283,9 +311,9 @@ describe("Medication Routes", () => {
   describe("PUT /api/user/glp1-mode", () => {
     it("enables GLP-1 mode", async () => {
       mockPremium();
-      vi.mocked(storage.updateUserProfile).mockResolvedValue({
-        glp1Mode: true,
-      } as never);
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(
+        createMockUserProfile({ glp1Mode: true }),
+      );
 
       const res = await request(app)
         .put("/api/user/glp1-mode")
@@ -308,7 +336,7 @@ describe("Medication Routes", () => {
 
     it("returns 404 when profile not found", async () => {
       mockPremium();
-      vi.mocked(storage.updateUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(undefined);
 
       const res = await request(app)
         .put("/api/user/glp1-mode")

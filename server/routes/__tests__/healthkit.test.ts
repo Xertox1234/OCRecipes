@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { syncHealthKitData } from "../../services/healthkit-sync";
 import { register } from "../healthkit";
+import { createMockHealthKitSync } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -32,7 +33,8 @@ function createApp() {
 function mockPremium() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
     tier: "premium",
-  } as never);
+    expiresAt: null,
+  });
 }
 
 describe("HealthKit Routes", () => {
@@ -48,7 +50,7 @@ describe("HealthKit Routes", () => {
       mockPremium();
       vi.mocked(syncHealthKitData).mockResolvedValue({
         weightsSynced: 2,
-      } as never);
+      });
 
       const res = await request(app)
         .post("/api/healthkit/sync")
@@ -77,7 +79,7 @@ describe("HealthKit Routes", () => {
     });
 
     it("returns 403 for free tier", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/healthkit/sync")
@@ -92,11 +94,13 @@ describe("HealthKit Routes", () => {
   describe("GET /api/healthkit/settings", () => {
     it("returns sync settings", async () => {
       const settings = [
-        { dataType: "weight", enabled: true, syncDirection: "read" },
+        createMockHealthKitSync({
+          dataType: "weight",
+          enabled: true,
+          syncDirection: "read",
+        }),
       ];
-      vi.mocked(storage.getHealthKitSyncSettings).mockResolvedValue(
-        settings as never,
-      );
+      vi.mocked(storage.getHealthKitSyncSettings).mockResolvedValue(settings);
 
       const res = await request(app)
         .get("/api/healthkit/settings")
@@ -110,11 +114,13 @@ describe("HealthKit Routes", () => {
   describe("PUT /api/healthkit/settings", () => {
     it("updates sync settings", async () => {
       mockPremium();
-      vi.mocked(storage.upsertHealthKitSyncSetting).mockResolvedValue({
-        dataType: "weight",
-        enabled: true,
-        syncDirection: "both",
-      } as never);
+      vi.mocked(storage.upsertHealthKitSyncSetting).mockResolvedValue(
+        createMockHealthKitSync({
+          dataType: "weight",
+          enabled: true,
+          syncDirection: "both",
+        }),
+      );
 
       const res = await request(app)
         .put("/api/healthkit/settings")
@@ -143,7 +149,7 @@ describe("HealthKit Routes", () => {
     });
 
     it("returns 403 for free tier", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .put("/api/healthkit/settings")

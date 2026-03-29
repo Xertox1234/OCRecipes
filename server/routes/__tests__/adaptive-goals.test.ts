@@ -3,8 +3,15 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import { computeAdaptiveGoals } from "../../services/adaptive-goals";
+import {
+  computeAdaptiveGoals,
+  type AdaptiveGoalRecommendation,
+} from "../../services/adaptive-goals";
 import { register } from "../adaptive-goals";
+import {
+  createMockUser,
+  createMockGoalAdjustmentLog,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -36,10 +43,11 @@ function createApp() {
 function mockPremium() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
     tier: "premium",
-  } as never);
+    expiresAt: null,
+  });
 }
 
-const mockRecommendation = {
+const mockRecommendation: AdaptiveGoalRecommendation = {
   newCalories: 2200,
   newProtein: 120,
   newCarbs: 260,
@@ -50,6 +58,7 @@ const mockRecommendation = {
   previousFat: 65,
   reason: "Weight trending down, increasing calories",
   weightTrendRate: -0.5,
+  explanation: "Weight trending down, increasing calories to compensate",
 };
 
 describe("Adaptive Goals Routes", () => {
@@ -63,12 +72,10 @@ describe("Adaptive Goals Routes", () => {
   describe("GET /api/goals/adaptive", () => {
     it("returns adaptive goals status", async () => {
       mockPremium();
-      vi.mocked(storage.getUser).mockResolvedValue({
-        adaptiveGoalsEnabled: true,
-      } as never);
-      vi.mocked(computeAdaptiveGoals).mockResolvedValue(
-        mockRecommendation as never,
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ adaptiveGoalsEnabled: true }),
       );
+      vi.mocked(computeAdaptiveGoals).mockResolvedValue(mockRecommendation);
 
       const res = await request(app)
         .get("/api/goals/adaptive")
@@ -81,7 +88,7 @@ describe("Adaptive Goals Routes", () => {
     });
 
     it("returns 403 for free tier", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/goals/adaptive")
@@ -93,10 +100,10 @@ describe("Adaptive Goals Routes", () => {
 
     it("returns no recommendation when null", async () => {
       mockPremium();
-      vi.mocked(storage.getUser).mockResolvedValue({
-        adaptiveGoalsEnabled: false,
-      } as never);
-      vi.mocked(computeAdaptiveGoals).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ adaptiveGoalsEnabled: false }),
+      );
+      vi.mocked(computeAdaptiveGoals).mockResolvedValue(null);
 
       const res = await request(app)
         .get("/api/goals/adaptive")
@@ -112,11 +119,9 @@ describe("Adaptive Goals Routes", () => {
   describe("POST /api/goals/adaptive/accept", () => {
     it("applies recommended goals", async () => {
       mockPremium();
-      vi.mocked(computeAdaptiveGoals).mockResolvedValue(
-        mockRecommendation as never,
-      );
+      vi.mocked(computeAdaptiveGoals).mockResolvedValue(mockRecommendation);
       vi.mocked(storage.applyAdaptiveGoalsAtomically).mockResolvedValue(
-        {} as never,
+        createMockGoalAdjustmentLog(),
       );
 
       const res = await request(app)
@@ -138,7 +143,7 @@ describe("Adaptive Goals Routes", () => {
 
     it("returns 400 when no recommendation", async () => {
       mockPremium();
-      vi.mocked(computeAdaptiveGoals).mockResolvedValue(null as never);
+      vi.mocked(computeAdaptiveGoals).mockResolvedValue(null);
 
       const res = await request(app)
         .post("/api/goals/adaptive/accept")
@@ -151,11 +156,9 @@ describe("Adaptive Goals Routes", () => {
   describe("POST /api/goals/adaptive/dismiss", () => {
     it("logs dismissed adjustment", async () => {
       mockPremium();
-      vi.mocked(computeAdaptiveGoals).mockResolvedValue(
-        mockRecommendation as never,
-      );
+      vi.mocked(computeAdaptiveGoals).mockResolvedValue(mockRecommendation);
       vi.mocked(storage.dismissAdaptiveGoalsAtomically).mockResolvedValue(
-        undefined as never,
+        undefined,
       );
 
       const res = await request(app)
@@ -172,7 +175,7 @@ describe("Adaptive Goals Routes", () => {
 
     it("succeeds even with no recommendation", async () => {
       mockPremium();
-      vi.mocked(computeAdaptiveGoals).mockResolvedValue(null as never);
+      vi.mocked(computeAdaptiveGoals).mockResolvedValue(null);
 
       const res = await request(app)
         .post("/api/goals/adaptive/dismiss")
@@ -187,7 +190,7 @@ describe("Adaptive Goals Routes", () => {
   describe("PUT /api/goals/adaptive/settings", () => {
     it("enables adaptive goals", async () => {
       mockPremium();
-      vi.mocked(storage.updateUser).mockResolvedValue({} as never);
+      vi.mocked(storage.updateUser).mockResolvedValue(createMockUser());
 
       const res = await request(app)
         .put("/api/goals/adaptive/settings")
@@ -230,20 +233,21 @@ describe("Adaptive Goals Routes", () => {
   describe("GET /api/goals/adjustment-history", () => {
     it("returns adjustment logs", async () => {
       mockPremium();
-      const logs = [{ id: 1, reason: "test" }];
-      vi.mocked(storage.getGoalAdjustmentLogs).mockResolvedValue(logs as never);
+      const logs = [createMockGoalAdjustmentLog({ reason: "test" })];
+      const jsonLogs = JSON.parse(JSON.stringify(logs));
+      vi.mocked(storage.getGoalAdjustmentLogs).mockResolvedValue(logs);
 
       const res = await request(app)
         .get("/api/goals/adjustment-history")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual(logs);
+      expect(res.body).toEqual(jsonLogs);
     });
 
     it("respects limit query param", async () => {
       mockPremium();
-      vi.mocked(storage.getGoalAdjustmentLogs).mockResolvedValue([] as never);
+      vi.mocked(storage.getGoalAdjustmentLogs).mockResolvedValue([]);
 
       await request(app)
         .get("/api/goals/adjustment-history?limit=10")

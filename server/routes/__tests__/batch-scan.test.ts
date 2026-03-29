@@ -49,7 +49,8 @@ describe("Batch Scan Routes", () => {
     it("saves to daily_log destination", async () => {
       vi.mocked(storage.batchCreateScannedItemsWithLogs).mockResolvedValue({
         scannedCount: 2,
-      } as never);
+        logCount: 2,
+      });
 
       const res = await request(app)
         .post("/api/batch/save")
@@ -76,7 +77,7 @@ describe("Batch Scan Routes", () => {
     it("saves to pantry destination", async () => {
       vi.mocked(storage.batchCreatePantryItems).mockResolvedValue({
         count: 1,
-      } as never);
+      });
 
       const res = await request(app)
         .post("/api/batch/save")
@@ -102,7 +103,7 @@ describe("Batch Scan Routes", () => {
       vi.mocked(storage.batchCreateGroceryItems).mockResolvedValue({
         count: 3,
         groceryListId: 42,
-      } as never);
+      });
 
       const res = await request(app)
         .post("/api/batch/save")
@@ -272,7 +273,8 @@ describe("Batch Scan Routes", () => {
     it("accepts items without barcode", async () => {
       vi.mocked(storage.batchCreateScannedItemsWithLogs).mockResolvedValue({
         scannedCount: 1,
-      } as never);
+        logCount: 1,
+      });
 
       const itemWithoutBarcode = { ...validItem };
       delete (itemWithoutBarcode as Record<string, unknown>).barcode;

@@ -5,6 +5,12 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { generateCoachResponse } from "../../services/nutrition-coach";
 import { register } from "../chat";
+import {
+  createMockChatConversation,
+  createMockChatMessage,
+  createMockUser,
+  createMockWeightLog,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -50,10 +56,9 @@ describe("Chat Routes", () => {
 
   describe("GET /api/chat/conversations", () => {
     it("returns conversations list", async () => {
-      const convos = [{ id: 1, title: "Chat 1" }];
-      vi.mocked(storage.getChatConversations).mockResolvedValue(
-        convos as never,
-      );
+      const mockConvos = [createMockChatConversation({ title: "Chat 1" })];
+      vi.mocked(storage.getChatConversations).mockResolvedValue(mockConvos);
+      const convos = JSON.parse(JSON.stringify(mockConvos));
 
       const res = await request(app)
         .get("/api/chat/conversations")
@@ -66,10 +71,8 @@ describe("Chat Routes", () => {
 
   describe("POST /api/chat/conversations", () => {
     it("creates a new conversation", async () => {
-      const convo = { id: 1, title: "New Chat" };
-      vi.mocked(storage.createChatConversation).mockResolvedValue(
-        convo as never,
-      );
+      const convo = createMockChatConversation({ title: "New Chat" });
+      vi.mocked(storage.createChatConversation).mockResolvedValue(convo);
 
       const res = await request(app)
         .post("/api/chat/conversations")
@@ -81,10 +84,8 @@ describe("Chat Routes", () => {
     });
 
     it("uses default title", async () => {
-      const convo = { id: 1, title: "New Chat" };
-      vi.mocked(storage.createChatConversation).mockResolvedValue(
-        convo as never,
-      );
+      const convo = createMockChatConversation({ title: "New Chat" });
+      vi.mocked(storage.createChatConversation).mockResolvedValue(convo);
 
       const res = await request(app)
         .post("/api/chat/conversations")
@@ -101,11 +102,14 @@ describe("Chat Routes", () => {
 
   describe("GET /api/chat/conversations/:id/messages", () => {
     it("returns messages for a conversation", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({
-        id: 1,
-      } as never);
-      const messages = [{ id: 1, role: "user", content: "Hello" }];
-      vi.mocked(storage.getChatMessages).mockResolvedValue(messages as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      const mockMessages = [
+        createMockChatMessage({ role: "user", content: "Hello" }),
+      ];
+      vi.mocked(storage.getChatMessages).mockResolvedValue(mockMessages);
+      const messages = JSON.parse(JSON.stringify(mockMessages));
 
       const res = await request(app)
         .get("/api/chat/conversations/1/messages")
@@ -116,7 +120,7 @@ describe("Chat Routes", () => {
     });
 
     it("returns 404 for unknown conversation", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue(null as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/chat/conversations/999/messages")
@@ -136,7 +140,7 @@ describe("Chat Routes", () => {
 
   describe("POST /api/chat/conversations/:id/messages", () => {
     it("returns 404 for unknown conversation", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue(null as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/chat/conversations/999/messages")
@@ -147,9 +151,9 @@ describe("Chat Routes", () => {
     });
 
     it("returns 400 for empty content", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({
-        id: 1,
-      } as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -160,15 +164,16 @@ describe("Chat Routes", () => {
     });
 
     it("returns 429 when free tier daily coach limit reached", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({
-        id: 1,
-      } as never);
-      vi.mocked(storage.getUser).mockResolvedValue({ id: "1" } as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "free",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
-        null as never,
+        null,
       );
 
       const res = await request(app)
@@ -180,15 +185,16 @@ describe("Chat Routes", () => {
     });
 
     it("returns 429 when daily limit reached", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({
-        id: 1,
-      } as never);
-      vi.mocked(storage.getUser).mockResolvedValue({ id: "1" } as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
+      vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
-        null as never,
+        null,
       );
 
       const res = await request(app)
@@ -200,36 +206,41 @@ describe("Chat Routes", () => {
     });
 
     function mockStreamingSetup() {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({
-        id: 1,
-      } as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      vi.mocked(storage.getUser).mockResolvedValue({
-        id: "1",
-        dailyCalorieGoal: 2000,
-        dailyProteinGoal: 100,
-        dailyCarbsGoal: 250,
-        dailyFatGoal: 65,
-      } as never);
-      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
-        {} as never,
+        expiresAt: null,
+      });
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({
+          dailyCalorieGoal: 2000,
+          dailyProteinGoal: 100,
+          dailyCarbsGoal: 250,
+          dailyFatGoal: 65,
+        }),
       );
-      vi.mocked(storage.createChatMessage).mockResolvedValue({} as never);
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+        createMockChatMessage(),
+      );
+      vi.mocked(storage.createChatMessage).mockResolvedValue(
+        createMockChatMessage(),
+      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
-        totalCalories: "500",
-        totalProtein: "20",
-        totalCarbs: "60",
-        totalFat: "15",
-      } as never);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue({
-        weight: "75.0",
-      } as never);
-      vi.mocked(storage.getChatMessages).mockResolvedValue([] as never);
+        totalCalories: 500,
+        totalProtein: 20,
+        totalCarbs: 60,
+        totalFat: 15,
+        itemCount: 3,
+      });
+      vi.mocked(storage.getLatestWeight).mockResolvedValue(
+        createMockWeightLog({ weight: "75.0" }),
+      );
+      vi.mocked(storage.getChatMessages).mockResolvedValue([]);
       vi.mocked(storage.updateChatConversationTitle).mockResolvedValue(
-        {} as never,
+        createMockChatConversation(),
       );
     }
 
@@ -241,7 +252,7 @@ describe("Chat Routes", () => {
         yield "Hello ";
         yield "world!";
       }
-      vi.mocked(generateCoachResponse).mockReturnValue(fakeStream() as never);
+      vi.mocked(generateCoachResponse).mockReturnValue(fakeStream());
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -269,7 +280,7 @@ describe("Chat Routes", () => {
         yield "Partial";
         throw new Error("AI crash");
       }
-      vi.mocked(generateCoachResponse).mockReturnValue(errorStream() as never);
+      vi.mocked(generateCoachResponse).mockReturnValue(errorStream());
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -283,16 +294,15 @@ describe("Chat Routes", () => {
 
     it("succeeds with null goals when user has no calorie goal", async () => {
       mockStreamingSetup();
-      vi.mocked(storage.getUser).mockResolvedValue({
-        id: "1",
-        dailyCalorieGoal: null,
-      } as never);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ dailyCalorieGoal: null }),
+      );
+      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
 
       async function* emptyStream() {
         yield "Ok";
       }
-      vi.mocked(generateCoachResponse).mockReturnValue(emptyStream() as never);
+      vi.mocked(generateCoachResponse).mockReturnValue(emptyStream());
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -308,14 +318,18 @@ describe("Chat Routes", () => {
     it("skips title update when history has more than 1 message", async () => {
       mockStreamingSetup();
       vi.mocked(storage.getChatMessages).mockResolvedValue([
-        { id: 1, role: "user", content: "first" },
-        { id: 2, role: "assistant", content: "reply" },
-      ] as never);
+        createMockChatMessage({ role: "user", content: "first" }),
+        createMockChatMessage({
+          id: 2,
+          role: "assistant",
+          content: "reply",
+        }),
+      ]);
 
       async function* fakeStream() {
         yield "Response";
       }
-      vi.mocked(generateCoachResponse).mockReturnValue(fakeStream() as never);
+      vi.mocked(generateCoachResponse).mockReturnValue(fakeStream());
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -384,13 +398,14 @@ describe("Chat Routes", () => {
     });
 
     it("POST /api/chat/conversations/:id/messages returns 401 when user not found", async () => {
-      vi.mocked(storage.getChatConversation).mockResolvedValue({
-        id: 1,
-      } as never);
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation(),
+      );
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      vi.mocked(storage.getUser).mockResolvedValue(null as never);
+        expiresAt: null,
+      });
+      vi.mocked(storage.getUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -415,9 +430,7 @@ describe("Chat Routes", () => {
 
   describe("DELETE /api/chat/conversations/:id", () => {
     it("deletes a conversation", async () => {
-      vi.mocked(storage.deleteChatConversation).mockResolvedValue(
-        true as never,
-      );
+      vi.mocked(storage.deleteChatConversation).mockResolvedValue(true);
 
       const res = await request(app)
         .delete("/api/chat/conversations/1")
@@ -427,9 +440,7 @@ describe("Chat Routes", () => {
     });
 
     it("returns 404 when not found", async () => {
-      vi.mocked(storage.deleteChatConversation).mockResolvedValue(
-        false as never,
-      );
+      vi.mocked(storage.deleteChatConversation).mockResolvedValue(false);
 
       const res = await request(app)
         .delete("/api/chat/conversations/999")

@@ -17,6 +17,7 @@ import {
   getPremiumFeatures,
   checkPremiumFeature,
 } from "../_helpers";
+import { createMockUser } from "../../__tests__/factories";
 
 // Mock storage before importing routes
 vi.mock("../../storage", () => ({
@@ -66,17 +67,7 @@ function createApp() {
   return app;
 }
 
-const mockUser = {
-  id: 1,
-  username: "testuser",
-  password: "$2b$10$hashedpassword", // bcrypt hash
-  displayName: null,
-  avatarUrl: null,
-  dailyCalorieGoal: 2000,
-  onboardingCompleted: false,
-  subscriptionTier: "free",
-  tokenVersion: 0,
-};
+const mockUser = createMockUser();
 
 describe("Auth Routes", () => {
   let app: express.Express;
@@ -87,8 +78,8 @@ describe("Auth Routes", () => {
 
   describe("POST /api/auth/register", () => {
     it("creates a new user and returns token", async () => {
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(null as never);
-      vi.mocked(storage.createUser).mockResolvedValue(mockUser as never);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockResolvedValue(mockUser);
 
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
@@ -98,12 +89,12 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(201);
       expect(res.body.token).toBe("mock-jwt-token");
       expect(res.body.user.username).toBe("testuser");
-      expect(res.body.user.id).toBe(1);
+      expect(res.body.user.id).toBe("1");
       expect(res.body.user).not.toHaveProperty("password");
     });
 
     it("returns 409 if username already exists", async () => {
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(mockUser as never);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(mockUser);
 
       const res = await request(app).post("/api/auth/register").send({
         username: "testuser",
@@ -156,11 +147,9 @@ describe("Auth Routes", () => {
       // Create a real bcrypt hash for "password123"
       const bcrypt = await import("bcrypt");
       const hash = await bcrypt.hash("password123", 10);
-      const userWithHash = { ...mockUser, password: hash };
+      const userWithHash = createMockUser({ password: hash });
 
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(
-        userWithHash as never,
-      );
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(userWithHash);
 
       const res = await request(app).post("/api/auth/login").send({
         username: "testuser",
@@ -174,7 +163,7 @@ describe("Auth Routes", () => {
     });
 
     it("returns 401 for non-existent user", async () => {
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
 
       const res = await request(app).post("/api/auth/login").send({
         username: "noone",
@@ -188,11 +177,9 @@ describe("Auth Routes", () => {
     it("returns 401 for wrong password", async () => {
       const bcrypt = await import("bcrypt");
       const hash = await bcrypt.hash("correctpassword", 10);
-      const userWithHash = { ...mockUser, password: hash };
+      const userWithHash = createMockUser({ password: hash });
 
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(
-        userWithHash as never,
-      );
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(userWithHash);
 
       const res = await request(app).post("/api/auth/login").send({
         username: "testuser",
@@ -212,11 +199,10 @@ describe("Auth Routes", () => {
 
   describe("POST /api/auth/logout", () => {
     it("increments token version and returns success", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
-      vi.mocked(storage.updateUser).mockResolvedValue({
-        ...mockUser,
-        tokenVersion: 1,
-      } as never);
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      vi.mocked(storage.updateUser).mockResolvedValue(
+        createMockUser({ tokenVersion: 1 }),
+      );
 
       const res = await request(app)
         .post("/api/auth/logout")
@@ -230,7 +216,7 @@ describe("Auth Routes", () => {
     });
 
     it("returns 404 if user not found", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/auth/logout")
@@ -242,7 +228,7 @@ describe("Auth Routes", () => {
 
   describe("GET /api/auth/me", () => {
     it("returns current user data", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
 
       const res = await request(app)
         .get("/api/auth/me")
@@ -250,13 +236,13 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.username).toBe("testuser");
-      expect(res.body.id).toBe(1);
+      expect(res.body.id).toBe("1");
       expect(res.body).not.toHaveProperty("password");
       expect(res.body.subscriptionTier).toBe("free");
     });
 
     it("returns 401 if user not found", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/auth/me")
@@ -278,8 +264,8 @@ describe("Auth Routes", () => {
 
   describe("PUT /api/auth/profile", () => {
     it("updates display name", async () => {
-      const updated = { ...mockUser, displayName: "Test User" };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      const updated = createMockUser({ displayName: "Test User" });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .put("/api/auth/profile")
@@ -291,8 +277,8 @@ describe("Auth Routes", () => {
     });
 
     it("updates calorie goal", async () => {
-      const updated = { ...mockUser, dailyCalorieGoal: 2500 };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      const updated = createMockUser({ dailyCalorieGoal: 2500 });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .put("/api/auth/profile")
@@ -323,7 +309,7 @@ describe("Auth Routes", () => {
     });
 
     it("returns 404 if user not found on update", async () => {
-      vi.mocked(storage.updateUser).mockResolvedValue(null as never);
+      vi.mocked(storage.updateUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .put("/api/auth/profile")
@@ -334,8 +320,8 @@ describe("Auth Routes", () => {
     });
 
     it("updates onboardingCompleted field", async () => {
-      const updated = { ...mockUser, onboardingCompleted: true };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      const updated = createMockUser({ onboardingCompleted: true });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .put("/api/auth/profile")
@@ -363,7 +349,7 @@ describe("Auth Routes", () => {
 
   describe("Error paths", () => {
     it("POST /api/auth/register returns 500 on storage error", async () => {
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
       vi.mocked(storage.createUser).mockRejectedValue(new Error("DB error"));
 
       const res = await request(app).post("/api/auth/register").send({
@@ -404,12 +390,11 @@ describe("Auth Routes", () => {
 
     it("uploads a valid JPEG avatar", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
-      const updated = {
-        ...mockUser,
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      const updated = createMockUser({
         avatarUrl: "/api/avatars/1-1234567890.jpg",
-      };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .post("/api/user/avatar")
@@ -455,8 +440,8 @@ describe("Auth Routes", () => {
 
     it("returns 404 when user not found after update", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
-      vi.mocked(storage.updateUser).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      vi.mocked(storage.updateUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/user/avatar")
@@ -471,7 +456,7 @@ describe("Auth Routes", () => {
 
     it("returns 500 when storage throws", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
       vi.mocked(storage.updateUser).mockRejectedValue(new Error("DB error"));
 
       const res = await request(app)
@@ -488,12 +473,11 @@ describe("Auth Routes", () => {
 
   describe("DELETE /api/user/avatar", () => {
     it("deletes avatar successfully", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue({
-        ...mockUser,
-        avatarUrl: "/api/avatars/1-123.jpg",
-      } as never);
-      const updated = { ...mockUser, avatarUrl: null };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ avatarUrl: "/api/avatars/1-123.jpg" }),
+      );
+      const updated = createMockUser({ avatarUrl: null });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .delete("/api/user/avatar")
@@ -507,8 +491,8 @@ describe("Auth Routes", () => {
     });
 
     it("returns 404 when user not found", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
-      vi.mocked(storage.updateUser).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      vi.mocked(storage.updateUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .delete("/api/user/avatar")
@@ -518,7 +502,7 @@ describe("Auth Routes", () => {
     });
 
     it("returns 500 when storage throws", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
       vi.mocked(storage.updateUser).mockRejectedValue(new Error("DB error"));
 
       const res = await request(app)
@@ -529,12 +513,11 @@ describe("Auth Routes", () => {
     });
 
     it("sanitizes path traversal in stored avatarUrl", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue({
-        ...mockUser,
-        avatarUrl: "/api/avatars/../../etc/passwd",
-      } as never);
-      const updated = { ...mockUser, avatarUrl: null };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ avatarUrl: "/api/avatars/../../etc/passwd" }),
+      );
+      const updated = createMockUser({ avatarUrl: null });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .delete("/api/user/avatar")
@@ -557,12 +540,11 @@ describe("Auth Routes", () => {
 
     it("uploads a valid PNG avatar", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/png");
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
-      const updated = {
-        ...mockUser,
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      const updated = createMockUser({
         avatarUrl: "/api/avatars/1-1234567890.png",
-      };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .post("/api/user/avatar")
@@ -578,12 +560,11 @@ describe("Auth Routes", () => {
 
     it("uploads a valid WebP avatar", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/webp");
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as never);
-      const updated = {
-        ...mockUser,
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      const updated = createMockUser({
         avatarUrl: "/api/avatars/1-1234567890.webp",
-      };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
       const res = await request(app)
         .post("/api/user/avatar")
@@ -599,15 +580,13 @@ describe("Auth Routes", () => {
 
     it("deletes old avatar file when uploading new one", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
-      vi.mocked(storage.getUser).mockResolvedValue({
-        ...mockUser,
-        avatarUrl: "/api/avatars/1-old.jpg",
-      } as never);
-      const updated = {
-        ...mockUser,
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ avatarUrl: "/api/avatars/1-old.jpg" }),
+      );
+      const updated = createMockUser({
         avatarUrl: "/api/avatars/1-new.jpg",
-      };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
       mockUnlink.mockClear();
 
       const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
@@ -629,15 +608,13 @@ describe("Auth Routes", () => {
 
     it("skips old avatar deletion when avatarUrl is not a local path", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
-      vi.mocked(storage.getUser).mockResolvedValue({
-        ...mockUser,
-        avatarUrl: "https://external.com/avatar.jpg",
-      } as never);
-      const updated = {
-        ...mockUser,
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ avatarUrl: "https://external.com/avatar.jpg" }),
+      );
+      const updated = createMockUser({
         avatarUrl: "/api/avatars/1-new.jpg",
-      };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
       mockUnlink.mockClear();
 
       const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
@@ -674,12 +651,11 @@ describe("Auth Routes", () => {
 
   describe("DELETE /api/user/avatar (edge cases)", () => {
     it("handles null avatarUrl gracefully (no unlink called)", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue({
-        ...mockUser,
-        avatarUrl: null,
-      } as never);
-      const updated = { ...mockUser, avatarUrl: null };
-      vi.mocked(storage.updateUser).mockResolvedValue(updated as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ avatarUrl: null }),
+      );
+      const updated = createMockUser({ avatarUrl: null });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
       mockUnlink.mockClear();
 
       const res = await request(app)
@@ -813,17 +789,21 @@ describe("_helpers utility functions", () => {
   describe("ipKeyGenerator", () => {
     it("returns req.ip when available", () => {
       const req = { ip: "192.168.1.1", socket: { remoteAddress: "10.0.0.1" } };
-      expect(ipKeyGenerator(req as never)).toBe("192.168.1.1");
+      expect(ipKeyGenerator(req as unknown as express.Request)).toBe(
+        "192.168.1.1",
+      );
     });
 
     it("falls back to socket.remoteAddress when ip is missing", () => {
       const req = { ip: "", socket: { remoteAddress: "10.0.0.1" } };
-      expect(ipKeyGenerator(req as never)).toBe("10.0.0.1");
+      expect(ipKeyGenerator(req as unknown as express.Request)).toBe(
+        "10.0.0.1",
+      );
     });
 
     it("returns 'unknown' when both ip and remoteAddress are missing", () => {
       const req = { ip: "", socket: { remoteAddress: "" } };
-      expect(ipKeyGenerator(req as never)).toBe("unknown");
+      expect(ipKeyGenerator(req as unknown as express.Request)).toBe("unknown");
     });
   });
 
@@ -874,8 +854,8 @@ describe("_helpers utility functions", () => {
 
   describe("getPremiumFeatures", () => {
     it("returns free tier features when no subscription", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
-      const req = { userId: "1" } as never;
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      const req = { userId: "1" } as unknown as express.Request;
       const features = await getPremiumFeatures(req);
       expect(features.maxDailyScans).toBe(3);
       expect(features.recipeGeneration).toBe(false);
@@ -884,8 +864,9 @@ describe("_helpers utility functions", () => {
     it("returns premium features for premium tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      const req = { userId: "1" } as never;
+        expiresAt: null,
+      });
+      const req = { userId: "1" } as unknown as express.Request;
       const features = await getPremiumFeatures(req);
       expect(features.maxDailyScans).toBe(999999);
       expect(features.recipeGeneration).toBe(true);
@@ -893,9 +874,10 @@ describe("_helpers utility functions", () => {
 
     it("falls back to free for invalid tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-        tier: "invalid_tier",
-      } as never);
-      const req = { userId: "1" } as never;
+        tier: "invalid_tier" as "free",
+        expiresAt: null,
+      });
+      const req = { userId: "1" } as unknown as express.Request;
       const features = await getPremiumFeatures(req);
       expect(features.maxDailyScans).toBe(3);
     });
@@ -905,12 +887,13 @@ describe("_helpers utility functions", () => {
     it("returns features when user has the premium feature", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      const req = { userId: "1" } as never;
+        expiresAt: null,
+      });
+      const req = { userId: "1" } as unknown as express.Request;
       const res = {
         status: vi.fn().mockReturnThis(),
         json: vi.fn(),
-      } as never;
+      } as unknown as express.Response;
       const features = await checkPremiumFeature(
         req,
         res,
@@ -922,11 +905,14 @@ describe("_helpers utility functions", () => {
     });
 
     it("sends 403 and returns null when user lacks the feature", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
-      const req = { userId: "1" } as never;
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      const req = { userId: "1" } as unknown as express.Request;
       const jsonMock = vi.fn();
       const statusMock = vi.fn().mockReturnValue({ json: jsonMock });
-      const res = { status: statusMock, json: jsonMock } as never;
+      const res = {
+        status: statusMock,
+        json: jsonMock,
+      } as unknown as express.Response;
       const features = await checkPremiumFeature(
         req,
         res,

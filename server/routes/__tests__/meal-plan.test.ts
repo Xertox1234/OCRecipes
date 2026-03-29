@@ -4,8 +4,19 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../meal-plan";
+import {
+  createMockMealPlanRecipe,
+  createMockMealPlanItem,
+  createMockScannedItem,
+  createMockDailyLog,
+  createMockUser,
+  createMockPantryItem,
+} from "../../__tests__/factories";
 
-import { generateMealPlanFromPantry } from "../../services/pantry-meal-plan";
+import {
+  generateMealPlanFromPantry,
+  type GeneratedMealPlan,
+} from "../../services/pantry-meal-plan";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -53,15 +64,14 @@ function createApp() {
 function mockPremium() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
     tier: "premium",
-  } as never);
+    expiresAt: null,
+  });
 }
 
-const mockRecipe = {
-  id: 1,
-  userId: "1",
+const mockRecipe = createMockMealPlanRecipe({
   title: "Chicken Salad",
   sourceType: "user_created",
-};
+});
 
 describe("Meal Plan Routes", () => {
   let app: express.Express;
@@ -73,24 +83,26 @@ describe("Meal Plan Routes", () => {
 
   describe("GET /api/meal-plan/recipes", () => {
     it("returns user recipes", async () => {
-      vi.mocked(storage.getUserMealPlanRecipes).mockResolvedValue([
-        mockRecipe,
-      ] as never);
+      vi.mocked(storage.getUserMealPlanRecipes).mockResolvedValue({
+        items: [mockRecipe],
+        total: 1,
+      });
 
       const res = await request(app)
         .get("/api/meal-plan/recipes")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
+      expect(res.body.items).toHaveLength(1);
     });
   });
 
   describe("GET /api/meal-plan/recipes/:id", () => {
     it("returns recipe with ingredients", async () => {
-      vi.mocked(storage.getMealPlanRecipeWithIngredients).mockResolvedValue(
-        mockRecipe as never,
-      );
+      vi.mocked(storage.getMealPlanRecipeWithIngredients).mockResolvedValue({
+        ...mockRecipe,
+        ingredients: [],
+      });
 
       const res = await request(app)
         .get("/api/meal-plan/recipes/1")
@@ -104,7 +116,8 @@ describe("Meal Plan Routes", () => {
       vi.mocked(storage.getMealPlanRecipeWithIngredients).mockResolvedValue({
         ...mockRecipe,
         userId: "2",
-      } as never);
+        ingredients: [],
+      });
 
       const res = await request(app)
         .get("/api/meal-plan/recipes/1")
@@ -124,9 +137,7 @@ describe("Meal Plan Routes", () => {
 
   describe("POST /api/meal-plan/recipes", () => {
     it("creates a recipe", async () => {
-      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
-        mockRecipe as never,
-      );
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
 
       const res = await request(app)
         .post("/api/meal-plan/recipes")
@@ -137,10 +148,12 @@ describe("Meal Plan Routes", () => {
     });
 
     it("creates a recipe with sourceType quick_entry", async () => {
-      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue({
-        ...mockRecipe,
-        sourceType: "quick_entry",
-      } as never);
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({
+          title: "Chicken Salad",
+          sourceType: "quick_entry",
+        }),
+      );
 
       const res = await request(app)
         .post("/api/meal-plan/recipes")
@@ -159,9 +172,7 @@ describe("Meal Plan Routes", () => {
     });
 
     it("defaults sourceType to user_created when omitted", async () => {
-      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
-        mockRecipe as never,
-      );
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
 
       await request(app)
         .post("/api/meal-plan/recipes")
@@ -175,10 +186,12 @@ describe("Meal Plan Routes", () => {
     });
 
     it("creates a recipe with sourceType ai_suggestion", async () => {
-      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue({
-        ...mockRecipe,
-        sourceType: "ai_suggestion",
-      } as never);
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({
+          title: "Chicken Salad",
+          sourceType: "ai_suggestion",
+        }),
+      );
 
       const res = await request(app)
         .post("/api/meal-plan/recipes")
@@ -217,10 +230,9 @@ describe("Meal Plan Routes", () => {
 
   describe("PUT /api/meal-plan/recipes/:id", () => {
     it("updates a recipe", async () => {
-      vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue({
-        ...mockRecipe,
-        title: "Updated",
-      } as never);
+      vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({ title: "Updated" }),
+      );
 
       const res = await request(app)
         .put("/api/meal-plan/recipes/1")
@@ -231,7 +243,7 @@ describe("Meal Plan Routes", () => {
     });
 
     it("returns 404 for not found", async () => {
-      vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(null as never);
+      vi.mocked(storage.updateMealPlanRecipe).mockResolvedValue(undefined);
 
       const res = await request(app)
         .put("/api/meal-plan/recipes/999")
@@ -244,7 +256,7 @@ describe("Meal Plan Routes", () => {
 
   describe("DELETE /api/meal-plan/recipes/:id", () => {
     it("deletes a recipe", async () => {
-      vi.mocked(storage.deleteMealPlanRecipe).mockResolvedValue(true as never);
+      vi.mocked(storage.deleteMealPlanRecipe).mockResolvedValue(true);
 
       const res = await request(app)
         .delete("/api/meal-plan/recipes/1")
@@ -254,7 +266,7 @@ describe("Meal Plan Routes", () => {
     });
 
     it("returns 404 when not found", async () => {
-      vi.mocked(storage.deleteMealPlanRecipe).mockResolvedValue(false as never);
+      vi.mocked(storage.deleteMealPlanRecipe).mockResolvedValue(false);
 
       const res = await request(app)
         .delete("/api/meal-plan/recipes/999")
@@ -266,7 +278,7 @@ describe("Meal Plan Routes", () => {
 
   describe("GET /api/meal-plan", () => {
     it("returns meal plan items for date range", async () => {
-      vi.mocked(storage.getMealPlanItems).mockResolvedValue([] as never);
+      vi.mocked(storage.getMealPlanItems).mockResolvedValue([]);
 
       const res = await request(app)
         .get("/api/meal-plan?start=2025-01-01&end=2025-01-07")
@@ -302,10 +314,13 @@ describe("Meal Plan Routes", () => {
 
   describe("POST /api/meal-plan/items", () => {
     it("adds recipe to meal plan", async () => {
-      vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(
-        mockRecipe as never,
+      vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(mockRecipe);
+      vi.mocked(storage.addMealPlanItem).mockResolvedValue(
+        createMockMealPlanItem({
+          mealType: "dinner",
+          plannedDate: "2025-01-01",
+        }),
       );
-      vi.mocked(storage.addMealPlanItem).mockResolvedValue({ id: 1 } as never);
 
       const res = await request(app)
         .post("/api/meal-plan/items")
@@ -332,10 +347,9 @@ describe("Meal Plan Routes", () => {
     });
 
     it("returns 404 for recipe not owned by user", async () => {
-      vi.mocked(storage.getMealPlanRecipe).mockResolvedValue({
-        ...mockRecipe,
-        userId: "2",
-      } as never);
+      vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(
+        createMockMealPlanRecipe({ title: "Chicken Salad", userId: "2" }),
+      );
 
       const res = await request(app)
         .post("/api/meal-plan/items")
@@ -352,7 +366,7 @@ describe("Meal Plan Routes", () => {
 
   describe("DELETE /api/meal-plan/items/:id", () => {
     it("removes item from plan", async () => {
-      vi.mocked(storage.removeMealPlanItem).mockResolvedValue(true as never);
+      vi.mocked(storage.removeMealPlanItem).mockResolvedValue(true);
 
       const res = await request(app)
         .delete("/api/meal-plan/items/1")
@@ -362,7 +376,7 @@ describe("Meal Plan Routes", () => {
     });
 
     it("returns 404 when not found", async () => {
-      vi.mocked(storage.removeMealPlanItem).mockResolvedValue(false as never);
+      vi.mocked(storage.removeMealPlanItem).mockResolvedValue(false);
 
       const res = await request(app)
         .delete("/api/meal-plan/items/999")
@@ -486,11 +500,15 @@ describe("Meal Plan Routes", () => {
     });
 
     it("POST /api/meal-plan/items adds scanned item to plan", async () => {
-      vi.mocked(storage.getScannedItem).mockResolvedValue({
-        id: 1,
-        userId: "1",
-      } as never);
-      vi.mocked(storage.addMealPlanItem).mockResolvedValue({ id: 1 } as never);
+      vi.mocked(storage.getScannedItem).mockResolvedValue(
+        createMockScannedItem(),
+      );
+      vi.mocked(storage.addMealPlanItem).mockResolvedValue(
+        createMockMealPlanItem({
+          mealType: "snack",
+          plannedDate: "2025-01-01",
+        }),
+      );
 
       const res = await request(app)
         .post("/api/meal-plan/items")
@@ -521,9 +539,7 @@ describe("Meal Plan Routes", () => {
     });
 
     it("POST /api/meal-plan/items returns 500 on storage error", async () => {
-      vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(
-        mockRecipe as never,
-      );
+      vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(mockRecipe);
       vi.mocked(storage.addMealPlanItem).mockRejectedValue(
         new Error("DB error"),
       );
@@ -565,16 +581,15 @@ describe("Meal Plan Routes", () => {
     it("confirms a meal plan item", async () => {
       mockPremium();
       vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
-        id: 1,
-        userId: "1",
-        plannedDate: "2025-01-01",
-        mealType: "dinner",
-        servings: "1",
-      } as never);
-      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue(
-        [] as never,
-      );
-      vi.mocked(storage.createDailyLog).mockResolvedValue({ id: 1 } as never);
+        ...createMockMealPlanItem({
+          plannedDate: "2025-01-01",
+          mealType: "dinner",
+        }),
+        recipe: null,
+        scannedItem: null,
+      });
+      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
+      vi.mocked(storage.createDailyLog).mockResolvedValue(createMockDailyLog());
 
       const res = await request(app)
         .post("/api/meal-plan/items/1/confirm")
@@ -586,13 +601,11 @@ describe("Meal Plan Routes", () => {
     it("returns 409 for already confirmed", async () => {
       mockPremium();
       vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
-        id: 1,
-        userId: "1",
-        plannedDate: "2025-01-01",
-      } as never);
-      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([
-        1,
-      ] as never);
+        ...createMockMealPlanItem({ plannedDate: "2025-01-01" }),
+        recipe: null,
+        scannedItem: null,
+      });
+      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([1]);
 
       const res = await request(app)
         .post("/api/meal-plan/items/1/confirm")
@@ -603,7 +616,7 @@ describe("Meal Plan Routes", () => {
 
     it("returns 404 when item not found", async () => {
       mockPremium();
-      vi.mocked(storage.getMealPlanItemById).mockResolvedValue(null as never);
+      vi.mocked(storage.getMealPlanItemById).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/items/999/confirm")
@@ -613,7 +626,7 @@ describe("Meal Plan Routes", () => {
     });
 
     it("returns 403 for free tier", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/items/1/confirm")
@@ -653,11 +666,11 @@ describe("Meal Plan Routes", () => {
 
   describe("POST /api/meal-plan/generate-from-pantry", () => {
     const mockPantryItems = [
-      { id: 1, userId: "1", name: "Chicken", category: "meat" },
-      { id: 2, userId: "1", name: "Rice", category: "grains" },
+      createMockPantryItem({ id: 1, name: "Chicken", category: "meat" }),
+      createMockPantryItem({ id: 2, name: "Rice", category: "grains" }),
     ];
 
-    const mockPlan = {
+    const mockPlan: GeneratedMealPlan = {
       days: [
         {
           dayNumber: 1,
@@ -686,7 +699,8 @@ describe("Meal Plan Routes", () => {
     it("returns 403 for free users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "free",
-      } as never);
+        expiresAt: null,
+      });
 
       const res = await request(app)
         .post("/api/meal-plan/generate-from-pantry")
@@ -722,19 +736,17 @@ describe("Meal Plan Routes", () => {
 
     it("generates meal plan successfully", async () => {
       mockPremium();
-      vi.mocked(storage.getPantryItems).mockResolvedValue(
-        mockPantryItems as never,
+      vi.mocked(storage.getPantryItems).mockResolvedValue(mockPantryItems);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({
+          dailyCalorieGoal: 2000,
+          dailyProteinGoal: 150,
+          dailyCarbsGoal: 250,
+          dailyFatGoal: 67,
+        }),
       );
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
-      vi.mocked(storage.getUser).mockResolvedValue({
-        dailyCalorieGoal: 2000,
-        dailyProteinGoal: 150,
-        dailyCarbsGoal: 250,
-        dailyFatGoal: 67,
-      } as never);
-      vi.mocked(generateMealPlanFromPantry).mockResolvedValue(
-        mockPlan as never,
-      );
+      vi.mocked(generateMealPlanFromPantry).mockResolvedValue(mockPlan);
 
       const res = await request(app)
         .post("/api/meal-plan/generate-from-pantry")

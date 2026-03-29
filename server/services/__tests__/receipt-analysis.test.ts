@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { analyzeReceiptPhotos, _testInternals } from "../receipt-analysis";
 
 import { openai } from "../../lib/openai";
+import { createMockChatCompletion } from "../../__tests__/factories";
 
 const { receiptItemSchema, receiptAnalysisSchema } = _testInternals;
 
@@ -21,9 +22,9 @@ vi.mock("../../lib/ai-safety", () => ({
 }));
 
 function mockOpenAIResponse(content: string) {
-  vi.mocked(openai.chat.completions.create).mockResolvedValue({
-    choices: [{ message: { content } }],
-  } as never);
+  vi.mocked(openai.chat.completions.create).mockResolvedValue(
+    createMockChatCompletion(content),
+  );
 }
 
 describe("Receipt Analysis Service", () => {
@@ -417,9 +418,9 @@ describe("Receipt Analysis Service", () => {
     });
 
     it("throws when OpenAI returns no content", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue({
-        choices: [{ message: { content: null } }],
-      } as never);
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(null),
+      );
 
       await expect(analyzeReceiptPhotos(["base64data"])).rejects.toThrow(
         "No response from receipt analysis",

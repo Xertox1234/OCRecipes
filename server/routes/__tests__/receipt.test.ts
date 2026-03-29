@@ -4,7 +4,12 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { analyzeReceiptPhotos } from "../../services/receipt-analysis";
+import type { ReceiptAnalysisResult } from "../../services/receipt-analysis";
 import { register } from "../receipt";
+import {
+  createMockReceiptScan,
+  createMockPantryItem,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -79,13 +84,15 @@ function createApp() {
 function setupPremiumMock() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
     tier: "premium",
-  } as never);
+    expiresAt: null,
+  });
 }
 
 function setupFreeMock() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
     tier: "free",
-  } as never);
+    expiresAt: null,
+  });
 }
 
 describe("Receipt Routes", () => {
@@ -108,12 +115,12 @@ describe("Receipt Routes", () => {
   describe("POST /api/receipt/scan", () => {
     it("analyzes receipt photos and returns results", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        0 as never,
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
+      vi.mocked(storage.createReceiptScan).mockResolvedValue(
+        createMockReceiptScan(),
       );
-      vi.mocked(storage.createReceiptScan).mockResolvedValue({} as never);
 
-      const mockResult = {
+      const mockResult: ReceiptAnalysisResult = {
         items: [
           {
             name: "Chicken Breast",
@@ -129,7 +136,7 @@ describe("Receipt Routes", () => {
         isPartialExtraction: false,
         overallConfidence: 0.85,
       };
-      vi.mocked(analyzeReceiptPhotos).mockResolvedValue(mockResult as never);
+      vi.mocked(analyzeReceiptPhotos).mockResolvedValue(mockResult);
 
       const res = await request(app)
         .post("/api/receipt/scan")
@@ -166,9 +173,7 @@ describe("Receipt Routes", () => {
 
     it("returns 429 when monthly scan limit reached", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        15 as never,
-      );
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(15);
 
       const res = await request(app)
         .post("/api/receipt/scan")
@@ -180,10 +185,10 @@ describe("Receipt Routes", () => {
 
     it("records failed scan when analysis throws", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        0 as never,
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
+      vi.mocked(storage.createReceiptScan).mockResolvedValue(
+        createMockReceiptScan(),
       );
-      vi.mocked(storage.createReceiptScan).mockResolvedValue({} as never);
       vi.mocked(analyzeReceiptPhotos).mockRejectedValue(
         new Error("Analysis failed"),
       );
@@ -201,12 +206,12 @@ describe("Receipt Routes", () => {
 
     it("records partial status when isPartialExtraction is true", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        0 as never,
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
+      vi.mocked(storage.createReceiptScan).mockResolvedValue(
+        createMockReceiptScan(),
       );
-      vi.mocked(storage.createReceiptScan).mockResolvedValue({} as never);
 
-      vi.mocked(analyzeReceiptPhotos).mockResolvedValue({
+      const partialResult: ReceiptAnalysisResult = {
         items: [
           {
             name: "Apple",
@@ -220,7 +225,8 @@ describe("Receipt Routes", () => {
         ],
         isPartialExtraction: true,
         overallConfidence: 0.6,
-      } as never);
+      };
+      vi.mocked(analyzeReceiptPhotos).mockResolvedValue(partialResult);
 
       const res = await request(app)
         .post("/api/receipt/scan")
@@ -235,16 +241,17 @@ describe("Receipt Routes", () => {
 
     it("records failed status when overallConfidence < 0.3", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        0 as never,
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
+      vi.mocked(storage.createReceiptScan).mockResolvedValue(
+        createMockReceiptScan(),
       );
-      vi.mocked(storage.createReceiptScan).mockResolvedValue({} as never);
 
-      vi.mocked(analyzeReceiptPhotos).mockResolvedValue({
+      const lowConfidenceResult: ReceiptAnalysisResult = {
         items: [],
         isPartialExtraction: false,
         overallConfidence: 0.2,
-      } as never);
+      };
+      vi.mocked(analyzeReceiptPhotos).mockResolvedValue(lowConfidenceResult);
 
       const res = await request(app)
         .post("/api/receipt/scan")
@@ -259,12 +266,12 @@ describe("Receipt Routes", () => {
 
     it("records completed status for good confidence", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        0 as never,
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(0);
+      vi.mocked(storage.createReceiptScan).mockResolvedValue(
+        createMockReceiptScan(),
       );
-      vi.mocked(storage.createReceiptScan).mockResolvedValue({} as never);
 
-      vi.mocked(analyzeReceiptPhotos).mockResolvedValue({
+      const goodResult: ReceiptAnalysisResult = {
         items: [
           {
             name: "Milk",
@@ -278,7 +285,8 @@ describe("Receipt Routes", () => {
         ],
         isPartialExtraction: false,
         overallConfidence: 0.9,
-      } as never);
+      };
+      vi.mocked(analyzeReceiptPhotos).mockResolvedValue(goodResult);
 
       const res = await request(app)
         .post("/api/receipt/scan")
@@ -297,12 +305,20 @@ describe("Receipt Routes", () => {
       setupPremiumMock();
 
       const mockCreated = [
-        { id: 1, name: "Chicken Breast", quantity: "1", category: "meat" },
-        { id: 2, name: "Milk", quantity: "1", category: "dairy" },
+        createMockPantryItem({
+          id: 1,
+          name: "Chicken Breast",
+          quantity: "1",
+          category: "meat",
+        }),
+        createMockPantryItem({
+          id: 2,
+          name: "Milk",
+          quantity: "1",
+          category: "dairy",
+        }),
       ];
-      vi.mocked(storage.createPantryItems).mockResolvedValue(
-        mockCreated as never,
-      );
+      vi.mocked(storage.createPantryItems).mockResolvedValue(mockCreated);
 
       const res = await request(app)
         .post("/api/receipt/confirm")
@@ -439,9 +455,7 @@ describe("Receipt Routes", () => {
   describe("GET /api/receipt/scan-count", () => {
     it("returns monthly scan count and limits", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        5 as never,
-      );
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(5);
 
       const res = await request(app)
         .get("/api/receipt/scan-count")
@@ -455,9 +469,7 @@ describe("Receipt Routes", () => {
 
     it("returns 0 remaining when limit reached", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        15 as never,
-      );
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(15);
 
       const res = await request(app)
         .get("/api/receipt/scan-count")
@@ -469,9 +481,7 @@ describe("Receipt Routes", () => {
 
     it("returns 0 remaining when over limit", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(
-        20 as never,
-      );
+      vi.mocked(storage.getMonthlyReceiptScanCount).mockResolvedValue(20);
 
       const res = await request(app)
         .get("/api/receipt/scan-count")

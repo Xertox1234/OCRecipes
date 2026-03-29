@@ -5,6 +5,34 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { generateMealSuggestions } from "../../services/meal-suggestions";
 import { register } from "../meal-suggestions";
+import {
+  createMockUser,
+  createMockMealPlanItem,
+  createMockMealPlanRecipe,
+  createMockScannedItem,
+  createMockMealSuggestionCache,
+} from "../../__tests__/factories";
+import type { MealSuggestion } from "@shared/types/meal-suggestions";
+
+function createMockMealSuggestion(
+  overrides: Partial<MealSuggestion> = {},
+): MealSuggestion {
+  return {
+    title: "Test Meal",
+    description: "A test meal suggestion",
+    reasoning: "Fits your nutritional goals",
+    calories: 300,
+    protein: 20,
+    carbs: 30,
+    fat: 10,
+    prepTimeMinutes: 15,
+    difficulty: "Easy",
+    ingredients: [{ name: "Test ingredient", quantity: "1", unit: "cup" }],
+    instructions: "Test instructions",
+    dietTags: [],
+    ...overrides,
+  };
+}
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -56,34 +84,30 @@ describe("Meal Suggestions Routes", () => {
     it("returns suggestions for premium user", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(
-        0 as never,
+        expiresAt: null,
+      });
+      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(0);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ dailyCalorieGoal: 2000 }),
       );
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
-      vi.mocked(storage.getUser).mockResolvedValue({
-        dailyCalorieGoal: 2000,
-      } as never);
-      vi.mocked(storage.getMealPlanItems).mockResolvedValue([] as never);
-      vi.mocked(storage.getMealSuggestionCache).mockResolvedValue(
-        null as never,
-      );
+      vi.mocked(storage.getMealPlanItems).mockResolvedValue([]);
+      vi.mocked(storage.getMealSuggestionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
-        totalCalories: "0",
-        totalProtein: "0",
-        totalCarbs: "0",
-        totalFat: "0",
-      } as never);
-      vi.mocked(storage.getPopularPicksByMealType).mockResolvedValue(
-        [] as never,
-      );
-      const suggestions = [{ title: "Oatmeal", calories: 300 }];
-      vi.mocked(generateMealSuggestions).mockResolvedValue(
-        suggestions as never,
-      );
+        totalCalories: 0,
+        totalProtein: 0,
+        totalCarbs: 0,
+        totalFat: 0,
+        itemCount: 0,
+      });
+      vi.mocked(storage.getPopularPicksByMealType).mockResolvedValue([]);
+      const suggestions = [
+        createMockMealSuggestion({ title: "Oatmeal", calories: 300 }),
+      ];
+      vi.mocked(generateMealSuggestions).mockResolvedValue(suggestions);
       vi.mocked(
         storage.createMealSuggestionCacheWithLimitCheck,
-      ).mockResolvedValue({} as never);
+      ).mockResolvedValue(createMockMealSuggestionCache());
 
       const res = await request(app)
         .post("/api/meal-plan/suggest")
@@ -99,23 +123,22 @@ describe("Meal Suggestions Routes", () => {
     it("returns cached suggestions on cache hit", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(
-        1 as never,
+        expiresAt: null,
+      });
+      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(1);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
+      vi.mocked(storage.getMealPlanItems).mockResolvedValue([]);
+      vi.mocked(storage.getMealSuggestionCache).mockResolvedValue(
+        createMockMealSuggestionCache({
+          id: 1,
+          suggestions: [{ title: "Cached Meal" }],
+        }),
       );
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
-      vi.mocked(storage.getUser).mockResolvedValue({} as never);
-      vi.mocked(storage.getMealPlanItems).mockResolvedValue([] as never);
-      vi.mocked(storage.getMealSuggestionCache).mockResolvedValue({
-        id: 1,
-        suggestions: [{ title: "Cached Meal" }],
-      } as never);
       vi.mocked(storage.incrementMealSuggestionCacheHit).mockResolvedValue(
-        {} as never,
+        undefined,
       );
-      vi.mocked(storage.getPopularPicksByMealType).mockResolvedValue(
-        [] as never,
-      );
+      vi.mocked(storage.getPopularPicksByMealType).mockResolvedValue([]);
 
       const res = await request(app)
         .post("/api/meal-plan/suggest")
@@ -131,7 +154,8 @@ describe("Meal Suggestions Routes", () => {
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "free",
-      } as never);
+        expiresAt: null,
+      });
 
       const res = await request(app)
         .post("/api/meal-plan/suggest")
@@ -145,10 +169,9 @@ describe("Meal Suggestions Routes", () => {
     it("returns 429 when daily limit reached", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(
-        100 as never,
-      );
+        expiresAt: null,
+      });
+      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(100);
 
       const res = await request(app)
         .post("/api/meal-plan/suggest")
@@ -179,10 +202,9 @@ describe("Meal Suggestions Routes", () => {
     it("returns 500 on storage error", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(
-        0 as never,
-      );
+        expiresAt: null,
+      });
+      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(0);
       vi.mocked(storage.getUserProfile).mockRejectedValue(
         new Error("DB error"),
       );
@@ -195,50 +217,45 @@ describe("Meal Suggestions Routes", () => {
       expect(res.status).toBe(500);
     });
 
-    function mockBudgetSetup(mealPlanItems: unknown[]) {
+    function mockBudgetSetup(
+      mealPlanItems: Awaited<ReturnType<typeof storage.getMealPlanItems>>,
+    ) {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(
-        0 as never,
+        expiresAt: null,
+      });
+      vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(0);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ dailyCalorieGoal: 2000 }),
       );
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
-      vi.mocked(storage.getUser).mockResolvedValue({
-        dailyCalorieGoal: 2000,
-      } as never);
-      vi.mocked(storage.getMealPlanItems).mockResolvedValue(
-        mealPlanItems as never,
-      );
-      vi.mocked(storage.getMealSuggestionCache).mockResolvedValue(
-        null as never,
-      );
+      vi.mocked(storage.getMealPlanItems).mockResolvedValue(mealPlanItems);
+      vi.mocked(storage.getMealSuggestionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
-        totalCalories: "0",
-        totalProtein: "0",
-        totalCarbs: "0",
-        totalFat: "0",
-      } as never);
-      vi.mocked(storage.getPopularPicksByMealType).mockResolvedValue(
-        [] as never,
-      );
-      vi.mocked(generateMealSuggestions).mockResolvedValue([] as never);
+        totalCalories: 0,
+        totalProtein: 0,
+        totalCarbs: 0,
+        totalFat: 0,
+        itemCount: 0,
+      });
+      vi.mocked(storage.getPopularPicksByMealType).mockResolvedValue([]);
+      vi.mocked(generateMealSuggestions).mockResolvedValue([]);
       vi.mocked(
         storage.createMealSuggestionCacheWithLimitCheck,
-      ).mockResolvedValue({} as never);
+      ).mockResolvedValue(createMockMealSuggestionCache());
     }
 
     it("accounts for existing meal plan items with recipe data in budget", async () => {
       mockBudgetSetup([
         {
-          mealType: "breakfast",
-          servings: "2",
-          recipe: {
+          ...createMockMealPlanItem({ mealType: "breakfast", servings: "2" }),
+          recipe: createMockMealPlanRecipe({
             title: "Oatmeal",
             caloriesPerServing: "300",
             proteinPerServing: "10",
             carbsPerServing: "50",
             fatPerServing: "5",
-          },
+          }),
           scannedItem: null,
         },
       ]);
@@ -255,16 +272,15 @@ describe("Meal Suggestions Routes", () => {
     it("accounts for existing meal plan items with scannedItem data in budget", async () => {
       mockBudgetSetup([
         {
-          mealType: "snack",
-          servings: "1",
+          ...createMockMealPlanItem({ mealType: "snack", servings: "1" }),
           recipe: null,
-          scannedItem: {
+          scannedItem: createMockScannedItem({
             productName: "Apple",
             calories: "95",
             protein: "0",
             carbs: "25",
             fat: "0",
-          },
+          }),
         },
       ]);
 
@@ -291,7 +307,7 @@ describe("Meal Suggestions Routes", () => {
           dietTags: ["vegetarian"],
           pickCount: 5,
         },
-      ] as never);
+      ]);
 
       const res = await request(app)
         .post("/api/meal-plan/suggest")
@@ -307,8 +323,8 @@ describe("Meal Suggestions Routes", () => {
     it("deduplicates popular picks that match AI suggestion titles", async () => {
       mockBudgetSetup([]);
       vi.mocked(generateMealSuggestions).mockResolvedValue([
-        { title: "Avocado Toast", calories: 350 },
-      ] as never);
+        createMockMealSuggestion({ title: "Avocado Toast", calories: 350 }),
+      ]);
       vi.mocked(storage.getPopularPicksByMealType).mockResolvedValue([
         {
           title: "avocado toast",
@@ -334,7 +350,7 @@ describe("Meal Suggestions Routes", () => {
           dietTags: [],
           pickCount: 2,
         },
-      ] as never);
+      ]);
 
       const res = await request(app)
         .post("/api/meal-plan/suggest")

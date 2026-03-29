@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../saved-items";
+import { createMockSavedItem } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -25,19 +26,12 @@ function createApp() {
   return app;
 }
 
-const mockSavedItem = {
+const mockSavedItem = createMockSavedItem({
   id: 1,
   userId: "1",
-  productName: "Greek Yogurt",
-  brandName: "Fage",
-  calories: 120,
-  protein: 18,
-  carbs: 6,
-  fat: 2,
-  servingSize: "170g",
-  barcode: null,
+  title: "Greek Yogurt",
   createdAt: new Date("2024-01-15T12:00:00"),
-};
+});
 
 describe("Saved Items Routes", () => {
   let app: express.Express;
@@ -48,9 +42,7 @@ describe("Saved Items Routes", () => {
 
   describe("GET /api/saved-items", () => {
     it("returns saved items list", async () => {
-      vi.mocked(storage.getSavedItems).mockResolvedValue([
-        mockSavedItem,
-      ] as never);
+      vi.mocked(storage.getSavedItems).mockResolvedValue([mockSavedItem]);
 
       const res = await request(app)
         .get("/api/saved-items")
@@ -58,11 +50,11 @@ describe("Saved Items Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
-      expect(res.body[0].productName).toBe("Greek Yogurt");
+      expect(res.body[0].title).toBe("Greek Yogurt");
     });
 
     it("respects limit parameter", async () => {
-      vi.mocked(storage.getSavedItems).mockResolvedValue([] as never);
+      vi.mocked(storage.getSavedItems).mockResolvedValue([]);
 
       await request(app)
         .get("/api/saved-items?limit=10")
@@ -72,9 +64,7 @@ describe("Saved Items Routes", () => {
     });
 
     it("returns 500 when storage throws", async () => {
-      vi.mocked(storage.getSavedItems).mockRejectedValue(
-        new Error("db error") as never,
-      );
+      vi.mocked(storage.getSavedItems).mockRejectedValue(new Error("db error"));
 
       const res = await request(app)
         .get("/api/saved-items")
@@ -87,7 +77,7 @@ describe("Saved Items Routes", () => {
 
   describe("GET /api/saved-items/count", () => {
     it("returns count of saved items", async () => {
-      vi.mocked(storage.getSavedItemCount).mockResolvedValue(5 as never);
+      vi.mocked(storage.getSavedItemCount).mockResolvedValue(5);
 
       const res = await request(app)
         .get("/api/saved-items/count")
@@ -99,7 +89,7 @@ describe("Saved Items Routes", () => {
 
     it("returns 500 when storage throws", async () => {
       vi.mocked(storage.getSavedItemCount).mockRejectedValue(
-        new Error("db error") as never,
+        new Error("db error"),
       );
 
       const res = await request(app)
@@ -113,9 +103,7 @@ describe("Saved Items Routes", () => {
 
   describe("POST /api/saved-items", () => {
     it("creates a saved item", async () => {
-      vi.mocked(storage.createSavedItem).mockResolvedValue(
-        mockSavedItem as never,
-      );
+      vi.mocked(storage.createSavedItem).mockResolvedValue(mockSavedItem);
 
       const res = await request(app)
         .post("/api/saved-items")
@@ -127,11 +115,11 @@ describe("Saved Items Routes", () => {
         });
 
       expect(res.status).toBe(201);
-      expect(res.body.productName).toBe("Greek Yogurt");
+      expect(res.body.title).toBe("Greek Yogurt");
     });
 
     it("returns 403 when limit reached", async () => {
-      vi.mocked(storage.createSavedItem).mockResolvedValue(null as never);
+      vi.mocked(storage.createSavedItem).mockResolvedValue(null);
 
       const res = await request(app)
         .post("/api/saved-items")
@@ -156,7 +144,7 @@ describe("Saved Items Routes", () => {
 
     it("returns 500 when storage throws", async () => {
       vi.mocked(storage.createSavedItem).mockRejectedValue(
-        new Error("db error") as never,
+        new Error("db error"),
       );
 
       const res = await request(app)
@@ -174,7 +162,7 @@ describe("Saved Items Routes", () => {
 
   describe("DELETE /api/saved-items/:id", () => {
     it("deletes a saved item", async () => {
-      vi.mocked(storage.deleteSavedItem).mockResolvedValue(true as never);
+      vi.mocked(storage.deleteSavedItem).mockResolvedValue(true);
 
       const res = await request(app)
         .delete("/api/saved-items/1")
@@ -184,7 +172,7 @@ describe("Saved Items Routes", () => {
     });
 
     it("returns 404 for non-existent item", async () => {
-      vi.mocked(storage.deleteSavedItem).mockResolvedValue(false as never);
+      vi.mocked(storage.deleteSavedItem).mockResolvedValue(false);
 
       const res = await request(app)
         .delete("/api/saved-items/999")
@@ -203,7 +191,7 @@ describe("Saved Items Routes", () => {
 
     it("returns 500 when storage throws", async () => {
       vi.mocked(storage.deleteSavedItem).mockRejectedValue(
-        new Error("db error") as never,
+        new Error("db error"),
       );
 
       const res = await request(app)

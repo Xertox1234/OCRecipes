@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../weight";
+import { createMockWeightLog, createMockUser } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -38,15 +39,10 @@ function createApp() {
   return app;
 }
 
-const mockWeightLog = {
-  id: 1,
-  userId: "1",
+const mockWeightLog = createMockWeightLog({
   weight: "75.5",
-  source: "manual",
-  note: null,
   loggedAt: new Date("2024-01-15T12:00:00"),
-  createdAt: new Date("2024-01-15T12:00:00"),
-};
+});
 
 describe("Weight Routes", () => {
   let app: express.Express;
@@ -59,10 +55,9 @@ describe("Weight Routes", () => {
     it("returns weight logs", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
-      vi.mocked(storage.getWeightLogs).mockResolvedValue([
-        mockWeightLog,
-      ] as never);
+        expiresAt: null,
+      });
+      vi.mocked(storage.getWeightLogs).mockResolvedValue([mockWeightLog]);
 
       const res = await request(app)
         .get("/api/weight")
@@ -73,8 +68,8 @@ describe("Weight Routes", () => {
     });
 
     it("limits free users to 7 entries", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
-      vi.mocked(storage.getWeightLogs).mockResolvedValue([] as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null);
+      vi.mocked(storage.getWeightLogs).mockResolvedValue([]);
 
       await request(app)
         .get("/api/weight")
@@ -90,14 +85,14 @@ describe("Weight Routes", () => {
 
   describe("GET /api/weight/trend", () => {
     it("returns full trend for premium users", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue({
-        id: 1,
-        goalWeight: "70",
-      } as never);
-      vi.mocked(storage.getWeightLogs).mockResolvedValue([] as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ goalWeight: "70" }),
+      );
+      vi.mocked(storage.getWeightLogs).mockResolvedValue([]);
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
 
       const res = await request(app)
         .get("/api/weight/trend")
@@ -108,12 +103,11 @@ describe("Weight Routes", () => {
     });
 
     it("returns basic trend for free users", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue({
-        id: 1,
-        goalWeight: "70",
-      } as never);
-      vi.mocked(storage.getWeightLogs).mockResolvedValue([] as never);
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({ goalWeight: "70" }),
+      );
+      vi.mocked(storage.getWeightLogs).mockResolvedValue([]);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null);
 
       const res = await request(app)
         .get("/api/weight/trend")
@@ -125,7 +119,7 @@ describe("Weight Routes", () => {
     });
 
     it("returns 404 if user not found", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(null as never);
+      vi.mocked(storage.getUser).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/weight/trend")
@@ -138,7 +132,7 @@ describe("Weight Routes", () => {
   describe("POST /api/weight", () => {
     it("creates a weight log and updates user weight", async () => {
       vi.mocked(storage.createWeightLogAndUpdateUser).mockResolvedValue(
-        mockWeightLog as never,
+        mockWeightLog,
       );
 
       const res = await request(app)
@@ -175,7 +169,7 @@ describe("Weight Routes", () => {
 
     it("accepts optional source and note", async () => {
       vi.mocked(storage.createWeightLogAndUpdateUser).mockResolvedValue(
-        mockWeightLog as never,
+        mockWeightLog,
       );
 
       const res = await request(app)
@@ -189,7 +183,7 @@ describe("Weight Routes", () => {
 
   describe("DELETE /api/weight/:id", () => {
     it("deletes a weight log", async () => {
-      vi.mocked(storage.deleteWeightLog).mockResolvedValue(true as never);
+      vi.mocked(storage.deleteWeightLog).mockResolvedValue(true);
 
       const res = await request(app)
         .delete("/api/weight/1")
@@ -199,7 +193,7 @@ describe("Weight Routes", () => {
     });
 
     it("returns 404 for non-existent log", async () => {
-      vi.mocked(storage.deleteWeightLog).mockResolvedValue(false as never);
+      vi.mocked(storage.deleteWeightLog).mockResolvedValue(false);
 
       const res = await request(app)
         .delete("/api/weight/999")
@@ -219,9 +213,9 @@ describe("Weight Routes", () => {
 
   describe("PUT /api/goals/weight", () => {
     it("sets goal weight", async () => {
-      vi.mocked(storage.updateUser).mockResolvedValue({
-        goalWeight: "70",
-      } as never);
+      vi.mocked(storage.updateUser).mockResolvedValue(
+        createMockUser({ goalWeight: "70" }),
+      );
 
       const res = await request(app)
         .put("/api/goals/weight")
@@ -233,9 +227,9 @@ describe("Weight Routes", () => {
     });
 
     it("clears goal weight with null", async () => {
-      vi.mocked(storage.updateUser).mockResolvedValue({
-        goalWeight: null,
-      } as never);
+      vi.mocked(storage.updateUser).mockResolvedValue(
+        createMockUser({ goalWeight: null }),
+      );
 
       const res = await request(app)
         .put("/api/goals/weight")

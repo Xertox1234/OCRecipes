@@ -5,13 +5,23 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { register, _testInternals } from "../cooking";
 import { batchNutritionLookup } from "../../services/nutrition-lookup";
+import type { NutritionData } from "../../services/nutrition-lookup";
 import { generateRecipeContent } from "../../services/recipe-generation";
 import { getSubstitutions } from "../../services/ingredient-substitution";
 import {
   analyzeIngredientPhoto,
   IngredientAnalysisError,
 } from "../../services/cooking-session";
-import type { CookingSessionIngredient } from "@shared/types/cook-session";
+import type {
+  CookingSessionIngredient,
+  RecipeContent,
+  SubstitutionResult,
+} from "@shared/types/cook-session";
+import {
+  createMockUserProfile,
+  createMockNutritionData,
+  createMockScannedItem,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -104,14 +114,16 @@ function createApp() {
 
 function setupPremiumMock() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-    tier: "premium",
-  } as never);
+    tier: "premium" as const,
+    expiresAt: null,
+  });
 }
 
 function setupFreeMock() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-    tier: "free",
-  } as never);
+    tier: "free" as const,
+    expiresAt: null,
+  });
 }
 
 const mockIngredient: CookingSessionIngredient = {
@@ -293,7 +305,7 @@ describe("Cooking Routes", () => {
         },
       ]);
 
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post(`/api/cooking/sessions/${sessionId}/photos`)
@@ -408,9 +420,11 @@ describe("Cooking Routes", () => {
         },
       ]);
 
-      vi.mocked(storage.getUserProfile).mockResolvedValue({
-        allergies: "peanuts",
-      } as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({
+          allergies: [{ name: "peanuts", severity: "severe" }],
+        }),
+      );
 
       const res = await request(app)
         .post(`/api/cooking/sessions/${sessionId}/photos`)
@@ -572,10 +586,10 @@ describe("Cooking Routes", () => {
       });
 
       vi.mocked(batchNutritionLookup).mockResolvedValue(
-        new Map([
+        new Map<string, NutritionData | null>([
           [
             "200 g chicken breast",
-            {
+            createMockNutritionData({
               calories: 330,
               protein: 62,
               carbs: 0,
@@ -583,9 +597,9 @@ describe("Cooking Routes", () => {
               fiber: 0,
               sugar: 0,
               sodium: 120,
-            },
+            }),
           ],
-        ]) as never,
+        ]),
       );
 
       const res = await request(app)
@@ -628,7 +642,9 @@ describe("Cooking Routes", () => {
         createdAt: Date.now(),
       });
 
-      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+      vi.mocked(batchNutritionLookup).mockResolvedValue(
+        new Map<string, NutritionData | null>(),
+      );
 
       const res = await request(app)
         .post(`/api/cooking/sessions/${sessionId}/nutrition`)
@@ -651,10 +667,10 @@ describe("Cooking Routes", () => {
       });
 
       vi.mocked(batchNutritionLookup).mockResolvedValue(
-        new Map([
+        new Map<string, NutritionData | null>([
           [
             "200 g chicken breast",
-            {
+            createMockNutritionData({
               calories: 330,
               protein: 62,
               carbs: 0,
@@ -662,9 +678,9 @@ describe("Cooking Routes", () => {
               fiber: 0,
               sugar: 0,
               sodium: 120,
-            },
+            }),
           ],
-        ]) as never,
+        ]),
       );
 
       const res = await request(app)
@@ -699,15 +715,20 @@ describe("Cooking Routes", () => {
       });
 
       vi.mocked(batchNutritionLookup).mockResolvedValue(
-        new Map([
+        new Map<string, NutritionData | null>([
           [
             "200 g chicken breast",
-            { calories: 330, protein: 62, carbs: 0, fat: 7.2 },
+            createMockNutritionData({
+              calories: 330,
+              protein: 62,
+              carbs: 0,
+              fat: 7.2,
+            }),
           ],
-        ]) as never,
+        ]),
       );
 
-      const mockItem = {
+      const mockItem = createMockScannedItem({
         id: 42,
         userId: "1",
         productName: "chicken breast",
@@ -716,11 +737,9 @@ describe("Cooking Routes", () => {
         carbs: "0",
         fat: "7",
         sourceType: "cook_session",
-      };
+      });
 
-      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
-        mockItem as never,
-      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(mockItem);
 
       const res = await request(app)
         .post(`/api/cooking/sessions/${sessionId}/log`)
@@ -777,7 +796,9 @@ describe("Cooking Routes", () => {
         createdAt: Date.now(),
       });
 
-      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+      vi.mocked(batchNutritionLookup).mockResolvedValue(
+        new Map<string, NutritionData | null>(),
+      );
       vi.mocked(storage.createScannedItemWithLog).mockRejectedValue(
         new Error("DB error"),
       );
@@ -804,11 +825,15 @@ describe("Cooking Routes", () => {
         createdAt: Date.now(),
       });
 
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(generateRecipeContent).mockResolvedValue({
         title: "Grilled Chicken",
+        description: "Simple grilled chicken breast",
+        difficulty: "Easy",
+        timeEstimate: "20 minutes",
         instructions: "Season and grill",
-      } as never);
+        dietTags: [],
+      } satisfies RecipeContent);
 
       const res = await request(app)
         .post(`/api/cooking/sessions/${sessionId}/recipe`)
@@ -868,7 +893,7 @@ describe("Cooking Routes", () => {
         createdAt: Date.now(),
       });
 
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(generateRecipeContent).mockRejectedValue(new Error("AI error"));
 
       const res = await request(app)
@@ -890,7 +915,7 @@ describe("Cooking Routes", () => {
         createdAt: Date.now(),
       });
 
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(getSubstitutions).mockResolvedValue({
         suggestions: [
           {
@@ -903,7 +928,7 @@ describe("Cooking Routes", () => {
           },
         ],
         dietaryProfileSummary: "No dietary restrictions",
-      } as never);
+      } satisfies SubstitutionResult);
 
       const res = await request(app)
         .post(`/api/cooking/sessions/${sessionId}/substitutions`)
@@ -972,7 +997,7 @@ describe("Cooking Routes", () => {
         createdAt: Date.now(),
       });
 
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(getSubstitutions).mockRejectedValue(new Error("AI error"));
 
       const res = await request(app)

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 import express from "express";
 import request from "supertest";
 
@@ -7,7 +7,12 @@ import {
   lookupNutrition,
   lookupBarcode,
 } from "../../services/nutrition-lookup";
+import type { BarcodeLookupResult } from "../../services/nutrition-lookup";
 import { register } from "../nutrition";
+import {
+  createMockScannedItem,
+  createMockNutritionData,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -40,7 +45,7 @@ function createApp() {
   return app;
 }
 
-const mockScannedItem = {
+const mockScannedItem = createMockScannedItem({
   id: 1,
   userId: "1",
   productName: "Greek Yogurt",
@@ -51,8 +56,8 @@ const mockScannedItem = {
   fat: "2",
   barcode: "1234567890",
   servingSize: "170g",
-  createdAt: new Date("2024-01-15T12:00:00"),
-};
+  scannedAt: new Date("2024-01-15T12:00:00"),
+});
 
 describe("Nutrition Routes", () => {
   let app: express.Express;
@@ -64,13 +69,15 @@ describe("Nutrition Routes", () => {
 
   describe("GET /api/nutrition/lookup", () => {
     it("returns nutrition data for a valid name", async () => {
-      vi.mocked(lookupNutrition).mockResolvedValue({
-        calories: 165,
-        protein: 31,
-        carbs: 0,
-        fat: 3.6,
-        source: "usda",
-      } as never);
+      vi.mocked(lookupNutrition).mockResolvedValue(
+        createMockNutritionData({
+          calories: 165,
+          protein: 31,
+          carbs: 0,
+          fat: 3.6,
+          source: "usda",
+        }),
+      );
 
       const res = await request(app)
         .get("/api/nutrition/lookup?name=chicken%20breast")
@@ -97,7 +104,7 @@ describe("Nutrition Routes", () => {
     });
 
     it("returns 404 when nutrition data not found", async () => {
-      vi.mocked(lookupNutrition).mockResolvedValue(null as never);
+      vi.mocked(lookupNutrition).mockResolvedValue(null);
 
       const res = await request(app)
         .get("/api/nutrition/lookup?name=nonexistent%20food")
@@ -111,9 +118,17 @@ describe("Nutrition Routes", () => {
     it("returns product data for valid barcode", async () => {
       vi.mocked(lookupBarcode).mockResolvedValue({
         productName: "Greek Yogurt",
-        calories: 120,
-        protein: 18,
-      } as never);
+        barcode: "1234567890",
+        per100g: { calories: 120, protein: 18 },
+        perServing: { calories: 120, protein: 18 },
+        servingInfo: {
+          displayLabel: "1 serving",
+          grams: 170,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+      } satisfies BarcodeLookupResult);
 
       const res = await request(app)
         .get("/api/nutrition/barcode/1234567890")
@@ -133,7 +148,7 @@ describe("Nutrition Routes", () => {
     });
 
     it("returns 404 when product not found", async () => {
-      vi.mocked(lookupBarcode).mockResolvedValue(null as never);
+      vi.mocked(lookupBarcode).mockResolvedValue(null);
 
       const res = await request(app)
         .get("/api/nutrition/barcode/9999999999")
@@ -146,9 +161,7 @@ describe("Nutrition Routes", () => {
 
   describe("GET /api/scanned-items", () => {
     it("returns scanned items list", async () => {
-      vi.mocked(storage.getScannedItems).mockResolvedValue([
-        mockScannedItem,
-      ] as never);
+      (storage.getScannedItems as Mock).mockResolvedValue([mockScannedItem]);
 
       const res = await request(app)
         .get("/api/scanned-items")
@@ -160,7 +173,7 @@ describe("Nutrition Routes", () => {
     });
 
     it("respects limit and offset parameters", async () => {
-      vi.mocked(storage.getScannedItems).mockResolvedValue([] as never);
+      (storage.getScannedItems as Mock).mockResolvedValue([]);
 
       await request(app)
         .get("/api/scanned-items?limit=10&offset=5")
@@ -172,9 +185,10 @@ describe("Nutrition Routes", () => {
 
   describe("GET /api/scanned-items/:id", () => {
     it("returns a scanned item by ID", async () => {
-      vi.mocked(storage.getScannedItemWithFavourite).mockResolvedValue(
-        mockScannedItem as never,
-      );
+      vi.mocked(storage.getScannedItemWithFavourite).mockResolvedValue({
+        ...mockScannedItem,
+        isFavourited: false,
+      });
 
       const res = await request(app)
         .get("/api/scanned-items/1")
@@ -188,7 +202,8 @@ describe("Nutrition Routes", () => {
       vi.mocked(storage.getScannedItemWithFavourite).mockResolvedValue({
         ...mockScannedItem,
         userId: "2",
-      } as never);
+        isFavourited: false,
+      });
 
       const res = await request(app)
         .get("/api/scanned-items/1")
@@ -199,7 +214,7 @@ describe("Nutrition Routes", () => {
 
     it("returns 404 when item is null", async () => {
       vi.mocked(storage.getScannedItemWithFavourite).mockResolvedValue(
-        null as never,
+        undefined,
       );
 
       const res = await request(app)
@@ -233,9 +248,7 @@ describe("Nutrition Routes", () => {
 
   describe("POST /api/scanned-items/:id/favourite", () => {
     it("toggles favourite status", async () => {
-      vi.mocked(storage.toggleFavouriteScannedItem).mockResolvedValue(
-        true as never,
-      );
+      vi.mocked(storage.toggleFavouriteScannedItem).mockResolvedValue(true);
 
       const res = await request(app)
         .post("/api/scanned-items/1/favourite")
@@ -246,9 +259,7 @@ describe("Nutrition Routes", () => {
     });
 
     it("returns 404 when toggle returns null (item not found or not owned)", async () => {
-      vi.mocked(storage.toggleFavouriteScannedItem).mockResolvedValue(
-        null as never,
-      );
+      vi.mocked(storage.toggleFavouriteScannedItem).mockResolvedValue(null);
 
       const res = await request(app)
         .post("/api/scanned-items/999/favourite")
@@ -283,7 +294,7 @@ describe("Nutrition Routes", () => {
   describe("POST /api/scanned-items", () => {
     it("creates a scanned item with daily log via storage", async () => {
       vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
-        mockScannedItem as never,
+        mockScannedItem,
       );
 
       const res = await request(app)
@@ -337,7 +348,7 @@ describe("Nutrition Routes", () => {
 
   describe("DELETE /api/scanned-items/:id", () => {
     it("soft deletes a scanned item", async () => {
-      vi.mocked(storage.softDeleteScannedItem).mockResolvedValue(true as never);
+      vi.mocked(storage.softDeleteScannedItem).mockResolvedValue(true);
 
       const res = await request(app)
         .delete("/api/scanned-items/1")
@@ -347,9 +358,7 @@ describe("Nutrition Routes", () => {
     });
 
     it("returns 404 for non-existent item", async () => {
-      vi.mocked(storage.softDeleteScannedItem).mockResolvedValue(
-        false as never,
-      );
+      vi.mocked(storage.softDeleteScannedItem).mockResolvedValue(false);
 
       const res = await request(app)
         .delete("/api/scanned-items/999")
@@ -386,17 +395,17 @@ describe("Nutrition Routes", () => {
         totalProtein: 100,
         totalCarbs: 200,
         totalFat: 50,
-        items: [],
+        itemCount: 0,
       };
-      vi.mocked(storage.getDailySummary).mockResolvedValue(
-        mockSummary as never,
-      );
-      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue(
-        [] as never,
-      );
+      vi.mocked(storage.getDailySummary).mockResolvedValue(mockSummary);
+      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
       vi.mocked(storage.getPlannedNutritionSummary).mockResolvedValue({
         plannedCalories: 0,
-      } as never);
+        plannedProtein: 0,
+        plannedCarbs: 0,
+        plannedFat: 0,
+        plannedItemCount: 0,
+      });
 
       const res = await request(app)
         .get("/api/daily-summary")
@@ -408,13 +417,21 @@ describe("Nutrition Routes", () => {
     });
 
     it("accepts date parameter and passes parsed date to storage", async () => {
-      vi.mocked(storage.getDailySummary).mockResolvedValue({} as never);
-      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue(
-        [] as never,
-      );
-      vi.mocked(storage.getPlannedNutritionSummary).mockResolvedValue(
-        {} as never,
-      );
+      vi.mocked(storage.getDailySummary).mockResolvedValue({
+        totalCalories: 0,
+        totalProtein: 0,
+        totalCarbs: 0,
+        totalFat: 0,
+        itemCount: 0,
+      });
+      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
+      vi.mocked(storage.getPlannedNutritionSummary).mockResolvedValue({
+        plannedCalories: 0,
+        plannedProtein: 0,
+        plannedCarbs: 0,
+        plannedFat: 0,
+        plannedItemCount: 0,
+      });
 
       const res = await request(app)
         .get("/api/daily-summary?date=2024-01-15")

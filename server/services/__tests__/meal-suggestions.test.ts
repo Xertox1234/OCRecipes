@@ -7,9 +7,12 @@ import {
   generateMealSuggestions,
 } from "../meal-suggestions";
 import type { MealSuggestionInput } from "../meal-suggestions";
-import type { UserProfile } from "@shared/schema";
 
 import { openai } from "../../lib/openai";
+import {
+  createMockChatCompletion,
+  createMockUserProfile,
+} from "../../__tests__/factories";
 
 vi.mock("../../lib/openai", () => ({
   openai: {
@@ -78,9 +81,9 @@ describe("meal-suggestions", () => {
     });
 
     it("should include allergies when present", () => {
-      const profile = {
+      const profile = createMockUserProfile({
         allergies: [{ name: "peanuts", severity: "severe" }],
-      } as unknown as UserProfile;
+      });
       const result = buildDietaryContext(profile);
       expect(result).toContain("Peanuts");
       expect(result).toContain("CRITICAL ALLERGY RESTRICTIONS");
@@ -88,78 +91,61 @@ describe("meal-suggestions", () => {
     });
 
     it("should include diet type", () => {
-      const profile = {
+      const profile = createMockUserProfile({
         dietType: "vegetarian",
-        allergies: [],
-        foodDislikes: [],
-        cuisinePreferences: [],
-      } as unknown as UserProfile;
+      });
       const result = buildDietaryContext(profile);
       expect(result).toContain("vegetarian");
     });
 
     it("should include food dislikes", () => {
-      const profile = {
-        allergies: [],
+      const profile = createMockUserProfile({
         foodDislikes: ["mushrooms", "olives"],
-        cuisinePreferences: [],
-      } as unknown as UserProfile;
+      });
       const result = buildDietaryContext(profile);
       expect(result).toContain("mushrooms");
       expect(result).toContain("olives");
     });
 
     it("should include cuisine preferences", () => {
-      const profile = {
-        allergies: [],
-        foodDislikes: [],
+      const profile = createMockUserProfile({
         cuisinePreferences: ["Italian", "Thai"],
-      } as unknown as UserProfile;
+      });
       const result = buildDietaryContext(profile);
       expect(result).toContain("Italian");
       expect(result).toContain("Thai");
     });
 
     it("should include cooking skill level", () => {
-      const profile = {
-        allergies: [],
-        foodDislikes: [],
-        cuisinePreferences: [],
+      const profile = createMockUserProfile({
         cookingSkillLevel: "beginner",
-      } as unknown as UserProfile;
+      });
       const result = buildDietaryContext(profile);
       expect(result).toContain("Cooking skill: beginner");
     });
 
     it("should include cooking time available", () => {
-      const profile = {
-        allergies: [],
-        foodDislikes: [],
-        cuisinePreferences: [],
+      const profile = createMockUserProfile({
         cookingTimeAvailable: "30 minutes",
-      } as unknown as UserProfile;
+      });
       const result = buildDietaryContext(profile);
       expect(result).toContain("Preferred cooking time: 30 minutes");
     });
 
     it("should return empty string for profile with no relevant fields", () => {
-      const profile = {
-        allergies: [],
-        foodDislikes: [],
-        cuisinePreferences: [],
-      } as unknown as UserProfile;
+      const profile = createMockUserProfile();
       expect(buildDietaryContext(profile)).toBe("");
     });
 
     it("should combine all fields with periods", () => {
-      const profile = {
+      const profile = createMockUserProfile({
         allergies: [{ name: "tree_nuts", severity: "moderate" }],
         dietType: "vegan",
         foodDislikes: ["onions"],
         cuisinePreferences: ["Japanese"],
         cookingSkillLevel: "intermediate",
         cookingTimeAvailable: "45 minutes",
-      } as unknown as UserProfile;
+      });
       const result = buildDietaryContext(profile);
       expect(result).toContain("CRITICAL ALLERGY RESTRICTIONS");
       expect(result).toContain("Tree Nuts");
@@ -308,9 +294,9 @@ describe("meal-suggestions", () => {
     });
 
     it("returns 3 validated suggestions from AI", async () => {
-      mockCreate.mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(validAIResponse) } }],
-      } as never);
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(validAIResponse)),
+      );
 
       const result = await generateMealSuggestions(baseInput);
       expect(result).toHaveLength(3);
@@ -320,9 +306,9 @@ describe("meal-suggestions", () => {
     });
 
     it("includes existing meals in the prompt", async () => {
-      mockCreate.mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(validAIResponse) } }],
-      } as never);
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(validAIResponse)),
+      );
 
       const input: MealSuggestionInput = {
         ...baseInput,
@@ -340,18 +326,16 @@ describe("meal-suggestions", () => {
     });
 
     it("includes dietary context when userProfile is provided", async () => {
-      mockCreate.mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(validAIResponse) } }],
-      } as never);
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(validAIResponse)),
+      );
 
       const input: MealSuggestionInput = {
         ...baseInput,
-        userProfile: {
+        userProfile: createMockUserProfile({
           dietType: "vegan",
           allergies: [{ name: "gluten" }],
-          foodDislikes: [],
-          cuisinePreferences: [],
-        } as unknown as UserProfile,
+        }),
       };
 
       await generateMealSuggestions(input);
@@ -372,9 +356,7 @@ describe("meal-suggestions", () => {
     });
 
     it("throws when AI returns no content", async () => {
-      mockCreate.mockResolvedValue({
-        choices: [{ message: { content: null } }],
-      } as never);
+      mockCreate.mockResolvedValue(createMockChatCompletion(null));
 
       await expect(generateMealSuggestions(baseInput)).rejects.toThrow(
         "No response from AI",
@@ -382,9 +364,7 @@ describe("meal-suggestions", () => {
     });
 
     it("throws when AI returns invalid JSON", async () => {
-      mockCreate.mockResolvedValue({
-        choices: [{ message: { content: "not json" } }],
-      } as never);
+      mockCreate.mockResolvedValue(createMockChatCompletion("not json"));
 
       await expect(generateMealSuggestions(baseInput)).rejects.toThrow(
         "AI returned invalid JSON response",
@@ -392,17 +372,11 @@ describe("meal-suggestions", () => {
     });
 
     it("throws when AI response fails schema validation", async () => {
-      mockCreate.mockResolvedValue({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({
-                suggestions: [{ title: "Only one" }],
-              }),
-            },
-          },
-        ],
-      } as never);
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(
+          JSON.stringify({ suggestions: [{ title: "Only one" }] }),
+        ),
+      );
 
       await expect(generateMealSuggestions(baseInput)).rejects.toThrow(
         /exactly 3 element/,
@@ -410,9 +384,9 @@ describe("meal-suggestions", () => {
     });
 
     it("uses 'No meals planned yet today' when existingMeals is empty", async () => {
-      mockCreate.mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(validAIResponse) } }],
-      } as never);
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(validAIResponse)),
+      );
 
       await generateMealSuggestions(baseInput);
 

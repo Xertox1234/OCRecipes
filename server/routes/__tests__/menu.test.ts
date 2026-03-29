@@ -3,7 +3,9 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
+import type { MenuAnalysisResult } from "../../services/menu-analysis";
 import { analyzeMenuPhoto } from "../../services/menu-analysis";
+import { createMockMenuScan } from "../../__tests__/factories";
 import { register } from "../menu";
 
 vi.mock("../../storage", () => ({
@@ -67,8 +69,9 @@ function createApp() {
 
 function mockPremium() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
-    tier: "premium",
-  } as never);
+    tier: "premium" as const,
+    expiresAt: null,
+  });
 }
 
 describe("Menu Routes", () => {
@@ -83,16 +86,38 @@ describe("Menu Routes", () => {
   describe("POST /api/menu/scan", () => {
     it("analyzes menu photo and returns result", async () => {
       mockPremium();
-      const mockResult = {
+      const mockResult: MenuAnalysisResult = {
         restaurantName: "Test Cafe",
         cuisine: "Italian",
-        menuItems: [{ name: "Pasta", price: 12.99 }],
+        menuItems: [
+          {
+            name: "Pasta",
+            estimatedCalories: 500,
+            estimatedProtein: 20,
+            estimatedCarbs: 60,
+            estimatedFat: 15,
+            tags: [],
+          },
+        ],
       };
-      vi.mocked(analyzeMenuPhoto).mockResolvedValue(mockResult as never);
-      vi.mocked(storage.createMenuScan).mockResolvedValue({
-        id: 1,
-        ...mockResult,
-      } as never);
+      vi.mocked(analyzeMenuPhoto).mockResolvedValue(mockResult);
+      vi.mocked(storage.createMenuScan).mockResolvedValue(
+        createMockMenuScan({
+          id: 1,
+          restaurantName: "Test Cafe",
+          cuisine: "Italian",
+          menuItems: [
+            {
+              name: "Pasta",
+              estimatedCalories: 500,
+              estimatedProtein: 20,
+              estimatedCarbs: 60,
+              estimatedFat: 15,
+              tags: [],
+            },
+          ],
+        }),
+      );
 
       const res = await request(app)
         .post("/api/menu/scan")
@@ -104,7 +129,7 @@ describe("Menu Routes", () => {
     });
 
     it("returns 403 for free tier users", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/menu/scan")
@@ -155,10 +180,10 @@ describe("Menu Routes", () => {
     it("returns menu scan history", async () => {
       mockPremium();
       const scans = [
-        { id: 1, restaurantName: "Cafe A" },
-        { id: 2, restaurantName: "Cafe B" },
+        createMockMenuScan({ id: 1, restaurantName: "Cafe A" }),
+        createMockMenuScan({ id: 2, restaurantName: "Cafe B" }),
       ];
-      vi.mocked(storage.getMenuScans).mockResolvedValue(scans as never);
+      vi.mocked(storage.getMenuScans).mockResolvedValue(scans);
 
       const res = await request(app)
         .get("/api/menu/history")
@@ -169,7 +194,7 @@ describe("Menu Routes", () => {
     });
 
     it("returns 403 for free tier users", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/menu/history")
@@ -194,7 +219,7 @@ describe("Menu Routes", () => {
 
   describe("DELETE /api/menu/scans/:id", () => {
     it("deletes a menu scan", async () => {
-      vi.mocked(storage.deleteMenuScan).mockResolvedValue(true as never);
+      vi.mocked(storage.deleteMenuScan).mockResolvedValue(true);
 
       const res = await request(app)
         .delete("/api/menu/scans/1")
@@ -204,7 +229,7 @@ describe("Menu Routes", () => {
     });
 
     it("returns 404 when scan not found", async () => {
-      vi.mocked(storage.deleteMenuScan).mockResolvedValue(false as never);
+      vi.mocked(storage.deleteMenuScan).mockResolvedValue(false);
 
       const res = await request(app)
         .delete("/api/menu/scans/999")

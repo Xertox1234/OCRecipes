@@ -17,6 +17,19 @@ module.exports = defineConfig([
     },
   },
   {
+    files: ["**/*.test.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSAsExpression > TSNeverKeyword",
+          message:
+            "Do not use 'as never' in tests. Use typed mock factories from server/__tests__/factories instead.",
+        },
+      ],
+    },
+  },
+  {
     files: ["server/routes/**/*.ts"],
     plugins: {
       ocrecipes: ocrecipesPlugin,

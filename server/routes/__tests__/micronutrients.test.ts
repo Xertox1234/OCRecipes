@@ -10,6 +10,10 @@ import {
   getDailyValueReference,
 } from "../../services/micronutrient-lookup";
 import { register } from "../micronutrients";
+import {
+  createMockScannedItem,
+  createMockDailyLog,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -41,7 +45,8 @@ function createApp() {
 function mockPremium() {
   vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
     tier: "premium",
-  } as never);
+    expiresAt: null,
+  });
 }
 
 describe("Micronutrients Routes", () => {
@@ -55,11 +60,9 @@ describe("Micronutrients Routes", () => {
   describe("GET /api/micronutrients/item/:id", () => {
     it("returns micronutrients for a scanned item", async () => {
       mockPremium();
-      vi.mocked(storage.getScannedItem).mockResolvedValue({
-        id: 1,
-        userId: "1",
-        productName: "Apple",
-      } as never);
+      vi.mocked(storage.getScannedItem).mockResolvedValue(
+        createMockScannedItem({ id: 1, userId: "1", productName: "Apple" }),
+      );
       const mockMicros = [
         {
           nutrientName: "Vitamin C",
@@ -81,7 +84,7 @@ describe("Micronutrients Routes", () => {
 
     it("returns 404 when item not found", async () => {
       mockPremium();
-      vi.mocked(storage.getScannedItem).mockResolvedValue(null as never);
+      vi.mocked(storage.getScannedItem).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/micronutrients/item/999")
@@ -113,7 +116,7 @@ describe("Micronutrients Routes", () => {
     });
 
     it("returns 403 for free tier users", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/micronutrients/item/1")
@@ -128,13 +131,13 @@ describe("Micronutrients Routes", () => {
     it("returns aggregated daily micronutrient summary", async () => {
       mockPremium();
       vi.mocked(storage.getDailyLogs).mockResolvedValue([
-        { scannedItemId: 1 },
-        { scannedItemId: 2 },
-      ] as never);
+        createMockDailyLog({ scannedItemId: 1 }),
+        createMockDailyLog({ scannedItemId: 2 }),
+      ]);
       vi.mocked(storage.getScannedItemsByIds).mockResolvedValue([
-        { id: 1, productName: "Apple" },
-        { id: 2, productName: "Banana" },
-      ] as never);
+        createMockScannedItem({ id: 1, productName: "Apple" }),
+        createMockScannedItem({ id: 2, productName: "Banana" }),
+      ]);
       vi.mocked(batchLookupMicronutrients).mockResolvedValue([
         [
           {
@@ -171,7 +174,7 @@ describe("Micronutrients Routes", () => {
     });
 
     it("returns 403 for free tier", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/micronutrients/daily")
@@ -229,7 +232,7 @@ describe("Micronutrients Routes", () => {
     });
 
     it("returns 403 for free tier users", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/micronutrients/lookup?name=chicken+breast")

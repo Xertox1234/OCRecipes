@@ -5,9 +5,13 @@ import {
   aiResponseSchema,
 } from "../pantry-meal-plan";
 import type { PantryMealPlanInput } from "../pantry-meal-plan";
-import type { PantryItem, UserProfile } from "@shared/schema";
 
 import { openai } from "../../lib/openai";
+import {
+  createMockPantryItem,
+  createMockUserProfile,
+  createMockChatCompletion,
+} from "../../__tests__/factories";
 
 vi.mock("../../lib/openai", () => ({
   openai: {
@@ -20,25 +24,17 @@ vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
 }));
 
-function makePantryItem(overrides: Partial<PantryItem> = {}): PantryItem {
-  return {
-    id: 1,
-    userId: "user1",
-    name: "Chicken Breast",
-    quantity: "2",
-    unit: "lb",
-    category: "meat",
-    expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-    addedAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
-  };
-}
-
 const BASE_INPUT: PantryMealPlanInput = {
   pantryItems: [
-    makePantryItem(),
-    makePantryItem({
+    createMockPantryItem({
+      userId: "user1",
+      name: "Chicken Breast",
+      quantity: "2",
+      unit: "lb",
+      category: "meat",
+      expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    }),
+    createMockPantryItem({
       id: 2,
       name: "Brown Rice",
       quantity: "3",
@@ -46,7 +42,7 @@ const BASE_INPUT: PantryMealPlanInput = {
       category: "grains",
       expiresAt: null,
     }),
-    makePantryItem({
+    createMockPantryItem({
       id: 3,
       name: "Broccoli",
       quantity: "1",
@@ -209,9 +205,9 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should return a valid plan when AI responds correctly", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(VALID_AI_RESPONSE) } }],
-      } as never);
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
+      );
 
       const result = await generateMealPlanFromPantry(BASE_INPUT);
 
@@ -221,9 +217,9 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should throw if AI returns empty content", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue({
-        choices: [{ message: { content: null } }],
-      } as never);
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(null),
+      );
 
       await expect(generateMealPlanFromPantry(BASE_INPUT)).rejects.toThrow(
         "No response from AI",
@@ -231,9 +227,9 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should throw if AI returns invalid JSON", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue({
-        choices: [{ message: { content: "not json" } }],
-      } as never);
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion("not json"),
+      );
 
       await expect(generateMealPlanFromPantry(BASE_INPUT)).rejects.toThrow(
         "AI returned invalid JSON response",
@@ -251,9 +247,9 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should call OpenAI with correct parameters", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(VALID_AI_RESPONSE) } }],
-      } as never);
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
+      );
 
       await generateMealPlanFromPantry(BASE_INPUT);
 
@@ -276,31 +272,21 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should include dietary context when profile is provided", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(VALID_AI_RESPONSE) } }],
-      } as never);
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
+      );
 
       const inputWithProfile: PantryMealPlanInput = {
         ...BASE_INPUT,
-        userProfile: {
-          id: 1,
+        userProfile: createMockUserProfile({
           userId: "user1",
           allergies: [{ name: "peanuts", severity: "severe" }],
           dietType: "vegetarian",
           cookingSkillLevel: "beginner",
           cookingTimeAvailable: "30 min",
           cuisinePreferences: ["Italian"],
-          foodDislikes: [],
-          healthConditions: [],
-          primaryGoal: null,
-          activityLevel: null,
           householdSize: 2,
-          glp1Mode: false,
-          glp1Medication: null,
-          glp1StartDate: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        } as UserProfile,
+        }),
       };
 
       await generateMealPlanFromPantry(inputWithProfile);
@@ -316,14 +302,14 @@ describe("pantry-meal-plan", () => {
     });
 
     it("should indicate expiring items in the prompt", async () => {
-      vi.mocked(openai.chat.completions.create).mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(VALID_AI_RESPONSE) } }],
-      } as never);
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
+      );
 
       const expiringInput: PantryMealPlanInput = {
         ...BASE_INPUT,
         pantryItems: [
-          makePantryItem({
+          createMockPantryItem({
             name: "Fresh Salmon",
             expiresAt: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), // 1 day
           }),

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { User } from "@shared/types/auth";
 
 /**
  * Tests for AuthContext logic.
@@ -83,8 +84,8 @@ describe("AuthContext", () => {
         user: null,
         isLoading: false,
         isAuthenticated: false,
-        login: async (_u: string, _p: string) => ({}) as never,
-        register: async (_u: string, _p: string) => ({}) as never,
+        login: async (_u: string, _p: string) => ({}) as unknown as User,
+        register: async (_u: string, _p: string) => ({}) as unknown as User,
         logout: async () => {},
         updateUser: async (_updates: Record<string, unknown>) => undefined,
         checkAuth: async () => {},

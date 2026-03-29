@@ -5,6 +5,10 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { validateReceipt } from "../../services/receipt-validation";
 import { register } from "../subscription";
+import {
+  createMockTransaction,
+  createMockUser,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -45,7 +49,7 @@ describe("Subscription Routes", () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "free",
         expiresAt: null,
-      } as never);
+      });
 
       const res = await request(app)
         .get("/api/subscription/status")
@@ -61,7 +65,7 @@ describe("Subscription Routes", () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
         expiresAt: futureDate,
-      } as never);
+      });
 
       const res = await request(app)
         .get("/api/subscription/status")
@@ -77,7 +81,7 @@ describe("Subscription Routes", () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
         expiresAt: pastDate,
-      } as never);
+      });
 
       const res = await request(app)
         .get("/api/subscription/status")
@@ -89,7 +93,7 @@ describe("Subscription Routes", () => {
     });
 
     it("returns 404 when user not found", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null as never);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/subscription/status")
@@ -101,7 +105,7 @@ describe("Subscription Routes", () => {
 
   describe("GET /api/subscription/scan-count", () => {
     it("returns daily scan count", async () => {
-      vi.mocked(storage.getDailyScanCount).mockResolvedValue(5 as never);
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(5);
 
       const res = await request(app)
         .get("/api/subscription/scan-count")
@@ -121,15 +125,15 @@ describe("Subscription Routes", () => {
     };
 
     it("upgrades to premium with valid receipt", async () => {
-      vi.mocked(storage.getTransaction).mockResolvedValue(null as never);
+      vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
       vi.mocked(validateReceipt).mockResolvedValue({
         valid: true,
         expiresAt: new Date("2025-12-31"),
-      } as never);
+      });
       vi.mocked(storage.createTransactionAndUpgrade).mockResolvedValue({
-        transaction: {},
-        user: {},
-      } as never);
+        transaction: createMockTransaction(),
+        user: createMockUser(),
+      });
 
       const res = await request(app)
         .post("/api/subscription/upgrade")
@@ -142,7 +146,9 @@ describe("Subscription Routes", () => {
     });
 
     it("rejects duplicate transaction", async () => {
-      vi.mocked(storage.getTransaction).mockResolvedValue({ id: 1 } as never);
+      vi.mocked(storage.getTransaction).mockResolvedValue(
+        createMockTransaction({ id: 1 }),
+      );
 
       const res = await request(app)
         .post("/api/subscription/upgrade")
@@ -153,12 +159,14 @@ describe("Subscription Routes", () => {
     });
 
     it("handles invalid receipt", async () => {
-      vi.mocked(storage.getTransaction).mockResolvedValue(null as never);
+      vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
       vi.mocked(validateReceipt).mockResolvedValue({
         valid: false,
         errorCode: "INVALID_RECEIPT",
-      } as never);
-      vi.mocked(storage.createTransaction).mockResolvedValue({} as never);
+      });
+      vi.mocked(storage.createTransaction).mockResolvedValue(
+        createMockTransaction(),
+      );
 
       const res = await request(app)
         .post("/api/subscription/upgrade")
@@ -184,11 +192,11 @@ describe("Subscription Routes", () => {
       vi.mocked(validateReceipt).mockResolvedValue({
         valid: true,
         expiresAt: new Date("2025-12-31"),
-      } as never);
+      });
       vi.mocked(storage.createTransactionAndUpgrade).mockResolvedValue({
-        transaction: {},
-        user: {},
-      } as never);
+        transaction: createMockTransaction(),
+        user: createMockUser(),
+      });
 
       const res = await request(app)
         .post("/api/subscription/restore")
@@ -204,7 +212,7 @@ describe("Subscription Routes", () => {
       vi.mocked(validateReceipt).mockResolvedValue({
         valid: false,
         errorCode: "NO_SUBSCRIPTION",
-      } as never);
+      });
 
       const res = await request(app)
         .post("/api/subscription/restore")

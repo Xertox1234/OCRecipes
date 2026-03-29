@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../allergen-check";
+import { createMockUserProfile } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -31,28 +32,26 @@ function createApp() {
   return app;
 }
 
-const profileWithAllergies = {
-  id: 1,
-  userId: "1",
+const profileWithAllergies = createMockUserProfile({
   allergies: [
     { name: "peanuts", severity: "severe" },
     { name: "milk", severity: "mild" },
   ],
-  healthConditions: [],
   dietType: "omnivore",
-  foodDislikes: [],
   primaryGoal: "maintain",
   activityLevel: "moderate",
-  householdSize: 1,
-  cuisinePreferences: [],
   cookingSkillLevel: "intermediate",
   cookingTimeAvailable: "30min",
-};
+});
 
-const profileNoAllergies = {
-  ...profileWithAllergies,
+const profileNoAllergies = createMockUserProfile({
   allergies: [],
-};
+  dietType: "omnivore",
+  primaryGoal: "maintain",
+  activityLevel: "moderate",
+  cookingSkillLevel: "intermediate",
+  cookingTimeAvailable: "30min",
+});
 
 describe("Allergen Check Routes", () => {
   let app: express.Express;
@@ -82,9 +81,7 @@ describe("Allergen Check Routes", () => {
     });
 
     it("returns empty matches when user has no allergies", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue(
-        profileNoAllergies as never,
-      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(profileNoAllergies);
 
       const res = await request(app)
         .post("/api/allergen-check")
@@ -97,9 +94,7 @@ describe("Allergen Check Routes", () => {
     });
 
     it("detects allergens in ingredients", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue(
-        profileWithAllergies as never,
-      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(profileWithAllergies);
 
       const res = await request(app)
         .post("/api/allergen-check")
@@ -117,9 +112,7 @@ describe("Allergen Check Routes", () => {
     });
 
     it("does not flag safe ingredients", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue(
-        profileWithAllergies as never,
-      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(profileWithAllergies);
 
       const res = await request(app)
         .post("/api/allergen-check")
@@ -131,7 +124,7 @@ describe("Allergen Check Routes", () => {
     });
 
     it("handles null user profile gracefully", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/allergen-check")
@@ -143,10 +136,11 @@ describe("Allergen Check Routes", () => {
     });
 
     it("respects severity for derived ingredients", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue({
-        ...profileWithAllergies,
-        allergies: [{ name: "milk", severity: "mild" }],
-      } as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({
+          allergies: [{ name: "milk", severity: "mild" }],
+        }),
+      );
 
       const res = await request(app)
         .post("/api/allergen-check")
@@ -163,10 +157,11 @@ describe("Allergen Check Routes", () => {
     });
 
     it("moderate severity flags derived ingredients", async () => {
-      vi.mocked(storage.getUserProfile).mockResolvedValue({
-        ...profileWithAllergies,
-        allergies: [{ name: "milk", severity: "moderate" }],
-      } as never);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({
+          allergies: [{ name: "milk", severity: "moderate" }],
+        }),
+      );
 
       const res = await request(app)
         .post("/api/allergen-check")

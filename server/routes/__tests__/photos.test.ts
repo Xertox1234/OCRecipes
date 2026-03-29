@@ -12,6 +12,7 @@ import {
 } from "../../services/photo-analysis";
 import { batchNutritionLookup } from "../../services/nutrition-lookup";
 import { register } from "../photos";
+import { createMockScannedItem } from "../../__tests__/factories";
 import {
   _testInternals,
   clearAnalysisSession,
@@ -122,21 +123,22 @@ describe("Photos Routes", () => {
 
   describe("POST /api/photos/analyze", () => {
     it("analyzes a photo successfully", async () => {
-      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0 as never);
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(analyzePhoto).mockResolvedValue({
         foods: [{ name: "Apple", quantity: "1 medium", confidence: 0.9 }],
         overallConfidence: 0.9,
-      } as never);
+      });
       vi.mocked(batchNutritionLookup).mockResolvedValue(
         new Map([
           [
             "1 medium Apple",
             { calories: 95, protein: 0.5, carbs: 25, fat: 0.3 },
           ],
-        ]) as never,
+        ]),
       );
       vi.mocked(needsFollowUp).mockReturnValue(false);
       vi.mocked(getFollowUpQuestions).mockReturnValue([]);
@@ -153,10 +155,11 @@ describe("Photos Routes", () => {
     });
 
     it("returns 429 when scan limit reached", async () => {
-      vi.mocked(storage.getDailyScanCount).mockResolvedValue(100 as never);
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(100);
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "free",
-      } as never);
+        expiresAt: null,
+      });
 
       const res = await request(app)
         .post("/api/photos/analyze")
@@ -167,10 +170,11 @@ describe("Photos Routes", () => {
     });
 
     it("returns 500 when analyzePhoto throws", async () => {
-      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0 as never);
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(analyzePhoto).mockRejectedValue(new Error("Vision API down"));
 
       const res = await request(app)
@@ -182,15 +186,16 @@ describe("Photos Routes", () => {
     });
 
     it("returns needsFollowUp and followUpQuestions in response", async () => {
-      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0 as never);
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(analyzePhoto).mockResolvedValue({
         foods: [{ name: "Apple Pie", quantity: "1 slice", confidence: 0.4 }],
         overallConfidence: 0.4,
-      } as never);
-      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+      });
+      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
       vi.mocked(needsFollowUp).mockReturnValue(true);
       vi.mocked(getFollowUpQuestions).mockReturnValue([
         "What type of apple pie?",
@@ -232,15 +237,16 @@ describe("Photos Routes", () => {
     it("returns 500 on service error", async () => {
       // We need to seed a session to get past the 404 check.
       // First create a valid session via analyze, then make refineAnalysis throw.
-      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0 as never);
+      vi.mocked(storage.getDailyScanCount).mockResolvedValue(0);
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(analyzePhoto).mockResolvedValue({
         foods: [{ name: "Apple", quantity: "1", confidence: 0.5 }],
         overallConfidence: 0.5,
-      } as never);
-      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map() as never);
+      });
+      vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
       vi.mocked(needsFollowUp).mockReturnValue(true);
       vi.mocked(getFollowUpQuestions).mockReturnValue(["What type?"]);
 
@@ -274,7 +280,7 @@ describe("Photos Routes", () => {
     });
 
     it("creates scanned item and daily log via storage", async () => {
-      const mockItem = {
+      const mockItem = createMockScannedItem({
         id: 42,
         userId: "1",
         productName: "Apple",
@@ -283,11 +289,9 @@ describe("Photos Routes", () => {
         carbs: "25",
         fat: "0",
         sourceType: "photo",
-      };
+      });
 
-      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
-        mockItem as never,
-      );
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(mockItem);
 
       const res = await request(app)
         .post("/api/photos/confirm")
@@ -482,7 +486,8 @@ describe("Photos Routes", () => {
     it("returns 403 when user is free tier (premium gate)", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "free",
-      } as never);
+        expiresAt: null,
+      });
 
       const res = await request(app)
         .post("/api/photos/analyze-recipe")
@@ -495,7 +500,8 @@ describe("Photos Routes", () => {
     it("returns 200 with recipe data for premium user", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(analyzeRecipePhoto).mockResolvedValue({
         title: "Pancakes",
         description: "Fluffy pancakes",
@@ -527,7 +533,8 @@ describe("Photos Routes", () => {
     it("returns 500 when analyzeRecipePhoto throws", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
-      } as never);
+        expiresAt: null,
+      });
       vi.mocked(analyzeRecipePhoto).mockRejectedValue(
         new Error("Vision API down"),
       );
