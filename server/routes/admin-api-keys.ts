@@ -2,7 +2,7 @@ import type { Express, Response } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { z } from "zod";
 import { API_TIERS } from "@shared/constants/api-tiers";
 import { isAdmin } from "./_helpers";
@@ -46,10 +46,7 @@ export function register(app: Express): void {
           message: "Store this key securely. It will not be shown again.",
         });
       } catch (err) {
-        logger.error(
-          { err: err instanceof Error ? err : new Error(String(err)) },
-          "admin create API key error",
-        );
+        logger.error({ err: toError(err) }, "admin create API key error");
         sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
       }
     },
@@ -85,10 +82,7 @@ export function register(app: Express): void {
 
         res.json({ data: keysWithUsage });
       } catch (err) {
-        logger.error(
-          { err: err instanceof Error ? err : new Error(String(err)) },
-          "admin list API keys error",
-        );
+        logger.error({ err: toError(err) }, "admin list API keys error");
         sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
       }
     },
@@ -120,10 +114,7 @@ export function register(app: Express): void {
         await storage.revokeApiKey(id);
         res.json({ message: "API key revoked" });
       } catch (err) {
-        logger.error(
-          { err: err instanceof Error ? err : new Error(String(err)) },
-          "admin revoke API key error",
-        );
+        logger.error({ err: toError(err) }, "admin revoke API key error");
         sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
       }
     },
@@ -161,10 +152,7 @@ export function register(app: Express): void {
         await storage.updateApiKeyTier(id, parsed.data.tier);
         res.json({ message: "API key tier updated", tier: parsed.data.tier });
       } catch (err) {
-        logger.error(
-          { err: err instanceof Error ? err : new Error(String(err)) },
-          "admin update API key tier error",
-        );
+        logger.error({ err: toError(err) }, "admin update API key tier error");
         sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
       }
     },

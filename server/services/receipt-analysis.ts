@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { openai } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("receipt-analysis");
 
@@ -136,10 +136,7 @@ export async function analyzeReceiptPhotos(
       temperature: 0.2,
     });
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "Receipt analysis API error",
-    );
+    log.error({ err: toError(error) }, "receipt analysis API error");
     throw new Error("Failed to analyze receipt photo. Please try again.");
   }
 
@@ -159,7 +156,7 @@ export async function analyzeReceiptPhotos(
   if (!result.success) {
     log.warn(
       { zodErrors: result.error.flatten() },
-      "Receipt validation failed",
+      "receipt validation failed",
     );
     throw new Error(
       "Receipt analysis returned unexpected data. Please try again.",

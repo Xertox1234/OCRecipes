@@ -14,7 +14,7 @@ import {
   parsePositiveIntParam,
   parseQueryString,
 } from "./_helpers";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { generateMealPlanFromPantry } from "../services/pantry-meal-plan";
 import { inferMealTypes } from "../services/meal-type-inference";
 
@@ -91,10 +91,7 @@ export function register(app: Express): void {
         const recipes = await storage.getUserMealPlanRecipes(req.userId);
         res.json(recipes);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get meal plan recipes failed",
-        );
+        logger.error({ err: toError(error) }, "get meal plan recipes failed");
         sendError(
           res,
           500,
@@ -125,10 +122,7 @@ export function register(app: Express): void {
 
         res.json(recipe);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get meal plan recipe failed",
-        );
+        logger.error({ err: toError(error) }, "get meal plan recipe failed");
         sendError(res, 500, "Failed to fetch recipe", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -177,10 +171,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "create meal plan recipe failed",
-        );
+        logger.error({ err: toError(error) }, "create meal plan recipe failed");
         sendError(
           res,
           500,
@@ -239,10 +230,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "update meal plan recipe failed",
-        );
+        logger.error({ err: toError(error) }, "update meal plan recipe failed");
         sendError(
           res,
           500,
@@ -274,10 +262,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "delete meal plan recipe failed",
-        );
+        logger.error({ err: toError(error) }, "delete meal plan recipe failed");
         sendError(
           res,
           500,
@@ -350,10 +335,7 @@ export function register(app: Express): void {
         const items = await storage.getMealPlanItems(req.userId, start, end);
         res.json(items);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get meal plan failed",
-        );
+        logger.error({ err: toError(error) }, "get meal plan failed");
         sendError(
           res,
           500,
@@ -427,10 +409,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "add meal plan item failed",
-        );
+        logger.error({ err: toError(error) }, "add meal plan item failed");
         sendError(
           res,
           500,
@@ -461,10 +440,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "remove meal plan item failed",
-        );
+        logger.error({ err: toError(error) }, "remove meal plan item failed");
         sendError(res, 500, "Failed to remove item", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -503,10 +479,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "reorder meal plan items failed",
-        );
+        logger.error({ err: toError(error) }, "reorder meal plan items failed");
         sendError(
           res,
           500,
@@ -582,10 +555,7 @@ export function register(app: Express): void {
 
         res.status(201).json(dailyLog);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "meal confirmation failed",
-        );
+        logger.error({ err: toError(error) }, "meal confirmation failed");
         sendError(res, 500, "Failed to confirm meal", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -676,7 +646,7 @@ export function register(app: Express): void {
         res.json(plan);
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "generate meal plan from pantry failed",
         );
         sendError(
@@ -805,7 +775,7 @@ export function register(app: Express): void {
           return;
         }
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "save generated meal plan failed",
         );
         sendError(

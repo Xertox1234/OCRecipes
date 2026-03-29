@@ -2,7 +2,7 @@ import { z } from "zod";
 import { openai } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("front-label-analysis");
 
@@ -92,7 +92,7 @@ export async function analyzeFrontLabel(
     if (!parsed.success) {
       log.warn(
         { zodErrors: parsed.error.flatten() },
-        "Front label extraction validation failed",
+        "front label extraction validation failed",
       );
       return {
         brand: null,
@@ -117,14 +117,11 @@ export async function analyzeFrontLabel(
 
     log.debug(
       { durationMs: Date.now() - startTime },
-      "Front label extraction completed",
+      "front label extraction completed",
     );
     return result;
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "Front label analysis error",
-    );
+    log.error({ err: toError(error) }, "front label analysis error");
     return {
       brand: null,
       productName: null,

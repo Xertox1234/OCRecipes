@@ -16,7 +16,7 @@ import type { AuthenticatedRequest } from "../middleware/auth";
 import { analyzeGlp1Insights } from "../services/glp1-insights";
 import type { ProteinSuggestion } from "@shared/types/protein-suggestions";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 export function register(app: Express): void {
   // GET /api/medication/logs
@@ -45,10 +45,7 @@ export function register(app: Express): void {
         });
         res.json(logs);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to get medication logs",
-        );
+        logger.error({ err: toError(error) }, "failed to get medication logs");
         sendError(
           res,
           500,
@@ -98,7 +95,7 @@ export function register(app: Express): void {
         res.status(201).json(log);
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "failed to create medication log",
         );
         sendError(
@@ -167,7 +164,7 @@ export function register(app: Express): void {
         res.json(updated);
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "failed to update medication log",
         );
         sendError(
@@ -215,7 +212,7 @@ export function register(app: Express): void {
         res.status(204).send();
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "failed to delete medication log",
         );
         sendError(
@@ -247,7 +244,7 @@ export function register(app: Express): void {
         res.json(insights);
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "failed to get medication insights",
         );
         sendError(
@@ -302,7 +299,7 @@ export function register(app: Express): void {
         res.json({ suggestions, remainingProtein, proteinGoal });
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "failed to get protein suggestions",
         );
         sendError(
@@ -358,10 +355,7 @@ export function register(app: Express): void {
           return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
         res.json(profile);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to update GLP-1 mode",
-        );
+        logger.error({ err: toError(error) }, "failed to update GLP-1 mode");
         sendError(
           res,
           500,

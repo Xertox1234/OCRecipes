@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { storage } from "../storage";
 import { openai } from "../lib/openai";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 import {
   detectAllergens,
   parseUserAllergies,
@@ -136,10 +136,7 @@ export async function analyzeMenuPhoto(
       temperature: 0.3,
     });
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "Menu analysis API error",
-    );
+    log.error({ err: toError(error) }, "menu analysis API error");
     throw new Error("Failed to analyze menu photo. Please try again.");
   }
 

@@ -13,7 +13,7 @@ import {
 import { getCuisineForFood } from "./cultural-food-map";
 import { openai } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 // Import shared type for use in this file, and re-export for consumers
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
@@ -329,10 +329,7 @@ export async function analyzeRecipePhoto(
     );
     return parsed.data;
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "recipe photo analysis error",
-    );
+    log.error({ err: toError(error) }, "recipe photo analysis error");
     return {
       title: "",
       description: null,
@@ -427,10 +424,7 @@ export async function analyzeLabelPhoto(
     );
     return parsed.data;
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "label analysis error",
-    );
+    log.error({ err: toError(error) }, "label analysis error");
     return {
       servingSize: null,
       servingsPerContainer: null,
@@ -546,10 +540,7 @@ export async function analyzePhoto(
     );
     return parsed.data;
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "photo analysis error",
-    );
+    log.error({ err: toError(error) }, "photo analysis error");
     return {
       foods: [],
       overallConfidence: 0,
@@ -607,10 +598,7 @@ Respond with JSON matching the same schema, with updated foods and confidence.`,
 
     return parsed.data;
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "refinement error",
-    );
+    log.error({ err: toError(error) }, "refinement error");
     return previousResult;
   }
 }
@@ -745,10 +733,7 @@ export async function classifyAndAnalyze(
 
     classification = parsed.data;
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "classification error",
-    );
+    log.error({ err: toError(error) }, "classification error");
     return {
       contentType: "non_food",
       confidence: 0,

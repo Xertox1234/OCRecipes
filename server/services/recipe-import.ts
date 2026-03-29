@@ -493,7 +493,7 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
   if (!parsed.success) {
     log.warn(
       { zodErrors: parsed.error.flatten() },
-      "Recipe LD+JSON parse error",
+      "recipe LD+JSON parse error",
     );
     return { success: false, error: "PARSE_ERROR" };
   }

@@ -8,93 +8,29 @@ const defaultLevel = isProduction ? "info" : "debug";
  * Root pino instance.
  * - JSON output in production (for log aggregators)
  * - pino-pretty in development (human-readable)
+ * - mixin injects requestId/userId from AsyncLocalStorage on every log call
  */
 export const rootLogger = pino({
   level: process.env.LOG_LEVEL || defaultLevel,
   ...(isProduction ? {} : { transport: { target: "pino-pretty" } }),
+  mixin() {
+    const ctx = getRequestContext();
+    if (!ctx) return {};
+    return ctx.userId
+      ? { requestId: ctx.requestId, userId: ctx.userId }
+      : { requestId: ctx.requestId };
+  },
 });
-
-type LogFn = pino.LogFn;
-
-/**
- * Creates a logger proxy that automatically merges AsyncLocalStorage
- * request context (requestId, userId) into every log call.
- *
- * Supports both calling forms:
- *   logger.info("message")
- *   logger.info({ key: "value" }, "message")
- */
-function createContextLogger(base: pino.Logger): pino.Logger {
-  const LOG_METHODS = [
-    "fatal",
-    "error",
-    "warn",
-    "info",
-    "debug",
-    "trace",
-  ] as const;
-
-  const handler: ProxyHandler<pino.Logger> = {
-    get(target, prop, receiver) {
-      if (prop === "child") {
-        return (bindings: pino.Bindings) =>
-          createContextLogger(target.child(bindings));
-      }
-
-      if (
-        typeof prop === "string" &&
-        LOG_METHODS.includes(prop as (typeof LOG_METHODS)[number])
-      ) {
-        const originalMethod = target[prop as keyof pino.Logger] as LogFn;
-
-        return function contextAwareLog(
-          this: pino.Logger,
-          ...args: Parameters<LogFn>
-        ) {
-          const ctx = getRequestContext();
-          if (!ctx) {
-            return originalMethod.apply(target, args);
-          }
-
-          const ctxBindings: Record<string, unknown> = {
-            requestId: ctx.requestId,
-          };
-          if (ctx.userId) {
-            ctxBindings.userId = ctx.userId;
-          }
-
-          // logger.info("message") → logger.info({ ...ctx }, "message")
-          // logger.info({ data }, "message") → logger.info({ ...ctx, ...data }, "message")
-          if (typeof args[0] === "string") {
-            return originalMethod.call(target, ctxBindings, args[0]);
-          }
-
-          if (typeof args[0] === "object" && args[0] !== null) {
-            const merged = { ...ctxBindings, ...(args[0] as object) };
-            return originalMethod.call(
-              target,
-              merged,
-              ...(args.slice(1) as [string]),
-            );
-          }
-
-          return originalMethod.apply(target, args);
-        };
-      }
-
-      return Reflect.get(target, prop, receiver);
-    },
-  };
-
-  return new Proxy(base, handler);
-}
 
 /**
  * Context-aware logger. Automatically includes requestId and userId
  * from AsyncLocalStorage when called within a request context.
  * Falls back to root logger (no request fields) outside requests.
+ *
+ * This is the same instance as rootLogger — the mixin applies to all
+ * log calls including child loggers created via .child().
  */
-export const logger = createContextLogger(rootLogger);
+export const logger = rootLogger;
 
 /**
  * Create a child logger with a baked-in service name.
@@ -107,4 +43,12 @@ export const logger = createContextLogger(rootLogger);
  */
 export function createServiceLogger(service: string): pino.Logger {
   return logger.child({ service });
+}
+
+/**
+ * Normalize an unknown caught value into an Error instance.
+ * Use in catch blocks: `logger.error({ err: toError(error) }, "message")`
+ */
+export function toError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
 }

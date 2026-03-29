@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import bcrypt from "bcrypt";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 // Extend Express Request type for API key auth
 declare global {
@@ -141,10 +141,7 @@ export async function requireApiKey(
     req.apiKeyTier = keyRow.tier;
     next();
   } catch (err) {
-    logger.error(
-      { err: err instanceof Error ? err : new Error(String(err)) },
-      "API key auth error",
-    );
+    logger.error({ err: toError(err) }, "API key auth error");
     sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
   }
 }

@@ -107,7 +107,7 @@ export async function analyzeIngredientPhoto(
   if (!validated.success) {
     log.warn(
       { zodErrors: validated.error.flatten() },
-      "Ingredient analysis validation failed",
+      "ingredient analysis validation failed",
     );
     throw new IngredientAnalysisError(
       "Unexpected response format from ingredient analysis",

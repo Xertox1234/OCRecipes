@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { TIER_FEATURES, type ApiTier } from "@shared/constants/api-tiers";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 // In-memory usage cache to avoid DB read on every request.
 // DB is source of truth; this cache avoids a DB round-trip per request.
@@ -63,10 +63,7 @@ export async function apiRateLimiter(
     try {
       currentCount = await storage.getApiKeyUsage(apiKeyId, yearMonth);
     } catch (err) {
-      logger.error(
-        { err: err instanceof Error ? err : new Error(String(err)) },
-        "rate limit check error",
-      );
+      logger.error({ err: toError(err) }, "rate limit check error");
       // Fail closed — reject request when we can't verify limits
       sendError(
         res,
@@ -98,10 +95,7 @@ export async function apiRateLimiter(
 
   // Increment usage — fire-and-forget (don't block response)
   storage.incrementApiKeyUsage(apiKeyId).catch((err) => {
-    logger.error(
-      { err: err instanceof Error ? err : new Error(String(err)) },
-      "failed to increment API key usage",
-    );
+    logger.error({ err: toError(err) }, "failed to increment API key usage");
   });
 
   // Update in-memory cache

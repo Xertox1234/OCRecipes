@@ -20,7 +20,7 @@ import {
   checkPremiumFeature,
   checkAiConfigured,
 } from "./_helpers";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 async function fetchDeduplicatedPopularPicks(
   userId: string,
@@ -240,10 +240,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "meal suggestion error",
-        );
+        logger.error({ err: toError(error) }, "meal suggestion error");
         sendError(
           res,
           500,

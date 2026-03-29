@@ -5,7 +5,7 @@ import { createSessionStore } from "../storage/sessions";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { detectImageMimeType } from "../lib/image-mime";
 import {
   compareWithVerifications,
@@ -289,10 +289,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "verification submit failed",
-        );
+        logger.error({ err: toError(error) }, "verification submit failed");
         sendError(
           res,
           500,
@@ -374,10 +371,7 @@ export function register(app: Express): void {
 
         res.json({ sessionId, data });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "front label analysis failed",
-        );
+        logger.error({ err: toError(error) }, "front label analysis failed");
         sendError(
           res,
           500,
@@ -476,10 +470,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "front label confirm failed",
-        );
+        logger.error({ err: toError(error) }, "front label confirm failed");
         sendError(
           res,
           500,
@@ -527,10 +518,7 @@ export function register(app: Express): void {
 
         res.json({ flags, total: totalCount, limit, offset });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get reformulation flags failed",
-        );
+        logger.error({ err: toError(error) }, "get reformulation flags failed");
         sendError(
           res,
           500,
@@ -582,7 +570,7 @@ export function register(app: Express): void {
         res.json({ success: true });
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "resolve reformulation flag failed",
         );
         sendError(
@@ -608,7 +596,7 @@ export function register(app: Express): void {
         res.json(stats);
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "get user verification stats failed",
         );
         sendError(
@@ -669,10 +657,7 @@ export function register(app: Express): void {
           hasFrontLabelData: verification.frontLabelData != null,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get verification status failed",
-        );
+        logger.error({ err: toError(error) }, "get verification status failed");
         sendError(
           res,
           500,

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { storage } from "../storage";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("micronutrient-lookup");
 
@@ -116,10 +116,7 @@ async function lookupMicronutrients(
 
     return micronutrients;
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "Micronutrient lookup error",
-    );
+    log.error({ err: toError(error) }, "micronutrient lookup error");
     return [];
   }
 }

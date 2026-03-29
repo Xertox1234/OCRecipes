@@ -10,7 +10,7 @@ import {
 } from "@apple/app-store-server-library";
 import type { JWSTransactionDecodedPayload } from "@apple/app-store-server-library";
 import type { Platform } from "@shared/schemas/subscription";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("receipt-validation");
 
@@ -66,11 +66,11 @@ export async function validateReceipt(
   if (STUB_MODE) {
     if (process.env.NODE_ENV === "production") {
       log.error(
-        "Receipt validation is stubbed in production — rejecting. Configure Apple/Google credentials to enable.",
+        "receipt validation is stubbed in production — rejecting. Configure Apple/Google credentials to enable.",
       );
       return { valid: false, errorCode: "NOT_IMPLEMENTED" };
     }
-    log.warn("Receipt validation is stubbed — auto-approving in dev");
+    log.warn("receipt validation is stubbed — auto-approving in dev");
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
     return { valid: true, expiresAt };
@@ -171,10 +171,7 @@ async function validateAppleReceipt(
       );
       return { valid: false, errorCode };
     }
-    log.error(
-      { err: err instanceof Error ? err : new Error(String(err)) },
-      "Apple receipt verification error",
-    );
+    log.error({ err: toError(err) }, "Apple receipt verification error");
     return { valid: false, errorCode: "INVALID_RECEIPT" };
   }
 
@@ -275,14 +272,20 @@ async function getGoogleAccessToken(): Promise<string> {
 
   if (!response.ok) {
     const text = await response.text();
-    log.error({ responseBody: text }, "Google OAuth token exchange failed");
+    log.error(
+      { responseBody: text.slice(0, 200) },
+      "Google OAuth token exchange failed",
+    );
     throw new Error("Failed to obtain Google access token");
   }
 
   const raw = await response.json();
   const parsed = googleOAuthResponseSchema.safeParse(raw);
   if (!parsed.success) {
-    log.error({ err: parsed.error }, "Unexpected Google OAuth response shape");
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "unexpected Google OAuth response shape",
+    );
     throw new Error("Invalid Google OAuth response");
   }
 
@@ -324,23 +327,26 @@ async function validateGoogleReceipt(
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch (err) {
-    log.error(
-      { err: err instanceof Error ? err : new Error(String(err)) },
-      "Google Play subscription request failed",
-    );
+    log.error({ err: toError(err) }, "Google Play subscription request failed");
     return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 
   if (!response.ok) {
     const text = await response.text();
-    log.error({ responseBody: text }, "Google Play subscription check failed");
+    log.error(
+      { responseBody: text.slice(0, 200) },
+      "Google Play subscription check failed",
+    );
     return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 
   const raw = await response.json();
   const parsed = googleSubscriptionResponseSchema.safeParse(raw);
   if (!parsed.success) {
-    log.error({ err: parsed.error }, "Unexpected Google subscription response");
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "unexpected Google subscription response",
+    );
     return { valid: false, errorCode: "STORE_API_ERROR" };
   }
 

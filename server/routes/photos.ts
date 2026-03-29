@@ -39,7 +39,7 @@ import {
   parseStringParam,
 } from "./_helpers";
 import { detectImageMimeType } from "../lib/image-mime";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 // Higher file size limit for label photos (5MB for text readability)
 const labelUpload = createImageUpload(5 * 1024 * 1024);
@@ -270,10 +270,7 @@ export function register(app: Express): void {
 
         res.json(response);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "photo analysis error",
-        );
+        logger.error({ err: toError(error) }, "photo analysis error");
         sendError(
           res,
           500,
@@ -359,10 +356,7 @@ export function register(app: Express): void {
           followUpQuestions: getFollowUpQuestions(refinedResult),
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "follow-up error",
-        );
+        logger.error({ err: toError(error) }, "follow-up error");
         sendError(
           res,
           500,
@@ -431,10 +425,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "photo confirm error",
-        );
+        logger.error({ err: toError(error) }, "photo confirm error");
         sendError(res, 500, "Failed to save meal", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -480,10 +471,7 @@ export function register(app: Express): void {
 
         res.json(result);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "recipe photo analysis error",
-        );
+        logger.error({ err: toError(error) }, "recipe photo analysis error");
         sendError(
           res,
           500,
@@ -569,10 +557,7 @@ export function register(app: Express): void {
           barcode,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "label analysis error",
-        );
+        logger.error({ err: toError(error) }, "label analysis error");
         sendError(
           res,
           500,
@@ -666,10 +651,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "label confirm error",
-        );
+        logger.error({ err: toError(error) }, "label confirm error");
         sendError(
           res,
           500,

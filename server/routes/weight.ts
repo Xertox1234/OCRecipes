@@ -10,7 +10,7 @@ import {
   crudRateLimit,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { calculateWeightTrend } from "../services/weight-trend";
 
@@ -51,10 +51,7 @@ export function register(app: Express): void {
         });
         res.json(logs);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get weight logs error",
-        );
+        logger.error({ err: toError(error) }, "get weight logs error");
         sendError(
           res,
           500,
@@ -96,10 +93,7 @@ export function register(app: Express): void {
 
         res.json({ ...trend, goalWeight });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get weight trend error",
-        );
+        logger.error({ err: toError(error) }, "get weight trend error");
         sendError(
           res,
           500,
@@ -137,10 +131,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "create weight log error",
-        );
+        logger.error({ err: toError(error) }, "create weight log error");
         sendError(res, 500, "Failed to log weight", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -173,10 +164,7 @@ export function register(app: Express): void {
         }
         res.status(204).send();
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "delete weight log error",
-        );
+        logger.error({ err: toError(error) }, "delete weight log error");
         sendError(
           res,
           500,
@@ -211,10 +199,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "set goal weight error",
-        );
+        logger.error({ err: toError(error) }, "set goal weight error");
         sendError(
           res,
           500,

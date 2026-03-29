@@ -6,7 +6,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { formatZodError, checkPremiumFeature, crudRateLimit } from "./_helpers";
 import { syncHealthKitData } from "../services/healthkit-sync";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 const syncDataSchema = z.object({
   weights: z
@@ -66,10 +66,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "HealthKit sync error",
-        );
+        logger.error({ err: toError(error) }, "HealthKit sync error");
         sendError(
           res,
           500,
@@ -90,10 +87,7 @@ export function register(app: Express): void {
         const settings = await storage.getHealthKitSyncSettings(req.userId);
         res.json(settings);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get HealthKit settings error",
-        );
+        logger.error({ err: toError(error) }, "get HealthKit settings error");
         sendError(
           res,
           500,
@@ -141,7 +135,7 @@ export function register(app: Express): void {
           );
         }
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "update HealthKit settings error",
         );
         sendError(

@@ -8,7 +8,7 @@ import {
   OPENAI_TIMEOUT_IMAGE_MS,
 } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("recipe-generation");
 
@@ -168,10 +168,7 @@ Respond with JSON only:
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "Recipe generation API error",
-    );
+    log.error({ err: toError(error) }, "recipe generation API error");
     throw new Error("Failed to generate recipe. Please try again.");
   }
 
@@ -189,7 +186,7 @@ Respond with JSON only:
   if (!parsed.success) {
     log.warn(
       { zodErrors: parsed.error.flatten() },
-      "Recipe generation validation failed",
+      "recipe generation validation failed",
     );
     throw new Error("Failed to generate valid recipe content");
   }
@@ -229,10 +226,7 @@ export async function generateRecipeImage(
     // Return as base64 data URL (stored directly in DB like avatars)
     return `data:image/png;base64,${imageData}`;
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "DALL-E image generation error",
-    );
+    log.error({ err: toError(error) }, "DALL-E image generation error");
     return null;
   }
 }
@@ -252,8 +246,8 @@ export async function generateFullRecipe(
     imageUrl = await generateRecipeImage(content.title, input.productName);
   } catch (error) {
     log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "Image generation failed, continuing without image",
+      { err: toError(error) },
+      "image generation failed, continuing without image",
     );
   }
 

@@ -10,7 +10,7 @@ import {
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { db } from "../db";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { eq, and, gte, gt, lt, lte, sql } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 
@@ -307,10 +307,7 @@ export async function purgeExpiredCacheRows(): Promise<number> {
 export function startCacheCleanupJob(): ReturnType<typeof setInterval> {
   return setInterval(() => {
     purgeExpiredCacheRows().catch((err) => {
-      logger.error(
-        { err: err instanceof Error ? err : new Error(String(err)) },
-        "cache cleanup error",
-      );
+      logger.error({ err: toError(err) }, "cache cleanup error");
     });
   }, CLEANUP_INTERVAL_MS);
 }

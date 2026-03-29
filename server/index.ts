@@ -8,7 +8,7 @@ import * as path from "path";
 import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
 import { validateEnv } from "./lib/env";
-import { logger, rootLogger } from "./lib/logger";
+import { logger, rootLogger, toError } from "./lib/logger";
 import { requestContextMiddleware } from "./lib/request-context";
 import crypto from "node:crypto";
 
@@ -16,17 +16,14 @@ import crypto from "node:crypto";
 validateEnv();
 
 process.on("uncaughtException", (error) => {
-  logger.fatal({ err: error }, "uncaught exception");
+  logger.fatal({ err: toError(error) }, "uncaught exception");
   rootLogger.flush();
   // Give async transport time to drain before exiting
   setTimeout(() => process.exit(1), 500);
 });
 
 process.on("unhandledRejection", (reason) => {
-  logger.error(
-    { err: reason instanceof Error ? reason : new Error(String(reason)) },
-    "unhandled rejection",
-  );
+  logger.error({ err: toError(reason) }, "unhandled rejection");
 });
 
 const app = express();
@@ -139,10 +136,7 @@ function setupErrorHandler(app: express.Application) {
 
     const status = error.status || error.statusCode || 500;
 
-    logger.error(
-      { err: err instanceof Error ? err : new Error(String(err)) },
-      "internal server error",
-    );
+    logger.error({ err: toError(err) }, "internal server error");
 
     if (res.headersSent) {
       return next(err);

@@ -5,7 +5,7 @@ import { nutritionCache } from "@shared/schema";
 import { and, gt, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { getStandardizedFoodName } from "./cultural-food-map";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("nutrition-lookup");
 
@@ -109,10 +109,7 @@ async function getCachedNutrition(
       }
     }
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "cache lookup error",
-    );
+    log.error({ err: toError(error) }, "cache lookup error");
   }
 
   return results;
@@ -146,10 +143,7 @@ async function cacheNutrition(
         },
       });
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "cache write error",
-    );
+    log.error({ err: toError(error) }, "cache write error");
   }
 }
 
@@ -202,10 +196,7 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
       source: "api-ninjas" as const,
     };
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "API Ninjas lookup error",
-    );
+    log.error({ err: toError(error) }, "API Ninjas lookup error");
     return null;
   }
 }
@@ -255,10 +246,7 @@ async function ensureCNFFoods(): Promise<void> {
         "CNF food lists loaded",
       );
     } catch (err) {
-      log.warn(
-        { err: err instanceof Error ? err : new Error(String(err)) },
-        "failed to load CNF food lists",
-      );
+      log.warn({ err: toError(err) }, "failed to load CNF food lists");
     }
     cnfFetchPromise = null;
   })();
@@ -431,10 +419,7 @@ async function lookupCNF(query: string): Promise<NutritionData | null> {
       source: "cnf",
     };
   } catch (err) {
-    log.warn(
-      { err: err instanceof Error ? err : new Error(String(err)) },
-      "CNF nutrient lookup error",
-    );
+    log.warn({ err: toError(err) }, "CNF nutrient lookup error");
     return null;
   }
 }
@@ -493,10 +478,7 @@ async function lookupUSDA(query: string): Promise<NutritionData | null> {
       source: "usda",
     };
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "USDA lookup error",
-    );
+    log.error({ err: toError(error) }, "USDA lookup error");
     return null;
   }
 }
@@ -850,10 +832,7 @@ export async function lookupBarcode(
         break;
       }
     } catch (err) {
-      log.warn(
-        { err: err instanceof Error ? err : new Error(String(err)), variant },
-        "Open Food Facts fetch error",
-      );
+      log.warn({ err: toError(err), variant }, "Open Food Facts fetch error");
     }
   }
 
@@ -976,10 +955,7 @@ export async function lookupBarcode(
         break; // Good match found, stop searching
       }
     } catch (err) {
-      log.warn(
-        { err: err instanceof Error ? err : new Error(String(err)) },
-        "CNF lookup failed",
-      );
+      log.warn({ err: toError(err) }, "CNF lookup failed");
     }
   }
 
@@ -997,10 +973,7 @@ export async function lookupBarcode(
           secondary.source === "cache" ? "usda" : secondary.source;
       }
     } catch (err) {
-      log.warn(
-        { err: err instanceof Error ? err : new Error(String(err)) },
-        "secondary nutrition lookup failed",
-      );
+      log.warn({ err: toError(err) }, "secondary nutrition lookup failed");
     }
   }
 
@@ -1121,10 +1094,7 @@ export async function lookupBarcode(
       source,
     })
     .catch((err) => {
-      log.error(
-        { err: err instanceof Error ? err : new Error(String(err)) },
-        "failed to upsert barcodeNutrition",
-      );
+      log.error({ err: toError(err) }, "failed to upsert barcodeNutrition");
     });
 
   return {
@@ -1228,10 +1198,7 @@ async function cacheNutritionIfAbsent(
       })
       .onConflictDoNothing({ target: nutritionCache.queryKey });
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "cache seed write error",
-    );
+    log.error({ err: toError(error) }, "cache seed write error");
   }
 }
 

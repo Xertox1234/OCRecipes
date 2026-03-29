@@ -20,7 +20,7 @@ import {
   parsePositiveIntParam,
   parseQueryInt,
 } from "./_helpers";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 const generateGroceryListSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -168,7 +168,7 @@ export function register(app: Express): void {
           return;
         }
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "failed to generate grocery list",
         );
         sendError(
@@ -191,10 +191,7 @@ export function register(app: Express): void {
         const lists = await storage.getGroceryLists(req.userId, limit);
         res.json(lists);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to fetch grocery lists",
-        );
+        logger.error({ err: toError(error) }, "failed to fetch grocery lists");
         sendError(
           res,
           500,
@@ -251,10 +248,7 @@ export function register(app: Express): void {
 
         res.json({ ...list, allergenFlags });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to fetch grocery list",
-        );
+        logger.error({ err: toError(error) }, "failed to fetch grocery list");
         sendError(
           res,
           500,
@@ -334,10 +328,7 @@ export function register(app: Express): void {
           ErrorCode.VALIDATION_ERROR,
         );
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to toggle grocery item",
-        );
+        logger.error({ err: toError(error) }, "failed to toggle grocery item");
         sendError(res, 500, "Failed to update item", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -394,7 +385,7 @@ export function register(app: Express): void {
         res.status(201).json(pantryItem);
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "failed to add grocery item to pantry",
         );
         sendError(
@@ -457,10 +448,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to add grocery item",
-        );
+        logger.error({ err: toError(error) }, "failed to add grocery item");
         sendError(res, 500, "Failed to add item", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -486,10 +474,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to delete grocery list",
-        );
+        logger.error({ err: toError(error) }, "failed to delete grocery list");
         sendError(
           res,
           500,

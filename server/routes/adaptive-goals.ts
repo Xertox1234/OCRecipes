@@ -2,7 +2,7 @@ import type { Express, Response } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { checkPremiumFeature, parseQueryInt, crudRateLimit } from "./_helpers";
 import { computeAdaptiveGoals } from "../services/adaptive-goals";
@@ -31,10 +31,7 @@ export function register(app: Express): void {
           recommendation,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get adaptive goals error",
-        );
+        logger.error({ err: toError(error) }, "get adaptive goals error");
         sendError(
           res,
           500,
@@ -105,10 +102,7 @@ export function register(app: Express): void {
           },
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "accept adaptive goal error",
-        );
+        logger.error({ err: toError(error) }, "accept adaptive goal error");
         sendError(
           res,
           500,
@@ -155,10 +149,7 @@ export function register(app: Express): void {
 
         res.json({ success: true });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "dismiss adaptive goal error",
-        );
+        logger.error({ err: toError(error) }, "dismiss adaptive goal error");
         sendError(
           res,
           500,
@@ -201,7 +192,7 @@ export function register(app: Express): void {
         res.json({ success: true, enabled });
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "update adaptive goals settings error",
         );
         sendError(
@@ -233,10 +224,7 @@ export function register(app: Express): void {
         const logs = await storage.getGoalAdjustmentLogs(req.userId, limit);
         res.json(logs);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get adjustment history error",
-        );
+        logger.error({ err: toError(error) }, "get adjustment history error");
         sendError(
           res,
           500,

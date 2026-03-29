@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -30,10 +30,7 @@ export function register(app: Express): void {
         const profile = await storage.getUserProfile(req.userId);
         res.json(profile || null);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "error fetching dietary profile",
-        );
+        logger.error({ err: toError(error) }, "error fetching dietary profile");
         sendError(
           res,
           500,
@@ -84,10 +81,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "error saving dietary profile",
-        );
+        logger.error({ err: toError(error) }, "error saving dietary profile");
         sendError(
           res,
           500,
@@ -138,10 +132,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "error updating dietary profile",
-        );
+        logger.error({ err: toError(error) }, "error updating dietary profile");
         sendError(
           res,
           500,

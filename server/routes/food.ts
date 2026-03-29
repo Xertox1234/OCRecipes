@@ -12,7 +12,7 @@ import {
 } from "./_helpers";
 import { parseNaturalLanguageFood } from "../services/food-nlp";
 import { transcribeAudio } from "../services/voice-transcription";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 const audioUpload = multer({
   storage: multer.memoryStorage(),
@@ -60,10 +60,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "food parse error",
-        );
+        logger.error({ err: toError(error) }, "food parse error");
         sendError(
           res,
           500,
@@ -123,10 +120,7 @@ export function register(app: Express): void {
           items,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "voice transcription error",
-        );
+        logger.error({ err: toError(error) }, "voice transcription error");
         sendError(
           res,
           500,

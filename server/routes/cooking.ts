@@ -34,7 +34,7 @@ import {
   parseUserAllergies,
   type AllergenMatch,
 } from "@shared/constants/allergens";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { storage } from "../storage";
 import { createSessionStore } from "../storage/sessions";
 
@@ -172,10 +172,7 @@ export function register(app: Express): void {
           createdAt: session.createdAt,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "create cooking session failed",
-        );
+        logger.error({ err: toError(error) }, "create cooking session failed");
         sendError(
           res,
           500,
@@ -206,10 +203,7 @@ export function register(app: Express): void {
           createdAt: session.createdAt,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "get cooking session failed",
-        );
+        logger.error({ err: toError(error) }, "get cooking session failed");
         sendError(
           res,
           500,
@@ -307,10 +301,7 @@ export function register(app: Express): void {
           allergenWarnings,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "add cooking photo failed",
-        );
+        logger.error({ err: toError(error) }, "add cooking photo failed");
         sendError(
           res,
           500,
@@ -370,10 +361,7 @@ export function register(app: Express): void {
 
         res.json({ ingredient });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "edit ingredient failed",
-        );
+        logger.error({ err: toError(error) }, "edit ingredient failed");
         sendError(
           res,
           500,
@@ -415,10 +403,7 @@ export function register(app: Express): void {
 
         res.json({ ingredients: session.ingredients });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "delete ingredient failed",
-        );
+        logger.error({ err: toError(error) }, "delete ingredient failed");
         sendError(
           res,
           500,
@@ -467,10 +452,7 @@ export function register(app: Express): void {
         );
         res.json(summary);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "nutrition summary failed",
-        );
+        logger.error({ err: toError(error) }, "nutrition summary failed");
         sendError(
           res,
           500,
@@ -538,10 +520,7 @@ export function register(app: Express): void {
 
         res.status(201).json(scannedItem);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "log cooking session failed",
-        );
+        logger.error({ err: toError(error) }, "log cooking session failed");
         sendError(res, 500, "Failed to log meal", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -595,7 +574,7 @@ export function register(app: Express): void {
         res.json(recipe);
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "generate recipe from session failed",
         );
         sendError(
@@ -663,7 +642,7 @@ export function register(app: Express): void {
         res.json(result);
       } catch (error) {
         logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
+          { err: toError(error) },
           "substitution suggestions failed",
         );
         sendError(

@@ -5,7 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { insertScannedItemSchema } from "@shared/schema";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import { lookupNutrition, lookupBarcode } from "../services/nutrition-lookup";
 import {
   nutritionLookupRateLimit,
@@ -89,10 +89,7 @@ export function register(app: Express): void {
         }
         res.json(result);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "nutrition lookup failed",
-        );
+        logger.error({ err: toError(error) }, "nutrition lookup failed");
         sendError(
           res,
           500,
@@ -133,10 +130,7 @@ export function register(app: Express): void {
           verificationCount: verification?.verificationCount ?? 0,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "barcode lookup failed",
-        );
+        logger.error({ err: toError(error) }, "barcode lookup failed");
         sendError(res, 500, "Barcode lookup failed", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -158,10 +152,7 @@ export function register(app: Express): void {
         const items = await storage.getFrequentItems(req.userId, limit);
         res.json({ items });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "fetch frequent items failed",
-        );
+        logger.error({ err: toError(error) }, "fetch frequent items failed");
         sendError(
           res,
           500,
@@ -188,10 +179,7 @@ export function register(app: Express): void {
         const result = await storage.getScannedItems(req.userId, limit, offset);
         res.json(result);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "fetch scanned items failed",
-        );
+        logger.error({ err: toError(error) }, "fetch scanned items failed");
         sendError(res, 500, "Failed to fetch items", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -221,10 +209,7 @@ export function register(app: Express): void {
 
         res.json(item);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "fetch scanned item failed",
-        );
+        logger.error({ err: toError(error) }, "fetch scanned item failed");
         sendError(res, 500, "Failed to fetch item", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -268,10 +253,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "create scanned item failed",
-        );
+        logger.error({ err: toError(error) }, "create scanned item failed");
         sendError(res, 500, "Failed to save item", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -302,10 +284,7 @@ export function register(app: Express): void {
 
         res.json({ isFavourited });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "toggle favourite failed",
-        );
+        logger.error({ err: toError(error) }, "toggle favourite failed");
         sendError(
           res,
           500,
@@ -335,10 +314,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "discard scanned item failed",
-        );
+        logger.error({ err: toError(error) }, "discard scanned item failed");
         sendError(res, 500, "Failed to discard item", "DISCARD_ITEM_FAILED");
       }
     },
@@ -367,10 +343,7 @@ export function register(app: Express): void {
           confirmedMealPlanItemIds: confirmedIds,
         });
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "fetch daily summary failed",
-        );
+        logger.error({ err: toError(error) }, "fetch daily summary failed");
         sendError(
           res,
           500,

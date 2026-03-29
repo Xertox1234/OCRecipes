@@ -1,9 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-// We test the request-context + logger integration by verifying that
-// fireAndForget preserves AsyncLocalStorage context through promise chains.
-
 describe("logger + AsyncLocalStorage integration", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -14,23 +11,6 @@ describe("logger + AsyncLocalStorage integration", () => {
     expect(getRequestContext()).toBeUndefined();
   });
 
-  it("getRequestContext returns context inside ALS.run()", async () => {
-    const { getRequestContext } = await import("../request-context");
-
-    // Simulate what requestContextMiddleware does by using a fresh ALS
-    const als = new AsyncLocalStorage<{
-      requestId: string;
-      userId: string | null;
-    }>();
-    const ctx = { requestId: "test-uuid-1234", userId: null };
-
-    als.run(ctx, () => {
-      // The module-level ALS won't have this context since we're using a different instance,
-      // but we can verify ALS propagation works in principle
-      expect(als.getStore()).toBe(ctx);
-    });
-  });
-
   it("ALS context propagates through promise chains (fireAndForget pattern)", async () => {
     const als = new AsyncLocalStorage<{ requestId: string }>();
     const captured: string[] = [];
@@ -38,17 +18,14 @@ describe("logger + AsyncLocalStorage integration", () => {
     const ctx = { requestId: "req-abc-123" };
 
     await als.run(ctx, async () => {
-      // Simulate fireAndForget: create a promise that resolves later
       const promise = new Promise<void>((resolve) => {
         setTimeout(() => {
-          // Inside the timeout, ALS context should still be available
           const store = als.getStore();
           if (store) captured.push(store.requestId);
           resolve();
         }, 10);
       });
 
-      // Simulate .catch() handler accessing ALS (like fireAndForget does)
       promise.catch(() => {
         const store = als.getStore();
         if (store) captured.push(store.requestId);
@@ -61,12 +38,10 @@ describe("logger + AsyncLocalStorage integration", () => {
   });
 
   it("setRequestUserId updates the context in-place", async () => {
-    // Use the actual module's ALS via the middleware
     const { requestContextMiddleware, getRequestContext, setRequestUserId } =
       await import("../request-context");
 
-    // Create mock req/res/next
-    const req = { headers: {} } as any;
+    const req = { id: "test-uuid-from-pino-http" } as any;
     const setHeaderCalls: [string, string][] = [];
     const res = {
       setHeader: (name: string, value: string) => {
@@ -82,8 +57,45 @@ describe("logger + AsyncLocalStorage integration", () => {
     });
 
     expect(contextInsideMiddleware?.userId).toBe("user-42");
-    expect(contextInsideMiddleware?.requestId).toBeDefined();
-    // Should have set the response header
-    expect(setHeaderCalls).toContainEqual(["X-Request-Id", expect.any(String)]);
+    expect(contextInsideMiddleware?.requestId).toBe("test-uuid-from-pino-http");
+    expect(setHeaderCalls).toContainEqual([
+      "X-Request-Id",
+      "test-uuid-from-pino-http",
+    ]);
+  });
+
+  it("requestContextMiddleware reads req.id set by pino-http", async () => {
+    const { requestContextMiddleware, getRequestContext } = await import(
+      "../request-context"
+    );
+
+    const pinoGeneratedId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    const req = { id: pinoGeneratedId } as any;
+    const res = { setHeader: vi.fn() } as any;
+
+    let capturedRequestId: string | undefined;
+
+    requestContextMiddleware(req, res, () => {
+      capturedRequestId = getRequestContext()?.requestId;
+    });
+
+    // ALS should use the same ID that pino-http generated
+    expect(capturedRequestId).toBe(pinoGeneratedId);
+    // Response header should also match
+    expect(res.setHeader).toHaveBeenCalledWith("X-Request-Id", pinoGeneratedId);
+  });
+
+  it("toError wraps non-Error values into Error instances", async () => {
+    const { toError } = await import("../logger");
+
+    const realError = new Error("real");
+    expect(toError(realError)).toBe(realError);
+
+    expect(toError("string error")).toBeInstanceOf(Error);
+    expect(toError("string error").message).toBe("string error");
+
+    expect(toError(42)).toBeInstanceOf(Error);
+    expect(toError(null)).toBeInstanceOf(Error);
+    expect(toError(undefined)).toBeInstanceOf(Error);
   });
 });

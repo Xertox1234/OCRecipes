@@ -16,7 +16,7 @@ import {
   generateCoachResponse,
   type CoachContext,
 } from "../services/nutrition-coach";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 export function register(app: Express): void {
   // GET /api/chat/conversations - List conversations
@@ -33,10 +33,7 @@ export function register(app: Express): void {
         );
         res.json(conversations);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to list conversations",
-        );
+        logger.error({ err: toError(error) }, "failed to list conversations");
         sendError(
           res,
           500,
@@ -70,10 +67,7 @@ export function register(app: Express): void {
         );
         res.status(201).json(conversation);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to create conversation",
-        );
+        logger.error({ err: toError(error) }, "failed to create conversation");
         sendError(
           res,
           500,
@@ -112,10 +106,7 @@ export function register(app: Express): void {
         const messages = await storage.getChatMessages(id, 100);
         res.json(messages);
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to fetch messages",
-        );
+        logger.error({ err: toError(error) }, "failed to fetch messages");
         sendError(
           res,
           500,
@@ -286,10 +277,7 @@ export function register(app: Express): void {
             res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
           }
         } catch (error) {
-          logger.error(
-            { err: error instanceof Error ? error : new Error(String(error)) },
-            "chat streaming error",
-          );
+          logger.error({ err: toError(error) }, "chat streaming error");
           if (!aborted) {
             res.write(
               `data: ${JSON.stringify({ error: "Failed to generate response" })}\n\n`,
@@ -304,10 +292,7 @@ export function register(app: Express): void {
         }
         res.end();
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to send message",
-        );
+        logger.error({ err: toError(error) }, "failed to send message");
         if (!res.headersSent) {
           sendError(
             res,
@@ -346,10 +331,7 @@ export function register(app: Express): void {
           );
         res.status(204).send();
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "failed to delete conversation",
-        );
+        logger.error({ err: toError(error) }, "failed to delete conversation");
         sendError(
           res,
           500,

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { PantryItem, UserProfile } from "@shared/schema";
 import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { buildDietaryContext } from "./meal-suggestions";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("pantry-meal-plan");
 
@@ -196,10 +196,7 @@ Each meal needs: mealType, title, description, servings, prepTimeMinutes, cookTi
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "Pantry meal plan generation API error",
-    );
+    log.error({ err: toError(error) }, "pantry meal plan generation API error");
     throw new Error("Failed to generate meal plan. Please try again.");
   }
 

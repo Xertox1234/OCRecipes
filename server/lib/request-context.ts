@@ -1,14 +1,10 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import crypto from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 
 export interface RequestContext {
   requestId: string;
   userId: string | null;
 }
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const als = new AsyncLocalStorage<RequestContext>();
 
@@ -34,9 +30,8 @@ export function requestContextMiddleware(
   res: Response,
   next: NextFunction,
 ): void {
-  const incoming = req.headers["x-request-id"] as string | undefined;
-  const requestId =
-    incoming && UUID_RE.test(incoming) ? incoming : crypto.randomUUID();
+  // Read the request ID already generated/validated by pino-http's genReqId
+  const requestId = (req as { id?: string }).id!;
 
   // Set request ID on response header for client-side correlation
   res.setHeader("X-Request-Id", requestId);

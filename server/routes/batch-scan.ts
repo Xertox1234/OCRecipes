@@ -7,7 +7,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { batchSaveRequestSchema } from "@shared/types/batch-scan";
 import { isValidBarcode } from "@shared/constants/classification";
 import { createRateLimiter, formatZodError } from "./_helpers";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 
 const batchSaveRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
@@ -107,10 +107,7 @@ export function register(app: Express): void {
           }
         }
       } catch (error) {
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "batch save error",
-        );
+        logger.error({ err: toError(error) }, "batch save error");
         sendError(
           res,
           500,

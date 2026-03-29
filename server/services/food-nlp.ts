@@ -7,7 +7,7 @@ import {
   validateAiResponse,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../lib/ai-safety";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("food-nlp");
 
@@ -75,10 +75,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
       { timeout: OPENAI_TIMEOUT_FAST_MS },
     );
   } catch (error) {
-    log.error(
-      { err: error instanceof Error ? error : new Error(String(error)) },
-      "Food NLP parsing error",
-    );
+    log.error({ err: toError(error) }, "food NLP parsing error");
     return [];
   }
 
@@ -90,7 +87,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
   try {
     rawJson = JSON.parse(content);
   } catch {
-    log.warn("Food NLP: AI returned invalid JSON");
+    log.warn("food NLP: AI returned invalid JSON");
     return [];
   }
   const parsed = validateAiResponse(rawJson, foodNlpResponseSchema);

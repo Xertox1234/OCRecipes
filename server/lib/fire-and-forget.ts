@@ -1,4 +1,4 @@
-import { logger } from "./logger";
+import { logger, toError } from "./logger";
 
 /**
  * Execute a promise in the background without blocking the caller.
@@ -12,7 +12,7 @@ export function fireAndForget(label: string, promise: Promise<unknown>): void {
   promise.catch((err) =>
     logger.error(
       {
-        err: err instanceof Error ? err : new Error(String(err)),
+        err: toError(err),
         operation: label,
       },
       "background operation failed",

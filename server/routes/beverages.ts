@@ -6,7 +6,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { formatZodError } from "./_helpers";
 import { storage } from "../storage";
 import { lookupNutrition } from "../services/nutrition-lookup";
-import { logger } from "../lib/logger";
+import { logger, toError } from "../lib/logger";
 import {
   BEVERAGE_TYPES,
   BEVERAGE_SIZES,
@@ -148,10 +148,7 @@ export function register(app: Express): void {
         if (error instanceof ZodError) {
           return sendError(res, 400, formatZodError(error));
         }
-        logger.error(
-          { err: error instanceof Error ? error : new Error(String(error)) },
-          "beverage logging failed",
-        );
+        logger.error({ err: toError(error) }, "beverage logging failed");
         sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
       }
     },
