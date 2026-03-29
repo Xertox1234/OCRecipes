@@ -12,7 +12,10 @@ import {
 } from "../../services/photo-analysis";
 import { batchNutritionLookup } from "../../services/nutrition-lookup";
 import { register } from "../photos";
-import { createMockScannedItem } from "../../__tests__/factories";
+import {
+  createMockScannedItem,
+  createMockNutritionData,
+} from "../../__tests__/factories";
 import {
   _testInternals,
   clearAnalysisSession,
@@ -129,14 +132,29 @@ describe("Photos Routes", () => {
         expiresAt: null,
       });
       vi.mocked(analyzePhoto).mockResolvedValue({
-        foods: [{ name: "Apple", quantity: "1 medium", confidence: 0.9 }],
+        foods: [
+          {
+            name: "Apple",
+            quantity: "1 medium",
+            category: "fruit" as const,
+            confidence: 0.9,
+            needsClarification: false,
+          },
+        ],
+        followUpQuestions: [],
         overallConfidence: 0.9,
       });
       vi.mocked(batchNutritionLookup).mockResolvedValue(
         new Map([
           [
             "1 medium Apple",
-            { calories: 95, protein: 0.5, carbs: 25, fat: 0.3 },
+            createMockNutritionData({
+              name: "Apple",
+              calories: 95,
+              protein: 0.5,
+              carbs: 25,
+              fat: 0.3,
+            }),
           ],
         ]),
       );
@@ -192,7 +210,16 @@ describe("Photos Routes", () => {
         expiresAt: null,
       });
       vi.mocked(analyzePhoto).mockResolvedValue({
-        foods: [{ name: "Apple Pie", quantity: "1 slice", confidence: 0.4 }],
+        foods: [
+          {
+            name: "Apple Pie",
+            quantity: "1 slice",
+            category: "other" as const,
+            confidence: 0.4,
+            needsClarification: true,
+          },
+        ],
+        followUpQuestions: ["What type of apple pie?"],
         overallConfidence: 0.4,
       });
       vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
@@ -243,7 +270,16 @@ describe("Photos Routes", () => {
         expiresAt: null,
       });
       vi.mocked(analyzePhoto).mockResolvedValue({
-        foods: [{ name: "Apple", quantity: "1", confidence: 0.5 }],
+        foods: [
+          {
+            name: "Apple",
+            quantity: "1",
+            category: "fruit" as const,
+            confidence: 0.5,
+            needsClarification: false,
+          },
+        ],
+        followUpQuestions: [],
         overallConfidence: 0.5,
       });
       vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());
@@ -362,7 +398,15 @@ describe("Photos Routes", () => {
         tier: "premium",
       } as Awaited<ReturnType<typeof storage.getSubscriptionStatus>>);
       vi.mocked(analyzePhoto).mockResolvedValue({
-        foods: [{ name: "Apple", quantity: "1 medium", confidence: 0.9 }],
+        foods: [
+          {
+            name: "Apple",
+            quantity: "1 medium",
+            category: "fruit" as const,
+            confidence: 0.9,
+            needsClarification: false,
+          },
+        ],
         overallConfidence: 0.9,
       } as Awaited<ReturnType<typeof analyzePhoto>>);
       vi.mocked(batchNutritionLookup).mockResolvedValue(new Map());

@@ -317,16 +317,17 @@ describe("Recipes Routes", () => {
 
   describe("GET /api/recipes/mine", () => {
     it("returns user's recipes", async () => {
-      vi.mocked(storage.getUserRecipes).mockResolvedValue([
-        mockRecipe,
-      ] as unknown as { items: CommunityRecipe[]; total: number });
+      vi.mocked(storage.getUserRecipes).mockResolvedValue({
+        items: [mockRecipe],
+        total: 1,
+      });
 
       const res = await request(app)
         .get("/api/recipes/mine")
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
+      expect(res.body.items).toHaveLength(1);
     });
   });
 

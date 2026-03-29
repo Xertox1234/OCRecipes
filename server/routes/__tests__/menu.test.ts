@@ -109,11 +109,10 @@ describe("Menu Routes", () => {
           menuItems: [
             {
               name: "Pasta",
-              estimatedCalories: 500,
-              estimatedProtein: 20,
-              estimatedCarbs: 60,
-              estimatedFat: 15,
-              tags: [],
+              calories: 500,
+              protein: 20,
+              carbs: 60,
+              fat: 15,
             },
           ],
         }),

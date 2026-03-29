@@ -194,7 +194,7 @@ describe("Grocery Routes", () => {
         ...mockList,
         items: [createMockGroceryListItem({ name: "chicken breast" })],
       });
-      vi.mocked(storage.getUserProfile).mockResolvedValue(null);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/meal-plan/grocery-lists/1")
@@ -205,7 +205,7 @@ describe("Grocery Routes", () => {
     });
 
     it("returns 404 for unknown list", async () => {
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(null);
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(undefined);
 
       const res = await request(app)
         .get("/api/meal-plan/grocery-lists/999")
@@ -234,7 +234,7 @@ describe("Grocery Routes", () => {
     });
 
     it("returns 404 when list not found", async () => {
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(null);
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(undefined);
 
       const res = await request(app)
         .put("/api/meal-plan/grocery-lists/999/items/1")
@@ -281,7 +281,7 @@ describe("Grocery Routes", () => {
         items: [],
       });
       vi.mocked(storage.updateGroceryListItemPantryFlag).mockResolvedValue(
-        null,
+        undefined,
       );
 
       const res = await request(app)
@@ -333,7 +333,7 @@ describe("Grocery Routes", () => {
     });
 
     it("returns 404 for unknown list", async () => {
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(null);
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists/999/items")
@@ -453,7 +453,9 @@ describe("Grocery Routes", () => {
         ...mockList,
         items: [],
       });
-      vi.mocked(storage.updateGroceryListItemChecked).mockResolvedValue(null);
+      vi.mocked(storage.updateGroceryListItemChecked).mockResolvedValue(
+        undefined,
+      );
 
       const res = await request(app)
         .put("/api/meal-plan/grocery-lists/1/items/999")
@@ -537,7 +539,7 @@ describe("Grocery Routes", () => {
 
   describe("POST /api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry", () => {
     it("returns 403 for free tier", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(null);
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists/1/items/1/add-to-pantry")
@@ -550,6 +552,7 @@ describe("Grocery Routes", () => {
     it("adds grocery item to pantry", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
+        expiresAt: null,
       });
       vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
         ...mockList,
@@ -579,6 +582,7 @@ describe("Grocery Routes", () => {
     it("returns 400 for invalid IDs", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
+        expiresAt: null,
       });
 
       const res = await request(app)
@@ -591,8 +595,9 @@ describe("Grocery Routes", () => {
     it("returns 404 when list not found", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
+        expiresAt: null,
       });
-      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(null);
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists/999/items/1/add-to-pantry")
@@ -604,6 +609,7 @@ describe("Grocery Routes", () => {
     it("returns 404 when grocery item not found in list", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
+        expiresAt: null,
       });
       vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
         ...mockList,
@@ -620,6 +626,7 @@ describe("Grocery Routes", () => {
     it("returns 500 on storage error", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
         tier: "premium",
+        expiresAt: null,
       });
       vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
         ...mockList,
