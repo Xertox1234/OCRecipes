@@ -4,6 +4,9 @@ import {
   containsDangerousDietaryAdvice,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../lib/ai-safety";
+import { createServiceLogger } from "../lib/logger";
+
+const log = createServiceLogger("nutrition-coach");
 
 export interface CoachContext {
   goals: {
@@ -93,7 +96,10 @@ export async function* generateCoachResponse(
       { timeout: OPENAI_TIMEOUT_STREAM_MS },
     );
   } catch (error) {
-    console.error("Coach API error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "Coach API error",
+    );
     yield "Sorry, I'm having trouble responding right now. Please try again.";
     return;
   }
@@ -119,7 +125,10 @@ export async function* generateCoachResponse(
       }
     }
   } catch (error) {
-    console.error("Coach streaming error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "Coach streaming error",
+    );
     yield "\n\nSorry, the response was interrupted. Please try again.";
     return;
   }

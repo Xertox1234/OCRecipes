@@ -5,6 +5,9 @@ import { nutritionCache } from "@shared/schema";
 import { and, gt, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { getStandardizedFoodName } from "./cultural-food-map";
+import { createServiceLogger } from "../lib/logger";
+
+const log = createServiceLogger("nutrition-lookup");
 
 // Rate limiting for parallel requests
 const RATE_LIMIT = 5;
@@ -106,7 +109,10 @@ async function getCachedNutrition(
       }
     }
   } catch (error) {
-    console.error("Cache lookup error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "cache lookup error",
+    );
   }
 
   return results;
@@ -140,7 +146,10 @@ async function cacheNutrition(
         },
       });
   } catch (error) {
-    console.error("Cache write error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "cache write error",
+    );
   }
 }
 
@@ -152,7 +161,7 @@ async function cacheNutrition(
 async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
   const apiKey = process.env.API_NINJAS_KEY;
   if (!apiKey) {
-    console.warn("API_NINJAS_KEY not configured — skipping API Ninjas lookup");
+    log.warn("API_NINJAS_KEY not configured — skipping API Ninjas lookup");
     return null;
   }
 
@@ -166,7 +175,7 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
     );
 
     if (!response.ok) {
-      console.error(`API Ninjas error: ${response.status}`);
+      log.error({ status: response.status }, "API Ninjas error");
       return null;
     }
 
@@ -193,7 +202,10 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
       source: "api-ninjas" as const,
     };
   } catch (error) {
-    console.error("API Ninjas lookup error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "API Ninjas lookup error",
+    );
     return null;
   }
 }
@@ -238,11 +250,15 @@ async function ensureCNFFoods(): Promise<void> {
       ]);
       cnfFoodsEN = await enRes.json();
       cnfFoodsFR = await frRes.json();
-      console.warn(
-        `CNF loaded: ${cnfFoodsEN?.length} EN + ${cnfFoodsFR?.length} FR foods`,
+      log.info(
+        { enCount: cnfFoodsEN?.length, frCount: cnfFoodsFR?.length },
+        "CNF food lists loaded",
       );
     } catch (err) {
-      console.warn("Failed to load CNF food lists:", err);
+      log.warn(
+        { err: err instanceof Error ? err : new Error(String(err)) },
+        "failed to load CNF food lists",
+      );
     }
     cnfFetchPromise = null;
   })();
@@ -379,7 +395,7 @@ async function lookupCNF(query: string): Promise<NutritionData | null> {
   const displayName =
     enFood?.food_description || matchFR?.food_description || query;
 
-  console.warn(`CNF match for "${query}": ${displayName} (code: ${matchCode})`);
+  log.debug({ query, match: displayName, code: matchCode }, "CNF match found");
 
   try {
     const nutRes = await fetch(
@@ -415,7 +431,10 @@ async function lookupCNF(query: string): Promise<NutritionData | null> {
       source: "cnf",
     };
   } catch (err) {
-    console.warn("CNF nutrient lookup error:", err);
+    log.warn(
+      { err: err instanceof Error ? err : new Error(String(err)) },
+      "CNF nutrient lookup error",
+    );
     return null;
   }
 }
@@ -423,9 +442,7 @@ async function lookupCNF(query: string): Promise<NutritionData | null> {
 // Warn at startup if using USDA DEMO_KEY (severe rate limits: 40 req/hour)
 const USDA_API_KEY = process.env.USDA_API_KEY || "DEMO_KEY";
 if (USDA_API_KEY === "DEMO_KEY") {
-  console.warn(
-    "⚠️  USDA_API_KEY not set - using DEMO_KEY with 40 requests/hour limit",
-  );
+  log.warn("USDA_API_KEY not set — using DEMO_KEY with 40 requests/hour limit");
 }
 
 /**
@@ -476,7 +493,10 @@ async function lookupUSDA(query: string): Promise<NutritionData | null> {
       source: "usda",
     };
   } catch (error) {
-    console.error("USDA lookup error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "USDA lookup error",
+    );
     return null;
   }
 }
@@ -823,13 +843,17 @@ export async function lookupBarcode(
       const json = await res.json();
       if (json.status === 1 && json.product) {
         offProduct = json.product;
-        console.warn(
-          `Barcode ${code}: found in OFF as ${variant} (${variant.length} digits)`,
+        log.debug(
+          { barcode: code, variant, digits: variant.length },
+          "barcode found in OFF",
         );
         break;
       }
     } catch (err) {
-      console.warn(`Open Food Facts fetch error for ${variant}:`, err);
+      log.warn(
+        { err: err instanceof Error ? err : new Error(String(err)), variant },
+        "Open Food Facts fetch error",
+      );
     }
   }
 
@@ -902,13 +926,19 @@ export async function lookupBarcode(
   // Some products exist in USDA but not OFF (branded/US-market items).
   let usdaByUPC: { product: NutritionData; brandName?: string } | null = null;
   if (!offProduct) {
-    console.warn(
-      `Barcode ${code}: not in OFF — trying USDA branded food by UPC`,
+    log.debug(
+      { barcode: code },
+      "barcode not in OFF — trying USDA branded food by UPC",
     );
     usdaByUPC = await lookupUSDAByUPC(code);
     if (usdaByUPC) {
-      console.warn(
-        `Barcode ${code}: USDA UPC match — "${usdaByUPC.product.name}" (${usdaByUPC.product.calories} kcal/100g)`,
+      log.debug(
+        {
+          barcode: code,
+          product: usdaByUPC.product.name,
+          calories: usdaByUPC.product.calories,
+        },
+        "USDA UPC match found",
       );
     }
   }
@@ -930,26 +960,35 @@ export async function lookupBarcode(
 
   for (const term of cnfSearchTerms) {
     try {
-      console.warn(`Barcode ${code}: trying CNF for "${term}"`);
+      log.debug({ barcode: code, term }, "trying CNF lookup");
       const cnfResult = await lookupCNF(term);
       if (cnfResult && cnfResult.calories > 0) {
         secondaryPer100g = normalizeToPerHundredGrams(cnfResult);
         secondarySource = "cnf";
-        console.warn(
-          `Barcode ${code}: CNF matched "${cnfResult.name}" — ${secondaryPer100g.calories} kcal/100g`,
+        log.debug(
+          {
+            barcode: code,
+            match: cnfResult.name,
+            calories: secondaryPer100g.calories,
+          },
+          "CNF match for barcode",
         );
         break; // Good match found, stop searching
       }
     } catch (err) {
-      console.warn("CNF lookup failed:", err);
+      log.warn(
+        { err: err instanceof Error ? err : new Error(String(err)) },
+        "CNF lookup failed",
+      );
     }
   }
 
   // If CNF didn't match, fall back to USDA + API Ninjas
   if (!secondaryPer100g && usdaSearchTerm) {
     try {
-      console.warn(
-        `Barcode ${code}: CNF miss — trying USDA for "${usdaSearchTerm}"`,
+      log.debug(
+        { barcode: code, searchTerm: usdaSearchTerm },
+        "CNF miss — trying USDA",
       );
       const secondary = await lookupNutrition(usdaSearchTerm);
       if (secondary) {
@@ -958,7 +997,10 @@ export async function lookupBarcode(
           secondary.source === "cache" ? "usda" : secondary.source;
       }
     } catch (err) {
-      console.warn("Secondary nutrition lookup failed:", err);
+      log.warn(
+        { err: err instanceof Error ? err : new Error(String(err)) },
+        "secondary nutrition lookup failed",
+      );
     }
   }
 
@@ -1004,8 +1046,14 @@ export async function lookupBarcode(
       // Both have data — compare. If >2× discrepancy, prefer secondary.
       const ratio = offPer100g.calories / secondaryPer100g.calories;
       if (ratio < 0.5 || ratio > 2.0) {
-        console.warn(
-          `Barcode ${code}: OFF=${offPer100g.calories} kcal/100g vs ${secondarySource}=${secondaryPer100g.calories} kcal/100g — using ${secondarySource}`,
+        log.debug(
+          {
+            barcode: code,
+            offCalories: offPer100g.calories,
+            secondaryCalories: secondaryPer100g.calories,
+            selectedSource: secondarySource,
+          },
+          "calorie discrepancy — using secondary source",
         );
         per100g = secondaryPer100g;
         source = secondarySource;
@@ -1073,7 +1121,10 @@ export async function lookupBarcode(
       source,
     })
     .catch((err) => {
-      console.error("Failed to upsert barcodeNutrition:", err);
+      log.error(
+        { err: err instanceof Error ? err : new Error(String(err)) },
+        "failed to upsert barcodeNutrition",
+      );
     });
 
   return {
@@ -1177,7 +1228,10 @@ async function cacheNutritionIfAbsent(
       })
       .onConflictDoNothing({ target: nutritionCache.queryKey });
   } catch (error) {
-    console.error("Cache seed write error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "cache seed write error",
+    );
   }
 }
 

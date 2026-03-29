@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { storage } from "../storage";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { createServiceLogger } from "../lib/logger";
+
+const log = createServiceLogger("micronutrient-lookup");
 
 const USDA_API_KEY = process.env.USDA_API_KEY || "DEMO_KEY";
 const USDA_BASE_URL = "https://api.nal.usda.gov/fdc/v1";
@@ -113,7 +116,10 @@ async function lookupMicronutrients(
 
     return micronutrients;
   } catch (error) {
-    console.error("Micronutrient lookup error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "Micronutrient lookup error",
+    );
     return [];
   }
 }

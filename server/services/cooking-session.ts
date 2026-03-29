@@ -11,6 +11,9 @@ import {
   calculateCookedNutrition,
   preparationToCookingMethod,
 } from "./cooking-adjustment";
+import { createServiceLogger } from "../lib/logger";
+
+const log = createServiceLogger("cooking-session");
 
 // ============================================================================
 // INGREDIENT ANALYSIS
@@ -102,9 +105,9 @@ export async function analyzeIngredientPhoto(
 
   const validated = photoAnalysisResponseSchema.safeParse(parsed);
   if (!validated.success) {
-    console.error(
-      "Ingredient analysis validation failed:",
-      validated.error.format(),
+    log.warn(
+      { zodErrors: validated.error.flatten() },
+      "Ingredient analysis validation failed",
     );
     throw new IngredientAnalysisError(
       "Unexpected response format from ingredient analysis",

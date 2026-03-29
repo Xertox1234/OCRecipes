@@ -3,6 +3,9 @@ import type {
   InsertMealPlanRecipe,
   InsertRecipeIngredient,
 } from "@shared/schema";
+import { createServiceLogger } from "../lib/logger";
+
+const log = createServiceLogger("recipe-catalog");
 
 const SPOONACULAR_BASE = "https://api.spoonacular.com";
 
@@ -11,9 +14,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 
 const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
 if (!SPOONACULAR_API_KEY && process.env.NODE_ENV !== "test") {
-  console.warn(
-    "SPOONACULAR_API_KEY is not set. Catalog search will be disabled.",
-  );
+  log.warn("SPOONACULAR_API_KEY is not set — catalog search will be disabled");
 }
 
 // ── Zod Schemas for Spoonacular responses ────────────────────────────
@@ -235,7 +236,10 @@ export async function searchCatalogRecipes(
   const json = await res.json();
   const parsed = catalogSearchResponseSchema.safeParse(json);
   if (!parsed.success) {
-    console.error("Spoonacular search parse error:", parsed.error.flatten());
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "Spoonacular search parse error",
+    );
     return { results: [], offset: 0, number: 0, totalResults: 0 };
   }
 
@@ -269,7 +273,10 @@ export async function getCatalogRecipeDetail(spoonacularId: number): Promise<{
   const json = await res.json();
   const parsed = recipeDetailSchema.safeParse(json);
   if (!parsed.success) {
-    console.error("Spoonacular detail parse error:", parsed.error.flatten());
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "Spoonacular detail parse error",
+    );
     return null;
   }
 

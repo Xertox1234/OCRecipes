@@ -5,6 +5,9 @@ import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { ALLERGEN_INGREDIENT_MAP } from "@shared/constants/allergens";
 import type { AllergenId } from "@shared/constants/allergens";
 import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
+import { createServiceLogger } from "../lib/logger";
+
+const log = createServiceLogger("meal-suggestions");
 
 // Zod schema for validating AI response
 const ingredientSchema = z.object({
@@ -182,7 +185,10 @@ Respond with JSON: { "suggestions": [...] }`;
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
   } catch (error) {
-    console.error("Meal suggestions API error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "Meal suggestions API error",
+    );
     throw new Error("Failed to generate meal suggestions. Please try again.");
   }
 

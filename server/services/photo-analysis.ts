@@ -13,9 +13,12 @@ import {
 import { getCuisineForFood } from "./cultural-food-map";
 import { openai } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import { createServiceLogger } from "../lib/logger";
 
 // Import shared type for use in this file, and re-export for consumers
 import type { LabelExtractionResult } from "@shared/types/label-analysis";
+
+const log = createServiceLogger("photo-analysis");
 
 // Zod schemas for runtime validation (from institutional learning: unsafe-type-cast-zod-validation)
 const foodItemSchema = z.object({
@@ -298,7 +301,10 @@ export async function analyzeRecipePhoto(
     const parsed = recipePhotoResultSchema.safeParse(JSON.parse(content));
 
     if (!parsed.success) {
-      console.error("Recipe photo extraction validation failed:", parsed.error);
+      log.warn(
+        { zodErrors: parsed.error.flatten() },
+        "recipe photo extraction validation failed",
+      );
       return {
         title: "",
         description: null,
@@ -317,12 +323,16 @@ export async function analyzeRecipePhoto(
       };
     }
 
-    console.warn(
-      `Recipe photo extraction completed in ${Date.now() - startTime}ms`,
+    log.debug(
+      { duration: Date.now() - startTime },
+      "recipe photo extraction completed",
     );
     return parsed.data;
   } catch (error) {
-    console.error("Recipe photo analysis error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "recipe photo analysis error",
+    );
     return {
       title: "",
       description: null,
@@ -384,7 +394,10 @@ export async function analyzeLabelPhoto(
     const parsed = labelExtractionSchema.safeParse(JSON.parse(content));
 
     if (!parsed.success) {
-      console.error("Label extraction validation failed:", parsed.error);
+      log.warn(
+        { zodErrors: parsed.error.flatten() },
+        "label extraction validation failed",
+      );
       return {
         servingSize: null,
         servingsPerContainer: null,
@@ -408,10 +421,16 @@ export async function analyzeLabelPhoto(
       };
     }
 
-    console.warn(`Label extraction completed in ${Date.now() - startTime}ms`);
+    log.debug(
+      { duration: Date.now() - startTime },
+      "label extraction completed",
+    );
     return parsed.data;
   } catch (error) {
-    console.error("Label analysis error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "label analysis error",
+    );
     return {
       servingSize: null,
       servingsPerContainer: null,
@@ -500,7 +519,10 @@ export async function analyzePhoto(
     // Safe parsing with Zod
     const parsed = analysisResultSchema.safeParse(JSON.parse(content));
     if (!parsed.success) {
-      console.error("Vision API response validation failed:", parsed.error);
+      log.warn(
+        { zodErrors: parsed.error.flatten() },
+        "vision API response validation failed",
+      );
       return {
         foods: [],
         overallConfidence: 0,
@@ -518,12 +540,16 @@ export async function analyzePhoto(
       }
     }
 
-    console.warn(
-      `Vision analysis (${intent}) completed in ${Date.now() - startTime}ms`,
+    log.debug(
+      { intent, duration: Date.now() - startTime },
+      "vision analysis completed",
     );
     return parsed.data;
   } catch (error) {
-    console.error("Photo analysis error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "photo analysis error",
+    );
     return {
       foods: [],
       overallConfidence: 0,
@@ -572,13 +598,19 @@ Respond with JSON matching the same schema, with updated foods and confidence.`,
 
     const parsed = analysisResultSchema.safeParse(JSON.parse(content));
     if (!parsed.success) {
-      console.error("Refinement validation failed:", parsed.error);
+      log.warn(
+        { zodErrors: parsed.error.flatten() },
+        "refinement validation failed",
+      );
       return previousResult;
     }
 
     return parsed.data;
   } catch (error) {
-    console.error("Refinement error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "refinement error",
+    );
     return previousResult;
   }
 }
@@ -698,7 +730,10 @@ export async function classifyAndAnalyze(
     const parsed = classifiedResultSchema.safeParse(JSON.parse(content));
 
     if (!parsed.success) {
-      console.error("Classification validation failed:", parsed.error);
+      log.warn(
+        { zodErrors: parsed.error.flatten() },
+        "classification validation failed",
+      );
       return {
         contentType: "non_food",
         confidence: 0,
@@ -710,7 +745,10 @@ export async function classifyAndAnalyze(
 
     classification = parsed.data;
   } catch (error) {
-    console.error("Classification error:", error);
+    log.error(
+      { err: error instanceof Error ? error : new Error(String(error)) },
+      "classification error",
+    );
     return {
       contentType: "non_food",
       confidence: 0,
@@ -727,8 +765,14 @@ export async function classifyAndAnalyze(
 
   const resolvedIntent = CONTENT_TYPE_TO_INTENT[classification.contentType];
 
-  console.warn(
-    `Classification: ${classification.contentType} (${classification.confidence}) → intent: ${resolvedIntent ?? "none"} in ${Date.now() - startTime}ms`,
+  log.debug(
+    {
+      contentType: classification.contentType,
+      confidence: classification.confidence,
+      resolvedIntent: resolvedIntent ?? "none",
+      duration: Date.now() - startTime,
+    },
+    "classification completed",
   );
 
   // Step 2: If high confidence and we have a mapped intent, run full analysis
