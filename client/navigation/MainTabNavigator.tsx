@@ -2,7 +2,7 @@ import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { Platform, StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
 import HomeStackNavigator from "@/navigation/HomeStackNavigator";
@@ -59,11 +59,19 @@ export default function MainTabNavigator() {
               />
             ) : null,
           headerShown: false,
-          tabBarLabelStyle: {
-            fontFamily: FontFamily.medium,
-            fontSize: 11,
-            letterSpacing: 0.3,
-          },
+          tabBarLabel: ({ color, children }) => (
+            <Text
+              style={{
+                fontFamily: FontFamily.medium,
+                fontSize: 11,
+                letterSpacing: 0.3,
+                color,
+              }}
+              maxFontSizeMultiplier={1.5}
+            >
+              {children}
+            </Text>
+          ),
         }}
       >
         <Tab.Screen

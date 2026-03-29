@@ -67,4 +67,14 @@ describe("ThemedText", () => {
     );
     expect(screen.getByTestId("custom-text")).toBeDefined();
   });
+
+  it("passes maxScale as maxFontSizeMultiplier", () => {
+    renderComponent(
+      <ThemedText testID="scaled-text" maxScale={1.5}>
+        Capped text
+      </ThemedText>,
+    );
+    const el = screen.getByTestId("scaled-text");
+    expect(el.getAttribute("maxFontSizeMultiplier")).toBe("1.5");
+  });
 });

@@ -39,7 +39,10 @@ export const FastingStreakBadge = React.memo(function FastingStreakBadge({
         accessibilityRole="text"
       >
         <Feather name="zap" size={12} color={badgeColor} accessible={false} />
-        <ThemedText style={[styles.compactText, { color: badgeColor }]}>
+        <ThemedText
+          maxScale={1.5}
+          style={[styles.compactText, { color: badgeColor }]}
+        >
           {streak}
         </ThemedText>
       </View>

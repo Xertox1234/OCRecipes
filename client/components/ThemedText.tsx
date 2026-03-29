@@ -7,6 +7,8 @@ export type ThemedTextProps = TextProps & {
   lightColor?: string;
   darkColor?: string;
   type?: "h1" | "h2" | "h3" | "h4" | "body" | "small" | "caption" | "link";
+  /** Cap Dynamic Type scaling for text in fixed-height containers (e.g. 1.5 = max 150%). */
+  maxScale?: number;
 };
 
 export function ThemedText({
@@ -14,6 +16,7 @@ export function ThemedText({
   lightColor,
   darkColor,
   type = "body",
+  maxScale,
   ...rest
 }: ThemedTextProps) {
   const { theme, isDark } = useTheme();
@@ -67,6 +70,7 @@ export function ThemedText({
   return (
     <Text
       accessibilityRole={getAccessibilityRole()}
+      maxFontSizeMultiplier={maxScale}
       style={[{ color: getColor() }, getTypeStyle(), style]}
       {...rest}
     />

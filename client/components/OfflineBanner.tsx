@@ -74,6 +74,7 @@ export function OfflineBanner() {
       />
       <ThemedText
         type="small"
+        maxScale={1.5}
         style={[styles.message, { color: theme.backgroundDefault }]}
         numberOfLines={1}
       >

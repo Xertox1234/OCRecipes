@@ -151,14 +151,18 @@ export function Chip({
         accessibilityState={{ selected }}
         style={[chipStyles, animatedStyle]}
       >
-        <ThemedText style={textStyles}>{label}</ThemedText>
+        <ThemedText maxScale={1.5} style={textStyles}>
+          {label}
+        </ThemedText>
       </AnimatedPressable>
     );
   }
 
   return (
     <Animated.View style={chipStyles}>
-      <ThemedText style={textStyles}>{label}</ThemedText>
+      <ThemedText maxScale={1.5} style={textStyles}>
+        {label}
+      </ThemedText>
     </Animated.View>
   );
 }

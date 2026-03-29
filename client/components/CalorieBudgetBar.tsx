@@ -27,25 +27,44 @@ export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
     <View style={styles.container} accessibilityLabel="Calorie budget summary">
       <View style={styles.labelRow}>
         <View style={styles.labelItem}>
-          <ThemedText style={[styles.labelValue, { color: theme.link }]}>
+          <ThemedText
+            maxScale={1.5}
+            style={[styles.labelValue, { color: theme.link }]}
+          >
             {Math.round(calorieGoal)}
           </ThemedText>
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+          <ThemedText
+            maxScale={1.5}
+            type="caption"
+            style={{ color: theme.textSecondary }}
+          >
             Goal
           </ThemedText>
         </View>
-        <ThemedText style={styles.operator}>-</ThemedText>
+        <ThemedText maxScale={1.5} style={styles.operator}>
+          -
+        </ThemedText>
         <View style={styles.labelItem}>
-          <ThemedText style={[styles.labelValue, { color: theme.error }]}>
+          <ThemedText
+            maxScale={1.5}
+            style={[styles.labelValue, { color: theme.error }]}
+          >
             {Math.round(foodCalories)}
           </ThemedText>
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+          <ThemedText
+            maxScale={1.5}
+            type="caption"
+            style={{ color: theme.textSecondary }}
+          >
             Food
           </ThemedText>
         </View>
-        <ThemedText style={styles.operator}>=</ThemedText>
+        <ThemedText maxScale={1.5} style={styles.operator}>
+          =
+        </ThemedText>
         <View style={styles.labelItem}>
           <ThemedText
+            maxScale={1.5}
             style={[
               styles.labelValue,
               { color: remaining >= 0 ? theme.success : theme.error },
@@ -53,7 +72,11 @@ export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
           >
             {Math.round(remaining)}
           </ThemedText>
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+          <ThemedText
+            maxScale={1.5}
+            type="caption"
+            style={{ color: theme.textSecondary }}
+          >
             Left
           </ThemedText>
         </View>

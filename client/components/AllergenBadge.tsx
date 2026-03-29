@@ -50,6 +50,7 @@ export const AllergenBadge = React.memo(function AllergenBadge({
       <Feather name={icon} size={12} color={color} accessible={false} />
       <ThemedText
         type="caption"
+        maxScale={1.5}
         style={{ color, marginLeft: Spacing.xs, fontWeight: "600" }}
       >
         {allergenLabel}

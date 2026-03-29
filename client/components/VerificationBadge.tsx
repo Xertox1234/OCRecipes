@@ -26,7 +26,9 @@ export const VerificationBadge = React.memo(function VerificationBadge({
       accessibilityRole="text"
     >
       <Feather name={config.icon} size={14} color={color} accessible={false} />
-      <ThemedText style={[styles.label, { color }]}>{config.label}</ThemedText>
+      <ThemedText maxScale={1.5} style={[styles.label, { color }]}>
+        {config.label}
+      </ThemedText>
     </View>
   );
 });

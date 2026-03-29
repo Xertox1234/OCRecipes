@@ -73,7 +73,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
           {/* Difficulty badge */}
           {recipe.difficulty ? (
             <View style={styles.difficultyBadge}>
-              <ThemedText style={styles.difficultyText}>
+              <ThemedText maxScale={1.5} style={styles.difficultyText}>
                 {recipe.difficulty}
               </ThemedText>
             </View>

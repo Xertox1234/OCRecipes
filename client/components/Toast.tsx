@@ -142,6 +142,7 @@ export function Toast({
         />
         <ThemedText
           type="small"
+          maxScale={1.5}
           style={[styles.message, { color: colors.text }]}
           numberOfLines={2}
         >
@@ -163,6 +164,7 @@ export function Toast({
           >
             <ThemedText
               type="small"
+              maxScale={1.5}
               style={[styles.actionLabel, { color: colors.text }]}
             >
               {action.label}
