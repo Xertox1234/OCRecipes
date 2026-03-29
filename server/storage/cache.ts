@@ -10,6 +10,7 @@ import {
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { db } from "../db";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { logger } from "../lib/logger";
 import { eq, and, gte, gt, lt, lte, sql } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 
@@ -295,7 +296,7 @@ export async function purgeExpiredCacheRows(): Promise<number> {
 
   // instructionCache cascades from suggestionCache, but clean orphans just in case
   if (totalDeleted > 0) {
-    console.warn(`Cache cleanup: purged ${totalDeleted} expired rows`);
+    logger.debug({ totalDeleted }, "cache cleanup: purged expired rows");
   }
   return totalDeleted;
 }
@@ -306,7 +307,10 @@ export async function purgeExpiredCacheRows(): Promise<number> {
 export function startCacheCleanupJob(): ReturnType<typeof setInterval> {
   return setInterval(() => {
     purgeExpiredCacheRows().catch((err) => {
-      console.error("Cache cleanup error:", err);
+      logger.error(
+        { err: err instanceof Error ? err : new Error(String(err)) },
+        "cache cleanup error",
+      );
     });
   }, CLEANUP_INTERVAL_MS);
 }
