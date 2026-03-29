@@ -4,7 +4,12 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import {
+  Spacing,
+  BorderRadius,
+  withOpacity,
+  MAX_FONT_SCALE_CONSTRAINED,
+} from "@/constants/theme";
 import { getBadgeConfig } from "./verification-badge-utils";
 import type { VerificationLevel } from "@shared/types/verification";
 
@@ -26,7 +31,10 @@ export const VerificationBadge = React.memo(function VerificationBadge({
       accessibilityRole="text"
     >
       <Feather name={config.icon} size={14} color={color} accessible={false} />
-      <ThemedText maxScale={1.5} style={[styles.label, { color }]}>
+      <ThemedText
+        maxScale={MAX_FONT_SCALE_CONSTRAINED}
+        style={[styles.label, { color }]}
+      >
         {config.label}
       </ThemedText>
     </View>

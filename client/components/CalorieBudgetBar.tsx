@@ -7,6 +7,7 @@ import {
   BorderRadius,
   FontFamily,
   withOpacity,
+  MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
 import { calculateRemaining, calculateProgress } from "./calorie-budget-utils";
 
@@ -28,43 +29,49 @@ export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
       <View style={styles.labelRow}>
         <View style={styles.labelItem}>
           <ThemedText
-            maxScale={1.5}
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
             style={[styles.labelValue, { color: theme.link }]}
           >
             {Math.round(calorieGoal)}
           </ThemedText>
           <ThemedText
-            maxScale={1.5}
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
             type="caption"
             style={{ color: theme.textSecondary }}
           >
             Goal
           </ThemedText>
         </View>
-        <ThemedText maxScale={1.5} style={styles.operator}>
+        <ThemedText
+          maxScale={MAX_FONT_SCALE_CONSTRAINED}
+          style={styles.operator}
+        >
           -
         </ThemedText>
         <View style={styles.labelItem}>
           <ThemedText
-            maxScale={1.5}
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
             style={[styles.labelValue, { color: theme.error }]}
           >
             {Math.round(foodCalories)}
           </ThemedText>
           <ThemedText
-            maxScale={1.5}
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
             type="caption"
             style={{ color: theme.textSecondary }}
           >
             Food
           </ThemedText>
         </View>
-        <ThemedText maxScale={1.5} style={styles.operator}>
+        <ThemedText
+          maxScale={MAX_FONT_SCALE_CONSTRAINED}
+          style={styles.operator}
+        >
           =
         </ThemedText>
         <View style={styles.labelItem}>
           <ThemedText
-            maxScale={1.5}
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
             style={[
               styles.labelValue,
               { color: remaining >= 0 ? theme.success : theme.error },
@@ -73,7 +80,7 @@ export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
             {Math.round(remaining)}
           </ThemedText>
           <ThemedText
-            maxScale={1.5}
+            maxScale={MAX_FONT_SCALE_CONSTRAINED}
             type="caption"
             style={{ color: theme.textSecondary }}
           >

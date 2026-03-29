@@ -14,6 +14,7 @@ import {
   Spacing,
   FontFamily,
   withOpacity,
+  MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
 
@@ -151,7 +152,7 @@ export function Chip({
         accessibilityState={{ selected }}
         style={[chipStyles, animatedStyle]}
       >
-        <ThemedText maxScale={1.5} style={textStyles}>
+        <ThemedText maxScale={MAX_FONT_SCALE_CONSTRAINED} style={textStyles}>
           {label}
         </ThemedText>
       </AnimatedPressable>
@@ -160,7 +161,7 @@ export function Chip({
 
   return (
     <Animated.View style={chipStyles}>
-      <ThemedText maxScale={1.5} style={textStyles}>
+      <ThemedText maxScale={MAX_FONT_SCALE_CONSTRAINED} style={textStyles}>
         {label}
       </ThemedText>
     </Animated.View>

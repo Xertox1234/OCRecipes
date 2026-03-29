@@ -4,7 +4,12 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import {
+  Spacing,
+  BorderRadius,
+  withOpacity,
+  MAX_FONT_SCALE_CONSTRAINED,
+} from "@/constants/theme";
 import type { AllergySeverity } from "@shared/constants/allergens";
 
 interface AllergenBadgeProps {
@@ -50,7 +55,7 @@ export const AllergenBadge = React.memo(function AllergenBadge({
       <Feather name={icon} size={12} color={color} accessible={false} />
       <ThemedText
         type="caption"
-        maxScale={1.5}
+        maxScale={MAX_FONT_SCALE_CONSTRAINED}
         style={{ color, marginLeft: Spacing.xs, fontWeight: "600" }}
       >
         {allergenLabel}

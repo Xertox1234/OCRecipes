@@ -17,6 +17,7 @@ export function ThemedText({
   darkColor,
   type = "body",
   maxScale,
+  maxFontSizeMultiplier: _ignored,
   ...rest
 }: ThemedTextProps) {
   const { theme, isDark } = useTheme();

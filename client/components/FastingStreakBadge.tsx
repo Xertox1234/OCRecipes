@@ -9,6 +9,7 @@ import {
   BorderRadius,
   FontFamily,
   withOpacity,
+  MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
 import { isHighStreak, formatStreakLabel } from "./fasting-display-utils";
 
@@ -40,7 +41,7 @@ export const FastingStreakBadge = React.memo(function FastingStreakBadge({
       >
         <Feather name="zap" size={12} color={badgeColor} accessible={false} />
         <ThemedText
-          maxScale={1.5}
+          maxScale={MAX_FONT_SCALE_CONSTRAINED}
           style={[styles.compactText, { color: badgeColor }]}
         >
           {streak}

@@ -15,6 +15,7 @@ import {
   FontFamily,
   Shadows,
   withOpacity,
+  MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
 
 const OFFLINE_MESSAGE = "You're offline. Some features may be unavailable.";
@@ -74,7 +75,7 @@ export function OfflineBanner() {
       />
       <ThemedText
         type="small"
-        maxScale={1.5}
+        maxScale={MAX_FONT_SCALE_CONSTRAINED}
         style={[styles.message, { color: theme.backgroundDefault }]}
         numberOfLines={1}
       >

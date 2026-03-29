@@ -514,11 +514,7 @@ export default function ScanScreen() {
           />
 
           <View accessibilityLiveRegion="polite">
-            <ThemedText
-              type="body"
-              style={styles.reticleText}
-              maxFontSizeMultiplier={1.3}
-            >
+            <ThemedText type="body" style={styles.reticleText} maxScale={1.3}>
               {isScanning
                 ? "Scanning..."
                 : isFrontLabelMode

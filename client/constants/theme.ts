@@ -70,6 +70,9 @@ export const FAB_SIZE = 56;
 /** Extra bottom padding for screens with the FAB (FAB height + margin) */
 export const FAB_CLEARANCE = FAB_SIZE + 16; // FAB size + gap
 
+/** Max Dynamic Type scale for text in fixed-height containers (badges, chips, tab bar, toasts). */
+export const MAX_FONT_SCALE_CONSTRAINED = 1.5;
+
 export const Spacing = {
   xs: 4,
   sm: 8,

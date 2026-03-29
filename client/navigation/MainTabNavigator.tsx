@@ -2,7 +2,7 @@ import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
 import HomeStackNavigator from "@/navigation/HomeStackNavigator";
@@ -10,8 +10,13 @@ import MealPlanStackNavigator from "@/navigation/MealPlanStackNavigator";
 import ChatStackNavigator from "@/navigation/ChatStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { ScanFAB } from "@/components/ScanFAB";
+import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { FontFamily, TAB_BAR_HEIGHT } from "@/constants/theme";
+import {
+  FontFamily,
+  TAB_BAR_HEIGHT,
+  MAX_FONT_SCALE_CONSTRAINED,
+} from "@/constants/theme";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
@@ -60,17 +65,17 @@ export default function MainTabNavigator() {
             ) : null,
           headerShown: false,
           tabBarLabel: ({ color, children }) => (
-            <Text
+            <ThemedText
+              maxScale={MAX_FONT_SCALE_CONSTRAINED}
               style={{
                 fontFamily: FontFamily.medium,
                 fontSize: 11,
                 letterSpacing: 0.3,
                 color,
               }}
-              maxFontSizeMultiplier={1.5}
             >
               {children}
-            </Text>
+            </ThemedText>
           ),
         }}
       >

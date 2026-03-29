@@ -2636,3 +2636,25 @@ useEffect(() => {
 **When to use:** Any component where internal state (error flags, validation results, expanded/collapsed) should reset when a key prop changes identity.
 
 **When NOT to use:** State that should survive prop changes (scroll position, user input in a form that receives new defaults).
+
+### Dynamic Type Overflow Prevention
+
+iOS Dynamic Type scales all `<Text>` by default — correct for accessibility. But text in **fixed-height containers** (tab bars, badges, chips, toasts) will overflow at extreme sizes. Use `ThemedText`'s `maxScale` prop to cap scaling:
+
+```typescript
+import { MAX_FONT_SCALE_CONSTRAINED } from "@/constants/theme";
+
+// Cap at 1.5x in a fixed-height badge
+<ThemedText maxScale={MAX_FONT_SCALE_CONSTRAINED} style={styles.badgeLabel}>
+  {label}
+</ThemedText>
+```
+
+**Rules:**
+
+- Always use `maxScale` on `ThemedText` — never pass `maxFontSizeMultiplier` directly (ThemedText strips it to prevent conflicts)
+- Use `MAX_FONT_SCALE_CONSTRAINED` (1.5) for standard constrained containers; use a custom value (e.g. 1.3) for very tight spaces like camera overlays
+- Never apply `maxScale` to body text in scrollable areas — that defeats the accessibility purpose
+- Only constrain text that lives in a genuinely fixed-height layout (tab bar, badge pill, chip, toast, progress bar label)
+
+**Where it's applied:** Tab bar labels, CalorieBudgetBar, Chip, HomeRecipeCard difficulty badge, VerificationBadge, AllergenBadge, FastingStreakBadge (compact), Toast, OfflineBanner, ScanScreen reticle text, HistoryScreen stat values.

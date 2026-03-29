@@ -13,6 +13,7 @@ import {
   BorderRadius,
   FontFamily,
   withOpacity,
+  MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { CommunityRecipe } from "@shared/schema";
@@ -73,7 +74,10 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
           {/* Difficulty badge */}
           {recipe.difficulty ? (
             <View style={styles.difficultyBadge}>
-              <ThemedText maxScale={1.5} style={styles.difficultyText}>
+              <ThemedText
+                maxScale={MAX_FONT_SCALE_CONSTRAINED}
+                style={styles.difficultyText}
+              >
                 {recipe.difficulty}
               </ThemedText>
             </View>

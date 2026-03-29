@@ -427,7 +427,7 @@ const DashboardHeader = React.memo(function DashboardHeader({
               <ThemedText
                 type="h2"
                 style={{ color: theme.buttonText }}
-                maxFontSizeMultiplier={1.3}
+                maxScale={1.3}
               >
                 {currentCalories.toLocaleString()}
               </ThemedText>
@@ -474,7 +474,7 @@ const DashboardHeader = React.memo(function DashboardHeader({
             <ThemedText
               type="h2"
               style={{ color: theme.buttonText }}
-              maxFontSizeMultiplier={1.3}
+              maxScale={1.3}
             >
               {itemCount}
             </ThemedText>

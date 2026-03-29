@@ -25,6 +25,7 @@ import {
   FontFamily,
   Shadows,
   withOpacity,
+  MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
 import {
   toastSpringConfig,
@@ -142,7 +143,7 @@ export function Toast({
         />
         <ThemedText
           type="small"
-          maxScale={1.5}
+          maxScale={MAX_FONT_SCALE_CONSTRAINED}
           style={[styles.message, { color: colors.text }]}
           numberOfLines={2}
         >
@@ -164,7 +165,7 @@ export function Toast({
           >
             <ThemedText
               type="small"
-              maxScale={1.5}
+              maxScale={MAX_FONT_SCALE_CONSTRAINED}
               style={[styles.actionLabel, { color: colors.text }]}
             >
               {action.label}
