@@ -171,11 +171,12 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const date = parseQueryDate(req.query.date) ?? new Date();
-        const user = await storage.getUser(req.userId);
+        const [user, dailySummary] = await Promise.all([
+          storage.getUser(req.userId),
+          storage.getDailySummary(req.userId, date),
+        ]);
         if (!user)
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
-
-        const dailySummary = await storage.getDailySummary(req.userId, date);
 
         const calorieGoal =
           user.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories;

@@ -480,6 +480,10 @@ export const communityRecipes = pgTable(
       table.description.op("gin_trgm_ops"),
     ),
     authorIdx: index("community_recipes_author_idx").on(table.authorId),
+    dietTagsGinIdx: index("community_recipes_diet_tags_gin_idx").using(
+      "gin",
+      table.dietTags,
+    ),
   }),
 );
 
@@ -614,6 +618,14 @@ export const mealPlanRecipes = pgTable(
     carbsNonNeg: check("mpr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
     fatNonNeg: check("mpr_fat_gte0", sql`${table.fatPerServing} >= 0`),
     servingsPositive: check("mpr_servings_gt0", sql`${table.servings} > 0`),
+    dietTagsGinIdx: index("meal_plan_recipes_diet_tags_gin_idx").using(
+      "gin",
+      table.dietTags,
+    ),
+    mealTypesGinIdx: index("meal_plan_recipes_meal_types_gin_idx").using(
+      "gin",
+      table.mealTypes,
+    ),
   }),
 );
 
