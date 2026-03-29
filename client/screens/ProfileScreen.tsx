@@ -1,23 +1,16 @@
-import React, { ComponentProps, useState, useRef, useEffect } from "react";
+import React, { ComponentProps } from "react";
 import {
   StyleSheet,
   View,
   Pressable,
   ActivityIndicator,
   Image,
-  AccessibilityInfo,
-  Linking,
-  Platform,
   ScrollView,
   useWindowDimensions,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation } from "@react-navigation/native";
-import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -27,11 +20,6 @@ import { SkeletonBox } from "@/components/SkeletonLoader";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
-import { useAccessibility } from "@/hooks/useAccessibility";
-import { useAuthContext } from "@/context/AuthContext";
-
-import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import {
   getTierLabel,
@@ -44,40 +32,14 @@ import {
   withOpacity,
   FAB_CLEARANCE,
 } from "@/constants/theme";
-import { compressImage, cleanupImage } from "@/lib/image-compression";
-import { getApiUrl, resolveImageUrl } from "@/lib/query-client";
-import { tokenStorage } from "@/lib/token-storage";
-import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
-import type { RootStackParamList } from "@/navigation/RootStackNavigator";
-import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { CompositeNavigationProp } from "@react-navigation/native";
-import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import type { MainTabParamList } from "@/navigation/MainTabNavigator";
-import {
-  useThemePreference,
-  type ThemePreference,
-} from "@/context/ThemeContext";
+import { resolveImageUrl } from "@/lib/query-client";
+import type { ThemePreference } from "@/context/ThemeContext";
 import { useHealthKitSettings } from "@/hooks/useHealthKit";
 import { HealthKitSyncIndicator } from "@/components/HealthKitSyncIndicator";
-
-type ProfileScreenNavigationProp = CompositeNavigationProp<
-  NativeStackNavigationProp<ProfileStackParamList, "Profile">,
-  CompositeNavigationProp<
-    BottomTabNavigationProp<MainTabParamList, "ProfileTab">,
-    NativeStackNavigationProp<RootStackParamList>
-  >
->;
+import { useProfileData } from "@/hooks/useProfileData";
+import type { DailySummary, FeaturedRecipe } from "@/hooks/useProfileData";
 
 type FeatherIconName = ComponentProps<typeof Feather>["name"];
-
-interface DailySummary {
-  totalCalories: number;
-  totalProtein: number;
-  totalCarbs: number;
-  totalFat: number;
-  itemCount: number;
-}
 
 const COVER_HEIGHT = 153;
 const AVATAR_SIZE = 60;
@@ -88,13 +50,6 @@ const GRID_ITEM_HEIGHT = 141;
 function useGridItemWidth() {
   const { width } = useWindowDimensions();
   return (width - Spacing.lg * 2 - GRID_GAP) / 2;
-}
-
-interface FeaturedRecipe {
-  id: number;
-  title: string;
-  imageUrl: string | null;
-  dietTags: string[];
 }
 
 // ---------- Sub-components ----------
@@ -664,140 +619,36 @@ const THEME_LABELS: Record<ThemePreference, string> = {
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const { theme } = useTheme();
-  const haptics = useHaptics();
-  const { reducedMotion } = useAccessibility();
-  const { user, logout, checkAuth } = useAuthContext();
-  const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { preference: themePreference, setPreference: setThemePreference } =
-    useThemePreference();
-  const { isPremium } = usePremiumContext();
-
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
-  const settingsYRef = useRef(0);
-
-  const { data: todaySummary, isLoading: summaryLoading } =
-    useQuery<DailySummary>({
-      queryKey: ["/api/daily-summary"],
-      enabled: !!user,
-    });
-
-  const { data: featuredRecipes } = useQuery<FeaturedRecipe[]>({
-    queryKey: ["/api/recipes/featured"],
-    enabled: !!user,
-  });
-
-  const { data: verificationData } = useQuery<{
-    count: number;
-    frontLabelCount: number;
-    compositeScore: number;
-    streak: number;
-  }>({
-    queryKey: ["/api/verification/user-count"],
-    enabled: !!user,
-  });
-
-  const isInitialLoading = summaryLoading;
-  const hasAnnouncedProfileRef = useRef(false);
-  useEffect(() => {
-    if (!isInitialLoading && user && !hasAnnouncedProfileRef.current) {
-      hasAnnouncedProfileRef.current = true;
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(
-          `Profile loaded for ${user.displayName || user.username}`,
-        );
-      }
-    }
-  }, [isInitialLoading, user]);
-
-  const handleLogout = async () => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    await logout();
-  };
-
-  const handleThemeToggle = async () => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    const nextPreference: ThemePreference =
-      themePreference === "system"
-        ? "light"
-        : themePreference === "light"
-          ? "dark"
-          : "system";
-    await setThemePreference(nextPreference);
-    if (Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(
-        `Appearance changed to ${THEME_LABELS[nextPreference]}`,
-      );
-    }
-  };
-
-  const handleAvatarPress = async () => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (result.canceled || !result.assets[0]) {
-      return;
-    }
-
-    setIsUploadingAvatar(true);
-    try {
-      const token = await tokenStorage.get();
-      if (!token) {
-        throw new Error("Not authenticated");
-      }
-
-      const compressed = await compressImage(result.assets[0].uri, {
-        maxWidth: 400,
-        maxHeight: 400,
-        quality: 0.8,
-        targetSizeKB: 500,
-      });
-
-      try {
-        const uploadResult = await uploadAsync(
-          `${getApiUrl()}/api/user/avatar`,
-          compressed.uri,
-          {
-            httpMethod: "POST",
-            uploadType: FileSystemUploadType.MULTIPART,
-            fieldName: "avatar",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          },
-        );
-
-        if (uploadResult.status !== 200) {
-          let errorMessage = "Failed to upload avatar";
-          try {
-            const errorData = JSON.parse(uploadResult.body || "{}");
-            if (errorData.error) errorMessage = errorData.error;
-          } catch {
-            // Malformed response body — use default message
-          }
-          throw new Error(errorMessage);
-        }
-
-        await checkAuth();
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
-      } finally {
-        await cleanupImage(compressed.uri);
-      }
-    } catch (error) {
-      console.error("Avatar upload error:", error);
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  };
+  const {
+    theme,
+    reducedMotion,
+    user,
+    themePreference,
+    showUpgradeModal,
+    isUploadingAvatar,
+    scrollRef,
+    todaySummary,
+    featuredRecipes,
+    verificationData,
+    isInitialLoading,
+    handleLogout,
+    handleThemeToggle,
+    handleAvatarPress,
+    handleEditProfile,
+    handleGearPress,
+    handleRecipePress,
+    handleSubscription,
+    handleLockedPress,
+    handleWeightTracking,
+    handleHealthKit,
+    handleDietaryProfile,
+    handleGLP1Companion,
+    handleNutritionGoals,
+    handleLibrary,
+    handleScanHistory,
+    handleCloseUpgradeModal,
+    handleSettingsLayout,
+  } = useProfileData();
 
   if (isInitialLoading) {
     return (
@@ -896,14 +747,8 @@ export default function ProfileScreen() {
         }
       >
         <ActionButtonsRow
-          onEditProfile={() => navigation.navigate("EditDietaryProfile")}
-          onGearPress={() => {
-            haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-            scrollRef.current?.scrollTo({
-              y: settingsYRef.current,
-              animated: true,
-            });
-          }}
+          onEditProfile={handleEditProfile}
+          onGearPress={handleGearPress}
         />
       </Animated.View>
 
@@ -918,10 +763,7 @@ export default function ProfileScreen() {
       >
         <PhotoGrid
           recipes={featuredRecipes ?? []}
-          onRecipePress={(recipeId) => {
-            haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-            navigation.navigate("FeaturedRecipeDetail", { recipeId });
-          }}
+          onRecipePress={handleRecipePress}
         />
       </Animated.View>
 
@@ -931,44 +773,28 @@ export default function ProfileScreen() {
           reducedMotion ? undefined : FadeInDown.delay(400).duration(400)
         }
         onLayout={(e) => {
-          settingsYRef.current = e.nativeEvent.layout.y;
+          handleSettingsLayout(e.nativeEvent.layout.y);
         }}
       >
         <SettingsSection
           themePreference={themePreference}
-          onWeightTracking={() => navigation.navigate("WeightTracking")}
-          onHealthKit={() => navigation.navigate("HealthKitSettings")}
-          onDietaryProfile={() => navigation.navigate("EditDietaryProfile")}
-          onGLP1Companion={() => navigation.navigate("GLP1Companion")}
-          onNutritionGoals={() => navigation.navigate("GoalSetup")}
-          onLibrary={() => navigation.navigate("SavedItems")}
-          onScanHistory={() => navigation.navigate("ScanHistory")}
+          onWeightTracking={handleWeightTracking}
+          onHealthKit={handleHealthKit}
+          onDietaryProfile={handleDietaryProfile}
+          onGLP1Companion={handleGLP1Companion}
+          onNutritionGoals={handleNutritionGoals}
+          onLibrary={handleLibrary}
+          onScanHistory={handleScanHistory}
           onThemeToggle={handleThemeToggle}
-          onSubscription={() => {
-            haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-            if (isPremium) {
-              if (Platform.OS === "ios") {
-                Linking.openURL("https://apps.apple.com/account/subscriptions");
-              } else {
-                Linking.openURL(
-                  "https://play.google.com/store/account/subscriptions",
-                );
-              }
-            } else {
-              setShowUpgradeModal(true);
-            }
-          }}
+          onSubscription={handleSubscription}
           onLogout={handleLogout}
-          onLockedPress={() => {
-            haptics.notification(Haptics.NotificationFeedbackType.Warning);
-            setShowUpgradeModal(true);
-          }}
+          onLockedPress={handleLockedPress}
         />
       </Animated.View>
 
       <UpgradeModal
         visible={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
+        onClose={handleCloseUpgradeModal}
       />
     </ScrollView>
   );

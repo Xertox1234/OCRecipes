@@ -193,6 +193,36 @@ export function withOpacity(hexColor: string, opacity: number): string {
   return `${hexColor}${alpha}`;
 }
 
+/** Camera UI colors — always dark regardless of theme (overlaying camera feed) */
+export const CameraColors = {
+  /** Black background behind camera viewfinder */
+  background: "#000000",
+  /** White text/icons visible over dark camera feed */
+  text: "#FFFFFF",
+  /** White icons on camera controls */
+  icon: "#FFFFFF",
+  /** Dimmed icon for disabled controls */
+  iconDisabled: "#666666",
+  /** Dark icon for use on light/white surfaces (e.g. shutter button) */
+  iconOnLight: "#000000",
+  /** Light semi-transparent overlay (control backgrounds) */
+  overlayLight: "rgba(0,0,0,0.4)",
+  /** Medium semi-transparent overlay */
+  overlayMedium: "rgba(0,0,0,0.5)",
+  /** Heavy semi-transparent overlay (modals over camera) */
+  overlayDark: "rgba(0,0,0,0.7)",
+  /** Medium-dark overlay variant */
+  overlayMediumDark: "rgba(0,0,0,0.6)",
+  /** White shutter/capture button */
+  shutterButton: "#FFFFFF",
+  /** Text shadow for readability over camera feed */
+  textShadow: "rgba(0,0,0,0.5)",
+  /** Light text shadow variant */
+  textShadowLight: "rgba(0,0,0,0.3)",
+  /** White border for camera UI elements */
+  border: "#FFFFFF",
+};
+
 export const Shadows = {
   small: {
     shadowColor: "#000",

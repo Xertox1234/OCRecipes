@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import {
   AccessibilityInfo,
   View,
@@ -7,8 +7,6 @@ import {
   Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -17,8 +15,7 @@ import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
-import { apiRequest } from "@/lib/query-client";
+import { useDietaryProfileForm } from "@/hooks/useDietaryProfileForm";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
   COMMON_ALLERGENS,
@@ -31,22 +28,6 @@ import {
   SKILL_LEVELS,
   COOKING_TIMES,
 } from "@/constants/dietary-options";
-
-interface Allergy {
-  name: string;
-  severity: "mild" | "moderate" | "severe";
-}
-
-interface DietaryProfile {
-  allergies?: Allergy[];
-  healthConditions?: string[];
-  dietType?: string | null;
-  primaryGoal?: string | null;
-  activityLevel?: string | null;
-  cuisinePreferences?: string[];
-  cookingSkillLevel?: string | null;
-  cookingTimeAvailable?: string | null;
-}
 
 function DietaryProfileSkeleton() {
   React.useEffect(() => {
@@ -182,114 +163,33 @@ function DietaryProfileSkeleton() {
 
 export default function EditDietaryProfileScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
   const { theme } = useTheme();
-  const haptics = useHaptics();
-  const queryClient = useQueryClient();
 
-  const [isSaving, setIsSaving] = useState(false);
-  const [selectedAllergen, setSelectedAllergen] = useState<string | null>(null);
-
-  // Form state
-  const [allergies, setAllergies] = useState<Allergy[]>([]);
-  const [healthConditions, setHealthConditions] = useState<string[]>([]);
-  const [dietType, setDietType] = useState<string | null>(null);
-  const [primaryGoal, setPrimaryGoal] = useState<string | null>(null);
-  const [activityLevel, setActivityLevel] = useState<string | null>(null);
-  const [cuisinePreferences, setCuisinePreferences] = useState<string[]>([]);
-  const [cookingSkillLevel, setCookingSkillLevel] = useState<string | null>(
-    null,
-  );
-  const [cookingTimeAvailable, setCookingTimeAvailable] = useState<
-    string | null
-  >(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const { data: profile, isLoading } = useQuery<DietaryProfile>({
-    queryKey: ["/api/user/dietary-profile"],
-  });
-
-  // Initialize form state from fetched profile
-  useEffect(() => {
-    if (profile) {
-      setAllergies(profile.allergies || []);
-      setHealthConditions(profile.healthConditions || []);
-      setDietType(profile.dietType || null);
-      setPrimaryGoal(profile.primaryGoal || null);
-      setActivityLevel(profile.activityLevel || null);
-      setCuisinePreferences(profile.cuisinePreferences || []);
-      setCookingSkillLevel(profile.cookingSkillLevel || null);
-      setCookingTimeAvailable(profile.cookingTimeAvailable || null);
-    }
-  }, [profile]);
-
-  const toggleAllergen = (allergenId: string) => {
-    const existing = allergies.find((a) => a.name === allergenId);
-    if (existing) {
-      setAllergies(allergies.filter((a) => a.name !== allergenId));
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    } else {
-      setSelectedAllergen(allergenId);
-    }
-  };
-
-  const setSeverity = (severity: "mild" | "moderate" | "severe") => {
-    if (selectedAllergen) {
-      const filtered = allergies.filter((a) => a.name !== selectedAllergen);
-      setAllergies([...filtered, { name: selectedAllergen, severity }]);
-      setSelectedAllergen(null);
-      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    }
-  };
-
-  const toggleHealthCondition = (conditionId: string) => {
-    if (healthConditions.includes(conditionId)) {
-      setHealthConditions(healthConditions.filter((c) => c !== conditionId));
-    } else {
-      setHealthConditions([...healthConditions, conditionId]);
-    }
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const toggleCuisine = (cuisineId: string) => {
-    if (cuisinePreferences.includes(cuisineId)) {
-      setCuisinePreferences(cuisinePreferences.filter((c) => c !== cuisineId));
-    } else {
-      setCuisinePreferences([...cuisinePreferences, cuisineId]);
-    }
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    setSaveError(null);
-    try {
-      await apiRequest("PUT", "/api/user/dietary-profile", {
-        allergies,
-        healthConditions,
-        dietType,
-        primaryGoal,
-        activityLevel,
-        cuisinePreferences,
-        cookingSkillLevel,
-        cookingTimeAvailable,
-      });
-
-      // Invalidate the dietary profile query to refresh data
-      queryClient.invalidateQueries({
-        queryKey: ["/api/user/dietary-profile"],
-      });
-
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
-      navigation.goBack();
-    } catch (error) {
-      console.error("Failed to save dietary profile:", error);
-      setSaveError("Failed to save profile. Please try again.");
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  const {
+    isLoading,
+    isSaving,
+    saveError,
+    selectedAllergen,
+    allergies,
+    healthConditions,
+    dietType,
+    setDietType,
+    primaryGoal,
+    setPrimaryGoal,
+    activityLevel,
+    setActivityLevel,
+    cuisinePreferences,
+    cookingSkillLevel,
+    setCookingSkillLevel,
+    cookingTimeAvailable,
+    setCookingTimeAvailable,
+    toggleAllergen,
+    setSeverity,
+    toggleHealthCondition,
+    toggleCuisine,
+    handleSave,
+    haptics,
+  } = useDietaryProfileForm();
 
   if (isLoading) {
     return (

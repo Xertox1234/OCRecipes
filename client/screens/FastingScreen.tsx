@@ -1,46 +1,25 @@
-import React, {
-  useState,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+import React, { useCallback } from "react";
 import {
   StyleSheet,
   View,
   ScrollView,
   Pressable,
-  Alert,
   RefreshControl,
-  AccessibilityInfo,
-  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import Svg, { Rect, Text as SvgText } from "react-native-svg";
 
 import { ThemedText } from "@/components/ThemedText";
-import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { Card } from "@/components/Card";
 import { FastingTimer } from "@/components/FastingTimer";
 import { FastingSetupModal } from "@/components/FastingSetupModal";
 import { FastingStreakBadge } from "@/components/FastingStreakBadge";
-import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
-import { useToast } from "@/context/ToastContext";
+import WeeklyChart from "@/components/WeeklyFastingChart";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import {
-  useFastingSchedule,
-  useCurrentFast,
-  useFastingHistory,
-  useUpdateSchedule,
-  useStartFast,
-  useEndFast,
-} from "@/hooks/useFasting";
+import { useFastingTimer } from "@/hooks/useFastingTimer";
 import {
   Spacing,
   BorderRadius,
@@ -49,18 +28,6 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { formatDuration, formatDateShort as formatDate } from "@/lib/format";
-import {
-  getFastingPhase,
-  getNextPhaseBoundary,
-  FASTING_TIPS,
-} from "@/components/fasting-display-utils";
-import * as Notifications from "expo-notifications";
-import { requestNotificationPermission } from "@/lib/notifications";
-import {
-  scheduleMilestoneNotifications,
-  scheduleCheckInNotifications,
-  scheduleEatingWindowNotifications,
-} from "@/lib/fasting-notifications";
 import type { FastingScreenNavigationProp } from "@/types/navigation";
 
 const COACH_QUESTIONS = [
@@ -72,187 +39,38 @@ const COACH_QUESTIONS = [
   "How does fasting affect metabolism?",
 ];
 
-/** Compute elapsed minutes from a start time to now */
-function getElapsedMinutes(startedAt: string): number {
-  const start = new Date(startedAt).getTime();
-  const now = Date.now();
-  return Math.max(0, (now - start) / 60000);
-}
-
-/** Build weekly bar chart data from fasting logs (last 7 days) */
-function buildWeeklyData(
-  logs: {
-    startedAt: string;
-    actualDurationMinutes: number | null;
-    completed: boolean | null;
-  }[],
-): { day: string; minutes: number; completed: boolean }[] {
-  const result: { day: string; minutes: number; completed: boolean }[] = [];
-  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split("T")[0];
-    const dayName = dayNames[date.getDay()];
-
-    const dayLog = logs.find((l) => {
-      const logDate = new Date(l.startedAt).toISOString().split("T")[0];
-      return logDate === dateStr;
-    });
-
-    result.push({
-      day: dayName,
-      minutes: dayLog?.actualDurationMinutes ?? 0,
-      completed: dayLog?.completed ?? false,
-    });
-  }
-  return result;
-}
-
-function WeeklyChart({
-  data,
-}: {
-  data: { day: string; minutes: number; completed: boolean }[];
-}) {
-  const { theme } = useTheme();
-
-  const maxMinutes = useMemo(
-    () => Math.max(...data.map((d) => d.minutes), 60),
-    [data],
-  );
-  const chartHeight = 120;
-  const barWidth = 28;
-  const gap = 12;
-  const totalWidth = data.length * (barWidth + gap) - gap;
-  const padding = { top: 10, bottom: 24 };
-  const usableHeight = chartHeight - padding.top - padding.bottom;
-
-  return (
-    <Svg
-      width="100%"
-      height={chartHeight}
-      viewBox={`0 0 ${totalWidth} ${chartHeight}`}
-    >
-      {data.map((d, i) => {
-        const barHeight =
-          maxMinutes > 0 ? (d.minutes / maxMinutes) * usableHeight : 0;
-        const x = i * (barWidth + gap);
-        const y = padding.top + usableHeight - barHeight;
-        const fillColor = d.completed
-          ? theme.success
-          : d.minutes > 0
-            ? withOpacity(theme.link, 0.6)
-            : withOpacity(theme.textSecondary, 0.15);
-
-        return (
-          <React.Fragment key={d.day}>
-            <Rect
-              x={x}
-              y={y}
-              width={barWidth}
-              height={Math.max(barHeight, 2)}
-              rx={4}
-              fill={fillColor}
-            />
-            <SvgText
-              x={x + barWidth / 2}
-              y={chartHeight - 4}
-              fontSize={10}
-              fill={theme.textSecondary}
-              textAnchor="middle"
-            >
-              {d.day}
-            </SvgText>
-          </React.Fragment>
-        );
-      })}
-    </Svg>
-  );
-}
-
 export default function FastingScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
-  const { theme } = useTheme();
-  const haptics = useHaptics();
-  const toast = useToast();
   const { reducedMotion } = useAccessibility();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
 
-  const [showSetup, setShowSetup] = useState(false);
-  const [elapsedMinutes, setElapsedMinutes] = useState(0);
-
-  const { data: schedule } = useFastingSchedule();
-  const { data: currentFast, refetch: refetchCurrent } = useCurrentFast();
   const {
-    data: historyData,
-    isLoading: historyLoading,
-    refetch: refetchHistory,
-  } = useFastingHistory();
-  const updateSchedule = useUpdateSchedule();
-  const startFast = useStartFast();
-  const endFast = useEndFast();
+    theme,
+    haptics,
+    showSetup,
+    setShowSetup,
+    elapsedMinutes,
+    schedule,
+    currentFast,
+    historyLoading,
+    updateSchedule,
+    startFast,
+    endFast,
+    isFasting,
+    stats,
+    logs,
+    weeklyData,
+    currentPhase,
+    nextPhaseBoundary,
+    idleTip,
+    handleRefresh,
+    handleStartFast,
+    handleEndFast,
+    handleSaveSchedule,
+    ConfirmationModal,
+  } = useFastingTimer();
 
   const navigation = useNavigation<FastingScreenNavigationProp>();
-
-  const isFasting = currentFast != null;
-  const stats = historyData?.stats;
-  const logs = useMemo(() => historyData?.logs ?? [], [historyData?.logs]);
-
-  // Update elapsed time every 30 seconds when fasting
-  useEffect(() => {
-    if (!currentFast) {
-      setElapsedMinutes(0);
-      return;
-    }
-    // Initial set
-    setElapsedMinutes(getElapsedMinutes(currentFast.startedAt));
-
-    const interval = setInterval(() => {
-      setElapsedMinutes(getElapsedMinutes(currentFast.startedAt));
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [currentFast]);
-
-  const weeklyData = useMemo(() => buildWeeklyData(logs), [logs]);
-
-  // Phase computation — stable per hour bucket (review #7)
-  const phaseHourBucket = Math.floor(elapsedMinutes / 60);
-  const currentPhase = useMemo(
-    () => (isFasting ? getFastingPhase(elapsedMinutes) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [phaseHourBucket, isFasting],
-  );
-  const nextPhaseBoundary = useMemo(
-    () => (isFasting ? getNextPhaseBoundary(elapsedMinutes) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [phaseHourBucket, isFasting],
-  );
-
-  // Phase transition — haptic + a11y announcement
-  const prevPhaseRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!currentPhase) {
-      prevPhaseRef.current = null;
-      return;
-    }
-    if (
-      prevPhaseRef.current !== null &&
-      currentPhase.name !== prevPhaseRef.current
-    ) {
-      AccessibilityInfo.announceForAccessibility(
-        `You've entered the ${currentPhase.name} phase`,
-      );
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-    prevPhaseRef.current = currentPhase.name;
-  }, [currentPhase]);
-
-  // Random idle tip — stable per mount (LEARNINGS.md:59)
-  const [idleTip] = useState(
-    () => FASTING_TIPS[Math.floor(Math.random() * FASTING_TIPS.length)],
-  );
 
   const handleCoachQuestion = useCallback(
     (question: string) => {
@@ -263,129 +81,6 @@ export default function FastingScreen() {
       });
     },
     [haptics, navigation],
-  );
-
-  const handleRefresh = useCallback(async () => {
-    await Promise.all([refetchCurrent(), refetchHistory()]);
-    haptics.impact();
-  }, [refetchCurrent, refetchHistory, haptics]);
-
-  const handleStartFast = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    startFast.mutate(undefined, {
-      onSuccess: async (log) => {
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
-
-        // Schedule notifications if any toggle is enabled
-        const s = schedule;
-        const anyEnabled =
-          (s?.notifyMilestones ?? true) ||
-          (s?.notifyCheckIns ?? true) ||
-          (s?.notifyEatingWindow ?? true);
-        if (!anyEnabled) return;
-
-        const granted = await requestNotificationPermission();
-        if (!granted) {
-          Alert.alert(
-            "Notifications Disabled",
-            "Enable notifications in Settings to receive fasting reminders and milestone encouragements.",
-            [
-              { text: "Not Now", style: "cancel" },
-              {
-                text: "Open Settings",
-                onPress: () => Linking.openSettings(),
-              },
-            ],
-          );
-          return;
-        }
-
-        const startedAt = new Date(log.startedAt);
-        const batches: Promise<string[]>[] = [];
-
-        if (s?.notifyMilestones ?? true) {
-          batches.push(
-            scheduleMilestoneNotifications(startedAt, log.targetDurationHours),
-          );
-        }
-        if (s?.notifyCheckIns ?? true) {
-          batches.push(scheduleCheckInNotifications(startedAt));
-        }
-        if (
-          (s?.notifyEatingWindow ?? true) &&
-          s?.eatingWindowStart &&
-          s?.eatingWindowEnd
-        ) {
-          batches.push(
-            scheduleEatingWindowNotifications(
-              s.eatingWindowStart,
-              s.eatingWindowEnd,
-            ),
-          );
-        }
-        await Promise.all(batches);
-      },
-      onError: (err) => {
-        haptics.notification(Haptics.NotificationFeedbackType.Error);
-        toast.error(err.message || "Failed to start fast");
-      },
-    });
-  }, [haptics, toast, startFast, schedule]);
-
-  const handleEndFast = useCallback(() => {
-    confirm({
-      title: "End Fast",
-      message: "Are you sure you want to end your current fast?",
-      confirmLabel: "End Fast",
-      destructive: true,
-      onConfirm: () => {
-        // Cancel all pending fasting notifications (survives unmount/crash)
-        Notifications.cancelAllScheduledNotificationsAsync();
-
-        endFast.mutate(undefined, {
-          onSuccess: (result) => {
-            const type = result.completed
-              ? Haptics.NotificationFeedbackType.Success
-              : Haptics.NotificationFeedbackType.Warning;
-            haptics.notification(type);
-            if (result.completed) {
-              toast.success(
-                `Great job! You fasted for ${formatDuration(result.actualDurationMinutes ?? 0)}.`,
-              );
-            }
-          },
-          onError: (err) => {
-            haptics.notification(Haptics.NotificationFeedbackType.Error);
-            toast.error(err.message || "Failed to end fast");
-          },
-        });
-      },
-    });
-  }, [confirm, haptics, toast, endFast]);
-
-  const handleSaveSchedule = useCallback(
-    (data: {
-      protocol: string;
-      fastingHours: number;
-      eatingHours: number;
-      eatingWindowStart?: string;
-      eatingWindowEnd?: string;
-      notifyEatingWindow: boolean;
-      notifyMilestones: boolean;
-      notifyCheckIns: boolean;
-    }) => {
-      updateSchedule.mutate(data, {
-        onSuccess: () => {
-          setShowSetup(false);
-          haptics.notification(Haptics.NotificationFeedbackType.Success);
-        },
-        onError: (err) => {
-          haptics.notification(Haptics.NotificationFeedbackType.Error);
-          toast.error(err.message || "Failed to save schedule");
-        },
-      });
-    },
-    [updateSchedule, haptics, toast],
   );
 
   return (

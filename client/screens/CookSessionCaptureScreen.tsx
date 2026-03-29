@@ -26,7 +26,7 @@ import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, CameraColors } from "@/constants/theme";
 import { CameraView, useCameraPermissions, type CameraRef } from "@/camera";
 import { useCreateCookSession, useAddCookPhoto } from "@/hooks/useCookSession";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -234,7 +234,7 @@ export default function CookSessionCaptureScreen() {
           >
             <ThemedText
               type="body"
-              style={{ color: "#FFFFFF", fontWeight: "600" }} // hardcoded
+              style={{ color: CameraColors.text, fontWeight: "600" }}
             >
               {permission?.status === "denied" && !permission.canAskAgain
                 ? "Open Settings"
@@ -256,7 +256,7 @@ export default function CookSessionCaptureScreen() {
 
   return (
     <View
-      style={[styles.container, { backgroundColor: "#000" /* hardcoded */ }]}
+      style={[styles.container, { backgroundColor: CameraColors.background }]}
     >
       {/* Camera */}
       <CameraView
@@ -274,7 +274,7 @@ export default function CookSessionCaptureScreen() {
           accessibilityLabel="Close"
           accessibilityRole="button"
         >
-          <Feather name="x" size={24} color={"#FFFFFF" /* hardcoded */} />
+          <Feather name="x" size={24} color={CameraColors.text} />
         </Pressable>
 
         <View style={styles.topCenter}>
@@ -285,14 +285,10 @@ export default function CookSessionCaptureScreen() {
                 { backgroundColor: theme.success },
               ]}
             >
-              <Feather
-                name="check"
-                size={14}
-                color={"#FFFFFF" /* hardcoded */}
-              />
+              <Feather name="check" size={14} color={CameraColors.text} />
               <ThemedText
                 type="small"
-                style={{ color: "#FFFFFF", fontWeight: "600" }} // hardcoded
+                style={{ color: CameraColors.text, fontWeight: "600" }}
               >
                 {ingredientCount} ingredient{ingredientCount !== 1 ? "s" : ""}
               </ThemedText>
@@ -306,14 +302,14 @@ export default function CookSessionCaptureScreen() {
           accessibilityLabel="Pick from gallery"
           accessibilityRole="button"
         >
-          <Feather name="image" size={24} color={"#FFFFFF" /* hardcoded */} />
+          <Feather name="image" size={24} color={CameraColors.text} />
         </Pressable>
       </View>
 
       {/* Analyzing overlay */}
       {isAnalyzing && (
         <View style={styles.analyzingOverlay}>
-          <ActivityIndicator size="large" color={"#FFFFFF" /* hardcoded */} />
+          <ActivityIndicator size="large" color={CameraColors.text} />
           <ThemedText type="body" style={styles.analyzingText}>
             Detecting ingredients...
           </ThemedText>
@@ -380,7 +376,7 @@ export default function CookSessionCaptureScreen() {
           >
             <ThemedText
               type="body"
-              style={{ color: "#FFFFFF", fontWeight: "600" }} // hardcoded
+              style={{ color: CameraColors.text, fontWeight: "600" }}
             >
               Done
             </ThemedText>
@@ -413,7 +409,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "rgba(0,0,0,0.4)", // hardcoded
+    backgroundColor: CameraColors.overlayLight,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -431,13 +427,13 @@ const styles = StyleSheet.create({
   },
   analyzingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.6)", // hardcoded
+    backgroundColor: CameraColors.overlayMediumDark,
     justifyContent: "center",
     alignItems: "center",
     zIndex: 5,
   },
   analyzingText: {
-    color: "#FFFFFF", // hardcoded
+    color: CameraColors.text,
     marginTop: Spacing.md,
   },
   thumbnailStrip: {
@@ -463,7 +459,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingTop: Spacing.lg,
-    backgroundColor: "rgba(0,0,0,0.5)", // hardcoded
+    backgroundColor: CameraColors.overlayMedium,
   },
   bottomControls: {
     flexDirection: "row",
@@ -481,7 +477,7 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 36,
     borderWidth: 4,
-    borderColor: "#FFFFFF", // hardcoded
+    borderColor: CameraColors.text,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -492,7 +488,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#FFFFFF", // hardcoded
+    backgroundColor: CameraColors.text,
   },
   doneButton: {
     paddingHorizontal: Spacing.lg,

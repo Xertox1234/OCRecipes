@@ -616,3 +616,81 @@ return (
 
 - `client/hooks/useConfirmationModal.ts` — confirmation dialog hook
 - Related: "Bottom-Sheet Lifecycle State Machine" in `docs/patterns/documentation.md`
+
+### Screen Hook — Extracting Screen State into a Custom Hook
+
+When a screen component exceeds ~800 lines or has more than ~10 state variables, extract its state management, data fetching, effects, and handlers into a dedicated `use{ScreenName}` hook. The screen file retains JSX rendering, inline sub-components, and styles.
+
+```typescript
+// client/hooks/useNutritionLookup.ts — screen hook example
+export function useNutritionLookup(params: {
+  barcode?: string;
+  imageUri?: string;
+  itemId?: number;
+}) {
+  const navigation = useNavigation<NutritionDetailNavigationProp>();
+  const haptics = useHaptics();
+  const { user } = useAuthContext();
+
+  const [nutrition, setNutrition] = useState<NutritionData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  // ... more state, queries, effects, handlers ...
+
+  return {
+    nutrition,
+    isLoading,
+    error,
+    handleAddToLog,
+    // ... flat object of all state + handlers the screen JSX needs
+  };
+}
+```
+
+```typescript
+// client/screens/NutritionDetailScreen.tsx — screen uses the hook
+export default function NutritionDetailScreen() {
+  const { theme } = useTheme();
+  const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
+
+  const {
+    nutrition,
+    isLoading,
+    error,
+    handleAddToLog,
+  } = useNutritionLookup(route.params);
+
+  // JSX only — no state management, no effects, no handlers
+  return <ThemedView>...</ThemedView>;
+}
+```
+
+**Conventions:**
+
+1. **Get dependencies internally** — hooks call `useNavigation()`, `useAuthContext()`, `useHaptics()`, etc. themselves. Do NOT pass navigation or context as parameters.
+2. **Accept only data params** — the hook receives route params or primitive configuration values (barcode, imageUri, intent), not React objects.
+3. **Return a flat object** — return `{ state, handlers, computed }` as a single flat object. Do not nest into sub-objects.
+4. **Use `useHaptics()` wrapper** — never call `Haptics.impactAsync()` / `Haptics.notificationAsync()` directly. The wrapper respects `reducedMotion`.
+5. **Export types the screen needs** — if the hook defines types used by screen sub-components (e.g., `DailySummary`, `ClassifyState`), export them.
+6. **Naming: `use{Feature}.ts`** — not `use{ScreenName}Screen.ts`. The hook describes the domain, not the UI.
+
+**When to use:**
+
+- Screen has >10 `useState` calls
+- Screen file exceeds ~800 lines
+- Screen has complex data-fetching chains (fetch → validate → transform → cache)
+- Multiple effects and handlers that are hard to reason about alongside JSX
+
+**When NOT to use:**
+
+- Simple screens with 2-3 state variables and a single query — the overhead of a separate file isn't worth it
+- Hooks that would only have 1-2 return values — keep them inline
+
+**References:**
+
+- `client/hooks/useNutritionLookup.ts` — data fetching + serving controls (463 lines)
+- `client/hooks/usePhotoAnalysis.ts` — 35 state variables extracted (369 lines)
+- `client/hooks/useScanClassification.ts` — classification state machine (220 lines)
+- `client/hooks/useFastingTimer.ts` — timer + phase logic (297 lines)
+- `client/hooks/useHistoryData.ts` — infinite query + 13 handlers (355 lines)
+- `client/hooks/useProfileData.ts` — profile queries + navigation handlers (306 lines)
+- `client/hooks/useDietaryProfileForm.ts` — form state + save logic (158 lines)

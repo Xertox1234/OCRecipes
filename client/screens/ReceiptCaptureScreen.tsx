@@ -21,7 +21,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useReceiptScanCount } from "@/hooks/useReceiptScan";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, CameraColors } from "@/constants/theme";
 import { CameraView, useCameraPermissions, type CameraRef } from "@/camera";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -175,7 +175,7 @@ export default function ReceiptCaptureScreen() {
 
   return (
     <View
-      style={[styles.container, { backgroundColor: "#000" }]} // hardcoded
+      style={[styles.container, { backgroundColor: CameraColors.background }]}
     >
       {/* Upgrade modal for free users */}
       {shouldShowUpgrade && (
@@ -201,11 +201,7 @@ export default function ReceiptCaptureScreen() {
           accessibilityLabel="Close"
           style={styles.topButton}
         >
-          <Feather
-            name="x"
-            size={24}
-            color="#FFFFFF" // hardcoded
-          />
+          <Feather name="x" size={24} color={CameraColors.text} />
         </Pressable>
 
         <ThemedText style={styles.topTitle}>Scan Receipt</ThemedText>
@@ -236,11 +232,7 @@ export default function ReceiptCaptureScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={`Remove photo ${index + 1}`}
                 >
-                  <Feather
-                    name="x"
-                    size={14}
-                    color="#FFFFFF" // hardcoded
-                  />
+                  <Feather name="x" size={14} color={CameraColors.text} />
                 </Pressable>
               </View>
             ))}
@@ -266,7 +258,11 @@ export default function ReceiptCaptureScreen() {
           <Feather
             name="image"
             size={24}
-            color={photos.length >= MAX_PHOTOS ? "#666" : "#FFFFFF"} // hardcoded
+            color={
+              photos.length >= MAX_PHOTOS
+                ? CameraColors.iconDisabled
+                : CameraColors.text
+            }
           />
         </Pressable>
 
@@ -284,13 +280,13 @@ export default function ReceiptCaptureScreen() {
                 {isCapturing ? (
                   <ActivityIndicator
                     size="small"
-                    color="#000" // hardcoded
+                    color={CameraColors.iconOnLight}
                   />
                 ) : (
                   <Feather
                     name="camera"
                     size={20}
-                    color="#000" // hardcoded
+                    color={CameraColors.iconOnLight}
                   />
                 )}
               </Pressable>
@@ -319,7 +315,7 @@ export default function ReceiptCaptureScreen() {
             {isCapturing ? (
               <ActivityIndicator
                 size="small"
-                color="#000" // hardcoded
+                color={CameraColors.iconOnLight}
               />
             ) : (
               <View style={styles.captureInner} />
@@ -393,28 +389,28 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "rgba(0,0,0,0.4)", // hardcoded — ensures visibility on light camera fallback
+    backgroundColor: CameraColors.overlayLight,
     justifyContent: "center",
     alignItems: "center",
   },
   topTitle: {
-    color: "#FFFFFF", // hardcoded
+    color: CameraColors.text,
     fontSize: 17,
     fontWeight: "600",
-    backgroundColor: "rgba(0,0,0,0.4)", // hardcoded — ensures visibility on light camera fallback
+    backgroundColor: CameraColors.overlayLight,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.sm,
     overflow: "hidden",
   },
   scanCounter: {
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: CameraColors.overlayMedium,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.sm,
   },
   scanCountText: {
-    color: "#FFFFFF", // hardcoded
+    color: CameraColors.text,
     fontSize: 13,
   },
   thumbnailStrip: {
@@ -432,13 +428,13 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: BorderRadius.sm,
     borderWidth: 2,
-    borderColor: "#FFFFFF", // hardcoded
+    borderColor: CameraColors.text,
   },
   removeBadge: {
     position: "absolute",
     top: -6,
     right: -6,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: CameraColors.overlayDark,
     borderRadius: 10,
     width: 20,
     height: 20,
@@ -455,7 +451,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-around",
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: CameraColors.overlayLight,
   },
   sideButton: {
     width: 48,
@@ -467,7 +463,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: "#FFFFFF", // hardcoded
+    backgroundColor: CameraColors.text,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 4,
@@ -477,7 +473,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: 29,
-    backgroundColor: "#FFFFFF", // hardcoded
+    backgroundColor: CameraColors.text,
   },
   smallCapture: {
     width: 48,
@@ -500,7 +496,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   photoCount: {
-    color: "#FFFFFF", // hardcoded
+    color: CameraColors.text,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -512,9 +508,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   hintText: {
-    color: "#FFFFFF", // hardcoded
+    color: CameraColors.text,
     fontSize: 14,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: CameraColors.overlayMedium,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
