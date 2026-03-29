@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "@shared/schema";
+import { logger } from "./lib/logger";
 
 const { Pool } = pg;
 
@@ -20,7 +21,7 @@ export const pool = new Pool({
 });
 
 pool.on("error", (err) => {
-  console.error("Unexpected database pool error:", err);
+  logger.error({ err }, "unexpected database pool error");
 });
 
 export const db = drizzle(pool, { schema });

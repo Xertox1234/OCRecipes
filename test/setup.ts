@@ -17,6 +17,9 @@ if (
   );
 }
 
+// Silence pino output during tests
+process.env.LOG_LEVEL = "silent";
+
 // Ensure JWT_SECRET is always set for auth-related tests
 process.env.JWT_SECRET =
   process.env.JWT_SECRET || "test-jwt-secret-for-testing-minimum-32chars";

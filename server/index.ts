@@ -2,26 +2,34 @@ import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
 import type { Request, Response, NextFunction } from "express";
+import pinoHttp from "pino-http";
 import { registerRoutes } from "./routes";
 import * as path from "path";
 import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
 import { validateEnv } from "./lib/env";
+import { logger, rootLogger } from "./lib/logger";
+import { requestContextMiddleware } from "./lib/request-context";
+import crypto from "node:crypto";
 
 // Validate all environment variables before anything else
 validateEnv();
 
 process.on("uncaughtException", (error) => {
-  console.error("Uncaught exception:", error);
-  process.exit(1);
+  logger.fatal({ err: error }, "uncaught exception");
+  rootLogger.flush();
+  // Give async transport time to drain before exiting
+  setTimeout(() => process.exit(1), 500);
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("Unhandled rejection:", reason);
+  logger.error(
+    { err: reason instanceof Error ? reason : new Error(String(reason)) },
+    "unhandled rejection",
+  );
 });
 
 const app = express();
-const log = console.warn;
 
 declare module "http" {
   interface IncomingMessage {
@@ -82,51 +90,43 @@ function setupBodyParsing(app: express.Application) {
   app.use(express.urlencoded({ extended: false, limit: "2mb" }));
 }
 
-// Endpoints whose response bodies should never be logged (tokens, medical data)
-const SENSITIVE_PATHS = [
-  "/api/auth/login",
-  "/api/auth/register",
-  "/api/auth/account",
-  "/api/medication",
-];
-
-function isSensitivePath(reqPath: string): boolean {
-  return SENSITIVE_PATHS.some(
-    (p) => reqPath === p || reqPath.startsWith(p + "/"),
-  );
-}
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function setupRequestLogging(app: express.Application) {
-  app.use((req, res, next) => {
-    const start = Date.now();
-    const reqPath = req.path;
-    let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
-
-    const originalResJson = res.json;
-    res.json = function (bodyJson, ...args) {
-      capturedJsonResponse = bodyJson;
-      return originalResJson.apply(res, [bodyJson, ...args]);
-    };
-
-    res.on("finish", () => {
-      if (!reqPath.startsWith("/api")) return;
-
-      const duration = Date.now() - start;
-
-      let logLine = `${req.method} ${reqPath} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse && !isSensitivePath(reqPath)) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    });
-
-    next();
-  });
+  app.use(
+    pinoHttp({
+      logger: rootLogger,
+      genReqId: (req) => {
+        const incoming = req.headers["x-request-id"] as string | undefined;
+        return incoming && UUID_RE.test(incoming)
+          ? incoming
+          : crypto.randomUUID();
+      },
+      autoLogging: {
+        ignore: (req) =>
+          !req.url?.startsWith("/api") || req.url === "/api/health",
+      },
+      serializers: {
+        req(req) {
+          return {
+            method: req.method,
+            url: req.url,
+            headers: {
+              "content-type": req.headers["content-type"],
+              "user-agent": req.headers["user-agent"],
+              "x-request-id": req.headers["x-request-id"],
+            },
+          };
+        },
+        res(res) {
+          return { statusCode: res.statusCode };
+        },
+      },
+      customSuccessMessage: (req) => `${req.method} ${req.url}`,
+      customErrorMessage: (req) => `${req.method} ${req.url}`,
+    }),
+  );
 }
 
 function setupErrorHandler(app: express.Application) {
@@ -139,7 +139,10 @@ function setupErrorHandler(app: express.Application) {
 
     const status = error.status || error.statusCode || 500;
 
-    console.error("Internal Server Error:", err);
+    logger.error(
+      { err: err instanceof Error ? err : new Error(String(err)) },
+      "internal server error",
+    );
 
     if (res.headersSent) {
       return next(err);
@@ -159,6 +162,7 @@ function setupErrorHandler(app: express.Application) {
   app.use(helmet());
   setupBodyParsing(app);
   setupRequestLogging(app);
+  app.use(requestContextMiddleware);
 
   // Serve static assets
   app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
@@ -197,7 +201,7 @@ function setupErrorHandler(app: express.Application) {
       host: "0.0.0.0",
     },
     () => {
-      log(`express server serving on port ${port}`);
+      logger.info({ port }, "express server started");
     },
   );
 
@@ -206,7 +210,8 @@ function setupErrorHandler(app: express.Application) {
 
   // Graceful shutdown
   function shutdown(signal: string) {
-    log(`${signal} received, shutting down gracefully`);
+    logger.info({ signal }, "graceful shutdown initiated");
+    rootLogger.flush();
     clearInterval(cacheCleanupInterval);
     server.close(() => {
       pool.end().then(() => {
