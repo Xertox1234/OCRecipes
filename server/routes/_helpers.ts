@@ -2,6 +2,7 @@
  * Shared helpers, rate limiters, schemas, and utilities used across route modules.
  */
 import type { Request, Response } from "express";
+import type { AuthenticatedRequest } from "../middleware/auth";
 import { rateLimit } from "express-rate-limit";
 import { z, ZodError } from "zod";
 import multer from "multer";
@@ -26,9 +27,9 @@ import { isAiConfigured } from "../lib/openai";
  * Use this when you need the features object without gating on a specific boolean feature.
  */
 export async function getPremiumFeatures(
-  req: Request,
+  req: AuthenticatedRequest,
 ): Promise<PremiumFeatures> {
-  const subscription = await storage.getSubscriptionStatus(req.userId!);
+  const subscription = await storage.getSubscriptionStatus(req.userId);
   const tier = subscription?.tier || "free";
   return TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
 }

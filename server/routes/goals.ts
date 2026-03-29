@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import {
   calculateGoals,
@@ -24,9 +24,9 @@ export function register(app: Express): void {
     "/api/goals",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const user = await storage.getUser(req.userId!);
+        const user = await storage.getUser(req.userId);
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
@@ -49,7 +49,7 @@ export function register(app: Express): void {
     "/api/goals/calculate",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = userPhysicalProfileSchema.parse(req.body);
 
@@ -57,7 +57,7 @@ export function register(app: Express): void {
         const goals = calculateGoals(validated);
 
         // Update user with physical profile and calculated goals
-        await storage.updateUser(req.userId!, {
+        await storage.updateUser(req.userId, {
           weight: validated.weight.toString(),
           height: validated.height.toString(),
           age: validated.age,
@@ -70,15 +70,15 @@ export function register(app: Express): void {
         });
 
         // Also update profile with activity level and primary goal
-        const existingProfile = await storage.getUserProfile(req.userId!);
+        const existingProfile = await storage.getUserProfile(req.userId);
         if (existingProfile) {
-          await storage.updateUserProfile(req.userId!, {
+          await storage.updateUserProfile(req.userId, {
             activityLevel: validated.activityLevel,
             primaryGoal: validated.primaryGoal,
           });
         } else {
           await storage.createUserProfile({
-            userId: req.userId!,
+            userId: req.userId,
             activityLevel: validated.activityLevel,
             primaryGoal: validated.primaryGoal,
           });
@@ -119,11 +119,11 @@ export function register(app: Express): void {
     "/api/goals",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = updateGoalsSchema.parse(req.body);
 
-        const updatedUser = await storage.updateUser(req.userId!, {
+        const updatedUser = await storage.updateUser(req.userId, {
           ...(validated.dailyCalorieGoal !== undefined && {
             dailyCalorieGoal: validated.dailyCalorieGoal,
           }),
@@ -168,14 +168,14 @@ export function register(app: Express): void {
     "/api/daily-budget",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const date = parseQueryDate(req.query.date) ?? new Date();
-        const user = await storage.getUser(req.userId!);
+        const user = await storage.getUser(req.userId);
         if (!user)
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
 
-        const dailySummary = await storage.getDailySummary(req.userId!, date);
+        const dailySummary = await storage.getDailySummary(req.userId, date);
 
         const calorieGoal =
           user.dailyCalorieGoal || DEFAULT_NUTRITION_GOALS.calories;

@@ -1,5 +1,5 @@
-import type { Express, Request, Response } from "express";
-import { requireAuth } from "../middleware/auth";
+import type { Express, Response } from "express";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { BatchStorageError } from "../storage/batch";
 import { sendError } from "../lib/api-errors";
@@ -20,7 +20,7 @@ export function register(app: Express): void {
     "/api/batch/save",
     requireAuth,
     batchSaveRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const parsed = batchSaveRequestSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -46,7 +46,7 @@ export function register(app: Express): void {
           }
         }
 
-        const userId = req.userId!;
+        const userId = req.userId;
 
         switch (destination) {
           case "daily_log": {

@@ -1,6 +1,6 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z } from "zod";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -44,7 +44,7 @@ export function register(app: Express): void {
     requireAuth,
     receiptRateLimit,
     receiptUpload.array("photos", 3),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -66,7 +66,7 @@ export function register(app: Express): void {
 
         // Check monthly scan cap
         const monthlyCount = await storage.getMonthlyReceiptScanCount(
-          req.userId!,
+          req.userId,
           new Date(),
         );
         if (monthlyCount >= features.monthlyReceiptScans) {
@@ -100,7 +100,7 @@ export function register(app: Express): void {
         } catch (error) {
           // Record failed attempt (doesn't count against cap)
           await storage.createReceiptScan({
-            userId: req.userId!,
+            userId: req.userId,
             itemCount: 0,
             photoCount: files.length,
             status: "failed",
@@ -118,7 +118,7 @@ export function register(app: Express): void {
 
         // Record the scan
         await storage.createReceiptScan({
-          userId: req.userId!,
+          userId: req.userId,
           itemCount: result.items.length,
           photoCount: files.length,
           status,
@@ -141,7 +141,7 @@ export function register(app: Express): void {
   app.post(
     "/api/receipt/confirm",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -166,7 +166,7 @@ export function register(app: Express): void {
           const expiresAt = new Date(now);
           expiresAt.setDate(expiresAt.getDate() + item.estimatedShelfLifeDays);
           return {
-            userId: req.userId!,
+            userId: req.userId,
             name: item.name,
             quantity: item.quantity.toString(),
             unit: item.unit ?? null,
@@ -194,7 +194,7 @@ export function register(app: Express): void {
   app.get(
     "/api/receipt/scan-count",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -205,7 +205,7 @@ export function register(app: Express): void {
         if (!features) return;
 
         const count = await storage.getMonthlyReceiptScanCount(
-          req.userId!,
+          req.userId,
           new Date(),
         );
 

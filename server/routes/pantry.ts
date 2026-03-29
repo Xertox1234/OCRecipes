@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -41,7 +41,7 @@ export function register(app: Express): void {
     "/api/pantry",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -54,7 +54,7 @@ export function register(app: Express): void {
           default: 200,
           max: 200,
         });
-        const items = await storage.getPantryItems(req.userId!, limit);
+        const items = await storage.getPantryItems(req.userId, limit);
         res.json(items);
       } catch (error) {
         console.error("Get pantry items error:", error);
@@ -73,7 +73,7 @@ export function register(app: Express): void {
     "/api/pantry",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -95,7 +95,7 @@ export function register(app: Express): void {
         }
 
         const item = await storage.createPantryItem({
-          userId: req.userId!,
+          userId: req.userId,
           name: parsed.data.name,
           quantity: parsed.data.quantity,
           unit: parsed.data.unit || null,
@@ -120,7 +120,7 @@ export function register(app: Express): void {
     "/api/pantry/:id",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -154,7 +154,7 @@ export function register(app: Express): void {
 
         const updated = await storage.updatePantryItem(
           id,
-          req.userId!,
+          req.userId,
           parsed.data,
         );
         if (!updated) {
@@ -179,7 +179,7 @@ export function register(app: Express): void {
     "/api/pantry/:id",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -200,7 +200,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const deleted = await storage.deletePantryItem(id, req.userId!);
+        const deleted = await storage.deletePantryItem(id, req.userId);
         if (!deleted) {
           sendError(res, 404, "Pantry item not found", ErrorCode.NOT_FOUND);
           return;
@@ -223,7 +223,7 @@ export function register(app: Express): void {
     "/api/pantry/expiring",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -233,7 +233,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const items = await storage.getExpiringPantryItems(req.userId!, 3);
+        const items = await storage.getExpiringPantryItems(req.userId, 3);
         res.json(items);
       } catch (error) {
         console.error("Get expiring pantry items error:", error);

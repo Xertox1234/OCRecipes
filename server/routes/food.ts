@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
 import multer from "multer";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -44,7 +44,7 @@ export function register(app: Express): void {
     "/api/food/parse-text",
     requireAuth,
     foodParseRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!checkAiConfigured(res)) return;
         const validated = parseTextSchema.parse(req.body);
@@ -76,7 +76,7 @@ export function register(app: Express): void {
     requireAuth,
     foodParseRateLimit,
     audioUpload.single("audio"),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         // Check voice logging premium
         const features = await checkPremiumFeature(

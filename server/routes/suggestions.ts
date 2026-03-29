@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { type AuthenticatedRequest, requireAuth } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -41,7 +41,7 @@ export function register(app: Express): void {
     "/api/items/:id/suggestions",
     requireAuth,
     suggestionsRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const itemId = parsePositiveIntParam(req.params.id);
         if (!itemId) {
@@ -53,18 +53,18 @@ export function register(app: Express): void {
           );
         }
 
-        const item = await storage.getScannedItem(itemId, req.userId!);
+        const item = await storage.getScannedItem(itemId, req.userId);
         if (!item) {
           return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
 
-        const userProfile = await storage.getUserProfile(req.userId!);
+        const userProfile = await storage.getUserProfile(req.userId);
         const profileHash = calculateProfileHash(userProfile);
 
         // Check cache first
         const cached = await storage.getSuggestionCache(
           itemId,
-          req.userId!,
+          req.userId,
           profileHash,
         );
         if (cached) {
@@ -174,7 +174,7 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
         const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         const cacheEntry = await storage.createSuggestionCache(
           itemId,
-          req.userId!,
+          req.userId,
           profileHash,
           parsed.data.suggestions,
           expiresAt,
@@ -200,7 +200,7 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
     "/api/items/:itemId/suggestions/:suggestionIndex/instructions",
     requireAuth,
     instructionsRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const itemId = parsePositiveIntParam(req.params.itemId);
         const rawIndex = req.params.suggestionIndex;
@@ -226,7 +226,7 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
           );
         }
 
-        const item = await storage.getScannedItem(itemId, req.userId!);
+        const item = await storage.getScannedItem(itemId, req.userId);
         if (!item) {
           return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
@@ -262,7 +262,7 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
         // Cache miss — need AI to generate instructions
         if (!checkAiConfigured(res)) return;
 
-        const userProfile = await storage.getUserProfile(req.userId!);
+        const userProfile = await storage.getUserProfile(req.userId);
 
         let dietaryContext = "";
         if (userProfile) {

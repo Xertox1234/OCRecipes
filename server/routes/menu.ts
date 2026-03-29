@@ -1,5 +1,5 @@
-import type { Express, Request, Response } from "express";
-import { requireAuth } from "../middleware/auth";
+import type { Express, Response } from "express";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -23,7 +23,7 @@ export function register(app: Express): void {
     requireAuth,
     menuRateLimit,
     menuUpload.single("photo"),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -55,11 +55,11 @@ export function register(app: Express): void {
         if (!checkAiConfigured(res)) return;
 
         const imageBase64 = req.file.buffer.toString("base64");
-        const result = await analyzeMenuPhoto(imageBase64, req.userId!);
+        const result = await analyzeMenuPhoto(imageBase64, req.userId);
 
         // Persist the scan result
         const saved = await storage.createMenuScan({
-          userId: req.userId!,
+          userId: req.userId,
           restaurantName: result.restaurantName ?? null,
           cuisine: result.cuisine ?? null,
           menuItems: result.menuItems ?? [],
@@ -77,7 +77,7 @@ export function register(app: Express): void {
   app.get(
     "/api/menu/history",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -88,7 +88,7 @@ export function register(app: Express): void {
         if (!features) return;
 
         const limit = parseQueryInt(req.query.limit, { default: 20, max: 50 });
-        const scans = await storage.getMenuScans(req.userId!, limit);
+        const scans = await storage.getMenuScans(req.userId, limit);
         res.json(scans);
       } catch (error) {
         console.error("Get menu history error:", error);
@@ -106,7 +106,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/menu/scans/:id",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id)
@@ -117,7 +117,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
-        const deleted = await storage.deleteMenuScan(id, req.userId!);
+        const deleted = await storage.deleteMenuScan(id, req.userId);
         if (!deleted)
           return sendError(
             res,

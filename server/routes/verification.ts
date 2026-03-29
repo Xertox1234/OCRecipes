@@ -1,8 +1,8 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { createSessionStore } from "../storage/sessions";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { detectImageMimeType } from "../lib/image-mime";
@@ -88,7 +88,7 @@ export function register(app: Express): void {
     "/api/verification/submit",
     requireAuth,
     verificationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = submitSchema.parse(req.body);
         const { barcode, sessionId } = validated;
@@ -104,7 +104,7 @@ export function register(app: Express): void {
           );
         }
 
-        if (session.userId !== req.userId!) {
+        if (session.userId !== req.userId) {
           return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
@@ -121,7 +121,7 @@ export function register(app: Express): void {
         // Check if user already verified this barcode
         const alreadyVerified = await storage.hasUserVerified(
           barcode,
-          req.userId!,
+          req.userId,
         );
         if (alreadyVerified) {
           return sendError(
@@ -201,7 +201,7 @@ export function register(app: Express): void {
         // Record verification (transactional)
         await storage.submitVerification(
           barcode,
-          req.userId!,
+          req.userId,
           extracted,
           session.labelData.confidence,
           comparison.isMatch,
@@ -265,7 +265,7 @@ export function register(app: Express): void {
         // Check if user can scan front label (hasn't already done it for this barcode)
         const canScanFrontLabel = !(await storage.hasUserFrontLabelScanned(
           barcode,
-          req.userId!,
+          req.userId,
         ));
 
         res.json({
@@ -303,7 +303,7 @@ export function register(app: Express): void {
     requireAuth,
     frontLabelRateLimit,
     frontLabelUpload.single("photo"),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!req.file) {
           return sendError(
@@ -334,13 +334,13 @@ export function register(app: Express): void {
         }
 
         // Check session bounds
-        const check = frontLabelStore.canCreate(req.userId!);
+        const check = frontLabelStore.canCreate(req.userId);
         if (!check.allowed) {
           return sendError(res, 429, check.reason, check.code);
         }
 
         // User must have back-label verified this barcode first
-        const hasVerified = await storage.hasUserVerified(barcode, req.userId!);
+        const hasVerified = await storage.hasUserVerified(barcode, req.userId);
         if (!hasVerified) {
           return sendError(
             res,
@@ -357,7 +357,7 @@ export function register(app: Express): void {
 
         // Store session for confirm step (factory handles timeout + user count)
         const sessionId = frontLabelStore.create({
-          userId: req.userId!,
+          userId: req.userId,
           data,
           barcode,
           createdAt: Date.now(),
@@ -383,7 +383,7 @@ export function register(app: Express): void {
   app.post(
     "/api/verification/front-label/confirm",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = frontLabelConfirmSchema.parse(req.body);
         const { barcode, sessionId } = validated;
@@ -399,7 +399,7 @@ export function register(app: Express): void {
           );
         }
 
-        if (session.userId !== req.userId!) {
+        if (session.userId !== req.userId) {
           return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
@@ -413,7 +413,7 @@ export function register(app: Express): void {
         }
 
         // User must have back-label verified this barcode
-        const hasVerified = await storage.hasUserVerified(barcode, req.userId!);
+        const hasVerified = await storage.hasUserVerified(barcode, req.userId);
         if (!hasVerified) {
           return sendError(
             res,
@@ -429,7 +429,7 @@ export function register(app: Express): void {
           productName: session.data.productName,
           netWeight: session.data.netWeight,
           claims: session.data.claims,
-          scannedByUserId: parseInt(req.userId!, 10),
+          scannedByUserId: parseInt(req.userId, 10),
           scannedAt: new Date().toISOString(),
         };
 
@@ -446,7 +446,7 @@ export function register(app: Express): void {
         }
 
         // Store front-label data and mark user's history (transactional)
-        await storage.confirmFrontLabelData(barcode, req.userId!, parsed.data);
+        await storage.confirmFrontLabelData(barcode, req.userId, parsed.data);
 
         // Clean up session
         frontLabelStore.clear(sessionId);
@@ -480,7 +480,7 @@ export function register(app: Express): void {
     "/api/verification/reformulation-flags",
     requireAuth,
     verificationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!req.userId || !isAdmin(req.userId)) {
           return sendError(
@@ -527,7 +527,7 @@ export function register(app: Express): void {
     "/api/verification/reformulation-flags/:flagId/resolve",
     requireAuth,
     verificationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!req.userId || !isAdmin(req.userId)) {
           return sendError(
@@ -578,9 +578,9 @@ export function register(app: Express): void {
   app.get(
     "/api/verification/user-count",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const stats = await storage.getUserVerificationStats(req.userId!);
+        const stats = await storage.getUserVerificationStats(req.userId);
         res.json(stats);
       } catch (error) {
         console.error("User verification stats error:", error);
@@ -600,7 +600,7 @@ export function register(app: Express): void {
   app.get(
     "/api/verification/:barcode",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const barcode =
           typeof req.params.barcode === "string"

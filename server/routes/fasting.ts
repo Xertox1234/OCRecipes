@@ -1,10 +1,10 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z } from "zod";
 import { fastingRateLimit, formatZodError, parseQueryInt } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { calculateFastingStats } from "../services/fasting-stats";
 
 export function register(app: Express): void {
@@ -13,9 +13,9 @@ export function register(app: Express): void {
     "/api/fasting/schedule",
     requireAuth,
     fastingRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const schedule = await storage.getFastingSchedule(req.userId!);
+        const schedule = await storage.getFastingSchedule(req.userId);
         res.json(schedule || null);
       } catch (error) {
         console.error("Get fasting schedule error:", error);
@@ -34,7 +34,7 @@ export function register(app: Express): void {
     "/api/fasting/schedule",
     requireAuth,
     fastingRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const schema = z.object({
           protocol: z.enum(["16:8", "18:6", "20:4", "5:2", "custom"]),
@@ -63,7 +63,7 @@ export function register(app: Express): void {
           );
 
         const result = await storage.upsertFastingSchedule(
-          req.userId!,
+          req.userId,
           parsed.data,
         );
         res.json(result);
@@ -84,10 +84,10 @@ export function register(app: Express): void {
     "/api/fasting/start",
     requireAuth,
     fastingRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         // Check no active fast
-        const active = await storage.getActiveFastingLog(req.userId!);
+        const active = await storage.getActiveFastingLog(req.userId);
         if (active)
           return sendError(
             res,
@@ -96,11 +96,11 @@ export function register(app: Express): void {
             ErrorCode.CONFLICT,
           );
 
-        const schedule = await storage.getFastingSchedule(req.userId!);
+        const schedule = await storage.getFastingSchedule(req.userId);
         const targetHours = schedule?.fastingHours || 16;
 
         const log = await storage.createFastingLog({
-          userId: req.userId!,
+          userId: req.userId,
           targetDurationHours: targetHours,
         });
         res.status(201).json(log);
@@ -116,12 +116,12 @@ export function register(app: Express): void {
     "/api/fasting/end",
     requireAuth,
     fastingRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const schema = z.object({ note: z.string().max(500).optional() });
         const parsed = schema.safeParse(req.body);
 
-        const active = await storage.getActiveFastingLog(req.userId!);
+        const active = await storage.getActiveFastingLog(req.userId);
         if (!active)
           return sendError(
             res,
@@ -140,7 +140,7 @@ export function register(app: Express): void {
 
         const updated = await storage.endFastingLog(
           active.id,
-          req.userId!,
+          req.userId,
           now,
           actualMinutes,
           completed,
@@ -159,9 +159,9 @@ export function register(app: Express): void {
     "/api/fasting/current",
     requireAuth,
     fastingRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const active = await storage.getActiveFastingLog(req.userId!);
+        const active = await storage.getActiveFastingLog(req.userId);
         res.json(active || null);
       } catch (error) {
         console.error("Get current fast error:", error);
@@ -180,11 +180,11 @@ export function register(app: Express): void {
     "/api/fasting/history",
     requireAuth,
     fastingRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const limit = parseQueryInt(req.query.limit, { default: 30, max: 100 });
 
-        const logs = await storage.getFastingLogs(req.userId!, limit);
+        const logs = await storage.getFastingLogs(req.userId, limit);
         const stats = calculateFastingStats(logs);
         res.json({ logs, stats });
       } catch (error) {

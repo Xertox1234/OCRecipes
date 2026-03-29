@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -24,9 +24,9 @@ export function register(app: Express): void {
     "/api/user/dietary-profile",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const profile = await storage.getUserProfile(req.userId!);
+        const profile = await storage.getUserProfile(req.userId);
         res.json(profile || null);
       } catch (error) {
         console.error("Error fetching dietary profile:", error);
@@ -44,11 +44,11 @@ export function register(app: Express): void {
     "/api/user/dietary-profile",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = userProfileInputSchema.parse({
           ...req.body,
-          userId: req.userId!,
+          userId: req.userId,
         });
 
         const profileData = {
@@ -66,7 +66,7 @@ export function register(app: Express): void {
 
         // Upsert profile + mark onboarding complete atomically
         const profile = await storage.upsertProfileWithOnboarding(
-          req.userId!,
+          req.userId,
           profileData,
         );
 
@@ -95,7 +95,7 @@ export function register(app: Express): void {
     "/api/user/dietary-profile",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         // For partial updates, make all fields optional
         const updateSchema = userProfileInputSchema
@@ -103,7 +103,7 @@ export function register(app: Express): void {
           .omit({ userId: true });
         const validated = updateSchema.parse(req.body);
 
-        const profile = await storage.updateUserProfile(req.userId!, validated);
+        const profile = await storage.updateUserProfile(req.userId, validated);
 
         if (!profile) {
           return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
@@ -117,7 +117,7 @@ export function register(app: Express): void {
         if (changedCacheFields) {
           fireAndForget(
             "suggestion-cache-invalidation",
-            storage.invalidateSuggestionCacheForUser(req.userId!),
+            storage.invalidateSuggestionCacheForUser(req.userId),
           );
         }
 

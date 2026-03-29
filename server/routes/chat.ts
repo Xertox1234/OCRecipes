@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import {
   chatRateLimit,
   formatZodError,
@@ -23,11 +23,11 @@ export function register(app: Express): void {
     "/api/chat/conversations",
     requireAuth,
     chatRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const limit = parseQueryInt(req.query.limit, { default: 50, max: 50 });
         const conversations = await storage.getChatConversations(
-          req.userId!,
+          req.userId,
           limit,
         );
         res.json(conversations);
@@ -48,7 +48,7 @@ export function register(app: Express): void {
     "/api/chat/conversations",
     requireAuth,
     chatRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const schema = z.object({ title: z.string().max(200).optional() });
         const parsed = schema.safeParse(req.body);
@@ -61,7 +61,7 @@ export function register(app: Express): void {
           );
 
         const conversation = await storage.createChatConversation(
-          req.userId!,
+          req.userId,
           parsed.data.title || "New Chat",
         );
         res.status(201).json(conversation);
@@ -82,7 +82,7 @@ export function register(app: Express): void {
     "/api/chat/conversations/:id/messages",
     requireAuth,
     chatRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id)
@@ -93,7 +93,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
-        const conversation = await storage.getChatConversation(id, req.userId!);
+        const conversation = await storage.getChatConversation(id, req.userId);
         if (!conversation)
           return sendError(
             res,
@@ -121,7 +121,7 @@ export function register(app: Express): void {
     "/api/chat/conversations/:id/messages",
     requireAuth,
     chatRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id)
@@ -132,7 +132,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
-        const conversation = await storage.getChatConversation(id, req.userId!);
+        const conversation = await storage.getChatConversation(id, req.userId);
         if (!conversation)
           return sendError(
             res,
@@ -162,7 +162,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const user = await storage.getUser(req.userId!);
+        const user = await storage.getUser(req.userId);
         if (!user)
           return sendError(res, 401, "Unauthorized", ErrorCode.UNAUTHORIZED);
 
@@ -170,7 +170,7 @@ export function register(app: Express): void {
         // transaction to prevent TOCTOU races bypassing the limit.
         const message = await storage.createChatMessageWithLimitCheck(
           id,
-          req.userId!,
+          req.userId,
           parsed.data.content,
           features.dailyCoachMessages,
         );
@@ -188,9 +188,9 @@ export function register(app: Express): void {
         const today = new Date();
         const [profile, dailySummary, latestWeight, history] =
           await Promise.all([
-            storage.getUserProfile(req.userId!),
-            storage.getDailySummary(req.userId!, today),
-            storage.getLatestWeight(req.userId!),
+            storage.getUserProfile(req.userId),
+            storage.getDailySummary(req.userId, today),
+            storage.getLatestWeight(req.userId),
             storage.getChatMessages(id, 20),
           ]);
 
@@ -267,7 +267,7 @@ export function register(app: Express): void {
               (parsed.data.content.length > 50 ? "..." : "");
             await storage.updateChatConversationTitle(
               id,
-              req.userId!,
+              req.userId,
               shortTitle,
             );
           }
@@ -309,7 +309,7 @@ export function register(app: Express): void {
     "/api/chat/conversations/:id",
     requireAuth,
     chatRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id)
@@ -320,7 +320,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
-        const deleted = await storage.deleteChatConversation(id, req.userId!);
+        const deleted = await storage.deleteChatConversation(id, req.userId);
         if (!deleted)
           return sendError(
             res,

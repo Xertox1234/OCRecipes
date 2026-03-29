@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { isValidCalendarDate } from "../utils/date-validation";
@@ -85,9 +85,9 @@ export function register(app: Express): void {
   app.get(
     "/api/meal-plan/recipes",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        const recipes = await storage.getUserMealPlanRecipes(req.userId!);
+        const recipes = await storage.getUserMealPlanRecipes(req.userId);
         res.json(recipes);
       } catch (error) {
         console.error("Get meal plan recipes error:", error);
@@ -105,7 +105,7 @@ export function register(app: Express): void {
   app.get(
     "/api/meal-plan/recipes/:id",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -132,7 +132,7 @@ export function register(app: Express): void {
     "/api/meal-plan/recipes",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = createMealPlanRecipeSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -152,7 +152,7 @@ export function register(app: Express): void {
           ingredients?.map((i) => i.name),
         );
         const recipe = await storage.createMealPlanRecipe(
-          { ...recipeData, userId: req.userId!, sourceType, mealTypes },
+          { ...recipeData, userId: req.userId, sourceType, mealTypes },
           ingredients?.map((ing) => ({
             ...ing,
             recipeId: 0, // Will be set by storage method
@@ -186,7 +186,7 @@ export function register(app: Express): void {
     "/api/meal-plan/recipes/:id",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -210,7 +210,7 @@ export function register(app: Express): void {
 
         const recipe = await storage.updateMealPlanRecipe(
           id,
-          req.userId!,
+          req.userId,
           parsed.data,
         );
         if (!recipe) {
@@ -245,7 +245,7 @@ export function register(app: Express): void {
     "/api/meal-plan/recipes/:id",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -253,7 +253,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const deleted = await storage.deleteMealPlanRecipe(id, req.userId!);
+        const deleted = await storage.deleteMealPlanRecipe(id, req.userId);
         if (!deleted) {
           sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
@@ -276,7 +276,7 @@ export function register(app: Express): void {
   app.get(
     "/api/meal-plan",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const start = parseQueryString(req.query.start);
         const end = parseQueryString(req.query.end);
@@ -331,7 +331,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const items = await storage.getMealPlanItems(req.userId!, start, end);
+        const items = await storage.getMealPlanItems(req.userId, start, end);
         res.json(items);
       } catch (error) {
         console.error("Get meal plan error:", error);
@@ -350,7 +350,7 @@ export function register(app: Express): void {
     "/api/meal-plan/items",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = addMealPlanItemSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -384,7 +384,7 @@ export function register(app: Express): void {
         if (parsed.data.scannedItemId) {
           const item = await storage.getScannedItem(
             parsed.data.scannedItemId,
-            req.userId!,
+            req.userId,
           );
           if (!item) {
             sendError(res, 404, "Scanned item not found", ErrorCode.NOT_FOUND);
@@ -394,7 +394,7 @@ export function register(app: Express): void {
 
         const mealPlanItem = await storage.addMealPlanItem({
           ...parsed.data,
-          userId: req.userId!,
+          userId: req.userId,
         });
 
         res.status(201).json(mealPlanItem);
@@ -423,7 +423,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/meal-plan/items/:id",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -431,7 +431,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const removed = await storage.removeMealPlanItem(id, req.userId!);
+        const removed = await storage.removeMealPlanItem(id, req.userId);
         if (!removed) {
           sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
           return;
@@ -450,7 +450,7 @@ export function register(app: Express): void {
     "/api/meal-plan/reorder",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const schema = z.object({
           items: z
@@ -465,7 +465,7 @@ export function register(app: Express): void {
 
         const { items } = schema.parse(req.body);
 
-        await storage.reorderMealPlanItems(req.userId!, items);
+        await storage.reorderMealPlanItems(req.userId, items);
 
         res.status(200).json({ success: true });
       } catch (error) {
@@ -498,7 +498,7 @@ export function register(app: Express): void {
     "/api/meal-plan/items/:id/confirm",
     requireAuth,
     mealConfirmRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -520,7 +520,7 @@ export function register(app: Express): void {
         }
 
         // Fetch meal plan item and verify ownership (IDOR)
-        const mealPlanItem = await storage.getMealPlanItemById(id, req.userId!);
+        const mealPlanItem = await storage.getMealPlanItemById(id, req.userId);
         if (!mealPlanItem) {
           sendError(res, 404, "Meal plan item not found", ErrorCode.NOT_FOUND);
           return;
@@ -528,7 +528,7 @@ export function register(app: Express): void {
 
         // Check for duplicate confirmation
         const confirmedIds = await storage.getConfirmedMealPlanItemIds(
-          req.userId!,
+          req.userId,
           new Date(mealPlanItem.plannedDate),
         );
         if (confirmedIds.includes(id)) {
@@ -543,7 +543,7 @@ export function register(app: Express): void {
 
         // Create daily log entry
         const dailyLog = await storage.createDailyLog({
-          userId: req.userId!,
+          userId: req.userId,
           scannedItemId: mealPlanItem.scannedItemId || null,
           recipeId: mealPlanItem.recipeId || null,
           mealPlanItemId: mealPlanItem.id,
@@ -569,7 +569,7 @@ export function register(app: Express): void {
     "/api/meal-plan/generate-from-pantry",
     requireAuth,
     pantryMealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -606,7 +606,7 @@ export function register(app: Express): void {
         }
 
         // Fetch pantry items
-        const pantryItems = await storage.getPantryItems(req.userId!);
+        const pantryItems = await storage.getPantryItems(req.userId);
         if (pantryItems.length === 0) {
           sendError(
             res,
@@ -619,8 +619,8 @@ export function register(app: Express): void {
 
         // Fetch user profile and goals
         const [userProfile, user] = await Promise.all([
-          storage.getUserProfile(req.userId!),
-          storage.getUser(req.userId!),
+          storage.getUserProfile(req.userId),
+          storage.getUser(req.userId),
         ]);
 
         const dailyTargets = {
@@ -660,7 +660,7 @@ export function register(app: Express): void {
     "/api/meal-plan/save-generated",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const mealSchema = z.object({
           mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
@@ -723,7 +723,7 @@ export function register(app: Express): void {
 
           return {
             recipe: {
-              userId: req.userId!,
+              userId: req.userId,
               title: meal.title,
               description: meal.description ?? null,
               difficulty: meal.difficulty ?? null,
@@ -746,7 +746,7 @@ export function register(app: Express): void {
               displayOrder: idx,
             })),
             planItem: {
-              userId: req.userId!,
+              userId: req.userId,
               plannedDate: meal.plannedDate,
               mealType: meal.mealType,
               servings: String(meal.servings),

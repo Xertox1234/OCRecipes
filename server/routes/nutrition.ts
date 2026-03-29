@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { insertScannedItemSchema } from "@shared/schema";
@@ -68,7 +68,7 @@ export function register(app: Express): void {
     "/api/nutrition/lookup",
     requireAuth,
     nutritionLookupRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       const name = parseQueryString(req.query.name)?.trim();
       if (!name || name.length > 200) {
         sendError(
@@ -106,7 +106,7 @@ export function register(app: Express): void {
     "/api/nutrition/barcode/:code",
     requireAuth,
     nutritionLookupRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       const rawCode = req.params.code;
       const code = typeof rawCode === "string" ? rawCode.trim() : "";
       if (!code || code.length > 50 || !/^\d+$/.test(code)) {
@@ -140,7 +140,7 @@ export function register(app: Express): void {
     "/api/scanned-items/frequent",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const limit = parseQueryInt(req.query.limit, {
           default: 5,
@@ -148,7 +148,7 @@ export function register(app: Express): void {
           max: 20,
         });
 
-        const items = await storage.getFrequentItems(req.userId!, limit);
+        const items = await storage.getFrequentItems(req.userId, limit);
         res.json({ items });
       } catch (error) {
         console.error("Error fetching frequent items:", error);
@@ -166,7 +166,7 @@ export function register(app: Express): void {
     "/api/scanned-items",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const limit = parseQueryInt(req.query.limit, {
           default: 50,
@@ -175,11 +175,7 @@ export function register(app: Express): void {
         });
         const offset = parseQueryInt(req.query.offset, { default: 0, min: 0 });
 
-        const result = await storage.getScannedItems(
-          req.userId!,
-          limit,
-          offset,
-        );
+        const result = await storage.getScannedItems(req.userId, limit, offset);
         res.json(result);
       } catch (error) {
         console.error("Error fetching scanned items:", error);
@@ -192,7 +188,7 @@ export function register(app: Express): void {
     "/api/scanned-items/:id",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -204,7 +200,7 @@ export function register(app: Express): void {
           );
         }
 
-        const item = await storage.getScannedItemWithFavourite(id, req.userId!);
+        const item = await storage.getScannedItemWithFavourite(id, req.userId);
 
         if (!item || item.userId !== req.userId) {
           return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
@@ -222,11 +218,11 @@ export function register(app: Express): void {
     "/api/scanned-items",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = scannedItemInputSchema.parse({
           ...req.body,
-          userId: req.userId!,
+          userId: req.userId,
         });
 
         // No logOverrides needed — defaults to source: "scan", mealType: null
@@ -267,7 +263,7 @@ export function register(app: Express): void {
     "/api/scanned-items/:id/favourite",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -278,7 +274,7 @@ export function register(app: Express): void {
         // to close the TOCTOU gap (see storage.toggleFavouriteScannedItem).
         const isFavourited = await storage.toggleFavouriteScannedItem(
           id,
-          req.userId!,
+          req.userId,
         );
 
         if (isFavourited === null) {
@@ -303,14 +299,14 @@ export function register(app: Express): void {
     "/api/scanned-items/:id",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           return sendError(res, 400, "Invalid item ID", "INVALID_ITEM_ID");
         }
 
-        const deleted = await storage.softDeleteScannedItem(id, req.userId!);
+        const deleted = await storage.softDeleteScannedItem(id, req.userId);
         if (!deleted) {
           return sendError(res, 404, "Item not found", "ITEM_NOT_FOUND");
         }
@@ -327,16 +323,16 @@ export function register(app: Express): void {
     "/api/daily-summary",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const date = parseQueryDate(req.query.date) ?? new Date();
 
         const [summary, confirmedIds] = await Promise.all([
-          storage.getDailySummary(req.userId!, date),
-          storage.getConfirmedMealPlanItemIds(req.userId!, date),
+          storage.getDailySummary(req.userId, date),
+          storage.getConfirmedMealPlanItemIds(req.userId, date),
         ]);
         const planned = await storage.getPlannedNutritionSummary(
-          req.userId!,
+          req.userId,
           date,
           confirmedIds,
         );

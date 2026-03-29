@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -106,7 +106,7 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/featured",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const limit = Math.min(Number(req.query.limit) || 12, 50);
         const offset = Number(req.query.offset) || 0;
@@ -129,7 +129,7 @@ export function register(app: Express): void {
     "/api/recipes/browse",
     requireAuth,
     instructionsRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = browseQuerySchema.safeParse(req.query);
         if (!parsed.success) {
@@ -145,7 +145,7 @@ export function register(app: Express): void {
 
         const [result, frequent] = await Promise.all([
           storage.getUnifiedRecipes({
-            userId: req.userId!,
+            userId: req.userId,
             query: query || undefined,
             cuisine: cuisine || undefined,
             diet: diet || undefined,
@@ -153,7 +153,7 @@ export function register(app: Express): void {
             limit,
           }),
           mealType
-            ? storage.getFrequentRecipesForMealType(req.userId!, mealType)
+            ? storage.getFrequentRecipesForMealType(req.userId, mealType)
             : Promise.resolve([]),
         ]);
         res.json({
@@ -177,7 +177,7 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/community",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const barcode = parseQueryString(req.query.barcode) || null;
         const productName = parseQueryString(req.query.productName);
@@ -215,12 +215,12 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/generation-status",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await getPremiumFeatures(req);
 
         const generationsToday = await storage.getDailyRecipeGenerationCount(
-          req.userId!,
+          req.userId,
           new Date(),
         );
 
@@ -248,7 +248,7 @@ export function register(app: Express): void {
     "/api/recipes/generate",
     requireAuth,
     recipeGenerationRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         // Check premium status
         const features = await checkPremiumFeature(
@@ -261,7 +261,7 @@ export function register(app: Express): void {
 
         // Early limit check (non-transactional fast path to avoid expensive AI call)
         const generationsToday = await storage.getDailyRecipeGenerationCount(
-          req.userId!,
+          req.userId,
           new Date(),
         );
 
@@ -296,7 +296,7 @@ export function register(app: Express): void {
         } = parsed.data;
 
         // Get user profile for dietary context
-        const userProfile = await storage.getUserProfile(req.userId!);
+        const userProfile = await storage.getUserProfile(req.userId);
 
         // Generate the recipe (expensive AI call, done before transaction)
         const generatedRecipe = await generateFullRecipe({
@@ -311,10 +311,10 @@ export function register(app: Express): void {
         // Atomically re-check limit + create recipe + log generation in a transaction
         // This prevents TOCTOU race where concurrent requests both pass the early check
         const recipe = await storage.createRecipeWithLimitCheck(
-          req.userId!,
+          req.userId,
           features.dailyRecipeGenerations,
           {
-            authorId: req.userId!,
+            authorId: req.userId,
             barcode: barcode || null,
             normalizedProductName: normalizeProductName(productName),
             title: generatedRecipe.title,
@@ -365,7 +365,7 @@ export function register(app: Express): void {
   app.post(
     "/api/recipes/:id/share",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
@@ -386,7 +386,7 @@ export function register(app: Express): void {
 
         const recipe = await storage.updateRecipePublicStatus(
           recipeId,
-          req.userId!,
+          req.userId,
           parsed.data.isPublic,
         );
 
@@ -417,9 +417,9 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/mine",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        const recipes = await storage.getUserRecipes(req.userId!);
+        const recipes = await storage.getUserRecipes(req.userId);
         res.json(recipes);
       } catch (error) {
         console.error("Get user recipes error:", error);
@@ -437,7 +437,7 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/:id",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
@@ -471,7 +471,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/recipes/:id",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
         if (!recipeId) {
@@ -481,7 +481,7 @@ export function register(app: Express): void {
 
         const deleted = await storage.deleteCommunityRecipe(
           recipeId,
-          req.userId!,
+          req.userId,
         );
 
         if (!deleted) {
@@ -516,7 +516,7 @@ export function register(app: Express): void {
     "/api/meal-plan/catalog/search",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = catalogSearchSchema.safeParse(req.query);
         if (!parsed.success) {
@@ -530,7 +530,7 @@ export function register(app: Express): void {
         }
 
         // Inject user's allergens as Spoonacular intolerances
-        const profile = await storage.getUserProfile(req.userId!);
+        const profile = await storage.getUserProfile(req.userId);
         const intolerances = buildIntolerancesParam(profile?.allergies);
 
         const results = await searchCatalogRecipes({
@@ -559,7 +559,7 @@ export function register(app: Express): void {
     "/api/meal-plan/catalog/:id",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -600,7 +600,7 @@ export function register(app: Express): void {
     "/api/meal-plan/catalog/:id/save",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -610,7 +610,7 @@ export function register(app: Express): void {
 
         // Dedup: check if already saved
         const existing = await storage.findMealPlanRecipeByExternalId(
-          req.userId!,
+          req.userId,
           String(id),
         );
         if (existing) {
@@ -631,7 +631,7 @@ export function register(app: Express): void {
         }
 
         // Set the userId and infer meal types if not provided
-        detail.recipe.userId = req.userId!;
+        detail.recipe.userId = req.userId;
         if (!detail.recipe.mealTypes || detail.recipe.mealTypes.length === 0) {
           detail.recipe.mealTypes = inferMealTypes(
             detail.recipe.title,
@@ -665,7 +665,7 @@ export function register(app: Express): void {
     "/api/meal-plan/recipes/import-url",
     requireAuth,
     urlImportRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = importUrlSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -709,7 +709,7 @@ export function register(app: Express): void {
         }));
         const recipe = await storage.createMealPlanRecipe(
           {
-            userId: req.userId!,
+            userId: req.userId,
             title: data.title,
             description: data.description,
             sourceType: "url_import",

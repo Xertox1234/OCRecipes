@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import {
   micronutrientRateLimit,
   checkPremiumFeature,
@@ -7,7 +7,7 @@ import {
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import {
   lookupMicronutrientsWithCache,
   batchLookupMicronutrients,
@@ -22,7 +22,7 @@ export function register(app: Express): void {
     "/api/micronutrients/item/:id",
     requireAuth,
     micronutrientRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -41,7 +41,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
-        const item = await storage.getScannedItem(itemId, req.userId!);
+        const item = await storage.getScannedItem(itemId, req.userId);
         if (!item)
           return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
 
@@ -66,7 +66,7 @@ export function register(app: Express): void {
     "/api/micronutrients/daily",
     requireAuth,
     micronutrientRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -80,7 +80,7 @@ export function register(app: Express): void {
         const date = dateStr ? new Date(dateStr) : new Date();
 
         // Get daily logs for the date
-        const logs = await storage.getDailyLogs(req.userId!, date);
+        const logs = await storage.getDailyLogs(req.userId, date);
 
         // Batch-fetch all scanned items in a single query (fixes N+1)
         const scannedItemIds = [
@@ -92,7 +92,7 @@ export function register(app: Express): void {
         ];
         const items = await storage.getScannedItemsByIds(
           scannedItemIds,
-          req.userId!,
+          req.userId,
         );
         const foodNames = items.map((item) => item.productName);
 
@@ -121,7 +121,7 @@ export function register(app: Express): void {
     "/api/micronutrients/lookup",
     requireAuth,
     micronutrientRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -158,7 +158,7 @@ export function register(app: Express): void {
   app.get(
     "/api/micronutrients/reference",
     requireAuth,
-    (_req: Request, res: Response) => {
+    (_req: AuthenticatedRequest, res: Response) => {
       res.json(getDailyValueReference());
     },
   );

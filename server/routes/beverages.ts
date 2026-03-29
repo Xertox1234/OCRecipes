@@ -1,6 +1,6 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { formatZodError } from "./_helpers";
@@ -68,7 +68,7 @@ export function register(app: Express): void {
   app.post(
     "/api/beverages/log",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = logBeverageSchema.parse(req.body);
         const { beverageType, size, modifiers, customName, customCalories } =
@@ -127,7 +127,7 @@ export function register(app: Express): void {
         // Create scanned item + daily log atomically via storage layer
         const scannedItem = await storage.createScannedItemWithLog(
           {
-            userId: req.userId!,
+            userId: req.userId,
             productName,
             servingSize,
             calories: calories.toString(),

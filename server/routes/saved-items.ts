@@ -1,6 +1,6 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { createSavedItemSchema } from "@shared/schemas/saved-items";
@@ -16,13 +16,13 @@ export function register(app: Express): void {
     "/api/saved-items",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const limit = parseQueryInt(req.query.limit, {
           default: 100,
           max: 100,
         });
-        const items = await storage.getSavedItems(req.userId!, limit);
+        const items = await storage.getSavedItems(req.userId, limit);
         res.json(items);
       } catch (error) {
         console.error("Get saved items error:", error);
@@ -40,9 +40,9 @@ export function register(app: Express): void {
     "/api/saved-items/count",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        const count = await storage.getSavedItemCount(req.userId!);
+        const count = await storage.getSavedItemCount(req.userId);
         res.json({ count });
       } catch (error) {
         console.error("Get saved items count error:", error);
@@ -60,7 +60,7 @@ export function register(app: Express): void {
     "/api/saved-items",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = createSavedItemSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -73,7 +73,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const item = await storage.createSavedItem(req.userId!, parsed.data);
+        const item = await storage.createSavedItem(req.userId, parsed.data);
         if (!item) {
           sendError(
             res,
@@ -101,7 +101,7 @@ export function register(app: Express): void {
     "/api/saved-items/:id",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -110,7 +110,7 @@ export function register(app: Express): void {
         }
 
         // IDOR protection built into deleteSavedItem
-        const deleted = await storage.deleteSavedItem(id, req.userId!);
+        const deleted = await storage.deleteSavedItem(id, req.userId);
         if (!deleted) {
           sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
           return;

@@ -1,8 +1,9 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { allergenCheckRateLimit, formatZodError } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { requireAuth } from "../middleware/auth";
+import type { AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import {
   detectAllergens,
@@ -28,7 +29,7 @@ export function register(app: Express): void {
     "/api/allergen-check",
     requireAuth,
     allergenCheckRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const parsed = allergenCheckRequestSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -43,7 +44,7 @@ export function register(app: Express): void {
         const { ingredients } = parsed.data;
 
         // Fetch user profile to get allergy declarations
-        const profile = await storage.getUserProfile(req.userId!);
+        const profile = await storage.getUserProfile(req.userId);
         const userAllergies = parseUserAllergies(profile?.allergies);
 
         if (userAllergies.length === 0) {

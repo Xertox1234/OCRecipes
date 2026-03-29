@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -34,13 +34,13 @@ export function register(app: Express): void {
     "/api/cookbooks",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const limit = parseQueryInt(req.query.limit, {
           default: 50,
           max: 100,
         });
-        const cookbooks = await storage.getUserCookbooks(req.userId!, limit);
+        const cookbooks = await storage.getUserCookbooks(req.userId, limit);
         res.json(cookbooks);
       } catch (error) {
         console.error("Get cookbooks error:", error);
@@ -59,7 +59,7 @@ export function register(app: Express): void {
     "/api/cookbooks",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = createCookbookSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -73,7 +73,7 @@ export function register(app: Express): void {
         }
 
         const cookbook = await storage.createCookbook({
-          userId: req.userId!,
+          userId: req.userId,
           name: parsed.data.name,
           description: parsed.data.description || null,
           coverImageUrl: parsed.data.coverImageUrl || null,
@@ -96,7 +96,7 @@ export function register(app: Express): void {
     "/api/cookbooks/:id",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -109,7 +109,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const cookbook = await storage.getCookbook(id, req.userId!);
+        const cookbook = await storage.getCookbook(id, req.userId);
         if (!cookbook) {
           sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
           return;
@@ -117,7 +117,7 @@ export function register(app: Express): void {
 
         const recipes = await storage.getResolvedCookbookRecipes(
           id,
-          req.userId!,
+          req.userId,
         );
         res.json({ ...cookbook, recipes });
       } catch (error) {
@@ -137,7 +137,7 @@ export function register(app: Express): void {
     "/api/cookbooks/:id",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -163,7 +163,7 @@ export function register(app: Express): void {
 
         const updated = await storage.updateCookbook(
           id,
-          req.userId!,
+          req.userId,
           parsed.data,
         );
         if (!updated) {
@@ -188,7 +188,7 @@ export function register(app: Express): void {
     "/api/cookbooks/:id",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -201,7 +201,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const deleted = await storage.deleteCookbook(id, req.userId!);
+        const deleted = await storage.deleteCookbook(id, req.userId);
         if (!deleted) {
           sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
           return;
@@ -224,7 +224,7 @@ export function register(app: Express): void {
     "/api/cookbooks/:id/recipes",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -238,7 +238,7 @@ export function register(app: Express): void {
         }
 
         // Verify ownership
-        const cookbook = await storage.getCookbook(id, req.userId!);
+        const cookbook = await storage.getCookbook(id, req.userId);
         if (!cookbook) {
           sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
           return;
@@ -287,7 +287,7 @@ export function register(app: Express): void {
     "/api/cookbooks/:id/recipes/:recipeId",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         const recipeId = parsePositiveIntParam(req.params.recipeId);
@@ -302,7 +302,7 @@ export function register(app: Express): void {
         }
 
         // Verify ownership
-        const cookbook = await storage.getCookbook(id, req.userId!);
+        const cookbook = await storage.getCookbook(id, req.userId);
         if (!cookbook) {
           sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
           return;

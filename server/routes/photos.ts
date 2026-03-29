@@ -1,9 +1,9 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import crypto from "crypto";
 import { MAX_IMAGE_SIZE_BYTES } from "../storage/sessions";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -75,7 +75,7 @@ export function register(app: Express): void {
     requireAuth,
     photoRateLimit,
     upload.single("photo"),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!checkAiConfigured(res)) return;
 
@@ -90,7 +90,7 @@ export function register(app: Express): void {
 
         // Check scan limit
         const scanCount = await storage.getDailyScanCount(
-          req.userId!,
+          req.userId,
           new Date(),
         );
 
@@ -142,7 +142,7 @@ export function register(app: Express): void {
             );
           }
 
-          const sessionCheck = storage.canCreateAnalysisSession(req.userId!);
+          const sessionCheck = storage.canCreateAnalysisSession(req.userId);
           if (!sessionCheck.allowed) {
             return sendError(res, 429, sessionCheck.reason, sessionCheck.code);
           }
@@ -175,7 +175,7 @@ export function register(app: Express): void {
             }
 
             const sessionId = intentConfig.needsSession
-              ? storage.createAnalysisSession(req.userId!, analysisResult)
+              ? storage.createAnalysisSession(req.userId, analysisResult)
               : crypto.randomUUID();
 
             return res.json({
@@ -225,7 +225,7 @@ export function register(app: Express): void {
             );
           }
 
-          const sessionCheck = storage.canCreateAnalysisSession(req.userId!);
+          const sessionCheck = storage.canCreateAnalysisSession(req.userId);
           if (!sessionCheck.allowed) {
             return sendError(res, 429, sessionCheck.reason, sessionCheck.code);
           }
@@ -255,7 +255,7 @@ export function register(app: Express): void {
 
         // Generate session ID (needed for follow-ups and confirm)
         const sessionId = intentConfig.needsSession
-          ? storage.createAnalysisSession(req.userId!, analysisResult)
+          ? storage.createAnalysisSession(req.userId, analysisResult)
           : crypto.randomUUID();
 
         const response = {
@@ -284,7 +284,7 @@ export function register(app: Express): void {
     "/api/photos/analyze/:sessionId/followup",
     requireAuth,
     photoRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const sessionId = parseStringParam(req.params.sessionId);
         if (!sessionId) {
@@ -318,7 +318,7 @@ export function register(app: Express): void {
         }
 
         // Verify session ownership
-        if (session.userId !== req.userId!) {
+        if (session.userId !== req.userId) {
           return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
@@ -369,7 +369,7 @@ export function register(app: Express): void {
   app.post(
     "/api/photos/confirm",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = confirmPhotoSchema.parse(req.body);
 
@@ -388,7 +388,7 @@ export function register(app: Express): void {
         const session = storage.getAnalysisSession(validated.sessionId);
 
         // Verify session ownership if session exists
-        if (session && session.userId !== req.userId!) {
+        if (session && session.userId !== req.userId) {
           return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
@@ -397,7 +397,7 @@ export function register(app: Express): void {
         // Create scanned item with photo source
         const scannedItem = await storage.createScannedItemWithLog(
           {
-            userId: req.userId!,
+            userId: req.userId,
             productName: validated.foods.map((f) => f.name).join(", "),
             calories: totals.calories.toString(),
             protein: totals.protein.toString(),
@@ -437,7 +437,7 @@ export function register(app: Express): void {
     requireAuth,
     photoRateLimit,
     labelUpload.single("photo"),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -495,12 +495,12 @@ export function register(app: Express): void {
     requireAuth,
     photoRateLimit,
     labelUpload.single("photo"),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         // Check scan limit (label scans share daily scan limit)
         const features = await getPremiumFeatures(req);
         const scanCount = await storage.getDailyScanCount(
-          req.userId!,
+          req.userId,
           new Date(),
         );
 
@@ -535,7 +535,7 @@ export function register(app: Express): void {
         const barcode = (req.body?.barcode as string) || undefined;
 
         // Check label session bounds before calling paid APIs
-        const labelCheck = storage.canCreateLabelSession(req.userId!);
+        const labelCheck = storage.canCreateLabelSession(req.userId);
         if (!labelCheck.allowed) {
           return sendError(res, 429, labelCheck.reason, labelCheck.code);
         }
@@ -544,7 +544,7 @@ export function register(app: Express): void {
 
         // Store session for confirm step
         const sessionId = storage.createLabelSession(
-          req.userId!,
+          req.userId,
           labelData,
           barcode,
         );
@@ -570,7 +570,7 @@ export function register(app: Express): void {
   app.post(
     "/api/photos/confirm-label",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = confirmLabelSchema.parse(req.body);
 
@@ -584,7 +584,7 @@ export function register(app: Express): void {
           );
         }
 
-        if (session.userId !== req.userId!) {
+        if (session.userId !== req.userId) {
           return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
@@ -604,7 +604,7 @@ export function register(app: Express): void {
 
         const scannedItem = await storage.createScannedItemWithLog(
           {
-            userId: req.userId!,
+            userId: req.userId,
             barcode: barcode || null,
             productName,
             servingSize: labelData.servingSize || null,

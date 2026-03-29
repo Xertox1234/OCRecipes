@@ -4,14 +4,23 @@ import { isAccessTokenPayload } from "../lib/jwt-types";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 
-// Extend Express Request type
+// Extend Express Request type.
+// userId is declared as non-optional because all routes that access it
+// sit behind requireAuth middleware which guarantees it is set.
+// Non-authenticated routes (login, register) do not read req.userId.
 declare global {
   namespace Express {
     interface Request {
-      userId?: string;
+      userId: string;
     }
   }
 }
+
+/**
+ * Semantic alias for routes behind requireAuth middleware.
+ * Structurally identical to Request, but signals intent in handler signatures.
+ */
+export type AuthenticatedRequest = Request;
 
 // Validate on module load - fail fast
 const JWT_SECRET = process.env.JWT_SECRET;

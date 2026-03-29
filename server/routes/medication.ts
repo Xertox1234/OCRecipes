@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z } from "zod";
 import {
   medicationRateLimit,
@@ -12,6 +12,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware/auth";
+import type { AuthenticatedRequest } from "../middleware/auth";
 import { analyzeGlp1Insights } from "../services/glp1-insights";
 import type { ProteinSuggestion } from "@shared/types/protein-suggestions";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
@@ -22,7 +23,7 @@ export function register(app: Express): void {
     "/api/medication/logs",
     requireAuth,
     medicationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -36,7 +37,7 @@ export function register(app: Express): void {
         const to = parseQueryDate(req.query.to);
         const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
 
-        const logs = await storage.getMedicationLogs(req.userId!, {
+        const logs = await storage.getMedicationLogs(req.userId, {
           from,
           to,
           limit,
@@ -59,7 +60,7 @@ export function register(app: Express): void {
     "/api/medication/log",
     requireAuth,
     medicationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -87,7 +88,7 @@ export function register(app: Express): void {
           );
 
         const log = await storage.createMedicationLog({
-          userId: req.userId!,
+          userId: req.userId,
           ...parsed.data,
         });
         res.status(201).json(log);
@@ -108,7 +109,7 @@ export function register(app: Express): void {
     "/api/medication/log/:id",
     requireAuth,
     medicationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -146,7 +147,7 @@ export function register(app: Express): void {
 
         const updated = await storage.updateMedicationLog(
           id,
-          req.userId!,
+          req.userId,
           parsed.data,
         );
         if (!updated)
@@ -174,7 +175,7 @@ export function register(app: Express): void {
     "/api/medication/log/:id",
     requireAuth,
     medicationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -193,7 +194,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
-        const deleted = await storage.deleteMedicationLog(id, req.userId!);
+        const deleted = await storage.deleteMedicationLog(id, req.userId);
         if (!deleted)
           return sendError(
             res,
@@ -219,7 +220,7 @@ export function register(app: Express): void {
     "/api/medication/insights",
     requireAuth,
     medicationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -229,7 +230,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const insights = await analyzeGlp1Insights(req.userId!);
+        const insights = await analyzeGlp1Insights(req.userId);
         res.json(insights);
       } catch (error) {
         console.error("Get medication insights error:", error);
@@ -248,7 +249,7 @@ export function register(app: Express): void {
     "/api/medication/protein-suggestions",
     requireAuth,
     medicationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -259,9 +260,9 @@ export function register(app: Express): void {
         if (!features) return;
 
         // Get user goals and daily summary to calculate remaining protein
-        const user = await storage.getUser(req.userId!);
+        const user = await storage.getUser(req.userId);
         const dailySummary = await storage.getDailySummary(
-          req.userId!,
+          req.userId,
           new Date(),
         );
         const proteinGoal =
@@ -272,7 +273,7 @@ export function register(app: Express): void {
         );
 
         // Get recent appetite level from medication logs
-        const recentLogs = await storage.getMedicationLogs(req.userId!, {
+        const recentLogs = await storage.getMedicationLogs(req.userId, {
           limit: 1,
         });
         const appetiteLevel = recentLogs[0]?.appetiteLevel ?? 3;
@@ -300,7 +301,7 @@ export function register(app: Express): void {
     "/api/user/glp1-mode",
     requireAuth,
     medicationRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -333,7 +334,7 @@ export function register(app: Express): void {
           updates.glp1StartDate = new Date();
         }
 
-        const profile = await storage.updateUserProfile(req.userId!, updates);
+        const profile = await storage.updateUserProfile(req.userId, updates);
         if (!profile)
           return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
         res.json(profile);

@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { calculateProfileHash } from "../utils/profile-hash";
@@ -44,7 +44,7 @@ export function register(app: Express): void {
     "/api/meal-plan/suggest",
     requireAuth,
     mealSuggestionRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = suggestMealSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -68,7 +68,7 @@ export function register(app: Express): void {
 
         // Early daily limit check (authoritative check happens in transaction below)
         const dailyCount = await storage.getDailyMealSuggestionCount(
-          req.userId!,
+          req.userId,
           new Date(),
         );
         if (dailyCount >= features.dailyAiSuggestions) {
@@ -82,15 +82,15 @@ export function register(app: Express): void {
         }
 
         // Build cache key
-        const userProfile = await storage.getUserProfile(req.userId!);
-        const user = await storage.getUser(req.userId!);
+        const userProfile = await storage.getUserProfile(req.userId);
+        const user = await storage.getUser(req.userId);
         const profileHash = userProfile
           ? calculateProfileHash(userProfile)
           : "no-profile";
 
         // Get existing meals for context
         const existingItems = await storage.getMealPlanItems(
-          req.userId!,
+          req.userId,
           parsed.data.date,
           parsed.data.date,
         );
@@ -109,7 +109,7 @@ export function register(app: Express): void {
           existingMeals.map((m) => m.title).sort(),
         );
         const cacheKey = buildSuggestionCacheKey(
-          req.userId!,
+          req.userId,
           parsed.data.date,
           parsed.data.mealType,
           profileHash,
@@ -123,7 +123,7 @@ export function register(app: Express): void {
           const remaining = features.dailyAiSuggestions - dailyCount;
           const cachedSuggestions = cached.suggestions as MealSuggestion[];
           const popularPicks = await fetchDeduplicatedPopularPicks(
-            req.userId!,
+            req.userId,
             parsed.data.mealType,
             cachedSuggestions,
           );
@@ -145,7 +145,7 @@ export function register(app: Express): void {
 
         // Use actual confirmed intake from daily summary (includes scans + confirmed meals)
         const actualIntake = await storage.getDailySummary(
-          req.userId!,
+          req.userId,
           new Date(parsed.data.date),
         );
 
@@ -187,7 +187,7 @@ export function register(app: Express): void {
         if (!checkAiConfigured(res)) return;
 
         const suggestions = await generateMealSuggestions({
-          userId: req.userId!,
+          userId: req.userId,
           date: parsed.data.date,
           mealType: parsed.data.mealType,
           userProfile: userProfile || null,
@@ -202,7 +202,7 @@ export function register(app: Express): void {
         const cacheEntry =
           await storage.createMealSuggestionCacheWithLimitCheck(
             cacheKey,
-            req.userId!,
+            req.userId,
             suggestions,
             expiresAt,
             features.dailyAiSuggestions,
@@ -220,7 +220,7 @@ export function register(app: Express): void {
 
         const remaining = features.dailyAiSuggestions - dailyCount - 1;
         const popularPicks = await fetchDeduplicatedPopularPicks(
-          req.userId!,
+          req.userId,
           parsed.data.mealType,
           suggestions,
         );

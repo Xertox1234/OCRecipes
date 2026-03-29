@@ -1,5 +1,5 @@
-import type { Express, Request, Response } from "express";
-import { requireAuth } from "../middleware/auth";
+import type { Express, Response } from "express";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -12,7 +12,7 @@ export function register(app: Express): void {
     "/api/goals/adaptive",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -22,8 +22,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const user = await storage.getUser(req.userId!);
-        const recommendation = await computeAdaptiveGoals(req.userId!);
+        const user = await storage.getUser(req.userId);
+        const recommendation = await computeAdaptiveGoals(req.userId);
         res.json({
           enabled: user?.adaptiveGoalsEnabled ?? false,
           hasRecommendation: recommendation !== null,
@@ -46,7 +46,7 @@ export function register(app: Express): void {
     "/api/goals/adaptive/accept",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -56,7 +56,7 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const recommendation = await computeAdaptiveGoals(req.userId!);
+        const recommendation = await computeAdaptiveGoals(req.userId);
         if (!recommendation) {
           return sendError(
             res,
@@ -68,7 +68,7 @@ export function register(app: Express): void {
 
         // Apply goals + audit log atomically
         await storage.applyAdaptiveGoalsAtomically(
-          req.userId!,
+          req.userId,
           {
             dailyCalorieGoal: recommendation.newCalories,
             dailyProteinGoal: recommendation.newProtein,
@@ -76,7 +76,7 @@ export function register(app: Express): void {
             dailyFatGoal: recommendation.newFat,
           },
           {
-            userId: req.userId!,
+            userId: req.userId,
             previousCalories: recommendation.previousCalories,
             newCalories: recommendation.newCalories,
             previousProtein: recommendation.previousProtein,
@@ -117,7 +117,7 @@ export function register(app: Express): void {
     "/api/goals/adaptive/dismiss",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -127,11 +127,11 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const recommendation = await computeAdaptiveGoals(req.userId!);
+        const recommendation = await computeAdaptiveGoals(req.userId);
         if (recommendation) {
           // Log dismissed adjustment + update timestamp atomically
-          await storage.dismissAdaptiveGoalsAtomically(req.userId!, {
-            userId: req.userId!,
+          await storage.dismissAdaptiveGoalsAtomically(req.userId, {
+            userId: req.userId,
             previousCalories: recommendation.previousCalories,
             newCalories: recommendation.newCalories,
             previousProtein: recommendation.previousProtein,
@@ -164,7 +164,7 @@ export function register(app: Express): void {
     "/api/goals/adaptive/settings",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -184,7 +184,7 @@ export function register(app: Express): void {
           );
         }
 
-        await storage.updateUser(req.userId!, {
+        await storage.updateUser(req.userId, {
           adaptiveGoalsEnabled: enabled,
         });
 
@@ -206,7 +206,7 @@ export function register(app: Express): void {
     "/api/goals/adjustment-history",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -217,7 +217,7 @@ export function register(app: Express): void {
         if (!features) return;
 
         const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
-        const logs = await storage.getGoalAdjustmentLogs(req.userId!, limit);
+        const logs = await storage.getGoalAdjustmentLogs(req.userId, limit);
         res.json(logs);
       } catch (error) {
         console.error("Get adjustment history error:", error);

@@ -1,6 +1,6 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
-import { requireAuth } from "../middleware/auth";
+import { type AuthenticatedRequest, requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -43,7 +43,7 @@ export function register(app: Express): void {
     "/api/healthkit/sync",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -54,7 +54,7 @@ export function register(app: Express): void {
         if (!features) return;
 
         const validated = syncDataSchema.parse(req.body);
-        const result = await syncHealthKitData(req.userId!, validated);
+        const result = await syncHealthKitData(req.userId, validated);
         res.json(result);
       } catch (error) {
         if (error instanceof ZodError) {
@@ -81,9 +81,9 @@ export function register(app: Express): void {
     "/api/healthkit/settings",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const settings = await storage.getHealthKitSyncSettings(req.userId!);
+        const settings = await storage.getHealthKitSyncSettings(req.userId);
         res.json(settings);
       } catch (error) {
         console.error("Get HealthKit settings error:", error);
@@ -102,7 +102,7 @@ export function register(app: Express): void {
     "/api/healthkit/settings",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -116,7 +116,7 @@ export function register(app: Express): void {
         const results = [];
         for (const setting of validated.settings) {
           const result = await storage.upsertHealthKitSyncSetting(
-            req.userId!,
+            req.userId,
             setting.dataType,
             setting.enabled,
             setting.syncDirection,

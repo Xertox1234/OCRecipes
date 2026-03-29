@@ -1,6 +1,6 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
-import { requireAuth } from "../middleware/auth";
+import { type AuthenticatedRequest, requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import {
   formatZodError,
@@ -30,7 +30,7 @@ export function register(app: Express): void {
     "/api/weight",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const from = parseQueryDate(req.query.from);
         const to = parseQueryDate(req.query.to);
@@ -39,11 +39,11 @@ export function register(app: Express): void {
           : undefined;
 
         // Free users: limit to last 7 entries
-        const subscription = await storage.getSubscriptionStatus(req.userId!);
+        const subscription = await storage.getSubscriptionStatus(req.userId);
         const tier = subscription?.tier || "free";
         const effectiveLimit = tier === "free" ? 7 : limit;
 
-        const logs = await storage.getWeightLogs(req.userId!, {
+        const logs = await storage.getWeightLogs(req.userId, {
           from,
           to,
           limit: effectiveLimit,
@@ -67,19 +67,19 @@ export function register(app: Express): void {
     "/api/weight/trend",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const user = await storage.getUser(req.userId!);
+        const user = await storage.getUser(req.userId);
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
-        const logs = await storage.getWeightLogs(req.userId!);
+        const logs = await storage.getWeightLogs(req.userId);
         const goalWeight = user.goalWeight ? parseFloat(user.goalWeight) : null;
         const trend = calculateWeightTrend(logs, goalWeight);
 
         // Free users get basic trend only
-        const subscription = await storage.getSubscriptionStatus(req.userId!);
+        const subscription = await storage.getSubscriptionStatus(req.userId);
         const tier = subscription?.tier || "free";
         if (tier === "free") {
           res.json({
@@ -108,13 +108,13 @@ export function register(app: Express): void {
     "/api/weight",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = createWeightLogSchema.parse(req.body);
 
         // Create weight log and update user's current weight atomically
         const log = await storage.createWeightLogAndUpdateUser({
-          userId: req.userId!,
+          userId: req.userId,
           weight: validated.weight.toString(),
           source: validated.source,
           note: validated.note,
@@ -141,7 +141,7 @@ export function register(app: Express): void {
     "/api/weight/:id",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -152,7 +152,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        const deleted = await storage.deleteWeightLog(id, req.userId!);
+        const deleted = await storage.deleteWeightLog(id, req.userId);
         if (!deleted) {
           return sendError(
             res,
@@ -179,10 +179,10 @@ export function register(app: Express): void {
     "/api/goals/weight",
     requireAuth,
     crudRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = weightGoalSchema.parse(req.body);
-        const user = await storage.updateUser(req.userId!, {
+        const user = await storage.updateUser(req.userId, {
           goalWeight: validated.goalWeight?.toString() ?? null,
         });
         if (!user) {

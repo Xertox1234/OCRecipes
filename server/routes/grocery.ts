@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
@@ -45,7 +45,7 @@ export function register(app: Express): void {
     "/api/meal-plan/grocery-lists",
     requireAuth,
     mealPlanRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = generateGroceryListSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -82,7 +82,7 @@ export function register(app: Express): void {
         }
 
         // Enforce date range limit based on subscription tier
-        const subscription = await storage.getSubscriptionStatus(req.userId!);
+        const subscription = await storage.getSubscriptionStatus(req.userId);
         const tierValue = subscription?.tier || "free";
         const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
         const maxDays = TIER_FEATURES[tier].extendedPlanRange ? 90 : 7;
@@ -103,7 +103,7 @@ export function register(app: Express): void {
 
         // Fetch ingredients from planned meals
         const ingredients = await storage.getMealPlanIngredientsForDateRange(
-          req.userId!,
+          req.userId,
           parsed.data.startDate,
           parsed.data.endDate,
         );
@@ -113,12 +113,12 @@ export function register(app: Express): void {
 
         // Optionally deduct pantry items (premium feature)
         if (parsed.data.deductPantry) {
-          const subscription = await storage.getSubscriptionStatus(req.userId!);
+          const subscription = await storage.getSubscriptionStatus(req.userId);
           const tier = subscription?.tier || "free";
           const features =
             TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
           if (features.pantryTracking) {
-            const userPantry = await storage.getPantryItems(req.userId!);
+            const userPantry = await storage.getPantryItems(req.userId);
             aggregated = deductPantryFromGrocery(aggregated, userPantry);
           }
         }
@@ -131,7 +131,7 @@ export function register(app: Express): void {
         // Atomically check count + create list + insert items (TOCTOU-safe)
         const result = await storage.createGroceryListWithLimitCheck(
           {
-            userId: req.userId!,
+            userId: req.userId,
             title,
             dateRangeStart: parsed.data.startDate,
             dateRangeEnd: parsed.data.endDate,
@@ -181,10 +181,10 @@ export function register(app: Express): void {
   app.get(
     "/api/meal-plan/grocery-lists",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const limit = parseQueryInt(req.query.limit, { default: 50, max: 100 });
-        const lists = await storage.getGroceryLists(req.userId!, limit);
+        const lists = await storage.getGroceryLists(req.userId, limit);
         res.json(lists);
       } catch (error) {
         console.error("Get grocery lists error:", error);
@@ -202,7 +202,7 @@ export function register(app: Express): void {
   app.get(
     "/api/meal-plan/grocery-lists/:id",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -210,14 +210,14 @@ export function register(app: Express): void {
           return;
         }
 
-        const list = await storage.getGroceryListWithItems(id, req.userId!);
+        const list = await storage.getGroceryListWithItems(id, req.userId);
         if (!list) {
           sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         // Enrich with allergen flags if user has allergies
-        const profile = await storage.getUserProfile(req.userId!);
+        const profile = await storage.getUserProfile(req.userId);
         const userAllergies = parseUserAllergies(profile?.allergies);
 
         let allergenFlags: Record<
@@ -259,7 +259,7 @@ export function register(app: Express): void {
   app.put(
     "/api/meal-plan/grocery-lists/:id/items/:itemId",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const listId = parsePositiveIntParam(req.params.id);
         const itemId = parsePositiveIntParam(req.params.itemId);
@@ -269,7 +269,7 @@ export function register(app: Express): void {
         }
 
         // IDOR: verify list belongs to user
-        const list = await storage.getGroceryListWithItems(listId, req.userId!);
+        const list = await storage.getGroceryListWithItems(listId, req.userId);
         if (!list) {
           sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
@@ -335,7 +335,7 @@ export function register(app: Express): void {
     "/api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry",
     requireAuth,
     pantryRateLimit,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -353,7 +353,7 @@ export function register(app: Express): void {
         }
 
         // IDOR: verify list belongs to user
-        const list = await storage.getGroceryListWithItems(listId, req.userId!);
+        const list = await storage.getGroceryListWithItems(listId, req.userId);
         if (!list) {
           sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
@@ -367,7 +367,7 @@ export function register(app: Express): void {
 
         // Create pantry item from grocery item data
         const pantryItem = await storage.createPantryItem({
-          userId: req.userId!,
+          userId: req.userId,
           name: groceryItem.name,
           quantity: groceryItem.quantity,
           unit: groceryItem.unit || null,
@@ -395,7 +395,7 @@ export function register(app: Express): void {
   app.post(
     "/api/meal-plan/grocery-lists/:id/items",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const listId = parsePositiveIntParam(req.params.id);
         if (!listId) {
@@ -404,7 +404,7 @@ export function register(app: Express): void {
         }
 
         // IDOR: verify list belongs to user
-        const list = await storage.getGroceryListWithItems(listId, req.userId!);
+        const list = await storage.getGroceryListWithItems(listId, req.userId);
         if (!list) {
           sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;
@@ -451,7 +451,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/meal-plan/grocery-lists/:id",
     requireAuth,
-    async (req: Request, res: Response): Promise<void> => {
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
@@ -459,7 +459,7 @@ export function register(app: Express): void {
           return;
         }
 
-        const deleted = await storage.deleteGroceryList(id, req.userId!);
+        const deleted = await storage.deleteGroceryList(id, req.userId);
         if (!deleted) {
           sendError(res, 404, "Grocery list not found", ErrorCode.NOT_FOUND);
           return;

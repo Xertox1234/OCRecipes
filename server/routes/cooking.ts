@@ -1,5 +1,5 @@
-import type { Express, Request, Response } from "express";
-import { requireAuth } from "../middleware/auth";
+import type { Express, Response } from "express";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -93,7 +93,7 @@ const clearCookSession = cookStore.clear;
 const resetSessionTimeout = cookStore.resetTimeout;
 
 function getSessionForUser(
-  req: Request,
+  req: AuthenticatedRequest,
   res: Response,
   sessionId: string | undefined,
 ): CookingSession | null {
@@ -140,7 +140,7 @@ export function register(app: Express): void {
     "/api/cooking/sessions",
     requireAuth,
     cookingPhotoRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -150,14 +150,14 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const check = cookStore.canCreate(req.userId!);
+        const check = cookStore.canCreate(req.userId);
         if (!check.allowed) {
           return sendError(res, 429, check.reason, check.code);
         }
 
         const sessionId = cookStore.create({
           id: "", // auto-set by factory to match store key
-          userId: req.userId!,
+          userId: req.userId,
           ingredients: [],
           photos: [],
           createdAt: Date.now(),
@@ -186,7 +186,7 @@ export function register(app: Express): void {
   app.get(
     "/api/cooking/sessions/:id",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -219,7 +219,7 @@ export function register(app: Express): void {
     requireAuth,
     cookingPhotoRateLimit,
     cookingUpload.single("photo"),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -281,7 +281,7 @@ export function register(app: Express): void {
         // Auto-detect allergens in the session's ingredients
         let allergenWarnings: AllergenMatch[] = [];
         try {
-          const profile = await storage.getUserProfile(req.userId!);
+          const profile = await storage.getUserProfile(req.userId);
           const userAllergies = parseUserAllergies(profile?.allergies);
           if (userAllergies.length > 0) {
             const ingredientNames = session.ingredients.map((i) => i.name);
@@ -315,7 +315,7 @@ export function register(app: Express): void {
   app.patch(
     "/api/cooking/sessions/:id/ingredients/:ingredientId",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -375,7 +375,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/cooking/sessions/:id/ingredients/:ingredientId",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -417,7 +417,7 @@ export function register(app: Express): void {
   app.post(
     "/api/cooking/sessions/:id/nutrition",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -466,7 +466,7 @@ export function register(app: Express): void {
   app.post(
     "/api/cooking/sessions/:id/log",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -503,7 +503,7 @@ export function register(app: Express): void {
         // Log as single composite scannedItem + dailyLog
         const scannedItem = await storage.createScannedItemWithLog(
           {
-            userId: req.userId!,
+            userId: req.userId,
             productName,
             calories: totals.calories.toString(),
             protein: totals.protein.toString(),
@@ -530,7 +530,7 @@ export function register(app: Express): void {
     "/api/cooking/sessions/:id/recipe",
     requireAuth,
     cookingPhotoRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
           req,
@@ -563,7 +563,7 @@ export function register(app: Express): void {
         if (!checkAiConfigured(res)) return;
 
         // Get user profile for dietary context
-        const userProfile = await storage.getUserProfile(req.userId!);
+        const userProfile = await storage.getUserProfile(req.userId);
 
         const recipe = await generateRecipeContent({
           productName: ingredientList,
@@ -588,7 +588,7 @@ export function register(app: Express): void {
     "/api/cooking/sessions/:id/substitutions",
     requireAuth,
     substitutionRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -632,7 +632,7 @@ export function register(app: Express): void {
           );
         }
 
-        const userProfile = await storage.getUserProfile(req.userId!);
+        const userProfile = await storage.getUserProfile(req.userId);
         const result = await getSubstitutions(targetIngredients, userProfile);
 
         res.json(result);

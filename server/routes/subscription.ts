@@ -1,6 +1,6 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Response } from "express";
 import { storage } from "../storage";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import {
   TIER_FEATURES,
   isValidSubscriptionTier,
@@ -20,10 +20,10 @@ export function register(app: Express): void {
   app.get(
     "/api/subscription/status",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const subscriptionData = await storage.getSubscriptionStatus(
-          req.userId!,
+          req.userId,
         );
 
         if (!subscriptionData) {
@@ -66,9 +66,9 @@ export function register(app: Express): void {
   app.get(
     "/api/subscription/scan-count",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const count = await storage.getDailyScanCount(req.userId!, new Date());
+        const count = await storage.getDailyScanCount(req.userId, new Date());
         res.json({ count });
       } catch (error) {
         console.error("Error fetching scan count:", error);
@@ -86,7 +86,7 @@ export function register(app: Express): void {
     "/api/subscription/upgrade",
     requireAuth,
     subscriptionRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const parsed = UpgradeRequestSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -115,7 +115,7 @@ export function register(app: Express): void {
         const validation = await validateReceipt(receipt, platform, productId);
         if (!validation.valid) {
           await storage.createTransaction({
-            userId: req.userId!,
+            userId: req.userId,
             transactionId,
             receipt,
             platform,
@@ -133,7 +133,7 @@ export function register(app: Express): void {
         const expiresAt = validation.expiresAt || null;
         await storage.createTransactionAndUpgrade(
           {
-            userId: req.userId!,
+            userId: req.userId,
             transactionId,
             receipt,
             platform,
@@ -165,7 +165,7 @@ export function register(app: Express): void {
     "/api/subscription/restore",
     requireAuth,
     subscriptionRateLimit,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const parsed = RestoreRequestSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -191,7 +191,7 @@ export function register(app: Express): void {
         const expiresAt = validation.expiresAt || null;
         await storage.createTransactionAndUpgrade(
           {
-            userId: req.userId!,
+            userId: req.userId,
             transactionId: restoreId,
             receipt,
             platform,

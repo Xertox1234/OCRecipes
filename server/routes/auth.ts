@@ -8,6 +8,7 @@ import {
   requireAuth,
   generateToken,
   invalidateTokenVersionCache,
+  type AuthenticatedRequest,
 } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -156,20 +157,20 @@ export function register(app: Express): void {
   app.post(
     "/api/auth/logout",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const user = await storage.getUser(req.userId!);
+        const user = await storage.getUser(req.userId);
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
         // Increment tokenVersion to invalidate all existing tokens
-        await storage.updateUser(req.userId!, {
+        await storage.updateUser(req.userId, {
           tokenVersion: user.tokenVersion + 1,
         });
 
         // Immediately invalidate the in-memory cache so revocation takes effect
-        invalidateTokenVersionCache(req.userId!);
+        invalidateTokenVersionCache(req.userId);
 
         res.json({ success: true });
       } catch (error) {
@@ -179,27 +180,31 @@ export function register(app: Express): void {
     },
   );
 
-  app.get("/api/auth/me", requireAuth, async (req: Request, res: Response) => {
-    const user = await storage.getUser(req.userId!);
-    if (!user) {
-      return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
-    }
+  app.get(
+    "/api/auth/me",
+    requireAuth,
+    async (req: AuthenticatedRequest, res: Response) => {
+      const user = await storage.getUser(req.userId);
+      if (!user) {
+        return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
+      }
 
-    res.json({
-      id: user.id,
-      username: user.username,
-      displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
-      dailyCalorieGoal: user.dailyCalorieGoal,
-      onboardingCompleted: user.onboardingCompleted,
-      subscriptionTier: user.subscriptionTier || "free",
-    });
-  });
+      res.json({
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        dailyCalorieGoal: user.dailyCalorieGoal,
+        onboardingCompleted: user.onboardingCompleted,
+        subscriptionTier: user.subscriptionTier || "free",
+      });
+    },
+  );
 
   app.put(
     "/api/auth/profile",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = profileUpdateSchema.parse(req.body);
         const updates: Record<string, unknown> = {};
@@ -219,7 +224,7 @@ export function register(app: Express): void {
           );
         }
 
-        const user = await storage.updateUser(req.userId!, updates);
+        const user = await storage.updateUser(req.userId, updates);
 
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
@@ -259,11 +264,11 @@ export function register(app: Express): void {
     "/api/auth/account",
     requireAuth,
     accountDeletionLimiter,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = deleteAccountSchema.parse(req.body);
 
-        const user = await storage.getUser(req.userId!);
+        const user = await storage.getUser(req.userId);
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
@@ -282,10 +287,10 @@ export function register(app: Express): void {
         }
 
         // Delete user (cascades to all child tables via FK constraints)
-        await storage.deleteUser(req.userId!);
+        await storage.deleteUser(req.userId);
 
         // Invalidate token cache so any in-flight requests are rejected
-        invalidateTokenVersionCache(req.userId!);
+        invalidateTokenVersionCache(req.userId);
 
         // Clean up avatar file after successful deletion
         deleteOldAvatarFile(user.avatarUrl);
@@ -317,7 +322,7 @@ export function register(app: Express): void {
     requireAuth,
     avatarRateLimit,
     upload.single("avatar"),
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!req.file) {
           return sendError(
@@ -350,13 +355,13 @@ export function register(app: Express): void {
         const filepath = path.join(AVATAR_DIR, filename);
 
         // Delete old avatar file if it exists (path.basename prevents traversal)
-        const currentUser = await storage.getUser(req.userId!);
+        const currentUser = await storage.getUser(req.userId);
         deleteOldAvatarFile(currentUser?.avatarUrl);
 
         await fsp.writeFile(filepath, req.file.buffer);
 
         const avatarUrl = `/api/avatars/${filename}`;
-        const user = await storage.updateUser(req.userId!, { avatarUrl });
+        const user = await storage.updateUser(req.userId, { avatarUrl });
 
         if (!user) {
           fs.unlink(filepath, () => {});
@@ -380,12 +385,12 @@ export function register(app: Express): void {
   app.delete(
     "/api/user/avatar",
     requireAuth,
-    async (req: Request, res: Response) => {
+    async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const currentUser = await storage.getUser(req.userId!);
+        const currentUser = await storage.getUser(req.userId);
         deleteOldAvatarFile(currentUser?.avatarUrl);
 
-        const user = await storage.updateUser(req.userId!, {
+        const user = await storage.updateUser(req.userId, {
           avatarUrl: null,
         });
 
