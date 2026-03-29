@@ -63,33 +63,32 @@ export async function getUserVerificationStats(userId: string): Promise<{
   compositeScore: number;
   streak: number;
 }> {
-  // Get counts (back-label + front-label)
-  const [countResult] = await db
-    .select({
-      count: sql<number>`count(*)::int`,
-      frontLabelCount: sql<number>`count(*) filter (where ${verificationHistory.frontLabelScanned} = true)::int`,
-    })
-    .from(verificationHistory)
-    .where(eq(verificationHistory.userId, userId));
-  const count = countResult?.count ?? 0;
-  const frontLabelCount = countResult?.frontLabelCount ?? 0;
+  // Run both queries in parallel — count + activity dates
+  const [countResult, activityRows] = await Promise.all([
+    db
+      .select({
+        count: sql<number>`count(*)::int`,
+        frontLabelCount: sql<number>`count(*) filter (where ${verificationHistory.frontLabelScanned} = true)::int`,
+      })
+      .from(verificationHistory)
+      .where(eq(verificationHistory.userId, userId)),
+    db
+      .select({
+        backDay: sql<string>`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`,
+        frontDay: sql<
+          string | null
+        >`DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
+      })
+      .from(verificationHistory)
+      .where(eq(verificationHistory.userId, userId)),
+  ]);
+
+  const count = countResult[0]?.count ?? 0;
+  const frontLabelCount = countResult[0]?.frontLabelCount ?? 0;
   const compositeScore = count + frontLabelCount * 0.5;
 
   if (count === 0)
     return { count: 0, frontLabelCount: 0, compositeScore: 0, streak: 0 };
-
-  // Get distinct activity dates (UTC) in a single query.
-  // Both back-label and front-label scan days count as activity days,
-  // so we retrieve both date columns and merge/dedup in JS.
-  const activityRows = await db
-    .select({
-      backDay: sql<string>`DATE(${verificationHistory.createdAt} AT TIME ZONE 'UTC')`,
-      frontDay: sql<
-        string | null
-      >`DATE(${verificationHistory.frontLabelScannedAt} AT TIME ZONE 'UTC')`,
-    })
-    .from(verificationHistory)
-    .where(eq(verificationHistory.userId, userId));
 
   // Collect unique dates from both columns
   const dateSet = new Set<string>();
