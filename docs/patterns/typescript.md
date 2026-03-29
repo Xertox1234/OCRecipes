@@ -310,11 +310,13 @@ When adding properties to Express Request:
 declare global {
   namespace Express {
     interface Request {
-      userId?: string;
+      userId: string;
     }
   }
 }
 ```
+
+**Middleware type narrowing convention:** `Request.userId` is declared as non-optional (`string`) because every route that accesses it sits behind `requireAuth` middleware, which guarantees assignment. The `AuthenticatedRequest` type alias (exported from `server/middleware/auth.ts`) is a semantic marker in handler signatures — it signals "this handler requires auth" but is structurally identical to `Request`. Non-authenticated routes (login, register) use plain `Request` and never read `req.userId`.
 
 ### Inline Response Types
 

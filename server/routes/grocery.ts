@@ -1,7 +1,7 @@
 import type { Express, Response } from "express";
 import { z, ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";

@@ -1,5 +1,5 @@
 import type { Express, Response } from "express";
-import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { z } from "zod";
@@ -22,7 +22,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        if (!req.userId || !isAdmin(req.userId)) {
+        if (!isAdmin(req.userId)) {
           sendError(res, 403, "Admin access required", "UNAUTHORIZED");
           return;
         }
@@ -57,7 +57,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        if (!req.userId || !isAdmin(req.userId)) {
+        if (!isAdmin(req.userId)) {
           sendError(res, 403, "Admin access required", "UNAUTHORIZED");
           return;
         }
@@ -93,7 +93,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        if (!req.userId || !isAdmin(req.userId)) {
+        if (!isAdmin(req.userId)) {
           sendError(res, 403, "Admin access required", "UNAUTHORIZED");
           return;
         }
@@ -125,7 +125,7 @@ export function register(app: Express): void {
     requireAuth,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        if (!req.userId || !isAdmin(req.userId)) {
+        if (!isAdmin(req.userId)) {
           sendError(res, 403, "Admin access required", "UNAUTHORIZED");
           return;
         }

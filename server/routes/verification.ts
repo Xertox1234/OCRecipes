@@ -482,7 +482,7 @@ export function register(app: Express): void {
     verificationRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        if (!req.userId || !isAdmin(req.userId)) {
+        if (!isAdmin(req.userId)) {
           return sendError(
             res,
             403,
@@ -529,7 +529,7 @@ export function register(app: Express): void {
     verificationRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        if (!req.userId || !isAdmin(req.userId)) {
+        if (!isAdmin(req.userId)) {
           return sendError(
             res,
             403,

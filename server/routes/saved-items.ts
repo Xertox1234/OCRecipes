@@ -1,6 +1,6 @@
 import type { Express, Response } from "express";
 import { storage } from "../storage";
-import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { createSavedItemSchema } from "@shared/schemas/saved-items";

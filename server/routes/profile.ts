@@ -1,7 +1,7 @@
 import type { Express, Response } from "express";
 import { ZodError } from "zod";
 import { storage } from "../storage";
-import { requireAuth, AuthenticatedRequest } from "../middleware/auth";
+import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
