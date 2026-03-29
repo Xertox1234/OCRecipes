@@ -411,3 +411,28 @@ const { data } = useQuery<ScannedItemResponse>({...});
 - Changes to the API shape should update all consumers
 
 **Why generic `PaginatedResponse<T>`:** Enables reuse across different paginated endpoints while maintaining type safety.
+
+### Prop Shielding in Wrapper Components
+
+When a wrapper component remaps a prop from the underlying primitive (e.g. `maxScale` → `maxFontSizeMultiplier`), destructure the raw prop out of `...rest` to prevent callers from bypassing the wrapper's API:
+
+```typescript
+// ❌ BAD — rest spread silently overwrites the explicit prop
+export function ThemedText({ maxScale, ...rest }: ThemedTextProps) {
+  return <Text maxFontSizeMultiplier={maxScale} {...rest} />;
+  //     If rest contains maxFontSizeMultiplier, it wins (spread is left-to-right)
+}
+
+// ✅ GOOD — strip the raw prop so the wrapper always controls it
+export function ThemedText({
+  maxScale,
+  maxFontSizeMultiplier: _ignored,
+  ...rest
+}: ThemedTextProps) {
+  return <Text maxFontSizeMultiplier={maxScale} {...rest} />;
+}
+```
+
+**Why:** JSX compiles to `{ maxFontSizeMultiplier: maxScale, ...rest }`. Object spread is left-to-right, so later keys overwrite earlier ones. Without the destructure, a caller passing both `maxScale` and `maxFontSizeMultiplier` (or just the raw prop from old code) gets silent, unpredictable behavior.
+
+**When to apply:** Any component that wraps a React Native primitive and remaps, restricts, or transforms a prop before passing it through.
