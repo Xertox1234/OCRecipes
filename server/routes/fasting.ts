@@ -109,7 +109,16 @@ export function register(app: Express): void {
         });
         res.status(201).json(log);
       } catch (error) {
-        logger.error({ err: toError(error) }, "failed to start fast");
+        const err = toError(error);
+        if (err.message?.includes("23505")) {
+          return sendError(
+            res,
+            409,
+            "A fast is already in progress",
+            ErrorCode.CONFLICT,
+          );
+        }
+        logger.error({ err }, "failed to start fast");
         sendError(res, 500, "Failed to start fast", ErrorCode.INTERNAL_ERROR);
       }
     },

@@ -1,5 +1,5 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -9,8 +9,12 @@ import {
   mealPlanRateLimit,
   mealConfirmRateLimit,
   pantryMealPlanRateLimit,
+  crudRateLimit,
   checkPremiumFeature,
   formatZodError,
+  handleRouteError,
+  numericStringField,
+  nullableNumericStringField,
   parsePositiveIntParam,
   parseQueryString,
 } from "./_helpers";
@@ -30,26 +34,10 @@ const createMealPlanRecipeSchema = z.object({
   imageUrl: z.string().max(2000).optional().nullable(),
   instructions: z.string().max(10000).optional().nullable(),
   dietTags: z.array(z.string().max(50)).max(20).optional(),
-  caloriesPerServing: z
-    .union([z.string(), z.number()])
-    .optional()
-    .nullable()
-    .transform((v) => v?.toString() ?? null),
-  proteinPerServing: z
-    .union([z.string(), z.number()])
-    .optional()
-    .nullable()
-    .transform((v) => v?.toString() ?? null),
-  carbsPerServing: z
-    .union([z.string(), z.number()])
-    .optional()
-    .nullable()
-    .transform((v) => v?.toString() ?? null),
-  fatPerServing: z
-    .union([z.string(), z.number()])
-    .optional()
-    .nullable()
-    .transform((v) => v?.toString() ?? null),
+  caloriesPerServing: nullableNumericStringField,
+  proteinPerServing: nullableNumericStringField,
+  carbsPerServing: nullableNumericStringField,
+  fatPerServing: nullableNumericStringField,
   sourceType: z
     .enum(["user_created", "quick_entry", "ai_suggestion", "photo_import"])
     .optional()
@@ -58,11 +46,7 @@ const createMealPlanRecipeSchema = z.object({
     .array(
       z.object({
         name: z.string().min(1).max(200),
-        quantity: z
-          .union([z.string(), z.number()])
-          .optional()
-          .nullable()
-          .transform((v) => v?.toString() ?? null),
+        quantity: nullableNumericStringField,
         unit: z.string().max(50).optional().nullable(),
         category: z.string().max(50).optional(),
       }),
@@ -75,10 +59,7 @@ const addMealPlanItemSchema = z.object({
   scannedItemId: z.number().int().positive().optional().nullable(),
   plannedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
-  servings: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v) => v?.toString()),
+  servings: numericStringField,
 });
 
 export function register(app: Express): void {
@@ -86,6 +67,7 @@ export function register(app: Express): void {
   app.get(
     "/api/meal-plan/recipes",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipes = await storage.getUserMealPlanRecipes(req.userId);
@@ -106,6 +88,7 @@ export function register(app: Express): void {
   app.get(
     "/api/meal-plan/recipes/:id",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -162,22 +145,7 @@ export function register(app: Express): void {
 
         res.status(201).json(recipe);
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error({ err: toError(error) }, "create meal plan recipe failed");
-        sendError(
-          res,
-          500,
-          "Failed to create recipe",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "create recipe");
       }
     },
   );
@@ -221,22 +189,7 @@ export function register(app: Express): void {
 
         res.json(recipe);
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error({ err: toError(error) }, "update meal plan recipe failed");
-        sendError(
-          res,
-          500,
-          "Failed to update recipe",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update recipe");
       }
     },
   );
@@ -277,6 +230,7 @@ export function register(app: Express): void {
   app.get(
     "/api/meal-plan",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const start = parseQueryString(req.query.start);
@@ -400,22 +354,7 @@ export function register(app: Express): void {
 
         res.status(201).json(mealPlanItem);
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error({ err: toError(error) }, "add meal plan item failed");
-        sendError(
-          res,
-          500,
-          "Failed to add item to plan",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "add item to plan");
       }
     },
   );
@@ -424,6 +363,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/meal-plan/items/:id",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const id = parsePositiveIntParam(req.params.id);
@@ -470,22 +410,7 @@ export function register(app: Express): void {
 
         res.status(200).json({ success: true });
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error({ err: toError(error) }, "reorder meal plan items failed");
-        sendError(
-          res,
-          500,
-          "Failed to reorder items",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "reorder items");
       }
     },
   );
@@ -776,25 +701,7 @@ export function register(app: Express): void {
           items: createdItems,
         });
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error(
-          { err: toError(error) },
-          "save generated meal plan failed",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to save meal plan",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "save meal plan");
       }
     },
   );

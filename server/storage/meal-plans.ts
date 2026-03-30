@@ -329,26 +329,28 @@ export async function getMealPlanItems(
   const recipesMap = new Map<number, MealPlanRecipe>();
   const scannedItemsMap = new Map<number, ScannedItem>();
 
-  if (recipeIds.length > 0) {
-    const recipes = await db
-      .select()
-      .from(mealPlanRecipes)
-      .where(inArray(mealPlanRecipes.id, recipeIds));
-    for (const r of recipes) recipesMap.set(r.id, r);
-  }
+  const [recipes, scanned] = await Promise.all([
+    recipeIds.length > 0
+      ? db
+          .select()
+          .from(mealPlanRecipes)
+          .where(inArray(mealPlanRecipes.id, recipeIds))
+      : Promise.resolve([]),
+    scannedItemIds.length > 0
+      ? db
+          .select()
+          .from(scannedItems)
+          .where(
+            and(
+              inArray(scannedItems.id, scannedItemIds),
+              isNull(scannedItems.discardedAt),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
 
-  if (scannedItemIds.length > 0) {
-    const scanned = await db
-      .select()
-      .from(scannedItems)
-      .where(
-        and(
-          inArray(scannedItems.id, scannedItemIds),
-          isNull(scannedItems.discardedAt),
-        ),
-      );
-    for (const s of scanned) scannedItemsMap.set(s.id, s);
-  }
+  for (const r of recipes) recipesMap.set(r.id, r);
+  for (const s of scanned) scannedItemsMap.set(s.id, s);
 
   return items.map((item) => ({
     ...item,

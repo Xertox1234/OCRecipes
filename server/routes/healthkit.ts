@@ -1,10 +1,14 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { type AuthenticatedRequest, requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { formatZodError, checkPremiumFeature, crudRateLimit } from "./_helpers";
+import {
+  handleRouteError,
+  checkPremiumFeature,
+  crudRateLimit,
+} from "./_helpers";
 import { syncHealthKitData } from "../services/healthkit-sync";
 import { logger, toError } from "../lib/logger";
 
@@ -58,21 +62,7 @@ export function register(app: Express): void {
         const result = await syncHealthKitData(req.userId, validated);
         res.json(result);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "HealthKit sync error");
-        sendError(
-          res,
-          500,
-          "Failed to sync HealthKit data",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "sync HealthKit data");
       }
     },
   );
@@ -126,24 +116,7 @@ export function register(app: Express): void {
         }
         res.json(results);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error(
-          { err: toError(error) },
-          "update HealthKit settings error",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to update HealthKit settings",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update HealthKit settings");
       }
     },
   );

@@ -2,6 +2,7 @@ import type { Express, Response } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { logger, toError } from "../lib/logger";
 import { z } from "zod";
 import { API_TIERS } from "@shared/constants/api-tiers";
@@ -25,13 +26,18 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!isAdmin(req.userId)) {
-          sendError(res, 403, "Admin access required", "UNAUTHORIZED");
+          sendError(res, 403, "Admin access required", ErrorCode.UNAUTHORIZED);
           return;
         }
 
         const parsed = createKeySchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, "Invalid request body", "VALIDATION_ERROR");
+          sendError(
+            res,
+            400,
+            "Invalid request body",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
@@ -48,7 +54,7 @@ export function register(app: Express): void {
         });
       } catch (err) {
         logger.error({ err: toError(err) }, "admin create API key error");
-        sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
+        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -60,7 +66,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!isAdmin(req.userId)) {
-          sendError(res, 403, "Admin access required", "UNAUTHORIZED");
+          sendError(res, 403, "Admin access required", ErrorCode.UNAUTHORIZED);
           return;
         }
 
@@ -84,7 +90,7 @@ export function register(app: Express): void {
         res.json({ data: keysWithUsage });
       } catch (err) {
         logger.error({ err: toError(err) }, "admin list API keys error");
-        sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
+        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -97,19 +103,19 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!isAdmin(req.userId)) {
-          sendError(res, 403, "Admin access required", "UNAUTHORIZED");
+          sendError(res, 403, "Admin access required", ErrorCode.UNAUTHORIZED);
           return;
         }
 
         const id = parseInt(String(req.params.id), 10);
         if (Number.isNaN(id)) {
-          sendError(res, 400, "Invalid key ID", "VALIDATION_ERROR");
+          sendError(res, 400, "Invalid key ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const existing = await storage.getApiKey(id);
         if (!existing) {
-          sendError(res, 404, "API key not found", "NOT_FOUND");
+          sendError(res, 404, "API key not found", ErrorCode.NOT_FOUND);
           return;
         }
 
@@ -117,7 +123,7 @@ export function register(app: Express): void {
         res.json({ message: "API key revoked" });
       } catch (err) {
         logger.error({ err: toError(err) }, "admin revoke API key error");
-        sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
+        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
       }
     },
   );
@@ -130,25 +136,30 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         if (!isAdmin(req.userId)) {
-          sendError(res, 403, "Admin access required", "UNAUTHORIZED");
+          sendError(res, 403, "Admin access required", ErrorCode.UNAUTHORIZED);
           return;
         }
 
         const id = parseInt(String(req.params.id), 10);
         if (Number.isNaN(id)) {
-          sendError(res, 400, "Invalid key ID", "VALIDATION_ERROR");
+          sendError(res, 400, "Invalid key ID", ErrorCode.VALIDATION_ERROR);
           return;
         }
 
         const parsed = updateTierSchema.safeParse(req.body);
         if (!parsed.success) {
-          sendError(res, 400, "Invalid request body", "VALIDATION_ERROR");
+          sendError(
+            res,
+            400,
+            "Invalid request body",
+            ErrorCode.VALIDATION_ERROR,
+          );
           return;
         }
 
         const existing = await storage.getApiKey(id);
         if (!existing) {
-          sendError(res, 404, "API key not found", "NOT_FOUND");
+          sendError(res, 404, "API key not found", ErrorCode.NOT_FOUND);
           return;
         }
 
@@ -156,7 +167,7 @@ export function register(app: Express): void {
         res.json({ message: "API key tier updated", tier: parsed.data.tier });
       } catch (err) {
         logger.error({ err: toError(err) }, "admin update API key tier error");
-        sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
+        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
       }
     },
   );

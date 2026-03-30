@@ -9,6 +9,7 @@ import {
   checkAiConfigured,
   createImageUpload,
   menuRateLimit,
+  crudRateLimit,
   parsePositiveIntParam,
   parseQueryInt,
 } from "./_helpers";
@@ -78,6 +79,7 @@ export function register(app: Express): void {
   app.get(
     "/api/menu/history",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -107,6 +109,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/menu/scans/:id",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const id = parsePositiveIntParam(req.params.id);

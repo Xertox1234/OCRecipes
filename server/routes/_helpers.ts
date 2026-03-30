@@ -16,6 +16,7 @@ import {
 import { ErrorCode } from "@shared/constants/error-codes";
 import { insertUserProfileSchema, allergySchema } from "@shared/schema";
 import { isAiConfigured } from "../lib/openai";
+import { logger, toError } from "../lib/logger";
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -146,6 +147,36 @@ export function formatZodError(error: ZodError): string {
       e.path.length ? `${e.path.join(".")}: ${e.message}` : e.message,
     )
     .join("; ");
+}
+
+/** Zod schema: accepts string or number, coerces to string. Returns undefined if absent. */
+export const numericStringField = z
+  .union([z.string(), z.number()])
+  .optional()
+  .transform((v) => v?.toString());
+
+/** Zod schema: accepts string or number, coerces to string. Returns null if absent. */
+export const nullableNumericStringField = z
+  .union([z.string(), z.number()])
+  .optional()
+  .nullable()
+  .transform((v) => v?.toString() ?? null);
+
+/**
+ * Standard catch handler for route endpoints with Zod validation.
+ * Handles ZodError → 400, everything else → 500 with logging.
+ */
+export function handleRouteError(
+  res: Response,
+  error: unknown,
+  context: string,
+): void {
+  if (error instanceof ZodError) {
+    sendError(res, 400, formatZodError(error), ErrorCode.VALIDATION_ERROR);
+    return;
+  }
+  logger.error({ err: toError(error) }, `${context} error`);
+  sendError(res, 500, `Failed to ${context}`, ErrorCode.INTERNAL_ERROR);
 }
 
 // ============================================================================

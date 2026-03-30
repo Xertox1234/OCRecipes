@@ -1,11 +1,11 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import multer from "multer";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
-  formatZodError,
+  handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
   foodParseRateLimit,
@@ -52,21 +52,7 @@ export function register(app: Express): void {
         const items = await parseNaturalLanguageFood(validated.text);
         res.json({ items });
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "food parse error");
-        sendError(
-          res,
-          500,
-          "Failed to parse food text",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "parse food text");
       }
     },
   );

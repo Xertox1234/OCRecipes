@@ -1,7 +1,7 @@
 import type { Express, Response } from "express";
 import crypto from "crypto";
 import { MAX_IMAGE_SIZE_BYTES } from "../storage/sessions";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -30,7 +30,7 @@ import {
 } from "../services/nutrition-lookup";
 import {
   photoRateLimit,
-  formatZodError,
+  handleRouteError,
   upload,
   createImageUpload,
   checkPremiumFeature,
@@ -417,16 +417,7 @@ export function register(app: Express): void {
 
         res.status(201).json(scannedItem);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "photo confirm error");
-        sendError(res, 500, "Failed to save meal", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "save meal");
       }
     },
   );
@@ -643,21 +634,7 @@ export function register(app: Express): void {
 
         res.status(201).json(scannedItem);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "label confirm error");
-        sendError(
-          res,
-          500,
-          "Failed to save label data",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "save label data");
       }
     },
   );

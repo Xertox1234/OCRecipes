@@ -12,6 +12,7 @@ import {
   checkPremiumFeature,
   checkAiConfigured,
   createRateLimiter,
+  crudRateLimit,
   createImageUpload,
   formatZodError,
 } from "./_helpers";
@@ -142,6 +143,7 @@ export function register(app: Express): void {
   app.post(
     "/api/receipt/confirm",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -195,6 +197,7 @@ export function register(app: Express): void {
   app.get(
     "/api/receipt/scan-count",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(

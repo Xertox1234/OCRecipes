@@ -16,6 +16,9 @@ export const ErrorCode = {
   API_KEY_INVALID: "API_KEY_INVALID",
   API_KEY_REVOKED: "API_KEY_REVOKED",
   TIER_LIMIT_EXCEEDED: "TIER_LIMIT_EXCEEDED",
+  DAILY_LIMIT_REACHED: "DAILY_LIMIT_REACHED",
+  CATALOG_QUOTA_EXCEEDED: "CATALOG_QUOTA_EXCEEDED",
+  SESSION_NOT_FOUND: "SESSION_NOT_FOUND",
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- intentional: merging value + type

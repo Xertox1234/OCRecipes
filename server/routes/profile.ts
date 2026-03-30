@@ -1,5 +1,4 @@
 import type { Express, Response } from "express";
-import { ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -7,7 +6,7 @@ import { logger, toError } from "../lib/logger";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
-  formatZodError,
+  handleRouteError,
   userProfileInputSchema,
   crudRateLimit,
 } from "./_helpers";
@@ -73,21 +72,7 @@ export function register(app: Express): void {
 
         res.status(201).json(profile);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "error saving dietary profile");
-        sendError(
-          res,
-          500,
-          "Failed to save dietary profile",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "save dietary profile");
       }
     },
   );
@@ -124,21 +109,7 @@ export function register(app: Express): void {
 
         res.json(profile);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "error updating dietary profile");
-        sendError(
-          res,
-          500,
-          "Failed to update dietary profile",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update dietary profile");
       }
     },
   );

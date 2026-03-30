@@ -1,9 +1,9 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { type AuthenticatedRequest, requireAuth } from "../middleware/auth";
 import { storage } from "../storage";
 import {
-  formatZodError,
+  handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
   parseQueryDate,
@@ -123,16 +123,7 @@ export function register(app: Express): void {
 
         res.status(201).json(log);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "create weight log error");
-        sendError(res, 500, "Failed to log weight", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "log weight");
       }
     },
   );
@@ -191,21 +182,7 @@ export function register(app: Express): void {
         }
         res.json({ goalWeight: user.goalWeight });
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "set goal weight error");
-        sendError(
-          res,
-          500,
-          "Failed to set goal weight",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "set goal weight");
       }
     },
   );

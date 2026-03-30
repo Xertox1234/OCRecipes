@@ -258,10 +258,9 @@ export const suggestionCache = pgTable(
     expiresAt: timestamp("expires_at").notNull(),
   },
   (table) => ({
-    itemUserIdx: index("suggestion_cache_item_user_idx").on(
-      table.scannedItemId,
-      table.userId,
-    ),
+    itemUserProfileIdx: uniqueIndex(
+      "suggestion_cache_item_user_profile_idx",
+    ).on(table.scannedItemId, table.userId, table.profileHash),
     expiresAtIdx: index("suggestion_cache_expires_at_idx").on(table.expiresAt),
   }),
 );
@@ -906,6 +905,9 @@ export const fastingLogs = pgTable(
       table.userId,
       table.startedAt,
     ),
+    uniqueActiveFast: uniqueIndex("fasting_logs_one_active_idx")
+      .on(table.userId)
+      .where(sql`ended_at IS NULL`),
   }),
 );
 

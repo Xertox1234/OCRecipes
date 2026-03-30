@@ -16,6 +16,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { CookbookListScreenNavigationProp } from "@/types/navigation";
 import type { CookbookWithCount } from "@shared/schema";
 
@@ -147,6 +148,7 @@ export default function CookbookListScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={cookbooks || []}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}

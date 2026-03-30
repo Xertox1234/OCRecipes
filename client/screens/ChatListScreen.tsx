@@ -32,6 +32,7 @@ import {
   FAB_CLEARANCE,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 
@@ -39,6 +40,8 @@ type ChatListNavigationProp = NativeStackNavigationProp<
   ChatStackParamList,
   "ChatList"
 >;
+
+const MAX_ANIMATED_INDEX = 10;
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -124,7 +127,11 @@ export default function ChatListScreen() {
     ({ item, index }: { item: ChatConversation; index: number }) => (
       <Animated.View
         entering={
-          reducedMotion ? undefined : FadeInDown.delay(index * 50).duration(300)
+          reducedMotion
+            ? undefined
+            : FadeInDown.delay(
+                Math.min(index, MAX_ANIMATED_INDEX) * 50,
+              ).duration(300)
         }
       >
         <Pressable
@@ -214,6 +221,7 @@ export default function ChatListScreen() {
       </View>
 
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={conversations}
         renderItem={renderItem}
         keyExtractor={(item) => item.id.toString()}

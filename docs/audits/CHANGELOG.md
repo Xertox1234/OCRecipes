@@ -15,6 +15,14 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-03-29 — Full Audit (Round 2)
+
+- **Trigger:** Periodic full codebase audit (first with all 5 domains reporting)
+- **Manifest:** [docs/audits/2026-03-29-full-2.md](2026-03-29-full-2.md)
+- **Findings:** 0 critical, 3 high, 7 medium, 12 low (22 total)
+- **Resolved:** 17 verified, 5 deferred (L1/L3/L4/L6/L7 — structural refactors)
+- **Commit:** `[pending]`
+
 ## 2026-03-29 — Full Audit
 
 - **Trigger:** Periodic full codebase audit

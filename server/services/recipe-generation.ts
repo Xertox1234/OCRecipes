@@ -87,23 +87,29 @@ function buildDietaryContext(
       userProfile.allergies.length > 0
     ) {
       const allergyNames = (userProfile.allergies as { name: string }[]).map(
-        (a) => a.name,
+        (a) => sanitizeUserInput(a.name),
       );
       parts.push(`MUST AVOID these allergens: ${allergyNames.join(", ")}`);
     }
     if (userProfile.dietType) {
-      parts.push(`Diet type: ${userProfile.dietType}`);
+      parts.push(`Diet type: ${sanitizeUserInput(userProfile.dietType)}`);
     }
     if (userProfile.cookingSkillLevel) {
-      parts.push(`Cooking skill: ${userProfile.cookingSkillLevel}`);
+      parts.push(
+        `Cooking skill: ${sanitizeUserInput(userProfile.cookingSkillLevel)}`,
+      );
     }
     if (userProfile.cookingTimeAvailable) {
-      parts.push(`Preferred cooking time: ${userProfile.cookingTimeAvailable}`);
+      parts.push(
+        `Preferred cooking time: ${sanitizeUserInput(userProfile.cookingTimeAvailable)}`,
+      );
     }
   }
 
   if (additionalDietPrefs && additionalDietPrefs.length > 0) {
-    parts.push(`Additional preferences: ${additionalDietPrefs.join(", ")}`);
+    parts.push(
+      `Additional preferences: ${additionalDietPrefs.map(sanitizeUserInput).join(", ")}`,
+    );
   }
 
   return parts.length > 0 ? parts.join(". ") + "." : "";
@@ -203,7 +209,9 @@ export async function generateRecipeImage(
   productName: string,
 ): Promise<string | null> {
   try {
-    const prompt = `Appetizing food photography of "${recipeTitle}" featuring ${productName}. Professional lighting, top-down view, styled on rustic wooden table. No text or labels. Photorealistic style.`;
+    const safeTitle = sanitizeUserInput(recipeTitle);
+    const safeProduct = sanitizeUserInput(productName);
+    const prompt = `Appetizing food photography of "${safeTitle}" featuring ${safeProduct}. Professional lighting, top-down view, styled on rustic wooden table. No text or labels. Photorealistic style.`;
 
     const response = await dalleClient.images.generate(
       {

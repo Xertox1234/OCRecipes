@@ -156,11 +156,13 @@ describe("fasting storage", () => {
       await createFastingLog({
         userId: testUser.id,
         startedAt: new Date("2024-01-01T08:00:00Z"),
+        endedAt: new Date("2024-01-01T16:00:00Z"),
         targetDurationHours: 16,
       });
       await createFastingLog({
         userId: testUser.id,
         startedAt: new Date("2024-06-01T08:00:00Z"),
+        endedAt: new Date("2024-06-02T02:00:00Z"),
         targetDurationHours: 18,
       });
 
@@ -174,6 +176,7 @@ describe("fasting storage", () => {
         await createFastingLog({
           userId: testUser.id,
           startedAt: new Date(`2024-0${i + 1}-01T08:00:00Z`),
+          endedAt: new Date(`2024-0${i + 1}-01T16:00:00Z`),
           targetDurationHours: 16,
         });
       }

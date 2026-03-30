@@ -105,7 +105,12 @@ function getSessionForUser(
   }
   const session = cookStore.get(sessionId);
   if (!session) {
-    sendError(res, 404, "Cooking session not found", "SESSION_NOT_FOUND");
+    sendError(
+      res,
+      404,
+      "Cooking session not found",
+      ErrorCode.SESSION_NOT_FOUND,
+    );
     return null;
   }
   if (session.userId !== req.userId) {

@@ -1,5 +1,5 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -10,7 +10,8 @@ import { lookupNutrition, lookupBarcode } from "../services/nutrition-lookup";
 import {
   nutritionLookupRateLimit,
   pantryRateLimit,
-  formatZodError,
+  handleRouteError,
+  numericStringField,
   parsePositiveIntParam,
   parseQueryInt,
   parseQueryDate,
@@ -32,34 +33,13 @@ const scannedItemInputSchema = insertScannedItemSchema.extend({
     .default("Unknown Product"),
   brandName: nullishString,
   servingSize: nullishString,
-  calories: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v) => v?.toString()),
-  protein: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v) => v?.toString()),
-  carbs: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v) => v?.toString()),
-  fat: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v) => v?.toString()),
-  fiber: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v) => v?.toString()),
-  sugar: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v) => v?.toString()),
-  sodium: z
-    .union([z.string(), z.number()])
-    .optional()
-    .transform((v) => v?.toString()),
+  calories: numericStringField,
+  protein: numericStringField,
+  carbs: numericStringField,
+  fat: numericStringField,
+  fiber: numericStringField,
+  sugar: numericStringField,
+  sodium: numericStringField,
 });
 
 export function register(app: Express): void {
@@ -118,7 +98,7 @@ export function register(app: Express): void {
       try {
         const result = await lookupBarcode(code);
         if (!result) {
-          sendError(res, 404, "Product not found", "NOT_IN_DATABASE");
+          sendError(res, 404, "Product not found", ErrorCode.NOT_FOUND);
           return;
         }
 
@@ -245,16 +225,7 @@ export function register(app: Express): void {
 
         res.status(201).json(item);
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "create scanned item failed");
-        sendError(res, 500, "Failed to save item", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "save item");
       }
     },
   );
@@ -268,7 +239,12 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          return sendError(res, 400, "Invalid item ID", "INVALID_ITEM_ID");
+          return sendError(
+            res,
+            400,
+            "Invalid item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         // Ownership + discardedAt check is done inside the transaction
@@ -279,7 +255,7 @@ export function register(app: Express): void {
         );
 
         if (isFavourited === null) {
-          return sendError(res, 404, "Item not found", "ITEM_NOT_FOUND");
+          return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
 
         res.json({ isFavourited });
@@ -304,18 +280,23 @@ export function register(app: Express): void {
       try {
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
-          return sendError(res, 400, "Invalid item ID", "INVALID_ITEM_ID");
+          return sendError(
+            res,
+            400,
+            "Invalid item ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const deleted = await storage.softDeleteScannedItem(id, req.userId);
         if (!deleted) {
-          return sendError(res, 404, "Item not found", "ITEM_NOT_FOUND");
+          return sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
         }
 
         res.status(204).send();
       } catch (error) {
         logger.error({ err: toError(error) }, "discard scanned item failed");
-        sendError(res, 500, "Failed to discard item", "DISCARD_ITEM_FAILED");
+        sendError(res, 500, "Failed to discard item", ErrorCode.INTERNAL_ERROR);
       }
     },
   );

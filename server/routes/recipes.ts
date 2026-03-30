@@ -1,5 +1,5 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -25,8 +25,11 @@ import {
   instructionsRateLimit,
   mealPlanRateLimit,
   urlImportRateLimit,
+  crudRateLimit,
   formatZodError,
+  handleRouteError,
   parsePositiveIntParam,
+  parseQueryInt,
   checkPremiumFeature,
   getPremiumFeatures,
   parseQueryString,
@@ -107,10 +110,15 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/featured",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        const limit = Math.min(Number(req.query.limit) || 12, 50);
-        const offset = Number(req.query.offset) || 0;
+        const limit = parseQueryInt(req.query.limit, {
+          default: 12,
+          min: 1,
+          max: 50,
+        });
+        const offset = parseQueryInt(req.query.offset, { default: 0, min: 0 });
         const recipes = await storage.getFeaturedRecipes(limit, offset);
         res.json(stripAuthorId(recipes));
       } catch (error) {
@@ -178,6 +186,7 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/community",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const barcode = parseQueryString(req.query.barcode) || null;
@@ -216,6 +225,7 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/generation-status",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const features = await getPremiumFeatures(req);
@@ -271,7 +281,7 @@ export function register(app: Express): void {
             res,
             429,
             "Daily recipe generation limit reached",
-            "DAILY_LIMIT_REACHED",
+            ErrorCode.DAILY_LIMIT_REACHED,
           );
           return;
         }
@@ -335,29 +345,14 @@ export function register(app: Express): void {
             res,
             429,
             "Daily recipe generation limit reached",
-            "DAILY_LIMIT_REACHED",
+            ErrorCode.DAILY_LIMIT_REACHED,
           );
           return;
         }
 
         res.status(201).json(recipe);
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error({ err: toError(error) }, "recipe generation failed");
-        sendError(
-          res,
-          500,
-          "Failed to generate recipe",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "generate recipe");
       }
     },
   );
@@ -366,6 +361,7 @@ export function register(app: Express): void {
   app.post(
     "/api/recipes/:id/share",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
@@ -418,6 +414,7 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/mine",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipes = await storage.getUserRecipes(req.userId);
@@ -438,6 +435,7 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/:id",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
@@ -472,6 +470,7 @@ export function register(app: Express): void {
   app.delete(
     "/api/recipes/:id",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipeId = parsePositiveIntParam(req.params.id);
@@ -541,7 +540,7 @@ export function register(app: Express): void {
         res.json(results);
       } catch (error) {
         if (error instanceof CatalogQuotaError) {
-          sendError(res, 402, error.message, "CATALOG_QUOTA_EXCEEDED");
+          sendError(res, 402, error.message, ErrorCode.CATALOG_QUOTA_EXCEEDED);
           return;
         }
         logger.error({ err: toError(error) }, "catalog search failed");
@@ -582,7 +581,7 @@ export function register(app: Express): void {
         res.json(detail);
       } catch (error) {
         if (error instanceof CatalogQuotaError) {
-          sendError(res, 402, error.message, "CATALOG_QUOTA_EXCEEDED");
+          sendError(res, 402, error.message, ErrorCode.CATALOG_QUOTA_EXCEEDED);
           return;
         }
         logger.error({ err: toError(error) }, "catalog detail failed");
@@ -647,7 +646,7 @@ export function register(app: Express): void {
         res.status(201).json(saved);
       } catch (error) {
         if (error instanceof CatalogQuotaError) {
-          sendError(res, 402, error.message, "CATALOG_QUOTA_EXCEEDED");
+          sendError(res, 402, error.message, ErrorCode.CATALOG_QUOTA_EXCEEDED);
           return;
         }
         logger.error({ err: toError(error) }, "catalog save failed");

@@ -23,6 +23,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { CookbookDetailScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { ResolvedCookbookRecipe } from "@shared/schema";
@@ -238,6 +239,7 @@ export default function CookbookDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={cookbook?.recipes || []}
         keyExtractor={(item) => `${item.recipeId}-${item.recipeType}`}
         renderItem={renderItem}

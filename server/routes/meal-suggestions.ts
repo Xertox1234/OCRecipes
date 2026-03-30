@@ -1,5 +1,5 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -17,10 +17,10 @@ import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 import {
   mealSuggestionRateLimit,
   formatZodError,
+  handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
 } from "./_helpers";
-import { logger, toError } from "../lib/logger";
 
 async function fetchDeduplicatedPopularPicks(
   userId: string,
@@ -77,7 +77,7 @@ export function register(app: Express): void {
             res,
             429,
             "Daily AI suggestion limit reached",
-            "DAILY_LIMIT_REACHED",
+            ErrorCode.DAILY_LIMIT_REACHED,
           );
           return;
         }
@@ -214,7 +214,7 @@ export function register(app: Express): void {
             res,
             429,
             "Daily AI suggestion limit reached",
-            "DAILY_LIMIT_REACHED",
+            ErrorCode.DAILY_LIMIT_REACHED,
           );
           return;
         }
@@ -231,22 +231,7 @@ export function register(app: Express): void {
           remainingToday: Math.max(0, remaining),
         });
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error({ err: toError(error) }, "meal suggestion error");
-        sendError(
-          res,
-          500,
-          "Failed to generate suggestions",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "generate suggestions");
       }
     },
   );

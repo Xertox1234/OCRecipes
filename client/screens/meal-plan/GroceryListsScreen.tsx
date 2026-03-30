@@ -140,10 +140,10 @@ export default function GroceryListsScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={lists || []}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
-        {...FLATLIST_DEFAULTS}
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.md,
           paddingHorizontal: Spacing.lg,

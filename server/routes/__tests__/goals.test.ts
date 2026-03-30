@@ -16,6 +16,7 @@ vi.mock("../../storage", () => ({
     getUserProfile: vi.fn(),
     createUserProfile: vi.fn(),
     updateUserProfile: vi.fn(),
+    upsertProfileWithOnboarding: vi.fn(),
   },
 }));
 
@@ -74,8 +75,7 @@ describe("Goals Routes", () => {
   describe("POST /api/goals/calculate", () => {
     it("calculates goals from physical profile", async () => {
       vi.mocked(storage.updateUser).mockResolvedValue(mockUser);
-      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(storage.createUserProfile).mockResolvedValue(
+      vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
         createMockUserProfile(),
       );
 
@@ -99,12 +99,9 @@ describe("Goals Routes", () => {
       expect(res.body.profile.weight).toBe(75);
     });
 
-    it("updates existing profile if one exists", async () => {
+    it("upserts profile with activity level and goal", async () => {
       vi.mocked(storage.updateUser).mockResolvedValue(mockUser);
-      vi.mocked(storage.getUserProfile).mockResolvedValue(
-        createMockUserProfile(),
-      );
-      vi.mocked(storage.updateUserProfile).mockResolvedValue(
+      vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
         createMockUserProfile(),
       );
 
@@ -121,8 +118,13 @@ describe("Goals Routes", () => {
         });
 
       expect(res.status).toBe(200);
-      expect(storage.updateUserProfile).toHaveBeenCalled();
-      expect(storage.createUserProfile).not.toHaveBeenCalled();
+      expect(storage.upsertProfileWithOnboarding).toHaveBeenCalledWith(
+        mockUser.id,
+        expect.objectContaining({
+          activityLevel: "sedentary",
+          primaryGoal: "lose_weight",
+        }),
+      );
     });
 
     it("returns 400 for missing required fields", async () => {

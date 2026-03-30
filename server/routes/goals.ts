@@ -1,5 +1,5 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -9,7 +9,7 @@ import {
   userPhysicalProfileSchema,
 } from "../services/goal-calculator";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { formatZodError, crudRateLimit, parseQueryDate } from "./_helpers";
+import { handleRouteError, crudRateLimit, parseQueryDate } from "./_helpers";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
 // Zod schema for manual goal update
@@ -57,33 +57,24 @@ export function register(app: Express): void {
         // Calculate goals using the service
         const goals = calculateGoals(validated);
 
-        // Update user with physical profile and calculated goals
-        await storage.updateUser(req.userId, {
-          weight: validated.weight.toString(),
-          height: validated.height.toString(),
-          age: validated.age,
-          gender: validated.gender,
-          dailyCalorieGoal: goals.dailyCalories,
-          dailyProteinGoal: goals.dailyProtein,
-          dailyCarbsGoal: goals.dailyCarbs,
-          dailyFatGoal: goals.dailyFat,
-          goalsCalculatedAt: new Date(),
-        });
-
-        // Also update profile with activity level and primary goal
-        const existingProfile = await storage.getUserProfile(req.userId);
-        if (existingProfile) {
-          await storage.updateUserProfile(req.userId, {
+        // Update user goals and profile in parallel (different tables, no FK dependency)
+        await Promise.all([
+          storage.updateUser(req.userId, {
+            weight: validated.weight.toString(),
+            height: validated.height.toString(),
+            age: validated.age,
+            gender: validated.gender,
+            dailyCalorieGoal: goals.dailyCalories,
+            dailyProteinGoal: goals.dailyProtein,
+            dailyCarbsGoal: goals.dailyCarbs,
+            dailyFatGoal: goals.dailyFat,
+            goalsCalculatedAt: new Date(),
+          }),
+          storage.upsertProfileWithOnboarding(req.userId, {
             activityLevel: validated.activityLevel,
             primaryGoal: validated.primaryGoal,
-          });
-        } else {
-          await storage.createUserProfile({
-            userId: req.userId,
-            activityLevel: validated.activityLevel,
-            primaryGoal: validated.primaryGoal,
-          });
-        }
+          }),
+        ]);
 
         res.json({
           ...goals,
@@ -97,21 +88,7 @@ export function register(app: Express): void {
           },
         });
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "calculate goals error");
-        sendError(
-          res,
-          500,
-          "Failed to calculate goals",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "calculate goals");
       }
     },
   );
@@ -150,16 +127,7 @@ export function register(app: Express): void {
           dailyFatGoal: updatedUser.dailyFatGoal,
         });
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "update goals error");
-        sendError(res, 500, "Failed to update goals", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "update goals");
       }
     },
   );

@@ -56,6 +56,14 @@ export async function createSuggestionCache(
       suggestions,
       expiresAt,
     })
+    .onConflictDoUpdate({
+      target: [
+        suggestionCache.scannedItemId,
+        suggestionCache.userId,
+        suggestionCache.profileHash,
+      ],
+      set: { suggestions, expiresAt, hitCount: 0 },
+    })
     .returning({ id: suggestionCache.id });
   return result;
 }

@@ -90,16 +90,16 @@ export function register(app: Express): void {
             Array.isArray(userProfile.allergies) &&
             userProfile.allergies.length > 0
           ) {
-            dietaryContext += `User allergies (avoid these ingredients): ${(userProfile.allergies as Allergy[]).map((a) => a.name).join(", ")}. `;
+            dietaryContext += `User allergies (avoid these ingredients): ${(userProfile.allergies as Allergy[]).map((a) => sanitizeUserInput(a.name)).join(", ")}. `;
           }
           if (userProfile.dietType) {
-            dietaryContext += `Diet: ${userProfile.dietType}. `;
+            dietaryContext += `Diet: ${sanitizeUserInput(userProfile.dietType)}. `;
           }
           if (userProfile.cookingSkillLevel) {
-            dietaryContext += `Cooking skill: ${userProfile.cookingSkillLevel}. `;
+            dietaryContext += `Cooking skill: ${sanitizeUserInput(userProfile.cookingSkillLevel)}. `;
           }
           if (userProfile.cookingTimeAvailable) {
-            dietaryContext += `Time: ${userProfile.cookingTimeAvailable}. `;
+            dietaryContext += `Time: ${sanitizeUserInput(userProfile.cookingTimeAvailable)}. `;
           }
         }
 
@@ -272,13 +272,13 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
             Array.isArray(userProfile.allergies) &&
             userProfile.allergies.length > 0
           ) {
-            dietaryContext += `User allergies (MUST avoid): ${(userProfile.allergies as Allergy[]).map((a) => a.name).join(", ")}. `;
+            dietaryContext += `User allergies (MUST avoid): ${(userProfile.allergies as Allergy[]).map((a) => sanitizeUserInput(a.name)).join(", ")}. `;
           }
           if (userProfile.dietType) {
-            dietaryContext += `Diet: ${userProfile.dietType}. `;
+            dietaryContext += `Diet: ${sanitizeUserInput(userProfile.dietType)}. `;
           }
           if (userProfile.cookingSkillLevel) {
-            dietaryContext += `Skill level: ${userProfile.cookingSkillLevel}. `;
+            dietaryContext += `Skill level: ${sanitizeUserInput(userProfile.cookingSkillLevel)}. `;
           }
         }
 

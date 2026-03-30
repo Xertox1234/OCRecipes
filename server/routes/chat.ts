@@ -181,7 +181,7 @@ export function register(app: Express): void {
             res,
             429,
             "Daily chat message limit reached",
-            "DAILY_LIMIT_REACHED",
+            ErrorCode.DAILY_LIMIT_REACHED,
           );
         }
 

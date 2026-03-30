@@ -1,5 +1,5 @@
 import type { Express, Response } from "express";
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -18,6 +18,8 @@ import {
   pantryRateLimit,
   checkPremiumFeature,
   formatZodError,
+  handleRouteError,
+  nullableNumericStringField,
   parsePositiveIntParam,
   parseQueryInt,
 } from "./_helpers";
@@ -32,11 +34,7 @@ const generateGroceryListSchema = z.object({
 
 const addManualGroceryItemSchema = z.object({
   name: z.string().min(1).max(200),
-  quantity: z
-    .union([z.string(), z.number()])
-    .optional()
-    .nullable()
-    .transform((v) => v?.toString() ?? null),
+  quantity: nullableNumericStringField,
   unit: z.string().max(50).optional().nullable(),
   category: z.string().max(50).optional().default("other"),
 });
@@ -159,25 +157,7 @@ export function register(app: Express): void {
 
         res.status(201).json({ ...result.list, items: result.items });
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error(
-          { err: toError(error) },
-          "failed to generate grocery list",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to generate grocery list",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "generate grocery list");
       }
     },
   );
@@ -445,17 +425,7 @@ export function register(app: Express): void {
 
         res.status(201).json(item);
       } catch (error) {
-        if (error instanceof ZodError) {
-          sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-        logger.error({ err: toError(error) }, "failed to add grocery item");
-        sendError(res, 500, "Failed to add item", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "add grocery item");
       }
     },
   );

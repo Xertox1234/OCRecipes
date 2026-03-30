@@ -155,7 +155,7 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe("NOT_IN_DATABASE");
+      expect(res.body.code).toBe("NOT_FOUND");
     });
   });
 
@@ -266,7 +266,7 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(404);
-      expect(res.body.code).toBe("ITEM_NOT_FOUND");
+      expect(res.body.code).toBe("NOT_FOUND");
     });
 
     it("returns 400 for invalid ID", async () => {

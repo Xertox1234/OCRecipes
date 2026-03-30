@@ -2,7 +2,6 @@ import type { Express, Request, Response } from "express";
 import bcrypt from "bcrypt";
 import fs, { promises as fsp } from "fs";
 import * as path from "path";
-import { ZodError } from "zod";
 import { storage } from "../storage";
 import {
   requireAuth,
@@ -19,7 +18,7 @@ import {
   avatarRateLimit,
   accountDeletionLimiter,
   crudRateLimit,
-  formatZodError,
+  handleRouteError,
   loginSchema,
   registerSchema,
   deleteAccountSchema,
@@ -35,6 +34,26 @@ function deleteOldAvatarFile(avatarUrl: string | null | undefined): void {
   if (!avatarUrl?.startsWith("/api/avatars/")) return;
   const safeName = path.basename(avatarUrl);
   fs.unlink(path.join(AVATAR_DIR, safeName), () => {});
+}
+
+function serializeUser(user: {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  dailyCalorieGoal: number | null;
+  onboardingCompleted: boolean | null;
+  subscriptionTier: string | null;
+}) {
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
+    dailyCalorieGoal: user.dailyCalorieGoal,
+    onboardingCompleted: user.onboardingCompleted,
+    subscriptionTier: user.subscriptionTier || "free",
+  };
 }
 
 export function register(app: Express): void {
@@ -80,34 +99,9 @@ export function register(app: Express): void {
 
         const token = generateToken(user.id.toString(), user.tokenVersion);
 
-        res.status(201).json({
-          user: {
-            id: user.id,
-            username: user.username,
-            displayName: user.displayName,
-            avatarUrl: user.avatarUrl,
-            dailyCalorieGoal: user.dailyCalorieGoal,
-            onboardingCompleted: user.onboardingCompleted,
-            subscriptionTier: user.subscriptionTier || "free",
-          },
-          token,
-        });
+        res.status(201).json({ user: serializeUser(user), token });
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "registration error");
-        sendError(
-          res,
-          500,
-          "Failed to create account",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "create account");
       }
     },
   );
@@ -144,29 +138,9 @@ export function register(app: Express): void {
 
         const token = generateToken(user.id.toString(), user.tokenVersion);
 
-        res.json({
-          user: {
-            id: user.id,
-            username: user.username,
-            displayName: user.displayName,
-            avatarUrl: user.avatarUrl,
-            dailyCalorieGoal: user.dailyCalorieGoal,
-            onboardingCompleted: user.onboardingCompleted,
-            subscriptionTier: user.subscriptionTier || "free",
-          },
-          token,
-        });
+        res.json({ user: serializeUser(user), token });
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "login error");
-        sendError(res, 500, "Failed to login", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "log in");
       }
     },
   );
@@ -208,15 +182,7 @@ export function register(app: Express): void {
         return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
       }
 
-      res.json({
-        id: user.id,
-        username: user.username,
-        displayName: user.displayName,
-        avatarUrl: user.avatarUrl,
-        dailyCalorieGoal: user.dailyCalorieGoal,
-        onboardingCompleted: user.onboardingCompleted,
-        subscriptionTier: user.subscriptionTier || "free",
-      });
+      res.json(serializeUser(user));
     },
   );
 
@@ -250,31 +216,9 @@ export function register(app: Express): void {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
-        res.json({
-          id: user.id,
-          username: user.username,
-          displayName: user.displayName,
-          avatarUrl: user.avatarUrl,
-          dailyCalorieGoal: user.dailyCalorieGoal,
-          onboardingCompleted: user.onboardingCompleted,
-          subscriptionTier: user.subscriptionTier || "free",
-        });
+        res.json(serializeUser(user));
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "profile update error");
-        sendError(
-          res,
-          500,
-          "Failed to update profile",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update profile");
       }
     },
   );
@@ -317,21 +261,7 @@ export function register(app: Express): void {
 
         res.json({ success: true });
       } catch (error) {
-        if (error instanceof ZodError) {
-          return sendError(
-            res,
-            400,
-            formatZodError(error),
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-        logger.error({ err: toError(error) }, "account deletion error");
-        sendError(
-          res,
-          500,
-          "Failed to delete account",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "delete account");
       }
     },
   );

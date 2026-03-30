@@ -9,17 +9,14 @@ import {
   pantryRateLimit,
   checkPremiumFeature,
   formatZodError,
+  nullableNumericStringField,
   parsePositiveIntParam,
   parseQueryInt,
 } from "./_helpers";
 
 const pantryItemSchema = z.object({
   name: z.string().min(1).max(200),
-  quantity: z
-    .union([z.string(), z.number()])
-    .optional()
-    .nullable()
-    .transform((v) => v?.toString() ?? null),
+  quantity: nullableNumericStringField,
   unit: z.string().max(50).optional().nullable(),
   category: z.string().max(50).optional().default("other"),
   expiresAt: z

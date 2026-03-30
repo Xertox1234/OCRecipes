@@ -13,6 +13,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { SubstitutionSuggestion } from "@shared/types/cook-session";
@@ -143,6 +144,7 @@ export default function SubstitutionResultScreen() {
   return (
     <ThemedView style={styles.container}>
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={suggestions}
         keyExtractor={(item, index) => `${item.originalIngredientId}-${index}`}
         renderItem={renderSuggestion}
