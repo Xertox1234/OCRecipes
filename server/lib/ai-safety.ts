@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "./logger";
 
 /**
  * AI Safety utilities for prompt injection protection and output validation.
@@ -76,7 +77,10 @@ export function validateAiResponse<T>(
 ): T | null {
   const result = schema.safeParse(response);
   if (!result.success) {
-    console.error("AI response validation failed:", result.error.format());
+    logger.warn(
+      { zodErrors: result.error.flatten() },
+      "AI response validation failed",
+    );
     return null;
   }
   return result.data;

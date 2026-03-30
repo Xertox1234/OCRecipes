@@ -1549,19 +1549,19 @@ Register `uncaughtException` and `unhandledRejection` handlers at the top of `se
 
 ```typescript
 process.on("uncaughtException", (error) => {
-  console.error("Uncaught exception:", error);
-  process.exit(1); // Process is in undefined state — exit and let PM restart
+  logger.fatal({ err: toError(error) }, "uncaught exception");
+  rootLogger.flush();
+  setTimeout(() => process.exit(1), 500);
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("Unhandled rejection:", reason);
-  // Log but don't exit — Node.js may recover
+  logger.error({ err: toError(reason) }, "unhandled rejection");
 });
 ```
 
 **Key details:**
 
-- `uncaughtException` MUST exit with code 1 — after an uncaught exception the process is in an undefined state (half-written files, leaked connections). The process manager (PM2, Docker, systemd) handles restarts
+- `uncaughtException` MUST exit — after an uncaught exception the process is in an undefined state. Call `rootLogger.flush()` then `setTimeout(() => process.exit(1), 500)` to give async transports time to drain
 - `unhandledRejection` logs but does NOT exit — these are often recoverable (e.g., a forgotten `.catch()` on a fire-and-forget promise)
 - No restart logic in the handlers — that's the process manager's job
 - These catch errors from outside Express: database connection drops, timer callbacks, event emitter errors, `setTimeout` throws
@@ -1570,7 +1570,45 @@ process.on("unhandledRejection", (reason) => {
 
 **References:**
 
-- `server/index.ts` — lines 8-15
+- `server/index.ts` — lines 18-30
+
+### AsyncLocalStorage for Request-Scoped Context
+
+Use `AsyncLocalStorage` to propagate per-request state (requestId, userId) through the entire async call chain without passing parameters through function signatures.
+
+```typescript
+// server/lib/request-context.ts
+const als = new AsyncLocalStorage<RequestContext>();
+
+// Middleware creates the store
+export function requestContextMiddleware(req, res, next) {
+  const requestId = req.id; // from pino-http
+  res.setHeader("X-Request-Id", requestId);
+  als.run({ requestId, userId: null }, () => next());
+}
+
+// Any code can read it — no parameter threading needed
+export function getRequestContext() {
+  return als.getStore(); // undefined outside a request
+}
+```
+
+**Key details:**
+
+- ALS context propagates through `Promise` chains, `setTimeout`, and `process.nextTick` in Node 18+
+- Returns `undefined` outside a request (startup, shutdown, background jobs) — callers must handle this gracefully
+- The store object is mutable — `setRequestUserId()` updates it in-place after auth middleware runs, which is safe because Node.js is single-threaded (one request never shares a store with another)
+- When middleware B needs data that middleware A produced, B should **read A's output** (e.g., `req.id`) rather than re-derive from the same source (e.g., re-parsing `X-Request-Id`). This prevents divergence bugs.
+
+**When to use:** Request ID propagation, user context in services, audit trails, distributed tracing headers — anywhere you need per-request state without threading it through every function call.
+
+**When NOT to use:** Short-lived scripts, single-function handlers where passing a parameter is simpler than setting up ALS.
+
+**References:**
+
+- `server/lib/request-context.ts` — ALS store, middleware, `getRequestContext()`, `setRequestUserId()`
+- `server/lib/logger.ts` — pino `mixin` reads ALS to inject `requestId`/`userId` into every log call
+- `server/middleware/auth.ts` — calls `setRequestUserId()` after token verification
 
 ### Centralized Environment Validation with Zod Schema
 

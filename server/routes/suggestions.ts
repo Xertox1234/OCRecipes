@@ -15,6 +15,7 @@ import {
 } from "./_helpers";
 import { openai } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import { logger, toError } from "../lib/logger";
 
 // Zod schema for instructions request
 const instructionsRequestSchema = z.object({
@@ -185,7 +186,7 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
           cacheId: cacheEntry.id,
         });
       } catch (error) {
-        console.error("Error generating suggestions:", error);
+        logger.error({ err: toError(error) }, "error generating suggestions");
         sendError(
           res,
           500,
@@ -364,7 +365,7 @@ Format as plain text with clear sections.`;
 
         res.json({ instructions });
       } catch (error) {
-        console.error("Error generating instructions:", error);
+        logger.error({ err: toError(error) }, "error generating instructions");
         sendError(
           res,
           500,

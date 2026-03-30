@@ -6,6 +6,7 @@
  * warnings so operators know which features are degraded.
  */
 import { z } from "zod";
+import { logger } from "./logger";
 
 const envSchema = z.object({
   // Required — server will not start without these
@@ -43,6 +44,11 @@ const envSchema = z.object({
 
   // Admin
   ADMIN_USER_IDS: z.string().optional(),
+
+  // Logging
+  LOG_LEVEL: z
+    .enum(["fatal", "error", "warn", "info", "debug", "trace"])
+    .optional(),
 });
 
 type Env = z.infer<typeof envSchema>;
@@ -91,7 +97,7 @@ export function validateEnv(): Env {
   }
 
   for (const w of warnings) {
-    console.warn(`[env] ${w}`);
+    logger.warn({ component: "env" }, w);
   }
 
   return validated;

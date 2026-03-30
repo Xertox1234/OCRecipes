@@ -13,7 +13,7 @@ module.exports = defineConfig([
   {
     files: ["server/**/*.ts"],
     rules: {
-      "no-console": ["error", { allow: ["warn", "error"] }],
+      "no-console": "error",
     },
   },
   {

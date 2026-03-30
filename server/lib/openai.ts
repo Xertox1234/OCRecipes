@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { logger } from "./logger";
 
 const OPENAI_DEFAULT_TIMEOUT_MS = 45_000;
 
@@ -9,9 +10,7 @@ export const OPENAI_TIMEOUT_IMAGE_MS = 120_000; // DALL-E: image generation
 
 const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
 if (!apiKey) {
-  console.warn(
-    "AI_INTEGRATIONS_OPENAI_API_KEY not set — AI features will fail",
-  );
+  logger.warn("AI_INTEGRATIONS_OPENAI_API_KEY not set — AI features will fail");
 }
 
 /** Whether OpenAI API is configured and AI features should work */

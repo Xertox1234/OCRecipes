@@ -1,0 +1,42 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { Request, Response, NextFunction } from "express";
+
+export interface RequestContext {
+  requestId: string;
+  userId: string | null;
+}
+
+const als = new AsyncLocalStorage<RequestContext>();
+
+/** Get the current request context, or undefined outside a request. */
+export function getRequestContext(): RequestContext | undefined {
+  return als.getStore();
+}
+
+/** Update the userId in the current request context (called by auth middleware). */
+export function setRequestUserId(userId: string): void {
+  const ctx = als.getStore();
+  if (ctx) {
+    ctx.userId = userId;
+  }
+}
+
+/**
+ * Express middleware that creates an AsyncLocalStorage context per request.
+ * Must be registered after pino-http (so req.id is available) and before routes.
+ */
+export function requestContextMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  // Read the request ID already generated/validated by pino-http's genReqId
+  const requestId = (req as { id?: string }).id!;
+
+  // Set request ID on response header for client-side correlation
+  res.setHeader("X-Request-Id", requestId);
+
+  als.run({ requestId, userId: null }, () => {
+    next();
+  });
+}

@@ -16,6 +16,7 @@ import type { AuthenticatedRequest } from "../middleware/auth";
 import { analyzeGlp1Insights } from "../services/glp1-insights";
 import type { ProteinSuggestion } from "@shared/types/protein-suggestions";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
+import { logger, toError } from "../lib/logger";
 
 export function register(app: Express): void {
   // GET /api/medication/logs
@@ -44,7 +45,7 @@ export function register(app: Express): void {
         });
         res.json(logs);
       } catch (error) {
-        console.error("Get medication logs error:", error);
+        logger.error({ err: toError(error) }, "failed to get medication logs");
         sendError(
           res,
           500,
@@ -93,7 +94,10 @@ export function register(app: Express): void {
         });
         res.status(201).json(log);
       } catch (error) {
-        console.error("Create medication log error:", error);
+        logger.error(
+          { err: toError(error) },
+          "failed to create medication log",
+        );
         sendError(
           res,
           500,
@@ -159,7 +163,10 @@ export function register(app: Express): void {
           );
         res.json(updated);
       } catch (error) {
-        console.error("Update medication log error:", error);
+        logger.error(
+          { err: toError(error) },
+          "failed to update medication log",
+        );
         sendError(
           res,
           500,
@@ -204,7 +211,10 @@ export function register(app: Express): void {
           );
         res.status(204).send();
       } catch (error) {
-        console.error("Delete medication log error:", error);
+        logger.error(
+          { err: toError(error) },
+          "failed to delete medication log",
+        );
         sendError(
           res,
           500,
@@ -233,7 +243,10 @@ export function register(app: Express): void {
         const insights = await analyzeGlp1Insights(req.userId);
         res.json(insights);
       } catch (error) {
-        console.error("Get medication insights error:", error);
+        logger.error(
+          { err: toError(error) },
+          "failed to get medication insights",
+        );
         sendError(
           res,
           500,
@@ -285,7 +298,10 @@ export function register(app: Express): void {
         );
         res.json({ suggestions, remainingProtein, proteinGoal });
       } catch (error) {
-        console.error("Get protein suggestions error:", error);
+        logger.error(
+          { err: toError(error) },
+          "failed to get protein suggestions",
+        );
         sendError(
           res,
           500,
@@ -339,7 +355,7 @@ export function register(app: Express): void {
           return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
         res.json(profile);
       } catch (error) {
-        console.error("Update GLP-1 mode error:", error);
+        logger.error({ err: toError(error) }, "failed to update GLP-1 mode");
         sendError(
           res,
           500,

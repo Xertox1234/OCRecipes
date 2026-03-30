@@ -1,12 +1,15 @@
 import { z } from "zod";
 import { storage } from "../storage";
 import { openai } from "../lib/openai";
+import { createServiceLogger, toError } from "../lib/logger";
 import {
   detectAllergens,
   parseUserAllergies,
   type AllergenMatch,
   type AllergySeverity,
 } from "@shared/constants/allergens";
+
+const log = createServiceLogger("menu-analysis");
 
 const menuItemSchema = z.object({
   name: z.string(),
@@ -133,7 +136,7 @@ export async function analyzeMenuPhoto(
       temperature: 0.3,
     });
   } catch (error) {
-    console.error("Menu analysis API error:", error);
+    log.error({ err: toError(error) }, "menu analysis API error");
     throw new Error("Failed to analyze menu photo. Please try again.");
   }
 

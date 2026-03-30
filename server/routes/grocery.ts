@@ -20,6 +20,7 @@ import {
   parsePositiveIntParam,
   parseQueryInt,
 } from "./_helpers";
+import { logger, toError } from "../lib/logger";
 
 const generateGroceryListSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -166,7 +167,10 @@ export function register(app: Express): void {
           );
           return;
         }
-        console.error("Generate grocery list error:", error);
+        logger.error(
+          { err: toError(error) },
+          "failed to generate grocery list",
+        );
         sendError(
           res,
           500,
@@ -187,7 +191,7 @@ export function register(app: Express): void {
         const lists = await storage.getGroceryLists(req.userId, limit);
         res.json(lists);
       } catch (error) {
-        console.error("Get grocery lists error:", error);
+        logger.error({ err: toError(error) }, "failed to fetch grocery lists");
         sendError(
           res,
           500,
@@ -244,7 +248,7 @@ export function register(app: Express): void {
 
         res.json({ ...list, allergenFlags });
       } catch (error) {
-        console.error("Get grocery list error:", error);
+        logger.error({ err: toError(error) }, "failed to fetch grocery list");
         sendError(
           res,
           500,
@@ -324,7 +328,7 @@ export function register(app: Express): void {
           ErrorCode.VALIDATION_ERROR,
         );
       } catch (error) {
-        console.error("Toggle grocery item error:", error);
+        logger.error({ err: toError(error) }, "failed to toggle grocery item");
         sendError(res, 500, "Failed to update item", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -380,7 +384,10 @@ export function register(app: Express): void {
 
         res.status(201).json(pantryItem);
       } catch (error) {
-        console.error("Add grocery item to pantry error:", error);
+        logger.error(
+          { err: toError(error) },
+          "failed to add grocery item to pantry",
+        );
         sendError(
           res,
           500,
@@ -441,7 +448,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        console.error("Add grocery item error:", error);
+        logger.error({ err: toError(error) }, "failed to add grocery item");
         sendError(res, 500, "Failed to add item", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -467,7 +474,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        console.error("Delete grocery list error:", error);
+        logger.error({ err: toError(error) }, "failed to delete grocery list");
         sendError(
           res,
           500,

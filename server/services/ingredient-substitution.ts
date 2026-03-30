@@ -21,6 +21,9 @@ import {
 import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { getSpoonacularSubstitutes } from "./recipe-catalog";
+import { createServiceLogger, toError } from "../lib/logger";
+
+const log = createServiceLogger("ingredient-substitution");
 
 // ============================================================================
 // FUNCTIONAL ROLES (food science context for AI substitution prompts)
@@ -393,9 +396,9 @@ Respond with JSON only:
 
   const validated = substitutionResponseSchema.safeParse(parsed);
   if (!validated.success) {
-    console.error(
-      "Substitution response validation failed:",
-      validated.error.format(),
+    log.warn(
+      { zodErrors: validated.error.flatten() },
+      "substitution response validation failed",
     );
     return [];
   }
@@ -512,7 +515,7 @@ export async function getSubstitutions(
         userAllergies,
       );
     } catch (error) {
-      console.error("AI substitution error:", error);
+      log.error({ err: toError(error) }, "AI substitution error");
       // Static + Spoonacular results still returned even if AI fails
     }
   }

@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { logger, toError } from "../lib/logger";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
@@ -29,7 +30,7 @@ export function register(app: Express): void {
         const profile = await storage.getUserProfile(req.userId);
         res.json(profile || null);
       } catch (error) {
-        console.error("Error fetching dietary profile:", error);
+        logger.error({ err: toError(error) }, "error fetching dietary profile");
         sendError(
           res,
           500,
@@ -80,7 +81,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        console.error("Error saving dietary profile:", error);
+        logger.error({ err: toError(error) }, "error saving dietary profile");
         sendError(
           res,
           500,
@@ -131,7 +132,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        console.error("Error updating dietary profile:", error);
+        logger.error({ err: toError(error) }, "error updating dietary profile");
         sendError(
           res,
           500,
