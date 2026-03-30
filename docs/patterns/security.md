@@ -154,34 +154,49 @@ if (isBlockedUrl(url)) {
 
 ### CORS with Pattern Matching
 
-Use origin pattern matching instead of wildcard `*` for CORS:
+Use origin pattern matching instead of wildcard `*` for CORS. Never combine `Access-Control-Allow-Origin: *` with `Access-Control-Allow-Credentials: true` — browsers reject this combination, and it signals an intent error. Only set CORS headers for allowed origins:
 
 ```typescript
-const ALLOWED_ORIGIN_PATTERNS = [
-  /^https?:\/\/localhost(:\d+)?$/,
-  /^exp:\/\/.+$/,
-  /^https:\/\/.+\.loca\.lt$/, // localtunnel
-  /^https:\/\/.+\.ngrok\.io$/, // ngrok
-];
-
-const publicDomain = process.env.EXPO_PUBLIC_DOMAIN;
-
-function isAllowedOrigin(origin: string | undefined): boolean {
-  if (!origin) return true; // Allow requests with no origin (mobile apps)
-  if (publicDomain && origin.includes(publicDomain)) return true;
-  return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
-}
-
+// ✅ GOOD: Only reflect specific origins; keep all CORS headers inside the allowed block
 app.use((req, res, next) => {
   const origin = req.header("origin");
   if (isAllowedOrigin(origin)) {
-    res.header("Access-Control-Allow-Origin", origin || "*");
+    if (origin) {
+      res.header("Access-Control-Allow-Origin", origin);
+      res.header("Access-Control-Allow-Credentials", "true");
+    }
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET, POST, PUT, DELETE, OPTIONS",
+    );
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   }
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
+
+// ❌ BAD: Wildcard with credentials; leaks methods/headers to disallowed origins
+app.use((req, res, next) => {
+  const origin = req.header("origin");
+  if (isAllowedOrigin(origin)) {
+    res.header("Access-Control-Allow-Origin", origin || "*"); // "*" + credentials = broken
+    res.header("Access-Control-Allow-Credentials", "true");
+  }
+  // These leak to ALL origins, even disallowed ones:
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   next();
 });
 ```
 
-**Why:** Prevents malicious domains from making authenticated requests to your API.
+**Rules:**
+
+1. **No-origin requests** (mobile apps, curl): omit CORS headers entirely — they don't need them
+2. **Allowed origins**: reflect the specific `origin` value, set credentials + methods + headers
+3. **Disallowed origins**: send no CORS headers at all — don't leak allowed methods/headers
+4. **`isAllowedOrigin`** should use exact match or anchored regex patterns, not `.includes()`
+
+**Reference:** `server/index.ts`
 
 ### Rate Limiting on Auth Endpoints
 

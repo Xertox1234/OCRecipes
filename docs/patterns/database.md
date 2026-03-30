@@ -1449,6 +1449,49 @@ export async function createSavedItem(userId: string, itemData: CreateSavedItemI
 - `server/storage/users.ts` — `createWeightLogAndUpdateUser()` (weight log + user weight update)
 - See also: [Early Non-Transactional Check + Authoritative Transactional Check](#early-non-transactional-check--authoritative-transactional-check) for the two-phase variant
 
+### Unique Constraint as TOCTOU Safety Net
+
+When the "check-then-insert" race window is narrow (no expensive work between check and insert) and the uniqueness is inherent to the data model, use a database unique constraint as the safety net instead of a full transaction. Keep the application-level check for a fast, friendly response, and catch the constraint violation in the error handler.
+
+```typescript
+// ✅ GOOD: App-level check for fast 409 + unique constraint catches the race
+// Route: POST /api/auth/register
+const existingUser = await storage.getUserByUsername(username);
+if (existingUser) {
+  return sendError(res, 409, "Username already exists", ErrorCode.CONFLICT);
+}
+
+let user;
+try {
+  user = await storage.createUser({ username, password: hashedPassword });
+} catch (err) {
+  const msg = toError(err).message;
+  if (msg.includes("23505") || msg.includes("unique")) {
+    return sendError(res, 409, "Username already exists", ErrorCode.CONFLICT);
+  }
+  throw err; // Re-throw non-constraint errors
+}
+```
+
+**When to use:**
+
+- Uniqueness is already enforced by a DB constraint (username, email, one-confirmation-per-item)
+- The insert is the only write operation (no multi-table atomicity needed)
+- The race window is narrow (no AI calls or external APIs between check and insert)
+
+**When NOT to use:**
+
+- Multi-table mutations that must be atomic (use a transaction instead)
+- Count-based limits (e.g., "max 5 per day") where there's no single unique key
+
+**Key:** PostgreSQL error code `23505` is the unique violation. Drizzle surfaces it in the error message. Always re-throw non-23505 errors.
+
+**References:**
+
+- `server/routes/auth.ts` — registration username uniqueness
+- `server/routes/meal-plan.ts` — meal plan confirmation dedup (partial unique index on `userId, mealPlanItemId` where not null)
+- `shared/schema.ts` — `daily_logs_unique_meal_plan_confirm` partial unique index
+
 ### Early Non-Transactional Check + Authoritative Transactional Check
 
 When an expensive operation (AI generation, external API call) sits between the limit check and the insert, use a two-phase approach: a fast non-transactional check before the expensive work, and an authoritative transactional check-then-insert after it. This avoids holding a database transaction open during a multi-second AI call while still preventing TOCTOU races.
