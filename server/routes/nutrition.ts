@@ -265,7 +265,7 @@ export function register(app: Express): void {
           res,
           500,
           "Failed to toggle favourite",
-          "TOGGLE_FAVOURITE_FAILED",
+          ErrorCode.TOGGLE_FAILED,
         );
       }
     },

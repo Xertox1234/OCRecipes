@@ -15,6 +15,14 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-03-30 — Full Audit (Round 3)
+
+- **Trigger:** Periodic full codebase audit
+- **Manifest:** [docs/audits/2026-03-30-full.md](2026-03-30-full.md)
+- **Findings:** 0 critical, 1 high, 8 medium (9 actionable out of 33 raw agent findings — 24 dropped as below-threshold)
+- **Resolved:** 9 verified, 0 deferred
+- **Note:** Fourth consecutive audit. Agents trending toward diminishing-return findings. Recommending shift to targeted audits.
+
 ## 2026-03-29 — Full Audit (Round 2)
 
 - **Trigger:** Periodic full codebase audit (first with all 5 domains reporting)

@@ -342,7 +342,7 @@ export function register(app: Express): void {
             res,
             404,
             "Ingredient not found",
-            "INGREDIENT_NOT_FOUND",
+            ErrorCode.INGREDIENT_NOT_FOUND,
           );
         }
 
@@ -403,7 +403,7 @@ export function register(app: Express): void {
             res,
             404,
             "Ingredient not found",
-            "INGREDIENT_NOT_FOUND",
+            ErrorCode.INGREDIENT_NOT_FOUND,
           );
         }
 

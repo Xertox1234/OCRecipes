@@ -154,16 +154,25 @@ export async function submitVerification(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // Insert verification history entry
-    await tx.insert(verificationHistory).values({
-      barcode,
-      userId,
-      extractedNutrition: extractedNutrition as unknown as Record<
-        string,
-        unknown
-      >,
-      ocrConfidence: ocrConfidence.toFixed(2),
-      isMatch,
-    });
+    const [inserted] = await tx
+      .insert(verificationHistory)
+      .values({
+        barcode,
+        userId,
+        extractedNutrition: extractedNutrition as unknown as Record<
+          string,
+          unknown
+        >,
+        ocrConfidence: ocrConfidence.toFixed(2),
+        isMatch,
+      })
+      .onConflictDoNothing({
+        target: [verificationHistory.barcode, verificationHistory.userId],
+      })
+      .returning({ id: verificationHistory.id });
+
+    // Concurrent duplicate — another request already verified this barcode for this user
+    if (!inserted) return;
 
     // Upsert barcode verification status
     await tx

@@ -57,13 +57,19 @@ function buildSystemPrompt(context: CoachContext): string {
     );
   }
   if (context.dietaryProfile.dietType) {
-    parts.push(`Diet type: ${context.dietaryProfile.dietType}`);
+    parts.push(
+      `Diet type: ${sanitizeUserInput(context.dietaryProfile.dietType)}`,
+    );
   }
   if (context.dietaryProfile.allergies.length > 0) {
-    parts.push(`Allergies: ${context.dietaryProfile.allergies.join(", ")}`);
+    parts.push(
+      `Allergies: ${context.dietaryProfile.allergies.map(sanitizeUserInput).join(", ")}`,
+    );
   }
   if (context.dietaryProfile.dislikes.length > 0) {
-    parts.push(`Food dislikes: ${context.dietaryProfile.dislikes.join(", ")}`);
+    parts.push(
+      `Food dislikes: ${context.dietaryProfile.dislikes.map(sanitizeUserInput).join(", ")}`,
+    );
   }
   return parts.join("\n");
 }

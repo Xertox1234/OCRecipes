@@ -51,7 +51,7 @@ export const users = pgTable("users", {
 });
 
 export const allergySchema = z.object({
-  name: z.string(),
+  name: z.string().max(100),
   severity: z.enum(["mild", "moderate", "severe"]),
 });
 
@@ -283,7 +283,7 @@ export const instructionCache = pgTable(
       .notNull(),
   },
   (table) => ({
-    cacheIndexIdx: index("instruction_cache_suggestion_idx").on(
+    cacheIndexIdx: uniqueIndex("instruction_cache_suggestion_idx").on(
       table.suggestionCacheId,
       table.suggestionIndex,
     ),

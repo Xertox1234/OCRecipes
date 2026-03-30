@@ -191,8 +191,9 @@ describe("Nutrition Coach", () => {
 
       await collectStream(generateCoachResponse(messages, makeContext()));
 
-      // sanitize should be called only for user messages
-      expect(mockSanitize).toHaveBeenCalledTimes(2);
+      // sanitize should be called for user messages + dietary profile fields
+      expect(mockSanitize).toHaveBeenCalledTimes(3);
+      expect(mockSanitize).toHaveBeenCalledWith("balanced"); // dietType in system prompt
       expect(mockSanitize).toHaveBeenCalledWith("Hi");
       expect(mockSanitize).toHaveBeenCalledWith("Thanks");
     });

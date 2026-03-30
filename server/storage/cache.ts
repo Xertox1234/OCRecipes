@@ -105,13 +105,22 @@ export async function createInstructionCache(
   suggestionType: string,
   instructions: string,
 ): Promise<void> {
-  await db.insert(instructionCache).values({
-    suggestionCacheId,
-    suggestionIndex,
-    suggestionTitle,
-    suggestionType,
-    instructions,
-  });
+  await db
+    .insert(instructionCache)
+    .values({
+      suggestionCacheId,
+      suggestionIndex,
+      suggestionTitle,
+      suggestionType,
+      instructions,
+    })
+    .onConflictDoUpdate({
+      target: [
+        instructionCache.suggestionCacheId,
+        instructionCache.suggestionIndex,
+      ],
+      set: { instructions, suggestionTitle, suggestionType },
+    });
 }
 
 export async function incrementInstructionCacheHit(id: number): Promise<void> {

@@ -5,6 +5,7 @@ import { requireApiKey } from "../middleware/api-key-auth";
 import { apiRateLimiter } from "../middleware/api-rate-limit";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { TIER_FEATURES, type ApiTier } from "@shared/constants/api-tiers";
 import { barcodeVariants } from "../services/nutrition-lookup";
 import type { BarcodeVerification, BarcodeNutrition } from "@shared/schema";
@@ -110,7 +111,12 @@ export function register(app: Express): void {
 
       // Validate barcode format (numeric, 8-14 digits)
       if (!BARCODE_PATTERN.test(barcode)) {
-        sendError(res, 400, "Invalid barcode format", "VALIDATION_ERROR");
+        sendError(
+          res,
+          400,
+          "Invalid barcode format",
+          ErrorCode.VALIDATION_ERROR,
+        );
         return;
       }
 
@@ -136,10 +142,10 @@ export function register(app: Express): void {
         return;
       }
 
-      sendError(res, 404, "Product not found", "NOT_FOUND");
+      sendError(res, 404, "Product not found", ErrorCode.NOT_FOUND);
     } catch (err) {
       logger.error({ err: toError(err) }, "public API error");
-      sendError(res, 500, "Internal server error", "INTERNAL_ERROR");
+      sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
     }
   });
 

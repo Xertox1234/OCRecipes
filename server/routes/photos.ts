@@ -139,7 +139,7 @@ export function register(app: Express): void {
               res,
               413,
               "Image too large for analysis session",
-              "IMAGE_TOO_LARGE",
+              ErrorCode.IMAGE_TOO_LARGE,
             );
           }
 
@@ -222,7 +222,7 @@ export function register(app: Express): void {
               res,
               413,
               "Image too large for analysis session",
-              "IMAGE_TOO_LARGE",
+              ErrorCode.IMAGE_TOO_LARGE,
             );
           }
 

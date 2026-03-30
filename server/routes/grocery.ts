@@ -96,7 +96,7 @@ export function register(app: Express): void {
             res,
             403,
             `Date range limited to ${maxDays} days on ${tier} plan`,
-            "DATE_RANGE_LIMIT",
+            ErrorCode.DATE_RANGE_LIMIT,
           );
           return;
         }

@@ -45,7 +45,7 @@ export function checkAiConfigured(res: Response): boolean {
       res,
       503,
       "AI features are not available. Please try again later.",
-      "AI_NOT_CONFIGURED",
+      ErrorCode.AI_NOT_CONFIGURED,
     );
     return false;
   }
@@ -428,10 +428,10 @@ export const profileUpdateSchema = z.object({
 
 // Enhanced user profile schema with proper validation for nested objects
 export const userProfileInputSchema = insertUserProfileSchema.extend({
-  allergies: z.array(allergySchema).optional(),
-  healthConditions: z.array(z.string()).optional(),
-  foodDislikes: z.array(z.string()).optional(),
-  cuisinePreferences: z.array(z.string()).optional(),
+  allergies: z.array(allergySchema).max(30).optional(),
+  healthConditions: z.array(z.string().max(200)).max(20).optional(),
+  foodDislikes: z.array(z.string().max(100)).max(50).optional(),
+  cuisinePreferences: z.array(z.string().max(100)).max(20).optional(),
   householdSize: z.number().int().min(1).max(20).optional(),
   dietType: z.string().max(50).optional().nullable(),
   primaryGoal: z.string().max(100).optional().nullable(),

@@ -462,7 +462,7 @@ export function register(app: Express): void {
             res,
             409,
             "Meal plan item already confirmed",
-            "ALREADY_CONFIRMED",
+            ErrorCode.ALREADY_CONFIRMED,
           );
           return;
         }
@@ -487,7 +487,7 @@ export function register(app: Express): void {
             res,
             409,
             "Meal plan item already confirmed",
-            "ALREADY_CONFIRMED",
+            ErrorCode.ALREADY_CONFIRMED,
           );
           return;
         }

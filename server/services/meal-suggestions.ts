@@ -5,7 +5,7 @@ import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { ALLERGEN_INGREDIENT_MAP } from "@shared/constants/allergens";
 import type { AllergenId } from "@shared/constants/allergens";
 import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
-import { sanitizeUserInput } from "../lib/ai-safety";
+import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("meal-suggestions");
@@ -161,7 +161,7 @@ export async function generateMealSuggestions(
           .join("\n")
       : "No meals planned yet today.";
 
-  const systemPrompt = `You are a professional nutritionist and meal planner. Generate exactly 3 meal suggestions that are practical, balanced, and tailored to the user's needs. Return JSON only.`;
+  const systemPrompt = `You are a professional nutritionist and meal planner. Generate exactly 3 meal suggestions that are practical, balanced, and tailored to the user's needs. Return JSON only.\n\n${SYSTEM_PROMPT_BOUNDARY}`;
 
   const userPrompt = `Generate 3 ${input.mealType} suggestions for ${input.date}.
 

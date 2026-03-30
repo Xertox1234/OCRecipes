@@ -113,7 +113,13 @@ export async function getScannedItemWithFavourite(
         eq(favouriteScannedItems.userId, userId),
       ),
     )
-    .where(and(eq(scannedItems.id, id), isNull(scannedItems.discardedAt)));
+    .where(
+      and(
+        eq(scannedItems.id, id),
+        eq(scannedItems.userId, userId),
+        isNull(scannedItems.discardedAt),
+      ),
+    );
 
   if (!row) return undefined;
   return { ...row.item, isFavourited: row.favouriteId !== null };

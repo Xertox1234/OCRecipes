@@ -86,7 +86,7 @@ export async function analyzeIngredientPhoto(
         },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 1000,
+      max_completion_tokens: 1000,
     },
     { timeout: OPENAI_TIMEOUT_HEAVY_MS },
   );
