@@ -3,6 +3,7 @@ import { z, ZodError } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { logger, toError } from "../lib/logger";
 import {
   calculateGoals,
   userPhysicalProfileSchema,
@@ -39,7 +40,7 @@ export function register(app: Express): void {
           goalsCalculatedAt: user.goalsCalculatedAt,
         });
       } catch (error) {
-        console.error("Get goals error:", error);
+        logger.error({ err: toError(error) }, "get goals error");
         sendError(res, 500, "Failed to fetch goals", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -104,7 +105,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        console.error("Calculate goals error:", error);
+        logger.error({ err: toError(error) }, "calculate goals error");
         sendError(
           res,
           500,
@@ -157,7 +158,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        console.error("Update goals error:", error);
+        logger.error({ err: toError(error) }, "update goals error");
         sendError(res, 500, "Failed to update goals", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -189,7 +190,7 @@ export function register(app: Express): void {
           remaining,
         });
       } catch (error) {
-        console.error("Get daily budget error:", error);
+        logger.error({ err: toError(error) }, "get daily budget error");
         sendError(
           res,
           500,

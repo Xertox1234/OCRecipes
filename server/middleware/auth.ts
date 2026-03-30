@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { isAccessTokenPayload } from "../lib/jwt-types";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
+import { setRequestUserId } from "../lib/request-context";
 
 // Extend Express Request type.
 // userId is declared as non-optional because all routes that access it
@@ -132,6 +133,7 @@ export async function requireAuth(
     }
 
     req.userId = payload.sub;
+    setRequestUserId(payload.sub);
     next();
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {

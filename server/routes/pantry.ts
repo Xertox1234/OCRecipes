@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
   pantryRateLimit,
@@ -57,7 +58,7 @@ export function register(app: Express): void {
         const items = await storage.getPantryItems(req.userId, limit);
         res.json(items);
       } catch (error) {
-        console.error("Get pantry items error:", error);
+        logger.error({ err: toError(error) }, "get pantry items error");
         sendError(
           res,
           500,
@@ -104,7 +105,7 @@ export function register(app: Express): void {
         });
         res.status(201).json(item);
       } catch (error) {
-        console.error("Create pantry item error:", error);
+        logger.error({ err: toError(error) }, "create pantry item error");
         sendError(
           res,
           500,
@@ -163,7 +164,7 @@ export function register(app: Express): void {
         }
         res.json(updated);
       } catch (error) {
-        console.error("Update pantry item error:", error);
+        logger.error({ err: toError(error) }, "update pantry item error");
         sendError(
           res,
           500,
@@ -207,7 +208,7 @@ export function register(app: Express): void {
         }
         res.status(204).send();
       } catch (error) {
-        console.error("Delete pantry item error:", error);
+        logger.error({ err: toError(error) }, "delete pantry item error");
         sendError(
           res,
           500,
@@ -236,7 +237,10 @@ export function register(app: Express): void {
         const items = await storage.getExpiringPantryItems(req.userId, 3);
         res.json(items);
       } catch (error) {
-        console.error("Get expiring pantry items error:", error);
+        logger.error(
+          { err: toError(error) },
+          "get expiring pantry items error",
+        );
         sendError(
           res,
           500,

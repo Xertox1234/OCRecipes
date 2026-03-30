@@ -2,6 +2,7 @@ import type { Express, Response } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
+import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { checkPremiumFeature, parseQueryInt, crudRateLimit } from "./_helpers";
 import { computeAdaptiveGoals } from "../services/adaptive-goals";
@@ -30,7 +31,7 @@ export function register(app: Express): void {
           recommendation,
         });
       } catch (error) {
-        console.error("Get adaptive goals error:", error);
+        logger.error({ err: toError(error) }, "get adaptive goals error");
         sendError(
           res,
           500,
@@ -101,7 +102,7 @@ export function register(app: Express): void {
           },
         });
       } catch (error) {
-        console.error("Accept adaptive goal error:", error);
+        logger.error({ err: toError(error) }, "accept adaptive goal error");
         sendError(
           res,
           500,
@@ -148,7 +149,7 @@ export function register(app: Express): void {
 
         res.json({ success: true });
       } catch (error) {
-        console.error("Dismiss adaptive goal error:", error);
+        logger.error({ err: toError(error) }, "dismiss adaptive goal error");
         sendError(
           res,
           500,
@@ -190,7 +191,10 @@ export function register(app: Express): void {
 
         res.json({ success: true, enabled });
       } catch (error) {
-        console.error("Update adaptive goals settings error:", error);
+        logger.error(
+          { err: toError(error) },
+          "update adaptive goals settings error",
+        );
         sendError(
           res,
           500,
@@ -220,7 +224,7 @@ export function register(app: Express): void {
         const logs = await storage.getGoalAdjustmentLogs(req.userId, limit);
         res.json(logs);
       } catch (error) {
-        console.error("Get adjustment history error:", error);
+        logger.error({ err: toError(error) }, "get adjustment history error");
         sendError(
           res,
           500,

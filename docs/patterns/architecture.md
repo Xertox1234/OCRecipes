@@ -1072,3 +1072,46 @@ const recipe = await storage.createMealPlanRecipe(
 
 - `server/storage/meal-plans.ts` — `createMealPlanRecipe()` (no longer imports from services)
 - `server/routes/meal-plan.ts`, `server/routes/recipes.ts` — callers that now compute `mealTypes` before calling storage
+
+### Structured Logging Conventions
+
+All server logging uses pino via `server/lib/logger.ts`. AsyncLocalStorage automatically injects `requestId` and `userId` into every log call within a request context.
+
+**Imports by module type:**
+
+- **Routes / middleware / lib / storage:** `import { logger, toError } from "../lib/logger"`
+- **Services:** `import { createServiceLogger, toError } from "../lib/logger"` + `const log = createServiceLogger("service-name")` where the name matches the filename
+
+**Log levels:**
+
+| Level   | Use for                                        | Example                                                                   |
+| ------- | ---------------------------------------------- | ------------------------------------------------------------------------- |
+| `fatal` | Process crash (uncaughtException only)         | `logger.fatal({ err }, "uncaught exception")`                             |
+| `error` | Operation failed, caller will handle           | `logger.error({ err: toError(error) }, "lookup error")`                   |
+| `warn`  | Degraded state, missing config, Zod validation | `logger.warn({ zodErrors: parsed.error.flatten() }, "validation failed")` |
+| `info`  | Operational status, startup/shutdown           | `logger.info({ port }, "server started")`                                 |
+| `debug` | Diagnostics hidden in production               | `log.debug({ duration, source }, "nutrition source queried")`             |
+
+**Error serialization — always use `toError()`:**
+
+```typescript
+} catch (error) {
+  logger.error({ err: toError(error) }, "route error");
+}
+```
+
+**Zod validation failures — use `zodErrors` key at `warn` level:**
+
+```typescript
+if (!parsed.success) {
+  log.warn({ zodErrors: parsed.error.flatten() }, "validation failed");
+}
+```
+
+**Message style:** lowercase, concise. Keep proper nouns capitalized (DALL-E, HealthKit, Spoonacular).
+
+**References:**
+
+- `server/lib/logger.ts` — pino instance, `mixin` for ALS context, `toError()` helper
+- `server/lib/request-context.ts` — AsyncLocalStorage store, `setRequestUserId()`
+- `server/index.ts` — pino-http middleware config, `genReqId`, serializers

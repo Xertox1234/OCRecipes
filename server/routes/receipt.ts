@@ -16,6 +16,7 @@ import {
   formatZodError,
 } from "./_helpers";
 import { detectImageMimeType } from "../lib/image-mime";
+import { logger, toError } from "../lib/logger";
 
 const receiptRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
@@ -126,7 +127,7 @@ export function register(app: Express): void {
 
         res.json(result);
       } catch (error) {
-        console.error("Receipt scan error:", error);
+        logger.error({ err: toError(error) }, "receipt scan error");
         sendError(
           res,
           500,
@@ -179,7 +180,7 @@ export function register(app: Express): void {
 
         res.json({ added: created.length, items: created });
       } catch (error) {
-        console.error("Receipt confirm error:", error);
+        logger.error({ err: toError(error) }, "receipt confirm error");
         sendError(
           res,
           500,
@@ -215,7 +216,7 @@ export function register(app: Express): void {
           remaining: Math.max(0, features.monthlyReceiptScans - count),
         });
       } catch (error) {
-        console.error("Receipt scan count error:", error);
+        logger.error({ err: toError(error) }, "receipt scan count error");
         sendError(
           res,
           500,

@@ -39,6 +39,7 @@ import {
   parseStringParam,
 } from "./_helpers";
 import { detectImageMimeType } from "../lib/image-mime";
+import { logger, toError } from "../lib/logger";
 
 // Higher file size limit for label photos (5MB for text readability)
 const labelUpload = createImageUpload(5 * 1024 * 1024);
@@ -269,7 +270,7 @@ export function register(app: Express): void {
 
         res.json(response);
       } catch (error) {
-        console.error("Photo analysis error:", error);
+        logger.error({ err: toError(error) }, "photo analysis error");
         sendError(
           res,
           500,
@@ -355,7 +356,7 @@ export function register(app: Express): void {
           followUpQuestions: getFollowUpQuestions(refinedResult),
         });
       } catch (error) {
-        console.error("Follow-up error:", error);
+        logger.error({ err: toError(error) }, "follow-up error");
         sendError(
           res,
           500,
@@ -424,7 +425,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        console.error("Confirm error:", error);
+        logger.error({ err: toError(error) }, "photo confirm error");
         sendError(res, 500, "Failed to save meal", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -470,7 +471,7 @@ export function register(app: Express): void {
 
         res.json(result);
       } catch (error) {
-        console.error("Recipe photo analysis error:", error);
+        logger.error({ err: toError(error) }, "recipe photo analysis error");
         sendError(
           res,
           500,
@@ -556,7 +557,7 @@ export function register(app: Express): void {
           barcode,
         });
       } catch (error) {
-        console.error("Label analysis error:", error);
+        logger.error({ err: toError(error) }, "label analysis error");
         sendError(
           res,
           500,
@@ -650,7 +651,7 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
-        console.error("Label confirm error:", error);
+        logger.error({ err: toError(error) }, "label confirm error");
         sendError(
           res,
           500,

@@ -15,6 +15,7 @@ import {
   getDailyValueReference,
 } from "../services/micronutrient-lookup";
 import { storage } from "../storage";
+import { logger, toError } from "../lib/logger";
 
 export function register(app: Express): void {
   // GET /api/micronutrients/item/:id — Get micronutrients for a specific scanned item
@@ -50,7 +51,7 @@ export function register(app: Express): void {
         );
         res.json({ itemId, productName: item.productName, micronutrients });
       } catch (error) {
-        console.error("Get item micronutrients error:", error);
+        logger.error({ err: toError(error) }, "get item micronutrients error");
         sendError(
           res,
           500,
@@ -105,7 +106,7 @@ export function register(app: Express): void {
           micronutrients: aggregated,
         });
       } catch (error) {
-        console.error("Get daily micronutrients error:", error);
+        logger.error({ err: toError(error) }, "get daily micronutrients error");
         sendError(
           res,
           500,
@@ -143,7 +144,7 @@ export function register(app: Express): void {
         const micronutrients = await lookupMicronutrientsWithCache(name);
         res.json({ foodName: name, micronutrients });
       } catch (error) {
-        console.error("Lookup micronutrients error:", error);
+        logger.error({ err: toError(error) }, "lookup micronutrients error");
         sendError(
           res,
           500,

@@ -5,6 +5,9 @@ import type {
   ParsedIngredient,
   ImportedRecipeData,
 } from "@shared/types/recipe-import";
+import { createServiceLogger } from "../lib/logger";
+
+const log = createServiceLogger("recipe-import");
 
 export type {
   ParsedIngredient,
@@ -488,7 +491,10 @@ export async function importRecipeFromUrl(url: string): Promise<ImportResult> {
 
   const parsed = schemaOrgRecipeSchema.safeParse(recipeData);
   if (!parsed.success) {
-    console.error("Recipe LD+JSON parse error:", parsed.error.flatten());
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "recipe LD+JSON parse error",
+    );
     return { success: false, error: "PARSE_ERROR" };
   }
 

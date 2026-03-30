@@ -6,6 +6,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { calculateFastingStats } from "../services/fasting-stats";
+import { logger, toError } from "../lib/logger";
 
 export function register(app: Express): void {
   // GET /api/fasting/schedule
@@ -18,7 +19,7 @@ export function register(app: Express): void {
         const schedule = await storage.getFastingSchedule(req.userId);
         res.json(schedule || null);
       } catch (error) {
-        console.error("Get fasting schedule error:", error);
+        logger.error({ err: toError(error) }, "failed to get fasting schedule");
         sendError(
           res,
           500,
@@ -68,7 +69,10 @@ export function register(app: Express): void {
         );
         res.json(result);
       } catch (error) {
-        console.error("Update fasting schedule error:", error);
+        logger.error(
+          { err: toError(error) },
+          "failed to update fasting schedule",
+        );
         sendError(
           res,
           500,
@@ -105,7 +109,7 @@ export function register(app: Express): void {
         });
         res.status(201).json(log);
       } catch (error) {
-        console.error("Start fast error:", error);
+        logger.error({ err: toError(error) }, "failed to start fast");
         sendError(res, 500, "Failed to start fast", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -148,7 +152,7 @@ export function register(app: Express): void {
         );
         res.json(updated);
       } catch (error) {
-        console.error("End fast error:", error);
+        logger.error({ err: toError(error) }, "failed to end fast");
         sendError(res, 500, "Failed to end fast", ErrorCode.INTERNAL_ERROR);
       }
     },
@@ -164,7 +168,7 @@ export function register(app: Express): void {
         const active = await storage.getActiveFastingLog(req.userId);
         res.json(active || null);
       } catch (error) {
-        console.error("Get current fast error:", error);
+        logger.error({ err: toError(error) }, "failed to get current fast");
         sendError(
           res,
           500,
@@ -188,7 +192,7 @@ export function register(app: Express): void {
         const stats = calculateFastingStats(logs);
         res.json({ logs, stats });
       } catch (error) {
-        console.error("Get fasting history error:", error);
+        logger.error({ err: toError(error) }, "failed to get fasting history");
         sendError(
           res,
           500,

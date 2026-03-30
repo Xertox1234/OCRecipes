@@ -8,6 +8,9 @@ import {
   OPENAI_TIMEOUT_IMAGE_MS,
 } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import { createServiceLogger, toError } from "../lib/logger";
+
+const log = createServiceLogger("recipe-generation");
 
 // Zod schemas for recipe generation
 const instructionItemSchema = z.union([
@@ -165,7 +168,7 @@ Respond with JSON only:
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
   } catch (error) {
-    console.error("Recipe generation API error:", error);
+    log.error({ err: toError(error) }, "recipe generation API error");
     throw new Error("Failed to generate recipe. Please try again.");
   }
 
@@ -181,7 +184,10 @@ Respond with JSON only:
   const parsed = recipeContentSchema.safeParse(parsedJson);
 
   if (!parsed.success) {
-    console.error("Recipe generation validation failed:", parsed.error);
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "recipe generation validation failed",
+    );
     throw new Error("Failed to generate valid recipe content");
   }
 
@@ -213,14 +219,14 @@ export async function generateRecipeImage(
 
     const imageData = response.data?.[0]?.b64_json;
     if (!imageData) {
-      console.error("DALL-E returned no image data");
+      log.error("DALL-E returned no image data");
       return null;
     }
 
     // Return as base64 data URL (stored directly in DB like avatars)
     return `data:image/png;base64,${imageData}`;
   } catch (error) {
-    console.error("DALL-E image generation error:", error);
+    log.error({ err: toError(error) }, "DALL-E image generation error");
     return null;
   }
 }
@@ -239,7 +245,10 @@ export async function generateFullRecipe(
   try {
     imageUrl = await generateRecipeImage(content.title, input.productName);
   } catch (error) {
-    console.error("Image generation failed, continuing without image:", error);
+    log.error(
+      { err: toError(error) },
+      "image generation failed, continuing without image",
+    );
   }
 
   return {
