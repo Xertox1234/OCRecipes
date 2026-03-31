@@ -13,10 +13,12 @@ import { Feather } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
+import { FallbackImage } from "@/components/FallbackImage";
 import { AllergenBadge } from "@/components/AllergenBadge";
 import { AllergenWarningBanner } from "@/components/AllergenWarningBanner";
 import { InlineSubstitution } from "@/components/InlineSubstitution";
 import { CookbookPickerModal } from "@/components/CookbookPickerModal";
+import { resolveImageUrl } from "@/lib/query-client";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAllergenCheck } from "@/hooks/useAllergenCheck";
@@ -69,6 +71,10 @@ export default function RecipeDetailScreen() {
 
   const { data: recipe, isLoading, error } = useMealPlanRecipeDetail(recipeId);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const imageUri = useMemo(
+    () => resolveImageUrl(recipe?.imageUrl),
+    [recipe?.imageUrl],
+  );
 
   // Extract ingredient names for allergen checking
   const ingredientNames = useMemo(
@@ -182,6 +188,20 @@ export default function RecipeDetailScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Hero image */}
+        <FallbackImage
+          source={{ uri: imageUri ?? undefined }}
+          style={styles.heroImage}
+          fallbackStyle={{
+            backgroundColor: theme.backgroundSecondary,
+            height: 200,
+          }}
+          fallbackIcon="image"
+          fallbackIconSize={48}
+          resizeMode="cover"
+          accessibilityLabel={`Photo of ${recipe.title}`}
+        />
+
         {/* Title & Meta */}
         <View style={styles.section}>
           <ThemedText style={styles.title}>{recipe.title}</ThemedText>
@@ -436,6 +456,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  heroImage: {
+    width: "100%",
+    height: 250,
+    marginBottom: Spacing.lg,
   },
   section: {
     paddingHorizontal: Spacing.lg,
