@@ -3,59 +3,32 @@ import { renderHook, act } from "@testing-library/react";
 
 import { useCollapsibleHeight } from "../useCollapsibleHeight";
 
-vi.mock("react-native-reanimated", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- mock needs synchronous require
-  const { useRef } = require("react");
-  return {
-    useSharedValue: (initial: number) => {
-      // Use useRef so the same object persists across re-renders (like real Reanimated)
-      const ref = useRef<{ value: number } | null>(null);
-      if (ref.current === null) {
-        ref.current = { value: initial };
-      }
-      return ref.current;
-    },
-    useAnimatedStyle: (fn: () => Record<string, unknown>) => {
-      // Store fn in a ref so the returned proxy always uses the latest closure
-      const ref = useRef(fn);
-      ref.current = fn;
-      // Return a Proxy that re-evaluates fn() on property access,
-      // simulating Reanimated's reactive style updates
-      return new Proxy(
-        {},
-        {
-          get(_, prop) {
-            return ref.current()[prop as string];
-          },
-          ownKeys() {
-            return Object.keys(ref.current());
-          },
-          getOwnPropertyDescriptor(_, prop) {
-            const val = ref.current();
-            if (prop in val) {
-              return {
-                configurable: true,
-                enumerable: true,
-                value: val[prop as string],
-              };
-            }
-            return undefined;
-          },
-        },
-      );
-    },
-    withTiming: (toValue: number, _config?: object, _cb?: unknown) => toValue,
-  };
-});
+// Track shared value assignments to verify animation logic
+const sharedValues: Record<string, { value: number }> = {};
+let sharedValueCounter = 0;
+
+vi.mock("react-native-reanimated", () => ({
+  useSharedValue: (initial: number) => {
+    const id = `sv_${sharedValueCounter++}`;
+    const sv = { value: initial };
+    sharedValues[id] = sv;
+    return sv;
+  },
+  useAnimatedStyle: (fn: () => object) => fn(),
+  withTiming: (toValue: number, _config?: object, _cb?: unknown) => toValue,
+}));
 
 vi.mock("@/constants/animations", () => ({
-  expandTimingConfig: { duration: 300 },
   collapseTimingConfig: { duration: 250 },
 }));
 
 describe("useCollapsibleHeight", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sharedValueCounter = 0;
+    for (const key of Object.keys(sharedValues)) {
+      delete sharedValues[key];
+    }
   });
 
   it("returns animatedStyle and onContentLayout", () => {
@@ -65,41 +38,26 @@ describe("useCollapsibleHeight", () => {
     expect(typeof result.current.onContentLayout).toBe("function");
   });
 
-  it("starts with zero height before measurement", () => {
+  it("starts with auto height (-1) when initially expanded", () => {
     const { result } = renderHook(() => useCollapsibleHeight(true, false));
 
-    // Before onContentLayout fires, height is 0
+    // animatedStyle should reflect auto (overflow: visible)
     expect(result.current.animatedStyle).toEqual({
-      height: 0,
-      overflow: "hidden",
-    });
-  });
-
-  it("snaps to measured height on first layout when expanded", () => {
-    const { result } = renderHook(() => useCollapsibleHeight(true, false));
-
-    act(() => {
-      result.current.onContentLayout({
-        nativeEvent: { layout: { height: 200 } },
-      });
-    });
-
-    expect(result.current.animatedStyle).toEqual({
-      height: 200,
-      overflow: "hidden",
+      overflow: "visible",
     });
   });
 
   it("starts with zero height when initially collapsed", () => {
     const { result } = renderHook(() => useCollapsibleHeight(false, false));
 
+    // animatedStyle should reflect height 0
     expect(result.current.animatedStyle).toEqual({
       height: 0,
       overflow: "hidden",
     });
   });
 
-  it("animates to measured height on expand", () => {
+  it("sets auto height on expand after content is measured", () => {
     const { result, rerender } = renderHook(
       ({ expanded }) => useCollapsibleHeight(expanded, false),
       { initialProps: { expanded: false } },
@@ -115,10 +73,9 @@ describe("useCollapsibleHeight", () => {
     // Expand
     rerender({ expanded: true });
 
-    // withTiming is mocked to return the target value immediately (200)
+    // Should be auto (-1 → overflow: visible)
     expect(result.current.animatedStyle).toEqual({
-      height: 200,
-      overflow: "hidden",
+      overflow: "visible",
     });
   });
 
@@ -170,36 +127,7 @@ describe("useCollapsibleHeight", () => {
     rerender({ expanded: true, motion: true });
 
     expect(result.current.animatedStyle).toEqual({
-      height: 150,
-      overflow: "hidden",
-    });
-  });
-
-  it("tracks content resize while expanded", () => {
-    const { result } = renderHook(() => useCollapsibleHeight(true, false));
-
-    // First measurement
-    act(() => {
-      result.current.onContentLayout({
-        nativeEvent: { layout: { height: 200 } },
-      });
-    });
-
-    expect(result.current.animatedStyle).toEqual({
-      height: 200,
-      overflow: "hidden",
-    });
-
-    // Content resizes
-    act(() => {
-      result.current.onContentLayout({
-        nativeEvent: { layout: { height: 300 } },
-      });
-    });
-
-    expect(result.current.animatedStyle).toEqual({
-      height: 300,
-      overflow: "hidden",
+      overflow: "visible",
     });
   });
 });
