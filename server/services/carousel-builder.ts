@@ -269,22 +269,6 @@ async function buildPremiumCarousel(
     );
   }
 
-  // Generate images for any cards still missing one (e.g. catalog without Spoonacular image)
-  await Promise.all(
-    results
-      .filter((card) => !card.imageUrl)
-      .map(async (card) => {
-        try {
-          card.imageUrl = await generateRecipeImage(card.title, card.title);
-        } catch (err) {
-          log.warn(
-            { error: String(err), title: card.title },
-            "Carousel image generation failed, continuing without",
-          );
-        }
-      }),
-  );
-
   // Rank: AI first (most personalized), then catalog
   return results.slice(0, 8);
 }
@@ -331,21 +315,7 @@ async function getOrGenerateAiSuggestions(
     const suggestions = await generateMealSuggestions(input);
     const cards = suggestions.map(normalizeAi);
 
-    // Generate images for all cards in parallel
-    await Promise.all(
-      cards.map(async (card) => {
-        try {
-          card.imageUrl = await generateRecipeImage(card.title, card.title);
-        } catch (err) {
-          log.warn(
-            { error: String(err), title: card.title },
-            "Carousel image generation failed, continuing without",
-          );
-        }
-      }),
-    );
-
-    // Cache the results with images (fire-and-forget)
+    // Cache cards immediately (without images) so the response is fast
     storage
       .setCarouselCache(
         userId,
@@ -361,6 +331,9 @@ async function getOrGenerateAiSuggestions(
         ),
       );
 
+    // Generate images in the background, then update the cache
+    generateCarouselImages(cards, userId, profileHash, mealType);
+
     return cards;
   } catch (err) {
     log.warn(
@@ -369,4 +342,47 @@ async function getOrGenerateAiSuggestions(
     );
     return [];
   }
+}
+
+/**
+ * Generate images for carousel cards in the background.
+ * Updates the cache once all images are ready so the next request gets them.
+ */
+function generateCarouselImages(
+  cards: CarouselRecipeCard[],
+  userId: string,
+  profileHash: string,
+  mealType: string,
+): void {
+  const cardsNeedingImages = cards.filter((c) => !c.imageUrl);
+  if (cardsNeedingImages.length === 0) return;
+
+  Promise.all(
+    cardsNeedingImages.map(async (card) => {
+      try {
+        card.imageUrl = await generateRecipeImage(card.title, card.title);
+      } catch (err) {
+        log.warn(
+          { error: String(err), title: card.title },
+          "Background carousel image generation failed",
+        );
+      }
+    }),
+  )
+    .then(() => {
+      // Update the cache with images so the next request gets them
+      return storage.setCarouselCache(
+        userId,
+        profileHash,
+        mealType,
+        cards,
+        CAROUSEL_CACHE_TTL_MS,
+      );
+    })
+    .catch((err) =>
+      log.warn(
+        { error: String(err) },
+        "Failed to update carousel cache with images",
+      ),
+    );
 }

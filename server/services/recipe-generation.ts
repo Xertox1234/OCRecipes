@@ -265,7 +265,14 @@ export async function generateRecipeImage(
   }
 }
 
+const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
 async function saveImageBuffer(buffer: Buffer): Promise<string> {
+  if (buffer.length > MAX_IMAGE_SIZE_BYTES) {
+    throw new Error(
+      `Image too large: ${buffer.length} bytes (max ${MAX_IMAGE_SIZE_BYTES})`,
+    );
+  }
   const filename = `recipe-${crypto.randomUUID()}.png`;
   const filepath = path.join(RECIPE_IMAGES_DIR, filename);
   await fs.promises.writeFile(filepath, buffer);
