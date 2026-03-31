@@ -43,6 +43,7 @@ describe("useCollapsibleHeight", () => {
 
     // animatedStyle should reflect auto (overflow: visible)
     expect(result.current.animatedStyle).toEqual({
+      height: "auto",
       overflow: "visible",
     });
   });
@@ -75,6 +76,7 @@ describe("useCollapsibleHeight", () => {
 
     // Should be auto (-1 → overflow: visible)
     expect(result.current.animatedStyle).toEqual({
+      height: "auto",
       overflow: "visible",
     });
   });
@@ -127,6 +129,7 @@ describe("useCollapsibleHeight", () => {
     rerender({ expanded: true, motion: true });
 
     expect(result.current.animatedStyle).toEqual({
+      height: "auto",
       overflow: "visible",
     });
   });

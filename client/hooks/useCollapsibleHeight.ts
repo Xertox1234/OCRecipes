@@ -54,7 +54,10 @@ export function useCollapsibleHeight(
 
   const animatedStyle = useAnimatedStyle(() => {
     if (animatedHeight.value === -1) {
-      return { overflow: "visible" as const };
+      return {
+        height: "auto" as unknown as number,
+        overflow: "visible" as const,
+      };
     }
     return {
       height: animatedHeight.value,
