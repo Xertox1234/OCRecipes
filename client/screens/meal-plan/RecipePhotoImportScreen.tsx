@@ -121,7 +121,7 @@ export default function RecipePhotoImportScreen() {
         cookTimeMinutes: result.cookTimeMinutes,
         instructions: result.instructions
           ? result.instructions.split(/\n/).filter((s) => s.trim().length > 0)
-          : null,
+          : undefined,
         dietTags: result.dietTags,
         sourceType: "photo_import",
         caloriesPerServing: result.caloriesPerServing,

@@ -35,7 +35,7 @@ function parseTextToSteps(text: string): string[] {
   if (numberedPattern.test(cleaned)) {
     const steps = cleaned
       .split(/\n\s*(?:(?:step\s+)?\d+[\.\)\:\-]\s*)/i)
-      .map((s) => s.trim())
+      .map((s) => s.replace(/^(?:step\s+)?\d+[\.\)\:\-]\s*/i, "").trim())
       .filter((s) => s.length > 0);
     if (steps.length > 1) return steps;
   }

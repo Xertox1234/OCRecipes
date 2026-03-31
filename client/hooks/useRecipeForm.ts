@@ -252,7 +252,7 @@ export function useRecipeForm(prefill?: ImportedRecipeData) {
         : null,
       cuisine: tags.cuisine.trim() || null,
       dietTags: tags.dietTags as string[],
-      instructions: instructionSteps.length > 0 ? instructionSteps : null,
+      instructions: instructionSteps.length > 0 ? instructionSteps : undefined,
       caloriesPerServing: nutrition.calories || null,
       proteinPerServing: nutrition.protein || null,
       carbsPerServing: nutrition.carbs || null,

@@ -36,6 +36,7 @@ export default function RecipeCoachChatScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [inputText, setInputText] = useState("");
+  const [createError, setCreateError] = useState(false);
   const didSendInitialRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
 
@@ -53,6 +54,9 @@ export default function RecipeCoachChatScreen({ navigation, route }: Props) {
       .mutateAsync(`Recipe: ${route.params.initialQuestion.slice(0, 50)}`)
       .then((conv) => {
         setConversationId(conv.id);
+      })
+      .catch(() => {
+        setCreateError(true);
       });
   }, []);
 
@@ -119,12 +123,42 @@ export default function RecipeCoachChatScreen({ navigation, route }: Props) {
       {/* Messages */}
       {!conversationId ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.link} />
-          <ThemedText
-            style={[styles.loadingText, { color: theme.textSecondary }]}
-          >
-            Starting conversation...
-          </ThemedText>
+          {createError ? (
+            <>
+              <Feather name="alert-circle" size={32} color={theme.error} />
+              <ThemedText
+                style={[styles.loadingText, { color: theme.textSecondary }]}
+              >
+                Could not start conversation
+              </ThemedText>
+              <Pressable
+                onPress={() => {
+                  setCreateError(false);
+                  didSendInitialRef.current = false;
+                  createConversation
+                    .mutateAsync(
+                      `Recipe: ${route.params.initialQuestion.slice(0, 50)}`,
+                    )
+                    .then((conv) => setConversationId(conv.id))
+                    .catch(() => setCreateError(true));
+                }}
+                style={[styles.retryButton, { borderColor: theme.link }]}
+                accessibilityRole="button"
+                accessibilityLabel="Retry starting conversation"
+              >
+                <ThemedText style={{ color: theme.link }}>Retry</ThemedText>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <ActivityIndicator size="large" color={theme.link} />
+              <ThemedText
+                style={[styles.loadingText, { color: theme.textSecondary }]}
+              >
+                Starting conversation...
+              </ThemedText>
+            </>
+          )}
         </View>
       ) : (
         <FlatList
@@ -229,6 +263,13 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 14,
+  },
+  retryButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.button,
+    borderWidth: 1,
+    marginTop: Spacing.sm,
   },
   messageList: {
     paddingHorizontal: Spacing.lg,
