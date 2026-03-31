@@ -496,6 +496,8 @@ const styles = StyleSheet.create({
 
 **Why:** `transparentModal` is the only native-stack presentation that both keeps the previous screen visible (no black/grey background flash) and adds no native chrome (no grabber bars or forced corner radius). The tradeoff is you must handle your own close button and cannot use native swipe-to-dismiss.
 
+**Cross-navigator reuse:** When the same content appears in both a stack screen and a `transparentModal`, extract a shared `*Content` component rather than duplicating layout. See [Shared Content Component Across Navigation Contexts](#shared-content-component-across-navigation-contexts).
+
 ### fullScreenModal Exception for Camera
 
 Use `presentation: "fullScreenModal"` instead of `transparentModal` for camera/scan screens. `transparentModal` has rendering issues on iOS that cause visual artifacts, and `fullScreenModal`'s black background is acceptable because the camera feed fills the screen immediately.
@@ -721,6 +723,99 @@ export default function CookbookFormScreen() {
 **When NOT to use:** When create and edit have substantially different fields, validation rules, or layouts (e.g., onboarding vs profile editing).
 
 **Why:** Eliminates duplication of form state, validation, layout, and styling. Changes to the form only need to happen in one place. The `isEditing` boolean provides a clear branch point for the few differences (title text, save handler, initial data).
+
+### Shared Content Component Across Navigation Contexts
+
+When the same content is displayed from different navigators (e.g., a stack screen in a tab and a root-level modal), extract a shared `*Content` component. Each parent screen handles its own navigation chrome, data fetching, and normalization, then renders the shared component with a unified props interface.
+
+```typescript
+// client/components/RecipeDetailContent.tsx — shared layout
+export interface RecipeDetailContentProps {
+  recipeId: number;
+  recipeType: "mealPlan" | "community";
+  title: string;
+  description?: string | null;
+  nutrition?: NutritionData | null;    // conditional section
+  ingredients?: IngredientItem[];       // conditional section
+  instructions?: string | null;
+  contentPaddingTop?: number;           // caller controls scroll insets
+  contentPaddingBottom?: number;
+}
+
+export function RecipeDetailContent(props: RecipeDetailContentProps) {
+  return (
+    <>
+      <ScrollView
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
+        contentContainerStyle={{
+          paddingTop: props.contentPaddingTop ?? 0,
+          paddingBottom: props.contentPaddingBottom ?? Spacing.xl,
+        }}
+      >
+        {/* Sections render conditionally based on data presence */}
+        {props.nutrition && <NutritionCard nutrition={props.nutrition} />}
+        {props.ingredients?.length && (
+          <RecipeIngredientsList ingredients={props.ingredients} />
+        )}
+      </ScrollView>
+      <CookbookPickerModal recipeId={props.recipeId} recipeType={props.recipeType} />
+    </>
+  );
+}
+```
+
+```typescript
+// Stack screen — handles header + tab bar insets
+export default function RecipeDetailScreen() {
+  const headerHeight = useHeaderHeight();
+  const tabBarHeight = useBottomTabBarHeight();
+  const { data: recipe } = useMealPlanRecipeDetail(recipeId);
+  const nutrition = useMemo(() => parseNutritionData(recipe), [recipe]);
+
+  return (
+    <RecipeDetailContent
+      {...normalizedProps}
+      nutrition={nutrition}
+      ingredients={recipe.ingredients}
+      contentPaddingTop={headerHeight + Spacing.sm}
+      contentPaddingBottom={tabBarHeight + Spacing.xl}
+    />
+  );
+}
+
+// Modal screen — handles safe area insets + floating close button
+export default function FeaturedRecipeDetailScreen() {
+  const insets = useSafeAreaInsets();
+  const { data: recipe } = useQuery<CommunityRecipe>(...);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <FloatingCloseButton top={insets.top} />
+      <RecipeDetailContent
+        {...normalizedProps}
+        contentPaddingBottom={insets.bottom + Spacing.xl}
+      />
+    </View>
+  );
+}
+```
+
+**Key principles:**
+
+- **Scroll insets as props**: The shared component cannot know its navigation context (header height, tab bar, safe areas). Accept `contentPaddingTop` / `contentPaddingBottom` from the parent.
+- **Hide missing sections**: Use conditional rendering (`{data && <Section />}`), not placeholders. Different data sources have different fields available.
+- **Navigation chrome stays in parent**: Close buttons, back headers, and floating overlays belong to the screen, not the shared component.
+- **Data normalization in parent**: Each screen maps its data type (e.g., `MealPlanRecipe`, `CommunityRecipe`) into the shared props interface. Extract pure normalizer functions into a `-utils.ts` file for testability.
+- **Hooks are safe to call unconditionally**: Hooks like `useAllergenCheck` that accept conditional data should use `enabled: data.length > 0` to short-circuit when data is absent.
+
+**When to use:** The same data is displayed in two or more screens that live in different navigator stacks (tab stack vs root modal, different tab stacks, etc.) and you cannot collapse them into a single screen registration.
+
+**When NOT to use:** When the screens share the same navigator — use a single screen with route params instead (see [Unified Create/Edit Screen via Optional Param](#unified-createedit-screen-via-optional-param)).
+
+**Why:** Navigation screens are tightly coupled to their navigator — they receive specific route params, navigation props, and are affected by presentation mode. A shared content component decouples the layout from the navigation context. Both screens shrink to thin wrappers (data fetch + normalize + chrome), and all layout changes happen in one place.
+
+**Reference implementation:** `RecipeDetailContent` shared by `RecipeDetailScreen` (MealPlan stack) and `FeaturedRecipeDetailScreen` (root modal).
 
 ### Coordinated Pull-to-Refresh for Multiple Queries
 
