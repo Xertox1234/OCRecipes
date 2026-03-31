@@ -56,6 +56,10 @@ attached_assets/
 uploads/avatars/*
 !uploads/avatars/.gitkeep
 
+# Generated recipe images (keep directory structure via .gitkeep)
+uploads/recipe-images/*
+!uploads/recipe-images/.gitkeep
+
 # Logs
 *.log
 logs/

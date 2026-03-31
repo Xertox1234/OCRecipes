@@ -13,6 +13,7 @@ import {
 import { generateMealSuggestions } from "./meal-suggestions";
 import type { MealSuggestionInput } from "./meal-suggestions";
 import { createServiceLogger } from "../lib/logger";
+import { generateRecipeImage } from "./recipe-generation";
 
 const log = createServiceLogger("carousel-builder");
 
@@ -268,6 +269,22 @@ async function buildPremiumCarousel(
     );
   }
 
+  // Generate images for any cards still missing one (e.g. catalog without Spoonacular image)
+  await Promise.all(
+    results
+      .filter((card) => !card.imageUrl)
+      .map(async (card) => {
+        try {
+          card.imageUrl = await generateRecipeImage(card.title, card.title);
+        } catch (err) {
+          log.warn(
+            { error: String(err), title: card.title },
+            "Carousel image generation failed, continuing without",
+          );
+        }
+      }),
+  );
+
   // Rank: AI first (most personalized), then catalog
   return results.slice(0, 8);
 }
@@ -314,7 +331,21 @@ async function getOrGenerateAiSuggestions(
     const suggestions = await generateMealSuggestions(input);
     const cards = suggestions.map(normalizeAi);
 
-    // Cache the results (fire-and-forget)
+    // Generate images for all cards in parallel
+    await Promise.all(
+      cards.map(async (card) => {
+        try {
+          card.imageUrl = await generateRecipeImage(card.title, card.title);
+        } catch (err) {
+          log.warn(
+            { error: String(err), title: card.title },
+            "Carousel image generation failed, continuing without",
+          );
+        }
+      }),
+    );
+
+    // Cache the results with images (fire-and-forget)
     storage
       .setCarouselCache(
         userId,

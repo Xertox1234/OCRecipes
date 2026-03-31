@@ -1,4 +1,7 @@
 import { z } from "zod";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { UserProfile } from "@shared/schema";
 import type { RecipeContent } from "@shared/types/cook-session";
 import {
@@ -7,10 +10,17 @@ import {
   OPENAI_TIMEOUT_HEAVY_MS,
   OPENAI_TIMEOUT_IMAGE_MS,
 } from "../lib/openai";
+import {
+  generateImage as runwareGenerateImage,
+  isRunwareConfigured,
+} from "../lib/runware";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("recipe-generation");
+
+const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
+fs.mkdirSync(RECIPE_IMAGES_DIR, { recursive: true });
 
 // Zod schemas for recipe generation
 const instructionItemSchema = z.union([
@@ -201,18 +211,35 @@ Respond with JSON only:
 }
 
 /**
- * Generate a food image using DALL-E 3
- * Returns base64 data URL or null if generation fails
+ * Generate a food image using Runware (primary) or DALL-E 3 (fallback).
+ * Saves to uploads/recipe-images/ and returns the URL path, or null on failure.
  */
 export async function generateRecipeImage(
   recipeTitle: string,
   productName: string,
 ): Promise<string | null> {
-  try {
-    const safeTitle = sanitizeUserInput(recipeTitle);
-    const safeProduct = sanitizeUserInput(productName);
-    const prompt = `Appetizing food photography of "${safeTitle}" featuring ${safeProduct}. Professional lighting, top-down view, styled on rustic wooden table. No text or labels. Photorealistic style.`;
+  const safeTitle = sanitizeUserInput(recipeTitle);
+  const safeProduct = sanitizeUserInput(productName);
+  const prompt = `Appetizing food photography of "${safeTitle}" featuring ${safeProduct}. Professional lighting, top-down view, styled on rustic wooden table. No text or labels. Photorealistic style.`;
 
+  // Try Runware first (66x cheaper than DALL-E)
+  if (isRunwareConfigured) {
+    try {
+      const buffer = await runwareGenerateImage(prompt);
+      if (buffer) {
+        return await saveImageBuffer(buffer);
+      }
+      log.warn("Runware returned no image, falling back to DALL-E");
+    } catch (error) {
+      log.warn(
+        { err: toError(error) },
+        "Runware failed, falling back to DALL-E",
+      );
+    }
+  }
+
+  // Fallback to DALL-E
+  try {
     const response = await dalleClient.images.generate(
       {
         model: "dall-e-3",
@@ -231,12 +258,18 @@ export async function generateRecipeImage(
       return null;
     }
 
-    // Return as base64 data URL (stored directly in DB like avatars)
-    return `data:image/png;base64,${imageData}`;
+    return await saveImageBuffer(Buffer.from(imageData, "base64"));
   } catch (error) {
     log.error({ err: toError(error) }, "DALL-E image generation error");
     return null;
   }
+}
+
+async function saveImageBuffer(buffer: Buffer): Promise<string> {
+  const filename = `recipe-${crypto.randomUUID()}.png`;
+  const filepath = path.join(RECIPE_IMAGES_DIR, filename);
+  await fs.promises.writeFile(filepath, buffer);
+  return `/api/recipe-images/${filename}`;
 }
 
 /**

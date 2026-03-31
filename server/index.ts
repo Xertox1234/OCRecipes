@@ -177,6 +177,17 @@ function setupErrorHandler(app: express.Application) {
     }),
   );
 
+  // Serve uploaded recipe images (public — no auth required)
+  app.use(
+    "/api/recipe-images",
+    express.static(path.resolve(process.cwd(), "uploads/recipe-images"), {
+      maxAge: "7d",
+      etag: true,
+      lastModified: true,
+      dotfiles: "deny",
+    }),
+  );
+
   // Health check endpoint (registered before routes for fast response)
   app.get("/api/health", async (_req, res) => {
     try {

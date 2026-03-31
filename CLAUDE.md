@@ -217,6 +217,7 @@ If tests fail or linting errors occur, the commit is blocked.
 - `JWT_SECRET` - JWT signing secret
 - `AI_INTEGRATIONS_OPENAI_API_KEY` - OpenAI API
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` - Custom OpenAI endpoint
+- `RUNWARE_API_KEY` - Runware API key for image generation (primary provider, falls back to DALL-E)
 - `SPOONACULAR_API_KEY` - Spoonacular recipe catalog API
 - `EXPO_PUBLIC_DOMAIN` - Public API domain for mobile client
 - `APPLE_ISSUER_ID` - Apple App Store Connect issuer ID (for IAP receipt validation)

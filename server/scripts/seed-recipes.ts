@@ -162,7 +162,7 @@ const RECIPE_TARGETS = [
   },
 ] as const;
 
-const IMAGES_DIR = path.resolve(process.cwd(), "assets/images/recipes");
+const IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
 
 function slugify(text: string): string {
   return text
@@ -307,7 +307,7 @@ async function main() {
       if (imageBuffer) {
         const imagePath = path.join(IMAGES_DIR, `${slug}.png`);
         fs.writeFileSync(imagePath, imageBuffer);
-        imageUrl = `/assets/images/recipes/${slug}.png`;
+        imageUrl = `/api/recipe-images/${slug}.png`;
         console.log(`  Image saved: ${imageUrl}`);
       } else {
         console.log("  No image generated (continuing without)");

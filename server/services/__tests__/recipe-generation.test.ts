@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import {
   normalizeProductName,
   generateRecipeContent,
@@ -6,6 +7,31 @@ import {
 } from "../recipe-generation";
 
 import { openai, dalleClient } from "../../lib/openai";
+
+// Mock fs to avoid writing to disk in tests
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      writeFileSync: vi.fn(),
+      mkdirSync: vi.fn(),
+      existsSync: vi.fn(() => true),
+      promises: {
+        ...actual.promises,
+        writeFile: vi.fn().mockResolvedValue(undefined),
+      },
+    },
+    writeFileSync: vi.fn(),
+    mkdirSync: vi.fn(),
+    existsSync: vi.fn(() => true),
+    promises: {
+      ...actual.promises,
+      writeFile: vi.fn().mockResolvedValue(undefined),
+    },
+  };
+});
 
 // Mock the openai module
 vi.mock("../../lib/openai", () => ({
@@ -25,8 +51,16 @@ vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_IMAGE_MS: 120_000,
 }));
 
+// Mock the runware module — isRunwareConfigured is controlled via a mutable ref
+const runwareMock = vi.hoisted(() => ({
+  isRunwareConfigured: false,
+  generateImage: vi.fn(),
+}));
+vi.mock("../../lib/runware", () => runwareMock);
+
 const mockCreate = vi.mocked(openai.chat.completions.create);
 const mockImageGenerate = vi.mocked(dalleClient.images.generate);
+const mockRunwareGenerate = runwareMock.generateImage;
 
 describe("Recipe Generation", () => {
   describe("normalizeProductName", () => {
@@ -204,14 +238,18 @@ describe("Recipe Generation", () => {
       vi.clearAllMocks();
     });
 
-    it("returns base64 data URL on success", async () => {
+    it("saves image to disk and returns URL path on success", async () => {
       mockImageGenerate.mockResolvedValue({
         data: [{ b64_json: "abc123base64data" }],
       } as any);
 
       const result = await generateRecipeImage("Chicken Salad", "Chicken");
 
-      expect(result).toBe("data:image/png;base64,abc123base64data");
+      expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
+      expect(fs.promises.writeFile).toHaveBeenCalledWith(
+        expect.stringContaining("recipe-"),
+        expect.any(Buffer),
+      );
     });
 
     it("returns null when DALL-E returns no data", async () => {
@@ -230,6 +268,60 @@ describe("Recipe Generation", () => {
       const result = await generateRecipeImage("Chicken Salad", "Chicken");
 
       expect(result).toBeNull();
+    });
+
+    describe("with Runware configured", () => {
+      beforeEach(() => {
+        runwareMock.isRunwareConfigured = true;
+      });
+
+      afterEach(() => {
+        runwareMock.isRunwareConfigured = false;
+      });
+
+      it("uses Runware when configured and succeeds", async () => {
+        mockRunwareGenerate.mockResolvedValue(Buffer.from("fake-image-data"));
+
+        const result = await generateRecipeImage("Chicken Salad", "Chicken");
+
+        expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
+        expect(mockRunwareGenerate).toHaveBeenCalled();
+        expect(mockImageGenerate).not.toHaveBeenCalled();
+      });
+
+      it("falls back to DALL-E when Runware returns null", async () => {
+        mockRunwareGenerate.mockResolvedValue(null);
+        mockImageGenerate.mockResolvedValue({
+          data: [{ b64_json: "dalle-fallback-data" }],
+        } as any);
+
+        const result = await generateRecipeImage("Chicken Salad", "Chicken");
+
+        expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
+        expect(mockRunwareGenerate).toHaveBeenCalled();
+        expect(mockImageGenerate).toHaveBeenCalled();
+      });
+
+      it("falls back to DALL-E when Runware throws", async () => {
+        mockRunwareGenerate.mockRejectedValue(new Error("Runware down"));
+        mockImageGenerate.mockResolvedValue({
+          data: [{ b64_json: "dalle-fallback-data" }],
+        } as any);
+
+        const result = await generateRecipeImage("Chicken Salad", "Chicken");
+
+        expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
+        expect(mockImageGenerate).toHaveBeenCalled();
+      });
+
+      it("returns null when both Runware and DALL-E fail", async () => {
+        mockRunwareGenerate.mockRejectedValue(new Error("Runware down"));
+        mockImageGenerate.mockRejectedValue(new Error("DALL-E down"));
+
+        const result = await generateRecipeImage("Chicken Salad", "Chicken");
+
+        expect(result).toBeNull();
+      });
     });
   });
 
@@ -259,7 +351,7 @@ describe("Recipe Generation", () => {
       const result = await generateFullRecipe({ productName: "Salmon" });
 
       expect(result.title).toBe("Grilled Salmon");
-      expect(result.imageUrl).toBe("data:image/png;base64,imagedata");
+      expect(result.imageUrl).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
     });
 
     it("returns recipe without image on image generation failure", async () => {
