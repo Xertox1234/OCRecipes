@@ -29,10 +29,9 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 
 const SECTIONS: { key: SectionKey; title: string; delay: number }[] = [
-  { key: "scanning", title: "Camera & Scanning", delay: 150 },
-  { key: "nutrition", title: "Nutrition & Health", delay: 200 },
-  { key: "recipes", title: "Recipes", delay: 250 },
-  { key: "planning", title: "Planning", delay: 300 },
+  { key: "nutrition", title: "Nutrition & Health", delay: 150 },
+  { key: "recipes", title: "Recipes", delay: 200 },
+  { key: "planning", title: "Planning", delay: 250 },
 ];
 
 export default function HomeScreen() {
