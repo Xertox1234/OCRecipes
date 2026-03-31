@@ -33,7 +33,7 @@ export interface GeneratedMeal {
   cookTimeMinutes: number;
   difficulty: "Easy" | "Medium" | "Hard";
   ingredients: { name: string; quantity: string; unit: string }[];
-  instructions: string;
+  instructions: string[];
   dietTags: string[];
   caloriesPerServing: number;
   proteinPerServing: number;
@@ -71,7 +71,14 @@ const generatedMealSchema = z.object({
   ),
   instructions: z
     .union([z.string(), z.array(z.string())])
-    .transform((val) => (Array.isArray(val) ? val.join("\n") : val)),
+    .transform((val): string[] =>
+      Array.isArray(val)
+        ? val.filter((s) => s.length > 0)
+        : val
+            .split("\n")
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0),
+    ),
   dietTags: z.array(z.string()).default([]),
   caloriesPerServing: z.number().min(0),
   proteinPerServing: z.number().min(0),

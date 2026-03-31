@@ -9,6 +9,9 @@ import {
   RecipeMetaChips,
   RecipeIngredientsList,
   RecipeDietTags,
+  FoodFacts,
+  RecipeInstructions,
+  AskCoach,
 } from "@/components/recipe-detail";
 import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
 import { useTheme } from "@/hooks/useTheme";
@@ -139,22 +142,22 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
               allergenResult={allergenResult}
             />
           )}
-
-          {/* 8. Instructions */}
-          {props.instructions && props.instructions.length > 0 && (
-            <View style={styles.instructionsSection}>
-              <ThemedText style={styles.sectionTitle}>Instructions</ThemedText>
-              {props.instructions.map((step, idx) => (
-                <ThemedText
-                  key={idx}
-                  style={[styles.instructions, { color: theme.textSecondary }]}
-                >
-                  {`${idx + 1}. ${step}`}
-                </ThemedText>
-              ))}
-            </View>
-          )}
         </View>
+
+        {/* 8. Food Facts (outside content padding — components handle own padding) */}
+        <FoodFacts ingredientNames={ingredientNames} />
+
+        {/* 9. Structured Instructions */}
+        <RecipeInstructions instructions={props.instructions ?? []} />
+
+        {/* 10. Ask Coach */}
+        <AskCoach
+          recipeId={props.recipeId}
+          recipeType={props.recipeType}
+          title={props.title}
+          dietTags={props.dietTags}
+          ingredientNames={ingredientNames}
+        />
       </ScrollView>
 
       <CookbookPickerModal
@@ -198,17 +201,5 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 13,
     fontFamily: FontFamily.medium,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
-    marginBottom: Spacing.md,
-  },
-  instructionsSection: {
-    marginBottom: Spacing.xl,
-  },
-  instructions: {
-    fontSize: 15,
-    lineHeight: 24,
   },
 });

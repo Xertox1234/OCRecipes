@@ -1,0 +1,146 @@
+{
+  "salmon": [
+    "Salmon is one of the richest sources of omega-3 fatty acids, which support heart and brain health.",
+    "Wild salmon gets its pink color from astaxanthin, a powerful antioxidant found in the krill they eat."
+  ],
+  "turmeric": [
+    "Turmeric contains curcumin, whose absorption increases 2000% when paired with black pepper.",
+    "Turmeric has been used in Ayurvedic medicine for over 4,000 years."
+  ],
+  "garlic": [
+    "Garlic contains allicin, which forms when cloves are crushed and has natural antibacterial properties.",
+    "Letting crushed garlic sit for 10 minutes before cooking preserves more of its beneficial compounds."
+  ],
+  "chicken": [
+    "Chicken breast is one of the leanest protein sources, with about 31g of protein per 100g.",
+    "Dark meat chicken contains more iron and zinc than white meat."
+  ],
+  "egg": [
+    "Eggs contain all 9 essential amino acids, making them a complete protein source.",
+    "The color of an eggshell is determined by the breed of hen and has no effect on nutrition."
+  ],
+  "avocado": [
+    "Avocados contain more potassium than bananas — about 485mg per 100g.",
+    "Avocados are technically a berry and are one of the few fruits that contain healthy fats."
+  ],
+  "spinach": [
+    "Cooking spinach actually increases its iron absorption by breaking down oxalic acid.",
+    "Spinach contains lutein and zeaxanthin, which support eye health and may prevent macular degeneration."
+  ],
+  "oat": [
+    "Oats contain beta-glucan, a soluble fiber that has been shown to lower cholesterol levels.",
+    "Steel-cut oats and rolled oats have the same nutritional profile — only the texture differs."
+  ],
+  "sweet potato": [
+    "Sweet potatoes are one of the best sources of beta-carotene, which the body converts to vitamin A.",
+    "Purple sweet potatoes contain anthocyanins, the same antioxidants found in blueberries."
+  ],
+  "broccoli": [
+    "Broccoli contains sulforaphane, a compound studied for its potential anti-cancer properties.",
+    "Steaming broccoli for 3-4 minutes preserves more nutrients than boiling or microwaving."
+  ],
+  "quinoa": [
+    "Quinoa is one of the few plant foods that is a complete protein, containing all 9 essential amino acids.",
+    "Quinoa is technically a seed, not a grain, and is related to spinach and beets."
+  ],
+  "blueberry": [
+    "Blueberries have one of the highest antioxidant levels of any common fruit.",
+    "The deep blue color of blueberries comes from anthocyanins, which may improve memory and cognitive function."
+  ],
+  "ginger": [
+    "Ginger contains gingerol, which has powerful anti-inflammatory and antioxidant effects.",
+    "Studies show ginger can reduce muscle pain and soreness by up to 25% after exercise."
+  ],
+  "lemon": [
+    "Lemons contain more potassium than apples or grapes.",
+    "The citric acid in lemons can enhance iron absorption from plant-based foods by up to 6x."
+  ],
+  "olive oil": [
+    "Extra virgin olive oil contains oleocanthal, a compound with anti-inflammatory effects similar to ibuprofen.",
+    "Olive oil is the only cooking oil that is made without chemical processing."
+  ],
+  "tomato": [
+    "Cooking tomatoes increases the bioavailability of lycopene, their primary antioxidant.",
+    "Tomatoes are technically fruits and were once considered poisonous in 18th-century Europe."
+  ],
+  "almond": [
+    "Almonds are the most nutrient-dense tree nut, packed with vitamin E, magnesium, and fiber.",
+    "Eating almonds with their skin on provides 2x more antioxidants than blanched almonds."
+  ],
+  "banana": [
+    "Green bananas contain resistant starch, which acts as prebiotic fiber for gut bacteria.",
+    "Bananas are naturally slightly radioactive due to their potassium content (potassium-40 isotope)."
+  ],
+  "rice": [
+    "Cooling cooked rice in the fridge converts some starch to resistant starch, lowering its glycemic impact.",
+    "Brown rice has 3x more fiber than white rice and retains the nutrient-rich bran layer."
+  ],
+  "yogurt": [
+    "Greek yogurt has roughly 2x the protein of regular yogurt due to the straining process.",
+    "Live-culture yogurt contains probiotics that support gut microbiome diversity."
+  ],
+  "honey": [
+    "Honey never spoils — archaeologists have found 3,000-year-old honey in Egyptian tombs that was still edible.",
+    "Raw honey contains trace enzymes, antioxidants, and small amounts of B vitamins."
+  ],
+  "cinnamon": [
+    "Ceylon cinnamon contains far less coumarin than cassia cinnamon, making it safer for daily use.",
+    "Studies suggest cinnamon may help improve insulin sensitivity and blood sugar regulation."
+  ],
+  "mushroom": [
+    "Mushrooms are the only plant-based source of vitamin D, and exposure to sunlight increases their content.",
+    "Some mushroom varieties contain beta-glucans that may support immune system function."
+  ],
+  "dark chocolate": [
+    "Dark chocolate (70%+) contains more antioxidants per serving than most fruits.",
+    "The flavanols in dark chocolate may improve blood flow and lower blood pressure."
+  ],
+  "tofu": [
+    "Tofu is made by coagulating soy milk, similar to how cheese is made from dairy milk.",
+    "Firm tofu provides about 10g of protein per 100g and is an excellent source of calcium."
+  ],
+  "lentil": [
+    "Lentils are one of the fastest-cooking legumes and don't require soaking before cooking.",
+    "One cup of cooked lentils provides about 18g of protein and 15g of fiber."
+  ],
+  "bell pepper": [
+    "Red bell peppers contain nearly 3x more vitamin C than oranges by weight.",
+    "Bell peppers change color as they ripen — green is unripe, while red, yellow, and orange are fully ripe and sweeter."
+  ],
+  "coconut": [
+    "Coconut water is naturally isotonic and contains electrolytes similar to human blood plasma.",
+    "Medium-chain triglycerides (MCTs) in coconut oil are metabolized differently than other fats."
+  ],
+  "beef": [
+    "Grass-fed beef contains up to 5x more omega-3 fatty acids than grain-fed beef.",
+    "Beef is one of the best dietary sources of heme iron, which is absorbed 2-3x better than plant iron."
+  ],
+  "carrot": [
+    "Cooking carrots actually increases beta-carotene availability by breaking down cell walls.",
+    "Purple carrots were the original variety — orange carrots were bred in the Netherlands in the 17th century."
+  ],
+  "walnut": [
+    "Walnuts are the only tree nut that contains a significant amount of alpha-linolenic acid (plant omega-3).",
+    "The wrinkly shape of a walnut resembles the brain, and research shows they may support brain health."
+  ],
+  "peanut": [
+    "Peanuts are technically legumes, not tree nuts — they grow underground.",
+    "Two tablespoons of peanut butter provide about 7g of protein and healthy monounsaturated fats."
+  ],
+  "cucumber": [
+    "Cucumbers are 95% water, making them one of the most hydrating foods you can eat.",
+    "The phrase 'cool as a cucumber' has scientific basis — the inside can be up to 20 degrees cooler than outside air."
+  ],
+  "onion": [
+    "Onions contain quercetin, a flavonoid with anti-inflammatory properties that survives cooking.",
+    "Chilling onions before cutting reduces the release of the compound that makes your eyes water."
+  ],
+  "pasta": [
+    "Al dente pasta has a lower glycemic index than overcooked pasta because the starch is less gelatinized.",
+    "Italy has over 350 recognized pasta shapes, each designed to hold different sauces."
+  ],
+  "miso": [
+    "Miso is a fermented food rich in probiotics that support digestive health.",
+    "The fermentation process in miso can take anywhere from a few weeks to several years."
+  ]
+}

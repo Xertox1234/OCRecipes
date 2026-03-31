@@ -5,3 +5,6 @@ export { RecipeIngredientsList } from "./RecipeIngredientsList";
 export type { IngredientItem } from "./RecipeIngredientsList";
 export { RecipeDietTags } from "./RecipeDietTags";
 export { RecipeDetailSkeleton } from "./RecipeDetailSkeleton";
+export { FoodFacts } from "./FoodFacts";
+export { RecipeInstructions } from "./RecipeInstructions";
+export { AskCoach } from "./AskCoach";
