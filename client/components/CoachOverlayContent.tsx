@@ -13,16 +13,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ChatBubble } from "@/components/ChatBubble";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import {
-  useCreateConversation,
-  useChatMessages,
-  useSendMessage,
-} from "@/hooks/useChat";
+import { useCreateConversation, useChatMessages } from "@/hooks/useChat";
+import { getApiUrl } from "@/lib/query-client";
+import { tokenStorage } from "@/lib/token-storage";
 import {
   Spacing,
   BorderRadius,
@@ -37,6 +36,86 @@ interface CoachOverlayContentProps {
   onDismiss: () => void;
 }
 
+/**
+ * Send a chat message and stream the SSE response, calling onChunk for each
+ * content delta. Returns the full accumulated response on completion.
+ *
+ * Uses XMLHttpRequest instead of fetch+ReadableStream because RN's
+ * ReadableStream does not reliably deliver chunks inside an RN Modal.
+ */
+async function sendMessageStreaming(
+  conversationId: number,
+  content: string,
+  screenContext: string | undefined,
+  onChunk: (accumulated: string) => void,
+  onDone: () => void,
+  signal: AbortSignal,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const baseUrl = getApiUrl();
+    const url = `${baseUrl}/api/chat/conversations/${conversationId}/messages`;
+
+    xhr.open("POST", url, true);
+    xhr.setRequestHeader("Content-Type", "application/json");
+
+    tokenStorage.get().then((token) => {
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      let accumulated = "";
+      let lastProcessedIndex = 0;
+
+      xhr.onreadystatechange = () => {
+        // readyState 3 = LOADING (partial data received)
+        if (xhr.readyState >= 3 && xhr.responseText) {
+          const newText = xhr.responseText.slice(lastProcessedIndex);
+          lastProcessedIndex = xhr.responseText.length;
+
+          const lines = newText.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if (data.content) {
+                  accumulated += data.content;
+                  onChunk(accumulated);
+                }
+                if (data.done) {
+                  onDone();
+                }
+              } catch {
+                // Ignore JSON parse errors from incomplete chunks
+              }
+            }
+          }
+        }
+
+        if (xhr.readyState === 4) {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`${xhr.status}: ${xhr.responseText}`));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error"));
+
+      signal.addEventListener("abort", () => {
+        xhr.abort();
+        resolve();
+      });
+
+      xhr.send(
+        JSON.stringify({
+          content,
+          ...(screenContext && { screenContext }),
+        }),
+      );
+    });
+  });
+}
+
 export function CoachOverlayContent({
   question,
   screenContext,
@@ -45,23 +124,27 @@ export function CoachOverlayContent({
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
 
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [inputText, setInputText] = useState("");
   const [createError, setCreateError] = useState(false);
-  const didSendInitialRef = useRef(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState("");
+  const [streamError, setStreamError] = useState(false);
+
   const scrollRef = useRef<ScrollView>(null);
   const titleRef = useRef<View>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const createConversation = useCreateConversation();
   const { data: messages } = useChatMessages(conversationId);
-  const { sendMessage, streamingContent, isStreaming, streamError } =
-    useSendMessage(conversationId);
 
-  // Step 1: Create conversation on mount
+  // Create conversation on mount
+  const didCreateRef = useRef(false);
   useEffect(() => {
-    if (didSendInitialRef.current) return;
-    didSendInitialRef.current = true;
+    if (didCreateRef.current) return;
+    didCreateRef.current = true;
 
     createConversation
       .mutateAsync(question.text.slice(0, 50))
@@ -74,17 +157,75 @@ export function CoachOverlayContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Step 2: Send initial question once conversation is created
+  // Send initial question once conversation is created
+  const didSendRef = useRef(false);
   useEffect(() => {
-    if (conversationId && !messages?.length) {
-      sendMessage(question.question, screenContext);
-    }
+    if (!conversationId || didSendRef.current) return;
+    didSendRef.current = true;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setIsStreaming(true);
+    setStreamingContent("");
+
+    sendMessageStreaming(
+      conversationId,
+      question.question,
+      screenContext,
+      (accumulated) => setStreamingContent(accumulated),
+      () => {
+        // On done — refresh messages from server
+        queryClient.invalidateQueries({
+          queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["/api/chat/conversations"],
+        });
+      },
+      controller.signal,
+    )
+      .catch(() => {
+        if (!controller.signal.aborted) setStreamError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsStreaming(false);
+          setStreamingContent("");
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  // Build display messages — same pattern as the proven RecipeCoachChatScreen
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  // Build display messages — show optimistic user bubble before server messages load
+  const serverMessages = (messages ?? []).filter((m) => m.role !== "system");
+  const showOptimisticUser = serverMessages.length === 0 && didSendRef.current;
+
   const displayMessages = [
-    ...(messages ?? []).filter((m) => m.role !== "system"),
+    ...(showOptimisticUser
+      ? [
+          {
+            id: -2,
+            conversationId: conversationId ?? 0,
+            role: "user" as const,
+            content: question.question,
+            metadata: null,
+            createdAt: new Date().toISOString(),
+          },
+        ]
+      : []),
+    ...serverMessages,
     ...(isStreaming && streamingContent
       ? [
           {
@@ -128,14 +269,44 @@ export function CoachOverlayContent({
   }, [isStreaming]);
 
   const handleSend = useCallback(() => {
-    if (!inputText.trim() || isStreaming) return;
-    sendMessage(inputText.trim());
+    if (!inputText.trim() || isStreaming || !conversationId) return;
+    const text = inputText.trim();
     setInputText("");
-  }, [inputText, isStreaming, sendMessage]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsStreaming(true);
+    setStreamingContent("");
+
+    sendMessageStreaming(
+      conversationId,
+      text,
+      undefined, // no screenContext on follow-ups
+      (accumulated) => setStreamingContent(accumulated),
+      () => {
+        queryClient.invalidateQueries({
+          queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["/api/chat/conversations"],
+        });
+      },
+      controller.signal,
+    )
+      .catch(() => {
+        if (!controller.signal.aborted) setStreamError(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setIsStreaming(false);
+          setStreamingContent("");
+        }
+      });
+  }, [inputText, isStreaming, conversationId, queryClient]);
 
   const handleRetry = useCallback(() => {
     setCreateError(false);
-    didSendInitialRef.current = false;
+    didSendRef.current = false;
     createConversation
       .mutateAsync(question.text.slice(0, 50))
       .then((conv) => {
