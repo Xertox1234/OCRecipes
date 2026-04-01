@@ -142,7 +142,10 @@ export function register(app: Express): void {
             ErrorCode.NOT_FOUND,
           );
 
-        const schema = z.object({ content: z.string().min(1).max(2000) });
+        const schema = z.object({
+          content: z.string().min(1).max(2000),
+          screenContext: z.string().max(1500).optional(),
+        });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
           return sendError(
@@ -226,6 +229,7 @@ export function register(app: Express): void {
             ).map((a) => a.name),
             dislikes: (profile?.foodDislikes as string[]) || [],
           },
+          screenContext: parsed.data.screenContext,
         };
 
         const messageHistory = history.map((m) => ({

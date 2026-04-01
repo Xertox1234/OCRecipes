@@ -123,6 +123,24 @@ export function containsDangerousDietaryAdvice(text: string): boolean {
   return DANGEROUS_DIETARY_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/**
+ * Sanitize a screen context field for safe inclusion in AI system prompts.
+ * Strips zero-width Unicode characters, control chars, and injection patterns.
+ * Preserves intentional newlines but removes other invisible characters.
+ */
+export function sanitizeContextField(text: string, maxLen = 1500): string {
+  let s = text.slice(0, maxLen);
+  // Strip zero-width chars, RTL/LTR overrides, BOM, soft hyphen
+  s = s.replace(/[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD]/g, "");
+  // Collapse CR/LF sequences to single newline
+  s = s.replace(/\r\n?/g, "\n");
+  // Strip control chars (except newline and tab)
+  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  // Run standard injection pattern filter
+  s = sanitizeUserInput(s);
+  return s.trim();
+}
+
 /** System prompt boundary instruction to append to AI system prompts. */
 export const SYSTEM_PROMPT_BOUNDARY =
   "IMPORTANT SAFETY RULES:\n" +

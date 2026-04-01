@@ -67,7 +67,7 @@ export function useSendMessage(conversationId: number | null) {
   const [streamError, setStreamError] = useState(false);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, screenContext?: string) => {
       if (!conversationId) return;
       setIsStreaming(true);
       setStreamingContent("");
@@ -90,7 +90,10 @@ export function useSendMessage(conversationId: number | null) {
         const res = await fetch(url, {
           method: "POST",
           headers,
-          body: JSON.stringify({ content }),
+          body: JSON.stringify({
+            content,
+            ...(screenContext && { screenContext }),
+          }),
         });
 
         if (!res.ok) {

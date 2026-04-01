@@ -1,6 +1,7 @@
 import { openai, OPENAI_TIMEOUT_STREAM_MS, MODEL_FAST } from "../lib/openai";
 import {
   sanitizeUserInput,
+  sanitizeContextField,
   containsDangerousDietaryAdvice,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../lib/ai-safety";
@@ -27,6 +28,7 @@ export interface CoachContext {
     allergies: string[];
     dislikes: string[];
   };
+  screenContext?: string;
 }
 
 function buildSystemPrompt(context: CoachContext): string {
@@ -36,8 +38,6 @@ function buildSystemPrompt(context: CoachContext): string {
     "Use markdown formatting for emphasis and structure when appropriate.",
     "Never diagnose medical conditions or replace professional medical advice.",
     "Never recommend extreme calorie restriction (below 1200 cal/day), extreme fasting protocols, or any advice that could promote disordered eating.",
-    "",
-    SYSTEM_PROMPT_BOUNDARY,
     "",
     "USER CONTEXT:",
   ];
@@ -71,6 +71,18 @@ function buildSystemPrompt(context: CoachContext): string {
       `Food dislikes: ${context.dietaryProfile.dislikes.map(sanitizeUserInput).join(", ")}`,
     );
   }
+
+  if (context.screenContext) {
+    parts.push(
+      "",
+      "SCREEN CONTEXT (user-reported, may be inaccurate):",
+      sanitizeContextField(context.screenContext, 1500),
+    );
+  }
+
+  // Safety boundary is always LAST — after all context sections
+  parts.push("", SYSTEM_PROMPT_BOUNDARY);
+
   return parts.join("\n");
 }
 
