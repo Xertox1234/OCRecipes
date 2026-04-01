@@ -101,20 +101,17 @@ export type FeaturedRecipeDetailScreenNavigationProp =
 
 /**
  * Navigation prop for MealPlanHomeScreen
- * Can navigate within meal plan stack and to other tabs
+ * Uses CompositeNavigationProp to navigate across stacks:
+ * - Navigate within MealPlanStack
+ * - Navigate to other tabs (MainTab)
+ * - Navigate to RootStack screens (FeaturedRecipeDetail modal)
  */
 export type MealPlanHomeScreenNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<MealPlanStackParamList, "MealPlanHome">,
-  BottomTabNavigationProp<MainTabParamList>
->;
-
-/**
- * Navigation prop for RecipeDetailScreen
- * Can navigate within meal plan stack
- */
-export type RecipeDetailScreenNavigationProp = NativeStackNavigationProp<
-  MealPlanStackParamList,
-  "RecipeDetail"
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
 >;
 
 /**
@@ -145,9 +142,12 @@ export type RecipeCreateScreenNavigationProp = NativeStackNavigationProp<
  * Navigation prop for RecipeImportScreen
  * Can navigate within meal plan stack
  */
-export type RecipeImportScreenNavigationProp = NativeStackNavigationProp<
-  MealPlanStackParamList,
-  "RecipeImport"
+export type RecipeImportScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<MealPlanStackParamList, "RecipeImport">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
 >;
 
 /**

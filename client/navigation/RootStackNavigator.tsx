@@ -67,6 +67,8 @@ export type RootStackParamList = {
   EditDietaryProfile: undefined;
   FeaturedRecipeDetail: {
     recipeId: number;
+    /** "community" (default) fetches from /api/recipes/:id; "mealPlan" fetches from /api/meal-plan/recipes/:id */
+    recipeType?: "community" | "mealPlan";
     /** When provided, the screen uses this data directly instead of fetching by ID */
     carouselCard?: import("@shared/types/carousel").CarouselRecipeCard;
   };
@@ -203,6 +205,8 @@ export default function RootStackNavigator() {
               headerShown: false,
               presentation: "transparentModal",
               animation: "slide_from_bottom",
+              gestureEnabled: true,
+              fullScreenGestureEnabled: true,
             }}
           />
           <Stack.Screen
