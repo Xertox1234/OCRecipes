@@ -25,6 +25,7 @@ import { PremiumProvider } from "@/context/PremiumContext";
 import { ThemeProvider, useThemePreference } from "@/context/ThemeContext";
 import { ToastProvider } from "@/context/ToastContext";
 import { BatchScanProvider } from "@/context/BatchScanContext";
+import { CoachOverlayProvider } from "@/context/CoachOverlayContext";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { setupNotificationChannel } from "@/lib/notifications";
 
@@ -77,9 +78,11 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <PremiumProvider>
-              <ThemeProvider>
-                <AppContent />
-              </ThemeProvider>
+              <CoachOverlayProvider>
+                <ThemeProvider>
+                  <AppContent />
+                </ThemeProvider>
+              </CoachOverlayProvider>
             </PremiumProvider>
           </AuthProvider>
         </QueryClientProvider>
