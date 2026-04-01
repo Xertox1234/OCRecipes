@@ -31,6 +31,9 @@ if (!JWT_SECRET) {
 // TypeScript now knows JWT_SECRET is defined after the check above
 const jwtSecret: string = JWT_SECRET;
 
+const JWT_ISSUER = "ocrecipes-api";
+const JWT_AUDIENCE = "ocrecipes-client";
+
 // In-memory cache for tokenVersion to avoid DB lookup on every request.
 // Short TTL (60s) balances performance with revocation responsiveness.
 // Cache is invalidated on logout via invalidateTokenVersionCache().
@@ -102,7 +105,10 @@ export async function requireAuth(
   const token = authHeader.slice(7);
 
   try {
-    const payload = jwt.verify(token, jwtSecret);
+    const payload = jwt.verify(token, jwtSecret, {
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
 
     if (!isAccessTokenPayload(payload)) {
       sendError(res, 401, "Invalid token payload", "TOKEN_INVALID");
@@ -147,5 +153,7 @@ export async function requireAuth(
 export function generateToken(userId: string, tokenVersion: number): string {
   return jwt.sign({ sub: userId, tokenVersion }, jwtSecret, {
     expiresIn: "7d",
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
   });
 }

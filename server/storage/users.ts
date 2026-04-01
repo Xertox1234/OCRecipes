@@ -21,18 +21,54 @@ import {
   type SubscriptionTier,
 } from "@shared/types/premium";
 import { db } from "../db";
-import { eq, desc, and, gte, lte, inArray } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  and,
+  gte,
+  lte,
+  inArray,
+  sql,
+  getTableColumns,
+} from "drizzle-orm";
 
 // ============================================================================
 // USER CRUD
 // ============================================================================
 
-export async function getUser(id: string): Promise<User | undefined> {
-  const [user] = await db.select().from(users).where(eq(users.id, id));
+// Exclude password from default queries — defense-in-depth against accidental leaks.
+// Only getUserForAuth / getUserByUsernameForAuth return the password hash.
+const { password: _password, ...safeUserColumns } = getTableColumns(users);
+
+/** User row without password hash */
+export type SafeUser = Omit<User, "password">;
+
+export async function getUser(id: string): Promise<SafeUser | undefined> {
+  const [user] = await db
+    .select(safeUserColumns)
+    .from(users)
+    .where(eq(users.id, id));
   return user || undefined;
 }
 
 export async function getUserByUsername(
+  username: string,
+): Promise<SafeUser | undefined> {
+  const [user] = await db
+    .select(safeUserColumns)
+    .from(users)
+    .where(eq(users.username, username));
+  return user || undefined;
+}
+
+/** Full user row including password hash — only for login/delete-account flows */
+export async function getUserForAuth(id: string): Promise<User | undefined> {
+  const [user] = await db.select().from(users).where(eq(users.id, id));
+  return user || undefined;
+}
+
+/** Full user row including password hash — only for login flow */
+export async function getUserByUsernameForAuth(
   username: string,
 ): Promise<User | undefined> {
   const [user] = await db
@@ -54,6 +90,21 @@ export async function updateUser(
   const [user] = await db
     .update(users)
     .set(updates)
+    .where(eq(users.id, id))
+    .returning();
+  return user || undefined;
+}
+
+/**
+ * Atomically increment tokenVersion via SQL to avoid TOCTOU race conditions.
+ * Returns the updated user, or undefined if not found.
+ */
+export async function incrementTokenVersion(
+  id: string,
+): Promise<User | undefined> {
+  const [user] = await db
+    .update(users)
+    .set({ tokenVersion: sql`${users.tokenVersion} + 1` })
     .where(eq(users.id, id))
     .returning();
   return user || undefined;

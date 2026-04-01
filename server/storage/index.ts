@@ -32,8 +32,11 @@ export const storage = {
   // Users & profiles
   getUser: users.getUser,
   getUserByUsername: users.getUserByUsername,
+  getUserForAuth: users.getUserForAuth,
+  getUserByUsernameForAuth: users.getUserByUsernameForAuth,
   createUser: users.createUser,
   updateUser: users.updateUser,
+  incrementTokenVersion: users.incrementTokenVersion,
   deleteUser: users.deleteUser,
   getUserProfile: users.getUserProfile,
   createUserProfile: users.createUserProfile,

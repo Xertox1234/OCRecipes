@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import bcrypt from "bcrypt";
+import { createHash } from "crypto";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { logger, toError } from "../lib/logger";
@@ -16,8 +17,14 @@ declare global {
 
 const KEY_PREFIX_LENGTH = 16;
 
+/** SHA-256 hash of the raw key — used as cache key to avoid storing plaintext in memory */
+function cacheKey(rawKey: string): string {
+  return createHash("sha256").update(rawKey).digest("hex");
+}
+
 // In-memory cache for validated API keys to avoid DB + bcrypt on every request.
 // Short TTL (60s) balances performance with revocation responsiveness.
+// Keys are stored as SHA-256 hashes to prevent plaintext exposure in memory dumps.
 const apiKeyCache = new Map<
   string,
   { id: number; tier: string; status: string; expiresAt: number }
@@ -26,10 +33,11 @@ const API_KEY_CACHE_TTL_MS = 60_000;
 const MAX_CACHED_KEYS = 10_000;
 
 function getCachedApiKey(rawKey: string) {
-  const entry = apiKeyCache.get(rawKey);
+  const hash = cacheKey(rawKey);
+  const entry = apiKeyCache.get(hash);
   if (!entry) return undefined;
   if (Date.now() > entry.expiresAt) {
-    apiKeyCache.delete(rawKey);
+    apiKeyCache.delete(hash);
     return undefined;
   }
   return entry;
@@ -45,7 +53,7 @@ function setCachedApiKey(
       apiKeyCache.delete(oldestKey);
     }
   }
-  apiKeyCache.set(rawKey, {
+  apiKeyCache.set(cacheKey(rawKey), {
     ...data,
     expiresAt: Date.now() + API_KEY_CACHE_TTL_MS,
   });
@@ -53,7 +61,7 @@ function setCachedApiKey(
 
 /** Immediately remove a cached API key (call on revocation) */
 export function invalidateApiKeyCache(rawKey: string): void {
-  apiKeyCache.delete(rawKey);
+  apiKeyCache.delete(cacheKey(rawKey));
 }
 
 /** Clear all cached keys (for testing) */

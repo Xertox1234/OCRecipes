@@ -113,7 +113,7 @@ export function register(app: Express): void {
       try {
         const validated = loginSchema.parse(req.body);
 
-        const user = await storage.getUserByUsername(validated.username);
+        const user = await storage.getUserByUsernameForAuth(validated.username);
         if (!user) {
           return sendError(
             res,
@@ -151,15 +151,11 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const user = await storage.getUser(req.userId);
+        // Atomically increment tokenVersion to invalidate all existing tokens
+        const user = await storage.incrementTokenVersion(req.userId);
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
-
-        // Increment tokenVersion to invalidate all existing tokens
-        await storage.updateUser(req.userId, {
-          tokenVersion: user.tokenVersion + 1,
-        });
 
         // Immediately invalidate the in-memory cache so revocation takes effect
         invalidateTokenVersionCache(req.userId);
@@ -232,7 +228,7 @@ export function register(app: Express): void {
       try {
         const validated = deleteAccountSchema.parse(req.body);
 
-        const user = await storage.getUser(req.userId);
+        const user = await storage.getUserForAuth(req.userId);
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }

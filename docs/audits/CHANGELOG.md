@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-04-01 — Authentication System Security Audit
+
+- **Trigger:** Targeted security audit of the authentication system
+- **Manifest:** [docs/audits/2026-04-01-security-auth.md](2026-04-01-security-auth.md)
+- **Findings:** 0 critical, 0 high, 3 medium, 1 low (4 total)
+- **Resolved:** 4 verified, 0 deferred, 0 false-positive
+- **Commit:** (pending)
+- **Note:** Key fixes: atomic tokenVersion increment (TOCTOU), password hash excluded from default getUser queries, API key cache uses SHA-256 hash keys, JWT iss/aud claims added.
+
 ## 2026-03-31 — Performance & Data-Integrity Audit
 
 - **Trigger:** Found generated images stored in DB; targeted audit for similar performance/data-integrity issues

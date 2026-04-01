@@ -23,9 +23,12 @@ import { createMockUser } from "../../__tests__/factories";
 vi.mock("../../storage", () => ({
   storage: {
     getUserByUsername: vi.fn(),
+    getUserByUsernameForAuth: vi.fn(),
+    getUserForAuth: vi.fn(),
     createUser: vi.fn(),
     getUser: vi.fn(),
     updateUser: vi.fn(),
+    incrementTokenVersion: vi.fn(),
     getSubscriptionStatus: vi.fn(),
   },
 }));
@@ -149,7 +152,9 @@ describe("Auth Routes", () => {
       const hash = await bcrypt.hash("password123", 10);
       const userWithHash = createMockUser({ password: hash });
 
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(userWithHash);
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+        userWithHash,
+      );
 
       const res = await request(app).post("/api/auth/login").send({
         username: "testuser",
@@ -163,7 +168,7 @@ describe("Auth Routes", () => {
     });
 
     it("returns 401 for non-existent user", async () => {
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(undefined);
 
       const res = await request(app).post("/api/auth/login").send({
         username: "noone",
@@ -179,7 +184,9 @@ describe("Auth Routes", () => {
       const hash = await bcrypt.hash("correctpassword", 10);
       const userWithHash = createMockUser({ password: hash });
 
-      vi.mocked(storage.getUserByUsername).mockResolvedValue(userWithHash);
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+        userWithHash,
+      );
 
       const res = await request(app).post("/api/auth/login").send({
         username: "testuser",
@@ -198,9 +205,8 @@ describe("Auth Routes", () => {
   });
 
   describe("POST /api/auth/logout", () => {
-    it("increments token version and returns success", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
-      vi.mocked(storage.updateUser).mockResolvedValue(
+    it("increments token version atomically and returns success", async () => {
+      vi.mocked(storage.incrementTokenVersion).mockResolvedValue(
         createMockUser({ tokenVersion: 1 }),
       );
 
@@ -210,13 +216,11 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(storage.updateUser).toHaveBeenCalledWith("1", {
-        tokenVersion: 1,
-      });
+      expect(storage.incrementTokenVersion).toHaveBeenCalledWith("1");
     });
 
     it("returns 404 if user not found", async () => {
-      vi.mocked(storage.getUser).mockResolvedValue(undefined);
+      vi.mocked(storage.incrementTokenVersion).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/auth/logout")
@@ -361,7 +365,7 @@ describe("Auth Routes", () => {
     });
 
     it("POST /api/auth/login returns 500 on storage error", async () => {
-      vi.mocked(storage.getUserByUsername).mockRejectedValue(
+      vi.mocked(storage.getUserByUsernameForAuth).mockRejectedValue(
         new Error("DB error"),
       );
 
@@ -374,7 +378,9 @@ describe("Auth Routes", () => {
     });
 
     it("POST /api/auth/logout returns 500 on storage error", async () => {
-      vi.mocked(storage.getUser).mockRejectedValue(new Error("DB error"));
+      vi.mocked(storage.incrementTokenVersion).mockRejectedValue(
+        new Error("DB error"),
+      );
 
       const res = await request(app)
         .post("/api/auth/logout")
