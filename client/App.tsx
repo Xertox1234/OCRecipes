@@ -38,9 +38,11 @@ function AppContent() {
         <BottomSheetModalProvider>
           <ToastProvider>
             <BatchScanProvider>
-              <NavigationContainer linking={linking}>
-                <RootStackNavigator />
-              </NavigationContainer>
+              <CoachOverlayProvider>
+                <NavigationContainer linking={linking}>
+                  <RootStackNavigator />
+                </NavigationContainer>
+              </CoachOverlayProvider>
             </BatchScanProvider>
             <OfflineBanner />
           </ToastProvider>
@@ -78,11 +80,9 @@ export default function App() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <PremiumProvider>
-              <CoachOverlayProvider>
-                <ThemeProvider>
-                  <AppContent />
-                </ThemeProvider>
-              </CoachOverlayProvider>
+              <ThemeProvider>
+                <AppContent />
+              </ThemeProvider>
             </PremiumProvider>
           </AuthProvider>
         </QueryClientProvider>

@@ -81,35 +81,33 @@ export function CoachOverlayContent({
   const { sendMessage, streamingContent, isStreaming, streamError } =
     useSendMessage(conversationId);
 
-  // Single async create+send on mount — no two-effect chain
+  // Step 1: Create conversation on mount
+  const didCreateRef = useRef(false);
   useEffect(() => {
-    const controller = new AbortController();
+    if (didCreateRef.current) return;
+    didCreateRef.current = true;
 
-    const run = async () => {
-      try {
-        const conv = await createConversation.mutateAsync(
-          question.text.slice(0, 50),
-        );
-        if (controller.signal.aborted) return;
-
+    createConversation
+      .mutateAsync(question.text.slice(0, 50))
+      .then((conv) => {
         conversationIdRef.current = conv.id;
         setConversationId(conv.id);
-
-        // Immediately send — no gap
-        await sendMessage(question.question, screenContext);
-      } catch {
-        if (!controller.signal.aborted) {
-          setCreateError(true);
-        }
-      }
-    };
-    run();
-
-    return () => {
-      controller.abort();
-    };
+      })
+      .catch(() => {
+        setCreateError(true);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Step 2: Send initial question once conversationId is set
+  // This fires after re-render, so sendMessage has the correct conversationId
+  const didSendInitialRef = useRef(false);
+  useEffect(() => {
+    if (!conversationId || didSendInitialRef.current) return;
+    didSendInitialRef.current = true;
+    sendMessage(question.question, screenContext);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId]);
 
   // Throttle streaming content via rAF
   useEffect(() => {
@@ -172,15 +170,16 @@ export function CoachOverlayContent({
 
   const handleRetry = useCallback(() => {
     setCreateError(false);
+    didSendInitialRef.current = false;
     createConversation
       .mutateAsync(question.text.slice(0, 50))
       .then((conv) => {
         conversationIdRef.current = conv.id;
         setConversationId(conv.id);
-        sendMessage(question.question, screenContext);
+        // sendMessage will fire via the conversationId effect above
       })
       .catch(() => setCreateError(true));
-  }, [createConversation, question, screenContext, sendMessage]);
+  }, [createConversation, question]);
 
   // Build display messages list
   const displayMessages: DisplayMessage[] = [
