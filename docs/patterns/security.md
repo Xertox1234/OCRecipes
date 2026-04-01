@@ -923,3 +923,72 @@ return res.status(status).json({ error: message });
 **References:**
 
 - `server/index.ts` — `setupErrorHandler()`
+
+---
+
+### Exclude Sensitive Columns from Default Queries
+
+Storage functions that return user records should exclude password hashes (and other secrets) by default. Create a `safeUserColumns` object that omits the `password` column using destructuring, and provide separate `ForAuth` variants for the rare login/delete flows that need it.
+
+```typescript
+// ❌ BAD: password hash leaks to every caller
+async function getUser(id: number): Promise<User | undefined> {
+  const [user] = await db.select().from(users).where(eq(users.id, id));
+  return user;
+}
+
+// ✅ GOOD: default query excludes password
+const { password: _, ...safeUserColumns } = getTableColumns(users);
+type SafeUser = InferSelectModel<typeof users> & { password?: never };
+
+async function getUser(id: number): Promise<SafeUser | undefined> {
+  const [user] = await db
+    .select(safeUserColumns)
+    .from(users)
+    .where(eq(users.id, id));
+  return user as SafeUser | undefined;
+}
+
+// Only for login / account-deletion flows
+async function getUserForAuth(id: number): Promise<User | undefined> {
+  const [user] = await db.select().from(users).where(eq(users.id, id));
+  return user;
+}
+```
+
+**When to use:** Any storage function returning rows from tables that contain password hashes, API keys, or other secrets.
+
+**Why:** Defence-in-depth — even if a route accidentally serialises the full object into a response, the secret is never present.
+
+**References:**
+
+- `server/storage/users.ts` — `safeUserColumns`, `getUser()`, `getUserForAuth()`
+
+---
+
+### Hash Secrets Used as In-Memory Cache Keys
+
+When caching the result of a secret lookup (e.g. API key → userId), never store the raw secret as the `Map` key. A heap dump or debug log would expose every cached secret. Instead, hash the secret with SHA-256 and use the digest as the key.
+
+```typescript
+import { createHash } from "crypto";
+
+// ❌ BAD: raw API key sits in memory as a Map key
+const apiKeyCache = new Map<string, { userId: number; expiresAt: number }>();
+apiKeyCache.set(rawKey, { userId, expiresAt });
+
+// ✅ GOOD: SHA-256 digest as key
+function cacheKey(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
+const apiKeyCache = new Map<string, { userId: number; expiresAt: number }>();
+apiKeyCache.set(cacheKey(rawKey), { userId, expiresAt });
+```
+
+**When to use:** Any in-memory cache (Map, object, LRU) keyed by a secret value — API keys, tokens, session IDs.
+
+**Why:** Secrets in memory are accessible via heap dumps, core dumps, or debug endpoints. Hashing makes the cache opaque without affecting lookup performance.
+
+**References:**
+
+- `server/middleware/api-key-auth.ts` — `cacheKey()`, `apiKeyCache`

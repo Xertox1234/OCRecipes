@@ -73,12 +73,14 @@ Completed after fixes are committed. Each row links to the docs change.
 
 ### Patterns Extracted
 
-| Finding | Pattern | Added To             |
-| ------- | ------- | -------------------- |
-| —       | —       | `docs/patterns/?.md` |
+| Finding | Pattern                                        | Added To                    |
+| ------- | ---------------------------------------------- | --------------------------- |
+| M1      | Atomic Counter / Version Increments via SQL    | `docs/patterns/database.md` |
+| M2      | Exclude Sensitive Columns from Default Queries | `docs/patterns/security.md` |
+| M3      | Hash Secrets Used as In-Memory Cache Keys      | `docs/patterns/security.md` |
 
 ### Learnings Extracted
 
 | Finding | Learning Title | Category |
 | ------- | -------------- | -------- |
-| —       | —              | —        |
+| —       | (none)         | —        |

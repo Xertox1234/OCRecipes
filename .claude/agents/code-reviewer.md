@@ -198,6 +198,7 @@ const insets = useSafeAreaInsets();
 - [ ] cacheId passed from parent response to enable child cache lookups
 - [ ] Nullable FK columns use LEFT JOIN (not INNER JOIN) in aggregation queries
 - [ ] Pre-fetched data passed to dependent functions via optional parameter to avoid redundant queries
+- [ ] **Atomic counter increments** — Counter/version columns (`tokenVersion`, `hitCount`, `viewCount`) use `sql\`${table.column} + 1\``instead of read-then-write. (Ref:`docs/patterns/database.md` "Atomic Counter / Version Increments via SQL")
 
 **Cache IDOR Pattern Reference:**
 
@@ -226,6 +227,9 @@ if (cacheId) {
 - [ ] **Rate limiting on new routes** — Every new route file must have rate limiting middleware on all endpoints. Check for `rateLimit`, `crudRateLimit`, or equivalent on each `app.get/post/put/patch/delete` handler. (Ref: `docs/patterns/security.md` "Rate Limiting")
 - [ ] **CHECK constraint + ON DELETE conflict** — When reviewing schema changes that add or modify CHECK constraints on tables with FK columns, verify the CHECK does not conflict with `ON DELETE SET NULL` on any FK in the same table. Prefer `ON DELETE CASCADE` or `ON DELETE RESTRICT` when a CHECK references the FK column. (Ref: `docs/LEARNINGS.md` "CHECK Constraint vs ON DELETE SET NULL Conflict")
 - [ ] **AI cache dedup** — Cache tables keyed by `(scannedItemId, userId, profileHash)` or similar composite key must have a `uniqueIndex` on that composite and use `onConflictDoUpdate` on insert. Plain `INSERT` allows duplicate cache rows under concurrent load. (Ref: `docs/patterns/database.md` "Unique Index + onConflictDoUpdate for AI Cache Dedup")
+- [ ] **Sensitive column exclusion** — Storage functions returning user rows must use `safeUserColumns` (excludes `password`). Only `ForAuth` variants may select the full row. New tables with secrets need analogous safe-column sets. (Ref: `docs/patterns/security.md` "Exclude Sensitive Columns from Default Queries")
+- [ ] **Hashed in-memory cache keys** — Any `Map` or object cache keyed by a secret (API key, token, session ID) must hash the key with SHA-256 via `cacheKey()`. Raw secrets must never appear as Map keys. (Ref: `docs/patterns/security.md` "Hash Secrets Used as In-Memory Cache Keys")
+- [ ] **JWT issuer/audience claims** — `jwt.sign()` must include `issuer` and `audience` options; `jwt.verify()` must validate them. Constants: `JWT_ISSUER = "ocrecipes-api"`, `JWT_AUDIENCE = "ocrecipes-client"`. (Ref: `server/middleware/auth.ts`)
 
 ### 11. Code Quality
 
