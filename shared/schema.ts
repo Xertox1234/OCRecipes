@@ -1321,6 +1321,29 @@ export const mealSuggestionCacheRelations = relations(
   }),
 );
 
+// Coach response cache — universal cache for predefined coach questions
+// Only used for questions WITHOUT screenContext (universal answers like fasting tips)
+export const coachResponseCache = pgTable(
+  "coach_response_cache",
+  {
+    id: serial("id").primaryKey(),
+    questionHash: varchar("question_hash", { length: 64 }).notNull().unique(),
+    question: text("question").notNull(),
+    response: text("response").notNull(),
+    hitCount: integer("hit_count").default(0),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+  },
+  (table) => ({
+    questionHashIdx: uniqueIndex("coach_response_cache_hash_idx").on(
+      table.questionHash,
+    ),
+    expiresAtIdx: index("coach_response_cache_expires_idx").on(table.expiresAt),
+  }),
+);
+
 // Meal planning types
 export const insertGroceryListSchema = createInsertSchema(groceryLists).omit({
   id: true,

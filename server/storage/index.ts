@@ -125,6 +125,8 @@ export const storage = {
   updateChatConversationTitle: chat.updateChatConversationTitle,
   getDailyChatMessageCount: chat.getDailyChatMessageCount,
   createChatMessageWithLimitCheck: chat.createChatMessageWithLimitCheck,
+  getCoachCachedResponse: chat.getCoachCachedResponse,
+  setCoachCachedResponse: chat.setCoachCachedResponse,
 
   // Cache (suggestions, instructions, meal suggestions, micronutrients)
   getSuggestionCache: cache.getSuggestionCache,
