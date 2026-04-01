@@ -72,7 +72,7 @@ export function CoachOverlayProvider({ children }: { children: ReactNode }) {
         <Modal
           visible
           animationType={reducedMotion ? "none" : "slide"}
-          presentationStyle={Platform.OS === "ios" ? "pageSheet" : "fullScreen"}
+          presentationStyle="overFullScreen"
           onRequestClose={closeCoach}
         >
           <CoachOverlayContent

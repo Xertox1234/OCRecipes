@@ -37,20 +37,6 @@ interface CoachOverlayContentProps {
   onDismiss: () => void;
 }
 
-interface DisplayMessage {
-  id: number;
-  role: "user" | "assistant";
-  content: string;
-}
-
-const StreamingBubble = React.memo(function StreamingBubble({
-  content,
-}: {
-  content: string;
-}) {
-  return <ChatBubble role="assistant" content={content} isStreaming />;
-});
-
 export function CoachOverlayContent({
   question,
   screenContext,
@@ -63,16 +49,7 @@ export function CoachOverlayContent({
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [inputText, setInputText] = useState("");
   const [createError, setCreateError] = useState(false);
-
-  // Throttled streaming display
-  const [displayContent, setDisplayContent] = useState("");
-  const accumulatedRef = useRef("");
-  const rafId = useRef<number | null>(null);
-
-  // Refs for stale closure prevention
-  const conversationIdRef = useRef<number | null>(null);
-  const isSendingRef = useRef(false);
-
+  const didSendInitialRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const titleRef = useRef<View>(null);
 
@@ -82,15 +59,13 @@ export function CoachOverlayContent({
     useSendMessage(conversationId);
 
   // Step 1: Create conversation on mount
-  const didCreateRef = useRef(false);
   useEffect(() => {
-    if (didCreateRef.current) return;
-    didCreateRef.current = true;
+    if (didSendInitialRef.current) return;
+    didSendInitialRef.current = true;
 
     createConversation
       .mutateAsync(question.text.slice(0, 50))
       .then((conv) => {
-        conversationIdRef.current = conv.id;
         setConversationId(conv.id);
       })
       .catch(() => {
@@ -99,39 +74,35 @@ export function CoachOverlayContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Step 2: Send initial question once conversationId is set
-  // This fires after re-render, so sendMessage has the correct conversationId
-  const didSendInitialRef = useRef(false);
+  // Step 2: Send initial question once conversation is created
   useEffect(() => {
-    if (!conversationId || didSendInitialRef.current) return;
-    didSendInitialRef.current = true;
-    sendMessage(question.question, screenContext);
+    if (conversationId && !messages?.length) {
+      sendMessage(question.question, screenContext);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  // Throttle streaming content via rAF
-  useEffect(() => {
-    if (!streamingContent) return;
-    accumulatedRef.current = streamingContent;
-    if (rafId.current === null) {
-      rafId.current = requestAnimationFrame(() => {
-        setDisplayContent(accumulatedRef.current);
-        rafId.current = null;
-      });
-    }
-  }, [streamingContent]);
-
-  // Cleanup rAF on unmount
-  useEffect(() => {
-    return () => {
-      if (rafId.current !== null) cancelAnimationFrame(rafId.current);
-    };
-  }, []);
+  // Build display messages — same pattern as the proven RecipeCoachChatScreen
+  const displayMessages = [
+    ...(messages ?? []).filter((m) => m.role !== "system"),
+    ...(isStreaming && streamingContent
+      ? [
+          {
+            id: -1,
+            conversationId: conversationId ?? 0,
+            role: "assistant" as const,
+            content: streamingContent,
+            metadata: null,
+            createdAt: new Date().toISOString(),
+          },
+        ]
+      : []),
+  ];
 
   // Auto-scroll on new content
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: !reducedMotion });
-  }, [displayContent, messages, reducedMotion]);
+  }, [streamingContent, messages, reducedMotion]);
 
   // Accessibility: move focus to title on mount
   useEffect(() => {
@@ -156,17 +127,11 @@ export function CoachOverlayContent({
     prevStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
-  const handleSendFollowUp = useCallback(async () => {
-    const text = inputText.trim();
-    if (!text || isSendingRef.current || !conversationIdRef.current) return;
-    isSendingRef.current = true;
+  const handleSend = useCallback(() => {
+    if (!inputText.trim() || isStreaming) return;
+    sendMessage(inputText.trim());
     setInputText("");
-    try {
-      await sendMessage(text);
-    } finally {
-      isSendingRef.current = false;
-    }
-  }, [inputText, sendMessage]);
+  }, [inputText, isStreaming, sendMessage]);
 
   const handleRetry = useCallback(() => {
     setCreateError(false);
@@ -174,23 +139,10 @@ export function CoachOverlayContent({
     createConversation
       .mutateAsync(question.text.slice(0, 50))
       .then((conv) => {
-        conversationIdRef.current = conv.id;
         setConversationId(conv.id);
-        // sendMessage will fire via the conversationId effect above
       })
       .catch(() => setCreateError(true));
   }, [createConversation, question]);
-
-  // Build display messages list
-  const displayMessages: DisplayMessage[] = [
-    ...(messages ?? [])
-      .filter((m) => m.role !== "system")
-      .map((m) => ({
-        id: m.id,
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
-  ];
 
   const canSend =
     inputText.trim().length > 0 && !isStreaming && !!conversationId;
@@ -267,16 +219,13 @@ export function CoachOverlayContent({
           keyboardShouldPersistTaps="handled"
         >
           {displayMessages.map((msg) => (
-            <ChatBubble key={msg.id} role={msg.role} content={msg.content} />
+            <ChatBubble
+              key={msg.id}
+              role={msg.role}
+              content={msg.content}
+              isStreaming={msg.id === -1}
+            />
           ))}
-          {isStreaming && displayContent && (
-            <View
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-            >
-              <StreamingBubble content={displayContent} />
-            </View>
-          )}
           {streamError && (
             <View
               style={styles.errorBanner}
@@ -325,12 +274,12 @@ export function CoachOverlayContent({
             maxLength={2000}
             returnKeyType="send"
             blurOnSubmit={false}
-            onSubmitEditing={handleSendFollowUp}
+            onSubmitEditing={handleSend}
             accessibilityLabel="Type a follow-up question"
             accessibilityHint="Press return to send"
           />
           <Pressable
-            onPress={handleSendFollowUp}
+            onPress={handleSend}
             style={[
               styles.sendButton,
               {
