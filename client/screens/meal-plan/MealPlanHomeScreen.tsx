@@ -633,7 +633,10 @@ export default function MealPlanHomeScreen() {
   const handleItemPress = useCallback(
     (item: MealPlanItemWithRelations) => {
       if (item.recipeId) {
-        navigation.navigate("RecipeDetail", { recipeId: item.recipeId });
+        navigation.navigate("FeaturedRecipeDetail", {
+          recipeId: item.recipeId,
+          recipeType: "mealPlan",
+        });
       }
     },
     [navigation],

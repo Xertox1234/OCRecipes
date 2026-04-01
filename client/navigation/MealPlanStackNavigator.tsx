@@ -2,7 +2,6 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import MealPlanHomeScreen from "@/screens/meal-plan/MealPlanHomeScreen";
-import RecipeDetailScreen from "@/screens/meal-plan/RecipeDetailScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
 import RecipeCreateScreen from "@/screens/meal-plan/RecipeCreateScreen";
 import RecipeImportScreen from "@/screens/meal-plan/RecipeImportScreen";
@@ -19,7 +18,6 @@ import type { ImportedRecipeData } from "@shared/types/recipe-import";
 
 export type MealPlanStackParamList = {
   MealPlanHome: undefined;
-  RecipeDetail: { recipeId: number };
   RecipeBrowser: {
     mealType?: string;
     plannedDate?: string;
@@ -56,13 +54,6 @@ export default function MealPlanStackNavigator() {
         component={MealPlanHomeScreen}
         options={{
           headerTitle: () => <HeaderTitle title="Plan" />,
-        }}
-      />
-      <Stack.Screen
-        name="RecipeDetail"
-        component={RecipeDetailScreen}
-        options={{
-          headerTitle: () => <HeaderTitle title="Recipe" showIcon={false} />,
         }}
       />
       <Stack.Screen

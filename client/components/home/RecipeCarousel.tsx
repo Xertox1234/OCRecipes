@@ -41,6 +41,7 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
             : parseInt(String(card.recipeData.id), 10);
         navigation.navigate("FeaturedRecipeDetail", {
           recipeId: communityId,
+          recipeType: "community",
         });
       } else {
         // AI and catalog cards — pass full card data for inline display

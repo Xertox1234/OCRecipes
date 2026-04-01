@@ -65,13 +65,10 @@ export default function CookbookDetailScreen() {
   const handleRecipePress = useCallback(
     (recipe: ResolvedCookbookRecipe) => {
       haptics.selection();
-      if (recipe.recipeType === "mealPlan") {
-        navigation.navigate("RecipeDetail", { recipeId: recipe.recipeId });
-      } else {
-        navigation.navigate("FeaturedRecipeDetail", {
-          recipeId: recipe.recipeId,
-        });
-      }
+      navigation.navigate("FeaturedRecipeDetail", {
+        recipeId: recipe.recipeId,
+        recipeType: recipe.recipeType === "mealPlan" ? "mealPlan" : "community",
+      });
     },
     [haptics, navigation],
   );

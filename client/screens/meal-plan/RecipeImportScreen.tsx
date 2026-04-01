@@ -135,7 +135,10 @@ export default function RecipeImportScreen() {
 
   const handleViewRecipe = useCallback(() => {
     if (importedRecipe) {
-      navigation.navigate("RecipeDetail", { recipeId: importedRecipe.id });
+      navigation.navigate("FeaturedRecipeDetail", {
+        recipeId: importedRecipe.id,
+        recipeType: "mealPlan",
+      });
     }
   }, [navigation, importedRecipe]);
 

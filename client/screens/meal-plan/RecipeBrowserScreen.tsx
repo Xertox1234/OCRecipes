@@ -431,13 +431,19 @@ export default function RecipeBrowserScreen() {
       haptics.selection();
 
       if (item.source === "community") {
-        navigation.navigate("FeaturedRecipeDetail", { recipeId: item.id });
+        navigation.navigate("FeaturedRecipeDetail", {
+          recipeId: item.id,
+          recipeType: "community",
+        });
         return;
       }
 
       // Personal recipe
       if (isBrowseOnly) {
-        navigation.navigate("RecipeDetail", { recipeId: item.id });
+        navigation.navigate("FeaturedRecipeDetail", {
+          recipeId: item.id,
+          recipeType: "mealPlan",
+        });
         return;
       }
 
@@ -465,7 +471,10 @@ export default function RecipeBrowserScreen() {
       try {
         const saved = await saveCatalogMutation.mutateAsync(item.id);
         if (isBrowseOnly) {
-          navigation.navigate("RecipeDetail", { recipeId: saved.id });
+          navigation.navigate("FeaturedRecipeDetail", {
+            recipeId: saved.id,
+            recipeType: "mealPlan",
+          });
         } else {
           await addItemMutation.mutateAsync({
             recipeId: saved.id,

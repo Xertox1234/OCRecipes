@@ -205,7 +205,10 @@ export function useProfileData() {
   const handleRecipePress = useCallback(
     (recipeId: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      navigation.navigate("FeaturedRecipeDetail", { recipeId });
+      navigation.navigate("FeaturedRecipeDetail", {
+        recipeId,
+        recipeType: "community",
+      });
     },
     [haptics, navigation],
   );
