@@ -325,6 +325,7 @@ async function main() {
         servings: 2,
         dietTags: [...content.dietTags, ...target.dietTags],
         instructions: content.instructions,
+        ingredients: content.ingredients,
         imageUrl,
         isPublic: true,
         likeCount: Math.floor(Math.random() * 50) + 5,

@@ -13,7 +13,7 @@ import {
   parsePositiveIntParam,
   checkAiConfigured,
 } from "./_helpers";
-import { openai } from "../lib/openai";
+import { openai, MODEL_FAST } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { logger, toError } from "../lib/logger";
 
@@ -146,11 +146,12 @@ Generate exactly 4 suggestions in this JSON format:
 Keep descriptions concise. Make recipes practical and kid activities fun and safe. Return only valid JSON.`;
 
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: MODEL_FAST,
+          temperature: 0.7,
           messages: [
             {
               role: "system",
-              content: `You are a helpful culinary and crafts assistant. Always respond with valid JSON only, no markdown formatting. ${SYSTEM_PROMPT_BOUNDARY}`,
+              content: `You are a helpful culinary and crafts assistant for a family-friendly nutrition app. Be practical and creative. If the user has allergies listed, never suggest recipes containing those allergens. Always respond with valid JSON only, no markdown formatting. ${SYSTEM_PROMPT_BOUNDARY}`,
             },
             { role: "user", content: prompt },
           ],
@@ -334,11 +335,12 @@ Format as plain text with clear sections.`;
         }
 
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: MODEL_FAST,
+          temperature: 0.4,
           messages: [
             {
               role: "system",
-              content: `You are a helpful culinary and crafts assistant. Provide clear, practical instructions. ${SYSTEM_PROMPT_BOUNDARY}`,
+              content: `You are a helpful culinary and crafts assistant for a family-friendly nutrition app. Provide clear, practical instructions in plain text with numbered steps and clear section headings. Do not use markdown formatting. If the user has allergies listed, never suggest ingredients containing those allergens. ${SYSTEM_PROMPT_BOUNDARY}`,
             },
             { role: "user", content: prompt },
           ],

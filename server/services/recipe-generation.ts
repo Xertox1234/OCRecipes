@@ -3,12 +3,16 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { UserProfile } from "@shared/schema";
-import type { RecipeContent } from "@shared/types/cook-session";
+import type {
+  RecipeContent,
+  GeneratedIngredient,
+} from "@shared/types/cook-session";
 import {
   openai,
   dalleClient,
   OPENAI_TIMEOUT_HEAVY_MS,
   OPENAI_TIMEOUT_IMAGE_MS,
+  MODEL_HEAVY,
 } from "../lib/openai";
 import {
   generateImage as runwareGenerateImage,
@@ -23,6 +27,12 @@ const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
 fs.mkdirSync(RECIPE_IMAGES_DIR, { recursive: true });
 
 // Zod schemas for recipe generation
+const ingredientSchema = z.object({
+  name: z.string().min(1),
+  quantity: z.string().default(""),
+  unit: z.string().default(""),
+});
+
 const instructionItemSchema = z.union([
   z.string(),
   z
@@ -39,6 +49,7 @@ const recipeContentSchema = z.object({
   description: z.string().min(1).max(500),
   difficulty: z.enum(["Easy", "Medium", "Hard"]),
   timeEstimate: z.string().min(1).max(50),
+  ingredients: z.array(ingredientSchema).min(1),
   instructions: z
     .union([z.string(), z.array(instructionItemSchema)])
     .transform((v): string[] => {
@@ -82,6 +93,7 @@ export interface GeneratedRecipe {
   description: string;
   difficulty: string;
   timeEstimate: string;
+  ingredients: GeneratedIngredient[];
   instructions: string[];
   dietTags: string[];
   imageUrl: string | null;
@@ -144,44 +156,54 @@ export async function generateRecipeContent(
 
   const servingsText = input.servings ? `for ${input.servings} servings` : "";
   const timeText = input.timeConstraint
-    ? `The recipe should take ${input.timeConstraint} or less.`
+    ? `Time constraint: ${sanitizeUserInput(input.timeConstraint)} or less.`
     : "";
 
   const sanitizedProductName = sanitizeUserInput(input.productName);
 
-  const prompt = `Create a delicious recipe using "${sanitizedProductName}" as the main ingredient ${servingsText}.
+  const userParts: string[] = [
+    `Create a recipe using "${sanitizedProductName}" as the main ingredient ${servingsText}.`.trim(),
+  ];
+  if (dietaryContext) userParts.push(`Dietary requirements: ${dietaryContext}`);
+  if (timeText) userParts.push(timeText);
 
-${dietaryContext ? `User dietary requirements: ${dietaryContext}` : ""}
-${timeText}
-
-Generate a complete recipe with:
-1. A creative, appetizing title
-2. A brief description (1-2 sentences)
-3. Clear step-by-step instructions including ingredients list
-4. Difficulty level (Easy, Medium, or Hard)
-5. Total time estimate (prep + cook)
-6. Relevant diet tags (e.g., "vegetarian", "gluten-free", "low-carb", "quick", "kid-friendly")
-
-Respond with JSON only:
-{
-  "title": "Recipe Title",
-  "description": "Brief appetizing description",
-  "difficulty": "Easy|Medium|Hard",
-  "timeEstimate": "30 min",
-  "instructions": "Full instructions with ingredients list and steps",
-  "dietTags": ["tag1", "tag2"]
-}`;
+  const prompt = userParts.join("\n\n");
 
   let response;
   try {
     response = await openai.chat.completions.create(
       {
-        model: "gpt-4o",
+        model: MODEL_HEAVY,
+        temperature: 0.7,
         max_completion_tokens: 2000,
         messages: [
           {
             role: "system",
-            content: `You are a professional chef and recipe developer. Create delicious, practical recipes that are easy to follow. Always respond with valid JSON only. ${SYSTEM_PROMPT_BOUNDARY}`,
+            content: `You are a professional chef creating recipes for a nutrition tracking app. Recipes must be practical, nutritionally balanced, and easy to follow at home.
+
+Guidelines:
+- Use common, easy-to-find grocery-store ingredients.
+- List each ingredient with a measured quantity and unit (e.g. "1 tbsp", "200 g"). Use "" for unit when the item is counted (e.g. "2" eggs).
+- Write 5–12 concise instruction steps. Each step should describe one clear action.
+- Adapt complexity to the user's cooking skill level when provided.
+- Choose an accurate difficulty: Easy (≤ 5 ingredients, one-pot/no-cook), Medium (6–12 ingredients, standard techniques), Hard (12+ ingredients or advanced techniques).
+- Include accurate prep + cook time in the timeEstimate.
+- Tag with all applicable diet tags: "vegetarian", "vegan", "gluten-free", "dairy-free", "low-carb", "high-protein", "quick", "kid-friendly", etc.
+
+ALLERGY SAFETY: If the user has listed allergens, NEVER include ingredients containing those allergens. Double-check every ingredient against the allergen list. Allergies are safety-critical — treat them as absolute exclusions.
+
+Respond with a single JSON object matching this exact schema:
+{
+  "title": "string",
+  "description": "string (1-2 sentences)",
+  "difficulty": "Easy | Medium | Hard",
+  "timeEstimate": "string (e.g. 30 min)",
+  "ingredients": [{ "name": "string", "quantity": "string", "unit": "string" }],
+  "instructions": ["string"],
+  "dietTags": ["string"]
+}
+
+${SYSTEM_PROMPT_BOUNDARY}`,
           },
           { role: "user", content: prompt },
         ],

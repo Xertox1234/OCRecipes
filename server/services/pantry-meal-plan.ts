@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { PantryItem, UserProfile } from "@shared/schema";
-import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
+import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "./meal-suggestions";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -158,7 +158,11 @@ export async function generateMealPlanFromPantry(
   const dietaryContext = buildDietaryContext(input.userProfile);
   const pantryList = formatPantryItems(input.pantryItems);
 
-  const systemPrompt = `You are a professional meal planner and chef. Generate a practical multi-day meal plan using ONLY the ingredients the user has in their pantry. You may assume basic pantry staples are available (salt, pepper, oil, water, common spices). Prioritize ingredients that are expiring soon. Return JSON only.\n\n${SYSTEM_PROMPT_BOUNDARY}`;
+  const systemPrompt = `You are a professional meal planner and chef. Generate a practical multi-day meal plan using ONLY the ingredients the user has in their pantry. You may assume basic pantry staples are available (salt, pepper, oil, water, common spices). Prioritize ingredients that are expiring soon.
+ALLERGY SAFETY: If the user has listed allergens, NEVER suggest meals containing those allergens. Allergies are safety-critical — treat them as absolute exclusions.
+Return JSON only.
+
+${SYSTEM_PROMPT_BOUNDARY}`;
 
   const userPrompt = `Generate a ${input.days}-day meal plan using my pantry ingredients.
 
@@ -192,7 +196,7 @@ Each meal needs: mealType, title, description, servings, prepTimeMinutes, cookTi
   try {
     response = await openai.chat.completions.create(
       {
-        model: "gpt-4o",
+        model: MODEL_HEAVY,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

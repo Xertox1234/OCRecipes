@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { openai } from "../lib/openai";
+import { openai, MODEL_HEAVY } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
@@ -111,7 +111,7 @@ export async function analyzeReceiptPhotos(
   let response;
   try {
     response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: MODEL_HEAVY,
       messages: [
         {
           role: "system",

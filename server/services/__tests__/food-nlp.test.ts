@@ -13,6 +13,8 @@ vi.mock("../../lib/openai", () => ({
     },
   },
   OPENAI_TIMEOUT_FAST_MS: 15_000,
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
 }));
 
 // Mock nutrition lookup

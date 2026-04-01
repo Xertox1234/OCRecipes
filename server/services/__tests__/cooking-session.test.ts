@@ -30,6 +30,8 @@ vi.mock("../../lib/openai", () => ({
     },
   },
   OPENAI_TIMEOUT_HEAVY_MS: 30000,
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
 }));
 
 vi.mock("../../lib/ai-safety", () => ({

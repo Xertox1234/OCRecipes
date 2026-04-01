@@ -18,7 +18,7 @@ import {
   ALLERGEN_INGREDIENT_MAP,
   type AllergySeverity,
 } from "@shared/constants/allergens";
-import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
+import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { getSpoonacularSubstitutes } from "./recipe-catalog";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -355,8 +355,6 @@ For each ingredient, provide 1-2 substitutions that:
 4. Include estimated macro differences per serving
 5. Harmonize with the other ingredients already in the recipe — prefer substitutes whose flavor profile complements the dish
 
-${SYSTEM_PROMPT_BOUNDARY}
-
 Respond with JSON only:
 {
   "suggestions": [
@@ -373,12 +371,16 @@ Respond with JSON only:
 
   const response = await openai.chat.completions.create(
     {
-      model: "gpt-4o",
+      model: MODEL_HEAVY,
+      temperature: 0.4,
       messages: [
         {
           role: "system",
           content:
-            "You are a food science and nutrition expert. Suggest practical ingredient substitutions that preserve the functional role of each ingredient (binding, leavening, emulsifying, etc.). Always respond with valid JSON only.",
+            "You are a food science and nutrition expert. Suggest practical ingredient substitutions that preserve the functional role of each ingredient (binding, leavening, emulsifying, etc.).\n" +
+            "ALLERGY SAFETY: If the user has listed allergens, NEVER suggest substitutes containing those allergens. Allergies are safety-critical — treat them as absolute exclusions.\n" +
+            "Always respond with valid JSON only.\n\n" +
+            SYSTEM_PROMPT_BOUNDARY,
         },
         { role: "user", content: prompt },
       ],

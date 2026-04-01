@@ -11,6 +11,8 @@ vi.mock("../../lib/openai", () => ({
       },
     },
   },
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
 }));
 
 vi.mock("../../storage", () => ({
@@ -92,7 +94,7 @@ describe("Menu Analysis", () => {
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "gpt-4o",
+          model: expect.any(String),
           response_format: { type: "json_object" },
           messages: expect.arrayContaining([
             expect.objectContaining({

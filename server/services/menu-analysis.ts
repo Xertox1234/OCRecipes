@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { storage } from "../storage";
-import { openai } from "../lib/openai";
+import { openai, MODEL_HEAVY } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 import {
@@ -115,7 +115,7 @@ export async function analyzeMenuPhoto(
   let response;
   try {
     response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: MODEL_HEAVY,
       messages: [
         {
           role: "system",

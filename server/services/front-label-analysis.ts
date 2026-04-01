@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { openai } from "../lib/openai";
+import { openai, MODEL_HEAVY } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -59,8 +59,9 @@ export async function analyzeFrontLabel(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: MODEL_HEAVY,
       max_completion_tokens: 300,
+      temperature: 0.2,
       messages: [
         {
           role: "system",

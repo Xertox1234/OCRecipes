@@ -11,6 +11,8 @@ vi.mock("../../lib/openai", () => ({
       },
     },
   },
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
 }));
 
 vi.mock("../../lib/ai-safety", () => ({

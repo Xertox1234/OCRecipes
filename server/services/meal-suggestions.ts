@@ -4,7 +4,7 @@ import type { UserProfile } from "@shared/schema";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { ALLERGEN_INGREDIENT_MAP } from "@shared/constants/allergens";
 import type { AllergenId } from "@shared/constants/allergens";
-import { openai, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
+import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
@@ -168,7 +168,13 @@ export async function generateMealSuggestions(
           .join("\n")
       : "No meals planned yet today.";
 
-  const systemPrompt = `You are a professional nutritionist and meal planner. Generate exactly 3 meal suggestions that are practical, balanced, and tailored to the user's needs. Return JSON only.\n\n${SYSTEM_PROMPT_BOUNDARY}`;
+  const systemPrompt = `You are a professional nutritionist and meal planner. Generate exactly 3 meal suggestions that are practical, balanced, and tailored to the user's needs.
+Be encouraging and practical. Suggest meals that feel achievable, not aspirational.
+ALLERGY SAFETY: If the user has listed allergens, NEVER suggest meals containing those allergens. Allergies are safety-critical — treat them as absolute exclusions.
+Never recommend extreme calorie restriction or any advice that could promote disordered eating.
+Return JSON only.
+
+${SYSTEM_PROMPT_BOUNDARY}`;
 
   const userPrompt = `Generate 3 ${input.mealType} suggestions for ${input.date}.
 
@@ -189,7 +195,7 @@ Respond with JSON: { "suggestions": [...] }`;
   try {
     response = await openai.chat.completions.create(
       {
-        model: "gpt-4o",
+        model: MODEL_HEAVY,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

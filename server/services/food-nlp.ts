@@ -1,7 +1,7 @@
 import pLimit from "p-limit";
 import { z } from "zod";
 import { lookupNutrition } from "./nutrition-lookup";
-import { openai, OPENAI_TIMEOUT_FAST_MS } from "../lib/openai";
+import { openai, OPENAI_TIMEOUT_FAST_MS, MODEL_FAST } from "../lib/openai";
 import {
   sanitizeUserInput,
   validateAiResponse,
@@ -48,7 +48,7 @@ export async function parseNaturalLanguageFood(
   try {
     response = await openai.chat.completions.create(
       {
-        model: "gpt-4o-mini",
+        model: MODEL_FAST,
         temperature: 0.1,
         max_completion_tokens: 500,
         response_format: { type: "json_object" },

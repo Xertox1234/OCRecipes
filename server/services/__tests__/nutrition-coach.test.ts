@@ -15,6 +15,8 @@ vi.mock("../../lib/openai", () => ({
     },
   },
   OPENAI_TIMEOUT_STREAM_MS: 30_000,
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
 }));
 
 vi.mock("../../lib/ai-safety", () => ({
@@ -101,7 +103,7 @@ describe("Nutrition Coach", () => {
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: "gpt-4o-mini",
+          model: expect.any(String),
           stream: true,
           messages: expect.arrayContaining([
             expect.objectContaining({

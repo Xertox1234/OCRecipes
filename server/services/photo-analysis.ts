@@ -11,7 +11,7 @@ import {
   type ContentType,
 } from "@shared/constants/classification";
 import { getCuisineForFood } from "./cultural-food-map";
-import { openai } from "../lib/openai";
+import { openai, MODEL_HEAVY, MODEL_FAST } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
@@ -80,11 +80,12 @@ Respond with JSON only matching this schema:
 
 const IDENTIFY_PROMPT = `You are a food identification assistant. Identify the foods in this photo.
 For each food item provide:
-1. Name (be specific)
+1. Name (be specific, e.g. "grilled chicken breast" not just "chicken")
 2. Estimated portion size
-3. Category: one of "protein", "vegetable", "grain", "fruit", "dairy", "beverage", "other"
+3. Your confidence level (0-1) based on how clearly the food is visible
+4. Category: one of "protein", "vegetable", "grain", "fruit", "dairy", "beverage", "other"
 
-Keep responses brief. No confidence scoring needed — set confidence to 1.0 and needsClarification to false.
+Keep responses brief.
 
 ${SYSTEM_PROMPT_BOUNDARY}
 
@@ -94,12 +95,12 @@ Respond with JSON only:
     {
       "name": "food name",
       "quantity": "portion size",
-      "confidence": 1.0,
+      "confidence": 0.9,
       "needsClarification": false,
       "category": "vegetable"
     }
   ],
-  "overallConfidence": 1.0,
+  "overallConfidence": 0.9,
   "followUpQuestions": []
 }`;
 
@@ -107,9 +108,10 @@ const RECIPE_PROMPT = `You are an ingredient identification assistant. Identify 
 For each ingredient provide:
 1. Name (e.g., "broccoli", "chicken breast")
 2. Estimated quantity
-3. Category: one of "protein", "vegetable", "grain", "fruit", "dairy", "beverage", "other"
+3. Your confidence level (0-1) based on how clearly the ingredient is visible
+4. Category: one of "protein", "vegetable", "grain", "fruit", "dairy", "beverage", "other"
 
-Focus on identifying ingredients that could be used in recipes. Set confidence to 1.0 and needsClarification to false.
+Focus on identifying ingredients that could be used in recipes.
 
 ${SYSTEM_PROMPT_BOUNDARY}
 
@@ -119,12 +121,12 @@ Respond with JSON only:
     {
       "name": "ingredient name",
       "quantity": "estimated amount",
-      "confidence": 1.0,
+      "confidence": 0.9,
       "needsClarification": false,
       "category": "protein"
     }
   ],
-  "overallConfidence": 1.0,
+  "overallConfidence": 0.9,
   "followUpQuestions": []
 }`;
 
@@ -270,8 +272,9 @@ export async function analyzeRecipePhoto(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: MODEL_HEAVY,
       max_completion_tokens: 2000,
+      temperature: 0.2,
       messages: [
         {
           role: "system",
@@ -360,8 +363,9 @@ export async function analyzeLabelPhoto(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: MODEL_HEAVY,
       max_completion_tokens: 800,
+      temperature: 0.2,
       messages: [
         {
           role: "system",
@@ -481,8 +485,9 @@ export async function analyzePhoto(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: MODEL_HEAVY,
       max_completion_tokens: maxTokens,
+      temperature: 0.3,
       messages: [
         {
           role: "system",
@@ -564,18 +569,36 @@ export async function refineAnalysis(
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: MODEL_HEAVY,
       max_completion_tokens: 500,
+      temperature: 0.3,
       messages: [
         {
           role: "system",
-          content: `You are a nutrition analysis assistant. You previously analyzed a meal and had a follow-up question. Based on the user's answer, update the analysis.
+          content: `You are a nutrition analysis assistant. You previously analyzed a meal and had a follow-up question. The user has answered. Update your analysis based on their clarification.
 
 Previous analysis: ${JSON.stringify(previousResult)}
 
 ${SYSTEM_PROMPT_BOUNDARY}
 
-Respond with JSON matching the same schema, with updated foods and confidence.`,
+Respond with JSON matching this schema:
+{
+  "foods": [
+    {
+      "name": "food name",
+      "quantity": "portion size",
+      "confidence": 0.95,
+      "needsClarification": false,
+      "clarificationQuestion": null,
+      "category": "protein",
+      "cuisine": "optional"
+    }
+  ],
+  "overallConfidence": 0.9,
+  "followUpQuestions": []
+}
+
+Update the food names, quantities, confidence, and categories based on the user's answer. Remove any clarification flags that are now resolved.`,
         },
         {
           role: "user",
@@ -689,7 +712,7 @@ export async function classifyAndAnalyze(
   let classification: ClassifiedResult;
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: MODEL_FAST,
       max_completion_tokens: 150,
       temperature: 0.1,
       messages: [

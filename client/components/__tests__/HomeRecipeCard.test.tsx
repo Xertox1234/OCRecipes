@@ -37,6 +37,7 @@ const baseRecipe = {
   createdAt: new Date(),
   updatedAt: new Date(),
   instructions: ["Grill chicken", "Toss salad"],
+  ingredients: [],
   barcode: null,
   timeEstimate: null,
   normalizedProductName: "grilled chicken salad",

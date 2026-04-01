@@ -459,6 +459,9 @@ export const communityRecipes = pgTable(
     servings: integer("servings").default(2),
     dietTags: jsonb("diet_tags").$type<string[]>().default([]),
     instructions: jsonb("instructions").$type<string[]>().notNull(),
+    ingredients: jsonb("ingredients")
+      .$type<{ name: string; quantity: string; unit: string }[]>()
+      .default([]),
     imageUrl: text("image_url"),
     isPublic: boolean("is_public").default(true),
     likeCount: integer("like_count").default(0),

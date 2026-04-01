@@ -35,6 +35,8 @@ vi.mock("../../lib/openai", () => ({
     },
   },
   isAiConfigured: true,
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
 }));
 
 vi.mock("../../middleware/auth");

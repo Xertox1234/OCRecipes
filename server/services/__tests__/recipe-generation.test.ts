@@ -49,6 +49,8 @@ vi.mock("../../lib/openai", () => ({
   },
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
   OPENAI_TIMEOUT_IMAGE_MS: 120_000,
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
 }));
 
 // Mock the runware module — isRunwareConfigured is controlled via a mutable ref
@@ -110,6 +112,10 @@ describe("Recipe Generation", () => {
         description: "A light and healthy salad.",
         difficulty: "Easy",
         timeEstimate: "20 min",
+        ingredients: [
+          { name: "chicken breast", quantity: "2", unit: "" },
+          { name: "mixed greens", quantity: "4", unit: "cups" },
+        ],
         instructions: "Grill chicken\nToss salad\nCombine",
         dietTags: ["high-protein", "low-carb"],
       };
@@ -126,6 +132,8 @@ describe("Recipe Generation", () => {
       expect(result.description).toBe("A light and healthy salad.");
       expect(result.difficulty).toBe("Easy");
       expect(result.timeEstimate).toBe("20 min");
+      expect(result.ingredients).toHaveLength(2);
+      expect(result.ingredients[0].name).toBe("chicken breast");
       expect(result.instructions).toContain("Grill chicken");
       expect(result.instructions).toContain("Toss salad");
       expect(result.dietTags).toEqual(["high-protein", "low-carb"]);
@@ -137,6 +145,7 @@ describe("Recipe Generation", () => {
         description: "Easy rice dish",
         difficulty: "Easy",
         timeEstimate: "15 min",
+        ingredients: [{ name: "rice", quantity: "1", unit: "cup" }],
         instructions: ["Boil water", "Add rice", "Simmer for 12 minutes"],
         dietTags: ["vegan"],
       };
@@ -157,6 +166,7 @@ describe("Recipe Generation", () => {
         description: "Easy rice dish",
         difficulty: "Easy",
         timeEstimate: "15 min",
+        ingredients: [{ name: "rice", quantity: "1", unit: "cup" }],
         instructions: [
           { step: 1, text: "Boil water" },
           { step: 2, text: "Add rice" },
@@ -208,6 +218,7 @@ describe("Recipe Generation", () => {
         description: "Plant-based bowl",
         difficulty: "Easy",
         timeEstimate: "15 min",
+        ingredients: [{ name: "tofu", quantity: "200", unit: "g" }],
         instructions: "Mix ingredients together",
         dietTags: ["vegan"],
       };
@@ -337,6 +348,7 @@ describe("Recipe Generation", () => {
         description: "Delicious salmon",
         difficulty: "Medium",
         timeEstimate: "30 min",
+        ingredients: [{ name: "salmon fillet", quantity: "2", unit: "" }],
         instructions: "Grill the salmon",
         dietTags: ["high-protein"],
       };
@@ -361,6 +373,7 @@ describe("Recipe Generation", () => {
         description: "Quick pasta dish",
         difficulty: "Easy",
         timeEstimate: "15 min",
+        ingredients: [{ name: "pasta", quantity: "200", unit: "g" }],
         instructions: "Cook pasta\nAdd sauce",
         dietTags: [],
       };

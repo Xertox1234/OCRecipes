@@ -1,4 +1,4 @@
-import { openai, OPENAI_TIMEOUT_STREAM_MS } from "../lib/openai";
+import { openai, OPENAI_TIMEOUT_STREAM_MS, MODEL_FAST } from "../lib/openai";
 import {
   sanitizeUserInput,
   containsDangerousDietaryAdvice,
@@ -90,7 +90,7 @@ export async function* generateCoachResponse(
   try {
     stream = await openai.chat.completions.create(
       {
-        model: "gpt-4o-mini",
+        model: MODEL_FAST,
         stream: true,
         messages: [
           { role: "system", content: systemPrompt },
