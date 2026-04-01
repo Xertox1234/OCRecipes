@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { createHash } from "crypto";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import {
@@ -16,6 +17,13 @@ import { sendError } from "../lib/api-errors";
 import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { subscriptionRateLimit } from "./_helpers";
+
+/** Store a hash + truncated prefix instead of the full receipt to avoid DB bloat. */
+function compactReceipt(receipt: string): string {
+  const hash = createHash("sha256").update(receipt).digest("hex");
+  const prefix = receipt.slice(0, 64);
+  return `${prefix}...sha256:${hash}`;
+}
 
 export function register(app: Express): void {
   app.get(
@@ -123,7 +131,7 @@ export function register(app: Express): void {
           await storage.createTransaction({
             userId: req.userId,
             transactionId,
-            receipt,
+            receipt: compactReceipt(receipt),
             platform,
             productId,
             status: "failed",
@@ -141,7 +149,7 @@ export function register(app: Express): void {
           {
             userId: req.userId,
             transactionId,
-            receipt,
+            receipt: compactReceipt(receipt),
             platform,
             productId,
             status: "completed",
@@ -199,7 +207,7 @@ export function register(app: Express): void {
           {
             userId: req.userId,
             transactionId: restoreId,
-            receipt,
+            receipt: compactReceipt(receipt),
             platform,
             productId: "restore",
             status: "completed",

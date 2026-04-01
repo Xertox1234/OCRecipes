@@ -11,7 +11,13 @@ import {
   type ContentType,
 } from "@shared/constants/classification";
 import { getCuisineForFood } from "./cultural-food-map";
-import { openai, MODEL_HEAVY, MODEL_FAST } from "../lib/openai";
+import {
+  openai,
+  MODEL_HEAVY,
+  MODEL_FAST,
+  OPENAI_TIMEOUT_HEAVY_MS,
+  OPENAI_TIMEOUT_FAST_MS,
+} from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
@@ -271,34 +277,37 @@ export async function analyzeRecipePhoto(
   const startTime = Date.now();
 
   try {
-    const response = await openai.chat.completions.create({
-      model: MODEL_HEAVY,
-      max_completion_tokens: 2000,
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content: RECIPE_PHOTO_PROMPT,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Extract the full recipe from this image:",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBase64}`,
-                detail: "high",
+    const response = await openai.chat.completions.create(
+      {
+        model: MODEL_HEAVY,
+        max_completion_tokens: 2000,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: RECIPE_PHOTO_PROMPT,
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Extract the full recipe from this image:",
               },
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${imageBase64}`,
+                  detail: "high",
+                },
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
 
     const content = response.choices[0]?.message?.content || "{}";
     const parsed = recipePhotoResultSchema.safeParse(JSON.parse(content));
@@ -308,22 +317,7 @@ export async function analyzeRecipePhoto(
         { zodErrors: parsed.error.flatten() },
         "recipe photo extraction validation failed",
       );
-      return {
-        title: "",
-        description: null,
-        ingredients: [],
-        instructions: null,
-        servings: null,
-        prepTimeMinutes: null,
-        cookTimeMinutes: null,
-        cuisine: null,
-        dietTags: [],
-        caloriesPerServing: null,
-        proteinPerServing: null,
-        carbsPerServing: null,
-        fatPerServing: null,
-        confidence: 0,
-      };
+      throw new Error("Recipe photo extraction returned invalid data");
     }
 
     log.debug(
@@ -362,34 +356,37 @@ export async function analyzeLabelPhoto(
   const startTime = Date.now();
 
   try {
-    const response = await openai.chat.completions.create({
-      model: MODEL_HEAVY,
-      max_completion_tokens: 800,
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content: LABEL_PROMPT,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Extract all nutrition values from this label:",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBase64}`,
-                detail: "high", // critical for reading small label text
+    const response = await openai.chat.completions.create(
+      {
+        model: MODEL_HEAVY,
+        max_completion_tokens: 800,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: LABEL_PROMPT,
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Extract all nutrition values from this label:",
               },
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${imageBase64}`,
+                  detail: "high", // critical for reading small label text
+                },
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
 
     const content = response.choices[0]?.message?.content || "{}";
     const parsed = labelExtractionSchema.safeParse(JSON.parse(content));
@@ -484,34 +481,37 @@ export async function analyzePhoto(
   const { prompt, maxTokens } = getPromptForIntent(intent);
 
   try {
-    const response = await openai.chat.completions.create({
-      model: MODEL_HEAVY,
-      max_completion_tokens: maxTokens,
-      temperature: 0.3,
-      messages: [
-        {
-          role: "system",
-          content: prompt,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Identify all foods in this image with portion estimates:",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBase64}`,
-                detail: "low", // 85 tokens, 512px - faster processing
+    const response = await openai.chat.completions.create(
+      {
+        model: MODEL_HEAVY,
+        max_completion_tokens: maxTokens,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content: prompt,
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Identify all foods in this image with portion estimates:",
               },
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${imageBase64}`,
+                  detail: "low", // 85 tokens, 512px - faster processing
+                },
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
 
     const content = response.choices[0]?.message?.content || "{}";
 
@@ -568,14 +568,15 @@ export async function refineAnalysis(
   const sanitizedAnswer = sanitizeUserInput(answer);
 
   try {
-    const response = await openai.chat.completions.create({
-      model: MODEL_HEAVY,
-      max_completion_tokens: 500,
-      temperature: 0.3,
-      messages: [
-        {
-          role: "system",
-          content: `You are a nutrition analysis assistant. You previously analyzed a meal and had a follow-up question. The user has answered. Update your analysis based on their clarification.
+    const response = await openai.chat.completions.create(
+      {
+        model: MODEL_HEAVY,
+        max_completion_tokens: 500,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content: `You are a nutrition analysis assistant. You previously analyzed a meal and had a follow-up question. The user has answered. Update your analysis based on their clarification.
 
 Previous analysis: ${JSON.stringify(previousResult)}
 
@@ -599,14 +600,16 @@ Respond with JSON matching this schema:
 }
 
 Update the food names, quantities, confidence, and categories based on the user's answer. Remove any clarification flags that are now resolved.`,
-        },
-        {
-          role: "user",
-          content: `Question: "${question}"\nAnswer: "${sanitizedAnswer}"\n\nUpdate the analysis based on this clarification.`,
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+          },
+          {
+            role: "user",
+            content: `Question: "${question}"\nAnswer: "${sanitizedAnswer}"\n\nUpdate the analysis based on this clarification.`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
 
     const content = response.choices[0]?.message?.content || "{}";
 
@@ -711,31 +714,34 @@ export async function classifyAndAnalyze(
   // Step 1: Classify
   let classification: ClassifiedResult;
   try {
-    const response = await openai.chat.completions.create({
-      model: MODEL_FAST,
-      max_completion_tokens: 150,
-      temperature: 0.1,
-      messages: [
-        { role: "system", content: CLASSIFICATION_PROMPT },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Classify this image:",
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBase64}`,
-                detail: "low",
+    const response = await openai.chat.completions.create(
+      {
+        model: MODEL_FAST,
+        max_completion_tokens: 150,
+        temperature: 0.1,
+        messages: [
+          { role: "system", content: CLASSIFICATION_PROMPT },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Classify this image:",
               },
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${imageBase64}`,
+                  detail: "low",
+                },
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      { timeout: OPENAI_TIMEOUT_FAST_MS },
+    );
 
     const content = response.choices[0]?.message?.content || "{}";
     const parsed = classifiedResultSchema.safeParse(JSON.parse(content));

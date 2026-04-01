@@ -209,6 +209,7 @@ async function buildFreeCarousel(
     allergies: userProfile?.allergies,
     cuisinePreferences: userProfile?.cuisinePreferences,
     limit: 8,
+    dismissedIds,
   });
 
   return recipes

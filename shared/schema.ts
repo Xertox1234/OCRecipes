@@ -756,7 +756,7 @@ export const weightLogs = pgTable(
       .notNull(),
   },
   (table) => ({
-    userDateIdx: index("weight_logs_user_date_idx").on(
+    userDateIdx: uniqueIndex("weight_logs_user_date_idx").on(
       table.userId,
       table.loggedAt,
     ),

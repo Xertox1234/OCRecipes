@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { storage } from "../storage";
-import { openai, MODEL_HEAVY } from "../lib/openai";
+import { openai, MODEL_HEAVY, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 import {
@@ -114,38 +114,41 @@ export async function analyzeMenuPhoto(
 
   let response;
   try {
-    response = await openai.chat.completions.create({
-      model: MODEL_HEAVY,
-      messages: [
-        {
-          role: "system",
-          content:
-            MENU_ANALYSIS_PROMPT +
-            userContext +
-            "\n\n" +
-            SYSTEM_PROMPT_BOUNDARY,
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBase64}`,
-                detail: "high",
+    response = await openai.chat.completions.create(
+      {
+        model: MODEL_HEAVY,
+        messages: [
+          {
+            role: "system",
+            content:
+              MENU_ANALYSIS_PROMPT +
+              userContext +
+              "\n\n" +
+              SYSTEM_PROMPT_BOUNDARY,
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${imageBase64}`,
+                  detail: "high",
+                },
               },
-            },
-            {
-              type: "text",
-              text: "Analyze this restaurant menu and provide nutrition estimates for each item.",
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 4096,
-      temperature: 0.3,
-    });
+              {
+                type: "text",
+                text: "Analyze this restaurant menu and provide nutrition estimates for each item.",
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 4096,
+        temperature: 0.3,
+      },
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
   } catch (error) {
     log.error({ err: toError(error) }, "menu analysis API error");
     throw new Error("Failed to analyze menu photo. Please try again.");

@@ -22,6 +22,7 @@ import {
   groceryListItems,
   pantryItems,
   communityRecipes,
+  cookbookRecipes,
 } from "@shared/schema";
 import { db } from "../db";
 import {
@@ -145,42 +146,47 @@ export interface MealPlanSuggestionInput {
 
 /**
  * Atomically creates multiple meal plan recipes with their ingredients
- * and plan items. Used when saving AI-suggested meal plans.
+ * and plan items. Uses batch inserts to minimize DB round trips.
  */
 export async function createMealPlanFromSuggestions(
   meals: MealPlanSuggestionInput[],
 ): Promise<{ recipeId: number; mealPlanItemId: number }[]> {
+  if (meals.length === 0) return [];
+
   return db.transaction(async (tx) => {
-    const items: { recipeId: number; mealPlanItemId: number }[] = [];
+    // Batch-insert all recipes at once
+    const recipes = await tx
+      .insert(mealPlanRecipes)
+      .values(meals.map((m) => m.recipe))
+      .returning();
 
-    for (const meal of meals) {
-      const [recipe] = await tx
-        .insert(mealPlanRecipes)
-        .values(meal.recipe)
-        .returning();
-
-      if (meal.ingredients.length > 0) {
-        await tx.insert(recipeIngredients).values(
-          meal.ingredients.map((ing, idx) => ({
-            ...ing,
-            recipeId: recipe.id,
-            displayOrder: ing.displayOrder ?? idx,
-          })),
-        );
-      }
-
-      const [mealPlanItem] = await tx
-        .insert(mealPlanItems)
-        .values({ ...meal.planItem, recipeId: recipe.id })
-        .returning();
-
-      items.push({
+    // Batch-insert all ingredients at once (with correct recipeIds)
+    const allIngredients = recipes.flatMap((recipe, i) =>
+      meals[i].ingredients.map((ing, idx) => ({
+        ...ing,
         recipeId: recipe.id,
-        mealPlanItemId: mealPlanItem.id,
-      });
+        displayOrder: ing.displayOrder ?? idx,
+      })),
+    );
+    if (allIngredients.length > 0) {
+      await tx.insert(recipeIngredients).values(allIngredients);
     }
 
-    return items;
+    // Batch-insert all plan items at once
+    const planItems = await tx
+      .insert(mealPlanItems)
+      .values(
+        recipes.map((recipe, i) => ({
+          ...meals[i].planItem,
+          recipeId: recipe.id,
+        })),
+      )
+      .returning();
+
+    return recipes.map((recipe, i) => ({
+      recipeId: recipe.id,
+      mealPlanItemId: planItems[i].id,
+    }));
   });
 }
 
@@ -201,11 +207,26 @@ export async function deleteMealPlanRecipe(
   id: number,
   userId: string,
 ): Promise<boolean> {
-  const result = await db
-    .delete(mealPlanRecipes)
-    .where(and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)))
-    .returning({ id: mealPlanRecipes.id });
-  return result.length > 0;
+  return db.transaction(async (tx) => {
+    const result = await tx
+      .delete(mealPlanRecipes)
+      .where(
+        and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)),
+      )
+      .returning({ id: mealPlanRecipes.id });
+    if (result.length === 0) return false;
+
+    // Clean up cookbook junction rows that referenced this recipe
+    await tx
+      .delete(cookbookRecipes)
+      .where(
+        and(
+          eq(cookbookRecipes.recipeId, id),
+          eq(cookbookRecipes.recipeType, "mealPlan"),
+        ),
+      );
+    return true;
+  });
 }
 
 export async function getUnifiedRecipes(params: {

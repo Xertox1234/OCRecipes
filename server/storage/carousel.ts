@@ -15,10 +15,17 @@ import { eq, and, desc, gte, sql, inArray, not } from "drizzle-orm";
 export async function getDismissedRecipeIds(
   userId: string,
 ): Promise<Set<string>> {
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
   const rows = await db
     .select({ recipeIdentifier: recipeDismissals.recipeIdentifier })
     .from(recipeDismissals)
-    .where(eq(recipeDismissals.userId, userId));
+    .where(
+      and(
+        eq(recipeDismissals.userId, userId),
+        gte(recipeDismissals.dismissedAt, ninetyDaysAgo),
+      ),
+    )
+    .limit(500);
 
   return new Set(rows.map((r) => r.recipeIdentifier));
 }
@@ -90,13 +97,15 @@ interface RecentRecipeFilters {
   allergies?: Allergy[] | null;
   cuisinePreferences?: string[] | null;
   limit?: number;
+  dismissedIds?: Set<string>;
 }
 
 export async function getRecentCommunityRecipes(
   userId: string,
   filters: RecentRecipeFilters,
 ) {
-  const dismissedIds = await getDismissedRecipeIds(userId);
+  const dismissedIds =
+    filters.dismissedIds ?? (await getDismissedRecipeIds(userId));
   const limit = filters.limit ?? 8;
 
   // Fetch more than needed so we can filter out dismissed ones in app

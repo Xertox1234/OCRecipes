@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-03-31 — Performance & Data-Integrity Audit
+
+- **Trigger:** Found generated images stored in DB; targeted audit for similar performance/data-integrity issues
+- **Manifest:** [docs/audits/2026-03-31-performance.md](2026-03-31-performance.md)
+- **Findings:** 0 critical, 2 high, 4 medium, 3 low (9 actionable, 7 dropped as below-threshold)
+- **Resolved:** 9 verified, 0 deferred
+- **Commit:** (pending)
+- **Note:** Key fix: `transactions.receipt` was storing full IAP receipts (50-200KB+) — same class as images-in-DB. Also fixed unbounded cache growth, N+1 inserts, missing unique constraints, and orphaned data.
+
 ## 2026-03-30 — Full Audit (Round 3)
 
 - **Trigger:** Periodic full codebase audit

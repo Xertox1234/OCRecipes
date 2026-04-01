@@ -6,6 +6,7 @@ import {
   instructionCache,
   mealSuggestionCache,
   micronutrientCache,
+  carouselSuggestionCache,
 } from "@shared/schema";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { db } from "../db";
@@ -89,10 +90,15 @@ export async function getInstructionCache(
       instructions: instructionCache.instructions,
     })
     .from(instructionCache)
+    .innerJoin(
+      suggestionCache,
+      eq(instructionCache.suggestionCacheId, suggestionCache.id),
+    )
     .where(
       and(
         eq(instructionCache.suggestionCacheId, suggestionCacheId),
         eq(instructionCache.suggestionIndex, suggestionIndex),
+        gt(suggestionCache.expiresAt, new Date()),
       ),
     );
   return cached || undefined;
@@ -303,6 +309,7 @@ export async function purgeExpiredCacheRows(): Promise<number> {
     micronutrientCache,
     suggestionCache,
     mealSuggestionCache,
+    carouselSuggestionCache,
   ] as const;
 
   let totalDeleted = 0;

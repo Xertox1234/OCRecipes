@@ -11,6 +11,7 @@ vi.mock("../../lib/openai", () => ({
       },
     },
   },
+  OPENAI_TIMEOUT_HEAVY_MS: 60_000,
 }));
 
 // Mock the openai 'toFile' helper
@@ -48,6 +49,7 @@ describe("Voice Transcription", () => {
           model: "whisper-1",
           language: "en",
         }),
+        expect.objectContaining({ timeout: 60_000 }),
       );
     });
 
@@ -64,16 +66,18 @@ describe("Voice Transcription", () => {
       mockTranscribe.mockRejectedValue(new Error("API rate limited"));
 
       const buffer = Buffer.from("fake audio");
-      await expect(transcribeAudio(buffer)).rejects.toThrow("API rate limited");
+      await expect(transcribeAudio(buffer)).rejects.toThrow(
+        "Voice transcription failed: API rate limited",
+      );
     });
 
-    it("handles empty transcription response", async () => {
+    it("throws on empty transcription response", async () => {
       mockTranscribe.mockResolvedValue({ text: "" } as any);
 
       const buffer = Buffer.from("silence");
-      const result = await transcribeAudio(buffer);
-
-      expect(result).toBe("");
+      await expect(transcribeAudio(buffer)).rejects.toThrow(
+        "Voice transcription returned empty result",
+      );
     });
   });
 });

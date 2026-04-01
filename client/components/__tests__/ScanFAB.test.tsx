@@ -8,6 +8,17 @@ const mockNavigate = vi.fn();
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
+  useNavigationState: (selector: (state: unknown) => unknown) =>
+    selector({
+      index: 0,
+      routes: [
+        {
+          key: "HomeTab",
+          name: "HomeTab",
+          state: { index: 0, routes: [{ key: "Home", name: "Home" }] },
+        },
+      ],
+    }),
 }));
 
 describe("ScanFAB", () => {

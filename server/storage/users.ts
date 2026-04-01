@@ -13,13 +13,15 @@ import {
   transactions,
   weightLogs,
   healthKitSync,
+  communityRecipes,
+  cookbookRecipes,
 } from "@shared/schema";
 import {
   subscriptionTierSchema,
   type SubscriptionTier,
 } from "@shared/types/premium";
 import { db } from "../db";
-import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { eq, desc, and, gte, lte, inArray } from "drizzle-orm";
 
 // ============================================================================
 // USER CRUD
@@ -60,13 +62,38 @@ export async function updateUser(
 /**
  * Permanently delete a user and all associated data.
  * Relies on ON DELETE CASCADE foreign keys to clean up child tables.
+ * Community recipes (which use SET NULL) are explicitly deleted first.
  */
 export async function deleteUser(id: string): Promise<boolean> {
-  const result = await db
-    .delete(users)
-    .where(eq(users.id, id))
-    .returning({ id: users.id });
-  return result.length > 0;
+  return db.transaction(async (tx) => {
+    // Community recipes use onDelete: "set null" so they must be explicitly removed.
+    // Also clean up any cookbook junction rows referencing those recipes.
+    const orphanedRecipes = await tx
+      .select({ id: communityRecipes.id })
+      .from(communityRecipes)
+      .where(eq(communityRecipes.authorId, id));
+
+    if (orphanedRecipes.length > 0) {
+      const recipeIds = orphanedRecipes.map((r) => r.id);
+      await tx
+        .delete(cookbookRecipes)
+        .where(
+          and(
+            inArray(cookbookRecipes.recipeId, recipeIds),
+            eq(cookbookRecipes.recipeType, "community"),
+          ),
+        );
+      await tx
+        .delete(communityRecipes)
+        .where(eq(communityRecipes.authorId, id));
+    }
+
+    const result = await tx
+      .delete(users)
+      .where(eq(users.id, id))
+      .returning({ id: users.id });
+    return result.length > 0;
+  });
 }
 
 // ============================================================================
@@ -257,7 +284,14 @@ export async function getWeightLogs(
 export async function createWeightLog(
   log: InsertWeightLog,
 ): Promise<WeightLog> {
-  const [created] = await db.insert(weightLogs).values(log).returning();
+  const [created] = await db
+    .insert(weightLogs)
+    .values(log)
+    .onConflictDoUpdate({
+      target: [weightLogs.userId, weightLogs.loggedAt],
+      set: { weight: log.weight, source: log.source, note: log.note },
+    })
+    .returning();
   return created;
 }
 
@@ -266,7 +300,14 @@ export async function createWeightLogAndUpdateUser(
   log: InsertWeightLog,
 ): Promise<WeightLog> {
   return db.transaction(async (tx) => {
-    const [created] = await tx.insert(weightLogs).values(log).returning();
+    const [created] = await tx
+      .insert(weightLogs)
+      .values(log)
+      .onConflictDoUpdate({
+        target: [weightLogs.userId, weightLogs.loggedAt],
+        set: { weight: log.weight, source: log.source, note: log.note },
+      })
+      .returning();
     await tx
       .update(users)
       .set({ weight: log.weight })

@@ -1,4 +1,5 @@
 import { logger } from "./logger";
+import { z } from "zod";
 
 const RUNWARE_API_URL = "https://api.runware.ai/v1";
 const RUNWARE_TIMEOUT_MS = 60_000;
@@ -17,11 +18,31 @@ interface RunwareImageResult {
   imageURL?: string;
 }
 
+const runwareResponseSchema = z.object({
+  data: z.array(
+    z.object({
+      taskType: z.string(),
+      imageBase64Data: z.string().optional(),
+      imageURL: z.string().optional(),
+    }),
+  ),
+});
+
+const DEFAULT_NEGATIVE_PROMPT =
+  "text, watermark, logo, label, letters, words, blurry, out of focus, oversaturated, artificial colors, cartoon, illustration, 3d render";
+
+export interface GenerateImageOptions {
+  prompt: string;
+  negativePrompt?: string;
+}
+
 /**
  * Generate an image using Runware's FLUX.1 Schnell model.
  * Returns the image as a Buffer, or null on failure.
  */
-export async function generateImage(prompt: string): Promise<Buffer | null> {
+export async function generateImage(
+  options: GenerateImageOptions,
+): Promise<Buffer | null> {
   if (!apiKey) return null;
 
   const controller = new AbortController();
@@ -39,7 +60,8 @@ export async function generateImage(prompt: string): Promise<Buffer | null> {
           taskType: "imageInference",
           taskUUID: crypto.randomUUID(),
           model: "runware:100@1",
-          positivePrompt: prompt,
+          positivePrompt: options.prompt,
+          negativePrompt: options.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT,
           width: 1024,
           height: 1024,
           outputType: "base64Data",
@@ -57,8 +79,16 @@ export async function generateImage(prompt: string): Promise<Buffer | null> {
       return null;
     }
 
-    const body = (await response.json()) as { data: RunwareImageResult[] };
-    const imageData = body.data?.[0]?.imageBase64Data;
+    const raw = await response.json();
+    const parsed = runwareResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      logger.error(
+        { zodErrors: parsed.error.flatten() },
+        "Runware response validation failed",
+      );
+      return null;
+    }
+    const imageData = parsed.data.data[0]?.imageBase64Data;
 
     if (!imageData) {
       logger.error("Runware returned no image data");

@@ -248,12 +248,12 @@ export async function generateRecipeImage(
 ): Promise<string | null> {
   const safeTitle = sanitizeUserInput(recipeTitle);
   const safeProduct = sanitizeUserInput(productName);
-  const prompt = `Appetizing food photography of "${safeTitle}" featuring ${safeProduct}. Professional lighting, top-down view, styled on rustic wooden table. No text or labels. Photorealistic style.`;
+  const prompt = `Professional food photography of "${safeTitle}" made with ${safeProduct}. Overhead 45-degree angle, natural window lighting, shallow depth of field. Plated on a neutral ceramic dish with fresh herb garnish. Clean minimalist background, photorealistic.`;
 
   // Try Runware first (66x cheaper than DALL-E)
   if (isRunwareConfigured) {
     try {
-      const buffer = await runwareGenerateImage(prompt);
+      const buffer = await runwareGenerateImage({ prompt });
       if (buffer) {
         return await saveImageBuffer(buffer);
       }
@@ -266,12 +266,13 @@ export async function generateRecipeImage(
     }
   }
 
-  // Fallback to DALL-E
+  // Fallback to DALL-E (no negative prompt support — embed exclusions in prompt)
   try {
+    const dallePrompt = `${prompt} No text, no watermarks, no logos, no labels, no letters.`;
     const response = await dalleClient.images.generate(
       {
         model: "dall-e-3",
-        prompt,
+        prompt: dallePrompt,
         n: 1,
         size: "1024x1024",
         quality: "standard",

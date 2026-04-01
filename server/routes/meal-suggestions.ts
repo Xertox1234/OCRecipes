@@ -39,6 +39,9 @@ const suggestMealSchema = z.object({
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]),
 });
 
+/** Prevents wasted AI calls when concurrent requests race past the advisory limit check */
+const inFlightGenerations = new Set<string>();
+
 export function register(app: Express): void {
   // POST /api/meal-plan/suggest — Generate 3 AI meal suggestions (premium)
   app.post(
@@ -81,6 +84,18 @@ export function register(app: Express): void {
           );
           return;
         }
+
+        // Prevent concurrent AI generation for the same user
+        if (inFlightGenerations.has(req.userId)) {
+          sendError(
+            res,
+            429,
+            "A suggestion is already being generated",
+            ErrorCode.DAILY_LIMIT_REACHED,
+          );
+          return;
+        }
+        inFlightGenerations.add(req.userId);
 
         // Parallelize independent queries
         const [userProfile, user, existingItems] = await Promise.all([
@@ -232,6 +247,8 @@ export function register(app: Express): void {
         });
       } catch (error) {
         handleRouteError(res, error, "generate suggestions");
+      } finally {
+        inFlightGenerations.delete(req.userId);
       }
     },
   );

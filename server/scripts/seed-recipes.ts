@@ -6,22 +6,15 @@
  * Usage: npm run seed:recipes
  */
 import "dotenv/config";
-import fs from "node:fs";
-import path from "node:path";
 import bcrypt from "bcrypt";
 import { db, pool } from "../db";
 import { users, userProfiles, communityRecipes } from "@shared/schema";
 import { eq, ilike } from "drizzle-orm";
 import {
   generateRecipeContent,
+  generateRecipeImage,
   normalizeProductName,
 } from "../services/recipe-generation";
-import OpenAI from "openai";
-
-// DALL-E client (direct OpenAI, not custom endpoint)
-const dalleClient = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-});
 
 const RECIPE_TARGETS = [
   // ── Original 12 ──────────────────────────────────────────────────────
@@ -162,17 +155,6 @@ const RECIPE_TARGETS = [
   },
 ] as const;
 
-const IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 60);
-}
-
 async function ensureDemoUser(): Promise<string> {
   const existing = await db
     .select()
@@ -219,32 +201,6 @@ async function getSeededIngredients(): Promise<Set<string>> {
   return new Set(existing.map((r) => r.name));
 }
 
-async function generateImage(
-  recipeTitle: string,
-  ingredient: string,
-): Promise<Buffer | null> {
-  try {
-    const prompt = `Appetizing food photography of "${recipeTitle}" featuring ${ingredient}. Professional studio lighting, top-down angle, styled on a ceramic plate with garnishes. Clean background, photorealistic, no text or labels.`;
-
-    const response = await dalleClient.images.generate({
-      model: "dall-e-3",
-      prompt,
-      n: 1,
-      size: "1024x1024",
-      quality: "standard",
-      response_format: "b64_json",
-    });
-
-    const b64 = response.data?.[0]?.b64_json;
-    if (!b64) return null;
-
-    return Buffer.from(b64, "base64");
-  } catch (error) {
-    console.error(`  Image generation failed: ${error}`);
-    return null;
-  }
-}
-
 async function main() {
   console.log("=== Seed Recipes Script ===\n");
 
@@ -265,11 +221,6 @@ async function main() {
 
   // Ensure demo user
   const demoUserId = await ensureDemoUser();
-
-  // Ensure images directory
-  if (!fs.existsSync(IMAGES_DIR)) {
-    fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  }
 
   let successCount = 0;
 
@@ -299,15 +250,12 @@ async function main() {
 
       console.log(`  Title: ${content.title}`);
 
-      // Generate image
-      const slug = slugify(content.title);
-      let imageUrl: string | null = null;
-
-      const imageBuffer = await generateImage(content.title, target.ingredient);
-      if (imageBuffer) {
-        const imagePath = path.join(IMAGES_DIR, `${slug}.png`);
-        fs.writeFileSync(imagePath, imageBuffer);
-        imageUrl = `/api/recipe-images/${slug}.png`;
+      // Generate image using shared service (Runware → DALL-E fallback)
+      const imageUrl = await generateRecipeImage(
+        content.title,
+        target.ingredient,
+      );
+      if (imageUrl) {
         console.log(`  Image saved: ${imageUrl}`);
       } else {
         console.log("  No image generated (continuing without)");

@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo } from "react";
 import { Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useNavigationState } from "@react-navigation/native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -39,6 +39,14 @@ export function ScanFAB() {
   const scale = useSharedValue(1);
   const rotation = useSharedValue(0);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Hide FAB when navigated into a child screen (e.g. GroceryLists has its own FAB)
+  const isOnRootScreen = useNavigationState((state) => {
+    const focusedTab = state.routes[state.index];
+    const nestedState = focusedTab.state;
+    if (!nestedState) return true;
+    return nestedState.index === 0;
+  });
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }, { rotate: `${rotation.value}deg` }],
@@ -88,6 +96,8 @@ export function ScanFAB() {
       })),
     [closeMenu, haptics, navigation],
   );
+
+  if (!isOnRootScreen) return null;
 
   return (
     <>
