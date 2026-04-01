@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useMemo } from "react";
 import {
   StyleSheet,
   View,
@@ -9,8 +9,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation } from "@react-navigation/native";
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -19,6 +18,7 @@ import { FastingTimer } from "@/components/FastingTimer";
 import { FastingSetupModal } from "@/components/FastingSetupModal";
 import { FastingStreakBadge } from "@/components/FastingStreakBadge";
 import WeeklyChart from "@/components/WeeklyFastingChart";
+import { AskCoachSection } from "@/components/AskCoachSection";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useFastingTimer } from "@/hooks/useFastingTimer";
 import {
@@ -29,16 +29,33 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { formatDuration, formatDateShort as formatDate } from "@/lib/format";
-import type { FastingScreenNavigationProp } from "@/types/navigation";
 
-const COACH_QUESTIONS = [
-  "Does coffee break my fast?",
-  "How do I handle hunger during a fast?",
-  "What are the benefits of 16:8 fasting?",
-  "Is it safe to exercise while fasting?",
-  "What should I eat to break my fast?",
-  "How does fasting affect metabolism?",
-];
+const FASTING_COACH_QUESTIONS = [
+  {
+    text: "Does coffee break my fast?",
+    question: "Does coffee break my fast?",
+  },
+  {
+    text: "How do I handle hunger during a fast?",
+    question: "How do I handle hunger during a fast?",
+  },
+  {
+    text: "What are the benefits of 16:8 fasting?",
+    question: "What are the benefits of 16:8 fasting?",
+  },
+  {
+    text: "Is it safe to exercise while fasting?",
+    question: "Is it safe to exercise while fasting?",
+  },
+  {
+    text: "What should I eat to break my fast?",
+    question: "What should I eat to break my fast?",
+  },
+  {
+    text: "How does fasting affect metabolism?",
+    question: "How does fasting affect metabolism?",
+  },
+] as const;
 
 export default function FastingScreen() {
   const insets = useSafeAreaInsets();
@@ -72,17 +89,10 @@ export default function FastingScreen() {
     ConfirmationModal,
   } = useFastingTimer();
 
-  const navigation = useNavigation<FastingScreenNavigationProp>();
-
-  const handleCoachQuestion = useCallback(
-    (question: string) => {
-      haptics.selection();
-      navigation.navigate("CoachTab", {
-        screen: "Chat",
-        params: { initialMessage: question },
-      });
-    },
-    [haptics, navigation],
+  const fastingContext = useMemo(
+    () =>
+      `User is on fasting screen. Schedule: ${schedule?.protocol ?? "none"}. Currently ${isFasting ? "fasting" : "not fasting"}${elapsedMinutes ? `. Elapsed: ${Math.round(elapsedMinutes / 60)}h` : ""}`,
+    [schedule?.protocol, isFasting, elapsedMinutes],
   );
 
   return (
@@ -304,46 +314,10 @@ export default function FastingScreen() {
           reducedMotion ? undefined : FadeInDown.delay(300).duration(400)
         }
       >
-        <Card elevation={1} style={styles.askCoachCard}>
-          <ThemedText type="h4" style={styles.sectionTitle}>
-            Ask Coach
-          </ThemedText>
-          {COACH_QUESTIONS.map((question) => (
-            <Pressable
-              key={question}
-              onPress={() => handleCoachQuestion(question)}
-              style={({ pressed }) => [
-                styles.coachQuestionRow,
-                {
-                  borderBottomColor: theme.border,
-                  opacity: pressed ? 0.6 : 1,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={question}
-              accessibilityHint="Opens coach chat and asks this question"
-            >
-              <Ionicons
-                name="chatbubble-outline"
-                size={16}
-                color={theme.link}
-                importantForAccessibility="no"
-              />
-              <ThemedText
-                style={[styles.coachQuestionText, { color: theme.text }]}
-                numberOfLines={1}
-              >
-                {question}
-              </ThemedText>
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={theme.textSecondary}
-                importantForAccessibility="no"
-              />
-            </Pressable>
-          ))}
-        </Card>
+        <AskCoachSection
+          questions={FASTING_COACH_QUESTIONS}
+          screenContext={fastingContext}
+        />
       </Animated.View>
 
       {/* Schedule Info Card */}
@@ -821,22 +795,5 @@ const styles = StyleSheet.create({
   tipText: {
     flex: 1,
     lineHeight: 20,
-  },
-  // Ask Coach
-  askCoachCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
-  coachQuestionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-  },
-  coachQuestionText: {
-    flex: 1,
-    fontSize: 14,
-    fontFamily: FontFamily.regular,
   },
 });

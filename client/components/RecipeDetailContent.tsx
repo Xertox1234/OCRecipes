@@ -11,8 +11,8 @@ import {
   RecipeDietTags,
   FoodFacts,
   RecipeInstructions,
-  AskCoach,
 } from "@/components/recipe-detail";
+import { AskCoachSection } from "@/components/AskCoachSection";
 import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -59,6 +59,34 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
   const uniqueTags = useMemo(
     () => [...new Set(props.dietTags ?? [])],
     [props.dietTags],
+  );
+
+  const recipeCoachQuestions = useMemo(
+    () => [
+      {
+        text: "What side dishes pair well?",
+        question: `What side dishes would pair well with ${props.title}?`,
+      },
+      {
+        text: "How can I make this healthier?",
+        question: `How can I modify ${props.title} to make it healthier while keeping it tasty?`,
+      },
+      {
+        text: "Can I substitute an ingredient?",
+        question: `What ingredient substitutions would work for ${props.title}?`,
+      },
+      {
+        text: "How do I store leftovers?",
+        question: `What's the best way to store and reheat leftovers from ${props.title}?`,
+      },
+    ],
+    [props.title],
+  );
+
+  const recipeCoachContext = useMemo(
+    () =>
+      `User is viewing recipe: ${props.title}${ingredientNames.length ? `\nIngredients: ${ingredientNames.join(", ")}` : ""}${uniqueTags.length ? `\nDiet tags: ${uniqueTags.join(", ")}` : ""}`,
+    [props.title, ingredientNames, uniqueTags],
   );
 
   return (
@@ -151,12 +179,9 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
         <RecipeInstructions instructions={props.instructions ?? []} />
 
         {/* 10. Ask Coach */}
-        <AskCoach
-          recipeId={props.recipeId}
-          recipeType={props.recipeType}
-          title={props.title}
-          dietTags={props.dietTags}
-          ingredientNames={ingredientNames}
+        <AskCoachSection
+          questions={recipeCoachQuestions}
+          screenContext={recipeCoachContext}
         />
       </ScrollView>
 
