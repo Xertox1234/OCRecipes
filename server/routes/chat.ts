@@ -17,6 +17,7 @@ import {
   type CoachContext,
 } from "../services/nutrition-coach";
 import { logger, toError } from "../lib/logger";
+import { createHash } from "crypto";
 
 export function register(app: Express): void {
   // GET /api/chat/conversations - List conversations
@@ -249,15 +250,59 @@ export function register(app: Express): void {
           aborted = true;
         });
 
+        // Check cache for predefined questions (no screenContext = universal answer)
+        const isCacheable = !parsed.data.screenContext && history.length <= 1;
+        const questionHash = isCacheable
+          ? createHash("sha256")
+              .update(parsed.data.content.trim().toLowerCase())
+              .digest("hex")
+              .slice(0, 32)
+          : null;
+
+        let cachedResponse: string | null = null;
+        if (questionHash) {
+          cachedResponse = await storage.getCoachCachedResponse(questionHash);
+        }
+
         let fullResponse = "";
         try {
-          for await (const chunk of generateCoachResponse(
-            messageHistory,
-            context,
-          )) {
-            if (aborted) break;
-            fullResponse += chunk;
-            res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+          if (cachedResponse) {
+            // Stream cached response with simulated typing animation
+            const words = cachedResponse.split(/(\s+)/);
+            let i = 0;
+            while (i < words.length && !aborted) {
+              // Send 3-5 words at a time for natural-feeling chunks
+              const chunkSize = 3 + Math.floor(Math.random() * 3);
+              const chunk = words.slice(i, i + chunkSize).join("");
+              i += chunkSize;
+              fullResponse += chunk;
+              res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+              // 30-80ms delay between chunks for typing feel
+              await new Promise((r) =>
+                setTimeout(r, 30 + Math.floor(Math.random() * 50)),
+              );
+            }
+          } else {
+            // Generate fresh response via OpenAI
+            for await (const chunk of generateCoachResponse(
+              messageHistory,
+              context,
+            )) {
+              if (aborted) break;
+              fullResponse += chunk;
+              res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+            }
+
+            // Cache the response for future use (fire-and-forget)
+            if (questionHash && fullResponse && !aborted) {
+              storage
+                .setCoachCachedResponse(
+                  questionHash,
+                  parsed.data.content,
+                  fullResponse,
+                )
+                .catch(() => {});
+            }
           }
 
           // Save assistant message (full or partial) to maintain conversation consistency

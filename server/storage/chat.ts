@@ -3,6 +3,7 @@ import {
   type ChatMessage,
   chatConversations,
   chatMessages,
+  coachResponseCache,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
@@ -195,4 +196,59 @@ export async function createChatMessageWithLimitCheck(
 
     return message;
   });
+}
+
+// ============================================================================
+// COACH RESPONSE CACHE
+// ============================================================================
+
+/**
+ * Get a cached coach response by question hash.
+ * Returns null if not found or expired. Increments hit count on cache hit.
+ */
+export async function getCoachCachedResponse(
+  questionHash: string,
+): Promise<string | null> {
+  const [cached] = await db
+    .select()
+    .from(coachResponseCache)
+    .where(
+      and(
+        eq(coachResponseCache.questionHash, questionHash),
+        gte(coachResponseCache.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+
+  if (!cached) return null;
+
+  // Fire-and-forget hit count increment
+  db.update(coachResponseCache)
+    .set({ hitCount: sql`${coachResponseCache.hitCount} + 1` })
+    .where(eq(coachResponseCache.id, cached.id))
+    .catch(() => {});
+
+  return cached.response;
+}
+
+/**
+ * Cache a coach response for a predefined question.
+ * Uses upsert to handle concurrent first-asks.
+ */
+export async function setCoachCachedResponse(
+  questionHash: string,
+  question: string,
+  response: string,
+  ttlDays = 7,
+): Promise<void> {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + ttlDays);
+
+  await db
+    .insert(coachResponseCache)
+    .values({ questionHash, question, response, expiresAt })
+    .onConflictDoUpdate({
+      target: coachResponseCache.questionHash,
+      set: { response, expiresAt, hitCount: 0 },
+    });
 }

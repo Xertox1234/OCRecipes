@@ -28,6 +28,8 @@ vi.mock("../../storage", () => ({
     getLatestWeight: vi.fn(),
     updateChatConversationTitle: vi.fn(),
     deleteChatConversation: vi.fn(),
+    getCoachCachedResponse: vi.fn().mockResolvedValue(null),
+    setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
