@@ -694,3 +694,37 @@ export default function NutritionDetailScreen() {
 - `client/hooks/useHistoryData.ts` — infinite query + 13 handlers (355 lines)
 - `client/hooks/useProfileData.ts` — profile queries + navigation handlers (306 lines)
 - `client/hooks/useDietaryProfileForm.ts` — form state + save logic (158 lines)
+
+### Additive SSE Protocol Extension
+
+When a new feature needs richer SSE events than the existing `{ content, done }` protocol, extend it by adding **optional fields** rather than introducing a new `type` discriminator. The client checks for field presence:
+
+```typescript
+// Server — yield events with optional fields alongside existing ones
+yield { content: "Here's a recipe..." };                    // Text chunk (existing)
+yield { content: "", recipe: validatedRecipe, allergenWarning };  // Recipe card (new)
+yield { content: "", imageUrl: "/api/recipe-images/uuid.png" };   // Image ready (new)
+yield { done: true };                                       // Terminal (existing)
+
+// Client — check for optional fields, fall through to existing behavior
+for (const line of lines) {
+  if (line.startsWith("data: ")) {
+    const data = JSON.parse(line.slice(6));
+    if (data.recipe) setStreamingRecipe(data.recipe);       // New
+    if (data.imageUrl) setStreamingRecipe(prev => ({ ...prev, imageUrl: data.imageUrl })); // New
+    if (data.content) { accumulated += data.content; setStreamingContent(accumulated); }    // Existing
+    if (data.done) { receivedDone = true; invalidateQueries(); }  // Existing
+  }
+}
+```
+
+**Why additive, not typed?** A typed protocol (`{ type: "text" | "recipe_card" | "image_ready" }`) requires a `switch` statement in every client, breaks backward compatibility with existing parsers, and creates a maintenance burden when new event types are added. The additive approach is backward-compatible — old clients ignore unknown fields — and simpler to parse.
+
+**When to use:** Extending an existing SSE stream with new event data alongside the original text streaming.
+
+**When NOT to use:** When events have fundamentally different schemas that can't be expressed as optional fields on a single object, or when the stream protocol is new (no backward compatibility needed).
+
+**References:**
+
+- `server/routes/chat.ts` — recipe chat path yields `recipe` and `imageUrl` fields
+- `client/hooks/useChat.ts` — `useSendMessage` parses optional `recipe`, `imageUrl`, `allergenWarning` fields

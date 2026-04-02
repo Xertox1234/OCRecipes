@@ -1771,3 +1771,166 @@ await db
 **References:**
 
 - `server/storage/users.ts` — `incrementTokenVersion()`
+
+### Advisory Lock for Per-User Rate Limiting
+
+When a transaction checks a count and then inserts (TOCTOU pattern), two concurrent transactions can both see the same count and both pass the limit check. PostgreSQL's `READ COMMITTED` isolation doesn't prevent this because each transaction sees its own snapshot.
+
+Use `pg_advisory_xact_lock` to serialize concurrent requests per user within the transaction:
+
+```typescript
+export async function createChatMessageWithLimitCheck(
+  conversationId: number,
+  userId: string,
+  content: string,
+  dailyLimit: number,
+  conversationType?: "coach" | "recipe",
+): Promise<ChatMessage | null> {
+  return db.transaction(async (tx) => {
+    // Serialize all generation attempts for this user
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+
+    const countResult = await tx
+      .select({ count: sql<number>`count(*)` })
+      .from(chatMessages)
+      .innerJoin(chatConversations, eq(chatMessages.conversationId, chatConversations.id))
+      .where(and(
+        eq(chatConversations.userId, userId),
+        eq(chatMessages.role, "user"),
+        gte(chatMessages.createdAt, startOfDay),
+        lt(chatMessages.createdAt, endOfDay),
+      ));
+
+    if (Number(countResult[0]?.count ?? 0) >= dailyLimit) return null;
+
+    // Safe to insert — no other transaction for this user can be between count and insert
+    const [message] = await tx.insert(chatMessages).values({ ... }).returning();
+    return message;
+  });
+}
+```
+
+The lock is **transaction-scoped** (`pg_advisory_xact_lock`, not `pg_advisory_lock`) — it releases automatically when the transaction commits or rolls back. The `hashtext()` function converts the userId string to an integer lock key.
+
+**When to use:** Any count-then-insert pattern where the count must be accurate under concurrent requests (daily limits, rate limiting, inventory checks).
+
+**Why not just `SERIALIZABLE` isolation?** Serializable would also work but requires retry logic for serialization failures. Advisory locks are simpler — they block rather than abort.
+
+**References:**
+
+- `server/storage/chat.ts` — `createChatMessageWithLimitCheck()`
+
+### JSONB Metadata Versioning
+
+When storing structured data in a JSONB column that may evolve over time, include a `metadataVersion` field and validate with Zod at write time:
+
+```typescript
+// Define the schema with a version literal
+const recipeChatMetadataSchema = z.object({
+  metadataVersion: z.literal(1),
+  recipe: z.object({
+    title: z.string(),
+    ingredients: z.array(z.object({ name: z.string(), quantity: z.string(), unit: z.string() })),
+    instructions: z.array(z.string()),
+    // ... other fields
+  }),
+  allergenWarning: z.string().nullable(),
+  imageUrl: z.string().nullable(),
+  savedRecipeId: z.number().optional(),
+});
+
+// Validate at write time — never store unvalidated JSONB
+const metadata = { metadataVersion: 1, recipe: validatedRecipe, ... };
+await storage.createChatMessage(id, "assistant", content, metadata);
+
+// Validate at read time — use safeParse, not `as` casts
+const parsed = recipeChatMetadataSchema.safeParse(msg.metadata);
+if (!parsed.success) return null; // Handle legacy/invalid data gracefully
+const { recipe } = parsed.data;
+```
+
+When the schema evolves, bump the version and add a normalizer:
+
+```typescript
+function normalizeRecipeMetadata(raw: unknown): NormalizedRecipe {
+  const version = (raw as any)?.metadataVersion ?? 1;
+  switch (version) {
+    case 1:
+      return transformV1(raw);
+    case 2:
+      return transformV2(raw);
+    default:
+      throw new Error(`Unknown metadata version: ${version}`);
+  }
+}
+```
+
+**When to use:** Any JSONB column that stores structured data which may change shape over time (chat metadata, cached AI responses, user preferences).
+
+**Why:** JSONB has no schema enforcement at the database level. Without versioning, old rows silently break when code expects new fields.
+
+**References:**
+
+- `server/services/recipe-chat.ts` — `recipeChatMetadataSchema`
+- `server/storage/chat.ts` — `saveRecipeFromChat()` uses `safeParse` on metadata
+
+### Type Discriminator Column for Shared Tables
+
+When two features share the same data model (e.g., coach chat and recipe chat both use conversations + messages), add a `type` text column with a default value instead of creating parallel tables:
+
+```typescript
+// Schema — add type with a default so existing rows are backward-compatible
+export const chatConversations = pgTable(
+  "chat_conversations",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id)
+      .notNull(),
+    title: text("title").notNull(),
+    type: text("type").notNull().default("coach"), // 'coach' | 'recipe'
+    // ...
+  },
+  (table) => ({
+    userTypeIdx: index("chat_conversations_user_type_idx").on(
+      table.userId,
+      table.type,
+    ),
+  }),
+);
+
+// Storage — filter by type
+export async function getChatConversations(
+  userId: string,
+  limit = 50,
+  type?: "coach" | "recipe",
+) {
+  const conditions = [eq(chatConversations.userId, userId)];
+  if (type) conditions.push(eq(chatConversations.type, type));
+  return db
+    .select()
+    .from(chatConversations)
+    .where(and(...conditions))
+    .orderBy(desc(chatConversations.updatedAt))
+    .limit(limit);
+}
+
+// Route — dispatch to different services based on type
+if (conversation.type === "recipe") {
+  // Recipe chat path — different AI service, different context building
+} else {
+  // Coach chat path — existing behavior
+}
+```
+
+**When to use:** Two features that share the same entity structure (same columns, same relationships) but have different behavior. Classic examples: chat types, notification types, log categories.
+
+**When NOT to use:** When the data models diverge significantly (different columns, different relationships). In that case, separate tables are cleaner.
+
+**Why:** Avoids duplicating CRUD operations, storage functions, hooks, and route handlers. The shared infrastructure handles the common case; only the behavior-specific logic (AI service, context building) is branched.
+
+**References:**
+
+- `shared/schema.ts` — `chatConversations.type` column
+- `server/routes/chat.ts` — type-aware dispatch in message endpoint
+- `client/hooks/useChat.ts` — `useChatConversations(type?)` with type in query key
