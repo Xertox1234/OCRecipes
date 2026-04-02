@@ -25,7 +25,10 @@ import {
   useCreateConversation,
   useChatMessages,
   useSendMessage,
+  useSaveRecipeFromChat,
+  type StreamingRecipe,
 } from "@/hooks/useChat";
+import { RecipeCard } from "@/components/recipe-chat/RecipeCard";
 
 type RecipeChatRouteProp = RouteProp<RootStackParamList, "RecipeChat">;
 
@@ -82,6 +85,24 @@ export default function RecipeChatScreen() {
   const { data: messages = [] } = useChatMessages(conversationId);
   const { sendMessage, streamingContent, streamingRecipe, isStreaming } =
     useSendMessage(conversationId);
+  const saveRecipeMutation = useSaveRecipeFromChat();
+  const [savedMessageIds, setSavedMessageIds] = useState<Set<number>>(
+    new Set(),
+  );
+
+  const handleSaveRecipe = useCallback(
+    async (messageId: number) => {
+      if (!conversationId || savedMessageIds.has(messageId)) return;
+      try {
+        await saveRecipeMutation.mutateAsync({ conversationId, messageId });
+        setSavedMessageIds((prev) => new Set(prev).add(messageId));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
+    },
+    [conversationId, savedMessageIds, saveRecipeMutation],
+  );
 
   const handleSend = useCallback(
     async (text?: string) => {
@@ -147,48 +168,58 @@ export default function RecipeChatScreen() {
     ({ item }: { item: (typeof displayMessages)[0] }) => {
       const isUser = item.role === "user";
       const metadata = item.metadata as Record<string, unknown> | null;
-      const recipe = metadata?.recipe as Record<string, unknown> | undefined;
+      const recipe = metadata?.recipe as StreamingRecipe | undefined;
+      const allergenWarning = metadata?.allergenWarning as string | undefined;
+      const isAlreadySaved = savedMessageIds.has(item.id);
+      const isStreaming_ = item.id === -1;
 
       return (
-        <View
-          style={[
-            styles.messageBubble,
-            isUser
-              ? [styles.userBubble, { backgroundColor: theme.link }]
-              : [
-                  styles.assistantBubble,
-                  { backgroundColor: withOpacity(theme.text, 0.06) },
-                ],
-          ]}
-          accessible
-          accessibilityRole="text"
-          accessibilityLabel={`${isUser ? "You" : "RecipeChef"}: ${item.content}`}
-        >
-          <ThemedText style={isUser ? { color: theme.buttonText } : undefined}>
-            {item.content}
-          </ThemedText>
-          {recipe && (
+        <View>
+          {/* Text bubble */}
+          {item.content ? (
             <View
               style={[
-                styles.recipeCardPlaceholder,
-                { borderColor: withOpacity(theme.link, 0.2) },
+                styles.messageBubble,
+                isUser
+                  ? [styles.userBubble, { backgroundColor: theme.link }]
+                  : [
+                      styles.assistantBubble,
+                      {
+                        backgroundColor: withOpacity(theme.text, 0.06),
+                      },
+                    ],
               ]}
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel={`${isUser ? "You" : "RecipeChef"}: ${item.content}`}
             >
-              <Feather name="book-open" size={20} color={theme.link} />
-              <ThemedText type="body" style={{ marginTop: Spacing.xs }}>
-                {(recipe.title as string) || "Recipe"}
-              </ThemedText>
-              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-                {(recipe.difficulty as string) || ""} {" \u00B7 "}{" "}
-                {(recipe.timeEstimate as string) || ""} {" \u00B7 "}{" "}
-                {(recipe.servings as number) || 2} servings
+              <ThemedText
+                style={isUser ? { color: theme.buttonText } : undefined}
+              >
+                {item.content}
               </ThemedText>
             </View>
+          ) : null}
+
+          {/* Recipe card (if present in metadata) */}
+          {recipe && (
+            <RecipeCard
+              recipe={recipe}
+              allergenWarning={allergenWarning}
+              isImageLoading={isStreaming_ && !recipe.imageUrl}
+              isSaved={isAlreadySaved}
+              isSaving={
+                saveRecipeMutation.isPending && !isAlreadySaved && !isStreaming_
+              }
+              onSave={
+                isStreaming_ ? undefined : () => handleSaveRecipe(item.id)
+              }
+            />
           )}
         </View>
       );
     },
-    [theme],
+    [theme, savedMessageIds, saveRecipeMutation.isPending, handleSaveRecipe],
   );
 
   return (
@@ -420,13 +451,6 @@ const styles = StyleSheet.create({
   assistantBubble: {
     alignSelf: "flex-start",
     borderBottomLeftRadius: BorderRadius.xs,
-  },
-  recipeCardPlaceholder: {
-    marginTop: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.card,
-    borderWidth: 1,
-    alignItems: "center",
   },
   typingRow: {
     flexDirection: "row",
