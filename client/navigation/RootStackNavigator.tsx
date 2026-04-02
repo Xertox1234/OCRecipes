@@ -203,7 +203,7 @@ export default function RootStackNavigator() {
             component={FeaturedRecipeDetailScreen}
             options={{
               headerShown: false,
-              presentation: "transparentModal",
+              presentation: "modal",
               animation: "slide_from_bottom",
               gestureEnabled: true,
               fullScreenGestureEnabled: true,

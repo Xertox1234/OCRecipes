@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
-import { StyleSheet, View, ScrollView } from "react-native";
+import { Pressable, StyleSheet, View, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
@@ -104,6 +104,7 @@ function normalizeCarouselCard(card: CarouselRecipeCard): NormalizedRecipe {
 export default function FeaturedRecipeDetailScreen() {
   const route = useRoute<FeaturedRecipeDetailRouteProp>();
   const { recipeId, recipeType = "community", carouselCard } = route.params;
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
@@ -199,6 +200,23 @@ export default function FeaturedRecipeDetailScreen() {
         />
       </View>
 
+      {/* Close button */}
+      <Pressable
+        onPress={() => navigation.goBack()}
+        style={[
+          styles.closeButton,
+          {
+            top: insets.top + Spacing.sm,
+            backgroundColor: withOpacity(theme.backgroundRoot, 0.7),
+          },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel="Close recipe"
+        hitSlop={12}
+      >
+        <Feather name="x" size={22} color={theme.text} />
+      </Pressable>
+
       {isLoading ? (
         <ScrollView contentInsetAdjustmentBehavior="never">
           <RecipeDetailSkeleton />
@@ -248,6 +266,16 @@ const styles = StyleSheet.create({
     width: HANDLE_WIDTH,
     height: HANDLE_HEIGHT,
     borderRadius: HANDLE_HEIGHT / 2,
+  },
+  closeButton: {
+    position: "absolute",
+    right: Spacing.md,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
   },
   center: {
     flex: 1,
