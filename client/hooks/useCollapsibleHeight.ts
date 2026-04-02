@@ -4,21 +4,28 @@ import {
   useAnimatedStyle,
   withTiming,
 } from "react-native-reanimated";
-import { collapseTimingConfig } from "@/constants/animations";
+import {
+  expandTimingConfig,
+  collapseTimingConfig,
+} from "@/constants/animations";
 
 /**
  * Encapsulates animated expand/collapse height logic for a section.
  *
- * - Expand: instant (sets height to -1 = auto)
+ * Always uses explicit height values — never removes the height property
+ * from the animated style, since Reanimated doesn't reliably recalculate
+ * native layout when animated properties are removed.
+ *
+ * - Expand: animates 0 → measured content height
  * - Collapse: animates measured content height → 0
- * - First render: no animation, just sets the correct state
+ * - First render: snaps to correct height after first onLayout measurement
  */
 export function useCollapsibleHeight(
   isExpanded: boolean,
   reducedMotion: boolean,
 ) {
   const contentHeight = useSharedValue(0);
-  const animatedHeight = useSharedValue(isExpanded ? -1 : 0); // -1 = auto
+  const animatedHeight = useSharedValue(0);
   const isFirstRender = useRef(true);
 
   const onContentLayout = useCallback(
@@ -27,9 +34,11 @@ export function useCollapsibleHeight(
       contentHeight.value = measured;
       if (isFirstRender.current) {
         isFirstRender.current = false;
-        if (isExpanded) {
-          animatedHeight.value = -1; // auto
-        }
+        // Snap to correct state without animation on first render
+        animatedHeight.value = isExpanded ? measured : 0;
+      } else if (isExpanded) {
+        // Content resized while expanded — track it immediately
+        animatedHeight.value = measured;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs
@@ -40,30 +49,22 @@ export function useCollapsibleHeight(
     if (isFirstRender.current) return;
 
     if (reducedMotion) {
-      animatedHeight.value = isExpanded ? -1 : 0;
+      animatedHeight.value = isExpanded ? contentHeight.value : 0;
     } else if (isExpanded) {
-      // Instant expand — set to auto immediately
-      animatedHeight.value = -1;
+      animatedHeight.value = withTiming(
+        contentHeight.value,
+        expandTimingConfig,
+      );
     } else {
-      // Snap to measured height first (from auto), then animate to 0
-      animatedHeight.value = contentHeight.value;
       animatedHeight.value = withTiming(0, collapseTimingConfig);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs
   }, [isExpanded, reducedMotion]);
 
-  const animatedStyle = useAnimatedStyle(() => {
-    if (animatedHeight.value === -1) {
-      return {
-        height: "auto" as unknown as number,
-        overflow: "visible" as const,
-      };
-    }
-    return {
-      height: animatedHeight.value,
-      overflow: "hidden" as const,
-    };
-  });
+  const animatedStyle = useAnimatedStyle(() => ({
+    height: animatedHeight.value,
+    overflow: "hidden" as const,
+  }));
 
   return { animatedStyle, onContentLayout };
 }

@@ -79,7 +79,9 @@ export function CollapsibleSection({
       </Pressable>
 
       <Animated.View style={animatedStyle}>
-        <View onLayout={onContentLayout}>{children}</View>
+        <View style={styles.contentWrapper} onLayout={onContentLayout}>
+          {children}
+        </View>
       </Animated.View>
     </View>
   );
@@ -97,6 +99,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     minHeight: 44,
   },
+  contentWrapper: {},
   title: {
     fontFamily: FontFamily.semiBold,
   },

@@ -237,7 +237,7 @@ export function MicronutrientSection({
       </Pressable>
 
       <Animated.View style={animatedStyle}>
-        <View onLayout={onContentLayout}>
+        <View style={styles.contentWrapper} onLayout={onContentLayout}>
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator color={theme.textSecondary} />
@@ -272,6 +272,7 @@ export function MicronutrientSection({
 }
 
 const styles = StyleSheet.create({
+  contentWrapper: {},
   header: {
     flexDirection: "row",
     alignItems: "center",
