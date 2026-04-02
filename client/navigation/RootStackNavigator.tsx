@@ -39,6 +39,7 @@ import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
 import WeightTrackingScreen from "@/screens/WeightTrackingScreen";
 import CoachChatScreen from "@/screens/CoachChatScreen";
+import RecipeChatScreen from "@/screens/RecipeChatScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -107,6 +108,10 @@ export type RootStackParamList = {
     question: string;
     questionText: string;
     screenContext?: string;
+  };
+  RecipeChat: {
+    conversationId?: number;
+    initialMessage?: string;
   };
 };
 
@@ -329,6 +334,15 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="CoachChat"
             component={CoachChatScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              animation: "slide_from_bottom",
+            }}
+          />
+          <Stack.Screen
+            name="RecipeChat"
+            component={RecipeChatScreen}
             options={{
               headerShown: false,
               presentation: "fullScreenModal",

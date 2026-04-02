@@ -1,12 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useRef } from "react";
 
 export interface ChatConversation {
   id: number;
   userId: string;
   title: string;
+  type: string; // 'coach' | 'recipe'
   createdAt: string;
   updatedAt: string;
 }
@@ -20,9 +21,33 @@ interface ChatMessage {
   createdAt: string;
 }
 
-export function useChatConversations() {
+/** Recipe data from SSE recipe card event */
+export interface StreamingRecipe {
+  title: string;
+  description: string;
+  difficulty: string;
+  timeEstimate: string;
+  servings: number;
+  ingredients: { name: string; quantity: string; unit: string }[];
+  instructions: string[];
+  dietTags: string[];
+  imageUrl?: string | null;
+}
+
+export function useChatConversations(type?: "coach" | "recipe") {
+  const queryKey = type
+    ? ["/api/chat/conversations", { type }]
+    : ["/api/chat/conversations"];
+
   return useQuery<ChatConversation[]>({
-    queryKey: ["/api/chat/conversations"],
+    queryKey,
+    queryFn: async () => {
+      const url = type
+        ? `/api/chat/conversations?type=${type}`
+        : "/api/chat/conversations";
+      const res = await apiRequest("GET", url);
+      return res.json();
+    },
   });
 }
 
@@ -36,9 +61,13 @@ export function useChatMessages(conversationId: number | null) {
 export function useCreateConversation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (title?: string) => {
+    mutationFn: async (data?: {
+      title?: string;
+      type?: "coach" | "recipe";
+    }) => {
       const res = await apiRequest("POST", "/api/chat/conversations", {
-        title,
+        title: data?.title,
+        type: data?.type,
       });
       return (await res.json()) as ChatConversation;
     },
@@ -63,14 +92,25 @@ export function useDeleteConversation() {
 export function useSendMessage(conversationId: number | null) {
   const queryClient = useQueryClient();
   const [streamingContent, setStreamingContent] = useState("");
+  const [streamingRecipe, setStreamingRecipe] =
+    useState<StreamingRecipe | null>(null);
+  const [allergenWarning, setAllergenWarning] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(false);
+
+  // Refs for stale-closure-safe access inside streaming callbacks
+  const isStreamingRef = useRef(false);
+  const streamingContentRef = useRef("");
 
   const sendMessage = useCallback(
     async (content: string, screenContext?: string) => {
       if (!conversationId) return;
+      isStreamingRef.current = true;
+      streamingContentRef.current = "";
       setIsStreaming(true);
       setStreamingContent("");
+      setStreamingRecipe(null);
+      setAllergenWarning(null);
       setStreamError(false);
 
       let receivedDone = false;
@@ -104,7 +144,9 @@ export function useSendMessage(conversationId: number | null) {
         const reader = res.body?.getReader();
         if (!reader) throw new Error("No response body");
         const decoder = new TextDecoder();
-        let accumulated = "";
+
+        // Throttle streaming content updates to 16ms (frame-aligned)
+        let pendingFlush = false;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -115,13 +157,39 @@ export function useSendMessage(conversationId: number | null) {
             if (line.startsWith("data: ")) {
               try {
                 const data = JSON.parse(line.slice(6));
-                if (data.content) {
-                  accumulated += data.content;
-                  setStreamingContent(accumulated);
+
+                // Recipe card event (additive protocol extension)
+                if (data.recipe) {
+                  setStreamingRecipe(data.recipe);
+                  if (data.allergenWarning) {
+                    setAllergenWarning(data.allergenWarning);
+                  }
                 }
+
+                // Image ready event
+                if (data.imageUrl) {
+                  setStreamingRecipe((prev) =>
+                    prev ? { ...prev, imageUrl: data.imageUrl } : null,
+                  );
+                }
+
+                // Text content chunk
+                if (data.content) {
+                  streamingContentRef.current += data.content;
+                  // Throttle UI updates to 16ms intervals
+                  if (!pendingFlush) {
+                    pendingFlush = true;
+                    setTimeout(() => {
+                      if (isStreamingRef.current) {
+                        setStreamingContent(streamingContentRef.current);
+                      }
+                      pendingFlush = false;
+                    }, 16);
+                  }
+                }
+
                 if (data.done) {
                   receivedDone = true;
-                  // Refresh messages
                   queryClient.invalidateQueries({
                     queryKey: [
                       `/api/chat/conversations/${conversationId}/messages`,
@@ -131,16 +199,15 @@ export function useSendMessage(conversationId: number | null) {
                     queryKey: ["/api/chat/conversations"],
                   });
                 }
+
                 if (data.error) {
                   throw new Error(data.error);
                 }
               } catch (e) {
-                // Re-throw actual errors, ignore parse errors for incomplete chunks
                 if (
                   e instanceof Error &&
                   e.message !== "Unexpected end of JSON input"
                 ) {
-                  // Only throw application-level errors, not JSON parse issues
                   if (!String(e).includes("JSON")) {
                     throw e;
                   }
@@ -151,7 +218,7 @@ export function useSendMessage(conversationId: number | null) {
         }
 
         // Stream ended — check if it completed normally
-        if (!receivedDone && accumulated.length > 0) {
+        if (!receivedDone && streamingContentRef.current.length > 0) {
           setStreamError(true);
           queryClient.invalidateQueries({
             queryKey: [`/api/chat/conversations/${conversationId}/messages`],
@@ -161,6 +228,7 @@ export function useSendMessage(conversationId: number | null) {
           });
         }
       } finally {
+        isStreamingRef.current = false;
         setIsStreaming(false);
         setStreamingContent("");
       }
@@ -168,5 +236,36 @@ export function useSendMessage(conversationId: number | null) {
     [conversationId, queryClient],
   );
 
-  return { sendMessage, streamingContent, isStreaming, streamError };
+  return {
+    sendMessage,
+    streamingContent,
+    streamingRecipe,
+    allergenWarning,
+    isStreaming,
+    streamError,
+  };
+}
+
+/** Save a recipe from a chat message to the user's library */
+export function useSaveRecipeFromChat() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      messageId,
+    }: {
+      conversationId: number;
+      messageId: number;
+    }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/chat/conversations/${conversationId}/save-recipe`,
+        { messageId },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+    },
+  });
 }
