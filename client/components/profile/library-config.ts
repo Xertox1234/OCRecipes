@@ -62,7 +62,7 @@ export function navigateLibraryItem(
 ) {
   switch (id) {
     case "cookbooks":
-      navigation.navigate("MealPlanTab", { screen: "CookbookList" });
+      navigation.navigate("CookbookListModal");
       break;
     case "savedItems":
       navigation.navigate("SavedItems");
@@ -71,16 +71,13 @@ export function navigateLibraryItem(
       navigation.navigate("ScanHistory", { showAll: true });
       break;
     case "groceryLists":
-      navigation.navigate("MealPlanTab", { screen: "GroceryLists" });
+      navigation.navigate("GroceryListsModal");
       break;
     case "pantry":
-      navigation.navigate("MealPlanTab", { screen: "Pantry" });
+      navigation.navigate("PantryModal");
       break;
     case "recipes":
-      navigation.navigate("MealPlanTab", {
-        screen: "RecipeBrowser",
-        params: {},
-      });
+      navigation.navigate("RecipeBrowserModal");
       break;
   }
 }

@@ -157,7 +157,7 @@ export function useProfileData() {
 
   const handleFastingPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate("HomeTab", { screen: "Fasting" });
+    navigation.navigate("FastingModal");
   }, [haptics, navigation]);
 
   const handleWeightPress = useCallback(() => {

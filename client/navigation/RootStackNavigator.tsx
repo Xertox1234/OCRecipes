@@ -40,6 +40,11 @@ import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
 import WeightTrackingScreen from "@/screens/WeightTrackingScreen";
 import CoachChatScreen from "@/screens/CoachChatScreen";
 import RecipeChatScreen from "@/screens/RecipeChatScreen";
+import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
+import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
+import PantryScreen from "@/screens/meal-plan/PantryScreen";
+import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
+import FastingScreen from "@/screens/FastingScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -113,6 +118,12 @@ export type RootStackParamList = {
     conversationId?: number;
     initialMessage?: string;
   };
+  // Profile hub modal screens (back returns to Profile, not Plan tab)
+  CookbookListModal: undefined;
+  GroceryListsModal: undefined;
+  PantryModal: undefined;
+  RecipeBrowserModal: { mealType?: string; date?: string } | undefined;
+  FastingModal: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -347,6 +358,58 @@ export default function RootStackNavigator() {
               headerShown: false,
               presentation: "fullScreenModal",
               animation: "slide_from_bottom",
+            }}
+          />
+
+          {/* Profile hub modals — back returns to Profile, not Plan tab */}
+          <Stack.Screen
+            name="CookbookListModal"
+            component={CookbookListScreen}
+            options={{
+              headerTitle: () => (
+                <HeaderTitle title="Cookbooks" showIcon={false} />
+              ),
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="GroceryListsModal"
+            component={GroceryListsScreen}
+            options={{
+              headerTitle: () => (
+                <HeaderTitle title="Grocery Lists" showIcon={false} />
+              ),
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="PantryModal"
+            component={PantryScreen}
+            options={{
+              headerTitle: () => (
+                <HeaderTitle title="Pantry" showIcon={false} />
+              ),
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="RecipeBrowserModal"
+            component={RecipeBrowserScreen}
+            options={{
+              headerTitle: () => (
+                <HeaderTitle title="Recipes" showIcon={false} />
+              ),
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="FastingModal"
+            component={FastingScreen}
+            options={{
+              headerTitle: () => (
+                <HeaderTitle title="Fasting Timer" showIcon={false} />
+              ),
+              presentation: "modal",
             }}
           />
         </>

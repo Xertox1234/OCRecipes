@@ -17,13 +17,12 @@ import {
   TAB_BAR_HEIGHT,
   MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
-import type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
 export type MainTabParamList = {
-  HomeTab: NavigatorScreenParams<HomeStackParamList> | undefined;
+  HomeTab: undefined;
   MealPlanTab: NavigatorScreenParams<MealPlanStackParamList> | undefined;
   CoachTab: NavigatorScreenParams<ChatStackParamList> | undefined;
   ProfileTab: NavigatorScreenParams<ProfileStackParamList> | undefined;
