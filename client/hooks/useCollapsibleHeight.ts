@@ -26,15 +26,16 @@ export function useCollapsibleHeight(
 ) {
   const contentHeight = useSharedValue(0);
   const animatedHeight = useSharedValue(0);
-  const isFirstRender = useRef(true);
+  const hasMeasured = useRef(false);
 
   const onContentLayout = useCallback(
     (e: { nativeEvent: { layout: { height: number } } }) => {
       const measured = e.nativeEvent.layout.height;
+      if (measured === 0) return; // Ignore zero-height measurements
       contentHeight.value = measured;
-      if (isFirstRender.current) {
-        isFirstRender.current = false;
-        // Snap to correct state without animation on first render
+      if (!hasMeasured.current) {
+        hasMeasured.current = true;
+        // Snap to correct state without animation on first measurement
         animatedHeight.value = isExpanded ? measured : 0;
       } else if (isExpanded) {
         // Content resized while expanded — track it immediately
@@ -46,7 +47,7 @@ export function useCollapsibleHeight(
   );
 
   useEffect(() => {
-    if (isFirstRender.current) return;
+    if (!hasMeasured.current) return;
 
     if (reducedMotion) {
       animatedHeight.value = isExpanded ? contentHeight.value : 0;
@@ -63,7 +64,6 @@ export function useCollapsibleHeight(
 
   const animatedStyle = useAnimatedStyle(() => ({
     height: animatedHeight.value,
-    overflow: "hidden" as const,
   }));
 
   return { animatedStyle, onContentLayout };

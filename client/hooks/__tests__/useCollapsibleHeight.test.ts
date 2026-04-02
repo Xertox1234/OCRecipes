@@ -71,7 +71,6 @@ describe("useCollapsibleHeight", () => {
     // Before onContentLayout fires, height is 0
     expect(result.current.animatedStyle).toEqual({
       height: 0,
-      overflow: "hidden",
     });
   });
 
@@ -86,7 +85,6 @@ describe("useCollapsibleHeight", () => {
 
     expect(result.current.animatedStyle).toEqual({
       height: 200,
-      overflow: "hidden",
     });
   });
 
@@ -95,7 +93,6 @@ describe("useCollapsibleHeight", () => {
 
     expect(result.current.animatedStyle).toEqual({
       height: 0,
-      overflow: "hidden",
     });
   });
 
@@ -118,7 +115,6 @@ describe("useCollapsibleHeight", () => {
     // withTiming is mocked to return the target value immediately (200)
     expect(result.current.animatedStyle).toEqual({
       height: 200,
-      overflow: "hidden",
     });
   });
 
@@ -141,7 +137,6 @@ describe("useCollapsibleHeight", () => {
     // withTiming is mocked to return the target value immediately (0)
     expect(result.current.animatedStyle).toEqual({
       height: 0,
-      overflow: "hidden",
     });
   });
 
@@ -163,7 +158,6 @@ describe("useCollapsibleHeight", () => {
 
     expect(result.current.animatedStyle).toEqual({
       height: 0,
-      overflow: "hidden",
     });
 
     // Re-expand with reduced motion
@@ -171,7 +165,6 @@ describe("useCollapsibleHeight", () => {
 
     expect(result.current.animatedStyle).toEqual({
       height: 150,
-      overflow: "hidden",
     });
   });
 
@@ -187,7 +180,6 @@ describe("useCollapsibleHeight", () => {
 
     expect(result.current.animatedStyle).toEqual({
       height: 200,
-      overflow: "hidden",
     });
 
     // Content resizes
@@ -199,7 +191,6 @@ describe("useCollapsibleHeight", () => {
 
     expect(result.current.animatedStyle).toEqual({
       height: 300,
-      overflow: "hidden",
     });
   });
 });
