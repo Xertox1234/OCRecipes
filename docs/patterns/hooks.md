@@ -728,3 +728,44 @@ for (const line of lines) {
 
 - `server/routes/chat.ts` — recipe chat path yields `recipe` and `imageUrl` fields
 - `client/hooks/useChat.ts` — `useSendMessage` parses optional `recipe`, `imageUrl`, `allergenWarning` fields
+
+### Override Parameter to Bypass Stale Closures on Async-Created IDs
+
+When a hook's callback closes over a state variable (e.g., `conversationId`), and the caller creates a new value via `setState` then immediately calls the callback, the callback still sees the old value because React state updates are asynchronous. The fix is an **explicit override parameter**:
+
+```typescript
+// Hook — accept optional override that takes precedence over state
+export function useSendMessage(conversationId: number | null) {
+  const sendMessage = useCallback(
+    async (content: string, screenContext?: string, conversationIdOverride?: number) => {
+      const effectiveId = conversationIdOverride ?? conversationId;
+      if (!effectiveId) return;
+      // ... use effectiveId everywhere (URL, query invalidation, etc.)
+    },
+    [conversationId, queryClient],
+  );
+  return { sendMessage, ... };
+}
+
+// Caller — pass the just-created ID directly
+const handleSend = useCallback(async () => {
+  let convId = conversationId;
+  if (!convId) {
+    const conv = await createConversation.mutateAsync({ title: "New Chat" });
+    convId = conv.id;
+    setConversationId(convId);  // Async — won't be visible to sendMessage's closure yet
+  }
+  sendMessage(content, undefined, convId);  // Pass directly — bypasses stale closure
+}, [conversationId, createConversation, sendMessage]);
+```
+
+**When to use:** Any time a caller (1) creates a resource, (2) stores its ID in state, and (3) immediately calls a hook callback that needs that ID — all in the same synchronous execution.
+
+**Why not just use a ref?** A ref would work for the hook's internal reads, but the caller still needs to pass the value somehow. The override parameter is the clearest API — it's explicit, type-safe, and doesn't require coordinating ref updates across component boundaries.
+
+**Why not restructure into a single API call?** Sometimes the resource creation and the subsequent action are intentionally separate concerns (e.g., creating a conversation is reusable, sending a message is a different mutation). Merging them couples unrelated operations.
+
+**References:**
+
+- `client/hooks/useChat.ts` — `useSendMessage` with `conversationIdOverride` parameter
+- `client/screens/RecipeChatScreen.tsx` — `handleSend` passes `convId` after async conversation creation

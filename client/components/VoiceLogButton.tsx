@@ -76,13 +76,24 @@ export const VoiceLogButton = React.memo(function VoiceLogButton({
         accessibilityRole="button"
         style={({ pressed }) => [
           styles.button,
-          {
-            backgroundColor: isListening ? theme.error : theme.link,
-            opacity: pressed || disabled ? 0.7 : 1,
-          },
+          isListening
+            ? {
+                backgroundColor: theme.error,
+                opacity: pressed || disabled ? 0.7 : 1,
+              }
+            : {
+                backgroundColor: "transparent",
+                borderWidth: 1.5,
+                borderColor: theme.border,
+                opacity: pressed || disabled ? 0.7 : 1,
+              },
         ]}
       >
-        <Feather name="mic" size={24} color={theme.buttonText} />
+        <Feather
+          name="mic"
+          size={22}
+          color={isListening ? theme.buttonText : theme.textSecondary}
+        />
       </Pressable>
     </Animated.View>
   );
@@ -90,9 +101,9 @@ export const VoiceLogButton = React.memo(function VoiceLogButton({
 
 const styles = StyleSheet.create({
   button: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
   },

@@ -287,12 +287,14 @@ export default function QuickLogScreen() {
               style={({ pressed }) => [
                 styles.cameraButton,
                 {
-                  backgroundColor: theme.link,
+                  backgroundColor: "transparent",
+                  borderWidth: 1.5,
+                  borderColor: theme.border,
                   opacity: pressed ? 0.7 : 1,
                 },
               ]}
             >
-              <Feather name="camera" size={24} color={theme.buttonText} />
+              <Feather name="camera" size={22} color={theme.textSecondary} />
             </Pressable>
             <Pressable
               onPress={handleTextSubmit}
@@ -384,12 +386,14 @@ export default function QuickLogScreen() {
                 style={({ pressed }) => [
                   styles.exampleChip,
                   {
-                    backgroundColor: withOpacity(theme.link, 0.1),
+                    backgroundColor: theme.backgroundSecondary,
+                    borderLeftWidth: 3,
+                    borderLeftColor: withOpacity(theme.link, 0.4),
                     opacity: pressed ? 0.7 : 1,
                   },
                 ]}
               >
-                <ThemedText style={[styles.exampleText, { color: theme.link }]}>
+                <ThemedText style={[styles.exampleText, { color: theme.text }]}>
                   {label}
                 </ThemedText>
               </Pressable>
@@ -400,8 +404,8 @@ export default function QuickLogScreen() {
               style={[
                 styles.tipCard,
                 {
-                  backgroundColor: withOpacity(theme.link, 0.15),
-                  borderColor: withOpacity(theme.link, 0.25),
+                  backgroundColor: theme.backgroundSecondary,
+                  borderColor: theme.border,
                 },
               ]}
               accessible={true}
@@ -410,11 +414,11 @@ export default function QuickLogScreen() {
               <Feather
                 name={tip.icon}
                 size={20}
-                color={theme.link}
+                color={theme.textSecondary}
                 style={styles.tipIcon}
               />
               <ThemedText
-                style={[styles.tipText, { color: theme.link }]}
+                style={[styles.tipText, { color: theme.textSecondary }]}
                 numberOfLines={2}
               >
                 {tip.text}
@@ -481,7 +485,7 @@ const styles = StyleSheet.create({
   },
   helpSection: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
+    paddingTop: Spacing.xl,
   },
   tipCard: {
     flexDirection: "row",
@@ -505,9 +509,9 @@ const styles = StyleSheet.create({
   },
   exampleChip: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.md,
     borderRadius: BorderRadius.xs,
-    marginBottom: Spacing.xs,
+    marginBottom: Spacing.sm,
   },
   exampleText: {
     fontSize: 14,
