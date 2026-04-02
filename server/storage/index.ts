@@ -25,6 +25,7 @@ import * as batch from "./batch";
 import * as reformulation from "./reformulation";
 import * as sessions from "./sessions";
 import * as carousel from "./carousel";
+import * as profileHub from "./profile-hub";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 
@@ -252,4 +253,7 @@ export const storage = {
   getCarouselCache: carousel.getCarouselCache,
   setCarouselCache: carousel.setCarouselCache,
   getRecentCommunityRecipes: carousel.getRecentCommunityRecipes,
+
+  // Profile hub (aggregated counts)
+  getLibraryCounts: profileHub.getLibraryCounts,
 };
