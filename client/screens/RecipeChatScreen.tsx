@@ -127,7 +127,7 @@ export default function RecipeChatScreen() {
         }
       }
 
-      sendMessage(content);
+      sendMessage(content, undefined, convId);
     },
     [inputText, isStreaming, conversationId, createConversation, sendMessage],
   );

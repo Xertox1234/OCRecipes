@@ -103,8 +103,13 @@ export function useSendMessage(conversationId: number | null) {
   const streamingContentRef = useRef("");
 
   const sendMessage = useCallback(
-    async (content: string, screenContext?: string) => {
-      if (!conversationId) return;
+    async (
+      content: string,
+      screenContext?: string,
+      conversationIdOverride?: number,
+    ) => {
+      const effectiveId = conversationIdOverride ?? conversationId;
+      if (!effectiveId) return;
       isStreamingRef.current = true;
       streamingContentRef.current = "";
       setIsStreaming(true);
@@ -118,7 +123,7 @@ export function useSendMessage(conversationId: number | null) {
       try {
         const baseUrl = getApiUrl();
         const url = new URL(
-          `/api/chat/conversations/${conversationId}/messages`,
+          `/api/chat/conversations/${effectiveId}/messages`,
           baseUrl,
         );
         const token = await tokenStorage.get();
@@ -192,7 +197,7 @@ export function useSendMessage(conversationId: number | null) {
                   receivedDone = true;
                   queryClient.invalidateQueries({
                     queryKey: [
-                      `/api/chat/conversations/${conversationId}/messages`,
+                      `/api/chat/conversations/${effectiveId}/messages`,
                     ],
                   });
                   queryClient.invalidateQueries({
@@ -221,7 +226,7 @@ export function useSendMessage(conversationId: number | null) {
         if (!receivedDone && streamingContentRef.current.length > 0) {
           setStreamError(true);
           queryClient.invalidateQueries({
-            queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+            queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
           });
           queryClient.invalidateQueries({
             queryKey: ["/api/chat/conversations"],

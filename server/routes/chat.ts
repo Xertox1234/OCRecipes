@@ -257,6 +257,7 @@ export function register(app: Express): void {
             let fullTextResponse = "";
             let recipeData: RecipeChatRecipe | null = null;
             let allergenWarning: string | null = null;
+            let recipeImageUrl: string | null = null;
 
             for await (const event of generateRecipeChatResponse(
               contextMessages,
@@ -279,6 +280,7 @@ export function register(app: Express): void {
                 allergenWarning = event.allergenWarning;
                 res.write(`data: ${eventJson}\n\n`);
               } else if ("imageUrl" in event && event.imageUrl) {
+                recipeImageUrl = event.imageUrl;
                 res.write(`data: ${eventJson}\n\n`);
               } else if ("content" in event && event.content) {
                 fullTextResponse += event.content;
@@ -293,7 +295,7 @@ export function register(app: Express): void {
                     metadataVersion: 1,
                     recipe: recipeData,
                     allergenWarning,
-                    imageUrl: null,
+                    imageUrl: recipeImageUrl,
                   }
                 : null;
 
