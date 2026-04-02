@@ -4,6 +4,8 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [RN Modal Cannot Overlay React Navigation transparentModal (2026-04-01)](#rn-modal-cannot-overlay-react-navigation-transparentmodal-2026-04-01)
+- [fetch ReadableStream Fails Inside RN Modal — Use XHR (2026-04-01)](#fetch-readablestream-fails-inside-rn-modal--use-xhr-2026-04-01)
 - [Mass-Assignment via Partial&lt;User&gt; in Storage Update Functions (2026-04-01)](#mass-assignment-via-partialuser-in-storage-update-functions-2026-04-01)
 - [Polymorphic FK with Discriminator Column — No DB-Level Constraint (2026-04-01)](#polymorphic-fk-with-discriminator-column--no-db-level-constraint-2026-04-01)
 - [CHECK Constraint vs ON DELETE SET NULL Conflict (2026-03-29)](#check-constraint-vs-on-delete-set-null-conflict-2026-03-29)
@@ -39,6 +41,40 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-04-01] RN Modal Cannot Overlay React Navigation transparentModal
+
+**Problem:** An RN `Modal` component rendered from a context provider at the app root opens _behind_ a React Navigation `transparentModal` screen on iOS. The user taps a button inside the `transparentModal`, the `Modal` opens, but it's invisible underneath.
+
+**Root cause:** iOS `presentViewController:` presents on the root view controller, but React Navigation's `transparentModal` creates a separate native view controller above it. The RN Modal cannot stack on top.
+
+**Fix:** Register the overlay as a `fullScreenModal` screen in the RootStack navigator instead. Navigation screens stack correctly on top of each other regardless of presentation mode. Use `navigation.navigate("CoachChat", { ... })` instead of context-based overlay.
+
+**Rule:** Never use RN `Modal` or absolute-positioned Views to overlay content on screens that are themselves React Navigation modals (`transparentModal`, `modal`, `formSheet`). Use a navigation screen instead.
+
+---
+
+## [2026-04-01] fetch ReadableStream Fails Inside RN Modal — Use XHR
+
+**Problem:** SSE streaming via `fetch` + `res.body.getReader()` works in regular React Native screens but silently fails inside an RN `Modal`. The `ReadableStream` reader never delivers chunks — `isStreaming` stays true but `streamingContent` stays empty.
+
+**Root cause:** React Native's `ReadableStream` implementation does not reliably deliver chunks in all native view contexts. The Modal creates a separate native view hierarchy that disrupts the streaming.
+
+**Fix:** Use `XMLHttpRequest` with `onreadystatechange` and `readyState >= 3` (LOADING) for SSE parsing. XHR's progressive response text works reliably everywhere in RN, including inside Modals.
+
+```typescript
+xhr.onreadystatechange = () => {
+  if (xhr.readyState >= 3 && xhr.responseText) {
+    const newText = xhr.responseText.slice(lastProcessedIndex);
+    lastProcessedIndex = xhr.responseText.length;
+    // Parse SSE lines from newText
+  }
+};
+```
+
+**Rule:** For SSE streaming in React Native, prefer XHR over fetch+ReadableStream. XHR is universally reliable; ReadableStream is context-dependent.
 
 ---
 
