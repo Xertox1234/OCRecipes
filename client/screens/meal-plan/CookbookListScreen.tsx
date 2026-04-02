@@ -1,7 +1,7 @@
 import React, { useCallback, useLayoutEffect } from "react";
 import { StyleSheet, View, Pressable, FlatList, Alert } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 
@@ -23,7 +23,7 @@ import type { CookbookWithCount } from "@shared/schema";
 export default function CookbookListScreen() {
   const navigation = useNavigation<CookbookListScreenNavigationProp>();
   const headerHeight = useHeaderHeight();
-  const tabBarHeight = useBottomTabBarHeight();
+  const tabBarHeight = useSafeTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { data: cookbooks, isLoading, refetch } = useCookbooks();

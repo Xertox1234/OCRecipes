@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from "react";
 import { StyleSheet, View, Pressable, FlatList, TextInput } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 
@@ -29,7 +29,7 @@ import { formatDateRange } from "@/lib/format";
 export default function GroceryListsScreen() {
   const navigation = useNavigation<GroceryListsScreenNavigationProp>();
   const headerHeight = useHeaderHeight();
-  const tabBarHeight = useBottomTabBarHeight();
+  const tabBarHeight = useSafeTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { confirm, ConfirmationModal } = useConfirmationModal();
