@@ -93,14 +93,14 @@ export default function SettingsScreen() {
           break;
         case "healthkit":
           if (healthKitUnlocked) {
-            navigation.navigate("HealthKitSettings" as any);
+            navigation.navigate("HealthKitSettings");
           } else {
             setShowUpgradeModal(true);
           }
           break;
         case "glp1":
           if (glp1Unlocked) {
-            navigation.navigate("GLP1Companion" as any);
+            navigation.navigate("GLP1Companion");
           } else {
             setShowUpgradeModal(true);
           }

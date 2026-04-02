@@ -1,6 +1,7 @@
 import React, { useRef } from "react";
 import { StyleSheet, View, ScrollView } from "react-native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { SkeletonBox } from "@/components/SkeletonLoader";
@@ -127,13 +128,17 @@ export default function ProfileScreen() {
 
 /** Skeleton loading state matching hub layout */
 function ProfileSkeleton({ theme }: { theme: any }) {
+  const insets = useSafeAreaInsets();
   return (
     <View style={[styles.root, { backgroundColor: theme.backgroundRoot }]}>
       {/* Profile card skeleton */}
       <View
         style={[
           styles.skeletonCard,
-          { backgroundColor: theme.backgroundSecondary },
+          {
+            backgroundColor: theme.backgroundSecondary,
+            paddingTop: insets.top + Spacing.lg,
+          },
         ]}
       >
         <View style={styles.skeletonRow}>
@@ -216,7 +221,6 @@ const styles = StyleSheet.create({
   // Skeleton styles
   skeletonCard: {
     padding: Spacing.lg,
-    paddingTop: 60, // Approximate safe area + padding
   },
   skeletonRow: {
     flexDirection: "row",
