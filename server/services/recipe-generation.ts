@@ -250,7 +250,7 @@ export async function generateRecipeImage(
   const safeProduct = sanitizeUserInput(productName);
   const prompt = `Professional food photography of "${safeTitle}" made with ${safeProduct}. Overhead 45-degree angle, natural window lighting, shallow depth of field. Plated on a neutral ceramic dish with fresh herb garnish. Clean minimalist background, photorealistic.`;
 
-  // Try Runware first (66x cheaper than DALL-E)
+  // Try Runware first (much cheaper than DALL-E)
   if (isRunwareConfigured) {
     try {
       const buffer = await runwareGenerateImage({ prompt });
