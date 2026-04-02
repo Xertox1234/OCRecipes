@@ -19,9 +19,7 @@ import {
 import {
   generateRecipeChatResponse,
   buildRecipeContext,
-  type RecipeChatSSEEvent,
   type RecipeChatRecipe,
-  recipeChatMetadataSchema,
 } from "../services/recipe-chat";
 import { logger, toError } from "../lib/logger";
 import { createHash } from "crypto";
