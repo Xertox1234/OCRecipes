@@ -35,6 +35,7 @@ interface SettingsItemConfig {
 }
 
 const SETTINGS_ITEMS: SettingsItemConfig[] = [
+  { id: "editProfile", icon: "edit-2", label: "Edit Profile" },
   {
     id: "healthkit",
     icon: "heart",
@@ -87,6 +88,9 @@ export default function SettingsScreen() {
     (id: string) => {
       haptics.selection();
       switch (id) {
+        case "editProfile":
+          navigation.navigate("EditDietaryProfile");
+          break;
         case "healthkit":
           if (healthKitUnlocked) {
             navigation.navigate("HealthKitSettings" as any);

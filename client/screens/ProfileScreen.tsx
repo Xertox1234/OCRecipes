@@ -29,7 +29,6 @@ export default function ProfileScreen() {
     isInitialLoading,
     handleThemeToggle,
     handleAvatarPress,
-    handleEditProfile,
     handleGearPress,
     handleLockedPress,
     handleCaloriePress,
@@ -76,7 +75,6 @@ export default function ProfileScreen() {
             compositeScore={verificationData?.compositeScore ?? 0}
             isUploadingAvatar={isUploadingAvatar}
             onAvatarPress={handleAvatarPress}
-            onEditProfile={handleEditProfile}
             onGearPress={handleGearPress}
           />
         </Animated.View>

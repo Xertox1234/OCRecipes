@@ -140,10 +140,6 @@ export function useProfileData() {
     }
   }, [haptics, checkAuth]);
 
-  const handleEditProfile = useCallback(() => {
-    navigation.navigate("EditDietaryProfile");
-  }, [navigation]);
-
   const handleGearPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.navigate("Settings");
@@ -190,7 +186,7 @@ export function useProfileData() {
     isInitialLoading,
     handleThemeToggle,
     handleAvatarPress,
-    handleEditProfile,
+
     handleGearPress,
     handleLockedPress,
     handleCaloriePress,

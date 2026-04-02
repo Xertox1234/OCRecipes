@@ -5,12 +5,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+import { Spacing, FontFamily, withOpacity } from "@/constants/theme";
 import { resolveImageUrl } from "@/lib/query-client";
 import { getTierLabel } from "@/components/verification-badge-utils";
 
@@ -21,7 +16,6 @@ interface ProfileCardProps {
   compositeScore: number;
   isUploadingAvatar: boolean;
   onAvatarPress: () => void;
-  onEditProfile: () => void;
   onGearPress: () => void;
 }
 
@@ -32,7 +26,6 @@ export const ProfileCard = React.memo(function ProfileCard({
   compositeScore,
   isUploadingAvatar,
   onAvatarPress,
-  onEditProfile,
   onGearPress,
 }: ProfileCardProps) {
   const { theme } = useTheme();
@@ -115,15 +108,6 @@ export const ProfileCard = React.memo(function ProfileCard({
               </ThemedText>
             )}
           </ThemedText>
-
-          <Pressable
-            onPress={onEditProfile}
-            accessibilityLabel="Edit Profile"
-            accessibilityRole="button"
-            style={[styles.editButton, { backgroundColor: theme.link }]}
-          >
-            <ThemedText style={styles.editButtonText}>Edit Profile</ThemedText>
-          </Pressable>
         </View>
       </View>
     </View>
@@ -183,16 +167,5 @@ const styles = StyleSheet.create({
   badge: {
     fontSize: 13,
     fontFamily: FontFamily.regular,
-  },
-  editButton: {
-    alignSelf: "flex-start",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.chip,
-  },
-  editButtonText: {
-    color: "#FFFFFF", // hardcoded — white on theme.link button
-    fontSize: 13,
-    fontFamily: FontFamily.medium,
   },
 });
