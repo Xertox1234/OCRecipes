@@ -375,19 +375,21 @@ export async function* generateRecipeChatResponse(
       allergenWarning,
     };
 
-    // Fire-and-forget image generation
-    generateRecipeImage(
-      recipe.title,
-      recipe.ingredients.map((i) => i.name).join(", "),
-    )
-      .then((imageUrl) => {
-        if (imageUrl) {
-          log.info({ imageUrl, title: recipe.title }, "recipe image generated");
-        }
-      })
-      .catch((error) => {
-        log.warn({ err: toError(error) }, "recipe image generation failed");
-      });
+    // Await image generation with timeout — yield imageUrl event before done
+    try {
+      const imageUrl = await Promise.race([
+        generateRecipeImage(
+          recipe.title,
+          recipe.ingredients.map((i) => i.name).join(", "),
+        ),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+      ]);
+      if (imageUrl) {
+        yield { content: "", imageUrl };
+      }
+    } catch (error) {
+      log.warn({ err: toError(error) }, "recipe image generation failed");
+    }
   }
 
   yield { done: true };

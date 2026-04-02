@@ -9,6 +9,7 @@ import {
   parsePositiveIntParam,
   checkPremiumFeature,
   checkAiConfigured,
+  handleRouteError,
 } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -17,7 +18,6 @@ import {
   analyzeImageForRecipe,
   RECIPE_SUGGESTION_CHIPS,
 } from "../services/recipe-chat";
-import { logger, toError } from "../lib/logger";
 
 // 5MB limit for recipe ingredient photos
 const recipeImageUpload = createImageUpload(5 * 1024 * 1024);
@@ -27,6 +27,7 @@ export function register(app: Express): void {
   app.get(
     "/api/chat/suggestions",
     requireAuth,
+    chatRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       const type = req.query.type as string | undefined;
       if (type === "recipe") {
@@ -81,11 +82,7 @@ export function register(app: Express): void {
 
         res.status(201).json(recipe);
       } catch (error) {
-        logger.error(
-          { err: toError(error) },
-          "failed to save recipe from chat",
-        );
-        sendError(res, 500, "Failed to save recipe", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "save recipe from chat");
       }
     },
   );
@@ -181,14 +178,8 @@ export function register(app: Express): void {
           ingredientAnalysis,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "failed to upload recipe image");
         if (!res.headersSent) {
-          sendError(
-            res,
-            500,
-            "Failed to analyze image",
-            ErrorCode.INTERNAL_ERROR,
-          );
+          handleRouteError(res, error, "upload recipe image");
         }
       }
     },

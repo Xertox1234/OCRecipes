@@ -10,6 +10,7 @@ import {
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
+import { recipeChatMetadataSchema } from "../services/recipe-chat";
 
 // ============================================================================
 // CHAT CONVERSATIONS
@@ -257,31 +258,22 @@ export async function saveRecipeFromChat(
       );
     if (!msg || !msg.metadata) return null;
 
-    const metadata = msg.metadata as Record<string, unknown>;
+    // 3. Validate metadata with Zod — no unsafe `as` casts on DB values
+    const parsed = recipeChatMetadataSchema.safeParse(msg.metadata);
 
-    // 3. Idempotency guard — if already saved, return existing recipe
-    if (metadata.savedRecipeId) {
+    // Handle legacy or non-recipe messages: check raw savedRecipeId for idempotency
+    const rawMetadata = msg.metadata as Record<string, unknown>;
+    if (rawMetadata.savedRecipeId) {
       const [existing] = await tx
         .select()
         .from(communityRecipes)
-        .where(eq(communityRecipes.id, metadata.savedRecipeId as number));
+        .where(eq(communityRecipes.id, Number(rawMetadata.savedRecipeId)));
       return existing || null;
     }
 
-    // 4. Extract recipe data from metadata
-    const recipe = metadata.recipe as
-      | {
-          title: string;
-          description?: string;
-          difficulty?: string;
-          timeEstimate?: string;
-          servings?: number;
-          ingredients: { name: string; quantity: string; unit: string }[];
-          instructions: string[];
-          dietTags?: string[];
-        }
-      | undefined;
-    if (!recipe) return null;
+    // 4. Extract validated recipe data from metadata
+    if (!parsed.success) return null;
+    const { recipe } = parsed.data;
 
     // 5. Create communityRecipe (private by default)
     const [created] = await tx
@@ -297,7 +289,7 @@ export async function saveRecipeFromChat(
         dietTags: recipe.dietTags ?? [],
         instructions: recipe.instructions,
         ingredients: recipe.ingredients,
-        imageUrl: (metadata.imageUrl as string) ?? null,
+        imageUrl: parsed.data.imageUrl ?? null,
         isPublic: false,
       })
       .returning();

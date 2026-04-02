@@ -231,6 +231,8 @@ export function useSendMessage(conversationId: number | null) {
         isStreamingRef.current = false;
         setIsStreaming(false);
         setStreamingContent("");
+        setStreamingRecipe(null);
+        setAllergenWarning(null);
       }
     },
     [conversationId, queryClient],
