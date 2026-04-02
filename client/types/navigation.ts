@@ -100,6 +100,15 @@ export type FeaturedRecipeDetailScreenNavigationProp =
   NativeStackNavigationProp<RootStackParamList, "FeaturedRecipeDetail">;
 
 /**
+ * Navigation prop for RecipeChatScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type RecipeChatScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "RecipeChat"
+>;
+
+/**
  * Navigation prop for MealPlanHomeScreen
  * Uses CompositeNavigationProp to navigate across stacks:
  * - Navigate within MealPlanStack

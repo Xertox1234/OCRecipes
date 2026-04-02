@@ -60,10 +60,7 @@ export function navigateAction(
       });
       break;
     case "generate-recipe":
-      navigation.navigate("MealPlanTab", {
-        screen: "RecipeCreate",
-        params: {},
-      });
+      navigation.navigate("RecipeChat", {});
       break;
     case "import-recipe":
       navigation.navigate("MealPlanTab", {

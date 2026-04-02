@@ -26,6 +26,10 @@ export const linking: LinkingOptions<RootStackParamList> = {
         path: "recipe/:recipeId",
         parse: { recipeId: parseIntOrZero },
       },
+      RecipeChat: {
+        path: "recipe-chat/:conversationId?",
+        parse: { conversationId: parseIntOrZero },
+      },
       NutritionDetail: "nutrition/:barcode",
       Scan: "scan",
     },

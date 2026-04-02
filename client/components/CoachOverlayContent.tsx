@@ -149,7 +149,7 @@ export function CoachOverlayContent({
     didCreateRef.current = true;
 
     createConversation
-      .mutateAsync(question.text.slice(0, 50))
+      .mutateAsync({ title: question.text.slice(0, 50) })
       .then((conv) => {
         setConversationId(conv.id);
       })
@@ -308,7 +308,7 @@ export function CoachOverlayContent({
     setCreateError(false);
     didSendRef.current = false;
     createConversation
-      .mutateAsync(question.text.slice(0, 50))
+      .mutateAsync({ title: question.text.slice(0, 50) })
       .then((conv) => {
         setConversationId(conv.id);
       })
