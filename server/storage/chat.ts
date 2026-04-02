@@ -1,8 +1,10 @@
 import {
   type ChatConversation,
   type ChatMessage,
+  type CommunityRecipe,
   chatConversations,
   chatMessages,
+  communityRecipes,
   coachResponseCache,
 } from "@shared/schema";
 import { db } from "../db";
@@ -29,11 +31,16 @@ export async function getChatConversation(
 export async function getChatConversations(
   userId: string,
   limit = 50,
+  type?: "coach" | "recipe",
 ): Promise<ChatConversation[]> {
+  const conditions = [eq(chatConversations.userId, userId)];
+  if (type) {
+    conditions.push(eq(chatConversations.type, type));
+  }
   return db
     .select()
     .from(chatConversations)
-    .where(eq(chatConversations.userId, userId))
+    .where(and(...conditions))
     .orderBy(desc(chatConversations.updatedAt))
     .limit(limit);
 }
@@ -41,10 +48,11 @@ export async function getChatConversations(
 export async function createChatConversation(
   userId: string,
   title: string,
+  type: "coach" | "recipe" = "coach",
 ): Promise<ChatConversation> {
   const [conversation] = await db
     .insert(chatConversations)
-    .values({ userId, title })
+    .values({ userId, title, type })
     .returning();
   return conversation;
 }
@@ -146,6 +154,9 @@ export async function getDailyChatMessageCount(
  * Wraps count-check + insert in a single transaction to prevent TOCTOU races
  * where concurrent requests could bypass the daily limit.
  *
+ * The conversationType filter ensures coach and recipe limits are counted
+ * independently (they have different daily allowances).
+ *
  * Returns the created message, or null if the daily limit has been reached.
  */
 export async function createChatMessageWithLimitCheck(
@@ -153,9 +164,23 @@ export async function createChatMessageWithLimitCheck(
   userId: string,
   content: string,
   dailyLimit: number,
+  conversationType?: "coach" | "recipe",
 ): Promise<ChatMessage | null> {
   return db.transaction(async (tx) => {
+    // Advisory lock per user to serialize concurrent generation attempts
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+
     const { startOfDay, endOfDay } = getDayBounds(new Date());
+
+    const conditions = [
+      eq(chatConversations.userId, userId),
+      eq(chatMessages.role, "user"),
+      gte(chatMessages.createdAt, startOfDay),
+      lt(chatMessages.createdAt, endOfDay),
+    ];
+    if (conversationType) {
+      conditions.push(eq(chatConversations.type, conversationType));
+    }
 
     const countResult = await tx
       .select({ count: sql<number>`count(*)` })
@@ -164,14 +189,7 @@ export async function createChatMessageWithLimitCheck(
         chatConversations,
         eq(chatMessages.conversationId, chatConversations.id),
       )
-      .where(
-        and(
-          eq(chatConversations.userId, userId),
-          eq(chatMessages.role, "user"),
-          gte(chatMessages.createdAt, startOfDay),
-          lt(chatMessages.createdAt, endOfDay),
-        ),
-      );
+      .where(and(...conditions));
 
     const currentCount = Number(countResult[0]?.count ?? 0);
     if (currentCount >= dailyLimit) {
@@ -195,6 +213,104 @@ export async function createChatMessageWithLimitCheck(
       .where(eq(chatConversations.id, conversationId));
 
     return message;
+  });
+}
+
+// ============================================================================
+// RECIPE CHAT — SAVE RECIPE FROM CHAT
+// ============================================================================
+
+/**
+ * Save a recipe from a chat message to communityRecipes.
+ * Atomic transaction: verify ownership, check idempotency, create recipe,
+ * update message metadata with back-reference.
+ *
+ * Returns the created recipe, or the existing one if already saved.
+ */
+export async function saveRecipeFromChat(
+  messageId: number,
+  conversationId: number,
+  userId: string,
+): Promise<CommunityRecipe | null> {
+  return db.transaction(async (tx) => {
+    // 1. Verify conversation ownership
+    const [conv] = await tx
+      .select()
+      .from(chatConversations)
+      .where(
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.userId, userId),
+        ),
+      );
+    if (!conv) return null;
+
+    // 2. Get the message and check it belongs to this conversation
+    const [msg] = await tx
+      .select()
+      .from(chatMessages)
+      .where(
+        and(
+          eq(chatMessages.id, messageId),
+          eq(chatMessages.conversationId, conversationId),
+        ),
+      );
+    if (!msg || !msg.metadata) return null;
+
+    const metadata = msg.metadata as Record<string, unknown>;
+
+    // 3. Idempotency guard — if already saved, return existing recipe
+    if (metadata.savedRecipeId) {
+      const [existing] = await tx
+        .select()
+        .from(communityRecipes)
+        .where(eq(communityRecipes.id, metadata.savedRecipeId as number));
+      return existing || null;
+    }
+
+    // 4. Extract recipe data from metadata
+    const recipe = metadata.recipe as
+      | {
+          title: string;
+          description?: string;
+          difficulty?: string;
+          timeEstimate?: string;
+          servings?: number;
+          ingredients: { name: string; quantity: string; unit: string }[];
+          instructions: string[];
+          dietTags?: string[];
+        }
+      | undefined;
+    if (!recipe) return null;
+
+    // 5. Create communityRecipe (private by default)
+    const [created] = await tx
+      .insert(communityRecipes)
+      .values({
+        authorId: userId,
+        normalizedProductName: recipe.title.toLowerCase(),
+        title: recipe.title,
+        description: recipe.description,
+        difficulty: recipe.difficulty,
+        timeEstimate: recipe.timeEstimate,
+        servings: recipe.servings ?? 2,
+        dietTags: recipe.dietTags ?? [],
+        instructions: recipe.instructions,
+        ingredients: recipe.ingredients,
+        imageUrl: (metadata.imageUrl as string) ?? null,
+        isPublic: false,
+      })
+      .returning();
+
+    // 6. Update message metadata with back-reference
+    await tx
+      .update(chatMessages)
+      .set({
+        metadata: sql`${chatMessages.metadata} || ${JSON.stringify({ savedRecipeId: created.id })}::jsonb`,
+      })
+      .where(eq(chatMessages.id, messageId));
+
+    return created;
   });
 }
 

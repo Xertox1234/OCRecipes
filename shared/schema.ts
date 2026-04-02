@@ -813,6 +813,7 @@ export const chatConversations = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     title: text("title").notNull(),
+    type: text("type").notNull().default("coach"), // 'coach' | 'recipe'
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -822,6 +823,10 @@ export const chatConversations = pgTable(
   },
   (table) => ({
     userIdIdx: index("chat_conversations_user_id_idx").on(table.userId),
+    userTypeIdx: index("chat_conversations_user_type_idx").on(
+      table.userId,
+      table.type,
+    ),
   }),
 );
 
@@ -842,6 +847,11 @@ export const chatMessages = pgTable(
   (table) => ({
     conversationIdIdx: index("chat_messages_conversation_id_idx").on(
       table.conversationId,
+    ),
+    convRoleCreatedIdx: index("chat_messages_conv_role_created_idx").on(
+      table.conversationId,
+      table.role,
+      table.createdAt,
     ),
   }),
 );
