@@ -37,7 +37,7 @@ export interface GenerateImageOptions {
 }
 
 /**
- * Generate an image using Runware's FLUX.1 Schnell model.
+ * Generate an image using Runware's FLUX.2 [klein] 9B KV model.
  * Returns the image as a Buffer, or null on failure.
  */
 export async function generateImage(
@@ -59,11 +59,11 @@ export async function generateImage(
         {
           taskType: "imageInference",
           taskUUID: crypto.randomUUID(),
-          model: "runware:100@1",
+          model: "runware:400@6",
           positivePrompt: options.prompt,
           negativePrompt: options.negativePrompt ?? DEFAULT_NEGATIVE_PROMPT,
-          width: 512,
-          height: 512,
+          width: 1024,
+          height: 1024,
           outputType: "base64Data",
           numberResults: 1,
         },
