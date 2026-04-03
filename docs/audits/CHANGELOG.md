@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-04-02 — Full Codebase Audit
+
+- **Trigger:** Periodic full codebase audit
+- **Manifest:** [docs/audits/2026-04-02-full.md](2026-04-02-full.md)
+- **Findings:** 1 critical, 6 high, 17 medium, 11 low (35 total)
+- **Resolved:** 33 verified, 2 deferred (M13: split \_helpers.ts, M16: consolidate buildDietaryContext)
+- **Commit:** `cbbd92f`
+- **Note:** Key fixes: `is_public` index on community_recipes, `updateUser` field whitelist, API key prefix unique constraint, storage/service layering violations resolved, 12 routes standardized to `handleRouteError`, AI prompt input sanitization gap closed. 6 archived todos from previous audits resolved. Net -53 LOC.
+
 ## 2026-04-01 — Authentication System Security Audit
 
 - **Trigger:** Targeted security audit of the authentication system

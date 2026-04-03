@@ -478,6 +478,44 @@ app.use(
 
 **Why:** Without this handler, multer validation errors bubble up as 500 Internal Server Error.
 
+### Magic-Byte Validation for All File Uploads
+
+Multer's `fileFilter` checks the MIME type from the `Content-Type` header, which is trivially spoofable. For security-sensitive uploads (images sent to AI vision APIs, audio sent to transcription APIs), validate the file's actual content by reading its magic bytes.
+
+Two helpers exist:
+
+- `server/lib/image-mime.ts` — `detectImageMimeType(buffer)` for JPEG, PNG, WebP, GIF, BMP, TIFF
+- `server/lib/audio-mime.ts` — `detectAudioMimeType(buffer)` for WAV, MP3, FLAC, OGG, MP4/M4A, WebM
+
+```typescript
+// ❌ BAD: Trust the Content-Type header
+if (!["audio/wav", "audio/mpeg"].includes(file.mimetype)) {
+  return res.status(400).json({ error: "Invalid audio type" });
+}
+// Attacker sends a shell script with Content-Type: audio/wav
+
+// ✅ GOOD: Validate magic bytes from actual file content
+import { detectAudioMimeType } from "../lib/audio-mime";
+
+const detectedMime = detectAudioMimeType(req.file.buffer);
+if (!detectedMime) {
+  return res.status(400).json({ error: "Unrecognized audio format" });
+}
+// Only recognized audio formats reach the transcription API
+```
+
+**When to use:** Any route that accepts file uploads and forwards them to an external API (OpenAI Whisper, OpenAI Vision, Runware, etc.). The magic-byte check is the last line of defense before the file leaves your server.
+
+**When NOT to use:** Text-only uploads (JSON, CSV) where MIME type is irrelevant.
+
+**Audit ref:** 2026-04-02-full L4
+
+**References:**
+
+- `server/lib/audio-mime.ts` — `detectAudioMimeType()`, `AUDIO_SIGNATURES`
+- `server/lib/image-mime.ts` — `detectImageMimeType()`, `IMAGE_SIGNATURES`
+- `server/routes/food.ts` — voice transcription upload with audio magic-byte check
+
 ### Input Validation with Zod
 
 Validate ALL user input with Zod schemas before processing:

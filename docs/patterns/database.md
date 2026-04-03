@@ -251,6 +251,39 @@ app.patch("/api/profile", requireAuth, async (req, res) => {
 
 **Why hash instead of timestamp:** Hash provides content-based invalidation. A user could update their profile (changing timestamp) without changing relevant fields, so timestamp-based invalidation would over-invalidate.
 
+### Admin Operations Must Invalidate In-Memory Caches
+
+When an admin endpoint modifies state that is cached in memory (API key revocation, tier changes, feature flags), it must explicitly invalidate the relevant cache. In-memory caches have no automatic link to the database — a revoked API key remains valid until the cache entry expires or is cleared.
+
+```typescript
+// ❌ BAD: Revoke in DB but cache still holds the old valid entry
+app.post("/api/admin/api-keys/:id/revoke", requireAdmin, async (req, res) => {
+  await storage.revokeApiKey(req.params.id);
+  res.json({ success: true });
+  // Revoked key still authenticates for up to TTL duration
+});
+
+// ✅ GOOD: Invalidate cache after state change
+import { clearApiKeyCache } from "../middleware/api-key-auth";
+
+app.post("/api/admin/api-keys/:id/revoke", requireAdmin, async (req, res) => {
+  await storage.revokeApiKey(req.params.id);
+  clearApiKeyCache(); // Force re-lookup from DB on next request
+  res.json({ success: true });
+});
+```
+
+**When to use:** Any admin or system operation that modifies data backing an in-memory cache — API key CRUD, subscription tier changes, feature flag toggles, rate limit config updates.
+
+**Why:** In-memory caches (TTL Maps, LRU caches) are performance optimizations that trade consistency for speed. Admin operations are rare but security-critical — a revoked API key or downgraded subscription must take effect immediately, not after a 5-minute TTL.
+
+**Audit ref:** 2026-04-02-full M2
+
+**References:**
+
+- `server/routes/admin-api-keys.ts` — `clearApiKeyCache()` after revoke and tier update
+- `server/middleware/api-key-auth.ts` — `apiKeyCache` Map with `clearApiKeyCache()` export
+
 ### Parent-Child Cache with Cascade Delete
 
 When caching hierarchical data (parent suggestions with child instructions), use foreign key cascade delete for automatic cleanup:

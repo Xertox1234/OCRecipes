@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Unsanitized AI Prompt Parameter That Looked Server-Generated (2026-04-02)](#unsanitized-ai-prompt-parameter-that-looked-server-generated-2026-04-02)
 - [RN Modal Cannot Overlay React Navigation transparentModal (2026-04-01)](#rn-modal-cannot-overlay-react-navigation-transparentmodal-2026-04-01)
 - [fetch ReadableStream Fails Inside RN Modal — Use XHR (2026-04-01)](#fetch-readablestream-fails-inside-rn-modal--use-xhr-2026-04-01)
 - [Mass-Assignment via Partial&lt;User&gt; in Storage Update Functions (2026-04-01)](#mass-assignment-via-partialuser-in-storage-update-functions-2026-04-01)
@@ -41,6 +42,22 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-04-02] Unsanitized AI Prompt Parameter That Looked Server-Generated
+
+**Category:** Security Gotcha
+
+**Problem:** The `refineAnalysis()` function in `photo-analysis.ts` accepts a `question` parameter that was interpolated directly into the OpenAI prompt without `sanitizeUserInput()`. The parameter name and call site made it look like a server-generated string (it's called "question" and passed from the route handler), but it actually originates from the client's POST body — the user types a follow-up question about a photo analysis.
+
+**Root cause:** The existing AI sanitization pattern documents sanitizing "user profile fields" and "user messages," but `question` didn't fit either mental category. It looked like an internal parameter because it was destructured alongside server-side values like `analysisId` and `previousResult`. The pattern's audit checklist says "trace every variable back to its source," but in practice the indirection through route handler destructuring obscured the origin.
+
+**Fix:** Added `sanitizeUserInput(question)` before prompt interpolation.
+
+**Rule:** When auditing AI services, do not rely on parameter names or call-site context to determine if a value is user-controlled. Trace every string variable in the prompt template back to its ultimate origin (request body, query param, DB column populated by user input). If the chain touches user input at any point, sanitize it. The audit checklist in `docs/patterns/security.md` already says this — the lesson is that it's easy to miss in practice when the variable has a "safe-looking" name.
+
+**Audit ref:** 2026-04-02-full M1
 
 ---
 

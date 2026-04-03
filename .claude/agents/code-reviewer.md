@@ -231,7 +231,18 @@ if (cacheId) {
 - [ ] **Hashed in-memory cache keys** — Any `Map` or object cache keyed by a secret (API key, token, session ID) must hash the key with SHA-256 via `cacheKey()`. Raw secrets must never appear as Map keys. (Ref: `docs/patterns/security.md` "Hash Secrets Used as In-Memory Cache Keys")
 - [ ] **JWT issuer/audience claims** — `jwt.sign()` must include `issuer` and `audience` options; `jwt.verify()` must validate them. Constants: `JWT_ISSUER = "ocrecipes-api"`, `JWT_AUDIENCE = "ocrecipes-client"`. (Ref: `server/middleware/auth.ts`)
 
-### 11. Code Quality
+### 11. Architecture Layering
+
+- [ ] **Services must not import `db`** — Service files (`server/services/*.ts`) must never import `db` from `../db` or execute raw Drizzle queries. All database access goes through the storage layer (`server/storage/`). If a service needs a new query, add a function to the appropriate storage module. (Ref: `docs/patterns/architecture.md`, audit H4)
+- [ ] **Storage must not import from services** — Storage modules (`server/storage/*.ts`) must never import from `server/services/`. Types shared between layers belong in `shared/types/` or `shared/schemas/`. (Ref: `docs/patterns/architecture.md`, audit H5)
+- [ ] **Session stores in storage layer** — In-memory session stores (via `createSessionStore`) must be instantiated in `server/storage/sessions.ts` and exported through the storage facade, not created in route files. (Ref: audit M12)
+- [ ] **File uploads need magic-byte validation** — All file upload endpoints must validate content via magic bytes, not just the client-provided MIME type. Use `detectImageMimeType()` for images and `detectAudioMimeType()` for audio from `server/lib/`. (Ref: `docs/patterns/security.md`, audit L4)
+- [ ] **Admin ops must invalidate caches** — Any admin operation that modifies state cached in memory (API keys, feature flags, etc.) must call the corresponding cache invalidation function. (Ref: `docs/patterns/database.md`, audit M2)
+- [ ] **Soft-delete filter on new queries** — Any new query against a table with a `discardedAt` column must include `AND discarded_at IS NULL` unless explicitly fetching deleted items. This is a recurring regression. (Ref: `docs/patterns/database.md`, audit M5)
+- [ ] **Update functions use pick types** — Storage update functions must use a `Pick<Entity, ...>` whitelist type, never `Partial<FullEntity>`. Dangerous fields (`id`, `password`, `tokenVersion`, `subscriptionTier`) must be excluded. (Ref: `docs/patterns/security.md`, audit H1)
+- [ ] **Use `handleRouteError` in catch blocks** — All route catch blocks must use `handleRouteError(res, err, "context")` from `_helpers.ts`, not manual `logger.error` + `sendError`. This ensures ZodErrors return 400 not 500. (Ref: audit M14)
+
+### 12. Code Quality
 
 - [ ] No commented-out code (remove or explain with TODO)
 - [ ] Meaningful variable and function names
@@ -241,7 +252,7 @@ if (cacheId) {
 - [ ] ESLint rules followed
 - [ ] TypeScript strict mode compliance
 
-### 12. Documentation & Todos
+### 13. Documentation & Todos
 
 - [ ] Complex logic has explanatory comments
 - [ ] Todos follow template in `todos/TEMPLATE.md`
