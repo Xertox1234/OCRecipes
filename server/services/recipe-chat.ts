@@ -100,31 +100,11 @@ const recipeResponseSchema = z.object({
   dietTags: z.array(z.string()).default([]),
 });
 
-/** Metadata stored in chatMessages.metadata for recipe responses */
-export const recipeChatMetadataSchema = z.object({
-  metadataVersion: z.literal(1),
-  recipe: z.object({
-    title: z.string(),
-    description: z.string(),
-    difficulty: z.string(),
-    timeEstimate: z.string(),
-    servings: z.number(),
-    ingredients: z.array(
-      z.object({
-        name: z.string(),
-        quantity: z.string(),
-        unit: z.string(),
-      }),
-    ),
-    instructions: z.array(z.string()),
-    dietTags: z.array(z.string()),
-  }),
-  allergenWarning: z.string().nullable(),
-  imageUrl: z.string().nullable(),
-  savedRecipeId: z.number().optional(),
-});
-
-export type RecipeChatMetadata = z.infer<typeof recipeChatMetadataSchema>;
+// Re-export shared schema for consumers that already import from this file
+export {
+  recipeChatMetadataSchema,
+  type RecipeChatMetadata,
+} from "@shared/schemas/recipe-chat";
 
 // ============================================================================
 // CONTEXT BUILDING

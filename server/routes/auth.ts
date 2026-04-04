@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import fs, { promises as fsp } from "fs";
 import * as path from "path";
 import { storage } from "../storage";
+import type { UpdatableUserFields } from "../storage/users";
 import {
   requireAuth,
   generateToken,
@@ -12,6 +13,7 @@ import {
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { detectImageMimeType } from "../lib/image-mime";
+import { handleRouteError } from "./_helpers";
 import {
   registerLimiter,
   loginLimiter,
@@ -26,7 +28,6 @@ import {
   profileUpdateSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
-import { handleRouteError } from "./_helpers";
 import { logger, toError } from "../lib/logger";
 
 const AVATAR_DIR = path.resolve(process.cwd(), "uploads/avatars");
@@ -191,7 +192,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const validated = profileUpdateSchema.parse(req.body);
-        const updates: Record<string, unknown> = {};
+        const updates: Partial<UpdatableUserFields> = {};
         if (validated.displayName !== undefined)
           updates.displayName = validated.displayName;
         if (validated.dailyCalorieGoal !== undefined)

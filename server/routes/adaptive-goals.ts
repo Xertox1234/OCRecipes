@@ -2,10 +2,13 @@ import type { Express, Response } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
+import {
+  checkPremiumFeature,
+  handleRouteError,
+  parseQueryInt,
+} from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
-import { checkPremiumFeature, parseQueryInt } from "./_helpers";
 import { computeAdaptiveGoals } from "../services/adaptive-goals";
 
 export function register(app: Express): void {
@@ -32,13 +35,7 @@ export function register(app: Express): void {
           recommendation,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "get adaptive goals error");
-        sendError(
-          res,
-          500,
-          "Failed to get adaptive goals",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "get adaptive goals");
       }
     },
   );
@@ -103,13 +100,7 @@ export function register(app: Express): void {
           },
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "accept adaptive goal error");
-        sendError(
-          res,
-          500,
-          "Failed to accept adaptive goal",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "accept adaptive goal");
       }
     },
   );
@@ -150,13 +141,7 @@ export function register(app: Express): void {
 
         res.json({ success: true });
       } catch (error) {
-        logger.error({ err: toError(error) }, "dismiss adaptive goal error");
-        sendError(
-          res,
-          500,
-          "Failed to dismiss adaptive goal",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "dismiss adaptive goal");
       }
     },
   );
@@ -192,16 +177,7 @@ export function register(app: Express): void {
 
         res.json({ success: true, enabled });
       } catch (error) {
-        logger.error(
-          { err: toError(error) },
-          "update adaptive goals settings error",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to update settings",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update adaptive goals settings");
       }
     },
   );
@@ -225,13 +201,7 @@ export function register(app: Express): void {
         const logs = await storage.getGoalAdjustmentLogs(req.userId, limit);
         res.json(logs);
       } catch (error) {
-        logger.error({ err: toError(error) }, "get adjustment history error");
-        sendError(
-          res,
-          500,
-          "Failed to get adjustment history",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "get adjustment history");
       }
     },
   );

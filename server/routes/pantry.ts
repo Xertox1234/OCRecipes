@@ -3,16 +3,16 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
-import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { pantryRateLimit } from "./_rate-limiters";
-import { nullableNumericStringField } from "./_schemas";
 import {
   checkPremiumFeature,
   formatZodError,
+  handleRouteError,
   parsePositiveIntParam,
   parseQueryInt,
 } from "./_helpers";
+import { pantryRateLimit } from "./_rate-limiters";
+import { nullableNumericStringField } from "./_schemas";
 
 const pantryItemSchema = z.object({
   name: z.string().min(1).max(200),
@@ -55,13 +55,7 @@ export function register(app: Express): void {
         const items = await storage.getPantryItems(req.userId, limit);
         res.json(items);
       } catch (error) {
-        logger.error({ err: toError(error) }, "get pantry items error");
-        sendError(
-          res,
-          500,
-          "Failed to fetch pantry items",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch pantry items");
       }
     },
   );
@@ -102,13 +96,7 @@ export function register(app: Express): void {
         });
         res.status(201).json(item);
       } catch (error) {
-        logger.error({ err: toError(error) }, "create pantry item error");
-        sendError(
-          res,
-          500,
-          "Failed to create pantry item",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "create pantry item");
       }
     },
   );
@@ -161,13 +149,7 @@ export function register(app: Express): void {
         }
         res.json(updated);
       } catch (error) {
-        logger.error({ err: toError(error) }, "update pantry item error");
-        sendError(
-          res,
-          500,
-          "Failed to update pantry item",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update pantry item");
       }
     },
   );
@@ -205,13 +187,7 @@ export function register(app: Express): void {
         }
         res.status(204).send();
       } catch (error) {
-        logger.error({ err: toError(error) }, "delete pantry item error");
-        sendError(
-          res,
-          500,
-          "Failed to delete pantry item",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "delete pantry item");
       }
     },
   );
@@ -234,16 +210,7 @@ export function register(app: Express): void {
         const items = await storage.getExpiringPantryItems(req.userId, 3);
         res.json(items);
       } catch (error) {
-        logger.error(
-          { err: toError(error) },
-          "get expiring pantry items error",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to fetch expiring items",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch expiring pantry items");
       }
     },
   );

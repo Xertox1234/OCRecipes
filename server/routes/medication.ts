@@ -1,13 +1,14 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
-import { medicationRateLimit } from "./_rate-limiters";
 import {
   formatZodError,
+  handleRouteError,
   checkPremiumFeature,
   parsePositiveIntParam,
   parseQueryInt,
   parseQueryDate,
 } from "./_helpers";
+import { medicationRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { storage } from "../storage";
@@ -16,7 +17,6 @@ import type { AuthenticatedRequest } from "../middleware/auth";
 import { analyzeGlp1Insights } from "../services/glp1-insights";
 import type { ProteinSuggestion } from "@shared/types/protein-suggestions";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
-import { logger, toError } from "../lib/logger";
 
 export function register(app: Express): void {
   // GET /api/medication/logs
@@ -45,13 +45,7 @@ export function register(app: Express): void {
         });
         res.json(logs);
       } catch (error) {
-        logger.error({ err: toError(error) }, "failed to get medication logs");
-        sendError(
-          res,
-          500,
-          "Failed to get medication logs",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "get medication logs");
       }
     },
   );
@@ -94,16 +88,7 @@ export function register(app: Express): void {
         });
         res.status(201).json(log);
       } catch (error) {
-        logger.error(
-          { err: toError(error) },
-          "failed to create medication log",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to create medication log",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "create medication log");
       }
     },
   );
@@ -163,16 +148,7 @@ export function register(app: Express): void {
           );
         res.json(updated);
       } catch (error) {
-        logger.error(
-          { err: toError(error) },
-          "failed to update medication log",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to update medication log",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update medication log");
       }
     },
   );
@@ -211,16 +187,7 @@ export function register(app: Express): void {
           );
         res.status(204).send();
       } catch (error) {
-        logger.error(
-          { err: toError(error) },
-          "failed to delete medication log",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to delete medication log",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "delete medication log");
       }
     },
   );
@@ -243,16 +210,7 @@ export function register(app: Express): void {
         const insights = await analyzeGlp1Insights(req.userId);
         res.json(insights);
       } catch (error) {
-        logger.error(
-          { err: toError(error) },
-          "failed to get medication insights",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to get medication insights",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "get medication insights");
       }
     },
   );
@@ -298,16 +256,7 @@ export function register(app: Express): void {
         );
         res.json({ suggestions, remainingProtein, proteinGoal });
       } catch (error) {
-        logger.error(
-          { err: toError(error) },
-          "failed to get protein suggestions",
-        );
-        sendError(
-          res,
-          500,
-          "Failed to get protein suggestions",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "get protein suggestions");
       }
     },
   );
@@ -359,13 +308,7 @@ export function register(app: Express): void {
           return sendError(res, 404, "Profile not found", ErrorCode.NOT_FOUND);
         res.json(profile);
       } catch (error) {
-        logger.error({ err: toError(error) }, "failed to update GLP-1 mode");
-        sendError(
-          res,
-          500,
-          "Failed to update GLP-1 mode",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update GLP-1 mode");
       }
     },
   );

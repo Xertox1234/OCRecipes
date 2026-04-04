@@ -6,9 +6,8 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { batchSaveRequestSchema } from "@shared/types/batch-scan";
 import { isValidBarcode } from "@shared/constants/classification";
+import { formatZodError, handleRouteError } from "./_helpers";
 import { createRateLimiter } from "./_rate-limiters";
-import { formatZodError } from "./_helpers";
-import { logger, toError } from "../lib/logger";
 
 const batchSaveRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
@@ -108,13 +107,7 @@ export function register(app: Express): void {
           }
         }
       } catch (error) {
-        logger.error({ err: toError(error) }, "batch save error");
-        sendError(
-          res,
-          500,
-          "Failed to save batch items",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "save batch items");
       }
     },
   );

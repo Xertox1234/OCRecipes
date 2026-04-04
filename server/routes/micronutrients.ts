@@ -1,10 +1,11 @@
 import type { Express, Response } from "express";
-import { micronutrientRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
+  handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
 } from "./_helpers";
+import { micronutrientRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -15,7 +16,6 @@ import {
   getDailyValueReference,
 } from "../services/micronutrient-lookup";
 import { storage } from "../storage";
-import { logger, toError } from "../lib/logger";
 
 export function register(app: Express): void {
   // GET /api/micronutrients/item/:id — Get micronutrients for a specific scanned item
@@ -51,13 +51,7 @@ export function register(app: Express): void {
         );
         res.json({ itemId, productName: item.productName, micronutrients });
       } catch (error) {
-        logger.error({ err: toError(error) }, "get item micronutrients error");
-        sendError(
-          res,
-          500,
-          "Failed to get micronutrients",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "get item micronutrients");
       }
     },
   );
@@ -106,13 +100,7 @@ export function register(app: Express): void {
           micronutrients: aggregated,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "get daily micronutrients error");
-        sendError(
-          res,
-          500,
-          "Failed to get daily micronutrients",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "get daily micronutrients");
       }
     },
   );
@@ -144,13 +132,7 @@ export function register(app: Express): void {
         const micronutrients = await lookupMicronutrientsWithCache(name);
         res.json({ foodName: name, micronutrients });
       } catch (error) {
-        logger.error({ err: toError(error) }, "lookup micronutrients error");
-        sendError(
-          res,
-          500,
-          "Failed to lookup micronutrients",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "lookup micronutrients");
       }
     },
   );
