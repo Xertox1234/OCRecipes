@@ -5,6 +5,7 @@ import type {
   PhotoResult,
   CameraPermissionResult,
 } from "@shared/types/camera";
+import type { Text as OCRText } from "react-native-vision-camera-ocr-plus";
 
 export type {
   ExpoBarcodeType,
@@ -12,6 +13,8 @@ export type {
   PhotoResult,
   CameraPermissionResult,
 };
+
+export type { OCRText };
 
 // Camera facing direction
 export type CameraFacing = "front" | "back";
@@ -25,6 +28,10 @@ export interface PhotoOptions {
 // Camera ref interface for imperative operations
 export interface CameraRef {
   takePicture(options?: PhotoOptions): Promise<PhotoResult | null>;
+  /** Get the most recent OCR result from the frame processor (label mode only) */
+  getLatestOCRResult?: () =>
+    | import("react-native-vision-camera-ocr-plus").Text
+    | null;
 }
 
 // Props for the abstracted camera component
@@ -50,4 +57,11 @@ export interface CameraViewProps {
   photoQuality?: number;
   /** Style for the camera view */
   style?: StyleProp<ViewStyle>;
+  /** Enable on-device OCR via frame processor (label mode only).
+   * Mutually exclusive with barcode scanning — only enable when barcodeTypes is empty. */
+  enableOCR?: boolean;
+  /** Called when OCR text detection state changes (text enters/exits viewfinder) */
+  onTextDetected?: (detected: boolean) => void;
+  /** Called with raw OCR result after each processed frame */
+  onOCRResult?: (text: OCRText) => void;
 }
