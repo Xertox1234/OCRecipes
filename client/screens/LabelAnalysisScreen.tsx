@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -29,6 +29,10 @@ import {
   type LabelExtractionResult,
 } from "@/lib/photo-upload";
 import { apiRequest } from "@/lib/query-client";
+import {
+  parseNutritionFromOCR,
+  type LocalNutritionData,
+} from "@/lib/nutrition-ocr-parser";
 import type { VerificationSubmitResponse } from "@shared/types/verification";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -43,6 +47,7 @@ type RouteParams = {
   barcode?: string;
   verificationMode?: boolean;
   verifyBarcode?: string;
+  localOCRText?: string;
 };
 
 interface NutrientRow {
@@ -98,6 +103,58 @@ function buildNutrientRows(data: LabelExtractionResult): NutrientRow[] {
   ];
 }
 
+/** Convert LocalNutritionData to LabelExtractionResult for display */
+function localDataToExtractionResult(
+  data: LocalNutritionData,
+): LabelExtractionResult {
+  return {
+    servingSize: data.servingSize,
+    servingsPerContainer: null,
+    calories: data.calories,
+    totalFat: data.totalFat,
+    saturatedFat: data.saturatedFat,
+    transFat: data.transFat,
+    cholesterol: data.cholesterol,
+    sodium: data.sodium,
+    totalCarbs: data.totalCarbs,
+    dietaryFiber: data.dietaryFiber,
+    totalSugars: data.totalSugars,
+    addedSugars: null,
+    protein: data.protein,
+    vitaminD: null,
+    calcium: null,
+    iron: null,
+    potassium: null,
+    confidence: data.confidence,
+    productName: null,
+  };
+}
+
+/** Check if AI data differs significantly from local OCR (>10% on any core field) */
+function shouldReplaceWithAI(
+  local: LabelExtractionResult,
+  ai: LabelExtractionResult,
+): boolean {
+  const fields: (keyof LabelExtractionResult)[] = [
+    "calories",
+    "totalFat",
+    "protein",
+    "totalCarbs",
+    "sodium",
+  ];
+
+  for (const field of fields) {
+    const localVal = local[field];
+    const aiVal = ai[field];
+    if (typeof localVal !== "number" || typeof aiVal !== "number") continue;
+    if (localVal === 0 && aiVal === 0) continue;
+    const diff = Math.abs(localVal - aiVal);
+    const base = Math.max(Math.abs(localVal), Math.abs(aiVal), 1);
+    if (diff / base > 0.1) return true;
+  }
+  return false;
+}
+
 export default function LabelAnalysisScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -118,8 +175,28 @@ export default function LabelAnalysisScreen() {
   const [isAnalyzing, setIsAnalyzing] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showMicros, setShowMicros] = useState(false);
+  const [dataSource, setDataSource] = useState<"local" | "ai" | null>(null);
+  const [showUpdatedToast, setShowUpdatedToast] = useState(false);
 
-  // Upload and analyze on mount
+  const dataSourceRef = useRef<"local" | "ai" | null>(null);
+  const labelDataRef = useRef<LabelExtractionResult | null>(null);
+
+  // Parse local OCR data for instant preview (if available)
+  useEffect(() => {
+    if (route.params.localOCRText) {
+      const localData = parseNutritionFromOCR(route.params.localOCRText);
+      if (localData.confidence >= 0.6) {
+        const extractionResult = localDataToExtractionResult(localData);
+        setLabelData(extractionResult);
+        labelDataRef.current = extractionResult;
+        setDataSource("local");
+        dataSourceRef.current = "local";
+        setIsAnalyzing(false);
+      }
+    }
+  }, [route.params.localOCRText]);
+
+  // Upload to OpenAI (always, even with local preview)
   useEffect(() => {
     let cancelled = false;
 
@@ -128,18 +205,38 @@ export default function LabelAnalysisScreen() {
         const result = await uploadLabelForAnalysis(imageUri, barcode);
         if (cancelled) return;
         setSessionId(result.sessionId);
-        setLabelData(result.labelData);
 
-        if (result.labelData.confidence < 0.3) {
-          setError(
-            "Could not read the label clearly. Try again with better lighting.",
-          );
+        if (dataSourceRef.current === "local" && labelDataRef.current) {
+          // Compare local vs AI: if significantly different, replace
+          const aiData = result.labelData;
+          if (shouldReplaceWithAI(labelDataRef.current, aiData)) {
+            setLabelData(aiData);
+            setDataSource("ai");
+            setShowUpdatedToast(true);
+            setTimeout(() => setShowUpdatedToast(false), 3000);
+          } else {
+            // AI confirms local data — just record the session ID
+            setDataSource("ai");
+          }
+        } else {
+          // No local preview or low confidence — use AI data directly
+          setLabelData(result.labelData);
+          setDataSource("ai");
+
+          if (result.labelData.confidence < 0.3) {
+            setError(
+              "Could not read the label clearly. Try again with better lighting.",
+            );
+          }
         }
       } catch (err) {
         if (cancelled) return;
-        setError(
-          err instanceof Error ? err.message : "Failed to analyze label",
-        );
+        // If we have local data, keep showing it; only set error if no data at all
+        if (!labelDataRef.current) {
+          setError(
+            err instanceof Error ? err.message : "Failed to analyze label",
+          );
+        }
       } finally {
         if (!cancelled) setIsAnalyzing(false);
       }
@@ -325,9 +422,27 @@ export default function LabelAnalysisScreen() {
 
         {/* Nutrition Table */}
         <Card elevation={1} style={styles.nutritionCard}>
-          <ThemedText type="h3" style={styles.nutritionTitle}>
-            Nutrition Facts
-          </ThemedText>
+          <View style={styles.nutritionTitleRow}>
+            <ThemedText type="h3" style={styles.nutritionTitle}>
+              Nutrition Facts
+            </ThemedText>
+            {dataSource === "local" && (
+              <View
+                style={[
+                  styles.sourceBadge,
+                  { backgroundColor: withOpacity(theme.info, 0.12) },
+                ]}
+              >
+                <Feather name="smartphone" size={12} color={theme.info} />
+                <ThemedText
+                  type="small"
+                  style={{ color: theme.info, fontWeight: "600" }}
+                >
+                  Scanned locally
+                </ThemedText>
+              </View>
+            )}
+          </View>
           <View
             style={[styles.dividerThick, { backgroundColor: theme.text }]}
           />
@@ -431,6 +546,15 @@ export default function LabelAnalysisScreen() {
           )}
         </Card>
 
+        {dataSource === "local" && !sessionId && (
+          <View style={styles.aiProgressRow}>
+            <ActivityIndicator size="small" color={theme.textSecondary} />
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Verifying with AI...
+            </ThemedText>
+          </View>
+        )}
+
         {/* Confidence indicator */}
         {labelData && labelData.confidence < 0.7 && (
           <View
@@ -506,6 +630,21 @@ export default function LabelAnalysisScreen() {
             Scan Front Label
           </Button>
         </View>
+      )}
+
+      {showUpdatedToast && (
+        <Animated.View
+          entering={FadeInUp.duration(200)}
+          style={[
+            styles.updatedToast,
+            { backgroundColor: withOpacity(theme.info, 0.12) },
+          ]}
+        >
+          <Feather name="check-circle" size={14} color={theme.info} />
+          <ThemedText type="small" style={{ color: theme.info }}>
+            Updated with AI analysis
+          </ThemedText>
+        </Animated.View>
       )}
 
       {/* Fixed Action Button */}
@@ -602,8 +741,37 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     marginBottom: Spacing.md,
   },
-  nutritionTitle: {
+  nutritionTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: Spacing.sm,
+  },
+  nutritionTitle: {},
+  sourceBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  updatedToast: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    padding: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    justifyContent: "center",
+  },
+  aiProgressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   dividerThick: {
     height: 3,
