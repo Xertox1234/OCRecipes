@@ -1,5 +1,8 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
+# Superpowers brainstorm sessions (visual companion server)
+.superpowers/
+
 # dependencies
 node_modules/
 
