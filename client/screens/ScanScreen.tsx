@@ -166,6 +166,7 @@ export default function ScanScreen() {
   const pulseScale = useSharedValue(1);
   const cornerOpacity = useSharedValue(0.6);
   const scanSuccessScale = useSharedValue(0);
+  const cornerGlow = useSharedValue(0);
 
   // Start corner pulse animation on mount (respects reduced motion preference)
   useEffect(() => {
@@ -185,12 +186,28 @@ export default function ScanScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cornerOpacity is a stable useSharedValue ref that never changes identity
   }, [reducedMotion]);
 
+  const handleTextDetected = useCallback(
+    (detected: boolean) => {
+      if (reducedMotion) {
+        cornerGlow.value = detected ? 1 : 0;
+      } else {
+        cornerGlow.value = detected
+          ? withTiming(1, { duration: 300 })
+          : withTiming(0, { duration: 500 });
+      }
+    },
+    [cornerGlow, reducedMotion],
+  );
+
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],
   }));
 
-  const cornerStyle = useAnimatedStyle(() => ({
+  const glowCornerStyle = useAnimatedStyle(() => ({
     opacity: cornerOpacity.value,
+    shadowColor: theme.success,
+    shadowRadius: cornerGlow.value * 8,
+    shadowOpacity: cornerGlow.value * 0.6,
   }));
 
   const successStyle = useAnimatedStyle(() => ({
@@ -260,11 +277,14 @@ export default function ScanScreen() {
               );
             }
           } else if (isLabelMode) {
+            // Get cached OCR result from the frame processor
+            const ocrResult = cameraRef.current?.getLatestOCRResult?.();
             navigation.navigate("LabelAnalysis", {
               imageUri: photo.uri,
               barcode: verifyBarcode,
               verificationMode: !!verifyBarcode,
               verifyBarcode,
+              localOCRText: ocrResult?.resultText ?? undefined,
             });
             if (!verifyBarcode) refreshScanCount();
           } else {
@@ -401,6 +421,8 @@ export default function ScanScreen() {
         enableTorch={torch}
         facing="back"
         isActive={isFocused}
+        enableOCR={isLabelMode}
+        onTextDetected={isLabelMode ? handleTextDetected : undefined}
         photoQuality={
           isLabelMode || isFrontLabelMode
             ? 0.85
@@ -451,7 +473,7 @@ export default function ScanScreen() {
           <AnimatedView
             style={[
               styles.reticle,
-              cornerStyle,
+              glowCornerStyle,
               { width: frame.WIDTH, height: frame.HEIGHT },
             ]}
           >
@@ -501,6 +523,19 @@ export default function ScanScreen() {
                   height: frame.CORNER_SIZE,
                   borderBottomRightRadius: frame.CORNER_RADIUS,
                 },
+              ]}
+            />
+            {/* Connecting lines — visible when text detected */}
+            <Animated.View
+              style={[
+                styles.connectingLineTop,
+                { backgroundColor: theme.success, opacity: cornerGlow.value },
+              ]}
+            />
+            <Animated.View
+              style={[
+                styles.connectingLineBottom,
+                { backgroundColor: theme.success, opacity: cornerGlow.value },
               ]}
             />
           </AnimatedView>
@@ -672,6 +707,22 @@ const styles = StyleSheet.create({
     right: 0,
     borderTopWidth: 0,
     borderLeftWidth: 0,
+  },
+  connectingLineTop: {
+    position: "absolute",
+    top: 0,
+    left: LABEL_FRAME.CORNER_SIZE,
+    right: LABEL_FRAME.CORNER_SIZE,
+    height: 2,
+    borderRadius: 1,
+  },
+  connectingLineBottom: {
+    position: "absolute",
+    bottom: 0,
+    left: LABEL_FRAME.CORNER_SIZE,
+    right: LABEL_FRAME.CORNER_SIZE,
+    height: 2,
+    borderRadius: 1,
   },
   successPulse: {
     position: "absolute",
