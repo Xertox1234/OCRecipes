@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useMemo } from "react";
 import {
   View,
   FlatList,
@@ -15,6 +15,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useQuery } from "@tanstack/react-query";
 
 import { useTheme } from "@/hooks/useTheme";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
@@ -30,6 +31,8 @@ import {
 } from "@/hooks/useChat";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { RecipeCard } from "@/components/recipe-chat/RecipeCard";
+import { generateRemixChips, type RemixChip } from "@/lib/remix-chips";
+import { apiRequest } from "@/lib/query-client";
 
 type RecipeChatRouteProp = RouteProp<RootStackParamList, "RecipeChat">;
 
@@ -75,6 +78,11 @@ export default function RecipeChatScreen() {
   const { theme } = useTheme();
   const flatListRef = useRef<FlatList>(null);
 
+  // Remix mode detection
+  const isRemixMode = !!route.params?.remixSourceRecipeId;
+  const remixSourceRecipeId = route.params?.remixSourceRecipeId;
+  const remixSourceRecipeTitle = route.params?.remixSourceRecipeTitle;
+
   const [conversationId, setConversationId] = useState<number | null>(
     route.params?.conversationId ?? null,
   );
@@ -82,6 +90,41 @@ export default function RecipeChatScreen() {
   const [hasStarted, setHasStarted] = useState(!!route.params?.conversationId);
 
   const createConversation = useCreateConversation();
+
+  // Fetch user dietary profile for remix chip generation
+  const { data: userProfile } = useQuery<{
+    allergies?: { name: string; severity: "mild" | "moderate" | "severe" }[];
+    dietType?: string | null;
+  }>({
+    queryKey: ["/api/user/dietary-profile"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/user/dietary-profile");
+      return res.json();
+    },
+    enabled: isRemixMode,
+  });
+
+  // Fetch source recipe ingredients for chip generation
+  const { data: sourceRecipe } = useQuery<{
+    ingredients: { name: string; quantity: string; unit: string }[];
+    dietTags?: string[];
+  }>({
+    queryKey: [`/api/recipes/${remixSourceRecipeId}`],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/recipes/${remixSourceRecipeId}`,
+      );
+      return res.json();
+    },
+    enabled: isRemixMode && !!remixSourceRecipeId,
+  });
+
+  // Generate dynamic remix chips
+  const remixChips = useMemo<RemixChip[]>(() => {
+    if (!isRemixMode || !sourceRecipe) return [];
+    return generateRemixChips(sourceRecipe, userProfile);
+  }, [isRemixMode, sourceRecipe, userProfile]);
   const { data: messages = [] } = useChatMessages(conversationId);
   const { sendMessage, streamingContent, streamingRecipe, isStreaming } =
     useSendMessage(conversationId);
@@ -116,10 +159,17 @@ export default function RecipeChatScreen() {
       let convId = conversationId;
       if (!convId) {
         try {
-          const conv = await createConversation.mutateAsync({
-            title: "New Recipe Chat",
-            type: "recipe",
-          });
+          const conv = await createConversation.mutateAsync(
+            isRemixMode
+              ? {
+                  type: "remix",
+                  sourceRecipeId: remixSourceRecipeId,
+                }
+              : {
+                  title: "New Recipe Chat",
+                  type: "recipe",
+                },
+          );
           convId = conv.id;
           setConversationId(convId);
         } catch {
@@ -129,7 +179,15 @@ export default function RecipeChatScreen() {
 
       sendMessage(content, undefined, convId);
     },
-    [inputText, isStreaming, conversationId, createConversation, sendMessage],
+    [
+      inputText,
+      isStreaming,
+      conversationId,
+      createConversation,
+      sendMessage,
+      isRemixMode,
+      remixSourceRecipeId,
+    ],
   );
 
   const handleChipPress = useCallback(
@@ -247,20 +305,28 @@ export default function RecipeChatScreen() {
         >
           <Feather name="x" size={22} color={theme.text} />
         </Pressable>
-        <ThemedText type="body">Recipe Chat</ThemedText>
+        <ThemedText type="body">
+          {isRemixMode ? "Recipe Remix" : "Recipe Chat"}
+        </ThemedText>
         <View style={styles.headerButton} />
       </View>
 
       {/* Messages or Empty State */}
       {!hasStarted ? (
         <View style={styles.emptyState}>
-          <Feather name="book-open" size={48} color={theme.link} />
+          <Feather
+            name={isRemixMode ? "shuffle" : "book-open"}
+            size={48}
+            color={theme.link}
+          />
           <ThemedText
             type="h3"
             style={{ textAlign: "center", marginTop: Spacing.md }}
             accessibilityRole="header"
           >
-            What would you like to cook?
+            {isRemixMode
+              ? `Remix ${remixSourceRecipeTitle ?? "Recipe"}`
+              : "What would you like to cook?"}
           </ThemedText>
           <ThemedText
             type="body"
@@ -270,8 +336,9 @@ export default function RecipeChatScreen() {
               marginTop: Spacing.xs,
             }}
           >
-            Describe a recipe, upload a photo of ingredients, or pick a
-            suggestion below
+            {isRemixMode
+              ? "Choose a modification or describe what you'd like to change"
+              : "Describe a recipe, upload a photo of ingredients, or pick a suggestion below"}
           </ThemedText>
 
           {/* Suggestion Chips */}
@@ -282,9 +349,11 @@ export default function RecipeChatScreen() {
             style={{ marginTop: Spacing.lg }}
             accessible
             accessibilityRole="none"
-            accessibilityLabel="Suggested prompts"
+            accessibilityLabel={
+              isRemixMode ? "Remix suggestions" : "Suggested prompts"
+            }
           >
-            {SUGGESTION_CHIPS.map((chip) => (
+            {(isRemixMode ? remixChips : SUGGESTION_CHIPS).map((chip) => (
               <Pressable
                 key={chip.label}
                 onPress={() => handleChipPress(chip.prompt)}
@@ -356,7 +425,11 @@ export default function RecipeChatScreen() {
         <TextInput
           value={inputText}
           onChangeText={setInputText}
-          placeholder="Describe what you want to cook..."
+          placeholder={
+            isRemixMode
+              ? "Describe what you'd like to change..."
+              : "Describe what you want to cook..."
+          }
           placeholderTextColor={theme.textSecondary}
           style={[
             styles.textInput,

@@ -32,7 +32,7 @@ export async function getChatConversation(
 export async function getChatConversations(
   userId: string,
   limit = 50,
-  type?: "coach" | "recipe",
+  type?: "coach" | "recipe" | "remix",
 ): Promise<ChatConversation[]> {
   const conditions = [eq(chatConversations.userId, userId)];
   if (type) {
@@ -49,11 +49,12 @@ export async function getChatConversations(
 export async function createChatConversation(
   userId: string,
   title: string,
-  type: "coach" | "recipe" = "coach",
+  type: "coach" | "recipe" | "remix" = "coach",
+  metadata?: Record<string, unknown> | null,
 ): Promise<ChatConversation> {
   const [conversation] = await db
     .insert(chatConversations)
-    .values({ userId, title, type })
+    .values({ userId, title, type, metadata: metadata ?? null })
     .returning();
   return conversation;
 }
@@ -155,8 +156,10 @@ export async function getDailyChatMessageCount(
  * Wraps count-check + insert in a single transaction to prevent TOCTOU races
  * where concurrent requests could bypass the daily limit.
  *
- * The conversationType filter ensures coach and recipe limits are counted
- * independently (they have different daily allowances).
+ * Counting strategy varies by conversation type:
+ * - coach: counts user messages in coach conversations today
+ * - recipe/remix: counts recipe user messages + remix conversations today
+ *   (remix conversations count as 1 generation regardless of message count)
  *
  * Returns the created message, or null if the daily limit has been reached.
  */
@@ -165,7 +168,7 @@ export async function createChatMessageWithLimitCheck(
   userId: string,
   content: string,
   dailyLimit: number,
-  conversationType?: "coach" | "recipe",
+  conversationType?: "coach" | "recipe" | "remix",
 ): Promise<ChatMessage | null> {
   return db.transaction(async (tx) => {
     // Advisory lock per user to serialize concurrent generation attempts
@@ -173,28 +176,140 @@ export async function createChatMessageWithLimitCheck(
 
     const { startOfDay, endOfDay } = getDayBounds(new Date());
 
-    const conditions = [
-      eq(chatConversations.userId, userId),
-      eq(chatMessages.role, "user"),
-      gte(chatMessages.createdAt, startOfDay),
-      lt(chatMessages.createdAt, endOfDay),
-    ];
-    if (conversationType) {
-      conditions.push(eq(chatConversations.type, conversationType));
-    }
+    // For remix conversations, only the first user message counts against the
+    // shared recipe generation quota. Subsequent messages are free refinements.
+    if (conversationType === "remix") {
+      // Check if this conversation already has a user message (i.e., not the first)
+      const existingMsgResult = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(chatMessages)
+        .where(
+          and(
+            eq(chatMessages.conversationId, conversationId),
+            eq(chatMessages.role, "user"),
+          ),
+        );
+      const hasExistingMessage = Number(existingMsgResult[0]?.count ?? 0) > 0;
 
-    const countResult = await tx
-      .select({ count: sql<number>`count(*)` })
-      .from(chatMessages)
-      .innerJoin(
-        chatConversations,
-        eq(chatMessages.conversationId, chatConversations.id),
-      )
-      .where(and(...conditions));
+      if (!hasExistingMessage) {
+        // First message — check shared recipe+remix generation quota.
+        // Count: recipe user messages + distinct remix conversations today.
+        const recipeMessageCount = await tx
+          .select({ count: sql<number>`count(*)` })
+          .from(chatMessages)
+          .innerJoin(
+            chatConversations,
+            eq(chatMessages.conversationId, chatConversations.id),
+          )
+          .where(
+            and(
+              eq(chatConversations.userId, userId),
+              eq(chatConversations.type, "recipe"),
+              eq(chatMessages.role, "user"),
+              gte(chatMessages.createdAt, startOfDay),
+              lt(chatMessages.createdAt, endOfDay),
+            ),
+          );
 
-    const currentCount = Number(countResult[0]?.count ?? 0);
-    if (currentCount >= dailyLimit) {
-      return null;
+        const remixConvCount = await tx
+          .select({
+            count: sql<number>`count(DISTINCT ${chatConversations.id})`,
+          })
+          .from(chatConversations)
+          .innerJoin(
+            chatMessages,
+            eq(chatMessages.conversationId, chatConversations.id),
+          )
+          .where(
+            and(
+              eq(chatConversations.userId, userId),
+              eq(chatConversations.type, "remix"),
+              eq(chatMessages.role, "user"),
+              gte(chatConversations.createdAt, startOfDay),
+              lt(chatConversations.createdAt, endOfDay),
+            ),
+          );
+
+        const totalGenerations =
+          Number(recipeMessageCount[0]?.count ?? 0) +
+          Number(remixConvCount[0]?.count ?? 0);
+
+        if (totalGenerations >= dailyLimit) {
+          return null;
+        }
+      }
+      // If hasExistingMessage, skip quota check — refinements are free
+    } else if (conversationType === "recipe") {
+      // Recipe messages share quota with remix conversations.
+      // Count recipe user messages + distinct remix conversations (not remix messages).
+      const recipeMessageCount = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(chatMessages)
+        .innerJoin(
+          chatConversations,
+          eq(chatMessages.conversationId, chatConversations.id),
+        )
+        .where(
+          and(
+            eq(chatConversations.userId, userId),
+            eq(chatConversations.type, "recipe"),
+            eq(chatMessages.role, "user"),
+            gte(chatMessages.createdAt, startOfDay),
+            lt(chatMessages.createdAt, endOfDay),
+          ),
+        );
+
+      const remixConvCount = await tx
+        .select({
+          count: sql<number>`count(DISTINCT ${chatConversations.id})`,
+        })
+        .from(chatConversations)
+        .innerJoin(
+          chatMessages,
+          eq(chatMessages.conversationId, chatConversations.id),
+        )
+        .where(
+          and(
+            eq(chatConversations.userId, userId),
+            eq(chatConversations.type, "remix"),
+            eq(chatMessages.role, "user"),
+            gte(chatConversations.createdAt, startOfDay),
+            lt(chatConversations.createdAt, endOfDay),
+          ),
+        );
+
+      const totalGenerations =
+        Number(recipeMessageCount[0]?.count ?? 0) +
+        Number(remixConvCount[0]?.count ?? 0);
+
+      if (totalGenerations >= dailyLimit) {
+        return null;
+      }
+    } else {
+      // Coach type — per-message counting
+      const conditions = [
+        eq(chatConversations.userId, userId),
+        eq(chatMessages.role, "user"),
+        gte(chatMessages.createdAt, startOfDay),
+        lt(chatMessages.createdAt, endOfDay),
+      ];
+      if (conversationType) {
+        conditions.push(eq(chatConversations.type, conversationType));
+      }
+
+      const countResult = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(chatMessages)
+        .innerJoin(
+          chatConversations,
+          eq(chatMessages.conversationId, chatConversations.id),
+        )
+        .where(and(...conditions));
+
+      const currentCount = Number(countResult[0]?.count ?? 0);
+      if (currentCount >= dailyLimit) {
+        return null;
+      }
     }
 
     const [message] = await tx
@@ -226,12 +341,16 @@ export async function createChatMessageWithLimitCheck(
  * Atomic transaction: verify ownership, check idempotency, create recipe,
  * update message metadata with back-reference.
  *
+ * For remix conversations, pass remixedFromId and remixedFromTitle to
+ * establish lineage to the original recipe.
+ *
  * Returns the created recipe, or the existing one if already saved.
  */
 export async function saveRecipeFromChat(
   messageId: number,
   conversationId: number,
   userId: string,
+  lineage?: { remixedFromId: number; remixedFromTitle: string },
 ): Promise<CommunityRecipe | null> {
   return db.transaction(async (tx) => {
     // 1. Verify conversation ownership
@@ -291,6 +410,10 @@ export async function saveRecipeFromChat(
         ingredients: recipe.ingredients,
         imageUrl: parsed.data.imageUrl ?? null,
         isPublic: false,
+        ...(lineage && {
+          remixedFromId: lineage.remixedFromId,
+          remixedFromTitle: lineage.remixedFromTitle,
+        }),
       })
       .returning();
 

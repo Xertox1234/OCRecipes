@@ -2027,3 +2027,47 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 **References:**
 
 - `server/index.ts` — shutdown handler with cache cleanup + pool.end
+
+### Per-Conversation Quota (vs Per-Message)
+
+When a feature allows iterative refinement within a session (e.g., remix conversations), use per-conversation quota instead of per-message. Only the first user message in a conversation counts against the daily limit; subsequent messages are free refinements.
+
+```typescript
+// In createChatMessageWithLimitCheck, for "remix" type:
+if (conversationType === "remix") {
+  // Check if this conversation already has a user message
+  const existingMsgCount = await tx
+    .select({ count: sql`count(*)` })
+    .from(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.conversationId, conversationId),
+        eq(chatMessages.role, "user"),
+      ),
+    );
+
+  if (Number(existingMsgCount[0]?.count ?? 0) > 0) {
+    // Not the first message — skip quota check, refinements are free
+  } else {
+    // First message — check shared quota pool
+  }
+}
+```
+
+**Symmetric counting is critical.** When different conversation types share a quota pool, both paths must count the same way. Recipe messages count per-message; remix conversations count as 1 each. The recipe path must also count remix conversations by distinct ID (not by message count), otherwise the total inflates.
+
+```typescript
+// Recipe path: count recipe messages + distinct remix conversations
+const recipeMessages = /* count user messages in recipe conversations today */;
+const remixConversations = /* count DISTINCT remix conversation IDs with user messages today */;
+const totalGenerations = recipeMessages + remixConversations;
+```
+
+**When to use:** Features that are session-based (AI conversations with refinement, collaborative editing sessions) rather than action-based (individual API calls, scans).
+
+**References:**
+
+- `server/storage/chat.ts` — `createChatMessageWithLimitCheck()` remix branch
+- `shared/types/premium.ts` — `dailyRecipeGenerations` shared between recipe + remix
+
+**Origin:** Recipe Remix feature (2026-04-08)

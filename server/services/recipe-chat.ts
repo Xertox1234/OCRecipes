@@ -213,6 +213,92 @@ function buildSystemPrompt(
   return parts.join("\n");
 }
 
+/**
+ * Build a system prompt for the recipe remix flow.
+ * Instructs the AI to MODIFY the original recipe rather than generate a new one.
+ */
+export function buildRemixSystemPrompt(
+  originalRecipe: {
+    title: string;
+    ingredients: { name: string; quantity: string; unit: string }[];
+    instructions: string[];
+    dietTags: string[];
+    description?: string | null;
+    difficulty?: string | null;
+    timeEstimate?: string | null;
+    servings?: number | null;
+  },
+  userProfile: UserProfile | null | undefined,
+): string {
+  const parts = [
+    "You are RecipeChef, a creative AI chef built into the OCRecipes app.",
+    "The user wants to REMIX an existing recipe. Your job is to MODIFY the recipe based on their request.",
+    "",
+    "IMPORTANT RULES:",
+    "- Preserve the original recipe's structure, style, and format",
+    "- Only change what the user specifically requests",
+    "- Keep the same number of instruction steps when possible",
+    "- Adjust quantities proportionally when swapping ingredients",
+    "- Update dietTags to reflect the changes (e.g., add 'dairy-free' if dairy was removed)",
+    "- Give the remix a new title that reflects the changes (e.g., 'Dairy-Free Chicken Alfredo')",
+    "",
+    "ORIGINAL RECIPE TO MODIFY:",
+    "```json",
+    JSON.stringify(
+      {
+        title: sanitizeUserInput(originalRecipe.title),
+        description: sanitizeUserInput(originalRecipe.description ?? ""),
+        difficulty: originalRecipe.difficulty,
+        timeEstimate: originalRecipe.timeEstimate,
+        servings: originalRecipe.servings,
+        ingredients: originalRecipe.ingredients.map((i) => ({
+          name: sanitizeUserInput(i.name),
+          quantity: i.quantity,
+          unit: i.unit,
+        })),
+        instructions: originalRecipe.instructions.map(sanitizeUserInput),
+        dietTags: originalRecipe.dietTags,
+      },
+      null,
+      2,
+    ),
+    "```",
+    "",
+    "When the user describes changes, respond with:",
+    "1. A brief conversational note about the changes (1-2 sentences)",
+    "2. Then output the MODIFIED recipe as a JSON object on a NEW LINE, starting with ```json and ending with ```",
+    "",
+    "The JSON must match this exact schema:",
+    "{",
+    '  "title": "string",',
+    '  "description": "string (1-2 sentences)",',
+    '  "difficulty": "Easy | Medium | Hard",',
+    '  "timeEstimate": "string (e.g. 30 min)",',
+    '  "servings": number,',
+    '  "ingredients": [{ "name": "string", "quantity": "string", "unit": "string" }],',
+    '  "instructions": ["string"],',
+    '  "dietTags": ["string"]',
+    "}",
+    "",
+  ];
+
+  // User dietary context
+  const dietaryContext = buildDietaryContext(userProfile, {
+    allergenDetail: "basic",
+  });
+  if (dietaryContext) {
+    parts.push("USER DIETARY PROFILE:");
+    parts.push(dietaryContext);
+    parts.push(
+      "ALLERGY SAFETY: NEVER include ingredients containing listed allergens. Double-check every ingredient. Allergies are safety-critical — treat them as absolute exclusions.",
+    );
+    parts.push("");
+  }
+
+  parts.push(SYSTEM_PROMPT_BOUNDARY);
+  return parts.join("\n");
+}
+
 // ============================================================================
 // ALLERGEN CHECK
 // ============================================================================
@@ -268,8 +354,11 @@ export async function* generateRecipeChatResponse(
   }[],
   userProfile: UserProfile | null | undefined,
   imageAnalysis?: string,
+  options?: { systemPromptOverride?: string },
 ): AsyncGenerator<RecipeChatSSEEvent> {
-  const systemPrompt = buildSystemPrompt(userProfile, imageAnalysis);
+  const systemPrompt =
+    options?.systemPromptOverride ??
+    buildSystemPrompt(userProfile, imageAnalysis);
 
   // Sanitize user messages
   const sanitizedMessages = conversationMessages.map((m) => ({

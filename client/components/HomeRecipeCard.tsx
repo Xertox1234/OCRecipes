@@ -1,6 +1,6 @@
 import React, { useCallback } from "react";
 import { StyleSheet, View } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -101,6 +101,24 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
               />
             </View>
           ) : null}
+
+          {/* Remix badge */}
+          {recipe.remixedFromId != null ? (
+            <View
+              style={[
+                styles.remixBadge,
+                { backgroundColor: withOpacity(theme.link, 0.9) },
+              ]}
+              accessibilityLabel="Remixed recipe"
+            >
+              <Ionicons
+                name="shuffle-outline"
+                size={10}
+                color="#FFFFFF" // hardcoded — always white on colored badge
+                accessible={false}
+              />
+            </View>
+          ) : null}
         </View>
 
         {/* Content section */}
@@ -173,6 +191,16 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: Spacing.sm,
     right: Spacing.sm,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  remixBadge: {
+    position: "absolute",
+    top: Spacing.sm,
+    left: Spacing.sm,
     width: 22,
     height: 22,
     borderRadius: 11,

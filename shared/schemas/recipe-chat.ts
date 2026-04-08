@@ -29,3 +29,13 @@ export const recipeChatMetadataSchema = z.object({
 });
 
 export type RecipeChatMetadata = z.infer<typeof recipeChatMetadataSchema>;
+
+/** Metadata stored in chatConversations.metadata for remix conversations */
+export const remixConversationMetadataSchema = z.object({
+  sourceRecipeId: z.number().int().positive(),
+  sourceRecipeTitle: z.string(),
+});
+
+export type RemixConversationMetadata = z.infer<
+  typeof remixConversationMetadataSchema
+>;
