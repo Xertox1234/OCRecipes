@@ -17,6 +17,8 @@ import type { CoachQuestion } from "@/components/CoachOverlayContent";
 interface AskCoachSectionProps {
   questions: readonly CoachQuestion[];
   screenContext: string;
+  /** Override press handler for specific questions. Return true if handled. */
+  onCustomPress?: (q: CoachQuestion) => boolean;
 }
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -24,6 +26,7 @@ type NavProp = NativeStackNavigationProp<RootStackParamList>;
 export const AskCoachSection = React.memo(function AskCoachSection({
   questions,
   screenContext,
+  onCustomPress,
 }: AskCoachSectionProps) {
   const { theme } = useTheme();
   const { isPremium } = usePremiumContext();
@@ -36,6 +39,8 @@ export const AskCoachSection = React.memo(function AskCoachSection({
         setShowUpgrade(true);
         return;
       }
+      // Allow parent to intercept specific questions (e.g., remix)
+      if (onCustomPress?.(q)) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       navigation.navigate("CoachChat", {
         question: q.question,
@@ -43,7 +48,7 @@ export const AskCoachSection = React.memo(function AskCoachSection({
         screenContext,
       });
     },
-    [isPremium, navigation, screenContext],
+    [isPremium, navigation, screenContext, onCustomPress],
   );
 
   return (
