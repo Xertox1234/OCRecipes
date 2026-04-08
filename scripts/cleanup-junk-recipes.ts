@@ -10,6 +10,7 @@
  * Usage: npx tsx scripts/cleanup-junk-recipes.ts
  * Add --dry-run to preview what would be deleted without actually deleting.
  */
+import "dotenv/config";
 import { db } from "../server/db";
 import { communityRecipes, cookbookRecipes } from "../shared/schema";
 import { eq, and, sql, or, ilike } from "drizzle-orm";

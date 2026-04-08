@@ -8,6 +8,7 @@
  * Add --delay=5000 to set delay between generations in ms (default: 3000).
  * Add --limit=10 to limit the number of recipes processed.
  */
+import "dotenv/config";
 import { db } from "../server/db";
 import { communityRecipes, mealPlanRecipes } from "../shared/schema";
 import { isNull, eq } from "drizzle-orm";
