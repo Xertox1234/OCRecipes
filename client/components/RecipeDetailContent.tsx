@@ -47,6 +47,10 @@ export interface RecipeDetailContentProps {
   instructions?: string[] | null;
   contentPaddingTop?: number;
   contentPaddingBottom?: number;
+  /** ID of the recipe this was remixed from (null if original was deleted) */
+  remixedFromId?: number | null;
+  /** Title snapshot of the original recipe (preserved even if original is deleted) */
+  remixedFromTitle?: string | null;
 }
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -152,6 +156,45 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
           <ThemedText type="h3" style={styles.title}>
             {props.title}
           </ThemedText>
+
+          {/* 2b. Remix lineage */}
+          {props.remixedFromTitle && (
+            <Pressable
+              onPress={
+                props.remixedFromId
+                  ? () =>
+                      navigation.navigate("FeaturedRecipeDetail", {
+                        recipeId: props.remixedFromId!,
+                        recipeType: "community",
+                      })
+                  : undefined
+              }
+              disabled={!props.remixedFromId}
+              style={styles.lineageRow}
+              accessibilityRole={props.remixedFromId ? "link" : "text"}
+              accessibilityLabel={`Remixed from ${props.remixedFromTitle}`}
+            >
+              <Ionicons
+                name="shuffle-outline"
+                size={12}
+                color={theme.textSecondary}
+              />
+              <ThemedText
+                style={[
+                  styles.lineageText,
+                  {
+                    color: props.remixedFromId
+                      ? theme.link
+                      : theme.textSecondary,
+                  },
+                ]}
+                numberOfLines={1}
+              >
+                Remixed from {props.remixedFromTitle}
+              </ThemedText>
+            </Pressable>
+          )}
+
           {props.description && (
             <ThemedText
               style={[styles.description, { color: theme.textSecondary }]}
@@ -291,5 +334,15 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 13,
     fontFamily: FontFamily.medium,
+  },
+  lineageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: Spacing.sm,
+  },
+  lineageText: {
+    fontSize: 13,
+    fontFamily: FontFamily.regular,
   },
 });

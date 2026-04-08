@@ -47,6 +47,8 @@ interface NormalizedRecipe {
   ingredients: IngredientItem[];
   imageUrl?: string | null;
   nutrition?: ReturnType<typeof parseNutritionData>;
+  remixedFromId?: number | null;
+  remixedFromTitle?: string | null;
 }
 
 export default function FeaturedRecipeDetailScreen() {
@@ -112,6 +114,8 @@ export default function FeaturedRecipeDetailScreen() {
         instructions: communityRecipe.instructions ?? [],
         ingredients: (communityRecipe.ingredients ?? []) as IngredientItem[],
         imageUrl: communityRecipe.imageUrl,
+        remixedFromId: communityRecipe.remixedFromId,
+        remixedFromTitle: communityRecipe.remixedFromTitle,
       };
     }
 
@@ -190,6 +194,8 @@ export default function FeaturedRecipeDetailScreen() {
           ingredients={normalized.ingredients}
           instructions={normalized.instructions}
           contentPaddingBottom={insets.bottom + Spacing.xl}
+          remixedFromId={normalized.remixedFromId}
+          remixedFromTitle={normalized.remixedFromTitle}
         />
       )}
     </View>
