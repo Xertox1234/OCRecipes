@@ -117,6 +117,9 @@ export type RootStackParamList = {
   RecipeChat: {
     conversationId?: number;
     initialMessage?: string;
+    /** When set, RecipeChatScreen enters remix mode for this recipe. */
+    remixSourceRecipeId?: number;
+    remixSourceRecipeTitle?: string;
   };
   // Profile hub modal screens (back returns to Profile, not Plan tab)
   CookbookListModal: undefined;

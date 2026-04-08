@@ -63,11 +63,13 @@ export function useCreateConversation() {
   return useMutation({
     mutationFn: async (data?: {
       title?: string;
-      type?: "coach" | "recipe";
+      type?: "coach" | "recipe" | "remix";
+      sourceRecipeId?: number;
     }) => {
       const res = await apiRequest("POST", "/api/chat/conversations", {
         title: data?.title,
         type: data?.type,
+        ...(data?.sourceRecipeId && { sourceRecipeId: data.sourceRecipeId }),
       });
       return (await res.json()) as ChatConversation;
     },
