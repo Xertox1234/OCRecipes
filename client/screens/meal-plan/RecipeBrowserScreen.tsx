@@ -28,6 +28,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import {
   useCatalogSearch,
   useSaveCatalogRecipe,
@@ -739,6 +740,7 @@ export default function RecipeBrowserScreen() {
         </View>
       ) : (
         <FlatList
+          {...FLATLIST_DEFAULTS}
           data={allRecipes}
           renderItem={renderItem}
           keyExtractor={keyExtractor}

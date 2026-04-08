@@ -22,6 +22,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type {
   BatchItem,
@@ -275,6 +276,7 @@ export default function BatchSummaryScreen() {
 
       {/* Items list */}
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={items}
         renderItem={renderItem}
         keyExtractor={keyExtractor}

@@ -12,6 +12,7 @@ import {
   withOpacity,
   FontFamily,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { MenuAnalysisItem } from "@/hooks/useMenuScan";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -203,6 +204,7 @@ export default function MenuScanResultScreen() {
       style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
     >
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={items}
         keyExtractor={keyExtractor}
         contentContainerStyle={{

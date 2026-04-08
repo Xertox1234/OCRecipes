@@ -26,6 +26,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import {
   PREPARATION_OPTIONS,
   type FoodCategory,
@@ -240,6 +241,7 @@ export default function CookSessionReviewScreen() {
   return (
     <ThemedView style={styles.container} accessibilityViewIsModal={true}>
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={ingredients}
         keyExtractor={(item) => item.id}
         renderItem={renderIngredient}

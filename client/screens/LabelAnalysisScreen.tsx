@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import {
   StyleSheet,
   View,
@@ -29,13 +35,16 @@ import {
   type LabelExtractionResult,
 } from "@/lib/photo-upload";
 import { apiRequest } from "@/lib/query-client";
-import {
-  parseNutritionFromOCR,
-  type LocalNutritionData,
-} from "@/lib/nutrition-ocr-parser";
+import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
 import type { VerificationSubmitResponse } from "@shared/types/verification";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+
+import {
+  buildNutrientRows,
+  localDataToExtractionResult,
+  shouldReplaceWithAI,
+} from "./label-analysis-utils";
 
 type LabelAnalysisNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -49,111 +58,6 @@ type RouteParams = {
   verifyBarcode?: string;
   localOCRText?: string;
 };
-
-interface NutrientRow {
-  label: string;
-  value: number | null;
-  unit: string;
-  indented?: boolean;
-  bold?: boolean;
-}
-
-function buildNutrientRows(data: LabelExtractionResult): NutrientRow[] {
-  return [
-    { label: "Calories", value: data.calories, unit: "kcal", bold: true },
-    { label: "Total Fat", value: data.totalFat, unit: "g", bold: true },
-    {
-      label: "Saturated Fat",
-      value: data.saturatedFat,
-      unit: "g",
-      indented: true,
-    },
-    { label: "Trans Fat", value: data.transFat, unit: "g", indented: true },
-    { label: "Cholesterol", value: data.cholesterol, unit: "mg", bold: true },
-    { label: "Sodium", value: data.sodium, unit: "mg", bold: true },
-    {
-      label: "Total Carbohydrates",
-      value: data.totalCarbs,
-      unit: "g",
-      bold: true,
-    },
-    {
-      label: "Dietary Fiber",
-      value: data.dietaryFiber,
-      unit: "g",
-      indented: true,
-    },
-    {
-      label: "Total Sugars",
-      value: data.totalSugars,
-      unit: "g",
-      indented: true,
-    },
-    {
-      label: "Added Sugars",
-      value: data.addedSugars,
-      unit: "g",
-      indented: true,
-    },
-    { label: "Protein", value: data.protein, unit: "g", bold: true },
-    { label: "Vitamin D", value: data.vitaminD, unit: "mcg" },
-    { label: "Calcium", value: data.calcium, unit: "mg" },
-    { label: "Iron", value: data.iron, unit: "mg" },
-    { label: "Potassium", value: data.potassium, unit: "mg" },
-  ];
-}
-
-/** Convert LocalNutritionData to LabelExtractionResult for display */
-function localDataToExtractionResult(
-  data: LocalNutritionData,
-): LabelExtractionResult {
-  return {
-    servingSize: data.servingSize,
-    servingsPerContainer: null,
-    calories: data.calories,
-    totalFat: data.totalFat,
-    saturatedFat: data.saturatedFat,
-    transFat: data.transFat,
-    cholesterol: data.cholesterol,
-    sodium: data.sodium,
-    totalCarbs: data.totalCarbs,
-    dietaryFiber: data.dietaryFiber,
-    totalSugars: data.totalSugars,
-    addedSugars: null,
-    protein: data.protein,
-    vitaminD: null,
-    calcium: null,
-    iron: null,
-    potassium: null,
-    confidence: data.confidence,
-    productName: null,
-  };
-}
-
-/** Check if AI data differs significantly from local OCR (>10% on any core field) */
-function shouldReplaceWithAI(
-  local: LabelExtractionResult,
-  ai: LabelExtractionResult,
-): boolean {
-  const fields: (keyof LabelExtractionResult)[] = [
-    "calories",
-    "totalFat",
-    "protein",
-    "totalCarbs",
-    "sodium",
-  ];
-
-  for (const field of fields) {
-    const localVal = local[field];
-    const aiVal = ai[field];
-    if (typeof localVal !== "number" || typeof aiVal !== "number") continue;
-    if (localVal === 0 && aiVal === 0) continue;
-    const diff = Math.abs(localVal - aiVal);
-    const base = Math.max(Math.abs(localVal), Math.abs(aiVal), 1);
-    if (diff / base > 0.1) return true;
-  }
-  return false;
-}
 
 export default function LabelAnalysisScreen() {
   const insets = useSafeAreaInsets();
@@ -199,6 +103,7 @@ export default function LabelAnalysisScreen() {
   // Upload to OpenAI (always, even with local preview)
   useEffect(() => {
     let cancelled = false;
+    let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function analyze() {
       try {
@@ -213,7 +118,7 @@ export default function LabelAnalysisScreen() {
             setLabelData(aiData);
             setDataSource("ai");
             setShowUpdatedToast(true);
-            setTimeout(() => setShowUpdatedToast(false), 3000);
+            toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
           } else {
             // AI confirms local data — just record the session ID
             setDataSource("ai");
@@ -245,11 +150,15 @@ export default function LabelAnalysisScreen() {
     analyze();
     return () => {
       cancelled = true;
+      if (toastTimer) clearTimeout(toastTimer);
     };
   }, [imageUri, barcode]);
 
-  const confirmMutation = useMutation({
-    mutationFn: () => confirmLabelAnalysis(sessionId!, servings),
+  const { mutate: confirmLog, isPending: isConfirming } = useMutation({
+    mutationFn: () => {
+      if (!sessionId) throw new Error("No session");
+      return confirmLabelAnalysis(sessionId, servings);
+    },
     onSuccess: () => {
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
@@ -264,7 +173,7 @@ export default function LabelAnalysisScreen() {
   const [verificationResult, setVerificationResult] =
     useState<VerificationSubmitResponse | null>(null);
 
-  const verifyMutation = useMutation({
+  const { mutate: verifyLog, isPending: isVerifying } = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/verification/submit", {
         barcode: verifyBarcode,
@@ -285,17 +194,17 @@ export default function LabelAnalysisScreen() {
     if (!sessionId) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     if (verificationMode && verifyBarcode) {
-      verifyMutation.mutate();
+      verifyLog();
     } else {
-      confirmMutation.mutate();
+      confirmLog();
     }
   }, [
     sessionId,
     haptics,
     verificationMode,
     verifyBarcode,
-    confirmMutation,
-    verifyMutation,
+    confirmLog,
+    verifyLog,
   ]);
 
   const adjustServings = useCallback(
@@ -306,9 +215,12 @@ export default function LabelAnalysisScreen() {
     [haptics],
   );
 
-  const nutrientRows = labelData ? buildNutrientRows(labelData) : [];
-  const macroRows = nutrientRows.slice(0, 11);
-  const microRows = nutrientRows.slice(11);
+  const nutrientRows = useMemo(
+    () => (labelData ? buildNutrientRows(labelData) : []),
+    [labelData],
+  );
+  const macroRows = useMemo(() => nutrientRows.slice(0, 11), [nutrientRows]);
+  const microRows = useMemo(() => nutrientRows.slice(11), [nutrientRows]);
 
   if (isAnalyzing) {
     return (
@@ -665,12 +577,8 @@ export default function LabelAnalysisScreen() {
         ) : (
           <Button
             onPress={handleLog}
-            disabled={
-              !sessionId ||
-              confirmMutation.isPending ||
-              verifyMutation.isPending
-            }
-            loading={confirmMutation.isPending || verifyMutation.isPending}
+            disabled={!sessionId || isConfirming || isVerifying}
+            loading={isConfirming || isVerifying}
             style={{ flex: 1 }}
           >
             {verificationMode

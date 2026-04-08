@@ -7,6 +7,40 @@ You are running a structured code audit. The scope is: $ARGUMENTS (defaults to "
 
 This workflow enforces finding tracking, per-fix verification, and a persistent audit trail. **Never skip steps.**
 
+## Specialist Agent Mapping
+
+Each audit domain maps to specialist agents in `.claude/agents/` that have deep knowledge of the project's patterns, conventions, and common pitfalls for that domain. Launch them as subagents during Phase 2 discovery.
+
+| Audit Domain     | Primary Agent(s)                                  | What They Check                                                       |
+| ---------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
+| `security`       | `security-auditor` + `ai-llm-specialist`          | IDOR, rate limiting, JWT, SSRF, prompt injection, AI safety           |
+| `performance`    | `database-specialist` + `rn-ui-ux-specialist`     | N+1 queries, missing indexes, FlatList optimization, animation jank   |
+| `data-integrity` | `database-specialist` + `nutrition-domain-expert` | Soft deletes, polymorphic FK orphans, cache dedup, nutrition accuracy |
+| `architecture`   | `database-specialist` + `ai-llm-specialist`       | Service/storage layering, route helper usage, db import violations    |
+| `code-quality`   | `testing-specialist` + `code-reviewer`            | Test coverage gaps, mock quality, pattern compliance, code smells     |
+| `camera`         | `camera-specialist` + `rn-ui-ux-specialist`       | Permissions, scan debouncing, frame processors, lifecycle management  |
+
+**For `full` or `pre-launch` scopes:** Launch agents for all domains (batch in groups of 4-5, not all at once).
+
+**For named scopes:** Launch only the primary agent(s) for that domain.
+
+**Agent prompt template for discovery:**
+
+```
+You are auditing the OCRecipes codebase for [DOMAIN] issues.
+
+Scope: [files/modules to focus on, or "full codebase"]
+
+For each finding, report:
+- A concise description of the issue
+- The exact file path and line number(s)
+- Severity: Critical / High / Medium / Low
+- The specific pattern or rule being violated (reference docs/patterns/ where applicable)
+
+Do NOT fix anything — only report findings. Do NOT report issues that are already handled correctly.
+Focus on genuinely new issues, not style preferences.
+```
+
 ## Phase 1: Setup
 
 1. Record the current baseline:
@@ -19,17 +53,19 @@ This workflow enforces finding tracking, per-fix verification, and a persistent 
 
 ## Phase 2: Discovery
 
-1. Launch specialized audit agents **in parallel** based on scope:
-   - `full` or `pre-launch`: all 5 domains (security, performance, data-integrity, architecture, code-quality)
-   - Named scope: only the matching domain(s)
+1. **Launch specialist agents in parallel** using the mapping table above:
+   - `full` or `pre-launch`: launch agents for all domains (batch in groups of 4-5 to avoid overwhelming context)
+   - Named scope (e.g., `security`): launch only the primary agent(s) for that domain
+   - Use the agent prompt template from the mapping section, specifying the domain and scope
+   - Each agent runs as a subagent via the Agent tool with the corresponding `.claude/agents/*.md` agent type
 2. As each agent completes, **deduplicate** its findings against:
    - The previous audit's manifest (if one exists) — mark already-fixed items as `false-positive`
-   - Other agents in this run — combine duplicates into single findings
+   - Other agents in this run — combine duplicates into single findings (agents with overlapping domains may flag the same issue)
 3. For each **genuinely new finding**, verify it exists in the current code:
    - Read the file at the reported line
    - Grep for the pattern the agent flagged
    - If the code doesn't match the finding, mark `false-positive` with evidence
-4. Write all verified findings to the manifest with status `open`
+4. Write all verified findings to the manifest with status `open`, including which agent reported each finding
 5. **Show the user the complete findings table** and ask: "Which findings should I fix now, and which should be deferred?"
 
 ## Phase 3: Fix (one at a time)
@@ -91,28 +127,49 @@ If the user says yes:
    ```
 3. Ask if the user wants to push
 
-## Phase 7: Codify (patterns & learnings)
+## Phase 7: Codify (patterns, learnings & agent updates)
 
-After fixes are committed, extract reusable knowledge using the pattern-codifier agent (`.claude/agents/pattern-codifier.md`).
+After fixes are committed, extract reusable knowledge using the pattern-codifier agent (`.claude/agents/pattern-codifier.md`) and update specialist agents with new checks.
 
 1. Review the manifest for codification candidates. Look for:
    - **Patterns** — Fixes that established reusable approaches (used/needed in 3+ places, non-obvious, project-specific)
    - **Learnings** — Findings that revealed gotchas, bugs with interesting root causes, or security/performance lessons
    - **Code reviewer updates** — New checks the code-reviewer agent should enforce going forward
+   - **Specialist agent updates** — New domain-specific checks that a specialist agent should catch in future audits
 2. For each candidate, apply the pattern-codifier's decision matrix:
    - Recurring solution → **Pattern** → add to appropriate `docs/patterns/*.md` file
    - Bug/gotcha/unexpected behavior → **Learning** → add to `docs/LEARNINGS.md`
    - New check needed → **Code reviewer update** → add to `.claude/agents/code-reviewer.md`
-3. Run the pattern-codifier as a subagent with this prompt structure:
+   - Domain-specific check → **Specialist agent update** → add to the relevant `.claude/agents/*.md` checklist
+3. **Specialist agent update routing:** When a finding reveals a new domain-specific check, add it to the appropriate specialist agent's review checklist:
+
+   | Finding Domain | Update Agent(s)                                        |
+   | -------------- | ------------------------------------------------------ |
+   | Security       | `security-auditor.md`, `ai-llm-specialist.md`          |
+   | Performance    | `database-specialist.md`, `rn-ui-ux-specialist.md`     |
+   | Data integrity | `database-specialist.md`, `nutrition-domain-expert.md` |
+   | Architecture   | `database-specialist.md`, `ai-llm-specialist.md`       |
+   | Code quality   | `testing-specialist.md`, `code-reviewer.md`            |
+   | Camera/vision  | `camera-specialist.md`, `rn-ui-ux-specialist.md`       |
+
+4. Run the pattern-codifier as a subagent with this prompt structure:
+
    ```
    Review the audit manifest at docs/audits/[manifest-file].md.
    For each verified fix, determine if it should be codified as a pattern,
-   learning, or code reviewer update. Follow the workflow in
-   .claude/agents/pattern-codifier.md. Only codify items that meet the
-   criteria (recurring, non-obvious, project-specific). Skip standard fixes.
+   learning, code reviewer update, or specialist agent update.
+   Follow the workflow in .claude/agents/pattern-codifier.md.
+   Only codify items that meet the criteria (recurring, non-obvious,
+   project-specific). Skip standard fixes.
+
+   For specialist agent updates, add new checklist items to the "Review
+   Checklist" section of the appropriate agent in .claude/agents/.
+   Also add entries to the "Common Mistakes to Catch" section if the
+   finding represents a recurring mistake pattern.
    ```
-4. Review the codifier's output and apply changes to docs
-5. Commit documentation separately:
+
+5. Review the codifier's output and apply changes to docs and agents
+6. Commit documentation separately:
    ```
    docs: codify patterns and learnings from [scope] audit
    ```

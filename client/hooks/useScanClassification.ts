@@ -46,16 +46,17 @@ export function useScanClassification({
   const navigationTimeoutRef = useRef<TimeoutRef>(null);
   const resetTimeoutRef = useRef<TimeoutRef>(null);
 
+  // Timer refs must be read at cleanup time (not captured at setup) — these are
+  // timer IDs, not React DOM refs, so the exhaustive-deps warning is inapplicable.
   useEffect(() => {
-    const navTimeout = navigationTimeoutRef.current;
-    const resetTimeout = resetTimeoutRef.current;
-    const classifyTimeout = classifyTimeoutRef.current;
-    const autoRouteTimeout = autoRouteTimeoutRef.current;
     return () => {
-      if (navTimeout) clearTimeout(navTimeout);
-      if (resetTimeout) clearTimeout(resetTimeout);
-      if (classifyTimeout) clearTimeout(classifyTimeout);
-      if (autoRouteTimeout) clearTimeout(autoRouteTimeout);
+      if (navigationTimeoutRef.current)
+        clearTimeout(navigationTimeoutRef.current);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      if (resetTimeoutRef.current) clearTimeout(resetTimeoutRef.current);
+      if (classifyTimeoutRef.current) clearTimeout(classifyTimeoutRef.current);
+      if (autoRouteTimeoutRef.current)
+        clearTimeout(autoRouteTimeoutRef.current);
     };
   }, []);
 

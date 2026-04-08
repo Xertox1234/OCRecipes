@@ -21,14 +21,21 @@ export interface LocalNutritionData {
 
 /** Fix common OCR character misreads in numeric strings */
 function fixOCRDigits(s: string): string {
-  return s.replace(/[Oo]/g, "0").replace(/[Il|]/g, "1").replace(/S/g, "5");
+  return s
+    .replace(/[Oo]/g, "0")
+    .replace(/[Il|]/g, "1")
+    .replace(/(?<=\d)S|S(?=\d)/g, "5");
 }
+
+/** Maximum plausible value per serving for any nutrition field */
+const MAX_NUTRITION_VALUE = 10000;
 
 /** Extract a numeric value from a string, applying OCR correction */
 function extractNumber(raw: string): number | null {
   const fixed = fixOCRDigits(raw.trim());
   const num = parseFloat(fixed);
-  return isNaN(num) ? null : num;
+  if (isNaN(num) || num < 0 || num > MAX_NUTRITION_VALUE) return null;
+  return num;
 }
 
 interface FieldPattern {
@@ -37,7 +44,7 @@ interface FieldPattern {
 }
 
 const FIELD_PATTERNS: FieldPattern[] = [
-  { key: "calories", pattern: /calories\s+<?(\S+)/i },
+  { key: "calories", pattern: /calories\s+(?!from\b)<?(\S+)/i },
   { key: "totalFat", pattern: /total\s+fat\s+<?(\S+?)g/i },
   { key: "saturatedFat", pattern: /saturated\s+fat\s+<?(\S+?)g/i },
   { key: "transFat", pattern: /trans\s+fat\s+<?(\S+?)g/i },
@@ -78,7 +85,7 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   // Extract serving size (free-form text, not numeric)
   const servingMatch = text.match(SERVING_SIZE_PATTERN);
   if (servingMatch) {
-    result.servingSize = servingMatch[1].trim();
+    result.servingSize = servingMatch[1].trim().slice(0, 100);
   }
 
   // Extract numeric fields

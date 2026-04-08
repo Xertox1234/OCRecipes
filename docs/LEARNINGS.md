@@ -4,6 +4,9 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [React Effect Cleanup Must Read Timer Refs at Cleanup Time (2026-04-07)](#react-effect-cleanup-must-read-timer-refs-at-cleanup-time-2026-04-07)
+- [OCR Regex Must Account for Prefix Lines Sharing Keywords (2026-04-07)](#ocr-regex-must-account-for-prefix-lines-sharing-keywords-2026-04-07)
+- [OCR Character Corrections Must Be Context-Sensitive (2026-04-07)](#ocr-character-corrections-must-be-context-sensitive-2026-04-07)
 - [Unsanitized AI Prompt Parameter That Looked Server-Generated (2026-04-02)](#unsanitized-ai-prompt-parameter-that-looked-server-generated-2026-04-02)
 - [RN Modal Cannot Overlay React Navigation transparentModal (2026-04-01)](#rn-modal-cannot-overlay-react-navigation-transparentmodal-2026-04-01)
 - [fetch ReadableStream Fails Inside RN Modal — Use XHR (2026-04-01)](#fetch-readablestream-fails-inside-rn-modal--use-xhr-2026-04-01)
@@ -42,6 +45,76 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-04-07] React Effect Cleanup Must Read Timer Refs at Cleanup Time
+
+**Category:** React Native Gotcha
+
+**Problem:** `useScanClassification` captured `navigationTimeoutRef.current` and `resetTimeoutRef.current` in local variables at effect setup time, then cleared those variables in the cleanup function. Since the refs were `null` at mount, the timeouts set later during barcode scanning were never cleaned up on unmount.
+
+```typescript
+// Bug: captures null at setup time
+useEffect(() => {
+  const navTimeout = navigationTimeoutRef.current; // null at mount
+  return () => {
+    if (navTimeout) clearTimeout(navTimeout); // always clearing null
+  };
+}, []);
+```
+
+**Root cause:** The React hooks lint rule `react-hooks/exhaustive-deps` warns about reading `.current` in cleanup. The original code followed the lint rule's suggestion (capture in a variable) — but that advice is for DOM refs, not timer IDs. Timer refs change asynchronously and must be read at cleanup time.
+
+**Fix:** Read `.current` directly inside the cleanup function:
+
+```typescript
+useEffect(() => {
+  return () => {
+    if (navigationTimeoutRef.current)
+      clearTimeout(navigationTimeoutRef.current);
+    if (resetTimeoutRef.current) clearTimeout(resetTimeoutRef.current);
+  };
+}, []);
+```
+
+**Rule:** For timer/timeout refs, always read `.current` inside the cleanup function, not at setup time. Suppress the `react-hooks/exhaustive-deps` warning with a comment explaining these are timer IDs, not DOM refs.
+
+**Audit ref:** 2026-04-07-full-2 finding M13
+
+---
+
+## [2026-04-07] OCR Regex Must Account for Prefix Lines Sharing Keywords
+
+**Category:** Data Integrity Gotcha
+
+**Problem:** The nutrition OCR parser's calories regex `/calories\s+<?(\S+)/i` matched "Calories from Fat 90" before "Calories 250" on pre-2020 US nutrition labels. Since `String.match()` returns the first match, the actual calorie count was silently dropped (captured "from" → `parseFloat("from")` → `NaN` → `null`).
+
+**Root cause:** Pre-2020 FDA-format labels include "Calories from Fat" as a separate line _before_ the main "Calories" line. The regex had no way to distinguish between them.
+
+**Fix:** Negative lookahead: `/calories\s+(?!from\b)<?(\S+)/i`
+
+**Rule:** When parsing structured text with line-by-line regex, check for real-world format variants where a keyword appears in multiple contexts. Negative lookaheads (`(?!...)`) can exclude false matches without rewriting the whole pattern. For nutrition labels specifically, always test with both pre-2020 and current FDA formats.
+
+**Audit ref:** 2026-04-07-full-2 finding M2
+
+---
+
+## [2026-04-07] OCR Character Corrections Must Be Context-Sensitive
+
+**Category:** Data Integrity Gotcha
+
+**Problem:** The `fixOCRDigits` function replaced all uppercase `S` with `5` unconditionally (`/S/g`). While `O→0` and `l→1` are reliable OCR corrections, `S→5` has a much higher false-positive rate when applied to non-numeric contexts.
+
+**Fix:** Narrowed to context-sensitive replacement: `/(?<=\d)S|S(?=\d)/g` — only replaces `S` when adjacent to a digit (e.g., "1S0" → "150" but "Sodium" stays "Sodium").
+
+**Rule:** OCR character corrections should use lookahead/lookbehind assertions to limit replacement to plausible contexts. The confidence level of each correction varies:
+
+- Very reliable: `O→0`, `l→1`, `|→1` (shape similarity is high)
+- Context-dependent: `S→5` (only when adjacent to digits)
+- Dangerous: Any correction that could apply to label text, not just numeric fields
+
+**Audit ref:** 2026-04-07-full-2 finding L2
 
 ---
 

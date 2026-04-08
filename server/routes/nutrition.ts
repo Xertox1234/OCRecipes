@@ -95,14 +95,15 @@ export function register(app: Express): void {
       }
 
       try {
-        const result = await lookupBarcode(code);
+        const [result, verification] = await Promise.all([
+          lookupBarcode(code),
+          storage.getVerification(code),
+        ]);
         if (!result) {
           sendError(res, 404, "Product not found", ErrorCode.NOT_FOUND);
           return;
         }
 
-        // Include verification status alongside nutrition data
-        const verification = await storage.getVerification(code);
         res.json({
           ...result,
           verificationLevel: verification?.verificationLevel ?? "unverified",

@@ -120,7 +120,7 @@ describe("Verification Routes", () => {
         .send();
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain("Barcode is required");
+      expect(res.body.error).toContain("Invalid barcode format");
     });
 
     it("returns 400 when user has not back-label verified", async () => {
@@ -322,7 +322,7 @@ describe("Verification Routes", () => {
         >,
       );
 
-      const res = await request(app).get("/api/verification/unknown");
+      const res = await request(app).get("/api/verification/99999999");
 
       expect(res.status).toBe(200);
       expect(res.body.hasFrontLabelData).toBe(false);

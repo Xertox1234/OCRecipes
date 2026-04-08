@@ -1677,24 +1677,33 @@ export const apiKeyUsage = pgTable(
   }),
 );
 
-export const barcodeNutrition = pgTable("barcode_nutrition", {
-  id: serial("id").primaryKey(),
-  barcode: text("barcode").notNull().unique(),
-  productName: text("product_name"),
-  brandName: text("brand_name"),
-  servingSize: text("serving_size"),
-  calories: decimal("calories", { precision: 10, scale: 2 }),
-  protein: decimal("protein", { precision: 10, scale: 2 }),
-  carbs: decimal("carbs", { precision: 10, scale: 2 }),
-  fat: decimal("fat", { precision: 10, scale: 2 }),
-  source: text("source").notNull(),
-  createdAt: timestamp("created_at")
-    .default(sql`CURRENT_TIMESTAMP`)
-    .notNull(),
-  updatedAt: timestamp("updated_at")
-    .default(sql`CURRENT_TIMESTAMP`)
-    .notNull(),
-});
+export const barcodeNutrition = pgTable(
+  "barcode_nutrition",
+  {
+    id: serial("id").primaryKey(),
+    barcode: text("barcode").notNull().unique(),
+    productName: text("product_name"),
+    brandName: text("brand_name"),
+    servingSize: text("serving_size"),
+    calories: decimal("calories", { precision: 10, scale: 2 }),
+    protein: decimal("protein", { precision: 10, scale: 2 }),
+    carbs: decimal("carbs", { precision: 10, scale: 2 }),
+    fat: decimal("fat", { precision: 10, scale: 2 }),
+    source: text("source").notNull(),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    caloriesNonNeg: check("bn_calories_gte0", sql`${table.calories} >= 0`),
+    proteinNonNeg: check("bn_protein_gte0", sql`${table.protein} >= 0`),
+    carbsNonNeg: check("bn_carbs_gte0", sql`${table.carbs} >= 0`),
+    fatNonNeg: check("bn_fat_gte0", sql`${table.fat} >= 0`),
+  }),
+);
 
 // ── Carousel (recipe discovery) ──────────────────────────────────────
 

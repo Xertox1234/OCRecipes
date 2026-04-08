@@ -313,15 +313,17 @@ export function register(app: Express): void {
           );
         }
 
-        const barcode = req.body?.barcode as string;
-        if (!barcode) {
+        const barcodeRaw = req.body?.barcode as string;
+        const barcodeResult = barcodeField.safeParse(barcodeRaw);
+        if (!barcodeResult.success) {
           return sendError(
             res,
             400,
-            "Barcode is required",
+            "Invalid barcode format",
             ErrorCode.VALIDATION_ERROR,
           );
         }
+        const barcode = barcodeResult.data;
 
         // Check session bounds
         const check = frontLabelStore.canCreate(req.userId);
@@ -560,18 +562,17 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const barcode =
-          typeof req.params.barcode === "string"
-            ? req.params.barcode
-            : undefined;
-        if (!barcode) {
+        const barcodeParam = req.params.barcode;
+        const barcodeParamResult = barcodeField.safeParse(barcodeParam);
+        if (!barcodeParamResult.success) {
           return sendError(
             res,
             400,
-            "Barcode is required",
+            "Invalid barcode format",
             ErrorCode.VALIDATION_ERROR,
           );
         }
+        const barcode = barcodeParamResult.data;
 
         const verification = await storage.getVerification(barcode);
 

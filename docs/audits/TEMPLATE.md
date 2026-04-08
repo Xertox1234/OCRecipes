@@ -19,27 +19,27 @@ Each finding has a lifecycle: `open` → `fixing` → `verified` or `deferred` o
 
 ### Critical
 
-| ID  | Finding       | File(s)     | Status | Verification |
-| --- | ------------- | ----------- | ------ | ------------ |
-| C1  | [description] | `path:line` | open   | —            |
+| ID  | Finding       | Domain | Agent                 | File(s)     | Status | Verification |
+| --- | ------------- | ------ | --------------------- | ----------- | ------ | ------------ |
+| C1  | [description] | —      | [agent that found it] | `path:line` | open   | —            |
 
 ### High
 
-| ID  | Finding       | File(s)     | Status | Verification |
-| --- | ------------- | ----------- | ------ | ------------ |
-| H1  | [description] | `path:line` | open   | —            |
+| ID  | Finding       | Domain | Agent                 | File(s)     | Status | Verification |
+| --- | ------------- | ------ | --------------------- | ----------- | ------ | ------------ |
+| H1  | [description] | —      | [agent that found it] | `path:line` | open   | —            |
 
 ### Medium
 
-| ID  | Finding       | File(s)     | Status | Verification |
-| --- | ------------- | ----------- | ------ | ------------ |
-| M1  | [description] | `path:line` | open   | —            |
+| ID  | Finding       | Domain | Agent                 | File(s)     | Status | Verification |
+| --- | ------------- | ------ | --------------------- | ----------- | ------ | ------------ |
+| M1  | [description] | —      | [agent that found it] | `path:line` | open   | —            |
 
 ### Low
 
-| ID  | Finding       | File(s)     | Status | Verification |
-| --- | ------------- | ----------- | ------ | ------------ |
-| L1  | [description] | `path:line` | open   | —            |
+| ID  | Finding       | Domain | Agent                 | File(s)     | Status | Verification |
+| --- | ------------- | ------ | --------------------- | ----------- | ------ | ------------ |
+| L1  | [description] | —      | [agent that found it] | `path:line` | open   | —            |
 
 ## Deferred Items
 
@@ -86,6 +86,12 @@ Completed after fixes are committed. Each row links to the docs change.
 | Finding | New Check Added |
 | ------- | --------------- |
 | —       | —               |
+
+### Specialist Agent Updates
+
+| Finding | Agent Updated         | New Check Added |
+| ------- | --------------------- | --------------- |
+| —       | `.claude/agents/?.md` | —               |
 
 **Codification commit:** `[SHA]`
 

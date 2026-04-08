@@ -125,6 +125,8 @@ Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 - [ ] Image picker fallback provided for gallery access
 - [ ] Camera view fills screen with floating UI overlays
 - [ ] Scan success feedback includes animation + haptics
+- [ ] `cancelAnimation()` called before assigning static values to shared values (especially in reducedMotion branches) — `withRepeat` doesn't stop on direct assignment
+- [ ] Timer refs in cleanup functions read `.current` at cleanup time, not captured at setup time (timer refs ≠ DOM refs)
 
 **Camera Pattern Reference:**
 
@@ -230,6 +232,8 @@ if (cacheId) {
 - [ ] **Sensitive column exclusion** — Storage functions returning user rows must use `safeUserColumns` (excludes `password`). Only `ForAuth` variants may select the full row. New tables with secrets need analogous safe-column sets. (Ref: `docs/patterns/security.md` "Exclude Sensitive Columns from Default Queries")
 - [ ] **Hashed in-memory cache keys** — Any `Map` or object cache keyed by a secret (API key, token, session ID) must hash the key with SHA-256 via `cacheKey()`. Raw secrets must never appear as Map keys. (Ref: `docs/patterns/security.md` "Hash Secrets Used as In-Memory Cache Keys")
 - [ ] **JWT issuer/audience claims** — `jwt.sign()` must include `issuer` and `audience` options; `jwt.verify()` must validate them. Constants: `JWT_ISSUER = "ocrecipes-api"`, `JWT_AUDIENCE = "ocrecipes-client"`. (Ref: `server/middleware/auth.ts`)
+- [ ] **Client-to-DB numeric validation** — When OCR/AI/user-parsed numeric values flow into DB columns with CHECK constraints, validate at all layers: client parser (reject negative/absurd), server route (clamp before insert), DB schema (CHECK ≥ 0). Missing any layer risks silent 500 errors. (Ref: `docs/patterns/security.md` "Defense-in-Depth: Client-to-DB Numeric Validation Pipeline", audit M5/M7/M6/L8)
+- [ ] **Nutrition table CHECK constraints** — All tables storing nutrition values must have `>= 0` CHECK constraints on calories, protein, carbs, fat columns. (Ref: `docs/patterns/database.md` "Non-Negative CHECK Constraints on All Nutrition Tables")
 
 ### 11. Architecture Layering
 

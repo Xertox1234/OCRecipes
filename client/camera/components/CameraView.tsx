@@ -182,10 +182,6 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       );
     }
 
-    if (!isActive) {
-      return null;
-    }
-
     return (
       <Camera
         ref={cameraRef}

@@ -2043,3 +2043,23 @@ if (conversation.type === "recipe") {
 - `shared/schema.ts` — `chatConversations.type` column
 - `server/routes/chat.ts` — type-aware dispatch in message endpoint
 - `client/hooks/useChat.ts` — `useChatConversations(type?)` with type in query key
+
+### Non-Negative CHECK Constraints on All Nutrition Tables
+
+Every table that stores nutrition values (calories, protein, carbs, fat, etc.) must have `>= 0` CHECK constraints:
+
+```typescript
+// In pgTable definition's third argument (constraints callback):
+(table) => ({
+  caloriesNonNeg: check("prefix_calories_gte0", sql`${table.calories} >= 0`),
+  proteinNonNeg: check("prefix_protein_gte0", sql`${table.protein} >= 0`),
+  carbsNonNeg: check("prefix_carbs_gte0", sql`${table.carbs} >= 0`),
+  fatNonNeg: check("prefix_fat_gte0", sql`${table.fat} >= 0`),
+}),
+```
+
+**Tables that have these:** `scannedItems`, `mealPlanRecipes`, `barcodeNutrition`
+
+**When adding a new table with nutrition columns:** Always add CHECKs. Use a short unique prefix for the constraint name (e.g., `si_`, `mpr_`, `bn_`).
+
+**Audit origin:** 2026-04-07-full-2 finding M6 — `barcodeNutrition` was missing CHECKs that `scannedItems` and `mealPlanRecipes` already had

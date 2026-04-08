@@ -38,6 +38,7 @@ import {
   FAB_CLEARANCE,
 } from "@/constants/theme";
 import { pressSpringConfig, expandTimingConfig } from "@/constants/animations";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { ScannedItemResponse } from "@/types/api";
 
 /** Height of the expanded action row */
@@ -724,6 +725,7 @@ export default function HistoryScreen() {
   return (
     <>
       <FlatList
+        {...FLATLIST_DEFAULTS}
         style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
         contentContainerStyle={[
           styles.listContent,

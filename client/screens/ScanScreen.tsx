@@ -20,6 +20,7 @@ import Animated, {
   withRepeat,
   withTiming,
   withSequence,
+  cancelAnimation,
 } from "react-native-reanimated";
 import {
   useNavigation,
@@ -171,6 +172,7 @@ export default function ScanScreen() {
   // Start corner pulse animation on mount (respects reduced motion preference)
   useEffect(() => {
     if (reducedMotion) {
+      cancelAnimation(cornerOpacity);
       cornerOpacity.value = 0.8; // Static value for reduced motion
       return;
     }
@@ -205,9 +207,10 @@ export default function ScanScreen() {
 
   const glowCornerStyle = useAnimatedStyle(() => ({
     opacity: cornerOpacity.value,
-    shadowColor: theme.success,
-    shadowRadius: cornerGlow.value * 8,
-    shadowOpacity: cornerGlow.value * 0.6,
+  }));
+
+  const connectingLineStyle = useAnimatedStyle(() => ({
+    opacity: cornerGlow.value,
   }));
 
   const successStyle = useAnimatedStyle(() => ({
@@ -525,20 +528,21 @@ export default function ScanScreen() {
                 },
               ]}
             />
-            {/* Connecting lines — visible when text detected */}
-            <Animated.View
-              style={[
-                styles.connectingLineTop,
-                { backgroundColor: theme.success, opacity: cornerGlow.value },
-              ]}
-            />
-            <Animated.View
-              style={[
-                styles.connectingLineBottom,
-                { backgroundColor: theme.success, opacity: cornerGlow.value },
-              ]}
-            />
           </AnimatedView>
+
+          {/* Glow border — independent of pulse, fades in when text detected */}
+          <Animated.View
+            style={[
+              styles.glowBorder,
+              {
+                width: frame.WIDTH,
+                height: frame.HEIGHT,
+                borderColor: theme.success,
+                borderRadius: frame.CORNER_RADIUS,
+              },
+              connectingLineStyle,
+            ]}
+          />
 
           <AnimatedView
             style={[
@@ -708,21 +712,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
     borderLeftWidth: 0,
   },
-  connectingLineTop: {
+  glowBorder: {
     position: "absolute",
-    top: 0,
-    left: LABEL_FRAME.CORNER_SIZE,
-    right: LABEL_FRAME.CORNER_SIZE,
-    height: 2,
-    borderRadius: 1,
-  },
-  connectingLineBottom: {
-    position: "absolute",
-    bottom: 0,
-    left: LABEL_FRAME.CORNER_SIZE,
-    right: LABEL_FRAME.CORNER_SIZE,
-    height: 2,
-    borderRadius: 1,
+    borderWidth: 2,
   },
   successPulse: {
     position: "absolute",

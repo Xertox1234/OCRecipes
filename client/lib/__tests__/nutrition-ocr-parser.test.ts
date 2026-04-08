@@ -132,4 +132,64 @@ Calories 230`;
     expect(result.servingSize).toBe("2/3 cup (55g)");
     expect(result.calories).toBe(230);
   });
+
+  it("handles S→5 OCR misread adjacent to digits", () => {
+    const text = `Calories 2S0
+Total Fat 1Sg`;
+
+    const result = parseNutritionFromOCR(text);
+    expect(result.calories).toBe(250);
+    expect(result.totalFat).toBe(15);
+  });
+
+  it("rejects negative values from OCR misread", () => {
+    const text = `Calories -120
+Total Fat -5g
+Protein 10g`;
+
+    const result = parseNutritionFromOCR(text);
+    expect(result.calories).toBeNull();
+    expect(result.totalFat).toBeNull();
+    expect(result.protein).toBe(10);
+  });
+
+  it("rejects unreasonably large values", () => {
+    const text = `Calories 99999
+Protein 5g`;
+
+    const result = parseNutritionFromOCR(text);
+    expect(result.calories).toBeNull();
+    expect(result.protein).toBe(5);
+  });
+
+  it("returns null for garbage non-numeric data", () => {
+    const text = `Calories abc
+Total Fat --g
+Sodium XYZmg`;
+
+    const result = parseNutritionFromOCR(text);
+    expect(result.calories).toBeNull();
+    expect(result.totalFat).toBeNull();
+    expect(result.sodium).toBeNull();
+    expect(result.confidence).toBe(0);
+  });
+
+  it("skips 'Calories from Fat' and extracts actual calories", () => {
+    const text = `Calories from Fat 90
+Calories 250
+Total Fat 10g
+Protein 5g`;
+
+    const result = parseNutritionFromOCR(text);
+    expect(result.calories).toBe(250);
+  });
+
+  it("caps serving size string length at 100 characters", () => {
+    const longText = "A".repeat(200);
+    const text = `Serving Size ${longText}
+Calories 100`;
+
+    const result = parseNutritionFromOCR(text);
+    expect(result.servingSize).toHaveLength(100);
+  });
 });

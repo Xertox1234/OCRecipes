@@ -536,7 +536,15 @@ export function register(app: Express): void {
         }
 
         const imageBase64 = req.file.buffer.toString("base64");
-        const barcode = (req.body?.barcode as string) || undefined;
+        const barcodeRaw = req.body?.barcode as string | undefined;
+        const barcode = barcodeRaw
+          ? z
+              .string()
+              .regex(/^\d{8,14}$/)
+              .safeParse(barcodeRaw).success
+            ? barcodeRaw
+            : undefined
+          : undefined;
 
         // Check label session bounds before calling paid APIs
         const labelCheck = storage.canCreateLabelSession(req.userId);
@@ -596,14 +604,17 @@ export function register(app: Express): void {
         const { labelData, barcode } = session;
         const servings = validated.servingsConsumed;
 
+        // Clamp negative AI values to 0 (defense-in-depth for DB CHECK constraints)
+        const clamp = (v: number | null) => Math.max(v ?? 0, 0);
+
         // Scale values by servings consumed
-        const scaledCalories = (labelData.calories ?? 0) * servings;
-        const scaledProtein = (labelData.protein ?? 0) * servings;
-        const scaledCarbs = (labelData.totalCarbs ?? 0) * servings;
-        const scaledFat = (labelData.totalFat ?? 0) * servings;
-        const scaledFiber = (labelData.dietaryFiber ?? 0) * servings;
-        const scaledSugar = (labelData.totalSugars ?? 0) * servings;
-        const scaledSodium = (labelData.sodium ?? 0) * servings;
+        const scaledCalories = clamp(labelData.calories) * servings;
+        const scaledProtein = clamp(labelData.protein) * servings;
+        const scaledCarbs = clamp(labelData.totalCarbs) * servings;
+        const scaledFat = clamp(labelData.totalFat) * servings;
+        const scaledFiber = clamp(labelData.dietaryFiber) * servings;
+        const scaledSugar = clamp(labelData.totalSugars) * servings;
+        const scaledSodium = clamp(labelData.sodium) * servings;
 
         const productName = labelData.productName || "Nutrition label scan";
 
