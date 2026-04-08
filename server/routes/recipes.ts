@@ -10,8 +10,10 @@ import {
 } from "@shared/constants/allergens";
 import {
   generateFullRecipe,
+  generateRecipeImage,
   normalizeProductName,
 } from "../services/recipe-generation";
+import { fireAndForget } from "../lib/fire-and-forget";
 import { inferMealTypes } from "../services/meal-type-inference";
 import {
   searchCatalogRecipes,
@@ -818,6 +820,24 @@ export function register(app: Express): void {
           },
           ingredientData,
         );
+
+        // Auto-generate image if source had none (async, non-blocking)
+        if (!recipe.imageUrl) {
+          fireAndForget(
+            "recipe-image-gen",
+            (async () => {
+              const imageUrl = await generateRecipeImage(
+                recipe.title,
+                recipe.title,
+              );
+              if (imageUrl) {
+                await storage.updateMealPlanRecipe(recipe.id, req.userId, {
+                  imageUrl,
+                });
+              }
+            })(),
+          );
+        }
 
         res.status(201).json(recipe);
       } catch (error) {

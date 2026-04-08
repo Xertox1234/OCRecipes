@@ -1,6 +1,8 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
+import { generateRecipeImage } from "../services/recipe-generation";
+import { fireAndForget } from "../lib/fire-and-forget";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -201,6 +203,24 @@ export function register(app: Express): void {
             recipeId: 0,
           })),
         );
+
+        // Auto-generate image if none provided (async, non-blocking)
+        if (!recipe.imageUrl) {
+          fireAndForget(
+            "recipe-image-gen",
+            (async () => {
+              const imageUrl = await generateRecipeImage(
+                recipe.title,
+                recipe.title,
+              );
+              if (imageUrl) {
+                await storage.updateMealPlanRecipe(recipe.id, req.userId, {
+                  imageUrl,
+                });
+              }
+            })(),
+          );
+        }
 
         res.status(201).json(recipe);
       } catch (error) {
