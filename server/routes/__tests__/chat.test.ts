@@ -99,6 +99,7 @@ describe("Chat Routes", () => {
         "1",
         "New Chat",
         "coach",
+        null,
       );
     });
   });

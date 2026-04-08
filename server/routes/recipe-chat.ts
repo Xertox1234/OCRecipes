@@ -66,10 +66,33 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
+        // Check if this is a remix conversation — pass lineage if so
+        const conversation = await storage.getChatConversation(id, req.userId);
+        let lineage:
+          | { remixedFromId: number; remixedFromTitle: string }
+          | undefined;
+        if (conversation?.type === "remix") {
+          const metadata = conversation.metadata as Record<
+            string,
+            unknown
+          > | null;
+          const sourceRecipeId = metadata?.sourceRecipeId as number | undefined;
+          const sourceRecipeTitle = metadata?.sourceRecipeTitle as
+            | string
+            | undefined;
+          if (sourceRecipeId && sourceRecipeTitle) {
+            lineage = {
+              remixedFromId: sourceRecipeId,
+              remixedFromTitle: sourceRecipeTitle,
+            };
+          }
+        }
+
         const recipe = await storage.saveRecipeFromChat(
           parsed.data.messageId,
           id,
           req.userId,
+          lineage,
         );
 
         if (!recipe)

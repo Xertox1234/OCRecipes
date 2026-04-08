@@ -21,6 +21,7 @@ import {
 import {
   generateRecipeChatResponse,
   buildRecipeContext,
+  buildRemixSystemPrompt,
   type RecipeChatRecipe,
 } from "../services/recipe-chat";
 import { logger, toError } from "../lib/logger";
@@ -40,7 +41,9 @@ export function register(app: Express): void {
         const limit = parseQueryInt(req.query.limit, { default: 50, max: 50 });
         const typeParam = req.query.type as string | undefined;
         const type =
-          typeParam === "coach" || typeParam === "recipe"
+          typeParam === "coach" ||
+          typeParam === "recipe" ||
+          typeParam === "remix"
             ? typeParam
             : undefined;
         const conversations = await storage.getChatConversations(
@@ -64,7 +67,8 @@ export function register(app: Express): void {
       try {
         const schema = z.object({
           title: z.string().max(200).optional(),
-          type: z.enum(["coach", "recipe"]).default("coach"),
+          type: z.enum(["coach", "recipe", "remix"]).default("coach"),
+          sourceRecipeId: z.number().int().positive().optional(),
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
@@ -75,12 +79,71 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
 
+        // Remix conversations require a source recipe
+        let conversationMetadata: Record<string, unknown> | null = null;
+        let defaultTitle =
+          parsed.data.type === "recipe" ? "New Recipe Chat" : "New Chat";
+
+        if (parsed.data.type === "remix") {
+          if (!parsed.data.sourceRecipeId) {
+            return sendError(
+              res,
+              400,
+              "sourceRecipeId is required for remix conversations",
+              ErrorCode.VALIDATION_ERROR,
+            );
+          }
+
+          // Fetch source recipe to validate it exists
+          const sourceRecipe = await storage.getCommunityRecipe(
+            parsed.data.sourceRecipeId,
+          );
+          if (!sourceRecipe) {
+            return sendError(
+              res,
+              404,
+              "Source recipe not found",
+              ErrorCode.NOT_FOUND,
+            );
+          }
+
+          conversationMetadata = {
+            sourceRecipeId: sourceRecipe.id,
+            sourceRecipeTitle: sourceRecipe.title,
+          };
+          defaultTitle = `Remix: ${sourceRecipe.title}`;
+        }
+
         const conversation = await storage.createChatConversation(
           req.userId,
-          parsed.data.title ||
-            (parsed.data.type === "recipe" ? "New Recipe Chat" : "New Chat"),
+          parsed.data.title || defaultTitle,
           parsed.data.type,
+          conversationMetadata,
         );
+
+        // For remix conversations, insert the source recipe as a system message
+        if (parsed.data.type === "remix" && conversationMetadata) {
+          const sourceRecipe = await storage.getCommunityRecipe(
+            parsed.data.sourceRecipeId!,
+          );
+          if (sourceRecipe) {
+            await storage.createChatMessage(
+              conversation.id,
+              "system",
+              JSON.stringify({
+                title: sourceRecipe.title,
+                description: sourceRecipe.description,
+                difficulty: sourceRecipe.difficulty,
+                timeEstimate: sourceRecipe.timeEstimate,
+                servings: sourceRecipe.servings,
+                ingredients: sourceRecipe.ingredients,
+                instructions: sourceRecipe.instructions,
+                dietTags: sourceRecipe.dietTags,
+              }),
+            );
+          }
+        }
+
         res.status(201).json(conversation);
       } catch (error) {
         handleRouteError(res, error, "create conversation");
@@ -164,9 +227,15 @@ export function register(app: Express): void {
 
         // Dispatch based on conversation type
         const isRecipeChat = conversation.type === "recipe";
+        const isRemixChat = conversation.type === "remix";
 
-        const featureKey = isRecipeChat ? "recipeGeneration" : "aiCoach";
-        const featureLabel = isRecipeChat ? "Recipe Generation" : "AI Coach";
+        const featureKey =
+          isRecipeChat || isRemixChat ? "recipeGeneration" : "aiCoach";
+        const featureLabel = isRemixChat
+          ? "Recipe Remix"
+          : isRecipeChat
+            ? "Recipe Generation"
+            : "AI Coach";
         const features = await checkPremiumFeature(
           req,
           res,
@@ -181,22 +250,23 @@ export function register(app: Express): void {
 
         // Atomically check daily limit and create message in a single
         // transaction to prevent TOCTOU races bypassing the limit.
-        const dailyLimit = isRecipeChat
-          ? features.dailyRecipeGenerations
-          : features.dailyCoachMessages;
+        const dailyLimit =
+          isRecipeChat || isRemixChat
+            ? features.dailyRecipeGenerations
+            : features.dailyCoachMessages;
         const message = await storage.createChatMessageWithLimitCheck(
           id,
           req.userId,
           parsed.data.content,
           dailyLimit,
-          conversation.type as "coach" | "recipe",
+          conversation.type as "coach" | "recipe" | "remix",
         );
 
         if (!message) {
           return sendError(
             res,
             429,
-            isRecipeChat
+            isRecipeChat || isRemixChat
               ? "Daily recipe generation limit reached"
               : "Daily chat message limit reached",
             ErrorCode.DAILY_LIMIT_REACHED,
@@ -229,14 +299,49 @@ export function register(app: Express): void {
         let responseBytes = 0;
 
         try {
-          if (isRecipeChat) {
-            // ─── RECIPE CHAT PATH ────────────────────────────────
+          if (isRecipeChat || isRemixChat) {
+            // ─── RECIPE / REMIX CHAT PATH ────────────────────────
             const [profile, history] = await Promise.all([
               storage.getUserProfile(req.userId),
               storage.getChatMessages(id, 10),
             ]);
 
             const contextMessages = buildRecipeContext(history);
+
+            // For remix, build a specialized system prompt with the original recipe
+            let remixPromptOverride: string | undefined;
+            if (isRemixChat) {
+              const metadata = conversation.metadata as Record<
+                string,
+                unknown
+              > | null;
+              const sourceRecipeId = metadata?.sourceRecipeId as
+                | number
+                | undefined;
+              if (sourceRecipeId) {
+                const sourceRecipe =
+                  await storage.getCommunityRecipe(sourceRecipeId);
+                if (sourceRecipe) {
+                  remixPromptOverride = buildRemixSystemPrompt(
+                    {
+                      title: sourceRecipe.title,
+                      ingredients: sourceRecipe.ingredients as {
+                        name: string;
+                        quantity: string;
+                        unit: string;
+                      }[],
+                      instructions: sourceRecipe.instructions as string[],
+                      dietTags: sourceRecipe.dietTags as string[],
+                      description: sourceRecipe.description,
+                      difficulty: sourceRecipe.difficulty,
+                      timeEstimate: sourceRecipe.timeEstimate,
+                      servings: sourceRecipe.servings,
+                    },
+                    profile,
+                  );
+                }
+              }
+            }
 
             let fullTextResponse = "";
             let recipeData: RecipeChatRecipe | null = null;
@@ -247,6 +352,9 @@ export function register(app: Express): void {
               contextMessages,
               profile,
               parsed.data.screenContext,
+              remixPromptOverride
+                ? { systemPromptOverride: remixPromptOverride }
+                : undefined,
             )) {
               if (aborted) break;
 
