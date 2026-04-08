@@ -4,7 +4,7 @@ import {
   type Allergy,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, desc, gte, notInArray } from "drizzle-orm";
+import { eq, and, desc, gte, notInArray, isNotNull } from "drizzle-orm";
 
 // ============================================================================
 // RECIPE DISMISSALS
@@ -69,7 +69,10 @@ export async function getRecentCommunityRecipes(
 
   const dismissedNumericIds = [...dismissedIds];
 
-  const conditions = [eq(communityRecipes.isPublic, true)];
+  const conditions = [
+    eq(communityRecipes.isPublic, true),
+    isNotNull(communityRecipes.imageUrl),
+  ];
   if (dismissedNumericIds.length > 0) {
     conditions.push(notInArray(communityRecipes.id, dismissedNumericIds));
   }
