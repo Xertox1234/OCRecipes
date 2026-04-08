@@ -179,7 +179,15 @@ export default function RecipeChatScreen() {
 
       sendMessage(content, undefined, convId);
     },
-    [inputText, isStreaming, conversationId, createConversation, sendMessage],
+    [
+      inputText,
+      isStreaming,
+      conversationId,
+      createConversation,
+      sendMessage,
+      isRemixMode,
+      remixSourceRecipeId,
+    ],
   );
 
   const handleChipPress = useCallback(
