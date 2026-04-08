@@ -21,6 +21,13 @@ import {
 import { importRecipeFromUrl } from "../services/recipe-import";
 import { logger, toError } from "../lib/logger";
 import {
+  normalizeTitle,
+  normalizeDescription,
+  normalizeDifficulty,
+  normalizeInstructions,
+  normalizeIngredient,
+} from "../lib/recipe-normalization";
+import {
   recipeGenerationRateLimit,
   instructionsRateLimit,
   mealPlanRateLimit,
@@ -67,7 +74,7 @@ function buildIntolerancesParam(allergies: unknown): string | undefined {
 
 // Zod schemas for recipe endpoints
 const recipeGenerationSchema = z.object({
-  productName: z.string().min(1).max(200),
+  productName: z.string().min(3).max(200),
   barcode: z.string().max(100).optional().nullable(),
   servings: z.number().int().min(1).max(20).optional(),
   dietPreferences: z.array(z.string().max(50)).max(10).optional(),
@@ -320,6 +327,27 @@ export function register(app: Express): void {
           timeConstraint,
           userProfile,
         });
+
+        // Normalize generated recipe data
+        generatedRecipe.title = normalizeTitle(generatedRecipe.title);
+        generatedRecipe.description =
+          normalizeDescription(generatedRecipe.description) ??
+          generatedRecipe.description;
+        generatedRecipe.difficulty =
+          normalizeDifficulty(generatedRecipe.difficulty) ??
+          generatedRecipe.difficulty;
+        generatedRecipe.instructions = normalizeInstructions(
+          generatedRecipe.instructions,
+        );
+        if (generatedRecipe.ingredients) {
+          generatedRecipe.ingredients = generatedRecipe.ingredients.map((ing) =>
+            normalizeIngredient({
+              name: ing.name,
+              quantity: ing.quantity,
+              unit: ing.unit,
+            }),
+          );
+        }
 
         // Atomically re-check limit + create recipe + log generation in a transaction
         // This prevents TOCTOU race where concurrent requests both pass the early check
@@ -742,15 +770,29 @@ export function register(app: Express): void {
           return;
         }
 
+        // Normalize imported data
+        data.title = normalizeTitle(data.title);
+        data.description = normalizeDescription(data.description ?? null) ?? "";
+        if (data.instructions) {
+          data.instructions = normalizeInstructions(data.instructions);
+        }
+
         // Save to DB
-        const ingredientData = data.ingredients.map((ing, idx) => ({
-          recipeId: 0,
-          name: ing.name,
-          quantity: ing.quantity,
-          unit: ing.unit,
-          category: "other" as const,
-          displayOrder: idx,
-        }));
+        const ingredientData = data.ingredients.map((ing, idx) => {
+          const normalized = normalizeIngredient({
+            name: ing.name,
+            quantity: ing.quantity ?? "",
+            unit: ing.unit ?? "",
+          });
+          return {
+            recipeId: 0,
+            name: normalized.name,
+            quantity: normalized.quantity,
+            unit: normalized.unit,
+            category: "other" as const,
+            displayOrder: idx,
+          };
+        });
         const recipe = await storage.createMealPlanRecipe(
           {
             userId: req.userId,
