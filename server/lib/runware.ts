@@ -99,3 +99,69 @@ export async function generateImage(
     clearTimeout(timeout);
   }
 }
+
+/**
+ * Remove the background from an image using Runware's AI segmentation.
+ * Returns a transparent-background PNG as a Buffer, or null on failure.
+ */
+export async function removeBackground(
+  imageBuffer: Buffer,
+): Promise<Buffer | null> {
+  if (!apiKey) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RUNWARE_TIMEOUT_MS);
+
+  try {
+    const inputBase64 = imageBuffer.toString("base64");
+
+    const response = await fetch(RUNWARE_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify([
+        {
+          taskType: "imageBackgroundRemoval",
+          taskUUID: crypto.randomUUID(),
+          inputImage: inputBase64,
+          outputType: "base64Data",
+          outputFormat: "PNG",
+        },
+      ]),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      logger.error(
+        { status: response.status },
+        "Runware background removal returned error status",
+      );
+      return null;
+    }
+
+    const raw = await response.json();
+    const parsed = runwareResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      logger.error(
+        { zodErrors: parsed.error.flatten() },
+        "Runware background removal response validation failed",
+      );
+      return null;
+    }
+
+    const imageData = parsed.data.data[0]?.imageBase64Data;
+    if (!imageData) {
+      logger.error("Runware background removal returned no image data");
+      return null;
+    }
+
+    return Buffer.from(imageData, "base64");
+  } catch (error) {
+    logger.error({ err: error }, "Runware background removal error");
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}

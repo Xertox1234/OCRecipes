@@ -2,13 +2,17 @@
  * Batch-generate ingredient icons using Runware FLUX.
  *
  * Usage:
- *   RUNWARE_API_KEY=xxx npx tsx scripts/generate-ingredient-icons.ts
- *   npm run generate:icons          # if env is set in .env
+ *   npx tsx scripts/generate-ingredient-icons.ts             # generate missing icons
+ *   npx tsx scripts/generate-ingredient-icons.ts --force      # regenerate ALL icons
+ *   npx tsx scripts/generate-ingredient-icons.ts --test 3     # test with first 3 icons
+ *   npx tsx scripts/generate-ingredient-icons.ts --force --test 3  # test overwrite
  *
  * Features:
  *   - Resumable: skips icons whose .png already exists on disk
  *   - Parallel: processes CONCURRENCY icons at a time
- *   - Generates at 512×512 via Runware, resizes to 256×256 via sharp
+ *   - Generates at 512×512 via Runware with clean white background
+ *   - Removes background via Runware AI segmentation → transparent PNG
+ *   - Resizes to 256×256 final output
  *   - Produces codegen map file at client/data/ingredient-icon-map.ts
  */
 
@@ -50,10 +54,10 @@ const CODEGEN_PATH = path.resolve(
 );
 
 const ICON_PROMPT_TEMPLATE = (name: string) =>
-  `3D clay render icon of a ${name}, centered, soft lighting, rounded smooth shapes, matte clay finish, subtle pastel tones, minimal detail, solid soft-white background, Pixar style, single object, app icon`;
+  `3D clay render icon of a ${name}, centered, soft lighting, rounded smooth shapes, matte clay finish, subtle pastel tones, minimal detail, solid clean white background, no shadow, Pixar style, single object, app icon`;
 
 const CATEGORY_PROMPT_TEMPLATE = (name: string) =>
-  `3D clay render icon representing ${name}, centered, soft lighting, rounded smooth shapes, matte clay finish, subtle pastel tones, minimal detail, solid soft-white background, Pixar style, app icon`;
+  `3D clay render icon representing ${name}, centered, soft lighting, rounded smooth shapes, matte clay finish, subtle pastel tones, minimal detail, solid clean white background, no shadow, Pixar style, app icon`;
 
 const NEGATIVE_PROMPT =
   "text, watermark, logo, label, letters, realistic photo, sharp edges, dark shadows, complex background, multiple objects, busy scene";
@@ -72,6 +76,18 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ── CLI flags ──────────────────────────────────────────────────────────────
+
+/** --force: regenerate all icons, overwriting existing files */
+const forceRegenerate = process.argv.includes("--force");
+
+/** --test N: only generate first N icons (for testing prompt/chroma-key) */
+const testCount = (() => {
+  const idx = process.argv.indexOf("--test");
+  if (idx === -1) return 0;
+  return parseInt(process.argv[idx + 1], 10) || 3;
+})();
+
 // Process items in batches of `size`
 async function batchProcess<T>(
   items: T[],
@@ -89,7 +105,8 @@ async function batchProcess<T>(
 async function main(): Promise<void> {
   await loadDotenv();
 
-  const { generateImage, isRunwareConfigured } = await loadRunware();
+  const { generateImage, removeBackground, isRunwareConfigured } =
+    await loadRunware();
   const sharp = await loadSharp();
 
   if (!isRunwareConfigured) {
@@ -100,19 +117,25 @@ async function main(): Promise<void> {
   // Ensure output directory exists
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
-  // Filter to icons that don't already exist on disk
-  const pending = ALL_ICONS.filter((icon) => !exists(iconPath(icon.slug)));
+  // Filter to icons that need generation
+  const pending = forceRegenerate
+    ? ALL_ICONS
+    : ALL_ICONS.filter((icon) => !exists(iconPath(icon.slug)));
   const skipped = ALL_ICONS.length - pending.length;
+
+  // If --test, limit to first N icons
+  const toProcess = testCount > 0 ? pending.slice(0, testCount) : pending;
 
   console.log(
     `\n🎨 Ingredient Icon Generator\n` +
       `   Total: ${ALL_ICONS.length} icons\n` +
       `   Already exist: ${skipped}\n` +
-      `   To generate: ${pending.length}\n` +
-      `   Concurrency: ${CONCURRENCY}\n`,
+      `   To generate: ${toProcess.length}${testCount > 0 ? ` (--test ${testCount})` : ""}${forceRegenerate ? " (--force)" : ""}\n` +
+      `   Concurrency: ${CONCURRENCY}\n` +
+      `   Background: AI removal → transparent PNG\n`,
   );
 
-  if (pending.length === 0) {
+  if (toProcess.length === 0) {
     console.log("✅ All icons already exist. Skipping generation.\n");
     await generateCodegenMap();
     return;
@@ -121,14 +144,14 @@ async function main(): Promise<void> {
   const failures: { slug: string; error: string }[] = [];
   let completed = 0;
 
-  await batchProcess(pending, CONCURRENCY, async (icon, _index) => {
+  await batchProcess(toProcess, CONCURRENCY, async (icon, _index) => {
     const prompt = icon.isCategory
       ? CATEGORY_PROMPT_TEMPLATE(icon.name)
       : ICON_PROMPT_TEMPLATE(icon.name);
 
-    const num = skipped + completed + 1;
+    const num = completed + 1;
     console.log(
-      `[${num}/${ALL_ICONS.length}] Generating: ${icon.name} (${icon.slug})...`,
+      `[${num}/${toProcess.length}] Generating: ${icon.name} (${icon.slug})...`,
     );
 
     try {
@@ -145,10 +168,21 @@ async function main(): Promise<void> {
         return;
       }
 
-      // Resize 512→256 with sharp
-      const resized = await sharp(buffer)
+      // Step 1: AI background removal via Runware
+      const transparent = await removeBackground(buffer);
+      if (!transparent) {
+        failures.push({
+          slug: icon.slug,
+          error: "Background removal returned null",
+        });
+        completed++;
+        return;
+      }
+
+      // Step 2: Resize 512→256
+      const resized = await sharp(transparent)
         .resize(256, 256, { fit: "cover" })
-        .png({ quality: 85, compressionLevel: 9 })
+        .png({ compressionLevel: 9 })
         .toBuffer();
 
       fs.writeFileSync(iconPath(icon.slug), resized);
@@ -180,7 +214,12 @@ async function main(): Promise<void> {
   await generateCodegenMap();
 
   if (failures.length > 0) {
-    console.log(`\n⚠️  Re-run the script to retry failed icons (resumable).\n`);
+    console.log(`\n⚠️  Re-run the script to retry failed icons (resumable).`);
+    if (testCount > 0) {
+      console.log(
+        `   (Test mode was active — only ${testCount} icons attempted)\n`,
+      );
+    }
     process.exit(1);
   }
 
