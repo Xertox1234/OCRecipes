@@ -55,70 +55,98 @@ interface SplitResult {
   instructions: string[];
 }
 
-function splitInstructionsArray(lines: string[]): SplitResult | null {
-  // Find the "Ingredients:" marker
-  const ingredientsMarkerIdx = lines.findIndex((l) =>
-    /^ingredients\s*:/i.test(l.trim()),
+/**
+ * Cleans a raw ingredient line by stripping markdown/bullet prefixes.
+ * Handles:
+ *   - "- ingredient"  / "* ingredient"  / "• ingredient"
+ *   - "1. ingredient" (numbered list)
+ *   - "**bold**" markdown
+ *   - Leading/trailing whitespace
+ */
+function cleanIngredientLine(raw: string): string {
+  return raw
+    .replace(/^\s*[-*•]\s*/, "")
+    .replace(/^\d+\.\s*/, "")
+    .replace(/\*{1,2}([^*]*)\*{1,2}/g, "$1")
+    .trim();
+}
+
+/**
+ * Cleans a raw instruction step line by stripping markdown bold labels,
+ * numbered prefixes, and bullet markers.
+ * Handles:
+ *   - "**Step Label:** actual text"  → "actual text"
+ *   - "1. text"                      → "text"
+ *   - "- text"                       → "text"
+ */
+function cleanInstructionLine(raw: string): string {
+  return (
+    raw
+      .replace(/^\s*[-*•]\s*/, "")
+      .replace(/^\d+\.\s*/, "")
+      // Strip bold step labels like "**Prep Tofu:**" or "*Prep Tofu:**"
+      .replace(/^\*{1,2}[^*]+\*{1,2}:?\s*/, "")
+      .trim()
   );
-  if (ingredientsMarkerIdx === -1) {
+}
+
+/**
+ * Extracts ingredients and instruction steps from a recipe's instructions array.
+ *
+ * Handles all known storage patterns:
+ *   Pattern A — ingredients + steps in the first element separated by \n
+ *   Pattern B — markdown "### Ingredients:" header with \n separation
+ *   Pattern C — bold "**Ingredients**:" label embedded in a numbered element
+ *   Pattern D — separate array elements with plain "Ingredients:" / "Instructions:" labels
+ */
+function splitInstructionsArray(lines: string[]): SplitResult | null {
+  // Join everything into one blob so multi-line strings are handled uniformly
+  const blob = lines.join("\n");
+
+  // Locate the ingredients section header (flexible: plain, ###, **bold**, numbered)
+  const ingredientMatch = blob.match(
+    /(?:#{1,3}\s*)?(?:\*{1,2})?ingredients(?:\*{1,2})?(?:\s*\*{1,2})?:?\s*\n/i,
+  );
+  if (!ingredientMatch) return null;
+
+  const afterIngredients = blob.slice(
+    ingredientMatch.index! + ingredientMatch[0].length,
+  );
+
+  // Locate the instructions/steps/preparation/cooking/directions section header
+  const stepsMatch = afterIngredients.match(
+    /(?:#{1,3}\s*)?(?:\*{1,2})?(?:instructions|steps|preparation|cooking|directions)(?:\*{1,2})?:?\s*\n/i,
+  );
+
+  if (!stepsMatch) {
+    // No steps marker found — cannot safely split
     return null;
   }
 
-  const ingredientLines: string[] = [];
-  const instructionLines: string[] = [];
-  let foundInstructions = false;
+  const ingredientBlob = afterIngredients.slice(0, stepsMatch.index!);
+  const stepsBlob = afterIngredients.slice(
+    stepsMatch.index! + stepsMatch[0].length,
+  );
 
-  for (let i = ingredientsMarkerIdx + 1; i < lines.length; i++) {
-    const line = lines[i];
+  // Parse ingredient lines
+  const ingredientLines = ingredientBlob
+    .split("\n")
+    .map(cleanIngredientLine)
+    .filter((line) => line.length > 0 && !/^ingredients/i.test(line));
 
-    // Check for embedded "Instructions:" at end of a line (e.g. "chili\n\nInstructions:")
-    const embeddedIdx = line.indexOf("\nInstructions:");
-    if (embeddedIdx !== -1) {
-      // Text before the embedded marker is the last ingredient line
-      const lastIngredient = line.slice(0, embeddedIdx).trim();
-      if (lastIngredient) {
-        ingredientLines.push(lastIngredient);
-      }
-      // Text after "Instructions:" on the same split (skip the label itself)
-      const afterLabel = line
-        .slice(embeddedIdx + "\nInstructions:".length)
-        .trim();
-      if (afterLabel) {
-        instructionLines.push(afterLabel);
-      }
-      foundInstructions = true;
-      // Remaining lines are all instructions
-      for (let j = i + 1; j < lines.length; j++) {
-        const step = lines[j].trim();
-        if (step) instructionLines.push(step);
-      }
-      break;
-    }
-
-    // Check for standalone "Instructions:" label
-    if (/^instructions\s*:/i.test(line.trim())) {
-      foundInstructions = true;
-      // Remaining lines are all instructions
-      for (let j = i + 1; j < lines.length; j++) {
-        const step = lines[j].trim();
-        if (step) instructionLines.push(step);
-      }
-      break;
-    }
-
-    // Still in ingredient section
-    const trimmed = line.trim();
-    if (trimmed) {
-      ingredientLines.push(trimmed);
-    }
-  }
-
-  if (!foundInstructions) {
-    // No "Instructions:" marker found — cannot safely split
-    return null;
-  }
+  if (ingredientLines.length === 0) return null;
 
   const ingredients = ingredientLines.map(parseIngredientLine);
+
+  // Parse instruction steps
+  const instructionLines = stepsBlob
+    .split("\n")
+    .map(cleanInstructionLine)
+    .filter(
+      (line) =>
+        line.length > 0 &&
+        !/^(?:instructions|steps|preparation|cooking|directions)/i.test(line),
+    );
 
   return { ingredients, instructions: instructionLines };
 }
