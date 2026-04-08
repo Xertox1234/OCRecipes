@@ -92,6 +92,8 @@ const communityRecipeDefaults: CommunityRecipe = {
   imageUrl: null,
   isPublic: true,
   likeCount: 0,
+  remixedFromId: null,
+  remixedFromTitle: null,
   createdAt: new Date("2024-01-01"),
   updatedAt: new Date("2024-01-01"),
 };

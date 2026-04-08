@@ -5,6 +5,7 @@ const chatConversationDefaults: ChatConversation = {
   userId: "1",
   title: "Test Conversation",
   type: "coach",
+  metadata: null,
   createdAt: new Date("2024-01-01"),
   updatedAt: new Date("2024-01-01"),
 };

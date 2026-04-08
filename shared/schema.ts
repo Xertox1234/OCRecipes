@@ -14,6 +14,7 @@ import {
   unique,
   check,
   date,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -465,6 +466,11 @@ export const communityRecipes = pgTable(
     imageUrl: text("image_url"),
     isPublic: boolean("is_public").default(true),
     likeCount: integer("like_count").default(0),
+    remixedFromId: integer("remixed_from_id").references(
+      (): AnyPgColumn => communityRecipes.id,
+      { onDelete: "set null" },
+    ),
+    remixedFromTitle: text("remixed_from_title"),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -816,7 +822,8 @@ export const chatConversations = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     title: text("title").notNull(),
-    type: text("type").notNull().default("coach"), // 'coach' | 'recipe'
+    type: text("type").notNull().default("coach"), // 'coach' | 'recipe' | 'remix'
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),

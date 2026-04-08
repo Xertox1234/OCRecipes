@@ -43,6 +43,8 @@ const baseRecipe = {
   normalizedProductName: "grilled chicken salad",
   isPublic: true,
   likeCount: 0,
+  remixedFromId: null,
+  remixedFromTitle: null,
 };
 
 describe("HomeRecipeCard", () => {
