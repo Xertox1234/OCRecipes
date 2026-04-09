@@ -6,13 +6,17 @@ import { storage } from "../../storage";
 import { register } from "../batch-scan";
 import { BatchStorageError } from "../../storage/batch";
 
-vi.mock("../../storage", () => ({
-  storage: {
-    batchCreateScannedItemsWithLogs: vi.fn(),
-    batchCreatePantryItems: vi.fn(),
-    batchCreateGroceryItems: vi.fn(),
-  },
-}));
+vi.mock("../../storage", async () => {
+  const batch = await import("../../storage/batch");
+  return {
+    BatchStorageError: batch.BatchStorageError,
+    storage: {
+      batchCreateScannedItemsWithLogs: vi.fn(),
+      batchCreatePantryItems: vi.fn(),
+      batchCreateGroceryItems: vi.fn(),
+    },
+  };
+});
 
 vi.mock("../../middleware/auth");
 
