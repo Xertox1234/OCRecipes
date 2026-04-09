@@ -490,6 +490,48 @@ const handleFavourite = useCallback(
 - TanStack Query v5 mutation result stability
 - Related: "Parameterized ID Callbacks for Memoized List Items" pattern
 
+### Lift TanStack Query Subscriptions Out of React.memo List Items
+
+When a `React.memo` list item calls a hook that subscribes to TanStack Query (e.g., `useIsRecipeFavourited` which internally calls `useFavouriteRecipeIds()`), **every** list item re-renders on any cache invalidation — even items whose derived value didn't change. This is because the query `data` reference changes, which triggers the `useMemo` inside each item, and the hook call itself bypasses `React.memo`'s prop comparison.
+
+**Fix:** Lift the query subscription to the parent, derive a `Set<string>` via `useMemo`, and pass a primitive `isFavourited` boolean as a prop.
+
+```typescript
+// Parent — single subscription, O(1) lookup via Set
+const { data: favouriteIds } = useFavouriteRecipeIds();
+const favouriteIdSet = useMemo(
+  () => new Set((favouriteIds ?? []).map((f) => `${f.recipeType}:${f.recipeId}`)),
+  [favouriteIds],
+);
+
+// In renderItem:
+const isFavourited = favouriteIdSet.has(`${item.recipeType}:${item.id}`);
+<RecipeCard isFavourited={isFavourited} onFavourite={handleFavourite} />
+```
+
+```typescript
+// Child — React.memo now works: isFavourited is a primitive boolean
+const RecipeCard = React.memo(function RecipeCard({
+  isFavourited,
+  onFavourite,
+}: Props) {
+  // No TanStack Query subscription here — just props
+});
+```
+
+**When to use:** Any `React.memo` list item that calls a hook subscribing to a shared TanStack Query cache (favourite checks, bookmark checks, selection state).
+
+**When NOT to use:** Screen-level components rendered once (not in a list) — calling the hook directly is fine there.
+
+**Why a Set?** Array `.includes()` is O(n) per item × n items = O(n²). `Set.has()` is O(1) per item × n items = O(n). With 50+ favourites and 20+ visible cards, this matters.
+
+**References:**
+
+- `client/screens/meal-plan/RecipeBrowserScreen.tsx` — `favouriteIdSet` pattern
+- `client/components/home/RecipeCarousel.tsx` — same pattern for carousel cards
+- Related: "Parameterized ID Callbacks for Memoized List Items" pattern
+- Related: "Destructure `mutate` from TanStack Query Mutations for Stable Deps" pattern
+
 ### Memoize Context Provider Value Objects
 
 When a context provider constructs its `value` as an inline object literal, every render creates a new object reference — causing all consumers to re-render even if the individual properties haven't changed. Wrap the value in `useMemo` with the individual properties as dependencies.
