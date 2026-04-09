@@ -360,5 +360,26 @@ describe("Suggestions Routes", () => {
 
       expect(res.status).toBe(500);
     });
+
+    it("returns 502 on SuggestionParseError", async () => {
+      // Import the mocked SuggestionParseError class from the mock
+      const { SuggestionParseError } = await import(
+        "../../services/suggestion-generation"
+      );
+
+      vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getSuggestionCache).mockResolvedValue(undefined);
+      vi.mocked(generateSuggestions).mockRejectedValue(
+        new SuggestionParseError("AI returned invalid JSON"),
+      );
+
+      const res = await request(app)
+        .post("/api/items/1/suggestions")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(502);
+      expect(res.body.error).toContain("AI returned invalid JSON");
+    });
   });
 });
