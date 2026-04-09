@@ -202,6 +202,7 @@ describe("profile-hub routes", () => {
         groceryLists: 2,
         pantryItems: 8,
         featuredRecipes: 156,
+        favouriteRecipes: 5,
       });
 
       const res = await request(app).get("/api/profile/library-counts");
@@ -214,6 +215,7 @@ describe("profile-hub routes", () => {
         groceryLists: 2,
         pantryItems: 8,
         featuredRecipes: 156,
+        favouriteRecipes: 5,
       });
     });
 
@@ -225,6 +227,7 @@ describe("profile-hub routes", () => {
         groceryLists: 0,
         pantryItems: 0,
         featuredRecipes: 0,
+        favouriteRecipes: 0,
       });
 
       const res = await request(app).get("/api/profile/library-counts");

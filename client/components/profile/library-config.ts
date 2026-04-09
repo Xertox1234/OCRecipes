@@ -17,6 +17,12 @@ export interface LibraryItem {
 
 export const LIBRARY_ITEMS: readonly LibraryItem[] = [
   {
+    id: "favourites",
+    icon: "heart",
+    label: "Favourites",
+    countKey: "favouriteRecipes",
+  },
+  {
     id: "cookbooks",
     icon: "book-open",
     label: "Cookbooks",
@@ -61,6 +67,9 @@ export function navigateLibraryItem(
   navigation: ProfileScreenNavigationProp,
 ) {
   switch (id) {
+    case "favourites":
+      navigation.navigate("FavouriteRecipes");
+      break;
     case "cookbooks":
       navigation.navigate("CookbookListModal");
       break;

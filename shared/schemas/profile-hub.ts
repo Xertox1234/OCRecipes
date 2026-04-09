@@ -63,6 +63,7 @@ export const libraryCountsSchema = z.object({
   groceryLists: z.number(),
   pantryItems: z.number(),
   featuredRecipes: z.number(),
+  favouriteRecipes: z.number(),
 });
 
 export type LibraryCountsResponse = z.infer<typeof libraryCountsSchema>;

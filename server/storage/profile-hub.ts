@@ -26,6 +26,7 @@ export async function getLibraryCounts(
         scanHistory: sql<number>`(SELECT count(*) FROM scanned_items WHERE user_id = ${userId} AND discarded_at IS NULL)`,
         groceryLists: sql<number>`(SELECT count(*) FROM grocery_lists WHERE user_id = ${userId})`,
         pantryItems: sql<number>`(SELECT count(*) FROM pantry_items WHERE user_id = ${userId})`,
+        favouriteRecipes: sql<number>`(SELECT count(*) FROM favourite_recipes WHERE user_id = ${userId})`,
       })
       .from(sql`(SELECT 1) AS _dummy`);
 
@@ -37,6 +38,7 @@ export async function getLibraryCounts(
       groceryLists: Number(row?.groceryLists ?? 0),
       pantryItems: Number(row?.pantryItems ?? 0),
       featuredRecipes: featuredRecipesCache!.count,
+      favouriteRecipes: Number(row?.favouriteRecipes ?? 0),
     };
   }
 
@@ -48,6 +50,7 @@ export async function getLibraryCounts(
       groceryLists: sql<number>`(SELECT count(*) FROM grocery_lists WHERE user_id = ${userId})`,
       pantryItems: sql<number>`(SELECT count(*) FROM pantry_items WHERE user_id = ${userId})`,
       featuredRecipes: sql<number>`(SELECT count(*) FROM community_recipes WHERE is_public = true)`,
+      favouriteRecipes: sql<number>`(SELECT count(*) FROM favourite_recipes WHERE user_id = ${userId})`,
     })
     .from(sql`(SELECT 1) AS _dummy`);
 
@@ -65,5 +68,6 @@ export async function getLibraryCounts(
     groceryLists: Number(row?.groceryLists ?? 0),
     pantryItems: Number(row?.pantryItems ?? 0),
     featuredRecipes: featuredCount,
+    favouriteRecipes: Number(row?.favouriteRecipes ?? 0),
   };
 }

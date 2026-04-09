@@ -3,13 +3,14 @@ import { StyleSheet, View, Pressable, FlatList, Alert } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useCookbooks, useDeleteCookbook } from "@/hooks/useCookbooks";
+import { useFavouriteRecipeIds } from "@/hooks/useFavouriteRecipes";
 import {
   Spacing,
   BorderRadius,
@@ -28,6 +29,8 @@ export default function CookbookListScreen() {
   const haptics = useHaptics();
   const { data: cookbooks, isLoading, refetch } = useCookbooks();
   const { mutate: deleteCookbook } = useDeleteCookbook();
+  const { data: favouriteIds } = useFavouriteRecipeIds();
+  const favouriteCount = favouriteIds?.ids.length ?? 0;
 
   // Refetch cookbook list (including recipe counts) when screen comes into focus,
   // since recipes may have been added from other screens in the stack
@@ -157,6 +160,45 @@ export default function CookbookListScreen() {
           paddingHorizontal: Spacing.lg,
           paddingBottom: tabBarHeight + Spacing.xl,
         }}
+        ListHeaderComponent={
+          <Pressable
+            onPress={() => {
+              haptics.selection();
+              navigation.navigate("FavouriteRecipes");
+            }}
+            style={[
+              styles.listItem,
+              { backgroundColor: withOpacity(theme.error, 0.06) },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Favourites, ${favouriteCount} recipes`}
+          >
+            <View style={styles.listItemContent}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: Spacing.sm,
+                }}
+              >
+                <Ionicons name="heart" size={16} color={theme.error} />
+                <ThemedText style={styles.listItemTitle}>Favourites</ThemedText>
+              </View>
+              <ThemedText
+                style={[styles.listItemMeta, { color: theme.textSecondary }]}
+              >
+                {favouriteCount} {favouriteCount === 1 ? "recipe" : "recipes"}
+              </ThemedText>
+            </View>
+            <View style={styles.listItemActions}>
+              <Feather
+                name="chevron-right"
+                size={18}
+                color={theme.textSecondary}
+              />
+            </View>
+          </Pressable>
+        }
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Feather
