@@ -168,6 +168,82 @@ app.post("/api/meal-plan/grocery-lists", requireAuth, async (req, res) => {
 - `server/services/pantry-deduction.ts` — `deductPantryFromGrocery()` with 9 unit tests
 - `client/lib/iap/purchase-utils.ts` — client-side equivalent
 
+### Storage Integration Tests with Transaction Rollback
+
+For testing storage functions against a real database, use the `setupTestTransaction` / `rollbackTestTransaction` utilities to run each test inside a transaction that rolls back after the test — leaving the DB clean.
+
+The key technique: mock the `db` import so all storage functions use the test transaction instead of the real connection pool.
+
+```typescript
+// server/storage/__tests__/favourite-recipes.test.ts
+import {
+  setupTestTransaction,
+  rollbackTestTransaction,
+  closeTestPool,
+  createTestUser,
+  getTestTx,
+} from "../../../test/db-test-utils";
+
+// Redirect all storage functions to the test transaction
+vi.mock("../../db", () => ({
+  get db() {
+    return getTestTx();
+  },
+}));
+
+// Import AFTER mocking — dynamic import ensures the mock is applied
+const { toggleFavouriteRecipe, getFavouriteRecipeCount } = await import(
+  "../favourite-recipes"
+);
+
+let tx: NodePgDatabase<typeof schema>;
+let testUser: schema.User;
+
+beforeEach(async () => {
+  tx = await setupTestTransaction();
+  testUser = await createTestUser(tx);
+});
+
+afterEach(async () => {
+  await rollbackTestTransaction();
+});
+afterAll(async () => {
+  await closeTestPool();
+});
+```
+
+**When to use:** Storage functions with complex transactional logic (advisory locks, unique constraint races, orphan cleanup, limit enforcement) that can't be adequately tested through route-level mocks.
+
+**When NOT to use:** Simple CRUD storage functions where route-level tests already provide sufficient coverage via mocked storage.
+
+**Gotcha — `fireAndForget` in tests:** Code using `fireAndForget()` executes asynchronously and the caller ignores the return value. Mocking it to return the promise does NOT make it synchronous. Capture the promise in a variable and await it explicitly:
+
+```typescript
+let lastFireAndForgetPromise: Promise<unknown> | null = null;
+vi.mock("../../lib/fire-and-forget", () => ({
+  fireAndForget: (_label: string, promise: Promise<unknown>) => {
+    lastFireAndForgetPromise = promise;
+  },
+}));
+
+// In test:
+beforeEach(() => {
+  lastFireAndForgetPromise = null;
+});
+
+it("cleans up orphans", async () => {
+  await getResolvedFavouriteRecipes(userId);
+  await lastFireAndForgetPromise; // Wait for the background cleanup
+  const count = await getFavouriteRecipeCount(userId);
+  expect(count).toBe(0);
+});
+```
+
+**Existing examples:**
+
+- `server/storage/__tests__/favourite-recipes.test.ts` — 24 integration tests
+- `test/db-test-utils.ts` — shared transaction setup/teardown utilities
+
 ### Pure Functions Outside React Component Bodies
 
 When a function inside a React component does not depend on props, state, or hooks, define it **outside** the component body at module scope. This avoids recreating the function on every render and eliminates the need for `useCallback` or `useMemo`.

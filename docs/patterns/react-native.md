@@ -445,6 +445,32 @@ export default function HistoryScreen() {
 
 **Why:** Standard `NativeStackNavigationProp` only knows about screens in its own stack. `CompositeNavigationProp` combines the stack navigator's type with the tab navigator's type, enabling type-safe navigation across both.
 
+### Intersection Type for Dual-Stack Screen Registration
+
+When a screen is registered in **two different stack navigators** (e.g., `FavouriteRecipesScreen` in both `MealPlanStackNavigator` and `ProfileStackNavigator`), use an intersection type for the inner `NativeStackNavigationProp`:
+
+```typescript
+// Screen registered in both MealPlanStack and ProfileStack
+type FavouriteRecipesScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<
+    MealPlanStackParamList & ProfileStackParamList, // Intersection of both stacks
+    "FavouriteRecipes"
+  >,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
+>;
+```
+
+**When to use:** A screen registered in multiple stack navigators that needs to navigate to routes from either hosting stack.
+
+**Why intersection, not union?** The intersection (`A & B`) tells TypeScript "this screen can navigate to routes from _both_ stacks," which is truthful — React Navigation resolves navigation calls through the composite prop chain regardless of which stack is active.
+
+**References:**
+
+- `client/types/navigation.ts` — `FavouriteRecipesScreenNavigationProp`
+
 ### Full-Screen Detail with transparentModal
 
 Use `presentation: "transparentModal"` with `slide_from_bottom` animation for full-screen detail views. The screen component fills the entire screen with its own background, close button, and scrollable content. The hero image extends to the very top with no native chrome.
