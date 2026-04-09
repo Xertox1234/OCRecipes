@@ -38,10 +38,8 @@ export function formatDateLong(dateStr: string): string {
   });
 }
 
-/** ISO date string from a Date object: "2024-01-05" */
-export function formatDateISO(date: Date): string {
-  return date.toISOString().split("T")[0];
-}
+/** @deprecated Use `toDateString` from `@shared/lib/date` instead. */
+export { toDateString as formatDateISO } from "@shared/lib/date";
 
 /** Human-readable duration from minutes: "1h 30m", "45m", "2h" */
 export function formatDuration(minutes: number): string {

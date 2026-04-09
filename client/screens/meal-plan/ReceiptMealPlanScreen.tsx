@@ -29,6 +29,7 @@ import {
 } from "@/constants/theme";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { toDateString } from "@shared/lib/date";
 
 const DAY_OPTIONS = [3, 5, 7] as const;
 
@@ -54,13 +55,13 @@ function formatDate(startDate: string, dayOffset: number): string {
 function getPlannedDate(startDate: string, dayOffset: number): string {
   const date = new Date(startDate + "T12:00:00");
   date.setDate(date.getDate() + dayOffset);
-  return date.toISOString().split("T")[0];
+  return toDateString(date);
 }
 
 function getTomorrowDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return d.toISOString().split("T")[0];
+  return toDateString(d);
 }
 
 export default function ReceiptMealPlanScreen() {

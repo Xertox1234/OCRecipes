@@ -24,6 +24,7 @@ import {
   communityRecipes,
   cookbookRecipes,
 } from "@shared/schema";
+import { toDateString } from "@shared/lib/date";
 import { db } from "../db";
 import {
   eq,
@@ -825,7 +826,7 @@ export async function getPlannedNutritionSummary(
   plannedFat: number;
   plannedItemCount: number;
 }> {
-  const dateStr = date.toISOString().split("T")[0];
+  const dateStr = toDateString(date);
 
   // Exclude items already confirmed (logged) for this date
   // Use provided confirmedIds if available to avoid redundant DB query

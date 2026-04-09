@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { toDateString } from "@shared/lib/date";
 import {
   StyleSheet,
   View,
@@ -92,10 +93,10 @@ export function GroceryListPickerModal({
 
   const handleCreateAndAdd = useCallback(() => {
     const title = newListTitle.trim() || "Grocery List";
-    const today = new Date().toISOString().split("T")[0];
-    const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0];
+    const today = toDateString(new Date());
+    const nextWeek = toDateString(
+      new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    );
 
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     createList.mutate(

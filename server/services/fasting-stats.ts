@@ -1,5 +1,6 @@
 import type { FastingStats } from "@shared/types/fasting";
 import type { FastingLog } from "@shared/schema";
+import { toDateString } from "@shared/lib/date";
 
 export type { FastingStats } from "@shared/types/fasting";
 
@@ -22,7 +23,7 @@ export function calculateFastingStats(logs: FastingLog[]): FastingStats {
   const sortedCompleted = completedLogs
     .map((l) => {
       const date = new Date(l.startedAt);
-      return { date, dateStr: date.toISOString().split("T")[0] };
+      return { date, dateStr: toDateString(date) };
     })
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 
@@ -36,10 +37,8 @@ export function calculateFastingStats(logs: FastingLog[]): FastingStats {
   for (let i = 0; i < uniqueDays.length; i++) {
     if (i === 0) {
       // Check if the most recent fast is today or yesterday
-      const today = new Date().toISOString().split("T")[0];
-      const yesterday = new Date(Date.now() - 86400000)
-        .toISOString()
-        .split("T")[0];
+      const today = toDateString(new Date());
+      const yesterday = toDateString(new Date(Date.now() - 86400000));
       if (uniqueDays[0] !== today && uniqueDays[0] !== yesterday) {
         currentStreak = 0;
         break;

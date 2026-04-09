@@ -1,4 +1,5 @@
 import { calculateFastingStats } from "../fasting-stats";
+import { toDateString } from "@shared/lib/date";
 
 function makeFastingLog(overrides: {
   id?: number;
@@ -341,7 +342,7 @@ describe("Fasting Stats", () => {
     });
 
     it("deduplicates same-day fasts for streak counting", () => {
-      const todayStr = new Date().toISOString().split("T")[0];
+      const todayStr = toDateString(new Date());
       const todayMorning = new Date(todayStr + "T08:00:00Z");
       const todayEvening = new Date(todayStr + "T14:00:00Z");
 

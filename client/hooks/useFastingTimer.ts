@@ -7,6 +7,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
+import { toDateString } from "@shared/lib/date";
 import {
   useFastingSchedule,
   useCurrentFast,
@@ -49,11 +50,11 @@ function buildWeeklyData(
   for (let i = 6; i >= 0; i--) {
     const date = new Date();
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = toDateString(date);
     const dayName = dayNames[date.getDay()];
 
     const dayLog = logs.find((l) => {
-      const logDate = new Date(l.startedAt).toISOString().split("T")[0];
+      const logDate = toDateString(new Date(l.startedAt));
       return logDate === dateStr;
     });
 

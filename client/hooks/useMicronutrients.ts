@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { toDateString } from "@shared/lib/date";
 
 interface MicronutrientData {
   nutrientName: string;
@@ -26,7 +27,7 @@ export function useItemMicronutrients(itemId: number | null) {
 }
 
 export function useDailyMicronutrients(date?: string) {
-  const dateParam = date || new Date().toISOString().split("T")[0];
+  const dateParam = date || toDateString(new Date());
   return useQuery<DailyMicronutrients>({
     queryKey: [`/api/micronutrients/daily?date=${dateParam}`],
   });

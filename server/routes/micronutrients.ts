@@ -8,6 +8,7 @@ import {
 import { micronutrientRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { toDateString } from "@shared/lib/date";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import {
   lookupMicronutrientsWithCache,
@@ -96,7 +97,7 @@ export function register(app: Express): void {
 
         const aggregated = aggregateMicronutrients(micronutrientArrays);
         res.json({
-          date: date.toISOString().split("T")[0],
+          date: toDateString(date),
           micronutrients: aggregated,
         });
       } catch (error) {

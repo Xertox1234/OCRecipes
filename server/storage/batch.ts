@@ -3,6 +3,7 @@
  * Each function uses transactions and batch INSERTs for atomicity and performance.
  */
 import { eq, and, sql } from "drizzle-orm";
+import { toDateString } from "@shared/lib/date";
 import { db } from "../db";
 import {
   scannedItems,
@@ -132,7 +133,7 @@ export async function batchCreateGroceryItems(
         );
       }
 
-      const today = new Date().toISOString().split("T")[0];
+      const today = toDateString(new Date());
       const [newList] = await tx
         .insert(groceryLists)
         .values({

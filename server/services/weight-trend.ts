@@ -1,4 +1,5 @@
 import type { WeightTrend } from "@shared/types/weight";
+import { toDateString } from "@shared/lib/date";
 
 /**
  * WeightTrendResult is the server-side alias for the shared WeightTrend type.
@@ -78,7 +79,7 @@ export function calculateWeightTrend(
       const weeksToGoal = Math.abs(diff / weeklyRateOfChange);
       const goalDate = new Date();
       goalDate.setDate(goalDate.getDate() + Math.round(weeksToGoal * 7));
-      projectedGoalDate = goalDate.toISOString().split("T")[0];
+      projectedGoalDate = toDateString(goalDate);
     }
   }
 

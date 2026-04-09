@@ -17,6 +17,7 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
+import { toDateString } from "@shared/lib/date";
 import {
   useGroceryLists,
   useCreateGroceryList,
@@ -40,12 +41,12 @@ export default function GroceryListsScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    return d.toISOString().split("T")[0];
+    return toDateString(d);
   });
   const [endDate, setEndDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 6);
-    return d.toISOString().split("T")[0];
+    return toDateString(d);
   });
 
   const handleGenerate = useCallback(() => {
