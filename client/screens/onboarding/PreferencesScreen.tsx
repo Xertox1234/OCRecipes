@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { COMMON_DISLIKES } from "@/constants/dietary-options";
 
 const CUISINES = [
   { id: "american", name: "American" },
@@ -82,6 +83,19 @@ export default function PreferencesScreen() {
     });
   };
 
+  const toggleDislike = (dislikeId: string) => {
+    const isSelected = data.foodDislikes.includes(dislikeId);
+    if (isSelected) {
+      updateData({
+        foodDislikes: data.foodDislikes.filter((d) => d !== dislikeId),
+      });
+    } else {
+      updateData({
+        foodDislikes: [...data.foodDislikes, dislikeId],
+      });
+    }
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <ScrollView
@@ -147,6 +161,51 @@ export default function PreferencesScreen() {
                     }}
                   >
                     {cuisine.name}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <ThemedText type="body" style={styles.sectionTitle}>
+            Food Dislikes
+          </ThemedText>
+          <ThemedText
+            type="caption"
+            style={{ color: theme.textSecondary, marginBottom: Spacing.sm }}
+          >
+            Select any foods you dislike so we can tailor suggestions.
+          </ThemedText>
+          <View style={styles.cuisinesGrid}>
+            {COMMON_DISLIKES.map((dislike) => {
+              const selected = data.foodDislikes.includes(dislike.id);
+              return (
+                <Pressable
+                  key={dislike.id}
+                  onPress={() => toggleDislike(dislike.id)}
+                  accessibilityLabel={dislike.name}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                  style={[
+                    styles.cuisineChip,
+                    {
+                      backgroundColor: selected
+                        ? theme.error
+                        : theme.backgroundDefault,
+                      borderColor: selected ? theme.error : theme.border,
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    type="small"
+                    style={{
+                      color: selected ? theme.buttonText : theme.text,
+                      fontWeight: selected ? "600" : "400",
+                    }}
+                  >
+                    {dislike.name}
                   </ThemedText>
                 </Pressable>
               );
