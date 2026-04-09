@@ -6,7 +6,7 @@ import {
   Pressable,
   Dimensions,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -19,6 +19,10 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
+import {
+  useIsRecipeFavourited,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
 import {
   Spacing,
   BorderRadius,
@@ -73,6 +77,14 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
     AccessibilityInfo.announceForAccessibility("Recipe dismissed");
     onDismiss(card);
   }, [onDismiss, card, haptics]);
+
+  const isFavourited = useIsRecipeFavourited(card.id, "community");
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+
+  const handleFavourite = useCallback(() => {
+    haptics.impact();
+    toggleFavourite({ recipeId: card.id, recipeType: "community" });
+  }, [haptics, toggleFavourite, card.id]);
 
   const imageUri = card.imageUrl ? resolveImageUrl(card.imageUrl) : null;
   const prepLabel = card.prepTimeMinutes ? `${card.prepTimeMinutes} min` : null;
@@ -166,6 +178,30 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
           {/* Action buttons */}
           <View style={styles.actions}>
             <Pressable
+              onPress={handleFavourite}
+              style={[
+                styles.actionButton,
+                {
+                  backgroundColor: withOpacity(
+                    isFavourited ? theme.error : theme.textSecondary,
+                    0.1,
+                  ),
+                },
+              ]}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isFavourited ? "Remove from favourites" : "Add to favourites"
+              }
+            >
+              <Ionicons
+                name={isFavourited ? "heart" : "heart-outline"}
+                size={18}
+                color={isFavourited ? theme.error : theme.textSecondary}
+                accessible={false}
+              />
+            </Pressable>
+            <Pressable
               onPress={handleDismiss}
               style={[
                 styles.actionButton,
@@ -176,7 +212,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
               accessibilityLabel="Dismiss recipe"
             >
               <Feather
-                name="thumbs-down"
+                name="x"
                 size={18}
                 color={theme.error}
                 accessible={false}

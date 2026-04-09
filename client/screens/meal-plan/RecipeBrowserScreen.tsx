@@ -7,13 +7,14 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  type GestureResponderEvent,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -37,6 +38,10 @@ import {
   type CatalogSearchParams,
 } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import {
+  useIsRecipeFavourited,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
@@ -114,6 +119,25 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
   browseOnly: boolean;
 }) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
+  const recipeType = item.source === "community" ? "community" : "mealPlan";
+  const isFavourited = useIsRecipeFavourited(
+    item.id,
+    recipeType as "mealPlan" | "community",
+  );
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+
+  const handleFavourite = useCallback(
+    (e: GestureResponderEvent) => {
+      e.stopPropagation();
+      haptics.impact();
+      toggleFavourite({
+        recipeId: item.id,
+        recipeType: recipeType as "mealPlan" | "community",
+      });
+    },
+    [haptics, toggleFavourite, item.id, recipeType],
+  );
 
   const isCommunity = item.source === "community";
 
@@ -206,6 +230,21 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
           )}
         </View>
       </View>
+      <Pressable
+        onPress={handleFavourite}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isFavourited ? "Remove from favourites" : "Add to favourites"
+        }
+        style={{ marginRight: Spacing.sm }}
+      >
+        <Ionicons
+          name={isFavourited ? "heart" : "heart-outline"}
+          size={20}
+          color={isFavourited ? theme.error : theme.textSecondary}
+        />
+      </Pressable>
       <View style={[styles.addButton, { backgroundColor: theme.link }]}>
         {adding ? (
           <ActivityIndicator size="small" color={theme.buttonText} />
