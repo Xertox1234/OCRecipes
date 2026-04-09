@@ -53,7 +53,8 @@ interface NormalizedRecipe {
 
 export default function FeaturedRecipeDetailScreen() {
   const route = useRoute<FeaturedRecipeDetailRouteProp>();
-  const { recipeId, recipeType = "community" } = route.params;
+  const { recipeId, recipeType, type } = route.params;
+  const resolvedRecipeType = recipeType ?? type ?? "community";
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
@@ -65,7 +66,7 @@ export default function FeaturedRecipeDetailScreen() {
     error: communityError,
   } = useQuery<CommunityRecipe>({
     queryKey: [`/api/recipes/${recipeId}`],
-    enabled: recipeType === "community" && recipeId > 0,
+    enabled: resolvedRecipeType === "community" && recipeId > 0,
   });
 
   // --- Meal plan recipe fetch ---
@@ -80,12 +81,12 @@ export default function FeaturedRecipeDetailScreen() {
       if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
-    enabled: recipeType === "mealPlan" && recipeId > 0,
+    enabled: resolvedRecipeType === "mealPlan" && recipeId > 0,
   });
 
   // --- Normalize into RecipeDetailContent props ---
   const normalized = useMemo((): NormalizedRecipe | null => {
-    if (recipeType === "mealPlan" && mealPlanRecipe) {
+    if (resolvedRecipeType === "mealPlan" && mealPlanRecipe) {
       return {
         title: mealPlanRecipe.title,
         description: mealPlanRecipe.description,
@@ -120,11 +121,12 @@ export default function FeaturedRecipeDetailScreen() {
     }
 
     return null;
-  }, [recipeType, mealPlanRecipe, communityRecipe]);
+  }, [resolvedRecipeType, mealPlanRecipe, communityRecipe]);
 
   const isLoading =
-    recipeType === "community" ? communityLoading : mealPlanLoading;
-  const error = recipeType === "community" ? communityError : mealPlanError;
+    resolvedRecipeType === "community" ? communityLoading : mealPlanLoading;
+  const error =
+    resolvedRecipeType === "community" ? communityError : mealPlanError;
 
   const imageUri = useMemo(
     () => resolveImageUrl(normalized?.imageUrl),
@@ -182,7 +184,7 @@ export default function FeaturedRecipeDetailScreen() {
       ) : (
         <RecipeDetailContent
           recipeId={recipeId}
-          recipeType={recipeType}
+          recipeType={resolvedRecipeType}
           title={normalized.title}
           description={normalized.description}
           imageUrl={imageUri}

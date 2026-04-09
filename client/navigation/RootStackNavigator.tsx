@@ -77,6 +77,8 @@ export type RootStackParamList = {
     recipeId: number;
     /** "community" (default) fetches from /api/recipes/:id; "mealPlan" fetches from /api/meal-plan/recipes/:id */
     recipeType?: "community" | "mealPlan";
+    /** Deep link query param — alias for recipeType */
+    type?: "community" | "mealPlan";
   };
   QuickLog: undefined;
   DailyNutritionDetail: undefined;
