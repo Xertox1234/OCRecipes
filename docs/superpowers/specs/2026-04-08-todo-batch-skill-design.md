@@ -79,17 +79,32 @@ Post-session verification:
 
 ### Step 3 — Research
 
-- **Pattern docs** — Read `docs/patterns/*.md` files relevant to the todo's domain, selected by label mapping:
-  - `security` → `security.md`
-  - `architecture`, `duplication` → `architecture.md`
-  - `ui` → `react-native.md`, `design-system.md`, `animation.md`
-  - `performance` → `performance.md`
-  - `testing` → `testing.md`
-  - `database` → `database.md`
-  - No matching label → read `CLAUDE.md` patterns section and infer from file paths
-- **Learnings** — Scan `docs/LEARNINGS.md` for entries mentioning the affected files or domain (avoid repeating past mistakes)
-- **Prior art** — Check `todos/archive/` for completed todos that touched the same files (learn from how they were solved)
-- **Source context** — Read the full files being modified (not just the lines mentioned in the todo) to understand surrounding code
+Read only what's relevant — don't read everything. Select by label and affected file paths.
+
+**Documentation inventory:**
+
+| Label                         | Pattern docs to read                                                                            |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| `security`                    | `docs/patterns/security.md`                                                                     |
+| `architecture`, `duplication` | `docs/patterns/architecture.md`                                                                 |
+| `ui`                          | `docs/patterns/react-native.md`, `docs/patterns/design-system.md`, `docs/patterns/animation.md` |
+| `performance`                 | `docs/patterns/performance.md`                                                                  |
+| `testing`                     | `docs/patterns/testing.md`                                                                      |
+| `database`                    | `docs/patterns/database.md`                                                                     |
+| `api`                         | `docs/patterns/api.md`                                                                          |
+| `hooks`                       | `docs/patterns/hooks.md`                                                                        |
+| `typescript`, `types`         | `docs/patterns/typescript.md`                                                                   |
+| `client-state`                | `docs/patterns/client-state.md`                                                                 |
+
+Other key docs (read when relevant, not always):
+
+- `docs/LEARNINGS.md` — bug post-mortems and gotchas (grep for affected file/domain)
+- `docs/patterns/documentation.md` — only if the todo involves docs changes
+- `CLAUDE.md` — fallback if no labels match; skim the "Key Patterns" section
+
+**Prior art** — Grep `todos/archive/` for completed todos that touched the same files (learn from how they were solved)
+
+**Source context** — Read the full files being modified (not just the lines mentioned in the todo) to understand surrounding code
 
 ### Step 4 — Implement
 
