@@ -4,6 +4,7 @@ import {
   communityRecipes,
   recipeGenerationLog,
   cookbookRecipes,
+  favouriteRecipes,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, or, ilike } from "drizzle-orm";
@@ -198,15 +199,25 @@ export async function deleteCommunityRecipe(
       .returning({ id: communityRecipes.id });
     if (result.length === 0) return false;
 
-    // Clean up cookbook junction rows that referenced this recipe
-    await tx
-      .delete(cookbookRecipes)
-      .where(
-        and(
-          eq(cookbookRecipes.recipeId, recipeId),
-          eq(cookbookRecipes.recipeType, "community"),
+    // Clean up junction rows that referenced this recipe
+    await Promise.all([
+      tx
+        .delete(cookbookRecipes)
+        .where(
+          and(
+            eq(cookbookRecipes.recipeId, recipeId),
+            eq(cookbookRecipes.recipeType, "community"),
+          ),
         ),
-      );
+      tx
+        .delete(favouriteRecipes)
+        .where(
+          and(
+            eq(favouriteRecipes.recipeId, recipeId),
+            eq(favouriteRecipes.recipeType, "community"),
+          ),
+        ),
+    ]);
     return true;
   });
 }

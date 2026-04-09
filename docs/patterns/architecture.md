@@ -6,19 +6,27 @@ When a storage layer (or any service layer) grows beyond ~500 lines, split it in
 
 ```
 server/storage/
-  index.ts          # Facade — composes all modules into `storage` object
-  helpers.ts        # Shared utilities (getDayBounds, escapeLike)
-  users.ts          # User accounts, profiles, subscriptions
-  nutrition.ts      # Scanned items, daily logs, saved items
-  meal-plans.ts     # Recipes, meal items, grocery lists, pantry
-  activity.ts       # Exercises, weight logs, health data
-  chat.ts           # Conversations, messages
-  cache.ts          # Nutrition cache, suggestion cache, instruction cache
-  community.ts      # Community recipes, social features
-  medication.ts     # Medication logs
-  fasting.ts        # Fasting logs
-  menu.ts           # Restaurant menu scans
-  cookbooks.ts      # Cookbooks and cookbook-recipe junction
+  index.ts              # Facade — composes all modules into `storage` object
+  helpers.ts            # Shared utilities (getDayBounds, escapeLike)
+  users.ts              # User accounts, profiles, subscriptions
+  nutrition.ts          # Scanned items, daily logs, saved items
+  meal-plans.ts         # Recipes, meal items, grocery lists, pantry
+  chat.ts               # Conversations, messages
+  cache.ts              # Nutrition cache, suggestion cache, instruction cache
+  community.ts          # Community recipes, social features
+  medication.ts         # Medication logs
+  fasting.ts            # Fasting logs
+  menu.ts               # Restaurant menu scans
+  cookbooks.ts          # Cookbooks and cookbook-recipe junction
+  favourite-recipes.ts  # Favourite recipes toggle, resolve, share
+  verification.ts       # Barcode verification pipeline
+  api-keys.ts           # API key management
+  batch.ts              # Batch scan storage
+  carousel.ts           # Home carousel data
+  profile-hub.ts        # Profile hub counts and aggregations
+  receipt.ts            # IAP receipt storage
+  reformulation.ts      # Product reformulation tracking
+  sessions.ts           # Cooking and label analysis sessions
 ```
 
 **Facade pattern:**
@@ -88,7 +96,7 @@ export function getDayBounds(date: Date): { startOfDay: Date; endOfDay: Date } {
 
 - `server/storage/index.ts` -- facade with all method compositions
 - `server/storage/helpers.ts` -- `getDayBounds`, `escapeLike`
-- 13 domain modules: `users.ts`, `nutrition.ts`, `meal-plans.ts`, `activity.ts`, `chat.ts`, `cache.ts`, `community.ts`, `medication.ts`, `fasting.ts`, `menu.ts`, `cookbooks.ts`
+- 19 domain modules (see directory listing above)
 
 ## Route Module Patterns
 

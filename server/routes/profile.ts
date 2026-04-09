@@ -15,6 +15,8 @@ const cacheAffectingFields = [
   "dietType",
   "cookingSkillLevel",
   "cookingTimeAvailable",
+  "foodDislikes",
+  "cuisinePreferences",
 ];
 
 export function register(app: Express): void {

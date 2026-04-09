@@ -19,19 +19,6 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
-vi.mock("../../db", () => ({
-  db: {
-    select: vi.fn().mockReturnThis(),
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
-  },
-}));
-
-vi.mock("@shared/schema", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@shared/schema")>();
-  return { ...actual };
-});
-
 function createApp() {
   const app = express();
   app.use(express.json());

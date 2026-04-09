@@ -7,6 +7,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import {
   formatZodError,
   handleRouteError,
+  parsePositiveIntParam,
   parseQueryInt,
   parseStringParam,
 } from "./_helpers";
@@ -26,6 +27,7 @@ export function register(app: Express): void {
   app.get(
     "/api/favourite-recipes",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const limit = parseQueryInt(req.query.limit, {
@@ -84,6 +86,7 @@ export function register(app: Express): void {
   app.get(
     "/api/favourite-recipes/check",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const parsed = checkFavouriteQuerySchema.safeParse(req.query);
@@ -111,6 +114,7 @@ export function register(app: Express): void {
   app.get(
     "/api/favourite-recipes/ids",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const ids = await storage.getUserFavouriteRecipeIds(req.userId);
@@ -125,6 +129,7 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/:recipeType/:recipeId/share",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const recipeType = parseStringParam(req.params.recipeType);
@@ -138,9 +143,8 @@ export function register(app: Express): void {
           return;
         }
 
-        const rawId = parseStringParam(req.params.recipeId);
-        const recipeId = rawId ? parseInt(rawId, 10) : NaN;
-        if (Number.isNaN(recipeId) || recipeId <= 0) {
+        const recipeId = parsePositiveIntParam(req.params.recipeId);
+        if (!recipeId) {
           sendError(res, 400, "Invalid recipe ID", ErrorCode.VALIDATION_ERROR);
           return;
         }

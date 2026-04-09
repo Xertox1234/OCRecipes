@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, or, inArray, sql } from "drizzle-orm";
 import {
   favouriteRecipes,
   mealPlanRecipes,
@@ -15,7 +15,30 @@ export async function toggleFavouriteRecipe(
   recipeId: number,
   recipeType: "mealPlan" | "community",
 ): Promise<boolean | null> {
+  // Verify recipe exists and user has access
+  if (recipeType === "mealPlan") {
+    const [recipe] = await db
+      .select({ id: mealPlanRecipes.id })
+      .from(mealPlanRecipes)
+      .where(
+        and(
+          eq(mealPlanRecipes.id, recipeId),
+          eq(mealPlanRecipes.userId, userId),
+        ),
+      );
+    if (!recipe) return false;
+  } else {
+    const [recipe] = await db
+      .select({ id: communityRecipes.id })
+      .from(communityRecipes)
+      .where(eq(communityRecipes.id, recipeId));
+    if (!recipe) return false;
+  }
+
   return db.transaction(async (tx) => {
+    // Serialize concurrent toggles for the same user to prevent limit bypass
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+
     const [existing] = await tx
       .select({ id: favouriteRecipes.id })
       .from(favouriteRecipes)
@@ -34,16 +57,17 @@ export async function toggleFavouriteRecipe(
       return false;
     }
 
-    const countResult = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(favouriteRecipes)
-      .where(eq(favouriteRecipes.userId, userId));
+    const [countResult, [subRow]] = await Promise.all([
+      tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(favouriteRecipes)
+        .where(eq(favouriteRecipes.userId, userId)),
+      tx
+        .select({ tier: users.subscriptionTier })
+        .from(users)
+        .where(eq(users.id, userId)),
+    ]);
     const count = countResult[0]?.count ?? 0;
-
-    const [subRow] = await tx
-      .select({ tier: users.subscriptionTier })
-      .from(users)
-      .where(eq(users.id, userId));
     const tierValue = subRow?.tier || "free";
     const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
     const limit = TIER_FEATURES[tier].maxFavouriteRecipes;
@@ -141,13 +165,32 @@ export async function getResolvedFavouriteRecipes(
   const [mealPlanRows, communityRows] = await Promise.all([
     mealPlanIds.length
       ? db
-          .select()
+          .select({
+            id: mealPlanRecipes.id,
+            title: mealPlanRecipes.title,
+            description: mealPlanRecipes.description,
+            imageUrl: mealPlanRecipes.imageUrl,
+            servings: mealPlanRecipes.servings,
+            difficulty: mealPlanRecipes.difficulty,
+          })
           .from(mealPlanRecipes)
-          .where(inArray(mealPlanRecipes.id, mealPlanIds))
+          .where(
+            and(
+              inArray(mealPlanRecipes.id, mealPlanIds),
+              eq(mealPlanRecipes.userId, userId),
+            ),
+          )
       : [],
     communityIds.length
       ? db
-          .select()
+          .select({
+            id: communityRecipes.id,
+            title: communityRecipes.title,
+            description: communityRecipes.description,
+            imageUrl: communityRecipes.imageUrl,
+            servings: communityRecipes.servings,
+            difficulty: communityRecipes.difficulty,
+          })
           .from(communityRecipes)
           .where(inArray(communityRecipes.id, communityIds))
       : [],
@@ -214,6 +257,7 @@ export async function getRecipeSharePayload(
   imageUrl: string | null;
 } | null> {
   if (recipeType === "community") {
+    // Community recipes must be public OR owned by the requesting user
     const [recipe] = await db
       .select({
         title: communityRecipes.title,
@@ -221,7 +265,15 @@ export async function getRecipeSharePayload(
         imageUrl: communityRecipes.imageUrl,
       })
       .from(communityRecipes)
-      .where(eq(communityRecipes.id, recipeId));
+      .where(
+        and(
+          eq(communityRecipes.id, recipeId),
+          or(
+            eq(communityRecipes.isPublic, true),
+            eq(communityRecipes.authorId, userId),
+          ),
+        ),
+      );
     if (!recipe) return null;
     return {
       title: recipe.title,

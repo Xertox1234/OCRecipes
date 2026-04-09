@@ -314,45 +314,41 @@ export function register(app: Express): void {
         try {
           if (isRecipeChat || isRemixChat) {
             // ─── RECIPE / REMIX CHAT PATH ────────────────────────
-            const [profile, history] = await Promise.all([
+            const remixSourceId = isRemixChat
+              ? remixConversationMetadataSchema.safeParse(conversation.metadata)
+                  ?.data?.sourceRecipeId
+              : undefined;
+
+            const [profile, history, sourceRecipe] = await Promise.all([
               storage.getUserProfile(req.userId),
               storage.getChatMessages(id, 10),
+              remixSourceId
+                ? storage.getCommunityRecipe(remixSourceId)
+                : undefined,
             ]);
 
             const contextMessages = buildRecipeContext(history);
 
             // For remix, build a specialized system prompt with the original recipe
             let remixPromptOverride: string | undefined;
-            if (isRemixChat) {
-              const parsedMeta = remixConversationMetadataSchema.safeParse(
-                conversation.metadata,
+            if (isRemixChat && sourceRecipe) {
+              remixPromptOverride = buildRemixSystemPrompt(
+                {
+                  title: sourceRecipe.title,
+                  ingredients: sourceRecipe.ingredients as {
+                    name: string;
+                    quantity: string;
+                    unit: string;
+                  }[],
+                  instructions: sourceRecipe.instructions as string[],
+                  dietTags: sourceRecipe.dietTags as string[],
+                  description: sourceRecipe.description,
+                  difficulty: sourceRecipe.difficulty,
+                  timeEstimate: sourceRecipe.timeEstimate,
+                  servings: sourceRecipe.servings,
+                },
+                profile,
               );
-              const sourceRecipeId = parsedMeta.success
-                ? parsedMeta.data.sourceRecipeId
-                : undefined;
-              if (sourceRecipeId) {
-                const sourceRecipe =
-                  await storage.getCommunityRecipe(sourceRecipeId);
-                if (sourceRecipe) {
-                  remixPromptOverride = buildRemixSystemPrompt(
-                    {
-                      title: sourceRecipe.title,
-                      ingredients: sourceRecipe.ingredients as {
-                        name: string;
-                        quantity: string;
-                        unit: string;
-                      }[],
-                      instructions: sourceRecipe.instructions as string[],
-                      dietTags: sourceRecipe.dietTags as string[],
-                      description: sourceRecipe.description,
-                      difficulty: sourceRecipe.difficulty,
-                      timeEstimate: sourceRecipe.timeEstimate,
-                      servings: sourceRecipe.servings,
-                    },
-                    profile,
-                  );
-                }
-              }
             }
 
             let fullTextResponse = "";

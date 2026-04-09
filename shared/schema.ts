@@ -338,6 +338,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   dailyLogs: many(dailyLogs),
   savedItems: many(savedItems),
   favouriteScannedItems: many(favouriteScannedItems),
+  favouriteRecipes: many(favouriteRecipes),
   mealPlanRecipes: many(mealPlanRecipes),
   mealPlanItems: many(mealPlanItems),
   transactions: many(transactions),
@@ -463,6 +464,16 @@ export const favouriteRecipes = pgTable(
       table.recipeType,
     ),
     userIdIdx: index("favourite_recipes_user_id_idx").on(table.userId),
+  }),
+);
+
+export const favouriteRecipesRelations = relations(
+  favouriteRecipes,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [favouriteRecipes.userId],
+      references: [users.id],
+    }),
   }),
 );
 

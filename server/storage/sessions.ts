@@ -13,7 +13,10 @@ import type { LabelExtractionResult } from "@shared/types/label-analysis";
 
 // ── Cooking session store ─────────────────────────────────────────────
 
-import type { CookingSessionIngredient } from "@shared/types/cook-session";
+import type {
+  CookingSessionIngredient,
+  CookingSessionPhoto,
+} from "@shared/types/cook-session";
 
 // ── Front-label verification session store ───────────────────────────
 
@@ -234,11 +237,6 @@ export function getLabelSession(sessionId: string): LabelSession | undefined {
 
 export function clearLabelSession(sessionId: string): void {
   labelStore.clear(sessionId);
-}
-
-interface CookingSessionPhoto {
-  id: string;
-  addedAt: number;
 }
 
 export interface CookingSession {

@@ -23,6 +23,7 @@ import {
   pantryItems,
   communityRecipes,
   cookbookRecipes,
+  favouriteRecipes,
 } from "@shared/schema";
 import { toDateString } from "@shared/lib/date";
 import { db } from "../db";
@@ -230,15 +231,25 @@ export async function deleteMealPlanRecipe(
       .returning({ id: mealPlanRecipes.id });
     if (result.length === 0) return false;
 
-    // Clean up cookbook junction rows that referenced this recipe
-    await tx
-      .delete(cookbookRecipes)
-      .where(
-        and(
-          eq(cookbookRecipes.recipeId, id),
-          eq(cookbookRecipes.recipeType, "mealPlan"),
+    // Clean up junction rows that referenced this recipe
+    await Promise.all([
+      tx
+        .delete(cookbookRecipes)
+        .where(
+          and(
+            eq(cookbookRecipes.recipeId, id),
+            eq(cookbookRecipes.recipeType, "mealPlan"),
+          ),
         ),
-      );
+      tx
+        .delete(favouriteRecipes)
+        .where(
+          and(
+            eq(favouriteRecipes.recipeId, id),
+            eq(favouriteRecipes.recipeType, "mealPlan"),
+          ),
+        ),
+    ]);
     return true;
   });
 }

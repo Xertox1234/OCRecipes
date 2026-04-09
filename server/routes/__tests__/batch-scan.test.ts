@@ -2,9 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
-import { storage } from "../../storage";
+import { storage, BatchStorageError } from "../../storage";
 import { register } from "../batch-scan";
-import { BatchStorageError } from "../../storage/batch";
 
 vi.mock("../../storage", async () => {
   const batch = await import("../../storage/batch");

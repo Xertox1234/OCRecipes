@@ -97,7 +97,12 @@ function getSessionForUser(
     return null;
   }
   if (session.userId !== req.userId) {
-    sendError(res, 403, "Not your cooking session", ErrorCode.UNAUTHORIZED);
+    sendError(
+      res,
+      404,
+      "Cooking session not found",
+      ErrorCode.SESSION_NOT_FOUND,
+    );
     return null;
   }
   return session;

@@ -281,7 +281,7 @@ describe("Cooking Routes", () => {
         .get(`/api/cooking/sessions/${sessionId}`)
         .set("Authorization", "Bearer token");
 
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(404);
     });
   });
 
