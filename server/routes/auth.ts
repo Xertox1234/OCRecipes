@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import fs, { promises as fsp } from "fs";
 import * as path from "path";
 import { storage } from "../storage";
-import type { UpdatableUserFields } from "../storage/users";
+import type { UpdatableUserFields } from "../storage";
 import {
   requireAuth,
   generateToken,

@@ -28,12 +28,6 @@ import { crudRateLimit, createRateLimiter } from "./_rate-limiters";
 import { createImageUpload } from "./_upload";
 import { isAdmin } from "./_admin";
 
-// ============================================================================
-// Front-label session store (centralized in storage/sessions.ts)
-// ============================================================================
-
-import { frontLabelSessionStore } from "../storage/sessions";
-
 const verificationRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 10,
@@ -61,7 +55,7 @@ const frontLabelConfirmSchema = z.object({
 // Multer config for front-label photo uploads (5MB limit)
 const frontLabelUpload = createImageUpload(5 * 1024 * 1024);
 
-const frontLabelStore = frontLabelSessionStore;
+const frontLabelStore = storage.frontLabelSessionStore;
 
 // Exported for testing (grouped per docs/patterns/security.md Test Internals Export Pattern)
 export const _testInternals = {

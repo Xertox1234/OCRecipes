@@ -21,6 +21,7 @@ vi.mock("../../storage", async () => {
       resolveReformulationFlag: vi.fn(),
       getReformulationFlag: vi.fn(),
       getLabelSession: sessions.getLabelSession,
+      frontLabelSessionStore: sessions.frontLabelSessionStore,
     },
   };
 });

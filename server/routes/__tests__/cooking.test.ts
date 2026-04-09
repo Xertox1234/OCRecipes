@@ -23,13 +23,17 @@ import {
   createMockScannedItem,
 } from "../../__tests__/factories";
 
-vi.mock("../../storage", () => ({
-  storage: {
-    getSubscriptionStatus: vi.fn(),
-    getUserProfile: vi.fn(),
-    createScannedItemWithLog: vi.fn(),
-  },
-}));
+vi.mock("../../storage", async () => {
+  const sessions = await import("../../storage/sessions");
+  return {
+    storage: {
+      getSubscriptionStatus: vi.fn(),
+      getUserProfile: vi.fn(),
+      createScannedItemWithLog: vi.fn(),
+      cookingSessionStore: sessions.cookingSessionStore,
+    },
+  };
+});
 
 vi.mock("../../middleware/auth");
 

@@ -29,6 +29,10 @@ import * as carousel from "./carousel";
 import * as profileHub from "./profile-hub";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
+export type { UpdatableUserFields } from "./users";
+export { BatchStorageError } from "./batch";
+export { MAX_IMAGE_SIZE_BYTES } from "./sessions";
+export type { CookingSession } from "./sessions";
 
 export const storage = {
   // Users & profiles
@@ -264,6 +268,7 @@ export const storage = {
   createLabelSession: sessions.createLabelSession,
   getLabelSession: sessions.getLabelSession,
   clearLabelSession: sessions.clearLabelSession,
+  cookingSessionStore: sessions.cookingSessionStore,
   frontLabelSessionStore: sessions.frontLabelSessionStore,
 
   // Carousel (recipe discovery)

@@ -36,8 +36,7 @@ import {
   type AllergenMatch,
 } from "@shared/constants/allergens";
 
-import { storage } from "../storage";
-import { cookingSessionStore, type CookingSession } from "../storage/sessions";
+import { storage, type CookingSession } from "../storage";
 
 // ============================================================================
 // MULTER CONFIG (5MB for ingredient photos)
@@ -67,7 +66,7 @@ const substitutionRateLimit = createRateLimiter({
 
 const MAX_PHOTOS_PER_SESSION = 10;
 
-const cookStore = cookingSessionStore;
+const cookStore = storage.cookingSessionStore;
 
 // Aliases for backward compatibility with route code and tests
 const clearCookSession = cookStore.clear;

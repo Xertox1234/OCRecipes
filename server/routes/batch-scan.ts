@@ -1,7 +1,6 @@
 import type { Express, Response } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
-import { storage } from "../storage";
-import { BatchStorageError } from "../storage/batch";
+import { storage, BatchStorageError } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { batchSaveRequestSchema } from "@shared/types/batch-scan";

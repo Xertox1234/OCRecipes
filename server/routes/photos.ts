@@ -1,8 +1,7 @@
 import type { Express, Response } from "express";
 import crypto from "crypto";
-import { MAX_IMAGE_SIZE_BYTES } from "../storage/sessions";
+import { storage, MAX_IMAGE_SIZE_BYTES } from "../storage";
 import { z } from "zod";
-import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
