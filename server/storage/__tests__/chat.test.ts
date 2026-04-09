@@ -16,6 +16,7 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
+import { communityRecipes } from "@shared/schema";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -314,11 +315,22 @@ describe("chat storage", () => {
 
   describe("saveRecipeFromChat — lineage", () => {
     it("creates recipe with remixedFromId and remixedFromTitle when lineage provided", async () => {
+      // Create a source recipe so the FK constraint is satisfied
+      const [sourceRecipe] = await tx
+        .insert(communityRecipes)
+        .values({
+          authorId: testUser.id,
+          normalizedProductName: "original pasta",
+          title: "Original Pasta",
+          instructions: ["Boil pasta"],
+        })
+        .returning();
+
       const conv = await createChatConversation(
         testUser.id,
         "Remix Chat",
         "remix",
-        { sourceRecipeId: 99, sourceRecipeTitle: "Original Pasta" },
+        { sourceRecipeId: sourceRecipe.id, sourceRecipeTitle: "Original Pasta" },
       );
 
       // Insert an assistant message with valid recipe metadata
@@ -339,13 +351,13 @@ describe("chat storage", () => {
       });
 
       const recipe = await saveRecipeFromChat(msg.id, conv.id, testUser.id, {
-        remixedFromId: 99,
+        remixedFromId: sourceRecipe.id,
         remixedFromTitle: "Original Pasta",
       });
 
       expect(recipe).not.toBeNull();
       expect(recipe!.title).toBe("Spicy Pasta");
-      expect(recipe!.remixedFromId).toBe(99);
+      expect(recipe!.remixedFromId).toBe(sourceRecipe.id);
       expect(recipe!.remixedFromTitle).toBe("Original Pasta");
       expect(recipe!.authorId).toBe(testUser.id);
     });

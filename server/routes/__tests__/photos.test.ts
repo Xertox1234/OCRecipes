@@ -27,6 +27,7 @@ import {
 vi.mock("../../storage", async () => {
   const sessions = await import("../../storage/sessions");
   return {
+    MAX_IMAGE_SIZE_BYTES: sessions.MAX_IMAGE_SIZE_BYTES,
     storage: {
       getSubscriptionStatus: vi.fn(),
       getDailyScanCount: vi.fn(),
