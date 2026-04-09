@@ -264,7 +264,6 @@ export const storage = {
   createLabelSession: sessions.createLabelSession,
   getLabelSession: sessions.getLabelSession,
   clearLabelSession: sessions.clearLabelSession,
-  cookingSessionStore: sessions.cookingSessionStore,
   frontLabelSessionStore: sessions.frontLabelSessionStore,
 
   // Carousel (recipe discovery)
