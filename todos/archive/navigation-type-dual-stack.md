@@ -1,6 +1,6 @@
 ---
 title: "Fix FavouriteRecipesScreen navigation type for dual-stack registration"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-04-09
 updated: 2026-04-09
