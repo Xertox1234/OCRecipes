@@ -216,6 +216,7 @@ export const storage = {
   getFavouriteRecipeCount: favouriteRecipesStorage.getFavouriteRecipeCount,
   getResolvedFavouriteRecipes:
     favouriteRecipesStorage.getResolvedFavouriteRecipes,
+  getRecipeSharePayload: favouriteRecipesStorage.getRecipeSharePayload,
 
   // Public API (API keys + barcode nutrition)
   createApiKey: apiKeysStorage.createApiKey,

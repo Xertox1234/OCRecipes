@@ -1,9 +1,6 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
 import { storage } from "../storage";
-import { db } from "../db";
-import { communityRecipes, mealPlanRecipes } from "@shared/schema";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -148,46 +145,18 @@ export function register(app: Express): void {
           return;
         }
 
-        let title = "";
-        let description = "";
-        let imageUrl: string | null = null;
-
-        if (recipeType === "community") {
-          const [recipe] = await db
-            .select({
-              title: communityRecipes.title,
-              description: communityRecipes.description,
-              imageUrl: communityRecipes.imageUrl,
-            })
-            .from(communityRecipes)
-            .where(eq(communityRecipes.id, recipeId));
-          if (!recipe) {
-            sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
-            return;
-          }
-          title = recipe.title;
-          description = recipe.description ?? "";
-          imageUrl = recipe.imageUrl ?? null;
-        } else {
-          const [recipe] = await db
-            .select({
-              title: mealPlanRecipes.title,
-              description: mealPlanRecipes.description,
-              imageUrl: mealPlanRecipes.imageUrl,
-            })
-            .from(mealPlanRecipes)
-            .where(eq(mealPlanRecipes.id, recipeId));
-          if (!recipe) {
-            sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
-            return;
-          }
-          title = recipe.title;
-          description = recipe.description ?? "";
-          imageUrl = recipe.imageUrl ?? null;
+        const payload = await storage.getRecipeSharePayload(
+          recipeId,
+          recipeType,
+          req.userId,
+        );
+        if (!payload) {
+          sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
+          return;
         }
 
         const deepLink = `ocrecipes://recipe/${recipeId}?type=${recipeType}`;
-        res.json({ title, description, imageUrl, deepLink });
+        res.json({ ...payload, deepLink });
       } catch (error) {
         handleRouteError(res, error, "get recipe share payload");
       }

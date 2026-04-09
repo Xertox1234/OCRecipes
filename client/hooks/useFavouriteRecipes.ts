@@ -35,6 +35,7 @@ export function useFavouriteRecipeIds() {
       if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
+    staleTime: 30_000,
     refetchOnMount: "always",
   });
 }

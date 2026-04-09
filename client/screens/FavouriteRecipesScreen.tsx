@@ -2,7 +2,6 @@ import React, { useCallback } from "react";
 import { StyleSheet, View, Pressable, FlatList } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -23,13 +22,11 @@ import {
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { resolveImageUrl } from "@/lib/query-client";
-import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { FavouriteRecipesScreenNavigationProp } from "@/types/navigation";
 import type { ResolvedFavouriteRecipe } from "@shared/schema";
 
-type NavProp = NativeStackNavigationProp<RootStackParamList>;
-
 export default function FavouriteRecipesScreen() {
-  const navigation = useNavigation<NavProp>();
+  const navigation = useNavigation<FavouriteRecipesScreenNavigationProp>();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useSafeTabBarHeight();
   const { theme } = useTheme();
@@ -201,7 +198,7 @@ export default function FavouriteRecipesScreen() {
             <ThemedText
               style={[styles.emptySubtitle, { color: theme.textSecondary }]}
             >
-              Recipes you favourite will appear here.
+              Heart recipes to save them here for quick access.
             </ThemedText>
           </View>
         }
