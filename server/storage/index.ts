@@ -19,6 +19,7 @@ import * as fasting from "./fasting";
 import * as menu from "./menu";
 import * as receipt from "./receipt";
 import * as cookbooksStorage from "./cookbooks";
+import * as favouriteRecipesStorage from "./favourite-recipes";
 import * as verification from "./verification";
 import * as apiKeysStorage from "./api-keys";
 import * as batch from "./batch";
@@ -207,6 +208,14 @@ export const storage = {
   removeRecipeFromCookbook: cookbooksStorage.removeRecipeFromCookbook,
   getCookbookRecipes: cookbooksStorage.getCookbookRecipes,
   getResolvedCookbookRecipes: cookbooksStorage.getResolvedCookbookRecipes,
+
+  // Favourite recipes
+  toggleFavouriteRecipe: favouriteRecipesStorage.toggleFavouriteRecipe,
+  getUserFavouriteRecipeIds: favouriteRecipesStorage.getUserFavouriteRecipeIds,
+  isRecipeFavourited: favouriteRecipesStorage.isRecipeFavourited,
+  getFavouriteRecipeCount: favouriteRecipesStorage.getFavouriteRecipeCount,
+  getResolvedFavouriteRecipes:
+    favouriteRecipesStorage.getResolvedFavouriteRecipes,
 
   // Public API (API keys + barcode nutrition)
   createApiKey: apiKeysStorage.createApiKey,
