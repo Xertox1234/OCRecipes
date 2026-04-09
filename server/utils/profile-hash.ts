@@ -11,6 +11,8 @@ export function calculateProfileHash(profile: UserProfile | undefined): string {
     dietType: profile?.dietType ?? null,
     cookingSkillLevel: profile?.cookingSkillLevel ?? null,
     cookingTimeAvailable: profile?.cookingTimeAvailable ?? null,
+    foodDislikes: profile?.foodDislikes ?? [],
+    cuisinePreferences: profile?.cuisinePreferences ?? [],
   });
   return crypto.createHash("sha256").update(hashInput).digest("hex");
 }

@@ -68,9 +68,29 @@ describe("Profile Hash", () => {
         dietType: null,
         cookingSkillLevel: null,
         cookingTimeAvailable: null,
+        foodDislikes: [],
+        cuisinePreferences: [],
       } as any);
       // Both should resolve to same defaults
       expect(hashUndefined).toBe(hashEmpty);
+    });
+
+    it("returns different hash for different food dislikes", () => {
+      const profile1 = { foodDislikes: ["cilantro"] } as any;
+      const profile2 = { foodDislikes: ["mushrooms"] } as any;
+
+      expect(calculateProfileHash(profile1)).not.toBe(
+        calculateProfileHash(profile2),
+      );
+    });
+
+    it("returns different hash for different cuisine preferences", () => {
+      const profile1 = { cuisinePreferences: ["Italian"] } as any;
+      const profile2 = { cuisinePreferences: ["Mexican"] } as any;
+
+      expect(calculateProfileHash(profile1)).not.toBe(
+        calculateProfileHash(profile2),
+      );
     });
 
     it("only uses suggestion-relevant fields for hashing", () => {
@@ -80,6 +100,8 @@ describe("Profile Hash", () => {
         dietType: "vegan",
         cookingSkillLevel: "beginner",
         cookingTimeAvailable: "15 minutes",
+        foodDislikes: [],
+        cuisinePreferences: ["Italian"],
         // Non-hashed fields:
         primaryGoal: "lose_weight",
         activityLevel: "active",
@@ -90,6 +112,8 @@ describe("Profile Hash", () => {
         dietType: "vegan",
         cookingSkillLevel: "beginner",
         cookingTimeAvailable: "15 minutes",
+        foodDislikes: [],
+        cuisinePreferences: ["Italian"],
         // Non-hashed fields:
         primaryGoal: "build_muscle",
         activityLevel: "sedentary",

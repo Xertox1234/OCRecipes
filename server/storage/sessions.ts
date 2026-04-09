@@ -249,10 +249,14 @@ export interface CookingSession {
   createdAt: number;
 }
 
+export const COOKING_MAX_PER_USER = 2;
+export const COOKING_MAX_GLOBAL = 1000;
+export const COOKING_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
 export const cookingSessionStore = createSessionStore<CookingSession>({
-  maxPerUser: 2,
-  maxGlobal: 1000,
-  timeoutMs: 30 * 60 * 1000,
+  maxPerUser: COOKING_MAX_PER_USER,
+  maxGlobal: COOKING_MAX_GLOBAL,
+  timeoutMs: COOKING_TIMEOUT_MS,
   label: "active cooking",
 });
 
