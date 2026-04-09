@@ -51,6 +51,15 @@ function RecipeCardInner({
   const [ingredientsExpanded, setIngredientsExpanded] = useState(false);
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
 
+  // Announce recipe card appearance for screen readers (fires once on mount)
+  useEffect(() => {
+    if (Platform.OS === "ios" && recipe.title) {
+      AccessibilityInfo.announceForAccessibility(
+        `Recipe ready: ${recipe.title}`,
+      );
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- announce once on mount only
+
   useEffect(() => {
     if (allergenWarning) {
       announceAllergenWarning(allergenWarning);
@@ -87,6 +96,7 @@ function RecipeCardInner({
       accessible
       accessibilityRole="none"
       accessibilityLabel={`Recipe: ${recipe.title}. ${recipe.difficulty}, ${recipe.timeEstimate}, ${recipe.servings} servings`}
+      accessibilityLiveRegion="polite"
     >
       {/* Image */}
       <View style={styles.imageContainer}>
