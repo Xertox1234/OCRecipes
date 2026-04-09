@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { Feather, Ionicons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ThemedText } from "@/components/ThemedText";
@@ -20,6 +20,7 @@ import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAllergenCheck } from "@/hooks/useAllergenCheck";
+import { RecipeActionBar } from "@/components/RecipeActionBar";
 import { usePremiumContext } from "@/context/PremiumContext";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
@@ -210,27 +211,13 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
             servings={props.servings}
           />
 
-          {/* 4. Save to Cookbook */}
+          {/* 4. Action Bar (Favourite, Share, Save to Cookbook) */}
           {props.recipeId > 0 && (
-            <Pressable
-              onPress={() => {
-                haptics.impact();
-                setPickerVisible(true);
-              }}
-              style={[
-                styles.saveButton,
-                { backgroundColor: withOpacity(theme.link, 0.1) },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Save to cookbook"
-            >
-              <Feather name="bookmark" size={14} color={theme.link} />
-              <ThemedText
-                style={[styles.saveButtonText, { color: theme.link }]}
-              >
-                Save to Cookbook
-              </ThemedText>
-            </Pressable>
+            <RecipeActionBar
+              recipeId={props.recipeId}
+              recipeType={props.recipeType}
+              onSaveToCookbook={() => setPickerVisible(true)}
+            />
           )}
 
           {/* 4b. Remix Button (community recipes only) */}
