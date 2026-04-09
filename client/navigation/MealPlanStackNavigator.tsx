@@ -12,6 +12,7 @@ import PantryScreen from "@/screens/meal-plan/PantryScreen";
 import CookbookCreateScreen from "@/screens/meal-plan/CookbookCreateScreen";
 import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
 import CookbookDetailScreen from "@/screens/meal-plan/CookbookDetailScreen";
+import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
@@ -40,6 +41,7 @@ export type MealPlanStackParamList = {
   CookbookCreate: { cookbookId?: number } | undefined;
   CookbookList: undefined;
   CookbookDetail: { cookbookId: number };
+  FavouriteRecipes: undefined;
 };
 
 const Stack = createNativeStackNavigator<MealPlanStackParamList>();
@@ -144,6 +146,15 @@ export default function MealPlanStackNavigator() {
             />
           ),
         })}
+      />
+      <Stack.Screen
+        name="FavouriteRecipes"
+        component={FavouriteRecipesScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="Favourites" showIcon={false} />
+          ),
+        }}
       />
     </Stack.Navigator>
   );
