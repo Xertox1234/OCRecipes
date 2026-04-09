@@ -218,6 +218,18 @@ export type CookbookListScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
+ * Navigation prop for FavouriteRecipesScreen
+ * Uses CompositeNavigationProp to navigate to RootStack screens (FeaturedRecipeDetail modal)
+ */
+export type FavouriteRecipesScreenNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<MealPlanStackParamList, "FavouriteRecipes">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList>,
+    NativeStackNavigationProp<RootStackParamList>
+  >
+>;
+
+/**
  * Navigation prop for CookbookDetailScreen
  * Uses CompositeNavigationProp to navigate across stacks:
  * - Navigate within MealPlanStack (RecipeDetail, CookbookEdit)
