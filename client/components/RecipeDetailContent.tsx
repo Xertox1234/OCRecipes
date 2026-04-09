@@ -20,6 +20,7 @@ import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAllergenCheck } from "@/hooks/useAllergenCheck";
+import { useIsRecipeFavourited } from "@/hooks/useFavouriteRecipes";
 import { RecipeActionBar } from "@/components/RecipeActionBar";
 import { usePremiumContext } from "@/context/PremiumContext";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -65,6 +66,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   const isCommunityRecipe = props.recipeType === "community";
+  const isFavourited = useIsRecipeFavourited(props.recipeId, props.recipeType);
 
   const handleRemixPress = useCallback(() => {
     if (!isPremium) {
@@ -216,6 +218,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
             <RecipeActionBar
               recipeId={props.recipeId}
               recipeType={props.recipeType}
+              isFavourited={isFavourited}
               onSaveToCookbook={() => setPickerVisible(true)}
             />
           )}

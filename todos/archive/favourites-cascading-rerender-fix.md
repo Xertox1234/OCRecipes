@@ -1,6 +1,6 @@
 ---
 title: "Fix cascading re-renders from useIsRecipeFavourited in list items"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-04-09
 updated: 2026-04-09

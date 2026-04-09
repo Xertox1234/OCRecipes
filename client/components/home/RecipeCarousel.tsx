@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   FlatList,
   StyleSheet,
@@ -15,6 +15,10 @@ import {
   useCarouselRecipes,
   useDismissCarouselRecipe,
 } from "@/hooks/useCarouselRecipes";
+import {
+  useFavouriteRecipeIds,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
 import { Spacing, FontFamily } from "@/constants/theme";
 import type { CarouselRecipeCard as CarouselCardType } from "@shared/types/carousel";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
@@ -26,8 +30,18 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { data, isLoading } = useCarouselRecipes();
   const dismissRecipe = useDismissCarouselRecipe();
+  const { data: favouriteData } = useFavouriteRecipeIds();
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
   const cards = data?.cards ?? [];
+
+  const favouriteIdSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favouriteData?.ids ?? []) {
+      set.add(`${f.recipeType}:${f.recipeId}`);
+    }
+    return set;
+  }, [favouriteData]);
 
   const handlePress = useCallback(
     (card: CarouselCardType) => {
@@ -46,15 +60,24 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
     [dismissRecipe],
   );
 
+  const handleFavourite = useCallback(
+    (recipeId: number) => {
+      toggleFavourite({ recipeId, recipeType: "community" });
+    },
+    [toggleFavourite],
+  );
+
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<CarouselCardType>) => (
       <CarouselRecipeCard
         card={item}
+        isFavourited={favouriteIdSet.has(`community:${item.id}`)}
         onPress={handlePress}
         onDismiss={handleDismiss}
+        onFavourite={handleFavourite}
       />
     ),
-    [handlePress, handleDismiss],
+    [handlePress, handleDismiss, handleFavourite, favouriteIdSet],
   );
 
   const keyExtractor = useCallback(

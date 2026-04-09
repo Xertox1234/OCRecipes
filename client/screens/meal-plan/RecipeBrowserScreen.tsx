@@ -39,7 +39,7 @@ import {
 } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import {
-  useIsRecipeFavourited,
+  useFavouriteRecipeIds,
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
 import { resolveImageUrl } from "@/lib/query-client";
@@ -109,34 +109,30 @@ const DIET_PRESETS = ["Vegetarian", "Vegan", "Gluten Free", "Keto", "Paleo"];
 
 const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
   item,
+  isFavourited,
   onPress,
+  onFavourite,
   adding,
   browseOnly,
 }: {
   item: UnifiedRecipeItem;
+  isFavourited: boolean;
   onPress: (item: UnifiedRecipeItem) => void;
+  onFavourite: (recipeId: number, recipeType: "mealPlan" | "community") => void;
   adding: boolean;
   browseOnly: boolean;
 }) {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const recipeType = item.source === "community" ? "community" : "mealPlan";
-  const isFavourited = useIsRecipeFavourited(
-    item.id,
-    recipeType as "mealPlan" | "community",
-  );
-  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
   const handleFavourite = useCallback(
     (e: GestureResponderEvent) => {
       e.stopPropagation();
       haptics.impact();
-      toggleFavourite({
-        recipeId: item.id,
-        recipeType: recipeType as "mealPlan" | "community",
-      });
+      const recipeType = item.source === "community" ? "community" : "mealPlan";
+      onFavourite(item.id, recipeType);
     },
-    [haptics, toggleFavourite, item.id, recipeType],
+    [haptics, onFavourite, item.id, item.source],
   );
 
   const isCommunity = item.source === "community";
@@ -445,6 +441,16 @@ export default function RecipeBrowserScreen() {
 
   const saveCatalogMutation = useSaveCatalogRecipe();
   const addItemMutation = useAddMealPlanItem();
+  const { data: favouriteData } = useFavouriteRecipeIds();
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+
+  const favouriteIdSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favouriteData?.ids ?? []) {
+      set.add(`${f.recipeType}:${f.recipeId}`);
+    }
+    return set;
+  }, [favouriteData]);
 
   const isBrowseOnly = !plannedDate || !mealType;
 
@@ -540,6 +546,13 @@ export default function RecipeBrowserScreen() {
     ],
   );
 
+  const handleFavourite = useCallback(
+    (recipeId: number, recipeType: "mealPlan" | "community") => {
+      toggleFavourite({ recipeId, recipeType });
+    },
+    [toggleFavourite],
+  );
+
   const handleToggleCuisine = useCallback(
     (cuisine: string) => {
       haptics.selection();
@@ -562,15 +575,26 @@ export default function RecipeBrowserScreen() {
   }, [haptics]);
 
   const renderItem = useCallback(
-    ({ item }: { item: UnifiedRecipeItem }) => (
-      <UnifiedRecipeCard
-        item={item}
-        onPress={handleRecipePress}
-        adding={addingId === `${item.source}-${item.id}`}
-        browseOnly={isBrowseOnly}
-      />
-    ),
-    [handleRecipePress, addingId, isBrowseOnly],
+    ({ item }: { item: UnifiedRecipeItem }) => {
+      const recipeType = item.source === "community" ? "community" : "mealPlan";
+      return (
+        <UnifiedRecipeCard
+          item={item}
+          isFavourited={favouriteIdSet.has(`${recipeType}:${item.id}`)}
+          onPress={handleRecipePress}
+          onFavourite={handleFavourite}
+          adding={addingId === `${item.source}-${item.id}`}
+          browseOnly={isBrowseOnly}
+        />
+      );
+    },
+    [
+      handleRecipePress,
+      handleFavourite,
+      addingId,
+      isBrowseOnly,
+      favouriteIdSet,
+    ],
   );
 
   const keyExtractor = useCallback(
