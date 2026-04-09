@@ -731,6 +731,66 @@ vi.mocked(storage.getUser).mockResolvedValue(null);
 
 **Exceptions:** Some storage functions explicitly return `null` for business-logic reasons (e.g., `createGroceryListWithLimitCheck` returns `null` when the limit is exceeded, `getApiKey` returns `T | null`). Check the storage function's return type before choosing `undefined` vs `null` in your mock.
 
+### Facade Mock Alignment for Re-Exported Values
+
+When `vi.mock("../../storage")` intercepts the storage facade, the mock replaces the **entire module** — including any re-exported values like types, classes, and constants. If a route imports a re-exported value (e.g., `import { storage, MAX_IMAGE_SIZE_BYTES } from "../storage"`), the mock must include it or the route receives `undefined` and throws at runtime.
+
+```typescript
+// ❌ BAD: Mock only returns `storage` — re-exported constants are undefined
+vi.mock("../../storage", () => ({
+  storage: {
+    getUser: vi.fn(),
+    createScannedItem: vi.fn(),
+  },
+}));
+// Route does: import { storage, MAX_IMAGE_SIZE_BYTES } from "../storage"
+// MAX_IMAGE_SIZE_BYTES is undefined → route throws → test gets 500
+
+// ✅ GOOD: Mock includes re-exported values from sub-modules
+vi.mock("../../storage", async () => {
+  const sessions = await import("../../storage/sessions");
+  return {
+    MAX_IMAGE_SIZE_BYTES: sessions.MAX_IMAGE_SIZE_BYTES,
+    storage: {
+      getUser: vi.fn(),
+      createScannedItem: vi.fn(),
+    },
+  };
+});
+```
+
+For re-exported classes used in `instanceof` checks (like `BatchStorageError`), the mock must return the real class — otherwise `catch` blocks that check `error instanceof BatchStorageError` won't match:
+
+```typescript
+vi.mock("../../storage", async () => {
+  const batch = await import("../../storage/batch");
+  return {
+    BatchStorageError: batch.BatchStorageError,
+    storage: {
+      /* ... */
+    },
+  };
+});
+```
+
+**When to update mocks:**
+
+- When adding a new re-export to `server/storage/index.ts`
+- When changing a route from a direct sub-module import to a facade import
+- When a test gets unexpected 500s after a refactor that didn't change business logic
+
+**Symptoms of misalignment:**
+
+- Tests expect 200/400/404 but get 500
+- Error messages like `Cannot read properties of undefined` in test output
+- Tests pass in isolation but fail when run with the full suite (mock hoisting order)
+
+**References:**
+
+- `server/routes/__tests__/photos.test.ts` — `MAX_IMAGE_SIZE_BYTES` re-exported from sessions
+- `server/routes/__tests__/batch-scan.test.ts` — `BatchStorageError` re-exported from batch
+- `server/routes/__tests__/cooking.test.ts` — `cookingSessionStore` re-exported with real implementation
+
 ## Adding New Patterns
 
 When you establish a new pattern:
