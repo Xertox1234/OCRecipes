@@ -8,6 +8,7 @@ import { register } from "../chat";
 import {
   createMockChatConversation,
   createMockChatMessage,
+  createMockCommunityRecipe,
   createMockUser,
   createMockWeightLog,
 } from "../../__tests__/factories";
@@ -30,6 +31,7 @@ vi.mock("../../storage", () => ({
     deleteChatConversation: vi.fn(),
     getCoachCachedResponse: vi.fn().mockResolvedValue(null),
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
+    getCommunityRecipe: vi.fn(),
   },
 }));
 
@@ -101,6 +103,78 @@ describe("Chat Routes", () => {
         "coach",
         null,
       );
+    });
+
+    it("creates remix conversation with sourceRecipeId and metadata", async () => {
+      const sourceRecipe = createMockCommunityRecipe({
+        id: 42,
+        title: "Original Pasta",
+        authorId: "1",
+        isPublic: true,
+      });
+      vi.mocked(storage.getCommunityRecipe).mockResolvedValue(sourceRecipe);
+      const convo = createMockChatConversation({
+        type: "remix",
+        title: "Remix: Original Pasta",
+        metadata: {
+          sourceRecipeId: 42,
+          sourceRecipeTitle: "Original Pasta",
+        },
+      });
+      vi.mocked(storage.createChatConversation).mockResolvedValue(convo);
+      vi.mocked(storage.createChatMessage).mockResolvedValue(
+        createMockChatMessage(),
+      );
+
+      const res = await request(app)
+        .post("/api/chat/conversations")
+        .set("Authorization", "Bearer token")
+        .send({ type: "remix", sourceRecipeId: 42 });
+
+      expect(res.status).toBe(201);
+      expect(storage.createChatConversation).toHaveBeenCalledWith(
+        "1",
+        "Remix: Original Pasta",
+        "remix",
+        { sourceRecipeId: 42, sourceRecipeTitle: "Original Pasta" },
+      );
+    });
+
+    it("returns 400 for remix without sourceRecipeId", async () => {
+      const res = await request(app)
+        .post("/api/chat/conversations")
+        .set("Authorization", "Bearer token")
+        .send({ type: "remix" });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("sourceRecipeId");
+    });
+
+    it("returns 404 for remix with non-existent recipe", async () => {
+      vi.mocked(storage.getCommunityRecipe).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/chat/conversations")
+        .set("Authorization", "Bearer token")
+        .send({ type: "remix", sourceRecipeId: 999 });
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 for remix with private recipe owned by another user", async () => {
+      const privateRecipe = createMockCommunityRecipe({
+        id: 10,
+        authorId: "other-user",
+        isPublic: false,
+      });
+      vi.mocked(storage.getCommunityRecipe).mockResolvedValue(privateRecipe);
+
+      const res = await request(app)
+        .post("/api/chat/conversations")
+        .set("Authorization", "Bearer token")
+        .send({ type: "remix", sourceRecipeId: 10 });
+
+      expect(res.status).toBe(404);
     });
   });
 

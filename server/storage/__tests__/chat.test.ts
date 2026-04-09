@@ -32,6 +32,8 @@ const {
   deleteChatConversation,
   updateChatConversationTitle,
   getDailyChatMessageCount,
+  createChatMessageWithLimitCheck,
+  saveRecipeFromChat,
 } = await import("../chat");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -219,6 +221,133 @@ describe("chat storage", () => {
     it("returns 0 when no messages exist", async () => {
       const count = await getDailyChatMessageCount(testUser.id, new Date());
       expect(count).toBe(0);
+    });
+  });
+
+  // ---- Remix quota (createChatMessageWithLimitCheck) ----
+
+  describe("createChatMessageWithLimitCheck — remix", () => {
+    it("first message in remix conversation counts against quota", async () => {
+      const conv = await createChatConversation(
+        testUser.id,
+        "Remix Chat",
+        "remix",
+        { sourceRecipeId: 1, sourceRecipeTitle: "Original" },
+      );
+
+      // First message should succeed (quota is 5)
+      const msg = await createChatMessageWithLimitCheck(
+        conv.id,
+        testUser.id,
+        "Make it spicy",
+        5,
+        "remix",
+      );
+      expect(msg).not.toBeNull();
+      expect(msg!.content).toBe("Make it spicy");
+    });
+
+    it("second message in same remix conversation does NOT count against quota", async () => {
+      const conv = await createChatConversation(
+        testUser.id,
+        "Remix Chat",
+        "remix",
+        { sourceRecipeId: 1, sourceRecipeTitle: "Original" },
+      );
+
+      // First message
+      await createChatMessageWithLimitCheck(
+        conv.id,
+        testUser.id,
+        "Make it spicy",
+        1, // daily limit = 1
+        "remix",
+      );
+
+      // Second message in same conversation — should succeed despite limit of 1
+      const msg2 = await createChatMessageWithLimitCheck(
+        conv.id,
+        testUser.id,
+        "Actually, make it mild",
+        1,
+        "remix",
+      );
+      expect(msg2).not.toBeNull();
+      expect(msg2!.content).toBe("Actually, make it mild");
+    });
+
+    it("recipe type correctly counts remix conversations as 1 each", async () => {
+      // Create a remix conversation and add a user message
+      const remixConv = await createChatConversation(
+        testUser.id,
+        "Remix Chat",
+        "remix",
+        { sourceRecipeId: 1, sourceRecipeTitle: "Original" },
+      );
+      await createChatMessageWithLimitCheck(
+        remixConv.id,
+        testUser.id,
+        "Make it spicy",
+        5,
+        "remix",
+      );
+
+      // Now try to create a recipe-type message — should count the remix conv
+      const recipeConv = await createChatConversation(
+        testUser.id,
+        "Recipe Chat",
+        "recipe",
+      );
+      // With limit of 1, the remix conv already consumed 1 generation
+      const msg = await createChatMessageWithLimitCheck(
+        recipeConv.id,
+        testUser.id,
+        "Make me a salad",
+        1,
+        "recipe",
+      );
+      expect(msg).toBeNull(); // Should be blocked — 1 remix conv counts as 1 generation
+    });
+  });
+
+  // ---- saveRecipeFromChat with lineage ----
+
+  describe("saveRecipeFromChat — lineage", () => {
+    it("creates recipe with remixedFromId and remixedFromTitle when lineage provided", async () => {
+      const conv = await createChatConversation(
+        testUser.id,
+        "Remix Chat",
+        "remix",
+        { sourceRecipeId: 99, sourceRecipeTitle: "Original Pasta" },
+      );
+
+      // Insert an assistant message with valid recipe metadata
+      const msg = await createChatMessage(conv.id, "assistant", "Here it is!", {
+        metadataVersion: 1,
+        recipe: {
+          title: "Spicy Pasta",
+          description: "A spicy version",
+          difficulty: "Easy",
+          timeEstimate: "30 min",
+          servings: 4,
+          ingredients: [{ name: "Pasta", quantity: "200", unit: "g" }],
+          instructions: ["Cook pasta", "Add spice"],
+          dietTags: ["spicy"],
+        },
+        allergenWarning: null,
+        imageUrl: null,
+      });
+
+      const recipe = await saveRecipeFromChat(msg.id, conv.id, testUser.id, {
+        remixedFromId: 99,
+        remixedFromTitle: "Original Pasta",
+      });
+
+      expect(recipe).not.toBeNull();
+      expect(recipe!.title).toBe("Spicy Pasta");
+      expect(recipe!.remixedFromId).toBe(99);
+      expect(recipe!.remixedFromTitle).toBe("Original Pasta");
+      expect(recipe!.authorId).toBe(testUser.id);
     });
   });
 });
