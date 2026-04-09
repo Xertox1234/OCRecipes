@@ -3,14 +3,16 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import { openai } from "../../lib/openai";
+import {
+  generateSuggestions,
+  generateInstructions,
+} from "../../services/suggestion-generation";
 import { register } from "../suggestions";
 import {
   createMockScannedItem,
   createMockUserProfile,
   createMockSuggestionCache,
   createMockInstructionCache,
-  createMockChatCompletion,
 } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
@@ -27,17 +29,18 @@ vi.mock("../../storage", () => ({
 }));
 
 vi.mock("../../lib/openai", () => ({
-  openai: {
-    chat: {
-      completions: {
-        create: vi.fn(),
-      },
-    },
-  },
   isAiConfigured: true,
-  MODEL_FAST: "gpt-4o-mini",
-  MODEL_HEAVY: "gpt-4o",
-  OPENAI_TIMEOUT_FAST_MS: 15_000,
+}));
+
+vi.mock("../../services/suggestion-generation", () => ({
+  generateSuggestions: vi.fn(),
+  generateInstructions: vi.fn(),
+  SuggestionParseError: class SuggestionParseError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "SuggestionParseError";
+    }
+  },
 }));
 
 vi.mock("../../middleware/auth");
@@ -97,13 +100,9 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getSuggestionCache).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion(
-          JSON.stringify({
-            suggestions: [{ type: "recipe", title: "Yogurt Bowl" }],
-          }),
-        ),
-      );
+      vi.mocked(generateSuggestions).mockResolvedValue([
+        { type: "recipe", title: "Yogurt Bowl", description: "" },
+      ]);
       vi.mocked(storage.createSuggestionCache).mockResolvedValue(
         createMockSuggestionCache({ id: 11 }),
       );
@@ -177,9 +176,7 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getInstructionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion("Step 1: Mix..."),
-      );
+      vi.mocked(generateInstructions).mockResolvedValue("Step 1: Mix...");
       vi.mocked(storage.createInstructionCache).mockResolvedValue(undefined);
 
       const res = await request(app)
@@ -251,8 +248,8 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getInstructionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion("Step 1: Gather materials..."),
+      vi.mocked(generateInstructions).mockResolvedValue(
+        "Step 1: Gather materials...",
       );
       vi.mocked(storage.createInstructionCache).mockResolvedValue(undefined);
 
@@ -273,8 +270,8 @@ describe("Suggestions Routes", () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getInstructionCache).mockResolvedValue(undefined);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion("These pair well because..."),
+      vi.mocked(generateInstructions).mockResolvedValue(
+        "These pair well because...",
       );
 
       const res = await request(app)
@@ -292,9 +289,7 @@ describe("Suggestions Routes", () => {
     it("skips caching when no cacheId provided", async () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion("Step 1: Mix..."),
-      );
+      vi.mocked(generateInstructions).mockResolvedValue("Step 1: Mix...");
 
       const res = await request(app)
         .post("/api/items/1/suggestions/0/instructions")
@@ -312,9 +307,7 @@ describe("Suggestions Routes", () => {
     it("returns 500 on OpenAI error", async () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockRejectedValue(
-        new Error("API error"),
-      );
+      vi.mocked(generateInstructions).mockRejectedValue(new Error("API error"));
 
       const res = await request(app)
         .post("/api/items/1/suggestions/0/instructions")
@@ -340,13 +333,9 @@ describe("Suggestions Routes", () => {
         }),
       );
       vi.mocked(storage.getSuggestionCache).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockResolvedValue(
-        createMockChatCompletion(
-          JSON.stringify({
-            suggestions: [{ type: "recipe", title: "Veggie Bowl" }],
-          }),
-        ),
-      );
+      vi.mocked(generateSuggestions).mockResolvedValue([
+        { type: "recipe", title: "Veggie Bowl", description: "" },
+      ]);
       vi.mocked(storage.createSuggestionCache).mockResolvedValue(
         createMockSuggestionCache({ id: 12 }),
       );
@@ -356,16 +345,14 @@ describe("Suggestions Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      expect(openai.chat.completions.create).toHaveBeenCalled();
+      expect(generateSuggestions).toHaveBeenCalled();
     });
 
     it("returns 500 on OpenAI error for suggestions", async () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getSuggestionCache).mockResolvedValue(undefined);
-      vi.mocked(openai.chat.completions.create).mockRejectedValue(
-        new Error("API error"),
-      );
+      vi.mocked(generateSuggestions).mockRejectedValue(new Error("API error"));
 
       const res = await request(app)
         .post("/api/items/1/suggestions")
