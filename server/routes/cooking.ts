@@ -37,6 +37,11 @@ import {
 } from "@shared/constants/allergens";
 
 import { storage, type CookingSession } from "../storage";
+import {
+  COOKING_MAX_PER_USER,
+  COOKING_MAX_GLOBAL,
+  COOKING_TIMEOUT_MS,
+} from "../storage/sessions";
 
 // ============================================================================
 // MULTER CONFIG (5MB for ingredient photos)
@@ -110,12 +115,9 @@ export const _testInternals = {
   resetSessionTimeout: cookStore.resetTimeout,
   MAX_PHOTOS_PER_SESSION,
   MAX_INGREDIENTS_PER_SESSION,
-  /** Matches cookingSessionStore config in storage/sessions.ts */
-  MAX_SESSIONS_PER_USER: 2,
-  /** Matches cookingSessionStore config in storage/sessions.ts */
-  MAX_SESSIONS_GLOBAL: 1000,
-  /** Matches cookingSessionStore config in storage/sessions.ts */
-  COOK_SESSION_TIMEOUT: 30 * 60 * 1000,
+  MAX_SESSIONS_PER_USER: COOKING_MAX_PER_USER,
+  MAX_SESSIONS_GLOBAL: COOKING_MAX_GLOBAL,
+  COOK_SESSION_TIMEOUT: COOKING_TIMEOUT_MS,
 };
 
 // ============================================================================

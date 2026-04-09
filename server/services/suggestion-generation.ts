@@ -101,7 +101,13 @@ Keep descriptions concise. Make recipes practical and kid activities fun and saf
   );
 
   const responseText = completion.choices[0]?.message?.content || "{}";
-  const parsed = suggestionsResponseSchema.safeParse(JSON.parse(responseText));
+  let raw: unknown;
+  try {
+    raw = JSON.parse(responseText);
+  } catch {
+    throw new SuggestionParseError("AI returned invalid JSON");
+  }
+  const parsed = suggestionsResponseSchema.safeParse(raw);
   if (!parsed.success) {
     throw new SuggestionParseError("AI returned an unexpected response format");
   }
