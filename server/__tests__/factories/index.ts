@@ -48,3 +48,7 @@ export {
   createMockMealSuggestionCache,
 } from "./cache";
 export { createMockSavedItem } from "./saved-item";
+export {
+  createMockFavouriteRecipe,
+  createMockResolvedFavouriteRecipe,
+} from "./favourite-recipes";
