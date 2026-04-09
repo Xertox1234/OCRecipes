@@ -5,6 +5,7 @@ export interface CarouselRecipeCard {
   imageUrl: string | null;
   prepTimeMinutes: number | null;
   recommendationReason: string;
+  isRemix?: boolean;
 }
 
 export interface CarouselResponse {
