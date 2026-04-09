@@ -8,54 +8,24 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { COMMON_DISLIKES } from "@/constants/dietary-options";
-
-const CUISINES = [
-  { id: "american", name: "American" },
-  { id: "italian", name: "Italian" },
-  { id: "mexican", name: "Mexican" },
-  { id: "chinese", name: "Chinese" },
-  { id: "japanese", name: "Japanese" },
-  { id: "indian", name: "Indian" },
-  { id: "thai", name: "Thai" },
-  { id: "mediterranean", name: "Mediterranean" },
-  { id: "korean", name: "Korean" },
-  { id: "vietnamese", name: "Vietnamese" },
-  { id: "french", name: "French" },
-  { id: "greek", name: "Greek" },
-];
-
-const SKILL_LEVELS = [
-  {
-    id: "beginner",
-    name: "Beginner",
-    description: "Simple recipes, basic techniques",
-  },
-  {
-    id: "intermediate",
-    name: "Intermediate",
-    description: "Comfortable with most recipes",
-  },
-  {
-    id: "advanced",
-    name: "Advanced",
-    description: "Complex techniques welcome",
-  },
-];
-
-const COOKING_TIMES = [
-  { id: "quick", name: "Quick", description: "Under 30 minutes" },
-  { id: "moderate", name: "Moderate", description: "30-60 minutes" },
-  { id: "leisurely", name: "Leisurely", description: "1+ hours, no rush" },
-];
+import {
+  COMMON_DISLIKES,
+  CUISINES,
+  SKILL_LEVELS,
+  COOKING_TIMES,
+} from "@/constants/dietary-options";
+import { useHaptics } from "@/hooks/useHaptics";
+import * as Haptics from "expo-haptics";
 
 export default function PreferencesScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const haptics = useHaptics();
   const { data, updateData, prevStep, completeOnboarding, isSubmitting } =
     useOnboarding();
 
   const toggleCuisine = (cuisineId: string) => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     const isSelected = data.cuisinePreferences.includes(cuisineId);
     if (isSelected) {
       updateData({
@@ -71,12 +41,14 @@ export default function PreferencesScreen() {
   };
 
   const selectSkillLevel = (levelId: string) => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     updateData({
       cookingSkillLevel: data.cookingSkillLevel === levelId ? null : levelId,
     });
   };
 
   const selectCookingTime = (timeId: string) => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     updateData({
       cookingTimeAvailable:
         data.cookingTimeAvailable === timeId ? null : timeId,
@@ -84,6 +56,7 @@ export default function PreferencesScreen() {
   };
 
   const toggleDislike = (dislikeId: string) => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     const isSelected = data.foodDislikes.includes(dislikeId);
     if (isSelected) {
       updateData({
