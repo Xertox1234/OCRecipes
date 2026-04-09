@@ -803,3 +803,102 @@ const handleSend = useCallback(async () => {
 
 - `client/hooks/useChat.ts` — `useSendMessage` with `conversationIdOverride` parameter
 - `client/screens/RecipeChatScreen.tsx` — `handleSend` passes `convId` after async conversation creation
+
+### Batch ID Cache + Derived Boolean Hook
+
+When rendering a list of items where each item needs a boolean check against a user's collection (e.g., "is this recipe favourited?"), avoid per-item API calls. Instead, fetch **all** IDs in one request and derive booleans locally.
+
+**Three-layer pattern:**
+
+1. **Server endpoint** returns all IDs in the collection (`GET /api/favourite-recipes/ids` → `{ ids: { recipeId, recipeType }[] }`)
+2. **Cache hook** fetches and caches the full ID set with `staleTime` to reduce refetches (`useFavouriteRecipeIds`)
+3. **Derived hook** reads from the cache and returns a boolean via `useMemo` — no network call (`useIsRecipeFavourited`)
+
+```typescript
+// Layer 2: Cache hook — fetches all IDs once, shared across components
+export function useFavouriteRecipeIds() {
+  return useQuery<{ ids: FavouriteId[] }>({
+    queryKey: ["/api/favourite-recipes/ids"],
+    queryFn: async () => {
+      /* ... */
+    },
+    staleTime: 30_000, // Reduce refetches when navigating between screens
+    refetchOnMount: "always",
+  });
+}
+
+// Layer 3: Derived hook — reads from cache, no network call
+export function useIsRecipeFavourited(
+  recipeId: number,
+  recipeType: "mealPlan" | "community",
+): boolean {
+  const { data } = useFavouriteRecipeIds();
+  return useMemo(
+    () =>
+      data?.ids.some(
+        (f) => f.recipeId === recipeId && f.recipeType === recipeType,
+      ) ?? false,
+    [data, recipeId, recipeType],
+  );
+}
+```
+
+**Optimistic updates** on the toggle mutation target the IDs cache — add/remove the ID immediately, rollback on error, invalidate on settle. The derived hook picks up the change instantly since it reads from the same cache.
+
+**When to use:** Any "is this item in my collection?" check rendered across a list — favourites, bookmarks, read/unread status, selections. The key criterion: the total collection size is small enough to return in a single response (hundreds of IDs, not millions).
+
+**References:**
+
+- `client/hooks/useFavouriteRecipes.ts` — `useFavouriteRecipeIds` + `useIsRecipeFavourited` + `useToggleFavouriteRecipe`
+- `server/routes/favourite-recipes.ts` — `GET /api/favourite-recipes/ids`
+
+### Native Share with Server-Side Payload
+
+When sharing content externally (social media, messaging), build the share payload server-side and consume it with React Native's `Share.share()`. This keeps deep link construction and content formatting centralized.
+
+```typescript
+// Server: GET /api/recipes/:recipeType/:recipeId/share
+// Returns: { title, description, imageUrl, deepLink }
+
+// Client hook:
+export function useShareRecipe() {
+  const share = useCallback(
+    async (recipeId: number, recipeType: "mealPlan" | "community") => {
+      const res = await apiRequest(
+        "GET",
+        `/api/recipes/${recipeType}/${recipeId}/share`,
+      );
+      const payload = await res.json();
+
+      const message = `Check out this recipe: ${payload.title}\n\n${payload.description}\n\n${payload.deepLink}`;
+
+      // iOS: pass url for image preview attachment
+      // Android: image URL must be included in message text
+      await Share.share(
+        Platform.OS === "ios"
+          ? {
+              title: payload.title,
+              message,
+              url: payload.imageUrl ?? undefined,
+            }
+          : { title: payload.title, message },
+      );
+    },
+    [],
+  );
+  return { share };
+}
+```
+
+**Key details:**
+
+- **Server builds the deep link** — the client doesn't need to know the URL scheme format
+- **Platform branching** — iOS `Share.share()` supports a `url` field for image attachment; Android does not
+- **Graceful cancellation** — `Share.share()` throws when the user dismisses the sheet; catch and ignore
+- **Ownership checks** — the server endpoint should verify access (especially for private content like personal recipes)
+
+**References:**
+
+- `client/hooks/useFavouriteRecipes.ts` — `useShareRecipe`
+- `server/routes/favourite-recipes.ts` — `GET /api/recipes/:recipeType/:recipeId/share`
+- `server/storage/favourite-recipes.ts` — `getRecipeSharePayload` (with userId ownership check for mealPlan recipes)
