@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-04-09 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit — ~30 commits, ~13K LOC since audit #8 (favourites, recipe remix, cooking session consolidation, storage facade re-exports, todo skill)
+- **Manifest:** [docs/audits/2026-04-09-full.md](2026-04-09-full.md)
+- **Findings:** 0 critical, 2 high, 11 medium, 16 low (29 total, 40 raw from 6 agents)
+- **Resolved:** 18 verified, 11 deferred (5 todos), 0 false-positive
+- **Commit:** `6a802fd`
+- **Note:** Key fixes: IDOR ownership checks on favouriteRecipes toggle/resolve/share, isPublic filter on community recipe share, rate limiters on 4 endpoints, column-restricted select (no JSONB over-fetch), Promise.all for tx queries + SSE waterfall, favouriteRecipes orphan cleanup in delete functions, pg_advisory_xact_lock for TOCTOU, cacheAffectingFields sync, Drizzle relations, duplicate type removal. +11 tests net. Deferred: cascading re-render refactor, share endpoint relocation, test coverage suite, nav type, test internals cleanup.
+
 ## 2026-04-07 — Full Codebase Audit (Round 2)
 
 - **Trigger:** Post-OCR-feature audit — 12 commits (~2200 LOC) landed since audit #6

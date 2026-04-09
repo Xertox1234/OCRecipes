@@ -164,6 +164,63 @@ export async function verifyGroceryListOwnership(
 - `server/storage/meal-plans.ts` — `verifyGroceryListOwnership`
 - Audit #6 H3
 
+#### Polymorphic FK IDOR: Ownership at Every Consumer
+
+When a junction table uses the polymorphic FK pattern (`recipeId` + `recipeType` discriminator, no DB-level FK), **every consumer function** — toggle, resolve, share, count — must independently verify ownership. The lack of a DB-level FK means there is no cascade or referential integrity check; the application code is the only enforcement layer.
+
+This is not the same as the standard "storage mutation includes userId" pattern. In the polymorphic case, ownership is determined by the _target_ table (e.g., `mealPlanRecipes.userId` or `communityRecipes.authorId`), not the junction table itself. Each consumer must check ownership through the appropriate target table based on the `recipeType` discriminator.
+
+**Checklist for polymorphic FK consumers:**
+
+1. **Toggle (add/remove):** Before inserting into the junction table, verify the target exists and belongs to the user. For `mealPlan` type: `eq(mealPlanRecipes.userId, userId)`. For `community` type: verify existence (community recipes are public by definition when toggling favourites).
+2. **Resolve (batch fetch details):** When fetching target rows by ID, include `eq(target.userId, userId)` in the WHERE clause (for private types) or `or(eq(isPublic, true), eq(authorId, userId))` (for public/private mixed types).
+3. **Share:** When building a share payload, filter by `or(eq(isPublic, true), eq(authorId, userId))` — never expose private community recipes.
+4. **Count:** Use EXISTS subqueries or proactive orphan cleanup to ensure counts exclude deleted targets (see "Orphan-Safe Counts" in database patterns).
+
+```typescript
+// ❌ Bad: Toggle accepts any recipeId without checking who owns it
+async function toggleFavourite(
+  userId: string,
+  recipeId: number,
+  recipeType: string,
+) {
+  return db.transaction(async (tx) => {
+    // ... toggle logic using recipeId directly — IDOR!
+  });
+}
+
+// ✅ Good: Verify ownership of the target recipe before toggling
+async function toggleFavourite(
+  userId: string,
+  recipeId: number,
+  recipeType: string,
+) {
+  return db.transaction(async (tx) => {
+    if (recipeType === "mealPlan") {
+      const [recipe] = await tx
+        .select({ id: mealPlanRecipes.id })
+        .from(mealPlanRecipes)
+        .where(
+          and(
+            eq(mealPlanRecipes.id, recipeId),
+            eq(mealPlanRecipes.userId, userId),
+          ),
+        );
+      if (!recipe) return undefined; // Not found or not owned
+    }
+    // ... toggle logic
+  });
+}
+```
+
+**Why this is non-obvious:** The junction table _does_ have `userId`, so it looks like ownership is enforced. But the `userId` on the junction only tracks who favourited — it does not prove the target recipe is accessible to that user. A malicious user can favourite another user's private meal plan recipe by guessing the ID.
+
+**References:**
+
+- `server/storage/favourite-recipes.ts` — toggle, resolve, share, count all verify target ownership
+- `server/storage/cookbooks.ts` — similar polymorphic FK pattern with same risk
+- Audit #9 H1, H2
+
 ### SSRF Protection for Server-Side URL Fetching
 
 When the server fetches a user-provided URL (e.g., recipe import, link previews), use the hardened `safeFetch` implementation in `server/services/recipe-import.ts`. It provides:

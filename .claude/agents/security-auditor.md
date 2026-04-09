@@ -267,6 +267,7 @@ When auditing a route file or service, check every item:
 - [ ] IDOR: ownership check at route level (404, not 403)
 - [ ] IDOR: storage mutations include userId in WHERE
 - [ ] IDOR: junction table reads join through parent
+- [ ] IDOR: polymorphic FK consumers (toggle, resolve, share, count) each verify target ownership independently — junction `userId` is not sufficient (Ref: audit #9 H1/H2)
 - [ ] Premium features gated via `checkPremiumFeature()`
 - [ ] `checkAiConfigured()` before AI calls
 

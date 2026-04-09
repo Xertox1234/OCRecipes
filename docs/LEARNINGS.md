@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [cacheAffectingFields Must Stay in Sync with calculateProfileHash (2026-04-09)](#cacheaffectingfields-must-stay-in-sync-with-calculateprofilehash-2026-04-09)
 - [React Effect Cleanup Must Read Timer Refs at Cleanup Time (2026-04-07)](#react-effect-cleanup-must-read-timer-refs-at-cleanup-time-2026-04-07)
 - [OCR Regex Must Account for Prefix Lines Sharing Keywords (2026-04-07)](#ocr-regex-must-account-for-prefix-lines-sharing-keywords-2026-04-07)
 - [OCR Character Corrections Must Be Context-Sensitive (2026-04-07)](#ocr-character-corrections-must-be-context-sensitive-2026-04-07)
@@ -45,6 +46,36 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-04-09] cacheAffectingFields Must Stay in Sync with calculateProfileHash
+
+**Category:** Gotcha (Data Integrity)
+
+**Problem:** When a user updated their `foodDislikes` or `cuisinePreferences` in the dietary profile, the suggestion cache was not eagerly invalidated. The user continued to see stale AI-generated suggestions that did not reflect their new preferences until the cache TTL expired (30 days).
+
+**Root cause:** Two separate lists define "which profile fields affect AI suggestions":
+
+1. `cacheAffectingFields` in `server/routes/profile.ts` — used at write time to decide whether to invalidate the suggestion cache when the profile is updated.
+2. The field list inside `calculateProfileHash()` in `server/utils/profile-hash.ts` — used at read time to generate a hash key for cache lookups.
+
+When `foodDislikes` and `cuisinePreferences` were added to `calculateProfileHash()` (so new cache entries would be keyed correctly), `cacheAffectingFields` was not updated to match. This meant profile updates that only changed dislikes or cuisine preferences did not trigger eager cache invalidation.
+
+**Fix:** Added `foodDislikes` and `cuisinePreferences` to `cacheAffectingFields`. Both lists now contain the same 6 fields: `allergies`, `dietType`, `cookingSkillLevel`, `cookingTimeAvailable`, `foodDislikes`, `cuisinePreferences`.
+
+**Rule:** When two lists must stay in sync, either:
+
+1. **Extract a single source of truth** — define the field list once and import it in both places, or
+2. **Add a test** — assert that `cacheAffectingFields` contains exactly the fields used in `calculateProfileHash()`.
+
+In this project, option 1 is preferred but deferred because `cacheAffectingFields` is checked against the request body keys (strings), while `calculateProfileHash` accesses `profile?.fieldName` (typed object access). A shared constant would need to bridge both usages.
+
+**References:**
+
+- `server/routes/profile.ts:13-20` — `cacheAffectingFields` array
+- `server/utils/profile-hash.ts` — `calculateProfileHash()` field list
+- Audit #9 L7
 
 ---
 
