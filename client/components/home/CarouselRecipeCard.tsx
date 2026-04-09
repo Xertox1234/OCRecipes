@@ -6,7 +6,7 @@ import {
   Pressable,
   Dimensions,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { Feather, Ionicons } from "@expo/vector-icons";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -143,6 +143,24 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
               </ThemedText>
             </View>
           ) : null}
+
+          {/* Remix badge */}
+          {card.isRemix ? (
+            <View
+              style={[
+                styles.remixBadge,
+                { backgroundColor: withOpacity(theme.link, 0.9) },
+              ]}
+              accessibilityLabel="Remixed recipe"
+            >
+              <Ionicons
+                name="shuffle-outline"
+                size={10}
+                color="#FFFFFF" // hardcoded — always white on colored badge
+                accessible={false}
+              />
+            </View>
+          ) : null}
         </View>
 
         {/* Content */}
@@ -213,6 +231,16 @@ const styles = StyleSheet.create({
   imageFallback: {
     width: "100%",
     height: IMAGE_HEIGHT,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  remixBadge: {
+    position: "absolute",
+    top: Spacing.sm,
+    left: Spacing.sm,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
   },

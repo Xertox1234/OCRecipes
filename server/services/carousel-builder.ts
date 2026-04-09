@@ -14,6 +14,7 @@ function normalizeCommunity(
     imageUrl: recipe.imageUrl,
     prepTimeMinutes: parseTimeEstimate(recipe.timeEstimate),
     recommendationReason: generateCommunityReason(recipe, profile),
+    isRemix: !!recipe.remixedFromId,
   };
 }
 
