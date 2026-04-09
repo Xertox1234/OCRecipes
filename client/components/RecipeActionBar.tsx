@@ -6,7 +6,6 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
-  useIsRecipeFavourited,
   useToggleFavouriteRecipe,
   useShareRecipe,
 } from "@/hooks/useFavouriteRecipes";
@@ -20,17 +19,18 @@ import {
 interface RecipeActionBarProps {
   recipeId: number;
   recipeType: "mealPlan" | "community";
+  isFavourited: boolean;
   onSaveToCookbook: () => void;
 }
 
 export const RecipeActionBar = React.memo(function RecipeActionBar({
   recipeId,
   recipeType,
+  isFavourited,
   onSaveToCookbook,
 }: RecipeActionBarProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const isFavourited = useIsRecipeFavourited(recipeId, recipeType);
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
   const { share } = useShareRecipe();
 

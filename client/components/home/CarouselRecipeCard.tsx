@@ -20,10 +20,6 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
-  useIsRecipeFavourited,
-  useToggleFavouriteRecipe,
-} from "@/hooks/useFavouriteRecipes";
-import {
   Spacing,
   BorderRadius,
   FontFamily,
@@ -41,16 +37,20 @@ const BUTTON_SIZE = 44;
 
 interface CarouselRecipeCardProps {
   card: CarouselCardType;
+  isFavourited: boolean;
   onPress: (card: CarouselCardType) => void;
   onDismiss: (card: CarouselCardType) => void;
+  onFavourite: (recipeId: number) => void;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
   card,
+  isFavourited,
   onPress,
   onDismiss,
+  onFavourite,
 }: CarouselRecipeCardProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -78,13 +78,10 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
     onDismiss(card);
   }, [onDismiss, card, haptics]);
 
-  const isFavourited = useIsRecipeFavourited(card.id, "community");
-  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
-
   const handleFavourite = useCallback(() => {
     haptics.impact();
-    toggleFavourite({ recipeId: card.id, recipeType: "community" });
-  }, [haptics, toggleFavourite, card.id]);
+    onFavourite(card.id);
+  }, [haptics, onFavourite, card.id]);
 
   const imageUri = card.imageUrl ? resolveImageUrl(card.imageUrl) : null;
   const prepLabel = card.prepTimeMinutes ? `${card.prepTimeMinutes} min` : null;
