@@ -390,6 +390,8 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 10. **COUNT on polymorphic FK without EXISTS** - Inflated counts from orphans
 11. **Missing nutrition CHECK constraints** - New tables with nutrition columns missing `>= 0` CHECKs (existing tables: scannedItems, mealPlanRecipes, barcodeNutrition all have them)
 12. **Plain INSERT on cache with unique key** - Use `onConflictDoNothing` for idempotent cache inserts to prevent 500 on concurrent writes
+13. **Over-fetching in polymorphic FK resolution** - `.select()` on target tables pulls full rows including large JSONB; use column-restricted `.select({ id, title, ... })` for list/card views (Ref: audit #9 M2)
+14. **Missing orphan cleanup in parent delete** - When adding a new polymorphic junction table, update ALL parent delete functions to clean up the new junction rows. Check both `deleteCommunityRecipe` and `deleteMealPlanRecipe` (Ref: audit #9 M5)
 
 ---
 

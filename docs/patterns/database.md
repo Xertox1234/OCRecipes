@@ -1852,6 +1852,7 @@ The lock is **transaction-scoped** (`pg_advisory_xact_lock`, not `pg_advisory_lo
 **References:**
 
 - `server/storage/chat.ts` — `createChatMessageWithLimitCheck()`
+- `server/storage/favourite-recipes.ts` — `toggleFavouriteRecipe()` (per-user lock on favourite limit check)
 
 ### Orphan-Safe Counts on Polymorphic Junction Tables
 
@@ -1889,6 +1890,120 @@ const recipeCountSql = sql<number>`(
 
 - `server/storage/cookbooks.ts` — `getUserCookbooks()`
 - Audit #6 H5
+
+### Column-Restricted Select for Polymorphic FK Resolution
+
+When resolving polymorphic FK references (fetching the target rows that junction entries point to), use an explicit `.select({ ... })` with only the columns needed for display — never `.select()` (full row). Polymorphic target tables often contain large JSONB columns (`ingredients`, `instructions`) that are unnecessary for list/card views but expensive to transfer and serialize.
+
+```typescript
+// ❌ Bad: Pulls full row including JSONB columns not used by the caller
+const mealPlanResults = mealPlanIds.length
+  ? await db
+      .select()
+      .from(mealPlanRecipes)
+      .where(inArray(mealPlanRecipes.id, mealPlanIds))
+  : [];
+
+// ✅ Good: Only select columns needed for display
+const mealPlanResults = mealPlanIds.length
+  ? await db
+      .select({
+        id: mealPlanRecipes.id,
+        title: mealPlanRecipes.title,
+        description: mealPlanRecipes.description,
+        imageUrl: mealPlanRecipes.imageUrl,
+        servings: mealPlanRecipes.servings,
+        difficulty: mealPlanRecipes.difficulty,
+      })
+      .from(mealPlanRecipes)
+      .where(inArray(mealPlanRecipes.id, mealPlanIds))
+  : [];
+```
+
+**When to use:** Any batch resolution of polymorphic FK references where the caller renders a list/card view (favourites list, cookbook recipes, search results). These views typically need title, image, and a few metadata fields — not the full recipe body.
+
+**When NOT to use:** Detail views where the caller renders the full entity (recipe detail screen, cooking session). In those cases, the full row is needed anyway.
+
+**Why:** Recipe tables often have `ingredients` (JSONB, ~2KB) and `instructions` (JSONB, ~5KB) columns. When resolving 50 favourites, pulling full rows transfers ~350KB of unused JSONB data. Column restriction reduces this to ~5KB.
+
+**References:**
+
+- `server/storage/favourite-recipes.ts` — `getResolvedFavouriteRecipes()` with column-restricted select
+- `server/storage/cookbooks.ts` — `getResolvedCookbookRecipes()` (similar pattern)
+- Audit #9 M2
+
+### Proactive Orphan Cleanup in Parent Delete Functions
+
+When deleting a parent entity that is referenced by polymorphic junction tables (no DB-level FK), clean up **all** junction tables that reference it — not just the ones you remember. This is the "write-time" complement to the "read-time" lazy cleanup and "count-time" EXISTS subquery patterns.
+
+```typescript
+// ❌ Bad: Only cleans up cookbookRecipes, forgets favouriteRecipes
+export async function deleteCommunityRecipe(recipeId: number, userId: string) {
+  return db.transaction(async (tx) => {
+    await tx
+      .delete(cookbookRecipes)
+      .where(
+        and(
+          eq(cookbookRecipes.recipeId, recipeId),
+          eq(cookbookRecipes.recipeType, "community"),
+        ),
+      );
+    await tx
+      .delete(communityRecipes)
+      .where(
+        and(
+          eq(communityRecipes.id, recipeId),
+          eq(communityRecipes.authorId, userId),
+        ),
+      );
+  });
+}
+
+// ✅ Good: Cleans up ALL junction tables referencing this entity
+export async function deleteCommunityRecipe(recipeId: number, userId: string) {
+  return db.transaction(async (tx) => {
+    await Promise.all([
+      tx
+        .delete(cookbookRecipes)
+        .where(
+          and(
+            eq(cookbookRecipes.recipeId, recipeId),
+            eq(cookbookRecipes.recipeType, "community"),
+          ),
+        ),
+      tx
+        .delete(favouriteRecipes)
+        .where(
+          and(
+            eq(favouriteRecipes.recipeId, recipeId),
+            eq(favouriteRecipes.recipeType, "community"),
+          ),
+        ),
+    ]);
+    await tx
+      .delete(communityRecipes)
+      .where(
+        and(
+          eq(communityRecipes.id, recipeId),
+          eq(communityRecipes.authorId, userId),
+        ),
+      );
+  });
+}
+```
+
+**Checklist when adding a new polymorphic junction table:** Find every `delete` function for every parent table type and add cleanup for the new junction table. Use `Promise.all` for independent cleanup queries within the same transaction.
+
+**Existing junction tables to check:** `cookbookRecipes`, `favouriteRecipes`. When adding a third (e.g., `sharedRecipes`), update delete functions for `mealPlanRecipes`, `communityRecipes`, and any other parent table.
+
+**Why not rely solely on lazy cleanup?** Lazy cleanup (filtering orphans at read time) leaves orphaned rows in the database until someone accesses them. This inflates count queries (limit checks, profile hub counts) and wastes storage. Proactive cleanup at delete time keeps the database clean and counts accurate.
+
+**References:**
+
+- `server/storage/community.ts` — `deleteCommunityRecipe()` cleans up both `cookbookRecipes` and `favouriteRecipes`
+- `server/storage/meal-plans.ts` — `deleteMealPlanRecipe()` cleans up both junction tables
+- See also: "Orphan-Safe Counts on Polymorphic Junction Tables" (above) for the count-time defense
+- Audit #9 M5, M6
 
 ### TOCTOU Race Recovery via Unique Constraint Catch
 
