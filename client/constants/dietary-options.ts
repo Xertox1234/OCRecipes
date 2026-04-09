@@ -59,6 +59,11 @@ export interface CookingTimeOption {
   description: string;
 }
 
+export interface FoodDislikeOption {
+  id: string;
+  name: string;
+}
+
 export const COMMON_ALLERGENS: AllergenOption[] = [
   { id: "peanuts", name: "Peanuts", icon: "alert-circle" },
   { id: "tree_nuts", name: "Tree Nuts", icon: "alert-circle" },
@@ -253,6 +258,21 @@ export const ACTIVITY_LEVELS: ActivityLevelOption[] = [
     name: "Athlete",
     description: "Professional or intense training",
   },
+];
+
+export const COMMON_DISLIKES: FoodDislikeOption[] = [
+  { id: "cilantro", name: "Cilantro" },
+  { id: "olives", name: "Olives" },
+  { id: "mushrooms", name: "Mushrooms" },
+  { id: "anchovies", name: "Anchovies" },
+  { id: "blue_cheese", name: "Blue Cheese" },
+  { id: "liver", name: "Liver/Organ Meats" },
+  { id: "brussels_sprouts", name: "Brussels Sprouts" },
+  { id: "tofu", name: "Tofu" },
+  { id: "beets", name: "Beets" },
+  { id: "okra", name: "Okra" },
+  { id: "eggplant", name: "Eggplant" },
+  { id: "coconut", name: "Coconut" },
 ];
 
 export const CUISINES: CuisineOption[] = [

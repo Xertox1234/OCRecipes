@@ -15,6 +15,7 @@ interface DietaryProfile {
   allergies?: Allergy[];
   healthConditions?: string[];
   dietType?: string | null;
+  foodDislikes?: string[];
   primaryGoal?: string | null;
   activityLevel?: string | null;
   cuisinePreferences?: string[];
@@ -36,6 +37,7 @@ export function useDietaryProfileForm() {
   const [dietType, setDietType] = useState<string | null>(null);
   const [primaryGoal, setPrimaryGoal] = useState<string | null>(null);
   const [activityLevel, setActivityLevel] = useState<string | null>(null);
+  const [foodDislikes, setFoodDislikes] = useState<string[]>([]);
   const [cuisinePreferences, setCuisinePreferences] = useState<string[]>([]);
   const [cookingSkillLevel, setCookingSkillLevel] = useState<string | null>(
     null,
@@ -57,6 +59,7 @@ export function useDietaryProfileForm() {
       setDietType(profile.dietType || null);
       setPrimaryGoal(profile.primaryGoal || null);
       setActivityLevel(profile.activityLevel || null);
+      setFoodDislikes(profile.foodDislikes || []);
       setCuisinePreferences(profile.cuisinePreferences || []);
       setCookingSkillLevel(profile.cookingSkillLevel || null);
       setCookingTimeAvailable(profile.cookingTimeAvailable || null);
@@ -91,6 +94,15 @@ export function useDietaryProfileForm() {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  const toggleDislike = (dislikeId: string) => {
+    if (foodDislikes.includes(dislikeId)) {
+      setFoodDislikes(foodDislikes.filter((d) => d !== dislikeId));
+    } else {
+      setFoodDislikes([...foodDislikes, dislikeId]);
+    }
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+  };
+
   const toggleCuisine = (cuisineId: string) => {
     if (cuisinePreferences.includes(cuisineId)) {
       setCuisinePreferences(cuisinePreferences.filter((c) => c !== cuisineId));
@@ -108,6 +120,7 @@ export function useDietaryProfileForm() {
         allergies,
         healthConditions,
         dietType,
+        foodDislikes,
         primaryGoal,
         activityLevel,
         cuisinePreferences,
@@ -144,6 +157,7 @@ export function useDietaryProfileForm() {
     setPrimaryGoal,
     activityLevel,
     setActivityLevel,
+    foodDislikes,
     cuisinePreferences,
     cookingSkillLevel,
     setCookingSkillLevel,
@@ -152,6 +166,7 @@ export function useDietaryProfileForm() {
     toggleAllergen,
     setSeverity,
     toggleHealthCondition,
+    toggleDislike,
     toggleCuisine,
     handleSave,
     haptics,

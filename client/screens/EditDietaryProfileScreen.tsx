@@ -24,6 +24,7 @@ import {
   HEALTH_CONDITIONS,
   GOALS,
   ACTIVITY_LEVELS,
+  COMMON_DISLIKES,
   CUISINES,
   SKILL_LEVELS,
   COOKING_TIMES,
@@ -178,6 +179,7 @@ export default function EditDietaryProfileScreen() {
     setPrimaryGoal,
     activityLevel,
     setActivityLevel,
+    foodDislikes,
     cuisinePreferences,
     cookingSkillLevel,
     setCookingSkillLevel,
@@ -186,6 +188,7 @@ export default function EditDietaryProfileScreen() {
     toggleAllergen,
     setSeverity,
     toggleHealthCondition,
+    toggleDislike,
     toggleCuisine,
     handleSave,
     haptics,
@@ -421,6 +424,46 @@ export default function EditDietaryProfileScreen() {
                     }}
                   >
                     {diet.name}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Food Dislikes Section */}
+        <View style={styles.section}>
+          <ThemedText type="h4" style={styles.sectionTitle}>
+            Food Dislikes
+          </ThemedText>
+          <View style={styles.optionsGrid}>
+            {COMMON_DISLIKES.map((dislike) => {
+              const selected = foodDislikes.includes(dislike.id);
+              return (
+                <Pressable
+                  key={dislike.id}
+                  onPress={() => toggleDislike(dislike.id)}
+                  accessibilityLabel={dislike.name}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                  style={[
+                    styles.cuisineChip,
+                    {
+                      backgroundColor: selected
+                        ? theme.error
+                        : theme.backgroundDefault,
+                      borderColor: selected ? theme.error : theme.border,
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    type="small"
+                    style={{
+                      color: selected ? theme.buttonText : theme.text,
+                      fontWeight: selected ? "600" : "400",
+                    }}
+                  >
+                    {dislike.name}
                   </ThemedText>
                 </Pressable>
               );
