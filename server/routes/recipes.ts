@@ -107,7 +107,14 @@ const catalogSearchSchema = z.object({
 });
 
 const importUrlSchema = z.object({
-  url: z.string().url().max(2000),
+  url: z
+    .string()
+    .url()
+    .max(2000)
+    .refine(
+      (url) => /^https?:\/\//.test(url),
+      "Only HTTP/HTTPS URLs are supported",
+    ),
 });
 
 // Strip authorId from public-facing community recipe responses
