@@ -3,7 +3,12 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import { register, _testInternals } from "../cooking";
+import { register, MAX_PHOTOS_PER_SESSION } from "../cooking";
+import {
+  cookingSessionStore,
+  COOKING_MAX_PER_USER,
+  COOKING_MAX_GLOBAL,
+} from "../../storage/sessions";
 import { batchNutritionLookup } from "../../services/nutrition-lookup";
 import type { NutritionData } from "../../services/nutrition-lookup";
 import { generateRecipeContent } from "../../services/recipe-generation";
@@ -146,22 +151,22 @@ describe("Cooking Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    _testInternals.cookSessionStore.clear();
-    _testInternals.userCookSessionCount.clear();
+    cookingSessionStore._internals.store.clear();
+    cookingSessionStore._internals.userCount.clear();
     // Clear any pending timeouts
-    for (const [, timeout] of _testInternals.cookSessionTimeouts) {
+    for (const [, timeout] of cookingSessionStore._internals.timeouts) {
       clearTimeout(timeout);
     }
-    _testInternals.cookSessionTimeouts.clear();
+    cookingSessionStore._internals.timeouts.clear();
     app = createApp();
   });
 
   afterEach(() => {
     // Clean up any timeouts created during tests to prevent leaks
-    for (const [, timeout] of _testInternals.cookSessionTimeouts) {
+    for (const [, timeout] of cookingSessionStore._internals.timeouts) {
       clearTimeout(timeout);
     }
-    _testInternals.cookSessionTimeouts.clear();
+    cookingSessionStore._internals.timeouts.clear();
   });
 
   describe("POST /api/cooking/sessions", () => {
@@ -193,8 +198,8 @@ describe("Cooking Routes", () => {
       setupPremiumMock();
 
       // Fill up user sessions for userId "1" (set by auth mock)
-      for (let i = 0; i < _testInternals.MAX_SESSIONS_PER_USER; i++) {
-        _testInternals.cookSessionStore.set(`existing-${i}`, {
+      for (let i = 0; i < COOKING_MAX_PER_USER; i++) {
+        cookingSessionStore._internals.store.set(`existing-${i}`, {
           id: `existing-${i}`,
           userId: "1",
           ingredients: [],
@@ -202,10 +207,7 @@ describe("Cooking Routes", () => {
           createdAt: Date.now(),
         });
       }
-      _testInternals.userCookSessionCount.set(
-        "1",
-        _testInternals.MAX_SESSIONS_PER_USER,
-      );
+      cookingSessionStore._internals.userCount.set("1", COOKING_MAX_PER_USER);
 
       const res = await request(app)
         .post("/api/cooking/sessions")
@@ -218,8 +220,8 @@ describe("Cooking Routes", () => {
     it("returns 429 when global session limit is reached", async () => {
       setupPremiumMock();
 
-      for (let i = 0; i < _testInternals.MAX_SESSIONS_GLOBAL; i++) {
-        _testInternals.cookSessionStore.set(`global-${i}`, {
+      for (let i = 0; i < COOKING_MAX_GLOBAL; i++) {
+        cookingSessionStore._internals.store.set(`global-${i}`, {
           id: `global-${i}`,
           userId: "other-user",
           ingredients: [],
@@ -240,7 +242,7 @@ describe("Cooking Routes", () => {
   describe("GET /api/cooking/sessions/:id", () => {
     it("returns a session for the owning user", async () => {
       const sessionId = "test-session-1";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1", // matches __mocks__/auth.ts req.userId
         ingredients: [mockIngredient],
@@ -269,7 +271,7 @@ describe("Cooking Routes", () => {
 
     it("returns 403 when session belongs to another user", async () => {
       const sessionId = "other-user-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "other-user-id",
         ingredients: [],
@@ -288,7 +290,7 @@ describe("Cooking Routes", () => {
   describe("POST /api/cooking/sessions/:id/photos", () => {
     it("analyzes a photo and adds detected ingredients", async () => {
       const sessionId = "photo-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -334,14 +336,11 @@ describe("Cooking Routes", () => {
 
     it("returns 400 when max photos reached", async () => {
       const sessionId = "full-photos-session";
-      const photos = Array.from(
-        { length: _testInternals.MAX_PHOTOS_PER_SESSION },
-        (_, i) => ({
-          id: `photo-${i}`,
-          addedAt: Date.now(),
-        }),
-      );
-      _testInternals.cookSessionStore.set(sessionId, {
+      const photos = Array.from({ length: MAX_PHOTOS_PER_SESSION }, (_, i) => ({
+        id: `photo-${i}`,
+        addedAt: Date.now(),
+      }));
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -359,7 +358,7 @@ describe("Cooking Routes", () => {
 
     it("returns 500 when analysis returns no content", async () => {
       const sessionId = "no-content-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -381,7 +380,7 @@ describe("Cooking Routes", () => {
 
     it("returns 500 when analysis returns invalid JSON", async () => {
       const sessionId = "bad-json-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -403,7 +402,7 @@ describe("Cooking Routes", () => {
 
     it("returns allergen warnings when user has allergies", async () => {
       const sessionId = "allergen-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -443,7 +442,7 @@ describe("Cooking Routes", () => {
   describe("PATCH /api/cooking/sessions/:id/ingredients/:ingredientId", () => {
     it("edits an ingredient name", async () => {
       const sessionId = "edit-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -463,7 +462,7 @@ describe("Cooking Routes", () => {
 
     it("edits ingredient quantity and unit", async () => {
       const sessionId = "edit-qty-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -483,7 +482,7 @@ describe("Cooking Routes", () => {
 
     it("returns 404 for non-existent ingredient", async () => {
       const sessionId = "edit-notfound-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -502,7 +501,7 @@ describe("Cooking Routes", () => {
 
     it("returns 400 for invalid edit data", async () => {
       const sessionId = "edit-invalid-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -531,7 +530,7 @@ describe("Cooking Routes", () => {
   describe("DELETE /api/cooking/sessions/:id/ingredients/:ingredientId", () => {
     it("deletes an ingredient from the session", async () => {
       const sessionId = "delete-ing-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [
@@ -553,7 +552,7 @@ describe("Cooking Routes", () => {
 
     it("returns 404 for non-existent ingredient", async () => {
       const sessionId = "delete-notfound-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -581,7 +580,7 @@ describe("Cooking Routes", () => {
   describe("POST /api/cooking/sessions/:id/nutrition", () => {
     it("returns nutrition summary for session ingredients", async () => {
       const sessionId = "nutrition-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -620,7 +619,7 @@ describe("Cooking Routes", () => {
 
     it("returns 400 when session has no ingredients", async () => {
       const sessionId = "empty-nutrition-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -638,7 +637,7 @@ describe("Cooking Routes", () => {
 
     it("handles ingredients with no nutrition data", async () => {
       const sessionId = "no-nutrition-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -662,7 +661,7 @@ describe("Cooking Routes", () => {
 
     it("applies cooking method adjustments", async () => {
       const sessionId = "cooking-method-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -710,7 +709,7 @@ describe("Cooking Routes", () => {
   describe("POST /api/cooking/sessions/:id/log", () => {
     it("logs a meal and clears the session", async () => {
       const sessionId = "log-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -760,12 +759,12 @@ describe("Cooking Routes", () => {
         expect.objectContaining({ mealType: "dinner" }),
       );
       // Session should be cleared
-      expect(_testInternals.cookSessionStore.has(sessionId)).toBe(false);
+      expect(cookingSessionStore._internals.store.has(sessionId)).toBe(false);
     });
 
     it("returns 400 when session has no ingredients", async () => {
       const sessionId = "empty-log-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -792,7 +791,7 @@ describe("Cooking Routes", () => {
 
     it("returns 500 when database transaction fails", async () => {
       const sessionId = "log-error-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -821,7 +820,7 @@ describe("Cooking Routes", () => {
       setupPremiumMock();
 
       const sessionId = "recipe-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -852,7 +851,7 @@ describe("Cooking Routes", () => {
       setupFreeMock();
 
       const sessionId = "recipe-free-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -871,7 +870,7 @@ describe("Cooking Routes", () => {
       setupPremiumMock();
 
       const sessionId = "recipe-empty-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -890,7 +889,7 @@ describe("Cooking Routes", () => {
       setupPremiumMock();
 
       const sessionId = "recipe-error-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -912,7 +911,7 @@ describe("Cooking Routes", () => {
   describe("POST /api/cooking/sessions/:id/substitutions", () => {
     it("returns substitution suggestions for session ingredients", async () => {
       const sessionId = "sub-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -947,7 +946,7 @@ describe("Cooking Routes", () => {
 
     it("returns 400 when session has no ingredients", async () => {
       const sessionId = "sub-empty-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [],
@@ -965,7 +964,7 @@ describe("Cooking Routes", () => {
 
     it("returns 400 when specified ingredientIds match no ingredients", async () => {
       const sessionId = "sub-nomatch-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -994,7 +993,7 @@ describe("Cooking Routes", () => {
 
     it("returns 500 when substitution service fails", async () => {
       const sessionId = "sub-error-session";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId: "1",
         ingredients: [{ ...mockIngredient }],
@@ -1018,62 +1017,64 @@ describe("Cooking Routes", () => {
     it("clearCookSession removes session and decrements user count", () => {
       const sessionId = "clear-test";
       const userId = "user-123";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId,
         ingredients: [],
         photos: [],
         createdAt: Date.now(),
       });
-      _testInternals.userCookSessionCount.set(userId, 2);
+      cookingSessionStore._internals.userCount.set(userId, 2);
 
-      _testInternals.clearCookSession(sessionId);
+      cookingSessionStore.clear(sessionId);
 
-      expect(_testInternals.cookSessionStore.has(sessionId)).toBe(false);
-      expect(_testInternals.userCookSessionCount.get(userId)).toBe(1);
+      expect(cookingSessionStore._internals.store.has(sessionId)).toBe(false);
+      expect(cookingSessionStore._internals.userCount.get(userId)).toBe(1);
     });
 
     it("clearCookSession removes user count entry when it reaches 0", () => {
       const sessionId = "clear-last";
       const userId = "user-456";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId,
         ingredients: [],
         photos: [],
         createdAt: Date.now(),
       });
-      _testInternals.userCookSessionCount.set(userId, 1);
+      cookingSessionStore._internals.userCount.set(userId, 1);
 
-      _testInternals.clearCookSession(sessionId);
+      cookingSessionStore.clear(sessionId);
 
-      expect(_testInternals.userCookSessionCount.has(userId)).toBe(false);
+      expect(cookingSessionStore._internals.userCount.has(userId)).toBe(false);
     });
 
     it("clearCookSession clears associated timeout", () => {
       const sessionId = "clear-timeout";
       const userId = "user-789";
-      _testInternals.cookSessionStore.set(sessionId, {
+      cookingSessionStore._internals.store.set(sessionId, {
         id: sessionId,
         userId,
         ingredients: [],
         photos: [],
         createdAt: Date.now(),
       });
-      _testInternals.userCookSessionCount.set(userId, 1);
+      cookingSessionStore._internals.userCount.set(userId, 1);
 
       // Set up a timeout
-      _testInternals.resetSessionTimeout(sessionId);
-      expect(_testInternals.cookSessionTimeouts.has(sessionId)).toBe(true);
+      cookingSessionStore.resetTimeout(sessionId);
+      expect(cookingSessionStore._internals.timeouts.has(sessionId)).toBe(true);
 
-      _testInternals.clearCookSession(sessionId);
+      cookingSessionStore.clear(sessionId);
 
-      expect(_testInternals.cookSessionTimeouts.has(sessionId)).toBe(false);
+      expect(cookingSessionStore._internals.timeouts.has(sessionId)).toBe(
+        false,
+      );
     });
 
     it("clearCookSession handles non-existent session gracefully", () => {
       expect(() => {
-        _testInternals.clearCookSession("nonexistent");
+        cookingSessionStore.clear("nonexistent");
       }).not.toThrow();
     });
   });

@@ -37,11 +37,6 @@ import {
 } from "@shared/constants/allergens";
 
 import { storage, type CookingSession } from "../storage";
-import {
-  COOKING_MAX_PER_USER,
-  COOKING_MAX_GLOBAL,
-  COOKING_TIMEOUT_MS,
-} from "../storage/sessions";
 
 // ============================================================================
 // MULTER CONFIG (5MB for ingredient photos)
@@ -69,11 +64,11 @@ const substitutionRateLimit = createRateLimiter({
 // SESSION STORE — uses canonical instance from storage/sessions.ts
 // ============================================================================
 
-const MAX_PHOTOS_PER_SESSION = 10;
+export const MAX_PHOTOS_PER_SESSION = 10;
 
 const cookStore = storage.cookingSessionStore;
 
-// Aliases for backward compatibility with route code and tests
+// Aliases for convenience in route handlers
 const clearCookSession = cookStore.clear;
 const resetSessionTimeout = cookStore.resetTimeout;
 
@@ -107,23 +102,6 @@ function getSessionForUser(
   }
   return session;
 }
-
-// ============================================================================
-// TEST INTERNALS
-// ============================================================================
-
-export const _testInternals = {
-  cookSessionStore: cookStore._internals.store,
-  cookSessionTimeouts: cookStore._internals.timeouts,
-  userCookSessionCount: cookStore._internals.userCount,
-  clearCookSession: cookStore.clear,
-  resetSessionTimeout: cookStore.resetTimeout,
-  MAX_PHOTOS_PER_SESSION,
-  MAX_INGREDIENTS_PER_SESSION,
-  MAX_SESSIONS_PER_USER: COOKING_MAX_PER_USER,
-  MAX_SESSIONS_GLOBAL: COOKING_MAX_GLOBAL,
-  COOK_SESSION_TIMEOUT: COOKING_TIMEOUT_MS,
-};
 
 // ============================================================================
 // ROUTE REGISTRATION
