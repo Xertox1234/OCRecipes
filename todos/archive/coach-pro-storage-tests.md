@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro: Write meaningful storage tests for coach-notebook"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-04-10
 updated: 2026-04-10
