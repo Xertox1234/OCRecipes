@@ -6,7 +6,11 @@ import {
   SYSTEM_PROMPT_BOUNDARY,
 } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
-import { getToolDefinitions, executeToolCall, MAX_TOOL_CALLS_PER_RESPONSE } from "./coach-tools";
+import {
+  getToolDefinitions,
+  executeToolCall,
+  MAX_TOOL_CALLS_PER_RESPONSE,
+} from "./coach-tools";
 
 const log = createServiceLogger("nutrition-coach");
 
@@ -179,15 +183,16 @@ export async function* generateCoachProResponse(
   }));
 
   // Build the conversation with system prompt
-  const conversation: Array<{
+  const conversation: {
     role: "system" | "user" | "assistant" | "tool";
     content: string | null;
-    tool_calls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }>;
+    tool_calls?: {
+      id: string;
+      type: "function";
+      function: { name: string; arguments: string };
+    }[];
     tool_call_id?: string;
-  }> = [
-    { role: "system", content: systemPrompt },
-    ...sanitizedMessages,
-  ];
+  }[] = [{ role: "system", content: systemPrompt }, ...sanitizedMessages];
 
   let toolCallCount = 0;
   let fullResponse = "";
@@ -199,7 +204,9 @@ export async function* generateCoachProResponse(
         {
           model: MODEL_FAST,
           stream: true,
-          messages: conversation as Parameters<typeof openai.chat.completions.create>[0]["messages"],
+          messages: conversation as Parameters<
+            typeof openai.chat.completions.create
+          >[0]["messages"],
           tools,
           max_completion_tokens: 1000,
           temperature: 0.7,
@@ -214,7 +221,10 @@ export async function* generateCoachProResponse(
 
     // Track tool calls being built from stream deltas
     let finishReason: string | null = null;
-    const pendingToolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
+    const pendingToolCalls: Map<
+      number,
+      { id: string; name: string; arguments: string }
+    > = new Map();
     let contentInThisRound = "";
 
     try {
@@ -300,8 +310,13 @@ export async function* generateCoachProResponse(
         const args = JSON.parse(tc.function.arguments);
         result = await executeToolCall(tc.function.name, args, userId);
       } catch (error) {
-        log.warn({ err: toError(error), tool: tc.function.name }, "Tool call failed");
-        result = { error: `Tool ${tc.function.name} failed: ${toError(error).message}` };
+        log.warn(
+          { err: toError(error), tool: tc.function.name },
+          "Tool call failed",
+        );
+        result = {
+          error: `Tool ${tc.function.name} failed: ${toError(error).message}`,
+        };
       }
 
       conversation.push({

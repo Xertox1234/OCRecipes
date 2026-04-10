@@ -179,7 +179,8 @@ export function getToolDefinitions(): ChatCompletionTool[] {
           properties: {
             startDate: {
               type: "string",
-              description: "Start date in YYYY-MM-DD format. Defaults to today.",
+              description:
+                "Start date in YYYY-MM-DD format. Defaults to today.",
             },
             endDate: {
               type: "string",
@@ -335,9 +336,7 @@ export async function executeToolCall(
         query: String(args.query ?? ""),
         diet: args.diet ? String(args.diet) : undefined,
         cuisine: args.cuisine ? String(args.cuisine) : undefined,
-        maxReadyTime: args.maxReadyTime
-          ? Number(args.maxReadyTime)
-          : undefined,
+        maxReadyTime: args.maxReadyTime ? Number(args.maxReadyTime) : undefined,
         number: 5,
       });
       return { results: result.results };
@@ -370,7 +369,8 @@ export async function executeToolCall(
         carbs: Number(args.carbs ?? 0),
         fat: Number(args.fat ?? 0),
         mealType: args.mealType ? String(args.mealType) : undefined,
-        message: "I've prepared this to log. Please confirm by tapping 'Log it' below.",
+        message:
+          "I've prepared this to log. Please confirm by tapping 'Log it' below.",
       };
     }
 
@@ -411,7 +411,9 @@ export async function executeToolCall(
         proposal: true,
         action: "add_meal_plan",
         recipeId: Number(args.recipeId ?? 0),
-        plannedDate: String(args.plannedDate ?? new Date().toISOString().split("T")[0]),
+        plannedDate: String(
+          args.plannedDate ?? new Date().toISOString().split("T")[0],
+        ),
         mealType: String(args.mealType ?? "lunch"),
         message: "I've prepared this meal plan addition. Please confirm below.",
       };
@@ -432,7 +434,8 @@ export async function executeToolCall(
             unit: item.unit ? String(item.unit) : null,
           };
         }),
-        message: "Here are the items I'd add to your grocery list. Please confirm below.",
+        message:
+          "Here are the items I'd add to your grocery list. Please confirm below.",
       };
     }
 
@@ -443,21 +446,19 @@ export async function executeToolCall(
         ? args.ingredients
         : [];
 
-      const ingredients = rawIngredients.map(
-        (i: unknown, index: number) => {
-          const item = i as Record<string, unknown>;
-          return {
-            id: String(index + 1),
-            name: String(item.name ?? ""),
-            quantity: 1,
-            unit: item.unit ? String(item.unit) : "",
-            confidence: 1,
-            category: "other" as const,
-            photoId: "",
-            userEdited: false,
-          };
-        },
-      );
+      const ingredients = rawIngredients.map((i: unknown, index: number) => {
+        const item = i as Record<string, unknown>;
+        return {
+          id: String(index + 1),
+          name: String(item.name ?? ""),
+          quantity: 1,
+          unit: item.unit ? String(item.unit) : "",
+          confidence: 1,
+          category: "other" as const,
+          photoId: "",
+          userEdited: false,
+        };
+      });
 
       const result = await getSubstitutions(ingredients, null);
       return result;

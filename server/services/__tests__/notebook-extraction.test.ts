@@ -1,7 +1,28 @@
 // server/services/__tests__/notebook-extraction.test.ts
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { extractNotebookEntries, shouldUpdateStrategy } from "../notebook-extraction";
+import type { ChatCompletion } from "openai/resources/chat/completions";
+import {
+  extractNotebookEntries,
+  shouldUpdateStrategy,
+} from "../notebook-extraction";
 import { openai } from "../../lib/openai";
+
+function mockCompletion(content: string): ChatCompletion {
+  return {
+    id: "test",
+    object: "chat.completion",
+    created: 0,
+    model: "gpt-4o-mini",
+    choices: [
+      {
+        index: 0,
+        finish_reason: "stop",
+        logprobs: null,
+        message: { role: "assistant", content, refusal: null },
+      },
+    ],
+  };
+}
 
 vi.mock("../../lib/openai", () => ({
   openai: {
@@ -28,18 +49,24 @@ describe("Notebook Extraction", () => {
   });
 
   it("extracts entries from a conversation", async () => {
-    mockCreate.mockResolvedValue({
-      choices: [{
-        message: {
-          content: JSON.stringify({
-            entries: [
-              { type: "preference", content: "Prefers quick meals under 15 min", followUpDate: null },
-              { type: "commitment", content: "Try meal prepping on Sunday", followUpDate: "2026-04-13" },
-            ],
-          }),
-        },
-      }],
-    } as never);
+    mockCreate.mockResolvedValue(
+      mockCompletion(
+        JSON.stringify({
+          entries: [
+            {
+              type: "preference",
+              content: "Prefers quick meals under 15 min",
+              followUpDate: null,
+            },
+            {
+              type: "commitment",
+              content: "Try meal prepping on Sunday",
+              followUpDate: "2026-04-13",
+            },
+          ],
+        }),
+      ),
+    );
 
     const messages = [
       { role: "user" as const, content: "I need quick meal ideas" },
@@ -54,12 +81,12 @@ describe("Notebook Extraction", () => {
   });
 
   it("returns empty array on parse failure", async () => {
-    mockCreate.mockResolvedValue({
-      choices: [{ message: { content: "not json" } }],
-    } as never);
+    mockCreate.mockResolvedValue(mockCompletion("not json"));
 
     const entries = await extractNotebookEntries(
-      [{ role: "user", content: "hello" }], "user-1", 1,
+      [{ role: "user", content: "hello" }],
+      "user-1",
+      1,
     );
     expect(entries).toEqual([]);
   });
