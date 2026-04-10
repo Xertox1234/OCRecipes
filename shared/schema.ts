@@ -1402,6 +1402,59 @@ export const coachResponseCache = pgTable(
   }),
 );
 
+// ============================================================================
+// COACH NOTEBOOK
+// ============================================================================
+
+export const coachNotebook = pgTable(
+  "coach_notebook",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    type: text("type").notNull(), // "insight" | "commitment" | "preference" | "goal" | "motivation" | "emotional_context" | "conversation_summary" | "coaching_strategy"
+    content: text("content").notNull(),
+    status: text("status").default("active").notNull(), // "active" | "completed" | "expired" | "archived"
+    followUpDate: timestamp("follow_up_date"),
+    sourceConversationId: integer("source_conversation_id").references(
+      () => chatConversations.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userTypeStatusIdx: index("coach_notebook_user_type_status_idx").on(
+      table.userId,
+      table.type,
+      table.status,
+    ),
+    userFollowUpIdx: index("coach_notebook_user_follow_up_idx").on(
+      table.userId,
+      table.followUpDate,
+    ),
+    sourceConversationIdx: index("coach_notebook_source_conv_idx").on(
+      table.sourceConversationId,
+    ),
+  }),
+);
+
+export const coachNotebookRelations = relations(coachNotebook, ({ one }) => ({
+  user: one(users, {
+    fields: [coachNotebook.userId],
+    references: [users.id],
+  }),
+  sourceConversation: one(chatConversations, {
+    fields: [coachNotebook.sourceConversationId],
+    references: [chatConversations.id],
+  }),
+}));
+
 // Meal planning types
 export const insertGroceryListSchema = createInsertSchema(groceryLists).omit({
   id: true,
@@ -1819,3 +1872,6 @@ export type ApiKeyUsage = typeof apiKeyUsage.$inferSelect;
 export type InsertApiKeyUsage = typeof apiKeyUsage.$inferInsert;
 export type BarcodeNutrition = typeof barcodeNutrition.$inferSelect;
 export type InsertBarcodeNutrition = typeof barcodeNutrition.$inferInsert;
+
+export type CoachNotebookEntry = typeof coachNotebook.$inferSelect;
+export type InsertCoachNotebookEntry = typeof coachNotebook.$inferInsert;
