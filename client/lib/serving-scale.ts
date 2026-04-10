@@ -33,3 +33,55 @@ export function parseFraction(value: string): number | null {
 
   return null;
 }
+
+/** Common cooking fractions: [decimal fractional part, display string] */
+const FRACTION_MAP: [number, string][] = [
+  [1 / 8, "1/8"],
+  [1 / 4, "1/4"],
+  [1 / 3, "1/3"],
+  [3 / 8, "3/8"],
+  [1 / 2, "1/2"],
+  [5 / 8, "5/8"],
+  [2 / 3, "2/3"],
+  [3 / 4, "3/4"],
+  [7 / 8, "7/8"],
+];
+
+const FRACTION_TOLERANCE = 0.003;
+
+/**
+ * Format a number as a cooking-friendly fraction string.
+ * Supports ½, ⅓, ¼, ¾, ⅔, ⅛ etc.
+ * Falls back to 1 decimal place for uncommon fractions.
+ */
+export function formatAsFraction(value: number): string {
+  if (value < 0) return formatAsFraction(-value);
+
+  const whole = Math.floor(value);
+  const frac = value - whole;
+
+  // Pure whole number (or very close)
+  if (frac < FRACTION_TOLERANCE) {
+    return String(whole);
+  }
+
+  // Check if fractional part matches a known cooking fraction
+  for (const [target, label] of FRACTION_MAP) {
+    if (Math.abs(frac - target) < FRACTION_TOLERANCE) {
+      return whole > 0 ? `${whole} ${label}` : label;
+    }
+  }
+
+  // Check if close to next whole number
+  if (1 - frac < FRACTION_TOLERANCE) {
+    return String(whole + 1);
+  }
+
+  // Fallback: 1 decimal place
+  const rounded = parseFloat(value.toFixed(1));
+  // Avoid trailing .0
+  if (rounded === Math.floor(rounded)) {
+    return String(Math.floor(rounded));
+  }
+  return String(rounded);
+}
