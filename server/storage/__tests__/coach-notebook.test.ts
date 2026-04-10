@@ -1,6 +1,31 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-
 import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+  vi,
+} from "vitest";
+import {
+  setupTestTransaction,
+  rollbackTestTransaction,
+  closeTestPool,
+  createTestUser,
+  getTestTx,
+} from "../../../test/db-test-utils";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type * as schema from "@shared/schema";
+
+// Mock the db import so the storage functions use our test transaction
+vi.mock("../../db", () => ({
+  get db() {
+    return getTestTx();
+  },
+}));
+
+// Import AFTER mocking
+const {
   getActiveNotebookEntries,
   createNotebookEntry,
   createNotebookEntries,
@@ -8,218 +33,364 @@ import {
   getCommitmentsWithDueFollowUp,
   archiveOldEntries,
   getNotebookEntryCount,
-} from "../coach-notebook";
+} = await import("../coach-notebook");
 
-const { mockDb, mockReturning } = vi.hoisted(() => {
-  const mockReturning = vi.fn().mockResolvedValue([]);
-  return {
-    mockReturning,
-    mockDb: {
-      select: vi.fn().mockReturnThis(),
-      from: vi.fn().mockReturnThis(),
-      where: vi.fn().mockReturnThis(),
-      orderBy: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      values: vi.fn().mockReturnThis(),
-      returning: mockReturning,
-      update: vi.fn().mockReturnThis(),
-      set: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
-    },
-  };
-});
-
-vi.mock("../../db", () => ({ db: mockDb }));
-
-const mockEntry = {
-  id: 1,
-  userId: "user-1",
-  type: "insight",
-  content: "User prefers high-protein meals",
-  status: "active",
-  followUpDate: null,
-  sourceConversationId: 42,
-  createdAt: new Date("2026-04-01"),
-  updatedAt: new Date("2026-04-01"),
-};
+let tx: NodePgDatabase<typeof schema>;
+let testUser: schema.User;
 
 describe("Coach Notebook Storage", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Reset chain methods to return `this`
-    mockDb.select.mockReturnThis();
-    mockDb.from.mockReturnThis();
-    mockDb.where.mockReturnThis();
-    mockDb.orderBy.mockReturnThis();
-    mockDb.insert.mockReturnThis();
-    mockDb.values.mockReturnThis();
-    mockDb.update.mockReturnThis();
-    mockDb.set.mockReturnThis();
-    mockReturning.mockResolvedValue([]);
+  beforeEach(async () => {
+    tx = await setupTestTransaction();
+    testUser = await createTestUser(tx);
   });
 
-  describe("getActiveNotebookEntries", () => {
-    it("returns entries from the query chain", async () => {
-      // orderBy is the terminal call for this query — mock it to resolve
-      mockDb.orderBy.mockResolvedValue([mockEntry]);
-
-      const result = await getActiveNotebookEntries("user-1");
-
-      expect(result).toEqual([mockEntry]);
-      expect(mockDb.select).toHaveBeenCalled();
-      expect(mockDb.from).toHaveBeenCalled();
-      expect(mockDb.where).toHaveBeenCalled();
-    });
-
-    it("returns empty array when no entries exist", async () => {
-      mockDb.orderBy.mockResolvedValue([]);
-
-      const result = await getActiveNotebookEntries("user-1");
-
-      expect(result).toEqual([]);
-    });
-
-    it("passes type filter when types are provided", async () => {
-      mockDb.orderBy.mockResolvedValue([]);
-
-      await getActiveNotebookEntries("user-1", ["insight", "goal"]);
-
-      // where() should be called with the type filter included
-      expect(mockDb.where).toHaveBeenCalled();
-    });
+  afterEach(async () => {
+    await rollbackTestTransaction();
   });
 
+  afterAll(async () => {
+    await closeTestPool();
+  });
+
+  // --------------------------------------------------------------------------
+  // createNotebookEntry
+  // --------------------------------------------------------------------------
   describe("createNotebookEntry", () => {
-    it("inserts a single entry and returns it", async () => {
-      mockReturning.mockResolvedValue([mockEntry]);
-
+    it("creates and returns an entry with correct fields", async () => {
       const result = await createNotebookEntry({
-        userId: "user-1",
+        userId: testUser.id,
         type: "insight",
         content: "User prefers high-protein meals",
         status: "active",
-        sourceConversationId: 42,
       });
 
-      expect(result).toEqual(mockEntry);
-      expect(mockDb.insert).toHaveBeenCalled();
-      expect(mockDb.values).toHaveBeenCalled();
-      expect(mockReturning).toHaveBeenCalled();
+      expect(result).toBeDefined();
+      expect(result.id).toBeTypeOf("number");
+      expect(result.userId).toBe(testUser.id);
+      expect(result.type).toBe("insight");
+      expect(result.content).toBe("User prefers high-protein meals");
+      expect(result.status).toBe("active");
+      expect(result.createdAt).toBeInstanceOf(Date);
+      expect(result.updatedAt).toBeInstanceOf(Date);
     });
   });
 
+  // --------------------------------------------------------------------------
+  // createNotebookEntries
+  // --------------------------------------------------------------------------
   describe("createNotebookEntries", () => {
-    it("returns empty array for empty input without calling db", async () => {
+    it("returns empty array for empty input without inserting", async () => {
       const result = await createNotebookEntries([]);
-
       expect(result).toEqual([]);
-      expect(mockDb.insert).not.toHaveBeenCalled();
     });
 
     it("batch inserts multiple entries", async () => {
-      const entries = [
+      const result = await createNotebookEntries([
         {
-          userId: "user-1",
-          type: "insight" as const,
-          content: "A",
-          status: "active" as const,
+          userId: testUser.id,
+          type: "insight",
+          content: "Content A",
+          status: "active",
         },
         {
-          userId: "user-1",
-          type: "goal" as const,
-          content: "B",
-          status: "active" as const,
+          userId: testUser.id,
+          type: "goal",
+          content: "Content B",
+          status: "active",
         },
-      ];
-      mockReturning.mockResolvedValue([
-        { ...mockEntry, id: 1, content: "A" },
-        { ...mockEntry, id: 2, content: "B" },
       ]);
 
-      const result = await createNotebookEntries(entries);
-
       expect(result).toHaveLength(2);
-      expect(mockDb.insert).toHaveBeenCalled();
-      expect(mockDb.values).toHaveBeenCalledWith(entries);
+      expect(result[0].type).toBe("insight");
+      expect(result[1].type).toBe("goal");
     });
   });
 
-  describe("updateNotebookEntryStatus", () => {
-    it("updates status and returns the updated entry", async () => {
-      const updated = { ...mockEntry, status: "archived" };
-      mockReturning.mockResolvedValue([updated]);
+  // --------------------------------------------------------------------------
+  // getActiveNotebookEntries
+  // --------------------------------------------------------------------------
+  describe("getActiveNotebookEntries", () => {
+    it("filters by userId and active status", async () => {
+      const otherUser = await createTestUser(tx);
 
-      const result = await updateNotebookEntryStatus(1, "user-1", "archived");
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "My entry",
+        status: "active",
+      });
+      await createNotebookEntry({
+        userId: otherUser.id,
+        type: "insight",
+        content: "Other user entry",
+        status: "active",
+      });
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "goal",
+        content: "Archived entry",
+        status: "archived",
+      });
 
-      expect(result).toEqual(updated);
-      expect(mockDb.update).toHaveBeenCalled();
-      expect(mockDb.set).toHaveBeenCalled();
-      expect(mockDb.where).toHaveBeenCalled();
+      const result = await getActiveNotebookEntries(testUser.id);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].content).toBe("My entry");
+      expect(result[0].userId).toBe(testUser.id);
+      expect(result[0].status).toBe("active");
     });
 
-    it("returns undefined when entry not found or wrong user", async () => {
-      mockReturning.mockResolvedValue([]);
+    it("returns empty array when no entries exist", async () => {
+      const result = await getActiveNotebookEntries(testUser.id);
+      expect(result).toEqual([]);
+    });
 
-      const result = await updateNotebookEntryStatus(
-        999,
-        "wrong-user",
-        "archived",
+    it("filters by type when types are provided", async () => {
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "Insight entry",
+        status: "active",
+      });
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "goal",
+        content: "Goal entry",
+        status: "active",
+      });
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "preference",
+        content: "Preference entry",
+        status: "active",
+      });
+
+      const result = await getActiveNotebookEntries(testUser.id, [
+        "insight",
+        "goal",
+      ]);
+
+      expect(result).toHaveLength(2);
+      const types = result.map((e) => e.type);
+      expect(types).toContain("insight");
+      expect(types).toContain("goal");
+      expect(types).not.toContain("preference");
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // updateNotebookEntryStatus
+  // --------------------------------------------------------------------------
+  describe("updateNotebookEntryStatus", () => {
+    it("changes status and updates updatedAt", async () => {
+      const entry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Eat more vegetables",
+        status: "active",
+      });
+
+      const updated = await updateNotebookEntryStatus(
+        entry.id,
+        testUser.id,
+        "completed",
       );
 
+      expect(updated).toBeDefined();
+      expect(updated!.status).toBe("completed");
+      expect(updated!.updatedAt.getTime()).toBeGreaterThanOrEqual(
+        entry.updatedAt.getTime(),
+      );
+    });
+
+    it("returns undefined when entry not found", async () => {
+      const result = await updateNotebookEntryStatus(
+        999999,
+        testUser.id,
+        "archived",
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it("returns undefined when userId does not match", async () => {
+      const otherUser = await createTestUser(tx);
+      const entry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "My insight",
+        status: "active",
+      });
+
+      const result = await updateNotebookEntryStatus(
+        entry.id,
+        otherUser.id,
+        "archived",
+      );
       expect(result).toBeUndefined();
     });
   });
 
+  // --------------------------------------------------------------------------
+  // getCommitmentsWithDueFollowUp
+  // --------------------------------------------------------------------------
   describe("getCommitmentsWithDueFollowUp", () => {
-    it("returns due commitments", async () => {
-      const commitment = {
-        ...mockEntry,
+    it("returns only due commitments", async () => {
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 1);
+
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 7);
+
+      // Due commitment (follow-up in the past)
+      await createNotebookEntry({
+        userId: testUser.id,
         type: "commitment",
-        followUpDate: new Date("2026-04-01"),
-      };
-      mockDb.orderBy.mockResolvedValue([commitment]);
+        content: "Past commitment",
+        status: "active",
+        followUpDate: pastDate,
+      });
 
-      const result = await getCommitmentsWithDueFollowUp("user-1");
+      // Not due yet (follow-up in the future)
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Future commitment",
+        status: "active",
+        followUpDate: futureDate,
+      });
 
-      expect(result).toEqual([commitment]);
-      expect(mockDb.where).toHaveBeenCalled();
+      // Non-commitment type with past follow-up
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "Insight with follow-up",
+        status: "active",
+        followUpDate: pastDate,
+      });
+
+      // Archived commitment with past follow-up
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Archived commitment",
+        status: "archived",
+        followUpDate: pastDate,
+      });
+
+      const result = await getCommitmentsWithDueFollowUp(testUser.id);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].content).toBe("Past commitment");
+      expect(result[0].type).toBe("commitment");
+      expect(result[0].status).toBe("active");
+    });
+
+    it("returns empty array when no commitments are due", async () => {
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 7);
+
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Future commitment",
+        status: "active",
+        followUpDate: futureDate,
+      });
+
+      const result = await getCommitmentsWithDueFollowUp(testUser.id);
+      expect(result).toEqual([]);
     });
   });
 
+  // --------------------------------------------------------------------------
+  // archiveOldEntries
+  // --------------------------------------------------------------------------
   describe("archiveOldEntries", () => {
-    it("returns count of archived entries", async () => {
-      mockReturning.mockResolvedValue([mockEntry, { ...mockEntry, id: 2 }]);
+    it("archives entries older than threshold", async () => {
+      // Create an entry with an old updatedAt by first creating it
+      // then updating to simulate age
+      const { coachNotebook } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
 
-      const count = await archiveOldEntries("user-1", 30);
+      const entry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "Old entry",
+        status: "active",
+      });
 
-      expect(count).toBe(2);
-      expect(mockDb.update).toHaveBeenCalled();
+      // Manually set updatedAt to 60 days ago
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 60);
+      await tx
+        .update(coachNotebook)
+        .set({ updatedAt: oldDate })
+        .where(eq(coachNotebook.id, entry.id));
+
+      // Create a recent entry that should NOT be archived
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "Recent entry",
+        status: "active",
+      });
+
+      const count = await archiveOldEntries(testUser.id, 30);
+
+      expect(count).toBe(1);
+
+      // Verify old entry was archived
+      const active = await getActiveNotebookEntries(testUser.id);
+      expect(active).toHaveLength(1);
+      expect(active[0].content).toBe("Recent entry");
     });
 
     it("returns 0 when no entries to archive", async () => {
-      mockReturning.mockResolvedValue([]);
-
-      const count = await archiveOldEntries("user-1", 30);
-
+      const count = await archiveOldEntries(testUser.id, 30);
       expect(count).toBe(0);
     });
   });
 
+  // --------------------------------------------------------------------------
+  // getNotebookEntryCount
+  // --------------------------------------------------------------------------
   describe("getNotebookEntryCount", () => {
-    it("returns count from query", async () => {
-      mockDb.where.mockResolvedValue([{ count: 5 }]);
+    it("counts by type and active status", async () => {
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "Insight 1",
+        status: "active",
+      });
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "Insight 2",
+        status: "active",
+      });
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "goal",
+        content: "Goal 1",
+        status: "active",
+      });
+      // Archived insight should not be counted
+      await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "Archived insight",
+        status: "archived",
+      });
 
-      const count = await getNotebookEntryCount("user-1", "insight");
+      const insightCount = await getNotebookEntryCount(testUser.id, "insight");
+      const goalCount = await getNotebookEntryCount(testUser.id, "goal");
 
-      expect(count).toBe(5);
+      expect(insightCount).toBe(2);
+      expect(goalCount).toBe(1);
     });
 
-    it("returns 0 when query returns empty", async () => {
-      mockDb.where.mockResolvedValue([]);
-
-      const count = await getNotebookEntryCount("user-1", "insight");
-
+    it("returns 0 when no entries of the type exist", async () => {
+      const count = await getNotebookEntryCount(testUser.id, "insight");
       expect(count).toBe(0);
     });
   });
