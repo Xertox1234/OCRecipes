@@ -1441,6 +1441,14 @@ export const coachNotebook = pgTable(
     sourceConversationIdx: index("coach_notebook_source_conv_idx").on(
       table.sourceConversationId,
     ),
+    typeCheck: check(
+      "coach_notebook_type_check",
+      sql`${table.type} IN ('insight', 'commitment', 'preference', 'goal', 'motivation', 'emotional_context', 'conversation_summary', 'coaching_strategy')`,
+    ),
+    statusCheck: check(
+      "coach_notebook_status_check",
+      sql`${table.status} IN ('active', 'completed', 'expired', 'archived')`,
+    ),
   }),
 );
 

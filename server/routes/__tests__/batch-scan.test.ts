@@ -5,10 +5,18 @@ import request from "supertest";
 import { storage, BatchStorageError } from "../../storage";
 import { register } from "../batch-scan";
 
-vi.mock("../../storage", async () => {
-  const batch = await import("../../storage/batch");
+vi.mock("../../storage", () => {
+  // Define inline inside factory — vi.mock is hoisted, so top-level vars aren't available
+  class BatchStorageErrorMock extends Error {
+    code: "NOT_FOUND" | "LIMIT_REACHED";
+    constructor(message: string, code: "NOT_FOUND" | "LIMIT_REACHED") {
+      super(message);
+      this.name = "BatchStorageError";
+      this.code = code;
+    }
+  }
   return {
-    BatchStorageError: batch.BatchStorageError,
+    BatchStorageError: BatchStorageErrorMock,
     storage: {
       batchCreateScannedItemsWithLogs: vi.fn(),
       batchCreatePantryItems: vi.fn(),

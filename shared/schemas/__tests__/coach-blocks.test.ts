@@ -9,7 +9,6 @@ import {
   recipeCardSchema,
   mealPlanCardSchema,
   coachBlockSchema,
-  type CoachBlock,
 } from "../coach-blocks";
 
 describe("Coach Block Schemas", () => {
@@ -40,7 +39,7 @@ describe("Coach Block Schemas", () => {
           subtitle: "480 cal - 42g P",
           action: {
             type: "navigate",
-            screen: "RecipeDetail",
+            screen: "FeaturedRecipeDetail",
             params: { recipeId: 123 },
           },
         },

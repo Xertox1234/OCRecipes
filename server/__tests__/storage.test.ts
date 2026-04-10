@@ -1,4 +1,4 @@
-import { escapeLike } from "../storage";
+import { escapeLike } from "../storage/helpers";
 
 // Test the storage layer contract and edge cases
 describe("Storage Interface Contract", () => {

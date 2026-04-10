@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
 import { inferMealTypes } from "../meal-type-inference";
+
+vi.mock("../../storage", () => ({ storage: {} }));
 
 describe("inferMealTypes", () => {
   it("tags breakfast keywords", () => {

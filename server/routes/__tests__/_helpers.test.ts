@@ -1,10 +1,14 @@
+import { vi } from "vitest";
 import { z } from "zod";
+
 import { loginSchema, registerSchema, profileUpdateSchema } from "../_schemas";
 import {
   parsePositiveIntParam,
   parseQueryInt,
   formatZodError,
 } from "../_helpers";
+
+vi.mock("../../storage", () => ({ storage: {} }));
 
 describe("Route Helpers", () => {
   describe("parsePositiveIntParam", () => {

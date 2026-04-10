@@ -3,7 +3,10 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import { generateCoachResponse } from "../../services/nutrition-coach";
+import {
+  generateCoachResponse,
+  generateCoachProResponse,
+} from "../../services/nutrition-coach";
 import { register } from "../chat";
 import {
   createMockChatConversation,
@@ -43,12 +46,24 @@ vi.mock("../../services/nutrition-coach", () => ({
 }));
 
 vi.mock("../../services/coach-blocks", () => ({
-  parseBlocksFromContent: vi.fn().mockReturnValue({ text: "", blocks: [] }),
+  parseBlocksFromContent: vi
+    .fn()
+    .mockImplementation((content: string) => ({ text: content, blocks: [] })),
   BLOCKS_SYSTEM_PROMPT: "test prompt",
 }));
 
 vi.mock("../../services/notebook-extraction", () => ({
   extractNotebookEntries: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../../lib/openai", () => ({
+  isAiConfigured: true,
+  openai: {},
+  dalleClient: {},
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
+  OPENAI_TIMEOUT_MS: 30000,
+  OPENAI_VISION_TIMEOUT_MS: 60000,
 }));
 
 vi.mock("../../middleware/auth");
@@ -342,7 +357,7 @@ describe("Chat Routes", () => {
         yield "Hello ";
         yield "world!";
       }
-      vi.mocked(generateCoachResponse).mockReturnValue(fakeStream());
+      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -353,11 +368,12 @@ describe("Chat Routes", () => {
       expect(res.text).toContain("Hello ");
       expect(res.text).toContain("world!");
       expect(res.text).toContain('"done":true');
-      // Saved assistant message
+      // Saved assistant message (4th arg is metadata — null when no blocks)
       expect(storage.createChatMessage).toHaveBeenCalledWith(
         1,
         "assistant",
         "Hello world!",
+        null,
       );
       // Title updated for first exchange (history.length === 0)
       expect(storage.updateChatConversationTitle).toHaveBeenCalled();
@@ -370,7 +386,7 @@ describe("Chat Routes", () => {
         yield "Partial";
         throw new Error("AI crash");
       }
-      vi.mocked(generateCoachResponse).mockReturnValue(errorStream());
+      vi.mocked(generateCoachProResponse).mockReturnValue(errorStream());
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -392,7 +408,7 @@ describe("Chat Routes", () => {
       async function* emptyStream() {
         yield "Ok";
       }
-      vi.mocked(generateCoachResponse).mockReturnValue(emptyStream());
+      vi.mocked(generateCoachProResponse).mockReturnValue(emptyStream());
 
       const res = await request(app)
         .post("/api/chat/conversations/1/messages")
@@ -401,7 +417,7 @@ describe("Chat Routes", () => {
 
       expect(res.status).toBe(200);
       // Verify goals are null when user has no calorie goal
-      const contextArg = vi.mocked(generateCoachResponse).mock.calls[0][1];
+      const contextArg = vi.mocked(generateCoachProResponse).mock.calls[0][1];
       expect(contextArg.goals).toBeNull();
     });
 
