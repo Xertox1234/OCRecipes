@@ -47,6 +47,7 @@ const FRACTION_MAP: [number, string][] = [
   [7 / 8, "7/8"],
 ];
 
+// Tight tolerance prevents false snapping (e.g. 1.67 should not match 2/3)
 const FRACTION_TOLERANCE = 0.003;
 
 /**
