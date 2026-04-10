@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro: Enforce coachProDailyMessages rate limit"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-04-10
 updated: 2026-04-10

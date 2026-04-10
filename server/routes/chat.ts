@@ -293,7 +293,9 @@ export function register(app: Express): void {
             429,
             isRecipeChat || isRemixChat
               ? "Daily recipe generation limit reached"
-              : "Daily chat message limit reached",
+              : features.coachPro
+                ? "Daily Coach Pro message limit reached"
+                : "Daily chat message limit reached",
             ErrorCode.DAILY_LIMIT_REACHED,
           );
         }
