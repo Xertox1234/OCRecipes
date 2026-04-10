@@ -867,6 +867,80 @@ vi.mock("../../storage", async () => {
 - `server/routes/__tests__/batch-scan.test.ts` — `BatchStorageError` re-exported from batch
 - `server/routes/__tests__/cooking.test.ts` — `cookingSessionStore` re-exported with real implementation
 
+### Always Provide a Factory for Modules with Side Effects
+
+`vi.mock("module")` without a factory still loads the real module to discover its exports and auto-mock them. If the module has eager side effects (e.g., `db.ts` throws when `DATABASE_URL` is missing), the auto-mock will fail.
+
+```typescript
+// ❌ BAD — auto-mock loads the module, DATABASE_URL check fires
+vi.mock("../../storage");
+
+// ✅ GOOD — factory prevents the real module from loading
+vi.mock("../../storage", () => ({ storage: {} }));
+
+// ✅ GOOD — factory with meaningful stubs
+vi.mock("../../storage", () => ({
+  storage: {
+    getUser: vi.fn(),
+    createItem: vi.fn(),
+  },
+}));
+```
+
+**When to use:** Mocking any module that imports `../db`, `../lib/openai`, or any other module with top-level side effects.
+
+**Gotcha:** Variables defined outside the factory aren't available inside it because `vi.mock` is hoisted to the top of the file. Define classes/values inside the factory:
+
+```typescript
+// ❌ BAD — class isn't initialized when hoisted factory runs
+class MockError extends Error { ... }
+vi.mock("../../storage", () => ({ MyError: MockError }));
+
+// ✅ GOOD — define inside the factory
+vi.mock("../../storage", () => {
+  class MockError extends Error { ... }
+  return { MyError: MockError };
+});
+```
+
+**References:**
+- `server/routes/__tests__/batch-scan.test.ts` — `BatchStorageError` defined inside factory
+- `server/routes/__tests__/_helpers.test.ts` — storage mock with factory to avoid db.ts
+
+**Origin:** Coach Pro test failures (2026-04-10) — 4 test files failed because auto-mock triggered `DATABASE_URL` check
+
+### Feature Flag Routing Divergence in Tests
+
+When premium tier checks create routing forks in handlers, tests must mock the function matching the code path their mocked tier triggers. Mocking `tier: "premium"` but only stubbing the free-tier function is a common source of 503/500 errors in tests.
+
+```typescript
+// Route handler branches on premium tier:
+const isCoachPro = !!features.coachPro;
+if (isCoachPro) {
+  for await (const chunk of generateCoachProResponse(...)) { ... }
+} else {
+  for await (const chunk of generateCoachResponse(...)) { ... }
+}
+```
+
+```typescript
+// ❌ BAD — test mocks premium tier but only stubs the free-tier function
+vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({ tier: "premium" });
+vi.mocked(generateCoachResponse).mockReturnValue(fakeStream()); // never called!
+
+// ✅ GOOD — mock the function matching the premium code path
+vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({ tier: "premium" });
+vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
+```
+
+**When to use:** Any test that mocks subscription tier and exercises a route with tier-dependent branching (coach, recipe generation, meal suggestions).
+
+**References:**
+- `server/routes/__tests__/chat.test.ts` — streaming tests use `generateCoachProResponse` for premium tier
+- `shared/types/premium.ts` — `TIER_FEATURES` maps tiers to feature booleans
+
+**Origin:** Coach Pro test failures (2026-04-10) — 7 chat tests returned 503 because premium tier routed to `generateCoachProResponse` but only `generateCoachResponse` was mocked
+
 ## Adding New Patterns
 
 When you establish a new pattern:

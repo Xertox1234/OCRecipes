@@ -21,7 +21,10 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import {
+  coachBlockSchema,
+  type CoachBlock,
+} from "@shared/schemas/coach-blocks";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 
 interface CoachChatProps {
@@ -33,6 +36,15 @@ interface CoachChatProps {
   onInitialMessageSent?: () => void;
 }
 
+function filterValidBlocks(raw: unknown[]): CoachBlock[] {
+  const valid: CoachBlock[] = [];
+  for (const b of raw) {
+    const result = coachBlockSchema.safeParse(b);
+    if (result.success) valid.push(result.data);
+  }
+  return valid;
+}
+
 async function sendMessageStreaming(
   conversationId: number,
   content: string,
@@ -40,6 +52,7 @@ async function sendMessageStreaming(
   onBlocks: (blocks: CoachBlock[]) => void,
   onDone: () => void,
   signal: AbortSignal,
+  warmUpId?: string | null,
 ): Promise<void> {
   const token = await tokenStorage.get();
   return new Promise<void>((resolve, reject) => {
@@ -65,8 +78,8 @@ async function sendMessageStreaming(
                 accumulated += data.content;
                 onChunk(accumulated);
               }
-              if (data.blocks) {
-                onBlocks(data.blocks);
+              if (data.blocks && Array.isArray(data.blocks)) {
+                onBlocks(filterValidBlocks(data.blocks));
               }
               if (data.done) {
                 onDone();
@@ -88,7 +101,7 @@ async function sendMessageStreaming(
       xhr.abort();
       resolve();
     });
-    xhr.send(JSON.stringify({ content }));
+    xhr.send(JSON.stringify(warmUpId ? { content, warmUpId } : { content }));
   });
 }
 
@@ -107,7 +120,9 @@ export default function CoachChat({
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
-  const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
+  const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
+    null,
+  );
 
   const scrollRef = useRef<ScrollView>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -165,6 +180,7 @@ export default function CoachChat({
 
       const abort = new AbortController();
       abortRef.current = abort;
+      const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
 
       try {
         await sendMessageStreaming(
@@ -172,7 +188,9 @@ export default function CoachChat({
           content,
           (accumulated) => {
             // Strip coach_blocks fence from displayed content during streaming
-            const display = accumulated.replace(/```coach_blocks\n[\s\S]*?(?:```|$)/, "").trim();
+            const display = accumulated
+              .replace(/```coach_blocks\n[\s\S]*?(?:```|$)/, "")
+              .trim();
             setStreamingContent(display);
             scrollRef.current?.scrollToEnd({ animated: false });
           },
@@ -182,6 +200,7 @@ export default function CoachChat({
             setOptimisticMessage(null);
           },
           abort.signal,
+          currentWarmUpId,
         );
       } catch {
         setIsStreaming(false);
@@ -255,11 +274,20 @@ export default function CoachChat({
         {/* Existing messages */}
         {messages?.map((msg) => (
           <View key={msg.id}>
-            <ChatBubble role={msg.role as "user" | "assistant"} content={msg.content} />
+            <ChatBubble
+              role={msg.role as "user" | "assistant"}
+              content={msg.content}
+            />
             {/* Render blocks from message metadata */}
             {(() => {
-              const meta = msg.metadata as Record<string, unknown> | null | undefined;
-              const blocks = meta?.blocks as CoachBlock[] | undefined;
+              const meta = msg.metadata as
+                | Record<string, unknown>
+                | null
+                | undefined;
+              const rawBlocks = meta?.blocks;
+              const blocks = Array.isArray(rawBlocks)
+                ? filterValidBlocks(rawBlocks)
+                : undefined;
               return blocks?.map((block, i) => (
                 <BlockRenderer
                   key={`${msg.id}-block-${i}`}
@@ -306,12 +334,18 @@ export default function CoachChat({
       <View
         style={[
           styles.inputBar,
-          { backgroundColor: theme.backgroundSecondary, borderTopColor: theme.border },
+          {
+            backgroundColor: theme.backgroundSecondary,
+            borderTopColor: theme.border,
+          },
         ]}
       >
         <TextInput
           ref={inputRef}
-          style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text }]}
+          style={[
+            styles.input,
+            { backgroundColor: theme.backgroundDefault, color: theme.text },
+          ]}
           placeholder="Ask your coach..."
           placeholderTextColor={theme.textSecondary}
           value={inputText}
@@ -328,7 +362,7 @@ export default function CoachChat({
             accessibilityRole="button"
             accessibilityLabel="Send message"
           >
-            <Ionicons name="send" size={16} color="#FFFFFF" />
+            <Ionicons name="send" size={16} color={theme.buttonText} />
           </Pressable>
         ) : hasVoice ? (
           <CoachMicButton

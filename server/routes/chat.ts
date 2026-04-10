@@ -28,8 +28,12 @@ import {
 import { remixConversationMetadataSchema } from "@shared/schemas/recipe-chat";
 import { logger, toError } from "../lib/logger";
 import { createHash } from "crypto";
-import { parseBlocksFromContent, BLOCKS_SYSTEM_PROMPT } from "../services/coach-blocks";
+import {
+  parseBlocksFromContent,
+  BLOCKS_SYSTEM_PROMPT,
+} from "../services/coach-blocks";
 import { extractNotebookEntries } from "../services/notebook-extraction";
+import { sanitizeContextField } from "../lib/ai-safety";
 import { consumeWarmUp } from "./coach-context";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
@@ -272,7 +276,9 @@ export function register(app: Express): void {
         const dailyLimit =
           isRecipeChat || isRemixChat
             ? features.dailyRecipeGenerations
-            : features.dailyCoachMessages;
+            : features.coachPro
+              ? features.coachProDailyMessages
+              : features.dailyCoachMessages;
         const message = await storage.createChatMessageWithLimitCheck(
           id,
           req.userId,
@@ -470,25 +476,28 @@ export function register(app: Express): void {
             // ── Coach Pro: inject notebook context ──────────────
             const isCoachPro = !!features.coachPro;
             if (isCoachPro) {
-              const notebookEntries = await storage.getActiveNotebookEntries(req.userId);
+              const notebookEntries = await storage.getActiveNotebookEntries(
+                req.userId,
+              );
               if (notebookEntries.length > 0) {
                 // Budget ~800 tokens (~3200 chars) for notebook context
                 const MAX_NOTEBOOK_CHARS = 3200;
                 let charCount = 0;
                 const lines: string[] = [];
                 for (const e of notebookEntries) {
-                  const line = `[${e.type}] ${e.content}`;
+                  const line = `[${e.type}] ${sanitizeContextField(e.content, 500)}`;
                   if (charCount + line.length > MAX_NOTEBOOK_CHARS) break;
                   lines.push(line);
                   charCount += line.length;
                 }
-                context.notebookSummary = lines.join("\n") + "\n\n" + BLOCKS_SYSTEM_PROMPT;
+                context.notebookSummary =
+                  lines.join("\n") + "\n\n" + BLOCKS_SYSTEM_PROMPT;
               } else {
                 context.notebookSummary = BLOCKS_SYSTEM_PROMPT;
               }
             }
 
-            const messageHistory = history.map((m) => ({
+            let messageHistory = history.map((m) => ({
               role: m.role as "user" | "assistant" | "system",
               content: m.content,
             }));
@@ -505,6 +514,7 @@ export function register(app: Express): void {
                   role: "user",
                   content: parsed.data.content,
                 };
+                messageHistory = warmedUp as typeof messageHistory;
               }
             }
 
@@ -619,7 +629,11 @@ export function register(app: Express): void {
                     { role: "user" as const, content: parsed.data.content },
                     { role: "assistant" as const, content: textContent },
                   ];
-                  const entries = await extractNotebookEntries(allMessages, req.userId, id);
+                  const entries = await extractNotebookEntries(
+                    allMessages,
+                    req.userId,
+                    id,
+                  );
                   if (entries.length > 0) {
                     await storage.createNotebookEntries(
                       entries.map((e) => ({
@@ -627,7 +641,9 @@ export function register(app: Express): void {
                         type: e.type,
                         content: e.content,
                         status: "active",
-                        followUpDate: e.followUpDate ? new Date(e.followUpDate) : null,
+                        followUpDate: e.followUpDate
+                          ? new Date(e.followUpDate)
+                          : null,
                         sourceConversationId: id,
                       })),
                     );

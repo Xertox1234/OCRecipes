@@ -1278,3 +1278,66 @@ const sanitizedRecipe = {
 - `server/lib/ai-safety.ts` — `sanitizeUserInput()`, `SYSTEM_PROMPT_BOUNDARY`
 
 **Origin:** Recipe Remix code review (2026-04-08) — caught as Critical finding
+
+### AI Output Field Whitelisting
+
+When AI models generate structured data containing navigation targets, screen names, or other parameterized commands, constrain the values to a Zod enum whitelist — never use `z.string()`.
+
+```typescript
+// ❌ BAD — AI can specify any screen, including admin/settings
+const navigateActionSchema = z.object({
+  type: z.literal("navigate"),
+  screen: z.string(), // unbounded — AI could emit "AdminPanel"
+});
+
+// ✅ GOOD — constrained to safe screens
+const NAVIGABLE_SCREENS = [
+  "NutritionDetail",
+  "FeaturedRecipeDetail",
+  "QuickLog",
+  "RecipeBrowserModal",
+] as const;
+
+const navigateActionSchema = z.object({
+  type: z.literal("navigate"),
+  screen: z.enum(NAVIGABLE_SCREENS),
+});
+```
+
+**When to use:** Any Zod schema for AI-generated structured output that references app screens, API endpoints, storage keys, or other internal identifiers.
+
+**Why:** Without a whitelist, the AI model can suggest navigation to any screen. If navigation actions are wired up without validation, this could expose admin, settings, or onboarding screens to unintended access.
+
+**References:**
+- `shared/schemas/coach-blocks.ts` — `navigateActionSchema` with `NAVIGABLE_SCREENS` enum
+- `server/services/coach-blocks.ts` — `validateBlocks()` drops blocks that fail schema validation
+
+**Origin:** Coach Pro code review (2026-04-10) — caught as Important finding (I2)
+
+### Sanitize AI-Generated Content Before Storage
+
+Even when the storage layer uses parameterized queries (preventing SQL injection) and the display layer doesn't interpret HTML (React Native `<Text>`), apply `sanitizeContextField()` to AI-generated content before writing to the database. This is defense-in-depth — the content may later be consumed by contexts that DO interpret special characters (web views, email templates, API responses).
+
+```typescript
+// ❌ BAD — AI output stored as-is
+const entries = await extractNotebookEntries(messages, userId, conversationId);
+await storage.createNotebookEntries(
+  entries.map((e) => ({ ...e, content: e.content })), // raw AI output
+);
+
+// ✅ GOOD — sanitize before storage
+import { sanitizeContextField } from "../lib/ai-safety";
+
+const entries = await extractNotebookEntries(messages, userId, conversationId);
+await storage.createNotebookEntries(
+  entries.map((e) => ({ ...e, content: sanitizeContextField(e.content, 500) })),
+);
+```
+
+**When to use:** Any pipeline where AI-generated text is written to the database, especially if that content is later served in API responses or displayed in contexts beyond the originating client.
+
+**References:**
+- `server/services/notebook-extraction.ts` — sanitizes extracted notebook entries
+- `server/lib/ai-safety.ts` — `sanitizeContextField()` strips zero-width chars, control chars, and injection patterns
+
+**Origin:** Coach Pro code review (2026-04-10) — caught as Critical finding (C2)

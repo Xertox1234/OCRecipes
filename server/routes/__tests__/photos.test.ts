@@ -48,6 +48,16 @@ vi.mock("../../storage", async () => {
   };
 });
 
+vi.mock("../../lib/openai", () => ({
+  isAiConfigured: true,
+  openai: {},
+  dalleClient: {},
+  MODEL_FAST: "gpt-4o-mini",
+  MODEL_HEAVY: "gpt-4o",
+  OPENAI_TIMEOUT_MS: 30000,
+  OPENAI_VISION_TIMEOUT_MS: 60000,
+}));
+
 vi.mock("../../services/photo-analysis", () => ({
   analyzePhoto: vi.fn(),
   analyzeRecipePhoto: vi.fn(),

@@ -1,8 +1,12 @@
 // server/services/notebook-extraction.ts
 import { openai, MODEL_FAST } from "../lib/openai";
-import { extractionResultSchema, type NotebookEntryType } from "@shared/schemas/coach-notebook";
+import {
+  extractionResultSchema,
+  type NotebookEntryType,
+} from "@shared/schemas/coach-notebook";
 import { storage } from "../storage";
 import { logger } from "../lib/logger";
+import { sanitizeContextField } from "../lib/ai-safety";
 
 interface ConversationMessage {
   role: "user" | "assistant" | "system";
@@ -32,14 +36,24 @@ export async function extractNotebookEntries(
   messages: ConversationMessage[],
   userId: string,
   conversationId: number,
-): Promise<Array<{ type: NotebookEntryType; content: string; followUpDate: string | null }>> {
+): Promise<
+  {
+    type: NotebookEntryType;
+    content: string;
+    followUpDate: string | null;
+  }[]
+> {
   try {
-    const strategyCount = await storage.getNotebookEntryCount(userId, "coaching_strategy");
+    const strategyCount = await storage.getNotebookEntryCount(
+      userId,
+      "coaching_strategy",
+    );
     const includeStrategy = shouldUpdateStrategy(strategyCount);
 
     const prompt = includeStrategy
       ? EXTRACTION_PROMPT
-      : EXTRACTION_PROMPT + '\n- Do NOT include "coaching_strategy" entries this time.';
+      : EXTRACTION_PROMPT +
+        '\n- Do NOT include "coaching_strategy" entries this time.';
 
     const response = await openai.chat.completions.create({
       model: MODEL_FAST,
@@ -62,13 +76,16 @@ export async function extractNotebookEntries(
     const result = extractionResultSchema.safeParse(parsed);
 
     if (!result.success) {
-      logger.warn({ error: result.error.message, conversationId }, "Failed to validate extraction result");
+      logger.warn(
+        { error: result.error.message, conversationId },
+        "Failed to validate extraction result",
+      );
       return [];
     }
 
     return result.data.entries.map((e) => ({
       type: e.type,
-      content: e.content,
+      content: sanitizeContextField(e.content, 500),
       followUpDate: e.followUpDate ?? null,
     }));
   } catch (error) {
