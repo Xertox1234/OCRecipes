@@ -35,6 +35,8 @@ export interface PremiumFeatures {
   adaptiveGoals: boolean;
   aiCoach: boolean;
   dailyCoachMessages: number;
+  coachPro: boolean;
+  coachProDailyMessages: number;
   advancedFasting: boolean;
   glp1Companion: boolean;
   menuScanner: boolean;
@@ -73,6 +75,8 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     adaptiveGoals: false,
     aiCoach: true,
     dailyCoachMessages: 3,
+    coachPro: false,
+    coachProDailyMessages: 0,
     advancedFasting: false,
     glp1Companion: false,
     menuScanner: false,
@@ -106,6 +110,8 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     adaptiveGoals: true,
     aiCoach: true,
     dailyCoachMessages: 999999,
+    coachPro: true,
+    coachProDailyMessages: 999999,
     advancedFasting: true,
     glp1Companion: true,
     menuScanner: true,
