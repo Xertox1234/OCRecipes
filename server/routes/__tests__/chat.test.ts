@@ -287,9 +287,10 @@ describe("Chat Routes", () => {
         .send({ content: "Hello" });
 
       expect(res.status).toBe(429);
+      expect(res.body.error).toBe("Daily chat message limit reached");
     });
 
-    it("returns 429 when daily limit reached", async () => {
+    it("returns 429 with Coach Pro message when premium daily limit reached", async () => {
       vi.mocked(storage.getChatConversation).mockResolvedValue(
         createMockChatConversation(),
       );
@@ -308,6 +309,7 @@ describe("Chat Routes", () => {
         .send({ content: "Hello" });
 
       expect(res.status).toBe(429);
+      expect(res.body.error).toBe("Daily Coach Pro message limit reached");
     });
 
     function mockStreamingSetup() {
