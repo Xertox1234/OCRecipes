@@ -27,6 +27,7 @@ import * as reformulation from "./reformulation";
 import * as sessions from "./sessions";
 import * as carousel from "./carousel";
 import * as profileHub from "./profile-hub";
+import * as coachNotebook from "./coach-notebook";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -278,4 +279,13 @@ export const storage = {
 
   // Profile hub (aggregated counts)
   getLibraryCounts: profileHub.getLibraryCounts,
+
+  // Coach Notebook
+  getActiveNotebookEntries: coachNotebook.getActiveNotebookEntries,
+  createNotebookEntry: coachNotebook.createNotebookEntry,
+  createNotebookEntries: coachNotebook.createNotebookEntries,
+  updateNotebookEntryStatus: coachNotebook.updateNotebookEntryStatus,
+  getCommitmentsWithDueFollowUp: coachNotebook.getCommitmentsWithDueFollowUp,
+  archiveOldEntries: coachNotebook.archiveOldEntries,
+  getNotebookEntryCount: coachNotebook.getNotebookEntryCount,
 };
