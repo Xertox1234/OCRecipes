@@ -29,6 +29,8 @@ interface CoachChatProps {
   onCreateConversation: () => Promise<number>;
   isCoachPro: boolean;
   warmUpHook: ReturnType<typeof useCoachWarmUp>;
+  initialMessage?: string | null;
+  onInitialMessageSent?: () => void;
 }
 
 async function sendMessageStreaming(
@@ -95,6 +97,8 @@ export default function CoachChat({
   onCreateConversation,
   isCoachPro,
   warmUpHook,
+  initialMessage,
+  onInitialMessageSent,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const hasVoice = usePremiumFeature("coachPro");
@@ -187,6 +191,32 @@ export default function CoachChat({
     [inputText, isStreaming, conversationId, onCreateConversation, warmUpHook],
   );
 
+  // Auto-send suggestion chip messages
+  useEffect(() => {
+    if (initialMessage) {
+      handleSend(initialMessage);
+      onInitialMessageSent?.();
+    }
+  }, [initialMessage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleBlockAction = useCallback(
+    (action: Record<string, unknown>) => {
+      // Action handling — navigation requires parent screen integration
+      if (action.type === "log_food") {
+        handleSend(`Please log: ${action.description as string}`);
+      }
+    },
+    [handleSend],
+  );
+
+  const handleCommitmentAccept = useCallback(
+    (_title: string, _followUpDate: string) => {
+      // Commitment is tracked via notebook extraction from the conversation
+      // The accept UI state is already managed by CommitmentCard component
+    },
+    [],
+  );
+
   const handleQuickReply = useCallback(
     (message: string) => {
       handleSend(message);
@@ -232,7 +262,9 @@ export default function CoachChat({
                 <BlockRenderer
                   key={`${msg.id}-block-${i}`}
                   block={block}
+                  onAction={handleBlockAction}
                   onQuickReply={handleQuickReply}
+                  onCommitmentAccept={handleCommitmentAccept}
                 />
               ));
             })()}
@@ -254,7 +286,9 @@ export default function CoachChat({
           <BlockRenderer
             key={`stream-block-${i}`}
             block={block}
+            onAction={handleBlockAction}
             onQuickReply={handleQuickReply}
+            onCommitmentAccept={handleCommitmentAccept}
           />
         ))}
 

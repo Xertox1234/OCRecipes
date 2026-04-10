@@ -411,30 +411,34 @@ export async function executeToolCall(
       const item = await storage.addMealPlanItem({
         userId,
         plannedDate: String(args.plannedDate ?? new Date().toISOString().split("T")[0]),
-        mealType: args.mealType ? String(args.mealType) : null,
-        notes: args.notes ? String(args.notes) : null,
+        mealType: String(args.mealType ?? "lunch"),
       });
       return { id: item.id, added: true };
     }
 
     case "add_to_grocery_list": {
       const rawItems = Array.isArray(args.items) ? args.items : [];
-      const listName = args.listName
+      const listTitle = args.listName
         ? String(args.listName)
         : "Coach Grocery List";
+      const today = new Date().toISOString().split("T")[0];
 
       const result = await storage.createGroceryListWithLimitCheck(
-        { userId, name: listName },
+        {
+          userId,
+          title: listTitle,
+          dateRangeStart: today,
+          dateRangeEnd: today,
+        },
         rawItems.map((i: unknown) => {
           const item = i as Record<string, unknown>;
           return {
             name: String(item.name ?? ""),
             quantity: item.quantity ? String(item.quantity) : null,
-            category: item.category ? String(item.category) : null,
-            checked: false,
+            unit: item.unit ? String(item.unit) : null,
           };
         }),
-        50, // max lists per user
+        50,
       );
 
       if (!result) {
@@ -457,10 +461,14 @@ export async function executeToolCall(
         (i: unknown, index: number) => {
           const item = i as Record<string, unknown>;
           return {
-            id: index + 1,
+            id: String(index + 1),
             name: String(item.name ?? ""),
-            amount: 1,
-            unit: "",
+            quantity: 1,
+            unit: item.unit ? String(item.unit) : "",
+            confidence: 1,
+            category: "other" as const,
+            photoId: "",
+            userEdited: false,
           };
         },
       );

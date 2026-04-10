@@ -32,6 +32,8 @@ vi.mock("../../storage", () => ({
     getCoachCachedResponse: vi.fn().mockResolvedValue(null),
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
     getCommunityRecipe: vi.fn(),
+    getActiveNotebookEntries: vi.fn().mockResolvedValue([]),
+    createNotebookEntries: vi.fn().mockResolvedValue([]),
   },
 }));
 

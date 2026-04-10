@@ -24,10 +24,11 @@ export default function CoachProScreen() {
     return result.id;
   }, [createConversation]);
 
+  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null);
+
   const handleSuggestionPress = useCallback(
-    (_text: string) => {
-      // The suggestion text will be used as the initial message
-      // CoachChat handles the sending internally
+    (text: string) => {
+      setPendingSuggestion(text);
     },
     [],
   );
@@ -47,6 +48,8 @@ export default function CoachProScreen() {
         onCreateConversation={handleCreateConversation}
         isCoachPro={isCoachPro}
         warmUpHook={warmUpHook}
+        initialMessage={pendingSuggestion}
+        onInitialMessageSent={() => setPendingSuggestion(null)}
       />
     </View>
   );

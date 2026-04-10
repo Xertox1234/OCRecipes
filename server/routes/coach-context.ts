@@ -99,6 +99,11 @@ export function register(app: Express): void {
 
         const { conversationId, interimTranscript } = parsed.data;
 
+        const conversation = await storage.getChatConversation(conversationId, req.userId);
+        if (!conversation) {
+          return sendError(res, 404, "Conversation not found", ErrorCode.NOT_FOUND);
+        }
+
         // Pre-fetch conversation history
         const messages = await storage.getChatMessages(conversationId, 20);
         const prepared = messages.map((m) => ({ role: m.role, content: m.content }));
