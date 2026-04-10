@@ -50,7 +50,7 @@ export function ServingStepperChip({
     setIsEditing(false);
     const parsed = parseInt(editValue, 10);
     if (!isNaN(parsed) && parsed > 0) {
-      onSetServings(parsed);
+      onSetServings(Math.min(parsed, 99));
     }
     // If invalid, reverts to current servingCount (no-op)
   }, [editValue, onSetServings]);
