@@ -31,10 +31,7 @@ export async function getActiveNotebookEntries(
 export async function createNotebookEntry(
   entry: InsertCoachNotebookEntry,
 ): Promise<CoachNotebookEntry> {
-  const [created] = await db
-    .insert(coachNotebook)
-    .values(entry)
-    .returning();
+  const [created] = await db.insert(coachNotebook).values(entry).returning();
   return created;
 }
 

@@ -11,25 +11,38 @@ interface Props {
 export default function SuggestionList({ block, onAction }: Props) {
   const { theme } = useTheme();
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}>
+    <View
+      style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
+    >
       {block.items.map((item, i) => (
         <Pressable
           key={i}
           style={[
             styles.item,
-            i < block.items.length - 1 && { borderBottomWidth: 1, borderBottomColor: theme.border },
+            i < block.items.length - 1 && {
+              borderBottomWidth: 1,
+              borderBottomColor: theme.border,
+            },
           ]}
-          onPress={() => item.action && onAction?.(item.action as Record<string, unknown>)}
+          onPress={() =>
+            item.action && onAction?.(item.action as Record<string, unknown>)
+          }
           disabled={!item.action}
           accessibilityRole={item.action ? "button" : "text"}
           accessibilityLabel={`${item.title}. ${item.subtitle}`}
         >
           <View style={styles.itemContent}>
-            <Text style={[styles.itemTitle, { color: theme.text }]}>{item.title}</Text>
-            <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>{item.subtitle}</Text>
+            <Text style={[styles.itemTitle, { color: theme.text }]}>
+              {item.title}
+            </Text>
+            <Text style={[styles.itemSubtitle, { color: theme.textSecondary }]}>
+              {item.subtitle}
+            </Text>
           </View>
           {item.action && (
-            <Text style={[styles.arrow, { color: theme.link }]}>{"\u2192"}</Text>
+            <Text style={[styles.arrow, { color: theme.link }]}>
+              {"\u2192"}
+            </Text>
           )}
         </Pressable>
       ))}

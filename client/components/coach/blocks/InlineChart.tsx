@@ -13,32 +13,61 @@ export default function InlineChart({ block }: Props) {
   if (block.chartType === "bar") {
     const maxValue = Math.max(...block.data.map((d) => d.value), 1);
     return (
-      <View style={[styles.container, { backgroundColor: theme.backgroundSecondary }]} accessibilityLabel={`${block.title}. ${block.summary ?? ""}`}>
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: theme.backgroundSecondary },
+        ]}
+        accessibilityLabel={`${block.title}. ${block.summary ?? ""}`}
+      >
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
         <View style={styles.barRow}>
           {block.data.map((d, i) => (
             <View key={i} style={styles.barCol}>
               <View style={styles.barWrapper}>
-                <View style={[styles.bar, { height: `${(d.value / maxValue) * 100}%`, backgroundColor: d.hit ? theme.success : theme.error }]} />
+                <View
+                  style={[
+                    styles.bar,
+                    {
+                      height: `${(d.value / maxValue) * 100}%`,
+                      backgroundColor: d.hit ? theme.success : theme.error,
+                    },
+                  ]}
+                />
               </View>
-              <Text style={[styles.barLabel, { color: theme.textSecondary }]}>{d.label}</Text>
+              <Text style={[styles.barLabel, { color: theme.textSecondary }]}>
+                {d.label}
+              </Text>
             </View>
           ))}
         </View>
-        {block.summary && <Text style={[styles.summary, { color: theme.textSecondary }]}>{block.summary}</Text>}
+        {block.summary && (
+          <Text style={[styles.summary, { color: theme.textSecondary }]}>
+            {block.summary}
+          </Text>
+        )}
       </View>
     );
   }
 
   if (block.chartType === "stat_row") {
     return (
-      <View style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}>
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: theme.backgroundSecondary },
+        ]}
+      >
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
         <View style={styles.statRow}>
           {block.data.map((d, i) => (
             <View key={i} style={styles.statItem}>
-              <Text style={[styles.statValue, { color: theme.link }]}>{d.value}</Text>
-              <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{d.label}</Text>
+              <Text style={[styles.statValue, { color: theme.link }]}>
+                {d.value}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
+                {d.label}
+              </Text>
             </View>
           ))}
         </View>
@@ -48,14 +77,27 @@ export default function InlineChart({ block }: Props) {
 
   // progress type
   const datum = block.data[0];
-  const pct = datum?.target ? Math.min((datum.value / datum.target) * 100, 100) : 0;
+  const pct = datum?.target
+    ? Math.min((datum.value / datum.target) * 100, 100)
+    : 0;
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}>
+    <View
+      style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
+    >
       <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
       <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>
-        <View style={[styles.progressFill, { width: `${pct}%`, backgroundColor: theme.success }]} />
+        <View
+          style={[
+            styles.progressFill,
+            { width: `${pct}%`, backgroundColor: theme.success },
+          ]}
+        />
       </View>
-      {block.summary && <Text style={[styles.summary, { color: theme.textSecondary }]}>{block.summary}</Text>}
+      {block.summary && (
+        <Text style={[styles.summary, { color: theme.textSecondary }]}>
+          {block.summary}
+        </Text>
+      )}
     </View>
   );
 }

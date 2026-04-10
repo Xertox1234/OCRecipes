@@ -8,24 +8,43 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getDailyLogs: vi.fn().mockResolvedValue([]),
-    getDailySummary: vi.fn().mockResolvedValue({ totalCalories: 800, totalProtein: 60 }),
+    getDailySummary: vi
+      .fn()
+      .mockResolvedValue({ totalCalories: 800, totalProtein: 60 }),
     getPantryItems: vi.fn().mockResolvedValue([]),
     getExpiringPantryItems: vi.fn().mockResolvedValue([]),
     getMealPlanItems: vi.fn().mockResolvedValue([]),
     addMealPlanItem: vi.fn().mockResolvedValue({ id: 1 }),
     addGroceryListItems: vi.fn().mockResolvedValue([{ id: 1 }]),
-    createGroceryListWithLimitCheck: vi.fn().mockResolvedValue({ list: { id: 1 }, items: [{ id: 1 }] }),
+    createGroceryListWithLimitCheck: vi
+      .fn()
+      .mockResolvedValue({ list: { id: 1 }, items: [{ id: 1 }] }),
     getGroceryLists: vi.fn().mockResolvedValue({ lists: [], total: 0 }),
     createScannedItemWithLog: vi.fn().mockResolvedValue({ id: 42 }),
   },
 }));
 
 vi.mock("../nutrition-lookup", () => ({
-  lookupNutrition: vi.fn().mockResolvedValue({ name: "chicken", calories: 165, protein: 31, carbs: 0, fat: 3.6, fiber: 0, sugar: 0, sodium: 74, servingSize: "100g", source: "USDA" }),
+  lookupNutrition: vi.fn().mockResolvedValue({
+    name: "chicken",
+    calories: 165,
+    protein: 31,
+    carbs: 0,
+    fat: 3.6,
+    fiber: 0,
+    sugar: 0,
+    sodium: 74,
+    servingSize: "100g",
+    source: "USDA",
+  }),
 }));
 
 vi.mock("../recipe-catalog", () => ({
-  searchCatalogRecipes: vi.fn().mockResolvedValue({ results: [{ id: 1, title: "Test Recipe", image: "url", readyInMinutes: 30 }] }),
+  searchCatalogRecipes: vi.fn().mockResolvedValue({
+    results: [
+      { id: 1, title: "Test Recipe", image: "url", readyInMinutes: 30 },
+    ],
+  }),
 }));
 
 vi.mock("../../lib/logger", () => ({
@@ -46,7 +65,8 @@ describe("Coach Tools Service", () => {
     const tools = getToolDefinitions();
     for (const tool of tools) {
       expect(tool).toHaveProperty("type", "function");
-      const fn = (tool as unknown as { function: Record<string, unknown> }).function;
+      const fn = (tool as unknown as { function: Record<string, unknown> })
+        .function;
       expect(fn).toHaveProperty("name");
       expect(fn).toHaveProperty("description");
       expect(fn).toHaveProperty("parameters");
@@ -55,7 +75,9 @@ describe("Coach Tools Service", () => {
 
   it("tool names match expected set", () => {
     const tools = getToolDefinitions();
-    const names = tools.map((t) => (t as { function: { name: string } }).function.name);
+    const names = tools.map(
+      (t) => (t as { function: { name: string } }).function.name,
+    );
     expect(names).toContain("lookup_nutrition");
     expect(names).toContain("search_recipes");
     expect(names).toContain("get_daily_log_details");
@@ -68,7 +90,11 @@ describe("Coach Tools Service", () => {
   });
 
   it("executes lookup_nutrition tool", async () => {
-    const result = await executeToolCall("lookup_nutrition", { query: "chicken breast" }, "user-1");
+    const result = await executeToolCall(
+      "lookup_nutrition",
+      { query: "chicken breast" },
+      "user-1",
+    );
     expect(result).toHaveProperty("name", "chicken");
   });
 
@@ -78,12 +104,18 @@ describe("Coach Tools Service", () => {
   });
 
   it("executes search_recipes tool", async () => {
-    const result = await executeToolCall("search_recipes", { query: "healthy lunch" }, "user-1") as { results: unknown[] };
+    const result = (await executeToolCall(
+      "search_recipes",
+      { query: "healthy lunch" },
+      "user-1",
+    )) as { results: unknown[] };
     expect(result.results).toHaveLength(1);
   });
 
   it("rejects unknown tool name", async () => {
-    await expect(executeToolCall("unknown_tool", {}, "user-1")).rejects.toThrow("Unknown tool");
+    await expect(executeToolCall("unknown_tool", {}, "user-1")).rejects.toThrow(
+      "Unknown tool",
+    );
   });
 
   it("exports MAX_TOOL_CALLS_PER_RESPONSE as 5", () => {

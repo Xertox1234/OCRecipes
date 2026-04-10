@@ -1,5 +1,10 @@
 import React from "react";
-import { Pressable, StyleSheet, AccessibilityInfo, Platform } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  AccessibilityInfo,
+  Platform,
+} from "react-native";
 import Animated, {
   useAnimatedStyle,
   withTiming,
@@ -17,7 +22,11 @@ interface Props {
   onPress: () => void;
 }
 
-export default function CoachMicButton({ isListening, volume, onPress }: Props) {
+export default function CoachMicButton({
+  isListening,
+  volume,
+  onPress,
+}: Props) {
   const { theme } = useTheme();
   const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
@@ -46,18 +55,31 @@ export default function CoachMicButton({ isListening, volume, onPress }: Props) 
   return (
     <Animated.View style={animatedStyle}>
       <Pressable
-        style={[styles.button, { backgroundColor: isListening ? theme.error : theme.link }]}
+        style={[
+          styles.button,
+          { backgroundColor: isListening ? theme.error : theme.link },
+        ]}
         onPress={onPress}
         accessibilityRole="button"
         accessibilityLabel={isListening ? "Stop listening" : "Voice input"}
         accessibilityState={{ selected: isListening }}
       >
-        <Ionicons name={isListening ? "stop" : "mic"} size={18} color="#FFFFFF" />
+        <Ionicons
+          name={isListening ? "stop" : "mic"}
+          size={18}
+          color={theme.buttonText}
+        />
       </Pressable>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  button: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  button: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

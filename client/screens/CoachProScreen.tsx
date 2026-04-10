@@ -24,14 +24,13 @@ export default function CoachProScreen() {
     return result.id;
   }, [createConversation]);
 
-  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null);
-
-  const handleSuggestionPress = useCallback(
-    (text: string) => {
-      setPendingSuggestion(text);
-    },
-    [],
+  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(
+    null,
   );
+
+  const handleSuggestionPress = useCallback((text: string) => {
+    setPendingSuggestion(text);
+  }, []);
 
   return (
     <View
@@ -41,7 +40,10 @@ export default function CoachProScreen() {
       ]}
     >
       {context && (
-        <CoachDashboard context={context} onSuggestionPress={handleSuggestionPress} />
+        <CoachDashboard
+          context={context}
+          onSuggestionPress={handleSuggestionPress}
+        />
       )}
       <CoachChat
         conversationId={conversationId}

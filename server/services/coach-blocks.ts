@@ -1,5 +1,8 @@
 // server/services/coach-blocks.ts
-import { coachBlockSchema, type CoachBlock } from "@shared/schemas/coach-blocks";
+import {
+  coachBlockSchema,
+  type CoachBlock,
+} from "@shared/schemas/coach-blocks";
 import { logger } from "../lib/logger";
 
 export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
@@ -9,7 +12,10 @@ export function validateBlocks(rawBlocks: unknown[]): CoachBlock[] {
     if (result.success) {
       valid.push(result.data);
     } else {
-      logger.debug({ block, error: result.error.message }, "Dropped invalid coach block");
+      logger.debug(
+        { block, error: result.error.message },
+        "Dropped invalid coach block",
+      );
     }
   }
   return valid;

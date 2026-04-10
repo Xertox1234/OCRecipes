@@ -5,7 +5,10 @@ import { validateBlocks, parseBlocksFromContent } from "../coach-blocks";
 describe("Coach Blocks Service", () => {
   it("validates valid blocks array", () => {
     const blocks = [
-      { type: "quick_replies", options: [{ label: "Yes", message: "Yes please" }] },
+      {
+        type: "quick_replies",
+        options: [{ label: "Yes", message: "Yes please" }],
+      },
     ];
     const result = validateBlocks(blocks);
     expect(result).toHaveLength(1);
@@ -15,7 +18,10 @@ describe("Coach Blocks Service", () => {
   it("filters out invalid blocks silently", () => {
     const blocks = [
       { type: "unknown_type", data: "bad" },
-      { type: "quick_replies", options: [{ label: "Yes", message: "Yes please" }] },
+      {
+        type: "quick_replies",
+        options: [{ label: "Yes", message: "Yes please" }],
+      },
     ];
     const result = validateBlocks(blocks);
     expect(result).toHaveLength(1);
@@ -28,7 +34,8 @@ describe("Coach Blocks Service", () => {
   });
 
   it("parses blocks from JSON-annotated content", () => {
-    const content = 'Here are some options:\n```coach_blocks\n[{"type":"quick_replies","options":[{"label":"Yes","message":"Yes"}]}]\n```';
+    const content =
+      'Here are some options:\n```coach_blocks\n[{"type":"quick_replies","options":[{"label":"Yes","message":"Yes"}]}]\n```';
     const { text, blocks } = parseBlocksFromContent(content);
     expect(text).toBe("Here are some options:");
     expect(blocks).toHaveLength(1);
