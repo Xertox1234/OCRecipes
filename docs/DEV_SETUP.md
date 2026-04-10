@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers everything needed to set up the OCRecipes development environment. The project uses **tunneling** to allow mobile devices to connect to your local development server.
+This guide covers everything needed to set up the OCRecipes development environment. For iOS Simulator or Android Emulator development, you can use your machine's local IP directly. Tunneling is an alternative for physical devices on different networks.
 
 ## Prerequisites
 
@@ -13,13 +13,17 @@ This guide covers everything needed to set up the OCRecipes development environm
 | Node.js    | 18+     | [nodejs.org](https://nodejs.org)  |
 | npm        | 9+      | Included with Node.js             |
 | PostgreSQL | 12+     | `brew install postgresql` (macOS) |
-| Expo Go    | Latest  | App Store / Play Store            |
 
-### Optional Tools
+### Optional Software
 
-- **ngrok** - Alternative tunnel (more reliable)
-- **cloudflared** - Cloudflare tunnel option
-- **Postman** - API testing
+| Software    | When Needed                                         |
+| ----------- | --------------------------------------------------- |
+| Xcode       | Required for `npx expo run:ios` (native builds)     |
+| Android SDK | Required for `npx expo run:android`                 |
+| Expo Go     | Quick prototyping (no camera support)               |
+| ngrok       | Alternative tunnel (more reliable than localtunnel) |
+| cloudflared | Cloudflare tunnel option                            |
+| Postman     | API testing                                         |
 
 ## Initial Setup
 
@@ -36,21 +40,92 @@ npm install
 
 ### 2. Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root. The sections below are organized by category.
+
+#### Required
+
+These must be set or the server will refuse to start:
 
 ```bash
-# Database
+# PostgreSQL connection string
 DATABASE_URL=postgresql://username:password@localhost:5432/ocrecipes
 
-# JWT
-JWT_SECRET=your-secure-random-string-here
+# JWT signing secret (must be at least 32 characters)
+JWT_SECRET=your-secure-random-string-at-least-32-chars
+```
 
-# OpenAI
+#### Server Configuration (optional, has defaults)
+
+```bash
+# Server port (default: 3000)
+PORT=3000
+
+# Environment (default: "development")
+NODE_ENV=development
+
+# Logging level: fatal | error | warn | info | debug | trace
+LOG_LEVEL=info
+```
+
+#### AI and API Keys (optional, features degrade without them)
+
+```bash
+# OpenAI — powers photo analysis, nutrition coaching, recipe generation
 AI_INTEGRATIONS_OPENAI_API_KEY=sk-...
-AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1  # Optional
 
-# Mobile API URL (optional - set when using fixed tunnel)
-EXPO_PUBLIC_DOMAIN=https://your-tunnel.loca.lt
+# Optional base URL override (e.g., for Azure OpenAI or a proxy)
+AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1
+
+# Spoonacular — recipe catalog search
+SPOONACULAR_API_KEY=your-spoonacular-key
+
+# USDA — nutrition data lookup (falls back to "DEMO_KEY" with severe rate limits)
+USDA_API_KEY=your-usda-key
+
+# API Ninjas — nutrition data fallback source
+API_NINJAS_KEY=your-api-ninjas-key
+
+# Runware — image generation (primary provider, falls back to DALL-E)
+RUNWARE_API_KEY=your-runware-key
+```
+
+#### Mobile Client
+
+```bash
+# Public API URL the mobile app uses to reach the backend.
+# For iOS Simulator: use your Mac's local IP (find with: ipconfig getifaddr en0)
+# For tunneling: use the tunnel URL
+EXPO_PUBLIC_DOMAIN=http://192.168.x.x:3000
+```
+
+#### Apple In-App Purchase (optional, receipt validation)
+
+Set `RECEIPT_VALIDATION_STUB=true` during development to auto-approve receipts when no Apple credentials are configured. **Never use stub mode in production.**
+
+```bash
+APPLE_ISSUER_ID=your-issuer-id
+APPLE_KEY_ID=your-key-id
+APPLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+APPLE_BUNDLE_ID=com.ocrecipes.app
+APPLE_ENVIRONMENT=sandbox          # "sandbox" or "production"
+APPLE_APP_ID=123456789             # Numeric App Apple ID (production JWS verification)
+APPLE_ROOT_CA_DIR=server/certs/    # Override path for Apple root CA certs
+RECEIPT_VALIDATION_STUB=true       # Dev-only: auto-approve receipts
+```
+
+#### Google In-App Purchase (optional, receipt validation)
+
+```bash
+GOOGLE_PACKAGE_NAME=com.ocrecipes.app
+GOOGLE_SERVICE_ACCOUNT_EMAIL=your-service-account@project.iam.gserviceaccount.com
+GOOGLE_SERVICE_ACCOUNT_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+```
+
+#### Admin
+
+```bash
+# Comma-separated user IDs with admin privileges
+ADMIN_USER_IDS=1,2
 ```
 
 ### 3. Database Setup
@@ -81,114 +156,152 @@ npm run db:push
 
 ## Starting Development Servers
 
-### Terminal 1: Backend Server
+### Option A: iOS Simulator (recommended for camera features)
 
-```bash
-npm run server:dev
-```
-
-This starts the Express server on port 3000 with hot reloading.
-
-Expected output:
-
-```
-Server running on port 3000
-Connected to database
-```
-
-### Terminal 2: Expo Frontend
-
-```bash
-npm run expo:dev
-```
-
-This starts Expo with automatic ngrok tunneling (via `--tunnel` flag).
-
-Expected output:
-
-```
-Metro waiting on exp://...
-› Tunnel ready
-› Scan the QR code above with Expo Go
-```
-
-### Terminal 3: Backend Tunnel
-
-```bash
-npx localtunnel --port 3000
-```
-
-This creates a public HTTPS URL for your backend API.
-
-Expected output:
-
-```
-your url is: https://major-snakes-draw.loca.lt
-```
-
-**Important**:
-
-- The tunnel URL changes each time you restart localtunnel
-- You MUST open the tunnel URL in a browser first and click "Click to Continue" on the security page
-- Without this step, all API requests will timeout with 408 errors
-
-### 4. Configure API URL
-
-After starting localtunnel, update the default URL in `client/lib/query-client.ts`:
-
-```typescript
-export function getApiUrl(): string {
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
-
-  if (!host) {
-    // UPDATE THIS URL EVERY TIME YOU RESTART LOCALTUNNEL
-    return "https://major-snakes-draw.loca.lt";
-  }
-  // ...
-}
-```
-
-Or set `EXPO_PUBLIC_DOMAIN` in your `.env` file.
-
-### 5. Bypass Localtunnel Security Page
-
-**CRITICAL STEP**: Open your tunnel URL (e.g., `https://major-snakes-draw.loca.lt`) in a web browser:
-
-1. You'll see a localtunnel security/landing page
-2. Click "Click to Continue"
-3. This unlocks the tunnel for API requests
-
-If you skip this step, your mobile app will get 408 timeout errors when trying to login/register.
-
-##IMPORTANT: Follow these steps after starting localtunnel:
-
-# 1. Copy the tunnel URL (e.g., https://major-snakes-draw.loca.lt)
-
-# 2. Update client/lib/query-client.ts with the new URL
-
-# 3. Open the tunnel URL in a browser and click "Click to Continue"
-
-# 4. Reload your app in Expo Go
+Camera features require native builds via `react-native-vision-camera` and will **not** work in Expo Go. See the "Native Builds" section below.
 
 ```bash
 # Terminal 1: Backend
 npm run server:dev
 
-# Terminal 2: Expo
+# Terminal 2: Build and launch in iOS Simulator
+npx expo run:ios
+```
+
+Set `EXPO_PUBLIC_DOMAIN` to your Mac's local IP (e.g., `http://192.168.x.x:3000`). The simulator can reach this directly without tunneling.
+
+### Option B: Expo Go (simpler, no camera support)
+
+```bash
+# Terminal 1: Backend
+npm run server:dev
+
+# Terminal 2: Expo with tunneling
 npm run expo:dev
+```
 
-# Terminal 3: Backend tunnel
+This starts Expo with automatic ngrok tunneling (via `--tunnel` flag). Scan the QR code with Expo Go on your device.
+
+If using Expo Go with a separate backend tunnel:
+
+```bash
+# Terminal 3: Backend tunnel (if not using local IP)
 npx localtunnel --port 3000
+```
 
-# Copy the tunnel URL and update query-client.ts or .env
+**Important**: Localtunnel URLs change on each restart. You must open the URL in a browser first and click "Click to Continue" — otherwise API requests will timeout with 408 errors.
+
+### Configure API URL
+
+Set `EXPO_PUBLIC_DOMAIN` in your `.env` file to the appropriate URL:
+
+- **Simulator**: `http://<your-mac-ip>:3000` (find with `ipconfig getifaddr en0`)
+- **Tunneling**: The tunnel URL (e.g., `https://major-snakes-draw.loca.lt`)
+
+## Native Builds (iOS / Android)
+
+Camera scanning, barcode reading, and OCR features use `react-native-vision-camera`, which requires a native build. **These features do not work in Expo Go.**
+
+### iOS Simulator
+
+```bash
+# First build (installs CocoaPods, compiles native modules — ~5-10 min)
+npx expo run:ios
+
+# Subsequent runs are much faster (incremental builds)
+npx expo run:ios
+```
+
+Requires Xcode to be installed. See CLAUDE.md's "iOS Simulator Setup" section for detailed first-time setup instructions and troubleshooting.
+
+### Android Emulator / Device
+
+```bash
+npx expo run:android
+```
+
+Requires Android SDK and an emulator or connected device.
+
+### Physical iPhone
+
+Building to a physical iPhone requires USB connection for the initial install, Xcode signing configuration, and trusting the developer certificate on the device. See CLAUDE.md's "Physical Device Setup (iPhone)" section for the complete walkthrough.
+
+After the initial install, subsequent development can be done wirelessly over the same WiFi network:
+
+```bash
+# Terminal 1: Backend
+npm run server:dev
+
+# Terminal 2: Metro bundler (--dev-client flag required, NOT Expo Go)
+npx expo start --dev-client --lan
 ```
 
 ## Testing Your Setup
 
-1. **Scan the QR code** shown by Expo on your mobile device
-2. **Open Expo Go** - the app will load
-3. **Check backend logs** - you should see API requests
-4. **Register an account** - verify database connection
+1. Start the backend server and verify it's running: `curl http://localhost:3000/api/health`
+2. Launch the app (simulator, emulator, or Expo Go)
+3. Register an account or log in — verify the database connection works
+4. Check backend logs for incoming API requests
+
+## All Available Commands
+
+### Development
+
+```bash
+npm run server:dev          # Express backend with hot reloading
+npm run expo:dev            # Expo frontend with tunneling (Expo Go)
+npx expo run:ios            # Build and run on iOS Simulator (native)
+npx expo run:android        # Build and run on Android emulator/device
+```
+
+### Database
+
+```bash
+npm run db:push             # Push Drizzle schema to PostgreSQL
+npm run seed:recipes        # Seed community recipe data
+```
+
+### Code Quality
+
+```bash
+npm run lint                # ESLint check
+npm run lint:fix            # ESLint auto-fix
+npm run lint:a11y           # Accessibility lint check
+npm run check:types         # TypeScript type checking
+npm run format              # Prettier format all files
+npm run check:format        # Check formatting without writing
+```
+
+### Testing
+
+```bash
+npm run test                # Run tests in watch mode
+npm run test:run            # Run all tests once
+npm run test:unit           # Run unit tests only (excludes storage integration tests)
+npm run test:integration    # Run storage integration tests only
+npm run test:coverage       # Run tests with coverage report
+```
+
+### End-to-End Testing (Maestro)
+
+```bash
+npm run e2e                 # Run all Maestro E2E flows
+npm run e2e:smoke           # Run smoke-tagged E2E flows only
+```
+
+### Production Build
+
+```bash
+npm run server:build        # Bundle server with esbuild -> server_dist/
+npm run server:prod         # Run production server
+npm run expo:static:build   # Build static Expo bundle
+```
+
+### Utilities
+
+```bash
+npm run generate:icons      # Generate ingredient icons
+```
 
 ## CORS Configuration
 
@@ -201,30 +314,27 @@ res.header("Access-Control-Allow-Origin", origin || "*");
 
 This prevents 403 CORS errors when accessing from mobile devices.
 
-## Code Quality Commands
+## Pre-Commit Hooks
 
-````bash
-# ESLint
-npm run lint           # Check for issues
-npm run lint:fix       # Auto-fix issues
+The project uses Husky with lint-staged. On every commit:
 
-# TypeScript
-npm run check:types    # Type checking
+1. **`npm run test:run`** — all tests must pass
+2. **lint-staged** runs on staged files:
+   - `.ts` / `.tsx` — ESLint + Prettier
+   - `client/**/*.tsx` — accessibility and hardcoded color checks
+   - `server/storage/*.ts` — IDOR storage check
+   - `.js` / `.md` — Prettier
 
-# Prettier
-npm run format         # Format all files
-npm run check:format   # Check formatting
-``` / 408 Timeout
+If tests fail or linting errors occur, the commit is blocked.
 
-1. **Open tunnel URL in browser** - Visit the localtunnel URL and click "Click to Continue"
-2. Verify backend tunnel is running: `ps aux | grep localtunnel`
-3. Check `query-client.ts` has the correct tunnel URL
-4. Ensure CORS is allowing all origins
-5. Restart localtunnel if it's been idle (tunnels can expire)
-1. Verify backend tunnel is running
-2. Check `query-client.ts` has the correct tunnel URL
-3. Ensure CORS is allowing all origins
-4. Try accessing the tunnel URL in a browser first
+## Troubleshooting
+
+### 403 / 408 Timeout
+
+1. **If using localtunnel**: Open the tunnel URL in a browser and click "Click to Continue"
+2. Verify backend is running: `curl http://localhost:3000/api/health`
+3. If using simulator, ensure `EXPO_PUBLIC_DOMAIN` has the correct local IP
+4. Restart the tunnel if it has been idle (tunnels can expire)
 
 ### Port Already in Use
 
@@ -234,7 +344,7 @@ lsof -ti:3000 | xargs kill -9
 
 # Or use a different port
 PORT=3001 npm run server:dev
-````
+```
 
 ### Database Connection Failed
 
@@ -246,9 +356,7 @@ pg_isready
 psql $DATABASE_URL
 
 # Create database if missing
-**Localtunnel Security Page**: Always open the tunnel URL in a browser first and click through the security page. This is required for API requests to work.
-
-Localtunnel can be unreliable. If you experience frequent timeouts, try a
+createdb ocrecipes
 ```
 
 ### Tunnel Connection Issues
@@ -281,17 +389,10 @@ npm install
 
 ### Camera Not Working
 
-1. Grant camera permissions in device settings
-2. Check Expo Go has camera access
-3. Try force-closing and reopening Expo Go
-
-## Why Tunneling?
-
-| Issue                                | Solution             |
-| ------------------------------------ | -------------------- |
-| Mobile can't reach localhost         | Public tunnel URL    |
-| Local IPs unreliable across networks | Consistent HTTPS URL |
-| Need HTTPS for secure features       | Tunnels provide SSL  |
+1. Camera features require a native build (`npx expo run:ios` or `npx expo run:android`) — they do **not** work in Expo Go
+2. Grant camera permissions in device settings
+3. If using iOS Simulator, camera simulation may be limited — use a physical device for full testing
+4. See CLAUDE.md's "Troubleshooting" sections for build-specific issues (e.g., `EXBarcodeScannerInterface.h` not found)
 
 ## Development Tips
 
@@ -309,7 +410,7 @@ Shake your device or press `r` in terminal to force reload.
 npx react-devtools
 
 # Expo debugger
-# Shake device → "Debug Remote JS"
+# Shake device -> "Debug Remote JS"
 ```
 
 ### Database Inspection
@@ -325,20 +426,11 @@ psql $DATABASE_URL
 SELECT * FROM users;
 ```
 
-## Production Build
-
-```bash
-# Build backend
-npm run server:build
-npm run server:prod
-
-# Build Expo (static)
-npm run expo:static:build
-```
-
 ## Notes
 
-- Don't commit tunnel URLs to git (they change each session)
+- Don't commit tunnel URLs or `.env` files to git
 - Port 5000 conflicts with macOS AirPlay Receiver
 - Expo's `--tunnel` flag uses @expo/ngrok automatically
-- Backend needs a separate tunnel (localtunnel/ngrok/cloudflared)
+- Backend needs a separate tunnel only if not using local IP access
+- `JWT_SECRET` must be at least 32 characters (validated at startup)
+- Missing optional API keys log warnings at startup — check server logs to see which features are degraded

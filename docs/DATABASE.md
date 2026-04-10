@@ -2,7 +2,7 @@
 
 ## Overview
 
-OCRecipes uses PostgreSQL with Drizzle ORM for database operations. The schema is defined in `shared/schema.ts` (31 tables) and is shared between the frontend and backend.
+OCRecipes uses PostgreSQL with Drizzle ORM for database operations. The schema is defined in `shared/schema.ts` (42 tables) and is shared between the frontend and backend.
 
 ## Schema Definition
 
@@ -174,7 +174,7 @@ Stores nutritional information for scanned food products.
 ```sql
 CREATE TABLE scanned_items (
   id SERIAL PRIMARY KEY,
-  user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE,
+  user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE NOT NULL,
   barcode TEXT,
   product_name TEXT NOT NULL,
   brand_name TEXT,
@@ -187,37 +187,43 @@ CREATE TABLE scanned_items (
   sugar DECIMAL(10, 2),
   sodium DECIMAL(10, 2),
   image_url TEXT,
-  source_type TEXT DEFAULT 'barcode',
+  source_type TEXT NOT NULL DEFAULT 'barcode',
   photo_url TEXT,
   ai_confidence DECIMAL(3, 2),
   preparation_methods JSONB,
   analysis_intent TEXT,
-  scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+  scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  discarded_at TIMESTAMP
 );
+
+CREATE INDEX scanned_items_user_active_idx ON scanned_items (user_id, scanned_at) WHERE discarded_at IS NULL;
+CREATE INDEX scanned_items_scanned_at_idx ON scanned_items (scanned_at);
+-- CHECK: calories >= 0, protein >= 0, carbs >= 0, fat >= 0
 ```
 
-| Column              | Type          | Constraints       | Description                                                   |
-| ------------------- | ------------- | ----------------- | ------------------------------------------------------------- |
-| id                  | SERIAL        | PK                | Auto-incrementing ID                                          |
-| user_id             | VARCHAR       | FK → users        | User who scanned                                              |
-| barcode             | TEXT          | nullable          | Product barcode (EAN/UPC)                                     |
-| product_name        | TEXT          | NOT NULL          | Product name                                                  |
-| brand_name          | TEXT          | nullable          | Manufacturer/brand                                            |
-| serving_size        | TEXT          | nullable          | Serving description                                           |
-| calories            | DECIMAL(10,2) | nullable          | Calories per serving                                          |
-| protein             | DECIMAL(10,2) | nullable          | Protein in grams                                              |
-| carbs               | DECIMAL(10,2) | nullable          | Carbohydrates in grams                                        |
-| fat                 | DECIMAL(10,2) | nullable          | Fat in grams                                                  |
-| fiber               | DECIMAL(10,2) | nullable          | Fiber in grams                                                |
-| sugar               | DECIMAL(10,2) | nullable          | Sugar in grams                                                |
-| sodium              | DECIMAL(10,2) | nullable          | Sodium in mg                                                  |
-| image_url           | TEXT          | nullable          | Product image URL (barcode source)                            |
-| source_type         | TEXT          | DEFAULT 'barcode' | `"barcode"` or `"photo"`                                      |
-| photo_url           | TEXT          | nullable          | User's uploaded photo URL (reserved for future use)           |
-| ai_confidence       | DECIMAL(3,2)  | nullable          | Vision AI confidence score 0.00–1.00                          |
-| preparation_methods | JSONB         | nullable          | Per-food prep methods: `[{ name, method }]`                   |
-| analysis_intent     | TEXT          | nullable          | Photo intent: `"log"`, `"calories"`, `"recipe"`, `"identify"` |
-| scanned_at          | TIMESTAMP     | NOT NULL          | When item was scanned                                         |
+| Column              | Type          | Constraints                 | Description                                                            |
+| ------------------- | ------------- | --------------------------- | ---------------------------------------------------------------------- |
+| id                  | SERIAL        | PK                          | Auto-incrementing ID                                                   |
+| user_id             | VARCHAR       | FK → users, NOT NULL        | User who scanned                                                       |
+| barcode             | TEXT          | nullable                    | Product barcode (EAN/UPC)                                              |
+| product_name        | TEXT          | NOT NULL                    | Product name                                                           |
+| brand_name          | TEXT          | nullable                    | Manufacturer/brand                                                     |
+| serving_size        | TEXT          | nullable                    | Serving description                                                    |
+| calories            | DECIMAL(10,2) | nullable, CHECK >= 0        | Calories per serving                                                   |
+| protein             | DECIMAL(10,2) | nullable, CHECK >= 0        | Protein in grams                                                       |
+| carbs               | DECIMAL(10,2) | nullable, CHECK >= 0        | Carbohydrates in grams                                                 |
+| fat                 | DECIMAL(10,2) | nullable, CHECK >= 0        | Fat in grams                                                           |
+| fiber               | DECIMAL(10,2) | nullable                    | Fiber in grams                                                         |
+| sugar               | DECIMAL(10,2) | nullable                    | Sugar in grams                                                         |
+| sodium              | DECIMAL(10,2) | nullable                    | Sodium in mg                                                           |
+| image_url           | TEXT          | nullable                    | Product image URL (barcode source)                                     |
+| source_type         | TEXT          | NOT NULL, DEFAULT 'barcode' | `"barcode"` or `"photo"`                                               |
+| photo_url           | TEXT          | nullable                    | User's uploaded photo URL (reserved for future use)                    |
+| ai_confidence       | DECIMAL(3,2)  | nullable                    | Vision AI confidence score 0.00–1.00                                   |
+| preparation_methods | JSONB         | nullable                    | Per-food prep methods: `[{ name, method }]`                            |
+| analysis_intent     | TEXT          | nullable                    | Photo intent: `"log"`, `"calories"`, `"recipe"`, `"identify"`          |
+| scanned_at          | TIMESTAMP     | NOT NULL, auto              | When item was scanned                                                  |
+| discarded_at        | TIMESTAMP     | nullable                    | Soft-delete timestamp (filtered from active queries via partial index) |
 
 ### Daily Logs Table
 
@@ -226,28 +232,39 @@ Tracks daily food intake by linking scanned items to specific days.
 ```sql
 CREATE TABLE daily_logs (
   id SERIAL PRIMARY KEY,
-  user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE,
+  user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE NOT NULL,
   scanned_item_id INTEGER REFERENCES scanned_items(id) ON DELETE CASCADE,
-  recipe_id INTEGER REFERENCES meal_plan_recipes(id) ON DELETE SET NULL,
+  recipe_id INTEGER REFERENCES meal_plan_recipes(id) ON DELETE CASCADE,
   meal_plan_item_id INTEGER REFERENCES meal_plan_items(id) ON DELETE SET NULL,
+  source TEXT NOT NULL DEFAULT 'scan',
   servings DECIMAL(5, 2) DEFAULT '1',
   meal_type TEXT,
-  source TEXT DEFAULT 'scan',
-  logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+  logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+  CHECK (scanned_item_id IS NOT NULL OR recipe_id IS NOT NULL),
+  CHECK (servings > 0)
 );
+
+CREATE INDEX daily_logs_user_logged_at_idx ON daily_logs (user_id, logged_at);
+CREATE INDEX daily_logs_logged_at_idx ON daily_logs (logged_at);
+CREATE INDEX daily_logs_meal_plan_item_id_idx ON daily_logs (meal_plan_item_id);
+CREATE UNIQUE INDEX daily_logs_unique_meal_plan_confirm ON daily_logs (user_id, meal_plan_item_id) WHERE meal_plan_item_id IS NOT NULL;
 ```
 
-| Column            | Type         | Constraints            | Description                                                                    |
-| ----------------- | ------------ | ---------------------- | ------------------------------------------------------------------------------ |
-| id                | SERIAL       | PK                     | Auto-incrementing ID                                                           |
-| user_id           | VARCHAR      | FK → users             | User who logged                                                                |
-| scanned_item_id   | INTEGER      | FK → scanned_items     | Reference to food item                                                         |
-| recipe_id         | INTEGER      | FK → meal_plan_recipes | Reference to a meal plan recipe (nullable)                                     |
-| meal_plan_item_id | INTEGER      | FK → meal_plan_items   | Reference to a meal plan item (nullable)                                       |
-| servings          | DECIMAL(5,2) | DEFAULT '1'            | Number of servings                                                             |
-| meal_type         | TEXT         | nullable               | Meal category                                                                  |
-| source            | TEXT         | DEFAULT 'scan'         | How the log was created: `"scan"`, `"photo"`, `"recipe"`, `"quick"`, `"voice"` |
-| logged_at         | TIMESTAMP    | NOT NULL               | When food was logged                                                           |
+| Column            | Type         | Constraints                               | Description                                                                    |
+| ----------------- | ------------ | ----------------------------------------- | ------------------------------------------------------------------------------ |
+| id                | SERIAL       | PK                                        | Auto-incrementing ID                                                           |
+| user_id           | VARCHAR      | FK → users, NOT NULL                      | User who logged                                                                |
+| scanned_item_id   | INTEGER      | FK → scanned_items, ON DELETE CASCADE     | Reference to food item (nullable)                                              |
+| recipe_id         | INTEGER      | FK → meal_plan_recipes, ON DELETE CASCADE | Reference to a meal plan recipe (nullable)                                     |
+| meal_plan_item_id | INTEGER      | FK → meal_plan_items, ON DELETE SET NULL  | Reference to a meal plan item (nullable)                                       |
+| source            | TEXT         | NOT NULL, DEFAULT 'scan'                  | How the log was created: `"scan"`, `"photo"`, `"recipe"`, `"quick"`, `"voice"` |
+| servings          | DECIMAL(5,2) | DEFAULT '1', CHECK > 0                    | Number of servings                                                             |
+| meal_type         | TEXT         | nullable                                  | Meal category                                                                  |
+| logged_at         | TIMESTAMP    | NOT NULL, auto                            | When food was logged                                                           |
+
+**Check constraints:** At least one of `scanned_item_id` or `recipe_id` must be non-null (prevents ghost rows with no nutrition source). `servings` must be > 0.
+
+**Unique constraint:** `(user_id, meal_plan_item_id)` WHERE `meal_plan_item_id IS NOT NULL` — prevents duplicate meal plan confirmations.
 
 ### Nutrition Cache Table
 
@@ -300,7 +317,7 @@ CREATE TABLE suggestion_cache (
   expires_at TIMESTAMP NOT NULL
 );
 
-CREATE INDEX suggestion_cache_item_user_idx ON suggestion_cache (scanned_item_id, user_id);
+CREATE UNIQUE INDEX suggestion_cache_item_user_profile_idx ON suggestion_cache (scanned_item_id, user_id, profile_hash);
 CREATE INDEX suggestion_cache_expires_at_idx ON suggestion_cache (expires_at);
 ```
 
@@ -412,41 +429,6 @@ Caches AI-generated meal suggestions per user. Keyed by a combination of user di
 | hit_count   | INTEGER      | DEFAULT 0        | Number of cache hits |
 | created_at  | TIMESTAMP    | NOT NULL, auto   | When cached          |
 | expires_at  | TIMESTAMP    | NOT NULL         | TTL expiry           |
-
-### Exercise Library Table
-
-Reference table of exercises with MET values. Includes both system-wide and user-created custom exercises.
-
-| Column     | Type         | Constraints    | Description                                               |
-| ---------- | ------------ | -------------- | --------------------------------------------------------- |
-| id         | SERIAL       | PK             | Auto-incrementing ID                                      |
-| name       | TEXT         | NOT NULL       | Exercise name                                             |
-| type       | TEXT         | NOT NULL       | Category: `"cardio"`, `"strength"`, `"flexibility"`, etc. |
-| met_value  | DECIMAL(4,1) | NOT NULL       | MET (Metabolic Equivalent of Task) value                  |
-| is_custom  | BOOLEAN      | DEFAULT FALSE  | Whether user-created                                      |
-| user_id    | VARCHAR      | FK → users     | Owner (null for system exercises)                         |
-| created_at | TIMESTAMP    | NOT NULL, auto | When created                                              |
-
-### Exercise Logs Table
-
-Records individual exercise sessions.
-
-| Column           | Type          | Constraints      | Description                     |
-| ---------------- | ------------- | ---------------- | ------------------------------- |
-| id               | SERIAL        | PK               | Auto-incrementing ID            |
-| user_id          | VARCHAR       | FK → users       | User who exercised              |
-| exercise_name    | TEXT          | NOT NULL         | Exercise name                   |
-| exercise_type    | TEXT          | NOT NULL         | Exercise category               |
-| duration_minutes | INTEGER       | NOT NULL         | Duration in minutes             |
-| calories_burned  | DECIMAL(10,2) | nullable         | Estimated calories burned       |
-| intensity        | TEXT          | nullable         | `"low"`, `"moderate"`, `"high"` |
-| sets             | INTEGER       | nullable         | Number of sets (strength)       |
-| reps             | INTEGER       | nullable         | Number of reps (strength)       |
-| weight_lifted    | DECIMAL(8,2)  | nullable         | Weight in kg (strength)         |
-| distance_km      | DECIMAL(8,2)  | nullable         | Distance in km (cardio)         |
-| source           | TEXT          | DEFAULT 'manual' | `"manual"` or `"healthkit"`     |
-| notes            | TEXT          | nullable         | Exercise notes                  |
-| logged_at        | TIMESTAMP     | NOT NULL, auto   | When exercise was logged        |
 
 ### Weight Logs Table
 
@@ -631,6 +613,205 @@ Tracks items in the user's pantry for recipe matching and deduction.
 | added_at   | TIMESTAMP     | NOT NULL, auto  | When item was added      |
 | updated_at | TIMESTAMP     | NOT NULL, auto  | When last updated        |
 
+### Cookbooks Table
+
+User-created cookbook collections for organizing recipes.
+
+| Column          | Type      | Constraints          | Description                   |
+| --------------- | --------- | -------------------- | ----------------------------- |
+| id              | SERIAL    | PK                   | Auto-incrementing ID          |
+| user_id         | VARCHAR   | FK → users, NOT NULL | User who created the cookbook |
+| name            | TEXT      | NOT NULL             | Cookbook name                 |
+| description     | TEXT      | nullable             | Cookbook description          |
+| cover_image_url | TEXT      | nullable             | Cover image URL               |
+| created_at      | TIMESTAMP | NOT NULL, auto       | When cookbook was created     |
+| updated_at      | TIMESTAMP | NOT NULL, auto       | When last updated             |
+
+### Cookbook Recipes Table
+
+Junction table linking recipes to cookbooks. Uses polymorphic FK (`recipe_id` + `recipe_type`) to reference either `meal_plan_recipes` or `community_recipes` (no DB-level FK on `recipe_id`).
+
+| Column      | Type      | Constraints                  | Description                        |
+| ----------- | --------- | ---------------------------- | ---------------------------------- |
+| id          | SERIAL    | PK                           | Auto-incrementing ID               |
+| cookbook_id | INTEGER   | FK → cookbooks, NOT NULL     | Parent cookbook                    |
+| recipe_id   | INTEGER   | NOT NULL                     | Referenced recipe ID (polymorphic) |
+| recipe_type | TEXT      | NOT NULL, DEFAULT 'mealPlan' | `"mealPlan"` or `"community"`      |
+| added_at    | TIMESTAMP | NOT NULL, auto               | When recipe was added to cookbook  |
+
+**Constraints:** Unique on `(cookbook_id, recipe_id, recipe_type)`.
+
+### Favourite Recipes Table
+
+Allows users to favourite recipes. Uses polymorphic FK (`recipe_id` + `recipe_type`) similar to cookbook recipes.
+
+| Column      | Type      | Constraints          | Description                        |
+| ----------- | --------- | -------------------- | ---------------------------------- |
+| id          | SERIAL    | PK                   | Auto-incrementing ID               |
+| user_id     | VARCHAR   | FK → users, NOT NULL | User who favourited                |
+| recipe_id   | INTEGER   | NOT NULL             | Referenced recipe ID (polymorphic) |
+| recipe_type | TEXT      | NOT NULL             | `"mealPlan"` or `"community"`      |
+| created_at  | TIMESTAMP | NOT NULL, auto       | When favourited                    |
+
+**Constraints:** Unique on `(user_id, recipe_id, recipe_type)`. Index on `user_id`.
+
+### Receipt Scans Table
+
+Stores receipt scan metadata for the pantry receipt scanner feature.
+
+| Column      | Type      | Constraints                   | Description                            |
+| ----------- | --------- | ----------------------------- | -------------------------------------- |
+| id          | SERIAL    | PK                            | Auto-incrementing ID                   |
+| user_id     | VARCHAR   | FK → users, NOT NULL          | User who scanned                       |
+| item_count  | INTEGER   | DEFAULT 0                     | Number of items extracted from receipt |
+| photo_count | INTEGER   | DEFAULT 1                     | Number of receipt photos processed     |
+| status      | TEXT      | NOT NULL, DEFAULT 'completed' | Scan status                            |
+| scanned_at  | TIMESTAMP | NOT NULL, auto                | When receipt was scanned               |
+
+### Coach Response Cache Table
+
+Universal cache for predefined coach questions. Only used for questions WITHOUT `screenContext` (universal answers like fasting tips).
+
+| Column        | Type        | Constraints      | Description                       |
+| ------------- | ----------- | ---------------- | --------------------------------- |
+| id            | SERIAL      | PK               | Auto-incrementing ID              |
+| question_hash | VARCHAR(64) | NOT NULL, UNIQUE | SHA-256 hash of the question text |
+| question      | TEXT        | NOT NULL         | Original question text            |
+| response      | TEXT        | NOT NULL         | Cached AI response                |
+| hit_count     | INTEGER     | DEFAULT 0        | Number of cache hits              |
+| created_at    | TIMESTAMP   | NOT NULL, auto   | When cached                       |
+| expires_at    | TIMESTAMP   | NOT NULL         | TTL expiry                        |
+
+### Barcode Verifications Table
+
+Stores community-verified product nutrition data for the verified product API pipeline.
+
+| Column                   | Type      | Constraints                    | Description                                         |
+| ------------------------ | --------- | ------------------------------ | --------------------------------------------------- |
+| id                       | SERIAL    | PK                             | Auto-incrementing ID                                |
+| barcode                  | TEXT      | NOT NULL, UNIQUE               | Product barcode (EAN/UPC)                           |
+| verification_level       | TEXT      | NOT NULL, DEFAULT 'unverified' | `"unverified"`, `"single_scan"`, `"verified"`, etc. |
+| consensus_nutrition_data | JSONB     | nullable                       | Consensus nutrition data from multiple scans        |
+| verification_count       | INTEGER   | NOT NULL, DEFAULT 0            | Number of verification scans                        |
+| front_label_data         | JSONB     | nullable                       | OCR-extracted front label data                      |
+| created_at               | TIMESTAMP | NOT NULL, auto                 | When first created                                  |
+| updated_at               | TIMESTAMP | NOT NULL, auto                 | When last updated                                   |
+
+### Verification History Table
+
+Records individual user verification scans linked to barcode verifications.
+
+| Column                 | Type         | Constraints                                   | Description                             |
+| ---------------------- | ------------ | --------------------------------------------- | --------------------------------------- |
+| id                     | SERIAL       | PK                                            | Auto-incrementing ID                    |
+| barcode                | TEXT         | FK → barcode_verifications(barcode), NOT NULL | Referenced barcode                      |
+| user_id                | VARCHAR      | FK → users, NOT NULL                          | User who submitted the scan             |
+| extracted_nutrition    | JSONB        | NOT NULL                                      | Nutrition data extracted from this scan |
+| ocr_confidence         | DECIMAL(3,2) | NOT NULL                                      | OCR confidence score 0.00–1.00          |
+| is_match               | BOOLEAN      | nullable                                      | Whether extraction matches consensus    |
+| front_label_scanned    | BOOLEAN      | NOT NULL, DEFAULT FALSE                       | Whether front label was also scanned    |
+| front_label_scanned_at | TIMESTAMP    | nullable                                      | When front label was scanned            |
+| created_at             | TIMESTAMP    | NOT NULL, auto                                | When scan was submitted                 |
+
+**Constraints:** Unique on `(barcode, user_id)` — one verification per user per barcode.
+
+### Reformulation Flags Table
+
+Detects product reformulations when new scans diverge significantly from consensus data.
+
+| Column                      | Type      | Constraints                                   | Description                                      |
+| --------------------------- | --------- | --------------------------------------------- | ------------------------------------------------ |
+| id                          | SERIAL    | PK                                            | Auto-incrementing ID                             |
+| barcode                     | TEXT      | FK → barcode_verifications(barcode), NOT NULL | Referenced barcode                               |
+| status                      | TEXT      | NOT NULL, DEFAULT 'flagged'                   | `"flagged"` or `"resolved"`                      |
+| divergent_scan_count        | INTEGER   | NOT NULL, DEFAULT 0                           | Number of divergent scans that triggered flag    |
+| previous_consensus          | JSONB     | nullable                                      | Snapshot of old consensus data for audit         |
+| previous_verification_level | TEXT      | nullable                                      | Verification level before reformulation detected |
+| previous_verification_count | INTEGER   | nullable                                      | Verification count before reset                  |
+| detected_at                 | TIMESTAMP | NOT NULL, auto                                | When reformulation was detected                  |
+| resolved_at                 | TIMESTAMP | nullable                                      | When the flag was resolved                       |
+
+**Constraints:** Unique partial index on `barcode` WHERE `status = 'flagged'` — only one active flag per barcode at a time.
+
+### API Keys Table
+
+API keys for the public barcode nutrition API.
+
+| Column     | Type        | Constraints                | Description                           |
+| ---------- | ----------- | -------------------------- | ------------------------------------- |
+| id         | SERIAL      | PK                         | Auto-incrementing ID                  |
+| key_prefix | VARCHAR(16) | NOT NULL, UNIQUE           | First 16 chars for key lookup         |
+| key_hash   | TEXT        | NOT NULL                   | SHA-256 hash of the full API key      |
+| name       | TEXT        | NOT NULL                   | Descriptive name for the key          |
+| tier       | TEXT        | NOT NULL, DEFAULT 'free'   | `"free"` or `"paid"`                  |
+| status     | TEXT        | NOT NULL, DEFAULT 'active' | `"active"` or `"revoked"`             |
+| owner_id   | VARCHAR     | FK → users                 | Owner user (nullable for system keys) |
+| created_at | TIMESTAMP   | NOT NULL, auto             | When key was created                  |
+| revoked_at | TIMESTAMP   | nullable                   | When key was revoked                  |
+
+### API Key Usage Table
+
+Monthly usage tracking per API key.
+
+| Column          | Type       | Constraints             | Description                     |
+| --------------- | ---------- | ----------------------- | ------------------------------- |
+| id              | SERIAL     | PK                      | Auto-incrementing ID            |
+| api_key_id      | INTEGER    | FK → api_keys, NOT NULL | Parent API key                  |
+| year_month      | VARCHAR(7) | NOT NULL                | Month bucket (e.g. `"2026-04"`) |
+| request_count   | INTEGER    | NOT NULL, DEFAULT 0     | Number of requests this month   |
+| last_request_at | TIMESTAMP  | nullable                | When last request was made      |
+
+**Constraints:** Unique on `(api_key_id, year_month)`.
+
+### Barcode Nutrition Table
+
+Cached barcode nutrition lookup results for the public API. Separate from the user-facing `nutrition_cache` which is keyed by query string.
+
+| Column       | Type          | Constraints          | Description               |
+| ------------ | ------------- | -------------------- | ------------------------- |
+| id           | SERIAL        | PK                   | Auto-incrementing ID      |
+| barcode      | TEXT          | NOT NULL, UNIQUE     | Product barcode (EAN/UPC) |
+| product_name | TEXT          | nullable             | Product name              |
+| brand_name   | TEXT          | nullable             | Brand/manufacturer        |
+| serving_size | TEXT          | nullable             | Serving size description  |
+| calories     | DECIMAL(10,2) | nullable, CHECK >= 0 | Calories per serving      |
+| protein      | DECIMAL(10,2) | nullable, CHECK >= 0 | Protein in grams          |
+| carbs        | DECIMAL(10,2) | nullable, CHECK >= 0 | Carbohydrates in grams    |
+| fat          | DECIMAL(10,2) | nullable, CHECK >= 0 | Fat in grams              |
+| source       | TEXT          | NOT NULL             | Data source identifier    |
+| created_at   | TIMESTAMP     | NOT NULL, auto       | When entry was created    |
+| updated_at   | TIMESTAMP     | NOT NULL, auto       | When last updated         |
+
+### Recipe Dismissals Table
+
+Tracks recipes dismissed by users in the recipe discovery carousel.
+
+| Column            | Type      | Constraints          | Description                         |
+| ----------------- | --------- | -------------------- | ----------------------------------- |
+| id                | SERIAL    | PK                   | Auto-incrementing ID                |
+| user_id           | VARCHAR   | FK → users, NOT NULL | User who dismissed                  |
+| recipe_identifier | TEXT      | NOT NULL             | Identifier for the dismissed recipe |
+| source            | TEXT      | NOT NULL             | Source of the recipe                |
+| dismissed_at      | TIMESTAMP | NOT NULL, auto       | When recipe was dismissed           |
+
+**Constraints:** Unique on `(user_id, recipe_identifier)`.
+
+### Carousel Suggestion Cache Table
+
+Caches AI-generated meal suggestions for the home screen recipe carousel. Keyed by user, profile hash, and meal type.
+
+| Column       | Type      | Constraints          | Description                               |
+| ------------ | --------- | -------------------- | ----------------------------------------- |
+| id           | SERIAL    | PK                   | Auto-incrementing ID                      |
+| user_id      | VARCHAR   | FK → users, NOT NULL | User these suggestions are for            |
+| profile_hash | TEXT      | NOT NULL             | Hash of dietary profile for invalidation  |
+| meal_type    | TEXT      | NOT NULL             | Meal type (e.g. `"breakfast"`, `"lunch"`) |
+| suggestions  | JSONB     | NOT NULL             | Array of carousel suggestion objects      |
+| expires_at   | TIMESTAMP | NOT NULL             | TTL expiry                                |
+| created_at   | TIMESTAMP | NOT NULL, auto       | When cached                               |
+
+**Constraints:** Unique on `(user_id, profile_hash, meal_type)`.
+
 ---
 
 ## Relationships
@@ -685,14 +866,19 @@ export const dailyLogsRelations = relations(dailyLogs, ({ one }) => ({
 
 All foreign keys use `ON DELETE CASCADE` unless noted:
 
-- Deleting a user removes all their profiles, scanned items, daily logs, saved items, suggestion cache entries, exercise logs, weight logs, fasting schedules/logs, medication logs, goal adjustment logs, chat conversations, menu scans, grocery lists, pantry items, and transactions
+- Deleting a user removes all their profiles, scanned items, daily logs, saved items, suggestion cache entries, weight logs, fasting schedules/logs, medication logs, goal adjustment logs, chat conversations, menu scans, receipt scans, grocery lists, pantry items, transactions, cookbooks, favourite recipes, favourite scanned items, api keys, and recipe dismissals
 - Deleting a scanned item removes all related daily logs and suggestion cache entries
 - Deleting a suggestion cache entry removes all related instruction cache entries
 - Deleting a chat conversation removes all its messages
 - Deleting a grocery list removes all its items
+- Deleting a cookbook removes all its cookbook recipe entries
+- Deleting a barcode verification removes all related verification history and reformulation flags
 - `saved_items.source_item_id` uses `ON DELETE SET NULL` (saved item preserved if source deleted)
-- `meal_plan_items.recipe_id` and `meal_plan_items.scanned_item_id` use `ON DELETE SET NULL`
-- `daily_logs.recipe_id` and `daily_logs.meal_plan_item_id` use `ON DELETE SET NULL`
+- `community_recipes.author_id` uses `ON DELETE SET NULL` (recipe preserved if author deleted)
+- `community_recipes.remixed_from_id` uses `ON DELETE SET NULL`
+- `daily_logs.recipe_id` uses `ON DELETE CASCADE`
+- `daily_logs.meal_plan_item_id` uses `ON DELETE SET NULL`
+- `recipe_generation_log.recipe_id` uses `ON DELETE SET NULL`
 
 ---
 

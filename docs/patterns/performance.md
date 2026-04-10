@@ -144,7 +144,7 @@ const handleFavourite = useCallback(
 
 **References:**
 
-- `client/screens/HistoryScreen.tsx:785` -- `handleFavourite`, `handleNavigateToDetail`, `handleToggleExpand`, `handleDiscard`
+- `client/screens/HistoryScreen.tsx` -- `handleFavourite`, `handleNavigateToDetail`, `handleToggleExpand`, `handleDiscard`
 - Related learning: "Inline Arrow Functions in renderItem Defeat React.memo" in LEARNINGS.md
 
 ### useMemo for Derived Filtering and Calculations

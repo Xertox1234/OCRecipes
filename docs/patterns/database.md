@@ -1095,58 +1095,9 @@ for (const effect of effects) {
 
 **Reference:** `server/services/glp1-insights.ts` — `sideEffects` JSONB column. Also applies to `allergies`, `foodDislikes`, and other JSONB array columns in `userProfiles`.
 
-### Shared Type Guards for JSONB Columns
-
-When multiple services need to safely access the same JSONB column shape (e.g., `userProfiles.allergies` is used by both `recipe-generation.ts` and `ingredient-substitution.ts`), extract the type guard into a shared file rather than duplicating it or using `as` casts.
-
-```typescript
-// shared/types/user-profile-guards.ts — single source of truth
-export function isAllergyArray(value: unknown): value is { name: string }[] {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (item) =>
-        typeof item === "object" &&
-        item !== null &&
-        typeof (item as Record<string, unknown>).name === "string",
-    )
-  );
-}
-
-export function isStringArray(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) && value.every((item) => typeof item === "string")
-  );
-}
-```
-
-```typescript
-// server/services/recipe-generation.ts — consumer
-import { isAllergyArray } from "@shared/types/user-profile-guards";
-
-if (isAllergyArray(userProfile.allergies) && userProfile.allergies.length > 0) {
-  const allergyNames = userProfile.allergies.map((a) => a.name); // fully typed
-}
-```
-
-**Key elements:**
-
-1. **Single definition** — guard logic lives in one place, not duplicated across services
-2. **`shared/types/`** — importable by both server and client code via `@shared/` alias
-3. **Narrows the type** — `value is { name: string }[]` gives full TypeScript autocompletion after the check
-4. **Replaces `as` casts** — eliminates `(profile.allergies as { name: string }[])` which provides zero runtime safety
-
-**Naming convention:** `is{ColumnShape}` — `isAllergyArray`, `isStringArray`. Place in `shared/types/{table}-guards.ts` grouped by the table they apply to.
-
-**When to use:** A JSONB column shape is accessed by 2+ services or by both client and server code. Extract on the second usage.
-
-**When NOT to use:** A JSONB column is only accessed in one place — an inline `Array.isArray()` guard is sufficient (see Safe JSONB Array Access pattern above).
-
-**Reference:** `shared/types/user-profile-guards.ts` — guards for `userProfiles.allergies` and `userProfiles.foodDislikes`
-
 ### Zod safeParse per JSONB Element
 
-When a JSONB array column has a Zod schema for its element type, validate each element individually with `safeParse()` — skip invalid entries instead of failing the entire request. This is strictly more robust than the `isAllergyArray()` type guard approach because it recovers gracefully from partial corruption.
+When a JSONB array column has a Zod schema for its element type, validate each element individually with `safeParse()` — skip invalid entries instead of failing the entire request. This is strictly more robust than an inline type guard approach because it recovers gracefully from partial corruption.
 
 ```typescript
 import { allergySchema } from "@shared/schema";

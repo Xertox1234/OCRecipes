@@ -1,6 +1,6 @@
 # OCRecipes Roadmap
 
-Last updated: 2026-03-20
+Last updated: 2026-04-09
 
 ## Shipped
 
@@ -58,9 +58,59 @@ Includes:
 
 **Post-merge steps:** `npm run db:push`, set `ADMIN_USER_IDS`, run backfill script, reach 1,000 verified products for soft launch.
 
+### Restaurant Menu Scanning
+
+Photo-based restaurant menu analysis. Users photograph a menu and receive parsed items with estimated nutrition data. (`server/services/menu-analysis.ts`, `server/routes/menu.ts`)
+
+### Product Reformulation Detection
+
+Automatic detection of product reformulations. When new scans consistently disagree with existing consensus, verified status is reset and re-verification is triggered. (`server/services/reformulation-detection.ts`, `reformulationFlags` table)
+
+### Verification Streak Rewards (Display & Badge Tiers)
+
+Badge tier system (Newcomer → Platinum) displayed on ProfileScreen and via VerificationBadge component. Note: premium feature unlocks for high verifiers are not yet implemented.
+
+### Cooking & Recipes
+
+- **Cooking Sessions** — Live cooking flow with photo analysis, ingredient detection, and recipe generation (`server/routes/cooking.ts`, `server/services/cooking-session.ts`)
+- **Cookbooks** — User-created recipe collections with polymorphic recipe support (`server/routes/cookbooks.ts`)
+- **Recipe Import** — Import recipes from URLs via schema.org LD+JSON extraction (`server/services/recipe-import.ts`)
+- **Recipe Chat** — Recipe-specific AI assistant for cooking questions (`server/routes/recipe-chat.ts`)
+- **Ingredient Substitutions** — AI-powered ingredient swap suggestions (`server/services/ingredient-substitution.ts`)
+- **Favourite Recipes** — Bookmark system for community and meal plan recipes (`server/routes/favourite-recipes.ts`)
+- **Recipe Generation** — AI recipe generation for premium users (`server/services/recipe-generation.ts`)
+
+### Scanning & Input
+
+- **Batch Scanning** — Multi-item batch upload to daily log (`server/routes/batch-scan.ts`, `client/screens/BatchScanScreen.tsx`)
+- **Voice Logging** — Speech-to-text food logging with on-device streaming recognition (`server/services/voice-transcription.ts`, `client/hooks/useSpeechToText.ts`)
+- **Receipt Scanning** — Restaurant receipt photo analysis for food logging (`server/services/receipt-analysis.ts`)
+
+### Health & Tracking
+
+- **Apple HealthKit Sync** — Weight sync and step tracking integration (`server/services/healthkit-sync.ts`, `server/routes/healthkit.ts`)
+- **Weight Tracking** — Weight logging with trend analysis and HealthKit integration (`server/routes/weight.ts`)
+- **Fasting Tracking** — Intermittent fasting with schedules and statistics (`server/routes/fasting.ts`, `server/services/fasting-stats.ts`)
+- **Medication Logging** — Medication tracking with GLP-1 medication insights (`server/routes/medication.ts`, `server/services/glp1-insights.ts`)
+- **Beverage Follow-ups** — Beverage-specific logging flow (`server/routes/beverages.ts`)
+
+### Planning & Shopping
+
+- **Meal Plan System** — Adaptive meal planning with recipes and AI-powered suggestions (`server/routes/meal-plan.ts`, `server/routes/meal-suggestions.ts`)
+- **Grocery Generation** — Auto-generate grocery lists from meal plans (`server/routes/grocery.ts`, `server/services/grocery-generation.ts`)
+- **Pantry System** — Track pantry items with shelf life management (`server/routes/pantry.ts`)
+
+### Platform
+
+- **Subscription System** — Tier management with Apple and Google IAP receipt validation (`server/routes/subscription.ts`, `server/services/receipt-validation.ts`)
+- **AI Nutrition Coach** — Chat-based nutrition coaching with conversation history (`server/routes/chat.ts`, `server/services/nutrition-coach.ts`)
+- **Profile Hub** — Redesigned profile with widgets and library counts (`server/routes/profile-hub.ts`)
+
 ---
 
 ## Next Up
+
+See active brainstorms in `docs/brainstorms/` and plans in `docs/plans/` for upcoming work.
 
 ---
 
@@ -68,13 +118,11 @@ Includes:
 
 These are lower-priority items that can be tackled when relevant:
 
-| Feature                                     | Notes                                                                           |
-| ------------------------------------------- | ------------------------------------------------------------------------------- |
-| Restaurant receipt → food logging (Phase 3) | Receipt type bifurcation in auto-classification. Deferred from Smart Scan plan. |
-| Server-side barcode detection (zxing-wasm)  | Only needed if Vision API barcode hints prove unreliable in production          |
-| Verification photo storage                  | Store label/front-label photos for API consumers. Needs object storage (S3/R2). |
-| Verification streak rewards                 | Beyond display — actual premium feature unlocks for high verifiers?             |
-| Product reformulation detection             | Reset verified status when new scans consistently disagree with consensus       |
+| Feature                                    | Notes                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------ |
+| Server-side barcode detection (zxing-wasm) | Only needed if Vision API barcode hints prove unreliable in production         |
+| Verification photo storage                 | Store label/front-label photos for API consumers. Needs object storage (S3/R2) |
+| Verification streak premium unlocks        | Beyond display — actual premium feature unlocks for high verifiers             |
 
 ---
 

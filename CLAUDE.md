@@ -42,9 +42,9 @@ npm run expo:static:build  # Build static Expo bundle
 
 - `client/` - React Native/Expo frontend
 - `server/` - Express.js backend
-  - `server/routes/` - 24 modular route files (registered via `server/routes.ts`)
-  - `server/storage/` - 13 domain-split storage modules (composed via `server/storage/index.ts`)
-  - `server/services/` - 22 service files (nutrition, AI, recipes, health, etc.)
+  - `server/routes/` - 40+ modular route files (registered via `server/routes.ts`)
+  - `server/storage/` - 20+ domain-split storage modules (composed via `server/storage/index.ts`)
+  - `server/services/` - 30+ service files (nutrition, AI, recipes, health, etc.)
 - `shared/` - Code shared between client/server (database schema, models, constants, types)
 
 ### Path Aliases
@@ -74,22 +74,25 @@ Main tabs: **Home**, **Plan**, **Coach**, **Profile** — Scan is a floating act
 
 Navigator files: `HomeStackNavigator`, `MealPlanStackNavigator`, `ChatStackNavigator`, `ProfileStackNavigator`
 
-Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, GoalSetup, EditDietaryProfile, FeaturedRecipeDetail, QuickLog, MenuScanResult
+Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, GoalSetup, EditDietaryProfile, FeaturedRecipeDetail, QuickLog, MenuScanResult, DailyNutritionDetail, LabelAnalysis, FrontLabelConfirm, BatchScan, BatchSummary, ReceiptCapture, ReceiptReview, ReceiptMealPlan, CookSessionCapture, CookSessionReview, SubstitutionResult, WeightTracking, CoachChat, RecipeChat, CookbookListModal, GroceryListsModal, PantryModal, RecipeBrowserModal, FastingModal
 
-**Deep linking** is configured in `client/navigation/linking.ts` (wired via `linking` prop on `NavigationContainer` in `App.tsx`). Supported paths: `ocrecipes://recipe/:recipeId`, `ocrecipes://nutrition/:barcode`, `ocrecipes://chat/:conversationId`, `ocrecipes://scan`. See `docs/patterns/react-native.md` → "Deep Linking Configuration" for the full pattern.
+**Deep linking** is configured in `client/navigation/linking.ts` (wired via `linking` prop on `NavigationContainer` in `App.tsx`). Supported prefixes: `ocrecipes://`, `https://ocrecipes.app`. Supported paths: `ocrecipes://recipe/:recipeId`, `ocrecipes://nutrition/:barcode`, `ocrecipes://chat/:conversationId`, `ocrecipes://recipe-chat/:conversationId`, `ocrecipes://scan`. See `docs/patterns/react-native.md` → "Deep Linking Configuration" for the full pattern.
 
 ### Database Schema (`shared/schema.ts`)
 
-33 tables organized by domain:
+40+ tables organized by domain:
 
 - **Core**: `users`, `userProfiles`, `scannedItems`, `dailyLogs`, `savedItems`, `favouriteScannedItems`
-- **Nutrition cache**: `nutritionCache`, `micronutrientCache`, `suggestionCache`, `instructionCache`, `mealSuggestionCache`
-- **Recipes & meal planning**: `communityRecipes`, `recipeGenerationLog`, `mealPlanRecipes`, `recipeIngredients`, `mealPlanItems`, `cookbooks`, `cookbookRecipes`
+- **Nutrition cache**: `nutritionCache`, `micronutrientCache`, `suggestionCache`, `instructionCache`, `mealSuggestionCache`, `coachResponseCache`, `carouselSuggestionCache`
+- **Recipes & meal planning**: `communityRecipes`, `recipeGenerationLog`, `mealPlanRecipes`, `recipeIngredients`, `mealPlanItems`
+- **Recipe engagement**: `recipeDismissals`, `favouriteRecipes`
+- **Cookbooks**: `cookbooks`, `cookbookRecipes`
 - **Grocery & pantry**: `groceryLists`, `groceryListItems`, `pantryItems`
 - **Exercise & activity**: `exerciseLibrary`, `exerciseLogs`
 - **Health tracking**: `weightLogs`, `healthKitSync`, `fastingSchedules`, `fastingLogs`, `medicationLogs`, `goalAdjustmentLogs`
 - **Chat**: `chatConversations`, `chatMessages`
-- **Menu scanning**: `menuScans`
+- **Menu & receipt scanning**: `menuScans`, `receiptScans`
+- **Verification & API**: `barcodeVerifications`, `verificationHistory`, `reformulationFlags`, `barcodeNutrition`, `apiKeys`, `apiKeyUsage`
 - **Subscriptions**: `transactions`
 
 ### Services (`server/services/`)
@@ -104,9 +107,12 @@ Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, Goa
 **AI & vision:**
 
 - `photo-analysis.ts` - OpenAI Vision food photo analysis (4 intents: log/calories/recipe/identify, confidence scoring, follow-up refinement when confidence < 0.7)
+- `front-label-analysis.ts` - Front-of-package label scanning
+- `receipt-analysis.ts` - Receipt photo analysis
 - `menu-analysis.ts` - Restaurant menu photo scanning & analysis
 - `voice-transcription.ts` - Voice-to-text for food logging
 - `nutrition-coach.ts` - AI nutrition coaching (chat)
+- `recipe-chat.ts` - Recipe-specific AI chat
 - `meal-suggestions.ts` - AI meal suggestions
 
 **Goals & health:**
@@ -114,7 +120,6 @@ Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, Goa
 - `goal-calculator.ts` - Calculates nutritional goals from user profiles (Mifflin-St Jeor)
 - `adaptive-goals.ts` - Dynamic goal adjustment based on progress
 - `weight-trend.ts` - Weight trend analysis
-- `exercise-calorie.ts` - MET-based exercise calorie calculations
 - `fasting-stats.ts` - Intermittent fasting statistics
 - `glp1-insights.ts` - GLP-1 medication insights
 - `healthkit-sync.ts` - Apple HealthKit integration
@@ -126,10 +131,26 @@ Root-level modal screens: Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, Goa
 - `recipe-import.ts` - Import recipes from URLs (schema.org LD+JSON)
 - `grocery-generation.ts` - Auto-generate grocery lists from meal plans
 - `pantry-deduction.ts` - Pantry item deduction logic
+- `cooking-session.ts` - Live cooking with photo analysis
+- `cooking-adjustment.ts` - Cooking portion adjustments
+- `ingredient-substitution.ts` - AI ingredient swaps
+- `carousel-builder.ts` - Recipe carousel generation
+- `meal-type-inference.ts` - Meal type detection
+- `pantry-meal-plan.ts` - Pantry-based meal planning
+- `suggestion-generation.ts` - AI suggestion generation
+
+**Verification:**
+
+- `reformulation-detection.ts` - Product reformulation flagging
+- `verification-comparison.ts` - Nutrition verification comparison
 
 **Payments:**
 
 - `receipt-validation.ts` - Apple/Google IAP receipt validation
+
+**Other:**
+
+- `profile-hub.ts` - Profile widget data aggregation
 
 ## Key Patterns
 
@@ -193,7 +214,7 @@ Debounce barcode scans using ref tracking and `isScanning` state to prevent dupl
 
 ## Testing
 
-Unit tests use **Vitest** (~1300+ tests across 80+ files) with tests co-located in `__tests__/` directories:
+Unit tests use **Vitest** (~3400+ tests across 240+ files) with tests co-located in `__tests__/` directories:
 
 - `server/__tests__/` - Auth middleware, storage interface tests
 - `server/routes/__tests__/` - Route-level tests for all 23 route modules
@@ -231,6 +252,10 @@ If tests fail or linting errors occur, the commit is blocked.
 - `GOOGLE_PACKAGE_NAME` - Android app package name (e.g. `com.ocrecipes.app`)
 - `GOOGLE_SERVICE_ACCOUNT_EMAIL` - Google service account email (for IAP receipt validation)
 - `GOOGLE_SERVICE_ACCOUNT_KEY` - Google service account private key (PEM, use `\n` for newlines)
+- `USDA_API_KEY` - USDA nutrition data lookup
+- `API_NINJAS_KEY` - API Ninjas nutrition fallback
+- `ADMIN_USER_IDS` - Comma-separated admin user IDs
+- `LOG_LEVEL` - Server log level (fatal/error/warn/info/debug/trace)
 
 ## iOS Simulator Setup
 

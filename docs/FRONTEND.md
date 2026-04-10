@@ -17,7 +17,7 @@ client/
 │   └── hooks/
 │       ├── useCamera.ts        # Camera functionality
 │       └── useCameraPermissions.ts # Permission management
-├── components/             # Reusable UI components (50+)
+├── components/             # Reusable UI components (90+)
 │   ├── Button.tsx
 │   ├── Card.tsx
 │   ├── Chip.tsx
@@ -65,37 +65,64 @@ client/
 │   └── theme.ts             # Colors, spacing, typography
 ├── context/
 │   ├── AuthContext.tsx      # Authentication state + useAuth() hook
+│   ├── BatchScanContext.tsx # Batch barcode scanning state
 │   ├── OnboardingContext.tsx # Onboarding data
 │   ├── PremiumContext.tsx   # Premium features
-│   └── ThemeContext.tsx     # Light/dark theme
-├── hooks/                  # Custom React hooks (30+)
+│   ├── ThemeContext.tsx     # Light/dark theme
+│   └── ToastContext.tsx     # Toast notification system
+├── hooks/                  # Custom React hooks (50+)
 │   ├── useAccessibility.ts  # Accessibility helpers
 │   ├── useAdaptiveGoals.ts  # Adaptive goal suggestions
+│   ├── useAllergenCheck.ts  # Allergen detection helpers
+│   ├── useAuth.ts           # Auth state hook
+│   ├── useAvatarUpload.ts   # Avatar image upload
+│   ├── useBatchConfirm.ts   # Batch scan confirmation flow
+│   ├── useBeverageSheet.ts  # Beverage selection bottom sheet
+│   ├── useCarouselRecipes.ts # Featured recipe carousel data
 │   ├── useChat.ts           # Chat conversations & messages
+│   ├── useCollapsibleHeight.ts # Collapsible section height animation
 │   ├── useColorScheme.ts    # System color scheme
+│   ├── useCookbooks.ts      # Cookbook CRUD & recipe management
+│   ├── useCookSession.ts    # Cook session capture & review
 │   ├── useDailyBudget.ts    # Daily calorie budget (intake - exercise)
+│   ├── useDietaryProfileForm.ts # Dietary profile form state
 │   ├── useDiscardItem.ts    # Item deletion with confirmation
-│   ├── useExerciseLogs.ts   # Exercise CRUD & exercise library
 │   ├── useFasting.ts        # Fasting schedule, start/end, history
+│   ├── useFastingTimer.ts   # Fasting timer countdown logic
+│   ├── useFavouriteRecipes.ts # Favourite recipe management
 │   ├── useFavourites.ts     # Favourite scanned items
 │   ├── useFoodParse.ts      # Natural language food parsing
+│   ├── useGenerateMealPlan.ts # AI meal plan generation
 │   ├── useGroceryList.ts    # Grocery list CRUD
 │   ├── useHaptics.ts        # Haptic feedback
 │   ├── useHealthKit.ts      # HealthKit sync settings
+│   ├── useHistoryData.ts    # Scan history data
+│   ├── useHomeActions.ts    # Home screen action handlers
+│   ├── useLibraryCounts.ts  # Library item counts
 │   ├── useMealPlan.ts       # Meal plan items
 │   ├── useMealPlanRecipes.ts # Meal plan recipe CRUD
 │   ├── useMealSuggestions.ts # AI meal suggestions
 │   ├── useMedication.ts     # GLP-1 medication logs & insights
 │   ├── useMenuScan.ts       # Menu scanning & history
 │   ├── useMicronutrients.ts # Micronutrient data & daily summary
+│   ├── useNetworkStatus.ts  # Network connectivity status
+│   ├── useNutritionLookup.ts # Nutrition data lookup
 │   ├── usePantry.ts         # Pantry item CRUD
+│   ├── usePhotoAnalysis.ts  # Photo analysis state
 │   ├── usePremiumFeatures.ts # Premium feature checks
+│   ├── useProfileData.ts    # User profile data management
+│   ├── useProfileWidgets.ts # Profile screen widget data
+│   ├── useReceiptScan.ts    # Receipt scanning & parsing
 │   ├── useRecipeForm.ts     # Recipe form state
+│   ├── useRecipePhotoImport.ts # Recipe import from photo
+│   ├── useRefreshOnFocus.ts # Refetch queries on screen focus
+│   ├── useSafeTabBarHeight.ts # Safe tab bar height calculation
 │   ├── useSavedItems.ts     # Saved items management
+│   ├── useScanClassification.ts # Scan type classification (barcode/label/menu)
 │   ├── useScreenOptions.ts  # Navigation options
+│   ├── useSpeechToText.ts   # On-device streaming speech-to-text
 │   ├── useSuggestionInstructions.ts # AI suggestion drill-down
 │   ├── useTheme.ts          # Theme hook
-│   ├── useVoiceRecording.ts # Voice recording for food logging
 │   └── useWeightLogs.ts     # Weight tracking & trends
 ├── lib/
 │   ├── api-error.ts         # API error handling utilities
@@ -124,26 +151,38 @@ client/
 │   ├── OnboardingNavigator.tsx
 │   ├── HomeStackNavigator.tsx
 │   ├── MealPlanStackNavigator.tsx
-│   ├── ActivityStackNavigator.tsx
 │   ├── ChatStackNavigator.tsx
-│   └── ProfileStackNavigator.tsx
+│   ├── ProfileStackNavigator.tsx
+│   └── linking.ts           # Deep link configuration
 ├── screens/
 │   ├── LoginScreen.tsx
 │   ├── HomeScreen.tsx
 │   ├── HistoryScreen.tsx
 │   ├── ScanScreen.tsx
 │   ├── ProfileScreen.tsx
+│   ├── SettingsScreen.tsx
 │   ├── ItemDetailScreen.tsx
 │   ├── NutritionDetailScreen.tsx
+│   ├── DailyNutritionDetailScreen.tsx
 │   ├── PhotoIntentScreen.tsx
 │   ├── PhotoAnalysisScreen.tsx
 │   ├── GoalSetupScreen.tsx
 │   ├── EditDietaryProfileScreen.tsx
 │   ├── SavedItemsScreen.tsx
+│   ├── FavouriteRecipesScreen.tsx
 │   ├── ChatListScreen.tsx
 │   ├── ChatScreen.tsx
-│   ├── ExerciseLogScreen.tsx
-│   ├── ExerciseSearchScreen.tsx
+│   ├── CoachChatScreen.tsx
+│   ├── RecipeChatScreen.tsx
+│   ├── BatchScanScreen.tsx
+│   ├── BatchSummaryScreen.tsx
+│   ├── LabelAnalysisScreen.tsx
+│   ├── FrontLabelConfirmScreen.tsx
+│   ├── CookSessionCaptureScreen.tsx
+│   ├── CookSessionReviewScreen.tsx
+│   ├── ReceiptCaptureScreen.tsx
+│   ├── ReceiptReviewScreen.tsx
+│   ├── SubstitutionResultScreen.tsx
 │   ├── FastingScreen.tsx
 │   ├── FeaturedRecipeDetailScreen.tsx
 │   ├── GLP1CompanionScreen.tsx
@@ -160,10 +199,14 @@ client/
 │   │   └── PreferencesScreen.tsx
 │   └── meal-plan/
 │       ├── MealPlanHomeScreen.tsx
-│       ├── RecipeDetailScreen.tsx
 │       ├── RecipeBrowserScreen.tsx
 │       ├── RecipeCreateScreen.tsx
 │       ├── RecipeImportScreen.tsx
+│       ├── RecipePhotoImportScreen.tsx
+│       ├── CookbookCreateScreen.tsx
+│       ├── CookbookListScreen.tsx
+│       ├── CookbookDetailScreen.tsx
+│       ├── ReceiptMealPlanScreen.tsx
 │       ├── GroceryListsScreen.tsx
 │       ├── GroceryListScreen.tsx
 │       └── PantryScreen.tsx
@@ -189,31 +232,35 @@ RootStackNavigator
 │   ├── GoalsScreen
 │   └── PreferencesScreen
 └── Main (authenticated)
-    ├── MainTabNavigator (5 tabs + ScanFAB)
+    ├── MainTabNavigator (4 tabs + ScanFAB)
     │   ├── HomeTab → HomeStackNavigator
     │   │   ├── HomeScreen (dashboard)
     │   │   └── FastingScreen
     │   ├── MealPlanTab → MealPlanStackNavigator
     │   │   ├── MealPlanHomeScreen
-    │   │   ├── RecipeDetailScreen
     │   │   ├── RecipeBrowserScreen
     │   │   ├── RecipeCreateScreen
     │   │   ├── RecipeImportScreen
+    │   │   ├── RecipePhotoImportScreen
+    │   │   ├── CookbookCreateScreen
+    │   │   ├── CookbookListScreen
+    │   │   ├── CookbookDetailScreen
+    │   │   ├── FavouriteRecipesScreen
+    │   │   ├── ReceiptMealPlanScreen
     │   │   ├── GroceryListsScreen
     │   │   ├── GroceryListScreen
     │   │   └── PantryScreen
-    │   ├── ActivityTab → ActivityStackNavigator
-    │   │   ├── ExerciseLogScreen
-    │   │   └── ExerciseSearchScreen
     │   ├── CoachTab → ChatStackNavigator
     │   │   ├── ChatListScreen
     │   │   └── ChatScreen
     │   └── ProfileTab → ProfileStackNavigator
     │       ├── ProfileScreen
+    │       ├── SettingsScreen
     │       ├── SavedItemsScreen
     │       ├── HistoryScreen (scan history)
     │       ├── ItemDetailScreen
     │       ├── WeightTrackingScreen
+    │       ├── DailyNutritionDetailScreen
     │       ├── HealthKitSettingsScreen
     │       └── GLP1CompanionScreen
     ├── ScanScreen (fullScreenModal, opened via ScanFAB)
@@ -265,7 +312,6 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   HomeTab: undefined;
   MealPlanTab: NavigatorScreenParams<MealPlanStackParamList> | undefined;
-  ActivityTab: undefined;
   CoachTab: undefined;
   ProfileTab: undefined;
 };
@@ -273,7 +319,6 @@ export type MainTabParamList = {
 // client/navigation/MealPlanStackNavigator.tsx
 export type MealPlanStackParamList = {
   MealPlanHome: undefined;
-  RecipeDetail: { recipeId: number };
   RecipeBrowser: {
     mealType?: string;
     plannedDate?: string;
@@ -281,6 +326,11 @@ export type MealPlanStackParamList = {
   };
   RecipeCreate: { prefill?: ImportedRecipeData };
   RecipeImport: undefined;
+  RecipePhotoImport: undefined;
+  CookbookCreate: undefined;
+  CookbookList: undefined;
+  CookbookDetail: { cookbookId: number };
+  FavouriteRecipes: undefined;
   GroceryLists: undefined;
   GroceryList: { listId: number };
   Pantry: undefined;
@@ -554,21 +604,48 @@ const summary = await summaryRes.json();
 // client/constants/theme.ts
 export const Colors = {
   light: {
-    text: "#1A1A1A",
-    textSecondary: "#757575",
-    success: "#00C853", // Primary green
-    calorieAccent: "#FF6B35", // Orange
-    proteinAccent: "#00C853", // Green
-    carbsAccent: "#FF6B35", // Orange
-    fatAccent: "#FFC107", // Yellow
-    backgroundRoot: "#FAFAFA",
+    text: "#212832",
+    textSecondary: "#717171",
+    buttonText: "#FFFFFF",
+    tabIconDefault: "#6B6B6B",
+    tabIconSelected: "#7C5CBF",
+    link: "#7C5CBF",
+    linkPressed: "#5C3FA3",
+    backgroundRoot: "#FFFFFF",
     backgroundDefault: "#FFFFFF",
+    backgroundSecondary: "#F2F2F2",
+    backgroundTertiary: "#E8E8E8",
+    border: "#E0E0E0",
     error: "#D32F2F",
+    warning: "#F57C00",
+    success: "#008A38",
+    info: "#2196F3",
+    calorieAccent: "#C94E1A",
+    proteinAccent: "#008A38",
+    carbsAccent: "#C94E1A",
+    fatAccent: "#8C6800",
   },
   dark: {
-    text: "#ECEDEE",
-    backgroundRoot: "#121212",
-    // ... dark variants
+    text: "#FFFFFF",
+    textSecondary: "#C4C4C4",
+    buttonText: "#FFFFFF",
+    tabIconDefault: "#C4C4C4",
+    tabIconSelected: "#A88BF5",
+    link: "#A88BF5",
+    linkPressed: "#8A6BDB",
+    backgroundRoot: "#212832",
+    backgroundDefault: "#212832",
+    backgroundSecondary: "#393948",
+    backgroundTertiary: "#4A4A5A",
+    border: "#4A4A5A",
+    error: "#F16360",
+    warning: "#FFB74D",
+    success: "#00E676",
+    info: "#64B5F6",
+    calorieAccent: "#FF8A65",
+    proteinAccent: "#00E676",
+    carbsAccent: "#FF8A65",
+    fatAccent: "#FFD54F",
   },
 };
 
@@ -579,15 +656,63 @@ export const Spacing = {
   lg: 16,
   xl: 20,
   "2xl": 24,
+  "3xl": 32,
+  "4xl": 40,
+  "5xl": 48,
   inputHeight: 48,
   buttonHeight: 52,
+  shutterButtonSize: 72,
 };
 
 export const Typography = {
-  h1: { fontSize: 32, lineHeight: 40, fontWeight: "700" },
-  h2: { fontSize: 28, lineHeight: 36, fontWeight: "700" },
-  body: { fontSize: 16, lineHeight: 24, fontWeight: "400" },
-  caption: { fontSize: 12, lineHeight: 16, fontWeight: "400" },
+  h1: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 32,
+    lineHeight: 40,
+    fontWeight: "700",
+  },
+  h2: {
+    fontFamily: "Poppins_700Bold",
+    fontSize: 28,
+    lineHeight: 36,
+    fontWeight: "700",
+  },
+  h3: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 24,
+    lineHeight: 32,
+    fontWeight: "600",
+  },
+  h4: {
+    fontFamily: "Poppins_600SemiBold",
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: "600",
+  },
+  body: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "400",
+  },
+  small: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "400",
+  },
+  caption: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "400",
+  },
+  link: {
+    fontFamily: "Poppins_400Regular",
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: "400",
+  },
 };
 
 export const BorderRadius = {
@@ -595,7 +720,19 @@ export const BorderRadius = {
   sm: 12,
   md: 18,
   lg: 24,
+  xl: 30,
+  "2xl": 40,
+  "3xl": 50,
   full: 9999,
+  // Semantic names (from Figma)
+  input: 8,
+  button: 8,
+  card: 15,
+  chip: 28,
+  chipFilled: 19,
+  tag: 28,
+  thumbnail: 10,
+  avatar: 9999,
 };
 ```
 
@@ -906,7 +1043,7 @@ Opened as a modal from ProfileScreen. Collects physical profile data and calcula
 
 ## Meal Planning
 
-The meal planning feature is accessed via the "Plan" tab in the main tab navigator. It uses the `MealPlanStackNavigator` with 8 screens (5 recipe + GroceryLists, GroceryList, Pantry) and a set of bottom-sheet recipe builder components.
+The meal planning feature is accessed via the "Plan" tab in the main tab navigator. It uses the `MealPlanStackNavigator` with 12 screens and a set of bottom-sheet recipe builder components.
 
 ### MealPlanHomeScreen
 
@@ -927,18 +1064,6 @@ Features:
 // Data fetching
 const { data: items } = useMealPlanItems(startDate, endDate);
 ```
-
-### RecipeDetailScreen
-
-Displays full recipe details.
-
-Features:
-
-- Recipe title, description, and metadata pills (time, difficulty, servings)
-- Nutrition card with per-serving macros
-- Full ingredients list with quantities and units
-- Formatted instructions text
-- Diet tag badges (Vegetarian, Vegan, etc.)
 
 ### RecipeBrowserScreen
 

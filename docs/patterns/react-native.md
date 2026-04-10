@@ -642,7 +642,7 @@ const handlePress = () => {
 
 **References:**
 
-- `client/screens/HistoryScreen.tsx:769` -- `handleToggleExpand`, `handleNavigateToDetail`
+- `client/screens/HistoryScreen.tsx` -- `handleToggleExpand`, `handleNavigateToDetail`
 - `client/components/HistoryItemActions.tsx` -- action button row
 - `client/constants/animations.ts:21` -- `expandTimingConfig`, `collapseTimingConfig`
 
