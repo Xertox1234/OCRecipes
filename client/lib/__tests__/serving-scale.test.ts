@@ -79,6 +79,11 @@ describe("formatAsFraction", () => {
   it("handles zero", () => {
     expect(formatAsFraction(0)).toBe("0");
   });
+
+  it("snaps values very close to a whole number", () => {
+    expect(formatAsFraction(2.999)).toBe("3");
+    expect(formatAsFraction(4.998)).toBe("5");
+  });
 });
 
 describe("scaleIngredientQuantity", () => {

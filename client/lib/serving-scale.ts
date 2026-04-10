@@ -56,8 +56,6 @@ const FRACTION_TOLERANCE = 0.003;
  * Falls back to 1 decimal place for uncommon fractions.
  */
 export function formatAsFraction(value: number): string {
-  if (value < 0) return formatAsFraction(-value);
-
   const whole = Math.floor(value);
   const frac = value - whole;
 
