@@ -6,6 +6,12 @@ import {
   sanitizeUserInput,
 } from "../../lib/ai-safety";
 
+vi.mock("../coach-tools", () => ({
+  getToolDefinitions: vi.fn(() => []),
+  executeToolCall: vi.fn(),
+  MAX_TOOL_CALLS_PER_RESPONSE: 5,
+}));
+
 vi.mock("../../lib/openai", () => ({
   openai: {
     chat: {

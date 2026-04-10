@@ -32,11 +32,23 @@ vi.mock("../../storage", () => ({
     getCoachCachedResponse: vi.fn().mockResolvedValue(null),
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
     getCommunityRecipe: vi.fn(),
+    getActiveNotebookEntries: vi.fn().mockResolvedValue([]),
+    createNotebookEntries: vi.fn().mockResolvedValue([]),
   },
 }));
 
 vi.mock("../../services/nutrition-coach", () => ({
   generateCoachResponse: vi.fn(),
+  generateCoachProResponse: vi.fn(),
+}));
+
+vi.mock("../../services/coach-blocks", () => ({
+  parseBlocksFromContent: vi.fn().mockReturnValue({ text: "", blocks: [] }),
+  BLOCKS_SYSTEM_PROMPT: "test prompt",
+}));
+
+vi.mock("../../services/notebook-extraction", () => ({
+  extractNotebookEntries: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../middleware/auth");

@@ -19,6 +19,7 @@ import { register as registerFood } from "./routes/food";
 import { register as registerHealthKit } from "./routes/healthkit";
 import { register as registerAdaptiveGoals } from "./routes/adaptive-goals";
 import { register as registerChat } from "./routes/chat";
+import { register as registerCoachContext } from "./routes/coach-context";
 import { register as registerRecipeChat } from "./routes/recipe-chat";
 import { register as registerFasting } from "./routes/fasting";
 import { register as registerMedication } from "./routes/medication";
@@ -63,6 +64,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerHealthKit(app);
   registerAdaptiveGoals(app);
   registerChat(app);
+  registerCoachContext(app);
   registerRecipeChat(app);
   registerFasting(app);
   registerMedication(app);
