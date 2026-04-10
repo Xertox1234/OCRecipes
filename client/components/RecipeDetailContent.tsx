@@ -21,6 +21,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAllergenCheck } from "@/hooks/useAllergenCheck";
 import { useIsRecipeFavourited } from "@/hooks/useFavouriteRecipes";
+import { useServingAdjuster } from "@/hooks/useServingAdjuster";
 import { RecipeActionBar } from "@/components/RecipeActionBar";
 import { usePremiumContext } from "@/context/PremiumContext";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -64,6 +65,15 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
   const { isPremium } = usePremiumContext();
   const [pickerVisible, setPickerVisible] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const {
+    servingCount,
+    scaledIngredients,
+    isAdjusted,
+    increment,
+    decrement,
+    setServings,
+  } = useServingAdjuster(props.servings ?? 1, props.ingredients ?? []);
 
   const isCommunityRecipe = props.recipeType === "community";
   const isFavourited = useIsRecipeFavourited(props.recipeId, props.recipeType);
@@ -211,6 +221,11 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
             timeDisplay={props.timeDisplay}
             difficulty={props.difficulty}
             servings={props.servings}
+            servingCount={servingCount}
+            isAdjusted={isAdjusted}
+            onIncrement={increment}
+            onDecrement={decrement}
+            onSetServings={setServings}
           />
 
           {/* 4. Action Bar (Favourite, Share, Save to Cookbook) */}
@@ -251,9 +266,9 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
           {props.nutrition && <NutritionCard nutrition={props.nutrition} />}
 
           {/* 7. Ingredients (conditional) */}
-          {props.ingredients && props.ingredients.length > 0 && (
+          {scaledIngredients.length > 0 && (
             <RecipeIngredientsList
-              ingredients={props.ingredients}
+              ingredients={scaledIngredients}
               allergenResult={allergenResult}
             />
           )}
