@@ -18,6 +18,7 @@ export interface IngredientItem {
   name: string;
   quantity?: string | number | null;
   unit?: string | null;
+  annotation?: string;
 }
 
 interface RecipeIngredientsListProps {
@@ -139,6 +140,16 @@ export function RecipeIngredientsList({
                   confidence={sub.confidence}
                 />
               ))}
+              {ing.annotation && (
+                <ThemedText
+                  style={[
+                    styles.annotationText,
+                    { color: theme.textSecondary },
+                  ]}
+                >
+                  {ing.annotation}
+                </ThemedText>
+              )}
             </View>
           </View>
         );
@@ -166,5 +177,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     flex: 1,
+  },
+  annotationText: {
+    fontSize: 12,
+    fontFamily: FontFamily.regular,
+    fontStyle: "italic",
+    marginTop: 2,
   },
 });
