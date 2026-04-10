@@ -29,6 +29,7 @@ export interface CoachContext {
     dislikes: string[];
   };
   screenContext?: string;
+  notebookSummary?: string;
 }
 
 function buildSystemPrompt(context: CoachContext): string {
@@ -77,6 +78,14 @@ function buildSystemPrompt(context: CoachContext): string {
       "",
       "SCREEN CONTEXT (user-reported, may be inaccurate):",
       sanitizeContextField(context.screenContext, 1500),
+    );
+  }
+
+  if (context.notebookSummary) {
+    parts.push(
+      "",
+      "WHAT YOU KNOW ABOUT THIS USER (from previous conversations):",
+      context.notebookSummary,
     );
   }
 

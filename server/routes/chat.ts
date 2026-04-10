@@ -27,6 +27,9 @@ import {
 import { remixConversationMetadataSchema } from "@shared/schemas/recipe-chat";
 import { logger, toError } from "../lib/logger";
 import { createHash } from "crypto";
+import { parseBlocksFromContent, BLOCKS_SYSTEM_PROMPT } from "../services/coach-blocks";
+import { extractNotebookEntries } from "../services/notebook-extraction";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 const SSE_TIMEOUT_MS = 120_000; // 2 minutes max per SSE connection
 const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
@@ -461,6 +464,21 @@ export function register(app: Express): void {
               screenContext: parsed.data.screenContext,
             };
 
+            // ── Coach Pro: inject notebook context ──────────────
+            const isCoachPro = !!features.coachPro;
+            if (isCoachPro) {
+              const notebookEntries = await storage.getActiveNotebookEntries(req.userId);
+              if (notebookEntries.length > 0) {
+                const summary = notebookEntries
+                  .slice(0, 15)
+                  .map((e) => `[${e.type}] ${e.content}`)
+                  .join("\n");
+                context.notebookSummary = summary + "\n\n" + BLOCKS_SYSTEM_PROMPT;
+              } else {
+                context.notebookSummary = BLOCKS_SYSTEM_PROMPT;
+              }
+            }
+
             const messageHistory = history.map((m) => ({
               role: m.role as "user" | "assistant" | "system",
               content: m.content,
@@ -524,8 +542,22 @@ export function register(app: Express): void {
               }
             }
 
+            // Parse blocks from response for Coach Pro
+            let blocks: CoachBlock[] = [];
+            let textContent = fullResponse;
+            if (isCoachPro && fullResponse) {
+              const parsed_blocks = parseBlocksFromContent(fullResponse);
+              textContent = parsed_blocks.text;
+              blocks = parsed_blocks.blocks;
+            }
+
             if (fullResponse) {
-              await storage.createChatMessage(id, "assistant", fullResponse);
+              await storage.createChatMessage(
+                id,
+                "assistant",
+                textContent,
+                blocks.length > 0 ? { blocks } : null,
+              );
             }
 
             if (!aborted && history.length <= 1) {
@@ -535,6 +567,38 @@ export function register(app: Express): void {
               fireAndForget(
                 "coach-chat-auto-title",
                 storage.updateChatConversationTitle(id, req.userId, shortTitle),
+              );
+            }
+
+            // Send blocks in the final event for Coach Pro
+            if (!aborted && blocks.length > 0) {
+              res.write(`data: ${JSON.stringify({ blocks })}\n\n`);
+            }
+
+            // Fire-and-forget notebook extraction for Coach Pro
+            if (isCoachPro && fullResponse && !aborted) {
+              fireAndForget(
+                "coach-notebook-extraction",
+                (async () => {
+                  const allMessages = [
+                    ...messageHistory,
+                    { role: "user" as const, content: parsed.data.content },
+                    { role: "assistant" as const, content: textContent },
+                  ];
+                  const entries = await extractNotebookEntries(allMessages, req.userId, id);
+                  if (entries.length > 0) {
+                    await storage.createNotebookEntries(
+                      entries.map((e) => ({
+                        userId: req.userId,
+                        type: e.type,
+                        content: e.content,
+                        status: "active",
+                        followUpDate: e.followUpDate ? new Date(e.followUpDate) : null,
+                        sourceConversationId: id,
+                      })),
+                    );
+                  }
+                })(),
               );
             }
           }
