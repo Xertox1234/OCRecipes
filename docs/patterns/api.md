@@ -402,7 +402,7 @@ export function parseQueryInt(
 **References:**
 
 - `server/routes/_helpers.ts` -- implementation
-- 12 route files: `adaptive-goals`, `fasting`, `exercises`, `weight`, `pantry`, `chat`, `menu`, `saved-items`, `medication`, `grocery`, `nutrition` -- consumers
+- 11 route files: `adaptive-goals`, `fasting`, `weight`, `pantry`, `chat`, `menu`, `saved-items`, `medication`, `grocery`, `nutrition` -- consumers
 
 ### `parsePositiveIntParam` -- Express 5 Route Param Parsing
 
@@ -452,7 +452,7 @@ export function parsePositiveIntParam(value: string | string[]): number | null {
 **References:**
 
 - `server/routes/_helpers.ts` -- implementation
-- 14 route files: `suggestions`, `exercises`, `weight`, `pantry`, `chat`, `menu`, `saved-items`, `medication`, `grocery`, `nutrition`, `micronutrients`, `meal-plan`, `recipes` -- consumers
+- 13 route files: `suggestions`, `weight`, `pantry`, `chat`, `menu`, `saved-items`, `medication`, `grocery`, `nutrition`, `micronutrients`, `meal-plan`, `recipes` -- consumers
 
 ### `parseQueryString` -- Typed String Query Parameter Parsing
 
@@ -494,7 +494,7 @@ export function parseQueryString(value: unknown): string | undefined {
 **References:**
 
 - `server/routes/_helpers.ts` -- implementation
-- Route files: `micronutrients`, `nutrition`, `meal-plan`, `recipes`, `exercises` -- consumers
+- Route files: `micronutrients`, `nutrition`, `meal-plan`, `recipes` -- consumers
 
 ### `parseStringParam` -- Express 5 String Route Param Parsing
 

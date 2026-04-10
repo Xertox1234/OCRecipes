@@ -1216,7 +1216,7 @@ const transcription = await openai.audio.transcriptions.create({
 
 **Category:** Express.js Gotcha
 
-**Context:** Phase 1 (Weight Tracking) and Phase 2 (Exercise Tracking) both have fixed-path routes (e.g., `/api/weight/trend`, `/api/exercises/summary`) alongside parameterized routes (e.g., `/api/weight/:id`, `/api/exercises/:id`).
+**Context:** Routes like weight tracking have fixed-path routes (e.g., `/api/weight/trend`) alongside parameterized routes (e.g., `/api/weight/:id`).
 
 **Problem:** Express matches routes in registration order. If `/api/weight/:id` is registered before `/api/weight/trend`, then a GET request to `/api/weight/trend` matches `:id = "trend"`, which fails with "Invalid weight log ID" because `parseInt("trend")` returns `NaN`.
 
@@ -1247,7 +1247,7 @@ The weight route file includes an explicit comment: `// NOTE: This must be regis
 
 This is especially easy to forget when using the route module pattern where routes are defined inside a `register()` function. Add a comment whenever a fixed path must come before a parameterized one.
 
-**Files:** `server/routes/weight.ts`, `server/routes/exercises.ts`
+**Files:** `server/routes/weight.ts`
 
 ---
 

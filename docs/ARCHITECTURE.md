@@ -58,54 +58,62 @@ OCRecipes/
 ├── client/                    # React Native/Expo Frontend
 │   ├── App.tsx                # Entry point with providers
 │   ├── camera/                # Camera module (components, hooks, types)
-│   ├── components/            # Reusable UI components (50+)
+│   ├── components/            # Reusable UI components (90+)
 │   │   └── recipe-builder/    # Bottom-sheet recipe builder (7 components)
 │   ├── constants/             # Theme, colors, spacing, dietary options
 │   ├── context/               # React Context providers (Auth, Onboarding, Premium, Theme)
-│   ├── hooks/                 # Custom React hooks (30+)
+│   ├── hooks/                 # Custom React hooks (80+)
 │   ├── lib/                   # Utilities (query client, token storage, image compression, etc.)
 │   │   ├── iap/               # In-app purchase helpers
 │   │   └── subscription/      # Subscription management
-│   ├── navigation/            # React Navigation stacks (8 navigators)
+│   ├── navigation/            # React Navigation stacks (7 navigators)
 │   │   ├── RootStackNavigator.tsx     # Entry point + modal screens
-│   │   ├── MainTabNavigator.tsx       # 5 tabs + Scan FAB
+│   │   ├── MainTabNavigator.tsx       # 4 tabs + Scan FAB
 │   │   ├── OnboardingNavigator.tsx    # 6-screen onboarding
 │   │   ├── HomeStackNavigator.tsx     # Home tab (dashboard, history)
 │   │   ├── MealPlanStackNavigator.tsx # Plan tab (recipes, grocery, pantry)
-│   │   ├── ActivityStackNavigator.tsx # Activity tab (exercise, weight, fasting)
 │   │   ├── ChatStackNavigator.tsx     # Coach tab (AI nutrition chat)
 │   │   └── ProfileStackNavigator.tsx  # Profile tab (settings, goals)
-│   ├── screens/               # Screen components (23 files + 2 subdirs)
+│   ├── screens/               # 50+ screen files across 3 subdirectories
 │   │   ├── onboarding/        # Onboarding flow (6 screens)
-│   │   └── meal-plan/         # Meal planning (8 screens)
+│   │   └── meal-plan/         # Meal planning (12 screens)
 │   └── types/                 # TypeScript type definitions
 │
 ├── server/                    # Express.js Backend
 │   ├── index.ts               # Server entry, CORS setup
-│   ├── routes.ts              # Route registrar (imports 23 route modules)
+│   ├── routes.ts              # Route registrar (imports 40+ route modules)
 │   ├── db.ts                  # Drizzle ORM configuration
 │   ├── middleware/            # Auth middleware, rate limiters
-│   ├── routes/                # 23 modular route files
-│   ├── storage/               # 12 domain-split storage modules
+│   ├── routes/                # 40+ modular route files
+│   ├── storage/               # 20+ domain-split storage modules
 │   │   ├── index.ts           # Composed storage interface
 │   │   ├── users.ts           # User & profile operations
 │   │   ├── nutrition.ts       # Scanned items, daily logs, favourites
 │   │   ├── cache.ts           # Suggestion, instruction, meal suggestion caches
 │   │   ├── meal-plans.ts      # Recipes, ingredients, meal plan items
 │   │   ├── community.ts       # Community recipes, generation logs
-│   │   ├── activity.ts        # Exercise, weight, goals
 │   │   ├── chat.ts            # Chat conversations & messages
 │   │   ├── fasting.ts         # Fasting schedules & logs
 │   │   ├── medication.ts      # Medication logs (GLP-1)
 │   │   ├── menu.ts            # Menu scans
+│   │   ├── api-keys.ts        # API key management
+│   │   ├── batch.ts           # Batch scan operations
+│   │   ├── carousel.ts        # Carousel suggestion cache
+│   │   ├── cookbooks.ts       # Cookbook & cookbook recipe operations
+│   │   ├── favourite-recipes.ts # Favourite recipe tracking
+│   │   ├── profile-hub.ts     # Profile hub aggregation
+│   │   ├── receipt.ts         # Receipt scan operations
+│   │   ├── reformulation.ts   # Reformulation flag tracking
+│   │   ├── sessions.ts        # Session management
+│   │   ├── verification.ts    # Barcode verification operations
 │   │   └── helpers.ts         # Shared query helpers
-│   ├── services/              # 22 business logic services
+│   ├── services/              # 30+ business logic services
 │   ├── utils/                 # Utility functions (date validation, profile hash, etc.)
 │   ├── lib/                   # Server libraries
 │   └── certs/                 # Apple root CA certificates
 │
 ├── shared/                    # Shared Code
-│   ├── schema.ts              # Database schema (31 tables, Drizzle ORM)
+│   ├── schema.ts              # Database schema (40+ tables, Drizzle ORM)
 │   ├── models/                # Shared type definitions
 │   ├── schemas/               # Zod validation schemas
 │   ├── types/                 # Shared TypeScript types
@@ -365,23 +373,28 @@ import { users } from "@shared/schema";
        │Conditions │   └───────────┘   └───────────┘
        └───────────┘
 
-                    MainTabNavigator (5 tabs + Scan FAB)
-   ┌──────────┬──────────┬──────────┬──────────┐
-   │          │          │          │          │
-   ▼          ▼          ▼          ▼          ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│HomeStack │ │MealPlan  │ │Activity  │ │Chat      │ │Profile   │
-│Navigator │ │Stack Nav │ │Stack Nav │ │Stack Nav │ │Stack Nav │
-├──────────┤ ├──────────┤ ├──────────┤ ├──────────┤ ├──────────┤
-│HomeScr   │ │MealPlan  │ │Exercise  │ │ChatList  │ │ProfileScr│
-│HistoryScr│ │  Home    │ │  LogScr  │ │ChatScr   │ │SavedItems│
-│ItemDetail│ │RecipeDtl │ │Exercise  │ └──────────┘ │GoalSetup │
-└──────────┘ │RecipeBrws│ │  Search  │              └──────────┘
-             │RecipeCrt │ │WeightTrk │
-             │RecipeImp │ │FastingScr│
-             │GroceryLst│ │GLP1Comp  │
-             │PantryScr │ │HealthKit │
-             └──────────┘ └──────────┘
+                    MainTabNavigator (4 tabs + Scan FAB)
+   ┌──────────┬──────────┬──────────┐
+   │          │          │          │
+   ▼          ▼          ▼          ▼
+┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+│HomeStack │ │MealPlan  │ │Chat      │ │Profile   │
+│Navigator │ │Stack Nav │ │Stack Nav │ │Stack Nav │
+├──────────┤ ├──────────┤ ├──────────┤ ├──────────┤
+│HomeScr   │ │MealPlan  │ │ChatList  │ │ProfileScr│
+│HistoryScr│ │  Home    │ │ChatScr   │ │SavedItems│
+│ItemDetail│ │RecipeDtl │ └──────────┘ │GoalSetup │
+└──────────┘ │RecipeBrws│              └──────────┘
+             │RecipeCrt │
+             │RecipeImp │
+             │RecipePhoto│
+             │GroceryLst│
+             │PantryScr │
+             │CookbookLst│
+             │CookbookDtl│
+             │CookbookCrt│
+             │ReceiptMeal│
+             └──────────┘
 
                   ScanFAB (floating action button)
                        │
@@ -520,7 +533,7 @@ Mobile App
          ▼
 ┌──────────────────┐
 │   Route Handler  │
-│ (23 route modules│
+│(40+ route modules│
 │  via routes.ts)  │
 └────────┬─────────┘
          │
@@ -731,11 +744,11 @@ interface IStorage {
 
   // Meal Plan Recipes & Items (see full interface in server/storage/meal-plans.ts)
   // Community Recipes, Transactions (see full interface in server/storage/community.ts)
-  // Exercise, Weight, Fasting, Chat, Medication, Menu, etc. (see server/storage/)
+  // Weight, Fasting, Chat, Medication, Menu, Cookbooks, Verification, etc. (see server/storage/)
 }
 ```
 
-**Note:** The storage layer is decomposed into 12 domain-split modules in `server/storage/`, composed via `server/storage/index.ts`. Each module handles one domain (users, nutrition, cache, meal-plans, activity, chat, fasting, medication, menu, community, helpers). `nutritionCache` is accessed directly via Drizzle in `server/services/nutrition-lookup.ts`, not through the `IStorage` interface, since it's a service-internal concern with its own upsert logic.
+**Note:** The storage layer is decomposed into 20+ domain-split modules in `server/storage/`, composed via `server/storage/index.ts`. Each module handles one domain (users, nutrition, cache, meal-plans, chat, fasting, medication, menu, community, cookbooks, api-keys, batch, carousel, favourite-recipes, profile-hub, receipt, reformulation, sessions, verification, helpers). `nutritionCache` is accessed directly via Drizzle in `server/services/nutrition-lookup.ts`, not through the `IStorage` interface, since it's a service-internal concern with its own upsert logic.
 
 ### Goal Calculator (`server/services/goal-calculator.ts`)
 
