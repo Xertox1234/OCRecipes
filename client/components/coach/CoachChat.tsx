@@ -159,14 +159,10 @@ export default function CoachChat({
 
     if (isStreaming && !wasStreaming) {
       // Streaming just started
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility("Coach is thinking...");
-      }
+      AccessibilityInfo.announceForAccessibility("Coach is thinking...");
     } else if (!isStreaming && wasStreaming) {
       // Streaming just finished
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility("Coach responded");
-      }
+      AccessibilityInfo.announceForAccessibility("Coach responded");
     }
   }, [isStreaming]);
 
@@ -412,11 +408,7 @@ export default function CoachChat({
         )}
 
         {/* Streaming assistant response */}
-        <View
-          accessibilityLiveRegion={
-            Platform.OS === "android" ? "polite" : undefined
-          }
-        >
+        <View>
           {isStreaming && streamingContent && (
             <ChatBubble role="assistant" content={streamingContent} />
           )}
