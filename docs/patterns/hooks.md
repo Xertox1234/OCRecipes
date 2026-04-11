@@ -577,6 +577,46 @@ export function useCookbookRecipes(cookbookId: number) {
 - TanStack Query v5 `refetchOnMount` documentation
 - Related: "TanStack Query CRUD Hook Module" pattern — mutations should still invalidate queries where possible
 
+### Optimistic Query Enabling on Premium-Gated Screens
+
+When a screen is only reachable by premium users (e.g., via conditional `initialRouteName`), optimistically enable dependent queries during the premium status loading phase. Without this, the query stays permanently disabled if `usePremiumFeature()` returns `false` before the subscription data resolves.
+
+```typescript
+// ❌ BAD: Query never fires if premium check hasn't resolved at mount time
+const { isCoachPro } = usePremiumFeature("coachPro");
+const { data: context } = useCoachContext(isCoachPro);
+// isCoachPro is false during loading → enabled: false → query never retries
+```
+
+```typescript
+// ✅ GOOD: Optimistically enable during loading phase
+const { isCoachPro, isLoading: isPremiumLoading } =
+  usePremiumFeature("coachPro");
+const contextEnabled = isCoachPro || isPremiumLoading;
+const { data: context, isLoading, error } = useCoachContext(contextEnabled);
+// Screen is only mounted for premium users, so optimistic enabling is safe.
+// If the user somehow isn't premium, the server returns 403 → error UI handles it.
+```
+
+**When to use:**
+
+- Premium-only screens mounted via conditional `initialRouteName` or navigator guards
+- Any screen where a feature-flag check gates a TanStack Query `enabled` flag and the check may not have resolved at mount time
+
+**When NOT to use:**
+
+- Screens accessible to all users where the premium check genuinely determines whether to fetch
+- Queries where the `enabled` flag depends on user input, not a loading race
+
+**Why:** `usePremiumFeature()` wraps a TanStack Query for subscription status. On first mount, the query is in-flight and returns `false` for the feature check. If a dependent query uses this as its `enabled` flag, it starts disabled and never re-enables because TanStack Query doesn't re-evaluate `enabled` when the value changes from `false` → `true` after the initial mount in the same render cycle. The optimistic approach treats "still loading" the same as "is premium" since the screen's mount condition already guarantees premium status.
+
+**References:**
+
+- `client/screens/CoachProScreen.tsx` — `contextEnabled = isCoachPro || isPremiumLoading`
+- `client/hooks/usePremiumFeatures.ts` — `usePremiumFeature()` hook
+
+**Origin:** Coach Pro blank screen bug (2026-04-10) — screen rendered blank because context query was permanently disabled during premium loading race
+
 ### Hook-Returned Component Pattern for BottomSheetModal
 
 When a reusable bottom sheet needs an imperative API (`confirm()`, `open()`) but also renders a component, return both from a custom hook. This avoids the declarative/imperative mismatch that causes timing bugs when syncing a `visible` boolean prop with `present()`/`dismiss()`.

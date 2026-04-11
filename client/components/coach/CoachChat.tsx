@@ -266,17 +266,58 @@ export default function CoachChat({
       if (action.type === "log_food") {
         handleSend(`Please log: ${action.description as string}`);
       } else if (action.type === "navigate") {
-        const screen = action.screen as keyof RootStackParamList;
+        const screen = action.screen as string;
         const params = action.params as Record<string, unknown> | undefined;
-        // Navigate to root-level modal screens via composite navigation
-        (
-          navigation as {
-            navigate: (
-              screen: string,
-              params?: Record<string, unknown>,
-            ) => void;
-          }
-        ).navigate(screen, params);
+        // Typed screen-specific branches — each call uses a literal screen name
+        // so TypeScript verifies params against RootStackParamList per screen.
+        // Params are Zod-validated upstream via NAVIGABLE_SCREENS enum.
+        switch (screen) {
+          case "NutritionDetail":
+            navigation.navigate(
+              "NutritionDetail",
+              params as RootStackParamList["NutritionDetail"],
+            );
+            break;
+          case "FeaturedRecipeDetail":
+            navigation.navigate(
+              "FeaturedRecipeDetail",
+              params as RootStackParamList["FeaturedRecipeDetail"],
+            );
+            break;
+          case "RecipeChat":
+            navigation.navigate(
+              "RecipeChat",
+              params as RootStackParamList["RecipeChat"],
+            );
+            break;
+          case "Scan":
+            navigation.navigate("Scan", params as RootStackParamList["Scan"]);
+            break;
+          case "RecipeBrowserModal":
+            navigation.navigate(
+              "RecipeBrowserModal",
+              params as RootStackParamList["RecipeBrowserModal"],
+            );
+            break;
+          case "QuickLog":
+            navigation.navigate("QuickLog");
+            break;
+          case "DailyNutritionDetail":
+            navigation.navigate("DailyNutritionDetail");
+            break;
+          case "WeightTracking":
+            navigation.navigate("WeightTracking");
+            break;
+          case "GroceryListsModal":
+            navigation.navigate("GroceryListsModal");
+            break;
+          case "PantryModal":
+            navigation.navigate("PantryModal");
+            break;
+          case "CookbookListModal":
+            navigation.navigate("CookbookListModal");
+            break;
+        }
       } else if (action.type === "add_meal_plan") {
         // Navigate to meal plan screen to add the plan
         navigation.navigate("RecipeBrowserModal");
