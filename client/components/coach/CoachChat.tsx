@@ -251,7 +251,14 @@ export default function CoachChat({
 
       warmUpHook.reset();
     },
-    [inputText, isStreaming, conversationId, onCreateConversation, warmUpHook],
+    [
+      inputText,
+      isStreaming,
+      conversationId,
+      onCreateConversation,
+      warmUpHook,
+      isCoachPro,
+    ],
   );
 
   // Auto-send suggestion chip messages
