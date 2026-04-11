@@ -132,7 +132,6 @@ export type RootStackParamList = {
     | {
         mealType?: string;
         date?: string;
-        searchQuery?: string;
         planDays?: MealPlanDay[];
       }
     | undefined;

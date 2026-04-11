@@ -16,6 +16,7 @@ import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
+import type { MealPlanDay } from "@shared/schemas/coach-blocks";
 
 export type MealPlanStackParamList = {
   MealPlanHome: undefined;
@@ -23,6 +24,7 @@ export type MealPlanStackParamList = {
     mealType?: string;
     plannedDate?: string;
     searchQuery?: string;
+    planDays?: MealPlanDay[];
   };
   RecipeCreate: {
     prefill?: ImportedRecipeData;

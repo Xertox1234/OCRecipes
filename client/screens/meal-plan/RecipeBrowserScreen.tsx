@@ -45,8 +45,8 @@ import {
 import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
+import { planBannerA11yLabel } from "@/components/coach/coach-chat-utils";
 import type { MealPlanRecipe, CommunityRecipe } from "@shared/schema";
-import type { MealPlanDay } from "@shared/schemas/coach-blocks";
 
 const SPOONACULAR_PAGE_SIZE = 20;
 
@@ -383,10 +383,7 @@ export default function RecipeBrowserScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
 
-  const { mealType, plannedDate, searchQuery } = route.params || {};
-  // When opened from Coach's add_meal_plan action, planDays contains the AI plan
-  const planDays = (route.params as { planDays?: MealPlanDay[] } | undefined)
-    ?.planDays;
+  const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
 
   const [searchText, setSearchText] = useState(searchQuery || "");
   const [activeCuisine, setActiveCuisine] = useState<string | undefined>();
@@ -771,13 +768,13 @@ export default function RecipeBrowserScreen() {
             { backgroundColor: withOpacity(theme.link, 0.08) },
           ]}
           accessibilityRole="summary"
-          accessibilityLabel={`AI meal plan with ${planDays.length} ${planDays.length === 1 ? "day" : "days"}`}
+          accessibilityLabel={planBannerA11yLabel(planDays)}
         >
           <ThemedText style={[styles.planBannerTitle, { color: theme.link }]}>
             AI Meal Plan
           </ThemedText>
-          {planDays.map((day, di) => (
-            <View key={di} style={styles.planBannerDay}>
+          {planDays.map((day) => (
+            <View key={day.label} style={styles.planBannerDay}>
               <ThemedText
                 style={[
                   styles.planBannerDayLabel,
@@ -788,7 +785,7 @@ export default function RecipeBrowserScreen() {
               </ThemedText>
               {day.meals.map((meal, mi) => (
                 <ThemedText
-                  key={mi}
+                  key={`${day.label}-${meal.type}-${mi}`}
                   style={[styles.planBannerMeal, { color: theme.text }]}
                   numberOfLines={1}
                 >
@@ -1013,7 +1010,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.card,
   },
   planBannerTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: FontFamily.semiBold,
     marginBottom: Spacing.sm,
   },
@@ -1021,13 +1018,13 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   planBannerDayLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: FontFamily.medium,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   planBannerMeal: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: FontFamily.regular,
     marginLeft: Spacing.sm,
   },
