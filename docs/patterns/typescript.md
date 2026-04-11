@@ -169,6 +169,43 @@ async getUser(id: string): Promise<User | null> {
 - Consider logging unexpected values for monitoring
 - The application continues working even with corrupted data
 
+### Zod safeParse at Internal Type-Erasure Boundaries
+
+When a callback or handler receives data through an intentionally untyped channel (e.g., `Record<string, unknown>`, event payloads, message-passing interfaces), validate with `safeParse()` instead of casting with `as`. This differs from the database/external API patterns because the data originates from trusted internal code — but the untyped channel erases the structural guarantee.
+
+```typescript
+// The block renderer emits actions through an untyped channel
+type BlockActionHandler = (action: Record<string, unknown>) => void;
+
+// Bad: Array.isArray proves "it's an array" but NOT "it's an array of MealPlanDay"
+const planDays = Array.isArray(action.plan)
+  ? (action.plan as MealPlanDay[])
+  : undefined;
+
+// Good: safeParse re-establishes the full structural guarantee
+import { mealPlanCardSchema } from "@shared/schemas/coach-blocks";
+
+const parsed = mealPlanCardSchema.shape.days.safeParse(action.plan);
+const planDays = parsed.success ? parsed.data : undefined;
+```
+
+**Why internal data needs validation too:** The `Record<string, unknown>` signature is a deliberate type-erasure boundary. Even if the emitter (e.g., `MealPlanCard`) sends Zod-validated data today, the untyped channel means any future caller can pass anything. `safeParse` at the receiving end restores the type contract.
+
+**When to use:**
+
+- Callbacks typed as `Record<string, unknown>` or `unknown`
+- Event bus / message-passing handlers
+- Any internal interface where structured data crosses through an untyped channel
+
+**When NOT to use:**
+
+- Internal function calls with fully typed signatures — the compiler already enforces the contract
+
+**References:**
+
+- `client/components/coach/coach-chat-utils.ts` — `parsePlanDays()` validates action payload
+- `client/components/coach/CoachChat.tsx` — `handleBlockAction` consumes block actions
+
 ### Zod Discriminated Union for Response Schemas
 
 When an API response has two distinct shapes (success vs error), use `z.discriminatedUnion()` to define both paths with a shared discriminant field. This gives both server and client compile-time safety over the response shape:

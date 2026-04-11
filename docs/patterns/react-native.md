@@ -471,6 +471,46 @@ type FavouriteRecipesScreenNavigationProp = CompositeNavigationProp<
 
 - `client/types/navigation.ts` — `FavouriteRecipesScreenNavigationProp`
 
+### Align Route Params Across Dual-Navigator Screens
+
+When a screen component is mounted in **two different navigators** with separate param lists (e.g., `RecipeBrowserScreen` as both `RecipeBrowser` in `MealPlanStack` and `RecipeBrowserModal` in `RootStack`), keep the shared param fields synchronized across both `ParamList` types. This extends the "Intersection Type for Dual-Stack Screen Registration" pattern above, which covers the navigation prop — this pattern covers the **route params**.
+
+```typescript
+// Both navigators define planDays — screen reads it without casting
+export type MealPlanStackParamList = {
+  RecipeBrowser: {
+    mealType?: string;
+    plannedDate?: string;
+    planDays?: MealPlanDay[]; // ← also in RootStackParamList
+  };
+};
+
+export type RootStackParamList = {
+  RecipeBrowserModal:
+    | { mealType?: string; date?: string; planDays?: MealPlanDay[] }
+    | undefined;
+};
+
+// In the screen — no cast needed
+const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
+```
+
+```typescript
+// Bad: Using `as` cast because the route type doesn't include planDays
+const planDays = (route.params as { planDays?: MealPlanDay[] } | undefined)
+  ?.planDays;
+```
+
+**Why:** React Navigation merges params at runtime regardless of TypeScript types. An `as` cast makes it _work_ but defeats the compiler — if someone renames `planDays` in one ParamList but not the other, no type error fires. Aligned types make the compiler your safety net.
+
+**When to use:** A screen registered in two navigators that receives the same data field from both entry points.
+
+**References:**
+
+- `client/navigation/MealPlanStackNavigator.tsx` — `MealPlanStackParamList["RecipeBrowser"]`
+- `client/navigation/RootStackNavigator.tsx` — `RootStackParamList["RecipeBrowserModal"]`
+- `client/screens/meal-plan/RecipeBrowserScreen.tsx` — reads `planDays` without cast
+
 ### Full-Screen Detail with transparentModal
 
 Use `presentation: "transparentModal"` with `slide_from_bottom` animation for full-screen detail views. The screen component fills the entire screen with its own background, close button, and scrollable content. The hero image extends to the very top with no native chrome.
