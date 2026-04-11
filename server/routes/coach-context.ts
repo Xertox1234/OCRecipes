@@ -12,12 +12,25 @@ const warmUpCache = new Map<
   string,
   {
     warmUpId: string;
-    messages: Array<{ role: string; content: string }>;
+    messages: { role: string; content: string }[];
     preparedAt: number;
   }
 >();
 
 const WARM_UP_TTL_MS = 30_000;
+
+// Periodic sweep to remove expired warm-up entries (every 60s).
+// Entries expire after WARM_UP_TTL_MS but are only cleaned on consumption;
+// this sweep catches entries from users who never sent the final message.
+const warmUpSweepInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of warmUpCache) {
+    if (now - entry.preparedAt > WARM_UP_TTL_MS) {
+      warmUpCache.delete(key);
+    }
+  }
+}, 60_000) as unknown as NodeJS.Timeout;
+warmUpSweepInterval.unref();
 
 export function register(app: Express): void {
   // GET /api/coach/context
@@ -26,7 +39,12 @@ export function register(app: Express): void {
     requireAuth,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const features = await checkPremiumFeature(req, res, "coachPro", "Coach Pro");
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "coachPro",
+          "Coach Pro",
+        );
         if (!features) return;
 
         const [profile, todayIntake, notebookEntries, dueCommitments] =
@@ -46,7 +64,9 @@ export function register(app: Express): void {
           const proteinGoal = 150; // Default, could come from profile goals
           const proteinLeft = proteinGoal - (todayIntake.totalProtein ?? 0);
           if (proteinLeft > 30) {
-            suggestions.push(`I need ${Math.round(proteinLeft)}g more protein today`);
+            suggestions.push(
+              `I need ${Math.round(proteinLeft)}g more protein today`,
+            );
           }
         }
         const hour = new Date().getHours();
@@ -85,7 +105,12 @@ export function register(app: Express): void {
     requireAuth,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const features = await checkPremiumFeature(req, res, "coachPro", "Coach Pro");
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "coachPro",
+          "Coach Pro",
+        );
         if (!features) return;
 
         const schema = z.object({
@@ -94,19 +119,35 @@ export function register(app: Express): void {
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success) {
-          return sendError(res, 400, "Invalid warm-up request", ErrorCode.VALIDATION_ERROR);
+          return sendError(
+            res,
+            400,
+            "Invalid warm-up request",
+            ErrorCode.VALIDATION_ERROR,
+          );
         }
 
         const { conversationId, interimTranscript } = parsed.data;
 
-        const conversation = await storage.getChatConversation(conversationId, req.userId);
+        const conversation = await storage.getChatConversation(
+          conversationId,
+          req.userId,
+        );
         if (!conversation) {
-          return sendError(res, 404, "Conversation not found", ErrorCode.NOT_FOUND);
+          return sendError(
+            res,
+            404,
+            "Conversation not found",
+            ErrorCode.NOT_FOUND,
+          );
         }
 
         // Pre-fetch conversation history
         const messages = await storage.getChatMessages(conversationId, 20);
-        const prepared = messages.map((m) => ({ role: m.role, content: m.content }));
+        const prepared = messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
         prepared.push({ role: "user", content: interimTranscript });
 
         const warmUpId = `${req.userId}-${Date.now()}`;
@@ -131,7 +172,7 @@ export function register(app: Express): void {
 export function consumeWarmUp(
   userId: string,
   warmUpId: string,
-): Array<{ role: string; content: string }> | null {
+): { role: string; content: string }[] | null {
   const cached = warmUpCache.get(userId);
   if (!cached || cached.warmUpId !== warmUpId) return null;
   if (Date.now() - cached.preparedAt > WARM_UP_TTL_MS) {
