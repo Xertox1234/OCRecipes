@@ -10,6 +10,10 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
+import type { CompositeNavigationProp } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 
 import { ChatBubble } from "@/components/ChatBubble";
 import BlockRenderer from "@/components/coach/blocks";
@@ -26,6 +30,22 @@ import {
   type CoachBlock,
 } from "@shared/schemas/coach-blocks";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
+import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
+import type { MainTabParamList } from "@/navigation/MainTabNavigator";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+
+/**
+ * 3-level composite: ChatStack → MainTab → RootStack.
+ * Allows CoachChat to navigate to root-level modal screens
+ * (FeaturedRecipeDetail, RecipeBrowserModal, etc.).
+ */
+type CoachChatNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<ChatStackParamList, "CoachPro">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList, "CoachTab">,
+    NativeStackNavigationProp<RootStackParamList>
+  >
+>;
 
 interface CoachChatProps {
   conversationId: number | null;
@@ -114,6 +134,7 @@ export default function CoachChat({
   onInitialMessageSent,
 }: CoachChatProps) {
   const { theme } = useTheme();
+  const navigation = useNavigation<CoachChatNavigationProp>();
   const hasVoice = usePremiumFeature("coachPro");
 
   const [inputText, setInputText] = useState("");
@@ -222,12 +243,26 @@ export default function CoachChat({
 
   const handleBlockAction = useCallback(
     (action: Record<string, unknown>) => {
-      // Action handling — navigation requires parent screen integration
       if (action.type === "log_food") {
         handleSend(`Please log: ${action.description as string}`);
+      } else if (action.type === "navigate") {
+        const screen = action.screen as keyof RootStackParamList;
+        const params = action.params as Record<string, unknown> | undefined;
+        // Navigate to root-level modal screens via composite navigation
+        (
+          navigation as {
+            navigate: (
+              screen: string,
+              params?: Record<string, unknown>,
+            ) => void;
+          }
+        ).navigate(screen, params);
+      } else if (action.type === "add_meal_plan") {
+        // Navigate to meal plan screen to add the plan
+        navigation.navigate("RecipeBrowserModal");
       }
     },
-    [handleSend],
+    [handleSend, navigation],
   );
 
   const handleCommitmentAccept = useCallback(
