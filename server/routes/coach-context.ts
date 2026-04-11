@@ -18,6 +18,19 @@ const warmUpCache = new Map<
 
 const WARM_UP_TTL_MS = 30_000;
 
+// Periodic sweep to remove expired warm-up entries (every 60s).
+// Entries expire after WARM_UP_TTL_MS but are only cleaned on consumption;
+// this sweep catches entries from users who never sent the final message.
+const warmUpSweepInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of warmUpCache) {
+    if (now - entry.preparedAt > WARM_UP_TTL_MS) {
+      warmUpCache.delete(key);
+    }
+  }
+}, 60_000) as unknown as NodeJS.Timeout;
+warmUpSweepInterval.unref();
+
 export function register(app: Express): void {
   // GET /api/coach/context
   app.get(
