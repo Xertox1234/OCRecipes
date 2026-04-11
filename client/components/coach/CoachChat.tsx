@@ -29,6 +29,7 @@ import { Spacing, BorderRadius } from "@/constants/theme";
 import {
   coachBlockSchema,
   type CoachBlock,
+  type MealPlanDay,
 } from "@shared/schemas/coach-blocks";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
@@ -319,8 +320,11 @@ export default function CoachChat({
             break;
         }
       } else if (action.type === "add_meal_plan") {
-        // Navigate to meal plan screen to add the plan
-        navigation.navigate("RecipeBrowserModal");
+        // Pass the AI-generated meal plan data through to the recipe browser
+        const planDays = Array.isArray(action.plan)
+          ? (action.plan as MealPlanDay[])
+          : undefined;
+        navigation.navigate("RecipeBrowserModal", { planDays });
       }
     },
     [handleSend, navigation],
