@@ -34,6 +34,7 @@ import type {
   SubstitutionResult,
 } from "@shared/types/cook-session";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
+import type { MealPlanDay } from "@shared/schemas/coach-blocks";
 import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
@@ -127,7 +128,14 @@ export type RootStackParamList = {
   CookbookListModal: undefined;
   GroceryListsModal: undefined;
   PantryModal: undefined;
-  RecipeBrowserModal: { mealType?: string; date?: string } | undefined;
+  RecipeBrowserModal:
+    | {
+        mealType?: string;
+        date?: string;
+        searchQuery?: string;
+        planDays?: MealPlanDay[];
+      }
+    | undefined;
   FastingModal: undefined;
 };
 

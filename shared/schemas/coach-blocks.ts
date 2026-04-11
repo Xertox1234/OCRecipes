@@ -157,6 +157,7 @@ export type CommitmentCard = z.infer<typeof commitmentCardSchema>;
 export type QuickReplies = z.infer<typeof quickRepliesSchema>;
 export type RecipeCard = z.infer<typeof recipeCardSchema>;
 export type MealPlanCard = z.infer<typeof mealPlanCardSchema>;
+export type MealPlanDay = MealPlanCard["days"][number];
 export type BlockAction = z.infer<typeof blockActionSchema>;
 export type LogFoodAction = z.infer<typeof logFoodActionSchema>;
 export type NavigateAction = z.infer<typeof navigateActionSchema>;

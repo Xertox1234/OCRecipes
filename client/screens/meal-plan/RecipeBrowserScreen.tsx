@@ -46,6 +46,7 @@ import { resolveImageUrl } from "@/lib/query-client";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeBrowserScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanRecipe, CommunityRecipe } from "@shared/schema";
+import type { MealPlanDay } from "@shared/schemas/coach-blocks";
 
 const SPOONACULAR_PAGE_SIZE = 20;
 
@@ -383,6 +384,9 @@ export default function RecipeBrowserScreen() {
   const haptics = useHaptics();
 
   const { mealType, plannedDate, searchQuery } = route.params || {};
+  // When opened from Coach's add_meal_plan action, planDays contains the AI plan
+  const planDays = (route.params as { planDays?: MealPlanDay[] } | undefined)
+    ?.planDays;
 
   const [searchText, setSearchText] = useState(searchQuery || "");
   const [activeCuisine, setActiveCuisine] = useState<string | undefined>();
@@ -759,6 +763,43 @@ export default function RecipeBrowserScreen() {
         </ScrollView>
       </View>
 
+      {/* AI meal plan summary banner */}
+      {planDays && planDays.length > 0 && (
+        <View
+          style={[
+            styles.planBanner,
+            { backgroundColor: withOpacity(theme.link, 0.08) },
+          ]}
+          accessibilityRole="summary"
+          accessibilityLabel={`AI meal plan with ${planDays.length} ${planDays.length === 1 ? "day" : "days"}`}
+        >
+          <ThemedText style={[styles.planBannerTitle, { color: theme.link }]}>
+            AI Meal Plan
+          </ThemedText>
+          {planDays.map((day, di) => (
+            <View key={di} style={styles.planBannerDay}>
+              <ThemedText
+                style={[
+                  styles.planBannerDayLabel,
+                  { color: theme.textSecondary },
+                ]}
+              >
+                {day.label}
+              </ThemedText>
+              {day.meals.map((meal, mi) => (
+                <ThemedText
+                  key={mi}
+                  style={[styles.planBannerMeal, { color: theme.text }]}
+                  numberOfLines={1}
+                >
+                  {meal.type}: {meal.title} ({meal.calories} cal)
+                </ThemedText>
+              ))}
+            </View>
+          ))}
+        </View>
+      )}
+
       {/* Results */}
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -964,5 +1005,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     paddingVertical: Spacing.md,
+  },
+  planBanner: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.card,
+  },
+  planBannerTitle: {
+    fontSize: 13,
+    fontFamily: FontFamily.semiBold,
+    marginBottom: Spacing.sm,
+  },
+  planBannerDay: {
+    marginBottom: Spacing.xs,
+  },
+  planBannerDayLabel: {
+    fontSize: 11,
+    fontFamily: FontFamily.medium,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  planBannerMeal: {
+    fontSize: 12,
+    fontFamily: FontFamily.regular,
+    marginLeft: Spacing.sm,
   },
 });
