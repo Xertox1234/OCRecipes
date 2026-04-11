@@ -1,6 +1,6 @@
 ---
 title: "Coach Pro: Add periodic warm-up cache eviction"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-04-10
 updated: 2026-04-10
