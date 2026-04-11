@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  AccessibilityInfo,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -148,6 +149,25 @@ export default function CoachChat({
   const scrollRef = useRef<ScrollView>(null);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<TextInput>(null);
+  const prevStreamingRef = useRef(false);
+
+  // Accessibility announcements for streaming state
+  useEffect(() => {
+    const wasStreaming = prevStreamingRef.current;
+    prevStreamingRef.current = isStreaming;
+
+    if (isStreaming && !wasStreaming) {
+      // Streaming just started
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility("Coach is thinking...");
+      }
+    } else if (!isStreaming && wasStreaming) {
+      // Streaming just finished
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility("Coach responded");
+      }
+    }
+  }, [isStreaming]);
 
   const { data: messages } = useChatMessages(conversationId);
   const {
@@ -342,27 +362,33 @@ export default function CoachChat({
         )}
 
         {/* Streaming assistant response */}
-        {isStreaming && streamingContent && (
-          <ChatBubble role="assistant" content={streamingContent} />
-        )}
+        <View
+          accessibilityLiveRegion={
+            Platform.OS === "android" ? "polite" : undefined
+          }
+        >
+          {isStreaming && streamingContent && (
+            <ChatBubble role="assistant" content={streamingContent} />
+          )}
 
-        {/* Streaming blocks */}
-        {streamBlocks.map((block, i) => (
-          <BlockRenderer
-            key={`stream-block-${i}`}
-            block={block}
-            onAction={handleBlockAction}
-            onQuickReply={handleQuickReply}
-            onCommitmentAccept={handleCommitmentAccept}
-          />
-        ))}
+          {/* Streaming blocks */}
+          {streamBlocks.map((block, i) => (
+            <BlockRenderer
+              key={`stream-block-${i}`}
+              block={block}
+              onAction={handleBlockAction}
+              onQuickReply={handleQuickReply}
+              onCommitmentAccept={handleCommitmentAccept}
+            />
+          ))}
 
-        {/* Typing indicator */}
-        {isStreaming && !streamingContent && (
-          <View style={styles.typing}>
-            <ActivityIndicator size="small" color={theme.textSecondary} />
-          </View>
-        )}
+          {/* Typing indicator */}
+          {isStreaming && !streamingContent && (
+            <View style={styles.typing}>
+              <ActivityIndicator size="small" color={theme.textSecondary} />
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       {/* Input bar */}
