@@ -1379,8 +1379,8 @@ export const mealSuggestionCacheRelations = relations(
   }),
 );
 
-// Coach response cache — universal cache for predefined coach questions
-// Only used for questions WITHOUT screenContext (universal answers like fasting tips)
+// Coach response cache — per-user cache for predefined coach questions
+// Only used for questions WITHOUT screenContext; keyed by userId + question hash
 export const coachResponseCache = pgTable(
   "coach_response_cache",
   {

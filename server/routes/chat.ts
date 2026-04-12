@@ -520,12 +520,15 @@ export function register(app: Express): void {
               }
             }
 
-            // Check cache for predefined questions (no screenContext = universal answer)
+            // Check cache for predefined questions (no screenContext, first message)
+            // Hash includes userId so personalized responses are never shared cross-user
             const isCacheable =
               !parsed.data.screenContext && history.length <= 1;
             const questionHash = isCacheable
               ? createHash("sha256")
-                  .update(parsed.data.content.trim().toLowerCase())
+                  .update(
+                    `${req.userId}:${parsed.data.content.trim().toLowerCase()}`,
+                  )
                   .digest("hex")
                   .slice(0, 32)
               : null;

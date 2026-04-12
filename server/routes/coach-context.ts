@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { checkPremiumFeature, handleRouteError } from "./_helpers";
+import { crudRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 
@@ -36,6 +37,7 @@ export function register(app: Express): void {
   app.get(
     "/api/coach/context",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -102,6 +104,7 @@ export function register(app: Express): void {
   app.post(
     "/api/coach/warm-up",
     requireAuth,
+    crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(

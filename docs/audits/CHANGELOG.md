@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-04-12 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit — ~45 commits, ~16K LOC since audit #9 (Coach Pro, serving adjuster, UI interactions, favourites deferred items, accessibility)
+- **Manifest:** [docs/audits/2026-04-12-full.md](2026-04-12-full.md)
+- **Findings:** 1 critical, 4 high, 11 medium, 13 low (29 total, 41 raw from 6 agents)
+- **Resolved:** 5 verified, 24 deferred (6 todos), 0 false-positive
+- **Commit:** `[pending]`
+- **Note:** Key fixes: userId added to coach response cache hash (cross-user data leak), rate limiters on coach-context endpoints, client SSE error event handling (isStreaming stuck), add_to_meal_plan tool schema/handler alignment, followUpDate ISO date validation. 24 items deferred to 6 todos: service extraction, test coverage, notebook lifecycle, streaming perf, hardening, type cleanup. Coach Pro was source of 27/29 findings.
+
 ## 2026-04-09 — Full Codebase Audit
 
 - **Trigger:** Periodic full audit — ~30 commits, ~13K LOC since audit #8 (favourites, recipe remix, cooking session consolidation, storage facade re-exports, todo skill)
