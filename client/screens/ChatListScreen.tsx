@@ -14,6 +14,7 @@ import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
+import { SwipeableRow } from "@/components/SwipeableRow";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -157,55 +158,64 @@ export default function ChatListScreen() {
               ).duration(300)
         }
       >
-        <Pressable
-          onPress={() => handleOpenChat(item.id)}
-          onLongPress={() => handleDeleteChat(item.id, item.title)}
-          delayLongPress={500}
-          style={({ pressed }) => [
-            styles.conversationItem,
-            {
-              backgroundColor: pressed
-                ? withOpacity(theme.text, 0.04)
-                : "transparent",
-              borderBottomColor: theme.border,
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={`Chat: ${item.title}. ${formatRelativeTime(item.updatedAt)}`}
-          accessibilityHint="Long press to delete"
+        <SwipeableRow
+          rightAction={{
+            icon: "trash-2",
+            label: "Delete",
+            backgroundColor: theme.error,
+            onAction: () => handleDeleteChat(item.id, item.title),
+          }}
         >
-          <View
-            style={[
-              styles.chatIcon,
-              { backgroundColor: withOpacity(theme.link, 0.12) },
+          <Pressable
+            onPress={() => handleOpenChat(item.id)}
+            onLongPress={() => handleDeleteChat(item.id, item.title)}
+            delayLongPress={500}
+            style={({ pressed }) => [
+              styles.conversationItem,
+              {
+                backgroundColor: pressed
+                  ? withOpacity(theme.text, 0.04)
+                  : "transparent",
+                borderBottomColor: theme.border,
+              },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Chat: ${item.title}. ${formatRelativeTime(item.updatedAt)}`}
+            accessibilityHint="Swipe left to delete, or long press"
           >
+            <View
+              style={[
+                styles.chatIcon,
+                { backgroundColor: withOpacity(theme.link, 0.12) },
+              ]}
+            >
+              <Feather
+                name={isRecipeMode ? "book-open" : "message-circle"}
+                size={18}
+                color={theme.link}
+                accessible={false}
+              />
+            </View>
+            <View style={styles.conversationContent}>
+              <ThemedText
+                type="body"
+                style={styles.conversationTitle}
+                numberOfLines={1}
+              >
+                {item.title}
+              </ThemedText>
+              <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+                {formatRelativeTime(item.updatedAt)}
+              </ThemedText>
+            </View>
             <Feather
-              name={isRecipeMode ? "book-open" : "message-circle"}
+              name="chevron-right"
               size={18}
-              color={theme.link}
+              color={theme.textSecondary}
               accessible={false}
             />
-          </View>
-          <View style={styles.conversationContent}>
-            <ThemedText
-              type="body"
-              style={styles.conversationTitle}
-              numberOfLines={1}
-            >
-              {item.title}
-            </ThemedText>
-            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
-              {formatRelativeTime(item.updatedAt)}
-            </ThemedText>
-          </View>
-          <Feather
-            name="chevron-right"
-            size={18}
-            color={theme.textSecondary}
-            accessible={false}
-          />
-        </Pressable>
+          </Pressable>
+        </SwipeableRow>
       </Animated.View>
     ),
     [handleOpenChat, handleDeleteChat, theme, reducedMotion, isRecipeMode],

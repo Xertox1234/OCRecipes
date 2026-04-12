@@ -262,6 +262,15 @@ export default function PantryScreen() {
               backgroundColor: theme.error,
               onAction: () => handleDelete(item.id),
             }}
+            leftAction={{
+              icon: "check",
+              label: "Used",
+              backgroundColor: theme.success,
+              onAction: () => {
+                haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+                deleteMutation.mutate(item.id);
+              },
+            }}
           >
             <PantryItemRow item={item} onDelete={handleDelete} />
           </SwipeableRow>
