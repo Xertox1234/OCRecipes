@@ -15,11 +15,17 @@ import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { EmptyState } from "@/components/EmptyState";
 import { SavedItemCard } from "@/components/SavedItemCard";
+import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox, SkeletonList } from "@/components/SkeletonLoader";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { useSavedItems, useSavedItemCount } from "@/hooks/useSavedItems";
+import {
+  useSavedItems,
+  useSavedItemCount,
+  useDeleteSavedItem,
+} from "@/hooks/useSavedItems";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
@@ -100,6 +106,9 @@ export default function SavedItemsScreen() {
   const { reducedMotion } = useAccessibility();
   const { isPremium, features } = usePremiumContext();
 
+  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const deleteMutation = useDeleteSavedItem();
+
   const {
     data: savedItems,
     isLoading,
@@ -110,6 +119,19 @@ export default function SavedItemsScreen() {
 
   const itemCount = countData?.count ?? 0;
   const limit = isPremium ? null : features.maxSavedItems;
+
+  const handleSwipeDelete = useCallback(
+    (item: SavedItem) => {
+      confirm({
+        title: "Delete Item",
+        message: `Delete "${item.title}"?`,
+        confirmLabel: "Delete",
+        destructive: true,
+        onConfirm: () => deleteMutation.mutate(item.id),
+      });
+    },
+    [confirm, deleteMutation],
+  );
 
   const renderItem = useCallback(
     ({ item, index }: { item: SavedItem; index: number }) => (
@@ -122,10 +144,19 @@ export default function SavedItemsScreen() {
               ).duration(300)
         }
       >
-        <SavedItemCard item={item} />
+        <SwipeableRow
+          rightAction={{
+            icon: "trash-2",
+            label: "Delete",
+            backgroundColor: theme.error,
+            onAction: () => handleSwipeDelete(item),
+          }}
+        >
+          <SavedItemCard item={item} />
+        </SwipeableRow>
       </Animated.View>
     ),
-    [reducedMotion],
+    [reducedMotion, theme, handleSwipeDelete],
   );
 
   const renderSeparator = useCallback(
@@ -201,6 +232,7 @@ export default function SavedItemsScreen() {
         showsVerticalScrollIndicator={false}
         {...FLATLIST_DEFAULTS}
       />
+      <ConfirmationModal />
     </ThemedView>
   );
 }
