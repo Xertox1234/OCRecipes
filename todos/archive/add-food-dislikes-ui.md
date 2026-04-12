@@ -1,6 +1,6 @@
 ---
 title: "Add food dislikes UI to onboarding and dietary profile"
-status: backlog
+status: done
 priority: medium
 created: 2026-04-08
 labels: [ui, onboarding, profile]
@@ -18,11 +18,11 @@ The schema field was added anticipating a dislikes input, but the corresponding 
 
 ## Acceptance Criteria
 
-- [ ] Onboarding flow includes a food dislikes input (e.g., tag/chip input on `PreferencesScreen` or a dedicated screen)
-- [ ] `EditDietaryProfileScreen` includes a food dislikes editor
-- [ ] Dislikes are saved to `userProfiles.foodDislikes` as `string[]`
-- [ ] `buildDietaryContext` output includes dislikes when non-empty (already implemented)
-- [ ] Profile hash invalidates suggestion cache when dislikes change (already implemented)
+- [x] Onboarding flow includes a food dislikes input (e.g., tag/chip input on `PreferencesScreen` or a dedicated screen)
+- [x] `EditDietaryProfileScreen` includes a food dislikes editor
+- [x] Dislikes are saved to `userProfiles.foodDislikes` as `string[]`
+- [x] `buildDietaryContext` output includes dislikes when non-empty (already implemented)
+- [x] Profile hash invalidates suggestion cache when dislikes change (already implemented)
 
 ## Implementation Notes
 
@@ -41,3 +41,6 @@ The schema field was added anticipating a dislikes input, but the corresponding 
 
 ### 2026-04-08
 - Identified during code review of todo batch session — `foodDislikes` schema field has no write path
+
+### 2026-04-12
+- All acceptance criteria already satisfied in codebase — UI exists in both PreferencesScreen (onboarding) and EditDietaryProfileScreen, COMMON_DISLIKES constant populated, toggleDislike wired in useDietaryProfileForm, buildDietaryContext reads foodDislikes, profile hash includes foodDislikes. Archived as already complete.
