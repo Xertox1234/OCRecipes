@@ -5,31 +5,7 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { checkPremiumFeature, handleRouteError } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-
-// In-memory warm-up cache: userId → { warmUpId, messages, preparedAt }
-const warmUpCache = new Map<
-  string,
-  {
-    warmUpId: string;
-    messages: { role: string; content: string }[];
-    preparedAt: number;
-  }
->();
-
-const WARM_UP_TTL_MS = 30_000;
-
-// Periodic sweep to remove expired warm-up entries (every 60s).
-// Entries expire after WARM_UP_TTL_MS but are only cleaned on consumption;
-// this sweep catches entries from users who never sent the final message.
-const warmUpSweepInterval = setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of warmUpCache) {
-    if (now - entry.preparedAt > WARM_UP_TTL_MS) {
-      warmUpCache.delete(key);
-    }
-  }
-}, 60_000) as unknown as NodeJS.Timeout;
-warmUpSweepInterval.unref();
+import { setWarmUp } from "../services/coach-warm-up";
 
 export function register(app: Express): void {
   // GET /api/coach/context
@@ -151,13 +127,7 @@ export function register(app: Express): void {
 
         const warmUpId = `${req.userId}-${Date.now()}`;
 
-        // Evict existing warm-up for this user
-        warmUpCache.delete(req.userId);
-        warmUpCache.set(req.userId, {
-          warmUpId,
-          messages: prepared,
-          preparedAt: Date.now(),
-        });
+        setWarmUp(req.userId, warmUpId, prepared);
 
         res.json({ warmUpId });
       } catch (error) {
@@ -165,19 +135,4 @@ export function register(app: Express): void {
       }
     },
   );
-}
-
-// Export for use by chat route
-export function consumeWarmUp(
-  userId: string,
-  warmUpId: string,
-): { role: string; content: string }[] | null {
-  const cached = warmUpCache.get(userId);
-  if (!cached || cached.warmUpId !== warmUpId) return null;
-  if (Date.now() - cached.preparedAt > WARM_UP_TTL_MS) {
-    warmUpCache.delete(userId);
-    return null;
-  }
-  warmUpCache.delete(userId);
-  return cached.messages;
 }

@@ -303,19 +303,29 @@ export async function* generateCoachProResponse(
       tool_calls: toolCallsArray,
     });
 
-    // Execute each tool and add results
-    for (const tc of toolCallsArray) {
-      let result: unknown;
-      try {
+    // Execute all tool calls in parallel — they are independent
+    const toolResults = await Promise.allSettled(
+      toolCallsArray.map(async (tc) => {
         const args = JSON.parse(tc.function.arguments);
-        result = await executeToolCall(tc.function.name, args, userId);
-      } catch (error) {
+        return executeToolCall(tc.function.name, args, userId);
+      }),
+    );
+
+    // Add results to conversation in the same order as tool calls
+    for (let i = 0; i < toolCallsArray.length; i++) {
+      const tc = toolCallsArray[i];
+      const settled = toolResults[i];
+
+      let result: unknown;
+      if (settled.status === "fulfilled") {
+        result = settled.value;
+      } else {
         log.warn(
-          { err: toError(error), tool: tc.function.name },
+          { err: toError(settled.reason), tool: tc.function.name },
           "Tool call failed",
         );
         result = {
-          error: `Tool ${tc.function.name} failed: ${toError(error).message}`,
+          error: `Tool ${tc.function.name} failed: ${toError(settled.reason).message}`,
         };
       }
 
