@@ -410,11 +410,11 @@ export async function executeToolCall(
       return {
         proposal: true,
         action: "add_meal_plan",
-        recipeId: Number(args.recipeId ?? 0),
         plannedDate: String(
           args.plannedDate ?? new Date().toISOString().split("T")[0],
         ),
         mealType: String(args.mealType ?? "lunch"),
+        notes: args.notes ? String(args.notes) : undefined,
         message: "I've prepared this meal plan addition. Please confirm below.",
       };
     }

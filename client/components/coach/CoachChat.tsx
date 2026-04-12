@@ -96,6 +96,10 @@ async function sendMessageStreaming(
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
+              if (data.error) {
+                onDone();
+                return;
+              }
               if (data.content) {
                 accumulated += data.content;
                 onChunk(accumulated);
