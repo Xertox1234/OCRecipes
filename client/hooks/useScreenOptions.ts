@@ -3,6 +3,7 @@ import { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 
 import { useTheme } from "@/hooks/useTheme";
+import { useAccessibility } from "@/hooks/useAccessibility";
 
 interface UseScreenOptionsParams {
   transparent?: boolean;
@@ -12,6 +13,7 @@ export function useScreenOptions({
   transparent = true,
 }: UseScreenOptionsParams = {}): NativeStackNavigationOptions {
   const { theme, isDark } = useTheme();
+  const { reducedMotion } = useAccessibility();
 
   return {
     headerTitleAlign: "center",
@@ -31,5 +33,7 @@ export function useScreenOptions({
     contentStyle: {
       backgroundColor: theme.backgroundRoot,
     },
+    // Fall back to no animation when reduced motion is preferred
+    ...(reducedMotion ? { animation: "none" } : {}),
   };
 }

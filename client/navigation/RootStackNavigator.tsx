@@ -26,6 +26,7 @@ import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuthContext } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
+import { useAccessibility } from "@/hooks/useAccessibility";
 import { Colors } from "@/constants/theme";
 import type { PhotoIntent } from "@shared/constants/preparation";
 import type { MenuAnalysisItem } from "@/hooks/useMenuScan";
@@ -144,6 +145,7 @@ export default function RootStackNavigator() {
   const screenOptions = useScreenOptions();
   const { isAuthenticated, isLoading, user } = useAuthContext();
   const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
 
   if (isLoading) {
     return (
@@ -183,7 +185,9 @@ export default function RootStackNavigator() {
               headerShown: false,
               // fullScreenModal intentional — transparentModal had rendering issues
               presentation: "fullScreenModal",
-              animation: "slide_from_bottom",
+              // fade_from_bottom gives a scale-up + fade effect, reinforcing
+              // spatial continuity from the FAB position
+              animation: reducedMotion ? "none" : "fade_from_bottom",
             }}
           />
           <Stack.Screen
@@ -208,6 +212,8 @@ export default function RootStackNavigator() {
             options={{
               headerTitle: "Meal Analysis",
               presentation: "modal",
+              // Cross-fade from PhotoIntent reinforces the "processing" transition
+              animation: reducedMotion ? "none" : "fade",
             }}
           />
           <Stack.Screen
@@ -232,7 +238,7 @@ export default function RootStackNavigator() {
             options={{
               headerShown: false,
               presentation: "modal",
-              animation: "slide_from_bottom",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
               gestureEnabled: true,
               fullScreenGestureEnabled: true,
             }}
@@ -275,7 +281,7 @@ export default function RootStackNavigator() {
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
-              animation: "slide_from_bottom",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
             }}
           />
           <Stack.Screen
@@ -292,7 +298,7 @@ export default function RootStackNavigator() {
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
-              animation: "slide_from_bottom",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
             }}
           />
           <Stack.Screen
@@ -333,7 +339,7 @@ export default function RootStackNavigator() {
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
-              animation: "slide_from_bottom",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
             }}
           />
           <Stack.Screen
@@ -360,7 +366,7 @@ export default function RootStackNavigator() {
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
-              animation: "slide_from_bottom",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
             }}
           />
           <Stack.Screen
@@ -369,7 +375,7 @@ export default function RootStackNavigator() {
             options={{
               headerShown: false,
               presentation: "fullScreenModal",
-              animation: "slide_from_bottom",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
             }}
           />
 

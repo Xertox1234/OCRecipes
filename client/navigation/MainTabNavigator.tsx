@@ -78,12 +78,15 @@ function AnimatedTabIcon({
 
 export default function MainTabNavigator() {
   const { theme, isDark } = useTheme();
+  const { reducedMotion } = useAccessibility();
 
   return (
     <View style={styles.container}>
       <Tab.Navigator
         initialRouteName="HomeTab"
         screenOptions={{
+          // Cross-fade between tabs instead of instant swap
+          animation: reducedMotion ? "none" : "fade",
           tabBarActiveTintColor: theme.link,
           tabBarInactiveTintColor: theme.tabIconDefault,
           tabBarStyle: {
