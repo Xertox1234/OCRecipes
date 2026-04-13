@@ -602,3 +602,177 @@ function ToastProvider({ children }: { children: ReactNode }) {
 
 - `client/context/ToastContext.tsx` — provider implementation
 - `client/components/Toast.tsx` — animated toast with swipe-to-dismiss and auto-dismiss
+
+### Trigger-Once Success Animation Hooks
+
+For brief, non-blocking visual feedback on user actions (food logged, item favorited, barcode scanned), use a hook that returns `{ trigger, animatedStyle }`. The parent calls `trigger()` and applies `animatedStyle` — no state management needed.
+
+Two variants:
+
+**Flash** — brief opacity pulse on a background overlay (e.g., green flash on scan success):
+
+```typescript
+// client/hooks/useSuccessAnimation.ts
+export function useSuccessFlash(color: string, duration = 300) {
+  const opacity = useSharedValue(0);
+  const reduced = useReducedMotion();
+
+  const trigger = useCallback(() => {
+    if (reduced) return;
+    opacity.value = withSequence(
+      withTiming(0.15, { duration: duration / 2 }),
+      withTiming(0, { duration: duration / 2 }),
+    );
+  }, [reduced, duration]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: color,
+    opacity: opacity.value,
+  }));
+
+  return { trigger, animatedStyle };
+}
+```
+
+**Pop** — scale bounce on an icon (e.g., heart icon on favourite):
+
+```typescript
+export function useSuccessPop(maxScale = 1.4) {
+  const scale = useSharedValue(1);
+  const reduced = useReducedMotion();
+
+  const trigger = useCallback(() => {
+    if (reduced) return;
+    scale.value = withSequence(
+      withSpring(maxScale, successPopConfig),
+      withSpring(1, successPopConfig),
+    );
+  }, [reduced, maxScale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return { trigger, animatedStyle };
+}
+```
+
+**Key elements:**
+
+1. **`trigger` is stable** — memoized with `useCallback`, safe as an effect dependency
+2. **GPU-bound** — only `opacity` and `transform` properties, no layout recalculation
+3. **≤300ms duration** — fast enough to not block interaction
+4. **`reducedMotion` guard** — `trigger()` is a no-op when reduced motion is active
+5. **Parent applies style** — `<Animated.View style={[styles.overlay, animatedStyle]} />`
+
+**When to use:** Inline success feedback on the triggering element (scan reticle, favourite button, log confirmation). Use _instead of_ distant toasts for actions where spatial feedback matters.
+
+**When NOT to use:** Error feedback (use Toast), multi-step confirmation flows, or animations that should persist (use state-driven animation instead).
+
+**References:**
+
+- `client/hooks/useSuccessAnimation.ts` — `useSuccessFlash`, `useSuccessPop`
+- `client/constants/animations.ts` — `successPopConfig`, `successFlashConfig`
+- `client/components/AnimatedCheckmark.tsx` — self-drawing SVG checkmark (SVG `strokeDashoffset` variant)
+- `client/screens/ScanScreen.tsx` — green flash on barcode scan
+- `client/components/RecipeActionBar.tsx` — heart pop on favourite
+
+### Scroll-Linked Collapsing Headers
+
+For screens with large headers that consume vertical space, collapse them based on scroll position using `useAnimatedScrollHandler`. Unlike tap-driven expand/collapse (see "Collapsible Section" pattern), this is driven continuously by scroll offset.
+
+```typescript
+// client/hooks/useScrollLinkedHeader.ts
+export function useScrollLinkedHeader(threshold = 100) {
+  const scrollY = useSharedValue(0);
+  const reduced = useReducedMotion();
+  const [isBarVisible, setIsBarVisible] = useState(false);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      scrollY.value = event.contentOffset.y;
+      // Sync JS-side state for pointerEvents toggling
+      runOnJS(setIsBarVisible)(event.contentOffset.y > threshold * 0.8);
+    },
+  });
+
+  const headerStyle = useAnimatedStyle(() => {
+    if (reduced) return {}; // Stay fully expanded
+    return {
+      height: interpolate(
+        scrollY.value,
+        [0, threshold],
+        [EXPANDED_HEIGHT, 0],
+        Extrapolation.CLAMP,
+      ),
+      opacity: interpolate(
+        scrollY.value,
+        [0, threshold * 0.6],
+        [1, 0],
+        Extrapolation.CLAMP,
+      ),
+    };
+  });
+
+  const barStyle = useAnimatedStyle(() => {
+    if (reduced) return { opacity: 0 };
+    return {
+      opacity: interpolate(
+        scrollY.value,
+        [threshold * 0.6, threshold],
+        [0, 1],
+        Extrapolation.CLAMP,
+      ),
+    };
+  });
+
+  return { scrollHandler, headerStyle, barStyle, isBarVisible };
+}
+```
+
+**Usage in a screen:**
+
+```tsx
+const { scrollHandler, headerStyle, barStyle, isBarVisible } =
+  useScrollLinkedHeader(120);
+
+<View>
+  {/* Collapsed bar — always rendered, opacity-driven */}
+  <Animated.View
+    style={[styles.collapsedBar, barStyle]}
+    pointerEvents={isBarVisible ? "auto" : "none"}
+  >
+    <CalorieSummaryCompact />
+  </Animated.View>
+
+  <Animated.ScrollView onScroll={scrollHandler} scrollEventThrottle={16}>
+    {/* Expandable header — collapses as user scrolls */}
+    <Animated.View style={headerStyle}>
+      <DailySummaryHeader />
+    </Animated.View>
+
+    {/* Main content */}
+    <ContentList />
+  </Animated.ScrollView>
+</View>;
+```
+
+**Key elements:**
+
+1. **`scrollEventThrottle={16}`** — 60fps scroll event delivery (required for smooth animation)
+2. **`Extrapolation.CLAMP`** — prevents over-collapse or negative values
+3. **`runOnJS(setIsBarVisible)`** — bridges UI thread scroll offset to JS thread for `pointerEvents`
+4. **`pointerEvents="none"`** — prevents invisible collapsed bar from intercepting touches
+5. **Two-phase opacity** — header fades out before full collapse, bar fades in after partial collapse, avoiding a "gap" where neither is visible
+6. **`reducedMotion`** — header stays fully expanded, bar stays hidden
+
+**When to use:** Screens with large fixed headers where content scrolls vertically (Home, Profile, Recipe Browser).
+
+**When NOT to use:** Screens with horizontal scroll (swipe conflicts), screens with very short content (nothing to scroll), or screens where the header contains interactive controls that must always be visible.
+
+**References:**
+
+- `client/hooks/useScrollLinkedHeader.ts` — reusable hook
+- `client/screens/HomeScreen.tsx` — DailySummaryHeader collapse
+- `client/screens/ProfileScreen.tsx` — ProfileCard collapse
+- `client/screens/meal-plan/RecipeBrowserScreen.tsx` — filter chip collapse

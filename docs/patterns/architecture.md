@@ -354,6 +354,66 @@ export async function* generateCoachResponse(
 
 **Reference:** `server/routes/chat.ts`, `server/services/nutrition-coach.ts`
 
+### Typed SSE Event Generators
+
+When a service needs to yield multiple event types (not just text chunks), use a discriminated union as the generator's yield type. The route handler switches on `event.type` to serialize each event differently.
+
+```typescript
+// Service: typed event generator
+type CoachEvent =
+  | { type: "content"; content: string }
+  | { type: "blocks"; blocks: CoachBlock[] };
+
+export async function* handleCoachChat(
+  params: CoachChatParams,
+): AsyncGenerator<CoachEvent> {
+  // ... orchestration logic ...
+  for await (const chunk of generateCoachProResponse(
+    messages,
+    context,
+    userId,
+  )) {
+    yield { type: "content", content: chunk };
+  }
+  if (parsedBlocks.length > 0) {
+    yield { type: "blocks", blocks: parsedBlocks };
+  }
+}
+```
+
+```typescript
+// Route handler: consumes typed events
+for await (const event of handleCoachChat(params)) {
+  if (aborted) break;
+  const eventJson = JSON.stringify(
+    event.type === "content"
+      ? { content: event.content }
+      : { blocks: event.blocks },
+  );
+  responseBytes += eventJson.length;
+  if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
+    aborted = true;
+    break;
+  }
+  res.write(`data: ${eventJson}\n\n`);
+}
+```
+
+**Key elements:**
+
+1. **Discriminated union** — `type` field makes the generator's contract explicit and type-safe
+2. **Route stays thin** — only serialization and I/O; no orchestration logic
+3. **Byte guard at the route layer** — the service doesn't know about SSE limits, the route enforces them
+4. **`isAborted` callback** — pass `() => aborted` to the service so it can check client disconnects without importing Express types
+
+**When to use:** Service extraction where the streamed response includes both content and structured data (blocks, tool results, metadata).
+
+**When NOT to use:** Simple text-only streaming — use `AsyncGenerator<string>` (see pattern above).
+
+**Extraction safety:** When moving cache logic from a route to a service, ensure all context-dependent values (e.g., `userId` in cache keys) are threaded through as parameters. Cache key regressions are silent — the code runs fine, but produces incorrect results.
+
+**Reference:** `server/services/coach-pro-chat.ts`, `server/routes/chat.ts`
+
 ## Service Patterns
 
 ### Statistics Computation from Log Data
