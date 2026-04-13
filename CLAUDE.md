@@ -272,13 +272,14 @@ The app uses `react-native-vision-camera` which requires native code compilation
    Backend will run on `http://localhost:3000`
 
 2. **Configure API URL**
-   Update `.env` to use your Mac's local IP (simulator can access this):
+   The simulator and physical devices cannot reach `localhost` — they need your Mac's LAN IP. **This IP changes when you switch networks**, so always verify before starting:
 
    ```bash
-   EXPO_PUBLIC_DOMAIN=http://192.168.137.175:3000
+   # Check current IP and update .env in one step:
+   CURRENT_IP=$(ipconfig getifaddr en0) && echo "Current IP: $CURRENT_IP" && sed -i '' "s|EXPO_PUBLIC_DOMAIN=.*|EXPO_PUBLIC_DOMAIN=http://$CURRENT_IP:3000|" .env && grep EXPO_PUBLIC_DOMAIN .env
    ```
 
-   To find your IP: `ipconfig getifaddr en0`
+   If the IP changed, you must restart Metro with `--clear` for the new value to take effect (see step 3).
 
 3. **Build & Launch Development Client**
    ```bash
@@ -292,9 +293,12 @@ The app uses `react-native-vision-camera` which requires native code compilation
 
 ### Subsequent Runs
 
-After the first build, you can launch faster:
+After the first build, you can launch faster. **Always verify the IP first** — it changes when you switch networks:
 
 ```bash
+# Step 0: Verify IP (ALWAYS do this first)
+CURRENT_IP=$(ipconfig getifaddr en0) && sed -i '' "s|EXPO_PUBLIC_DOMAIN=.*|EXPO_PUBLIC_DOMAIN=http://$CURRENT_IP:3000|" .env && echo "API URL: http://$CURRENT_IP:3000"
+
 # Terminal 1: Backend
 npm run server:dev
 
@@ -411,19 +415,17 @@ The app requires a physical device for full camera functionality testing. **Your
    - If it shows "No development servers found":
      - Ensure iPhone and Mac are on **same WiFi network**
      - Tap **"Enter URL manually"**
-     - Enter: `http://YOUR_MAC_IP:8081` (e.g., `http://192.168.137.175:8081`)
+     - Enter: `http://YOUR_MAC_IP:8081` (run `ipconfig getifaddr en0` to find it)
      - Tap **Connect**
-
-4. **Find your Mac's IP** (if needed):
-   ```bash
-   ifconfig | grep "inet " | grep -v 127.0.0.1
-   ```
 
 ### Subsequent Development
 
 After first install, **USB cable is NOT required**. Just ensure both devices are on same WiFi:
 
 ```bash
+# Step 0: Verify IP (ALWAYS do this first — IP changes when you switch networks)
+CURRENT_IP=$(ipconfig getifaddr en0) && sed -i '' "s|EXPO_PUBLIC_DOMAIN=.*|EXPO_PUBLIC_DOMAIN=http://$CURRENT_IP:3000|" .env && echo "API URL: http://$CURRENT_IP:3000"
+
 # Terminal 1: Backend (MUST start this first!)
 npm run server:dev
 # Wait for: "express server serving on port 3000"
@@ -438,15 +440,15 @@ npx expo start --dev-client --lan --clear
 1. Open the OCRecipes app
 2. If it shows "No development servers found":
    - Tap **"Enter URL manually"**
-   - Enter: `http://192.168.137.175:8081`
+   - Enter: `http://YOUR_MAC_IP:8081` (run `ipconfig getifaddr en0` to find it)
    - Tap **Connect**
-3. App should load and connect to backend at `http://192.168.137.175:3000`
+3. App should load and connect to the backend
 
 **Troubleshooting:**
 
 - If login fails with "Network request failed": The backend server isn't running or isn't reachable
   - Verify backend is running: `curl http://localhost:3000/api/health` should return `{"status":"ok"}`
-  - Check `.env` has correct IP: `EXPO_PUBLIC_DOMAIN=http://192.168.137.175:3000`
+  - Check `.env` IP matches current network: `ipconfig getifaddr en0` then compare with `grep EXPO_PUBLIC_DOMAIN .env`
   - Restart Metro with `--clear` flag to reload environment variables
 - If app can't connect to Metro: Both devices must be on same WiFi network
 - To force reload on phone: Shake device → tap "Reload"
@@ -466,6 +468,6 @@ npx expo start --dev-client --lan
 - **USB cable is required** for the initial build only
 - After installation, you can develop wirelessly (phone and Mac on same WiFi)
 - **ALWAYS start backend server before Metro bundler** - Metro needs the backend running
+- **ALWAYS verify `EXPO_PUBLIC_DOMAIN` IP** before launching — stale IPs cause silent API failures (skeleton placeholders, no data loading). Run: `CURRENT_IP=$(ipconfig getifaddr en0) && sed -i '' "s|EXPO_PUBLIC_DOMAIN=.*|EXPO_PUBLIC_DOMAIN=http://$CURRENT_IP:3000|" .env`
 - QR codes from `npx expo start` **do NOT work** - the app needs the native camera module
 - Always use `--dev-client` flag, NOT Expo Go
-- Your Mac IP is: `192.168.137.175` (update in `.env` if it changes)
