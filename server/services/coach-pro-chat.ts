@@ -235,7 +235,7 @@ export async function* handleCoachChat(
     yield { type: "blocks", blocks };
   }
 
-  // Fire-and-forget notebook extraction for Coach Pro
+  // Fire-and-forget notebook extraction + archival for Coach Pro
   if (isCoachPro && fullResponse && !isAborted()) {
     fireAndForget(
       "coach-notebook-extraction",
@@ -262,6 +262,8 @@ export async function* handleCoachChat(
             })),
           );
         }
+        // Archive notebook entries older than 30 days to bound growth
+        await storage.archiveOldEntries(userId, 30);
       })(),
     );
   }

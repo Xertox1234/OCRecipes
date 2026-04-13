@@ -145,6 +145,21 @@ describe("Coach Notebook Storage", () => {
       expect(result).toEqual([]);
     });
 
+    it("returns at most 100 entries (bounded query)", async () => {
+      // Insert 105 active entries via batch
+      const entries = Array.from({ length: 105 }, (_, i) => ({
+        userId: testUser.id,
+        type: "insight" as const,
+        content: `Entry ${i}`,
+        status: "active" as const,
+      }));
+      await createNotebookEntries(entries);
+
+      const result = await getActiveNotebookEntries(testUser.id);
+
+      expect(result).toHaveLength(100);
+    });
+
     it("filters by type when types are provided", async () => {
       await createNotebookEntry({
         userId: testUser.id,

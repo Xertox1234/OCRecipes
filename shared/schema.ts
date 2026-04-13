@@ -1433,6 +1433,7 @@ export const coachNotebook = pgTable(
       table.userId,
       table.type,
       table.status,
+      table.followUpDate,
     ),
     userFollowUpIdx: index("coach_notebook_user_follow_up_idx").on(
       table.userId,

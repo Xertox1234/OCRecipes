@@ -25,7 +25,8 @@ export async function getActiveNotebookEntries(
     .select()
     .from(coachNotebook)
     .where(and(...conditions))
-    .orderBy(desc(coachNotebook.updatedAt));
+    .orderBy(desc(coachNotebook.updatedAt))
+    .limit(100);
 }
 
 export async function createNotebookEntry(
