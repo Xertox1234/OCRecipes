@@ -10,6 +10,11 @@ import {
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, or, ilike } from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
+import {
+  addToIndex,
+  removeFromIndex,
+  communityToSearchable,
+} from "../services/recipe-search";
 
 // ============================================================================
 // COMMUNITY RECIPES
@@ -85,6 +90,9 @@ export async function createCommunityRecipe(
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
 ): Promise<CommunityRecipe> {
   const [recipe] = await db.insert(communityRecipes).values(data).returning();
+  if (recipe.isPublic) {
+    addToIndex(communityToSearchable(recipe));
+  }
   return recipe;
 }
 
@@ -98,7 +106,7 @@ export async function createRecipeWithLimitCheck(
   dailyLimit: number,
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
 ): Promise<CommunityRecipe | null> {
-  return db.transaction(async (tx) => {
+  const recipe = await db.transaction(async (tx) => {
     // Check daily limit inside transaction
     const { startOfDay, endOfDay } = getDayBounds(new Date());
     const result = await tx
@@ -118,16 +126,26 @@ export async function createRecipeWithLimitCheck(
     }
 
     // Create recipe
-    const [recipe] = await tx.insert(communityRecipes).values(data).returning();
+    const [created] = await tx
+      .insert(communityRecipes)
+      .values(data)
+      .returning();
 
     // Log the generation
     await tx.insert(recipeGenerationLog).values({
       userId,
-      recipeId: recipe.id,
+      recipeId: created.id,
     });
 
-    return recipe;
+    return created;
   });
+
+  // Update search index after transaction commits
+  if (recipe?.isPublic) {
+    addToIndex(communityToSearchable(recipe));
+  }
+
+  return recipe;
 }
 
 export async function updateRecipePublicStatus(
@@ -145,6 +163,13 @@ export async function updateRecipePublicStatus(
       ),
     )
     .returning();
+  if (recipe) {
+    if (recipe.isPublic) {
+      addToIndex(communityToSearchable(recipe));
+    } else {
+      removeFromIndex(`community:${recipe.id}`);
+    }
+  }
   return recipe || undefined;
 }
 
@@ -177,6 +202,24 @@ export async function getFeaturedRecipes(
     .offset(offset);
 }
 
+/**
+ * Load all public community recipes for search index initialization.
+ */
+export async function getAllPublicCommunityRecipes(): Promise<
+  CommunityRecipe[]
+> {
+  return db
+    .select()
+    .from(communityRecipes)
+    .where(
+      and(
+        eq(communityRecipes.isPublic, true),
+        sql`COALESCE(jsonb_array_length(${communityRecipes.instructions}), 0) > 0`,
+      ),
+    )
+    .orderBy(desc(communityRecipes.createdAt));
+}
+
 export async function deleteCommunityRecipe(
   recipeId: number,
   authorId: string,
@@ -199,6 +242,8 @@ export async function deleteCommunityRecipe(
       .where(and(eq(communityRecipes.id, recipeId), ownershipCondition))
       .returning({ id: communityRecipes.id });
     if (result.length === 0) return false;
+
+    removeFromIndex(`community:${recipeId}`);
 
     // Clean up junction rows that referenced this recipe
     await Promise.all([

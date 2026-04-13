@@ -1176,3 +1176,69 @@ if (!parsed.success) {
 - `server/lib/logger.ts` — pino instance, `mixin` for ALS context, `toError()` helper
 - `server/lib/request-context.ts` — AsyncLocalStorage store, `setRequestUserId()`
 - `server/index.ts` — pino-http middleware config, `genReqId`, serializers
+
+### In-Memory Search Index Pattern
+
+When you need fuzzy text search, relevance ranking, or typo tolerance over data you own, use a server-side in-memory search index (e.g., MiniSearch) rather than PostgreSQL `ILIKE` or full-text search. This avoids new infrastructure while providing superior search UX for small-to-medium datasets.
+
+**Structure:**
+
+```
+server/services/recipe-search.ts    — index singleton, normalizers, search execution
+shared/types/recipe-search.ts       — shared SearchableRecipe type
+```
+
+**Key components:**
+
+1. **Normalizer functions** — transform heterogeneous DB types into a common searchable document:
+
+```typescript
+// One normalizer per source
+export function mealPlanToSearchable(
+  recipe: MealPlanRecipe,
+  ingredientNames: string[],
+): SearchableRecipe { ... }
+
+export function communityToSearchable(
+  recipe: CommunityRecipe,
+): SearchableRecipe { ... }
+```
+
+2. **Module-level singleton** — the index and a document store for full retrieval:
+
+```typescript
+let index: MiniSearch<SearchableRecipe> | null = null;
+const documentStore = new Map<string, SearchableRecipe>();
+```
+
+3. **Initialization on server startup** — non-blocking, server starts even if index fails:
+
+```typescript
+// server/routes.ts
+initSearchIndex().catch((err) => {
+  logger.error({ err }, "Failed to initialize search index");
+});
+```
+
+4. **Direct CRUD hooks** — thin function calls from storage layer, not pub/sub:
+
+```typescript
+// In storage functions, after create/update/delete:
+addToIndex(mealPlanToSearchable(created, ingNames));
+removeFromIndex(`personal:${id}`);
+```
+
+5. **No-op guards** — hooks are safe to call before index initialization:
+
+```typescript
+export function addToIndex(doc: SearchableRecipe): void {
+  if (!index) return; // no-op before init
+  // ...
+}
+```
+
+**When to use:** Fuzzy search, typo tolerance, or relevance ranking over data under ~50K documents where you don't want to introduce Elasticsearch/Meilisearch.
+
+**When NOT to use:** Full-text search over 100K+ documents, geospatial queries, or when PostgreSQL `pg_trgm` trigram indexes already meet your needs.
+
+**Reference:** `server/services/recipe-search.ts`, `shared/types/recipe-search.ts`

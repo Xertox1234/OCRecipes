@@ -473,3 +473,64 @@ export function ThemedText({
 **Why:** JSX compiles to `{ maxFontSizeMultiplier: maxScale, ...rest }`. Object spread is left-to-right, so later keys overwrite earlier ones. Without the destructure, a caller passing both `maxScale` and `maxFontSizeMultiplier` (or just the raw prop from old code) gets silent, unpredictable behavior.
 
 **When to apply:** Any component that wraps a React Native primitive and remaps, restricts, or transforms a prop before passing it through.
+
+### Unified Source Normalization
+
+When multiple data sources (different DB tables, external APIs) need to be rendered in a single list, normalize them into a shared type with a `source` discriminator and a prefixed composite ID. This avoids tagged unions and source-specific rendering branches.
+
+```typescript
+// shared/types/recipe-search.ts
+export interface SearchableRecipe {
+  id: string; // "personal:42", "community:17", "spoonacular:654321"
+  source: "personal" | "community" | "spoonacular";
+  title: string;
+  // ... common fields from all sources (nullable where a source lacks the data)
+}
+```
+
+```typescript
+// Normalizers — one per source, flatten into the common type
+function mealPlanToSearchable(
+  recipe: MealPlanRecipe,
+  ingredientNames: string[],
+): SearchableRecipe {
+  return {
+    id: `personal:${recipe.id}`,
+    source: "personal",
+    title: recipe.title,
+    cuisine: recipe.cuisine ?? null, // present in this source
+    caloriesPerServing: parseNum(recipe.caloriesPerServing),
+    // ...
+  };
+}
+
+function communityToSearchable(recipe: CommunityRecipe): SearchableRecipe {
+  return {
+    id: `community:${recipe.id}`,
+    source: "community",
+    title: recipe.title,
+    cuisine: null, // not present in this source
+    caloriesPerServing: null,
+    // ...
+  };
+}
+```
+
+```typescript
+// Client — one render path, extract numeric ID when needed
+const numericId = parseInt(item.id.split(":")[1], 10);
+const recipeType = item.source === "personal" ? "mealPlan" : item.source;
+```
+
+**Key rules:**
+
+- **Composite ID format:** `"source:numericId"` — globally unique, parseable, works as React key
+- **Nullable fields:** Use `null` (not `undefined`) for fields a source doesn't provide — keeps the interface honest
+- **One normalizer per source:** Each normalizer maps source-specific shapes to the common interface, isolating source-specific logic
+- **Shared type in `shared/types/`:** Both client and server import from the same file
+
+**When to use:** Merging results from 2+ heterogeneous sources into a single list (search results, activity feeds, notification streams).
+
+**When NOT to use:** Sources already share the same DB table/type, or when only one source is rendered at a time (use separate components instead).
+
+**Reference:** `shared/types/recipe-search.ts`, `server/services/recipe-search.ts` (normalizers), `client/screens/meal-plan/RecipeBrowserScreen.tsx` (unified rendering)

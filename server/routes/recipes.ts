@@ -21,6 +21,7 @@ import {
   CatalogQuotaError,
 } from "../services/recipe-catalog";
 import { importRecipeFromUrl } from "../services/recipe-import";
+import { searchRecipes } from "../services/recipe-search";
 import { logger, toError } from "../lib/logger";
 import {
   normalizeTitle,
@@ -96,6 +97,28 @@ const browseQuerySchema = z.object({
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
 });
 
+const searchQuerySchema = z.object({
+  q: z.string().max(200).optional(),
+  ingredients: z.string().max(500).optional(),
+  pantry: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
+  cuisine: z.string().max(50).optional(),
+  diet: z.string().max(50).optional(),
+  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
+  difficulty: z.enum(["easy", "medium", "hard"]).optional(),
+  maxPrepTime: z.coerce.number().int().min(1).max(480).optional(),
+  maxCalories: z.coerce.number().int().min(1).max(5000).optional(),
+  minProtein: z.coerce.number().int().min(0).max(500).optional(),
+  sort: z
+    .enum(["relevance", "newest", "quickest", "calories_asc", "popular"])
+    .optional(),
+  source: z.enum(["all", "personal", "community", "spoonacular"]).optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
 const catalogSearchSchema = z.object({
   query: z.string().min(1).max(200),
   cuisine: z.string().max(100).optional(),
@@ -146,6 +169,38 @@ export function register(app: Express): void {
           res,
           500,
           "Failed to fetch featured recipes",
+          ErrorCode.INTERNAL_ERROR,
+        );
+      }
+    },
+  );
+
+  // GET /api/recipes/search - Unified recipe search
+  app.get(
+    "/api/recipes/search",
+    requireAuth,
+    instructionsRateLimit,
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+      try {
+        const parsed = searchQuerySchema.safeParse(req.query);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        const result = await searchRecipes(parsed.data, req.userId);
+        res.json(result);
+      } catch (error) {
+        logger.error({ err: toError(error) }, "recipe search failed");
+        sendError(
+          res,
+          500,
+          "Failed to search recipes",
           ErrorCode.INTERNAL_ERROR,
         );
       }

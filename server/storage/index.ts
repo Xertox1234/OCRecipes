@@ -119,6 +119,8 @@ export const storage = {
   getPopularPicksByMealType: mealPlans.getPopularPicksByMealType,
   getRecipesWithEmptyMealTypes: mealPlans.getRecipesWithEmptyMealTypes,
   batchUpdateMealTypes: mealPlans.batchUpdateMealTypes,
+  getAllMealPlanRecipes: mealPlans.getAllMealPlanRecipes,
+  getAllRecipeIngredients: mealPlans.getAllRecipeIngredients,
 
   // Weight & HealthKit
   getWeightLogs: users.getWeightLogs,
@@ -173,6 +175,7 @@ export const storage = {
   updateRecipePublicStatus: community.updateRecipePublicStatus,
   getCommunityRecipe: community.getCommunityRecipe,
   getFeaturedRecipes: community.getFeaturedRecipes,
+  getAllPublicCommunityRecipes: community.getAllPublicCommunityRecipes,
   deleteCommunityRecipe: community.deleteCommunityRecipe,
   getUserRecipes: community.getUserRecipes,
 

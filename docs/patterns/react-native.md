@@ -2932,3 +2932,74 @@ import { MAX_FONT_SCALE_CONSTRAINED } from "@/constants/theme";
 - Only constrain text that lives in a genuinely fixed-height layout (tab bar, badge pill, chip, toast, progress bar label)
 
 **Where it's applied:** Tab bar labels, CalorieBudgetBar, Chip, HomeRecipeCard difficulty badge, VerificationBadge, AllergenBadge, FastingStreakBadge (compact), Toast, OfflineBanner, ScanScreen reticle text, HistoryScreen stat values.
+
+### Lifted Filter State with Presentational Sheet
+
+When a bottom sheet provides advanced filtering for a list screen, keep all filter state in the parent screen — not inside the sheet. The sheet is purely presentational: it receives current filters and fires callbacks. This keeps the sheet reusable, testable, and avoids stale-state bugs from sheet mounting/unmounting.
+
+```typescript
+// Parent screen — owns the state
+const [advancedFilters, setAdvancedFilters] = useState<SearchFilters>({
+  sort: "relevance",
+  maxPrepTime: undefined,
+  maxCalories: undefined,
+  minProtein: undefined,
+  source: "all",
+});
+const filterSheetRef = React.useRef<BottomSheetModal>(null);
+
+// Derived badge count
+const activeFilterCount = useMemo(() => {
+  let count = 0;
+  if (advancedFilters.sort !== "relevance") count++;
+  if (advancedFilters.maxPrepTime !== undefined) count++;
+  if (advancedFilters.maxCalories !== undefined) count++;
+  if (advancedFilters.minProtein !== undefined) count++;
+  if (advancedFilters.source !== "all") count++;
+  return count;
+}, [advancedFilters]);
+```
+
+```tsx
+// Sheet component — purely presentational, no internal state
+interface SearchFilterSheetProps {
+  filters: SearchFilters;
+  onFiltersChange: (filters: SearchFilters) => void;
+  onReset: () => void;
+  activeFilterCount: number;
+}
+
+export function SearchFilterSheet({
+  filters,
+  onFiltersChange,
+  onReset,
+  activeFilterCount,
+}: SearchFilterSheetProps) {
+  // Renders chips, sliders, reset button — all driven by props
+}
+```
+
+```tsx
+// Filter icon button with badge — opens the sheet
+<Pressable onPress={() => filterSheetRef.current?.present()}>
+  <Feather name="sliders" size={16} color={theme.link} />
+  {activeFilterCount > 0 && (
+    <View style={styles.filterBadge}>
+      <ThemedText style={styles.filterBadgeText}>
+        {activeFilterCount}
+      </ThemedText>
+    </View>
+  )}
+</Pressable>
+```
+
+**Key rules:**
+
+- **State in parent, not sheet:** The sheet reads `filters` prop and calls `onFiltersChange` — it never calls `useState` for filter values
+- **Badge count is derived:** Compute `activeFilterCount` as a `useMemo` comparing current filters to defaults — don't track it as separate state
+- **Reset clears to defaults:** The parent's `onReset` handler resets to the default `SearchFilters` object, not to empty/null
+- **Sheet is a BottomSheetModal child:** Wrap in `<BottomSheetView>` inside `<BottomSheetModal>`, placed at the end of the screen's return
+
+**When to use:** Any list screen with a filter bottom sheet (recipe search, product catalog, activity log filters).
+
+**Reference:** `client/components/meal-plan/SearchFilterSheet.tsx`, `client/screens/meal-plan/RecipeBrowserScreen.tsx`

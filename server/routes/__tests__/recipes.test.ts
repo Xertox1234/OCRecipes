@@ -9,6 +9,7 @@ import {
   getCatalogRecipeDetail,
 } from "../../services/recipe-catalog";
 import { importRecipeFromUrl } from "../../services/recipe-import";
+import { searchRecipes } from "../../services/recipe-search";
 import { register } from "../recipes";
 
 import {
@@ -58,6 +59,17 @@ vi.mock("../../services/recipe-import", () => ({
   importRecipeFromUrl: vi.fn(),
 }));
 
+vi.mock("../../services/recipe-search", () => ({
+  searchRecipes: vi.fn().mockResolvedValue({
+    results: [],
+    total: 0,
+    offset: 0,
+    limit: 20,
+    query: { q: null, filters: {}, sort: "relevance" },
+  }),
+  initSearchIndex: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
@@ -95,6 +107,78 @@ describe("Recipes Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body[0].title).toBe("Pasta Primavera");
       expect(res.body[0].authorId).toBeUndefined();
+    });
+  });
+
+  describe("GET /api/recipes/search", () => {
+    it("returns 200 with search results", async () => {
+      vi.mocked(searchRecipes).mockResolvedValue({
+        results: [
+          {
+            id: "personal:1",
+            source: "personal",
+            userId: "1",
+            title: "Chicken Parmesan",
+            description: null,
+            ingredients: [],
+            cuisine: "Italian",
+            dietTags: [],
+            mealTypes: [],
+            difficulty: null,
+            prepTimeMinutes: null,
+            cookTimeMinutes: null,
+            totalTimeMinutes: null,
+            caloriesPerServing: null,
+            proteinPerServing: null,
+            carbsPerServing: null,
+            fatPerServing: null,
+            servings: null,
+            imageUrl: null,
+            sourceUrl: null,
+            createdAt: null,
+          },
+        ],
+        total: 1,
+        offset: 0,
+        limit: 20,
+        query: { q: "chicken", filters: {}, sort: "relevance" },
+      });
+
+      const res = await request(app).get("/api/recipes/search?q=chicken");
+      expect(res.status).toBe(200);
+      expect(res.body.results).toHaveLength(1);
+      expect(res.body.total).toBe(1);
+    });
+
+    it("validates q max length", async () => {
+      const longQ = "a".repeat(201);
+      const res = await request(app).get(`/api/recipes/search?q=${longQ}`);
+      expect(res.status).toBe(400);
+    });
+
+    it("validates limit range", async () => {
+      const res = await request(app).get("/api/recipes/search?limit=100");
+      expect(res.status).toBe(400);
+    });
+
+    it("validates sort enum", async () => {
+      const res = await request(app).get("/api/recipes/search?sort=invalid");
+      expect(res.status).toBe(400);
+    });
+
+    it("passes filter params to searchRecipes", async () => {
+      await request(app).get(
+        "/api/recipes/search?q=pasta&cuisine=Italian&diet=vegetarian&sort=quickest",
+      );
+      expect(searchRecipes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: "pasta",
+          cuisine: "Italian",
+          diet: "vegetarian",
+          sort: "quickest",
+        }),
+        expect.any(String),
+      );
     });
   });
 
