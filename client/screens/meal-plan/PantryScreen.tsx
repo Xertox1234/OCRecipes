@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -16,6 +16,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { IngredientIcon } from "@/components/IngredientIcon";
+import { EmptyState } from "@/components/EmptyState";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
@@ -134,6 +135,7 @@ export default function PantryScreen() {
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");
+  const addItemInputRef = useRef<TextInput>(null);
 
   const {
     data: pantryItems,
@@ -332,25 +334,19 @@ export default function PantryScreen() {
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Feather
-              name="package"
-              size={48}
-              color={withOpacity(theme.text, 0.2)}
-            />
-            <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-              Pantry is Empty
-            </ThemedText>
-            <ThemedText
-              style={[styles.emptySubtitle, { color: theme.textSecondary }]}
-            >
-              Add items below to track what you have at home.
-            </ThemedText>
-          </View>
+          <EmptyState
+            variant="firstTime"
+            icon="package"
+            title="Your pantry is empty"
+            description="Add items below to track what you have at home."
+            actionLabel="Add Items"
+            onAction={() => addItemInputRef.current?.focus()}
+          />
         }
         ListFooterComponent={
           <View style={styles.addItemRow}>
             <TextInput
+              ref={addItemInputRef}
               style={[
                 styles.addItemInput,
                 {

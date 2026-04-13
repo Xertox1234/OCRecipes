@@ -14,6 +14,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { EmptyState } from "@/components/EmptyState";
 import { FastingTimer } from "@/components/FastingTimer";
 import { FastingSetupModal } from "@/components/FastingSetupModal";
 import { FastingStreakBadge } from "@/components/FastingStreakBadge";
@@ -560,29 +561,16 @@ export default function FastingScreen() {
 
       {/* Empty State */}
       {!isFasting && logs.length === 0 && !historyLoading && (
-        <Animated.View
-          entering={
-            reducedMotion ? undefined : FadeInDown.delay(200).duration(400)
-          }
-        >
-          <Card elevation={1} style={styles.emptyCard}>
-            <Feather
-              name="coffee"
-              size={40}
-              color={withOpacity(theme.textSecondary, 0.5)}
-            />
-            <ThemedText type="h4" style={styles.emptyTitle}>
-              No fasting history
-            </ThemedText>
-            <ThemedText
-              type="small"
-              style={[styles.emptyText, { color: theme.textSecondary }]}
-            >
-              Start your first fast to begin tracking your intermittent fasting
-              journey.
-            </ThemedText>
-          </Card>
-        </Animated.View>
+        <View style={styles.emptyCard}>
+          <EmptyState
+            variant="firstTime"
+            icon="coffee"
+            title="No fasting history"
+            description="Start your first fast to begin tracking your intermittent fasting journey."
+            actionLabel="Start Fast"
+            onAction={handleStartFast}
+          />
+        </View>
       )}
 
       {/* Setup Modal */}

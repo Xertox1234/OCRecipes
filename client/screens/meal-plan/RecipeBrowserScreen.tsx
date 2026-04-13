@@ -21,6 +21,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Chip } from "@/components/Chip";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -575,6 +576,16 @@ export default function RecipeBrowserScreen() {
     setSafeForMe((prev) => !prev);
   }, [haptics]);
 
+  const handleClearFilters = useCallback(() => {
+    haptics.selection();
+    setSearchText("");
+    setDebouncedQuery("");
+    setActiveCuisine(undefined);
+    setActiveDiet(undefined);
+    setSafeForMe(false);
+    setShowSpoonacular(false);
+  }, [haptics]);
+
   const renderItem = useCallback(
     ({ item }: { item: UnifiedRecipeItem }) => {
       const recipeType = item.source === "community" ? "community" : "mealPlan";
@@ -808,18 +819,23 @@ export default function RecipeBrowserScreen() {
         </View>
       ) : allRecipes.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Feather
-            name={debouncedQuery ? "search" : "book-open"}
-            size={40}
-            color={withOpacity(theme.text, 0.2)}
-          />
-          <ThemedText
-            style={[styles.emptyText, { color: theme.textSecondary }]}
-          >
-            {debouncedQuery
-              ? "No matching recipes"
-              : "No recipes yet. Create or import one!"}
-          </ThemedText>
+          {debouncedQuery || activeCuisine || activeDiet || safeForMe ? (
+            <EmptyState
+              variant="noResults"
+              icon="search"
+              title="No recipes match your search"
+              description="Try different search terms or clear your filters."
+              actionLabel="Clear Filters"
+              onAction={handleClearFilters}
+            />
+          ) : (
+            <EmptyState
+              variant="firstTime"
+              icon="book-open"
+              title="No recipes yet"
+              description="Create or import a recipe to get started."
+            />
+          )}
           {debouncedQuery && (
             <SearchOnlineButton
               onPress={() => setShowSpoonacular(true)}

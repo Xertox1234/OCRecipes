@@ -66,7 +66,7 @@ export function EmptyState({
       >
         {description}
       </ThemedText>
-      {variant === "firstTime" && actionLabel && onAction && (
+      {actionLabel && onAction && (
         <Pressable
           onPress={onAction}
           accessibilityRole="button"

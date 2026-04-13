@@ -10,6 +10,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -287,32 +288,14 @@ export default function CookbookDetailScreen() {
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Feather
-              name="book-open"
-              size={48}
-              color={withOpacity(theme.text, 0.2)}
-            />
-            <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-              No Recipes Yet
-            </ThemedText>
-            <ThemedText
-              style={[styles.emptySubtitle, { color: theme.textSecondary }]}
-            >
-              Browse recipes and save your favorites here.
-            </ThemedText>
-            <Pressable
-              onPress={handleAddRecipes}
-              style={[styles.browseButton, { backgroundColor: theme.link }]}
-              accessibilityRole="button"
-              accessibilityLabel="Browse recipes"
-            >
-              <Feather name="search" size={16} color={theme.buttonText} />
-              <ThemedText style={styles.browseButtonText}>
-                Browse Recipes
-              </ThemedText>
-            </Pressable>
-          </View>
+          <EmptyState
+            variant="firstTime"
+            icon="book-open"
+            title="This cookbook is empty"
+            description="Browse recipes and save your favorites here."
+            actionLabel="Add Recipes"
+            onAction={handleAddRecipes}
+          />
         }
       />
     </View>
