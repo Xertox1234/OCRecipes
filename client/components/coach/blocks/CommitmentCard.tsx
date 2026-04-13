@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
+import { withOpacity } from "@/constants/theme";
 import type { CommitmentCard as CommitmentCardType } from "@shared/schemas/coach-blocks";
 
 interface Props {
@@ -56,7 +57,10 @@ export default function CommitmentCard({ block, onAccept }: Props) {
       {!accepted && (
         <View style={styles.actions}>
           <Pressable
-            style={[styles.acceptBtn, { backgroundColor: theme.link + "33" }]}
+            style={[
+              styles.acceptBtn,
+              { backgroundColor: withOpacity(theme.link, 0.2) },
+            ]}
             onPress={() => {
               setAccepted(true);
               onAccept?.(block.title, block.followUpDate);

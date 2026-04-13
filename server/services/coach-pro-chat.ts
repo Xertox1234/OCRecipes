@@ -207,9 +207,9 @@ export async function* handleCoachChat(
   let blocks: CoachBlock[] = [];
   let textContent = fullResponse;
   if (isCoachPro && fullResponse) {
-    const parsed_blocks = parseBlocksFromContent(fullResponse);
-    textContent = parsed_blocks.text;
-    blocks = parsed_blocks.blocks;
+    const parsedBlocks = parseBlocksFromContent(fullResponse);
+    textContent = parsedBlocks.text;
+    blocks = parsedBlocks.blocks;
   }
 
   if (fullResponse) {

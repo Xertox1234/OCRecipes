@@ -8,6 +8,7 @@ import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 import type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
+import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 
 // Re-export types from navigation files for convenience
 export type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -16,6 +17,19 @@ export type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 export type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 export type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 export type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
+
+/**
+ * 3-level composite: ChatStack → MainTab → RootStack.
+ * Allows CoachChat to navigate to root-level modal screens
+ * (FeaturedRecipeDetail, RecipeBrowserModal, etc.).
+ */
+export type CoachChatNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<ChatStackParamList, "CoachPro">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList, "CoachTab">,
+    NativeStackNavigationProp<RootStackParamList>
+  >
+>;
 
 /**
  * Navigation prop for HistoryScreen when hosted in ProfileStack as "ScanHistory".

@@ -1,6 +1,7 @@
 import React from "react";
 import { ScrollView, Text, Pressable, StyleSheet } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
+import { withOpacity } from "@/constants/theme";
 import type { QuickReplies as QuickRepliesType } from "@shared/schemas/coach-blocks";
 
 interface Props {
@@ -23,8 +24,8 @@ export default function QuickReplies({ block, onSelect }: Props) {
           style={[
             styles.chip,
             {
-              backgroundColor: theme.link + "26",
-              borderColor: theme.link + "4D",
+              backgroundColor: withOpacity(theme.link, 0.15),
+              borderColor: withOpacity(theme.link, 0.3),
             },
           ]}
           onPress={() => onSelect?.(option.message)}

@@ -16,7 +16,7 @@ import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
-import type { MealPlanDay } from "@shared/schemas/coach-blocks";
+import type { MealPlanDay } from "@shared/types/meal-plan";
 
 export type MealPlanStackParamList = {
   MealPlanHome: undefined;

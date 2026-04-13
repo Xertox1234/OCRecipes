@@ -34,7 +34,7 @@ import type {
   SubstitutionResult,
 } from "@shared/types/cook-session";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-import type { MealPlanDay } from "@shared/schemas/coach-blocks";
+import type { MealPlanDay } from "@shared/types/meal-plan";
 import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";

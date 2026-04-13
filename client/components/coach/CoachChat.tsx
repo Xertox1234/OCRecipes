@@ -18,9 +18,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
-import type { CompositeNavigationProp } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 
 import { ChatBubble } from "@/components/ChatBubble";
 import BlockRenderer from "@/components/coach/blocks";
@@ -38,22 +35,10 @@ import {
 } from "@shared/schemas/coach-blocks";
 import { parsePlanDays } from "@/components/coach/coach-chat-utils";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
-import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
-import type { MainTabParamList } from "@/navigation/MainTabNavigator";
-import type { RootStackParamList } from "@/navigation/RootStackNavigator";
-
-/**
- * 3-level composite: ChatStack → MainTab → RootStack.
- * Allows CoachChat to navigate to root-level modal screens
- * (FeaturedRecipeDetail, RecipeBrowserModal, etc.).
- */
-type CoachChatNavigationProp = CompositeNavigationProp<
-  NativeStackNavigationProp<ChatStackParamList, "CoachPro">,
-  CompositeNavigationProp<
-    BottomTabNavigationProp<MainTabParamList, "CoachTab">,
-    NativeStackNavigationProp<RootStackParamList>
-  >
->;
+import type {
+  CoachChatNavigationProp,
+  RootStackParamList,
+} from "@/types/navigation";
 
 interface CoachChatProps {
   conversationId: number | null;
