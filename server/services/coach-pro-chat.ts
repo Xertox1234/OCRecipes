@@ -97,9 +97,9 @@ export async function* handleCoachChat(
     },
     dietaryProfile: {
       dietType: profile?.dietType || null,
-      allergies: ((profile?.allergies as { name: string }[] | null) || []).map(
-        (a) => a.name,
-      ),
+      allergies: ((profile?.allergies as { name: string }[] | null) || [])
+        .map((a) => a?.name)
+        .filter(Boolean),
       dislikes: (profile?.foodDislikes as string[]) || [],
     },
     screenContext,
@@ -150,7 +150,7 @@ export async function* handleCoachChat(
   const isCacheable = !screenContext && history.length <= 1;
   const questionHash = isCacheable
     ? createHash("sha256")
-        .update(content.trim().toLowerCase())
+        .update(`${userId}:${content.trim().toLowerCase()}`)
         .digest("hex")
         .slice(0, 32)
     : null;

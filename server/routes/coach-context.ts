@@ -65,7 +65,9 @@ export function register(app: Express): void {
                 dietType: profile.dietType,
                 allergies: (
                   (profile.allergies as { name: string }[] | null) || []
-                ).map((a) => a.name),
+                )
+                  .map((a) => a?.name)
+                  .filter(Boolean),
                 dislikes: profile.foodDislikes,
               }
             : null,
