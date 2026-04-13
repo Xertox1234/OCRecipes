@@ -35,6 +35,13 @@ const navigateActionSchema = z.object({
   params: z.record(z.unknown()).optional(),
 });
 
+/** Per-screen param schemas for navigate actions requiring specific params. */
+const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
+  NutritionDetail: z.object({ barcode: z.string() }),
+  FeaturedRecipeDetail: z.object({ recipeId: z.number() }),
+  RecipeChat: z.object({ conversationId: z.number() }),
+};
+
 const GOAL_TYPES = ["calories", "protein", "carbs", "fat", "weight"] as const;
 
 const setGoalActionSchema = z.object({
@@ -43,11 +50,17 @@ const setGoalActionSchema = z.object({
   value: z.number().optional(),
 });
 
-const blockActionSchema = z.discriminatedUnion("type", [
-  logFoodActionSchema,
-  navigateActionSchema,
-  setGoalActionSchema,
-]);
+const blockActionSchema = z
+  .discriminatedUnion("type", [
+    logFoodActionSchema,
+    navigateActionSchema,
+    setGoalActionSchema,
+  ])
+  .superRefine((val, ctx) => {
+    if (val.type === "navigate") {
+      validateNavigateParams(val, ctx);
+    }
+  });
 
 // ── Block schemas ───────────────────────────────────────────────────
 
@@ -59,13 +72,44 @@ export const actionCardSchema = z.object({
   actionLabel: z.string(),
 });
 
+/** Validate navigate action screen params (shared between action card and suggestion list). */
+function validateNavigateParams(
+  val: { screen: string; params?: Record<string, unknown> },
+  ctx: z.RefinementCtx,
+): void {
+  const schema = screenParamSchemas[val.screen];
+  if (schema) {
+    if (!val.params) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Screen "${val.screen}" requires params`,
+        path: ["params"],
+      });
+      return;
+    }
+    const result = schema.safeParse(val.params);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        ctx.addIssue({
+          ...issue,
+          path: ["params", ...issue.path],
+        });
+      }
+    }
+  }
+}
+
+const navigateActionWithParamValidation = navigateActionSchema.superRefine(
+  validateNavigateParams,
+);
+
 export const suggestionListSchema = z.object({
   type: z.literal("suggestion_list"),
   items: z.array(
     z.object({
       title: z.string(),
       subtitle: z.string(),
-      action: z.union([navigateActionSchema, z.null()]).nullable(),
+      action: z.union([navigateActionWithParamValidation, z.null()]).nullable(),
     }),
   ),
 });

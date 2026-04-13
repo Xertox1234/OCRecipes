@@ -59,10 +59,12 @@ export async function extractNotebookEntries(
       model: MODEL_FAST,
       messages: [
         { role: "system", content: prompt },
-        ...messages.map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })),
+        ...messages
+          .filter((m) => m.role !== "system")
+          .map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
       ],
       response_format: { type: "json_object" },
       max_tokens: 1000,
@@ -95,5 +97,5 @@ export async function extractNotebookEntries(
 }
 
 export function shouldUpdateStrategy(currentCount: number): boolean {
-  return currentCount % 5 === 0;
+  return currentCount > 0 && currentCount % 5 === 0;
 }

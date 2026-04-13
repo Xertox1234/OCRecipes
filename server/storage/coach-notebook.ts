@@ -36,11 +36,19 @@ export async function createNotebookEntry(
   return created;
 }
 
+const MAX_ENTRY_CONTENT_LENGTH = 500;
+const MAX_ENTRIES_PER_BATCH = 10;
+
 export async function createNotebookEntries(
   entries: InsertCoachNotebookEntry[],
 ): Promise<CoachNotebookEntry[]> {
   if (entries.length === 0) return [];
-  return db.insert(coachNotebook).values(entries).returning();
+  // Defense-in-depth: clamp batch size and content length
+  const clamped = entries.slice(0, MAX_ENTRIES_PER_BATCH).map((e) => ({
+    ...e,
+    content: e.content.slice(0, MAX_ENTRY_CONTENT_LENGTH),
+  }));
+  return db.insert(coachNotebook).values(clamped).returning();
 }
 
 export async function updateNotebookEntryStatus(

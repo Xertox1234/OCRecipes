@@ -91,8 +91,8 @@ describe("Notebook Extraction", () => {
     expect(entries).toEqual([]);
   });
 
-  it("shouldUpdateStrategy returns true every 5 conversations", () => {
-    expect(shouldUpdateStrategy(0)).toBe(true);
+  it("shouldUpdateStrategy returns true every 5 conversations (but not at 0)", () => {
+    expect(shouldUpdateStrategy(0)).toBe(false);
     expect(shouldUpdateStrategy(1)).toBe(false);
     expect(shouldUpdateStrategy(4)).toBe(false);
     expect(shouldUpdateStrategy(5)).toBe(true);
