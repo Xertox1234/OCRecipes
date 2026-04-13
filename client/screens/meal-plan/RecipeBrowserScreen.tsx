@@ -799,7 +799,11 @@ export default function RecipeBrowserScreen() {
 
       {/* Results */}
       {isLoading ? (
-        <View style={styles.loadingContainer}>
+        <View
+          style={styles.loadingContainer}
+          accessibilityLabel="Loading..."
+          accessibilityElementsHidden
+        >
           <SkeletonBox width="100%" height={64} borderRadius={12} />
           <View style={{ height: Spacing.sm }} />
           <SkeletonBox width="100%" height={64} borderRadius={12} />

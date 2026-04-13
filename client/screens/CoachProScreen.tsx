@@ -1,11 +1,5 @@
 import React, { useCallback, useState } from "react";
-import {
-  View,
-  Text,
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-} from "react-native";
+import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
@@ -15,7 +9,8 @@ import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
 import CoachDashboard from "@/components/coach/CoachDashboard";
 import CoachChat from "@/components/coach/CoachChat";
-import { Spacing } from "@/constants/theme";
+import { SkeletonBox } from "@/components/SkeletonLoader";
+import { Spacing, BorderRadius } from "@/constants/theme";
 
 export default function CoachProScreen() {
   const { theme } = useTheme();
@@ -57,8 +52,24 @@ export default function CoachProScreen() {
       ]}
     >
       {isContextLoading && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={theme.link} />
+        <View
+          style={styles.loadingContainer}
+          accessibilityLabel="Loading..."
+          accessibilityElementsHidden
+        >
+          <SkeletonBox width="60%" height={20} borderRadius={BorderRadius.sm} />
+          <SkeletonBox
+            width="90%"
+            height={48}
+            borderRadius={BorderRadius.md}
+            style={{ marginTop: Spacing.sm }}
+          />
+          <SkeletonBox
+            width="40%"
+            height={16}
+            borderRadius={BorderRadius.xs}
+            style={{ marginTop: Spacing.sm }}
+          />
         </View>
       )}
       {isContextError && (
@@ -97,7 +108,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   loadingContainer: {
     paddingVertical: Spacing.xl,
-    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
   },
   errorContainer: {
     paddingVertical: Spacing.md,

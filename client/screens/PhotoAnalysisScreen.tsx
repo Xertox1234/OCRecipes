@@ -3,7 +3,6 @@ import {
   StyleSheet,
   View,
   ScrollView,
-  ActivityIndicator,
   Image,
   TextInput,
   Pressable,
@@ -23,6 +22,7 @@ import { ScanFlowStepIndicator } from "@/components/ScanFlowStepIndicator";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { PreparationPicker } from "@/components/PreparationPicker";
+import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
@@ -404,20 +404,51 @@ export default function PhotoAnalysisScreen() {
 
   if (isAnalyzing) {
     return (
-      <ThemedView style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={theme.success} />
-        <ThemedText
-          type="body"
-          style={[styles.loadingText, { color: theme.textSecondary }]}
-        >
-          {loadingText}
-        </ThemedText>
-        <ThemedText
-          type="small"
-          style={[styles.loadingSubtext, { color: theme.textSecondary }]}
-        >
-          This may take a few seconds
-        </ThemedText>
+      <ThemedView style={styles.container}>
+        <View style={headerPaddingStyle}>
+          <ScanFlowStepIndicator currentStep={3} totalSteps={3} />
+        </View>
+        <View style={styles.analysisLoadingContainer}>
+          <ThemedText
+            type="body"
+            style={[styles.loadingText, { color: theme.textSecondary }]}
+          >
+            {loadingText}
+          </ThemedText>
+          <ThemedText
+            type="small"
+            style={[styles.loadingSubtext, { color: theme.textSecondary }]}
+          >
+            This may take a few seconds
+          </ThemedText>
+          <View
+            accessibilityLabel="Loading..."
+            accessibilityElementsHidden
+            style={styles.analysisSkeleton}
+          >
+            {/* Food item rows */}
+            {[1, 2, 3].map((i) => (
+              <View key={i} style={styles.analysisSkeletonRow}>
+                <SkeletonBox
+                  width={48}
+                  height={48}
+                  borderRadius={BorderRadius.sm}
+                />
+                <View style={styles.analysisSkeletonText}>
+                  <SkeletonBox width="70%" height={16} />
+                  <SkeletonBox width="40%" height={14} />
+                </View>
+              </View>
+            ))}
+            {/* Nutrition summary */}
+            <SkeletonBox
+              width="100%"
+              height={80}
+              borderRadius={BorderRadius.md}
+              style={{ marginTop: Spacing.lg }}
+            />
+          </View>
+        </View>
       </ThemedView>
     );
   }
@@ -750,9 +781,25 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  centered: {
-    justifyContent: "center",
+  analysisLoadingContainer: {
+    flex: 1,
     alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing["2xl"],
+  },
+  analysisSkeleton: {
+    width: "100%",
+    marginTop: Spacing["2xl"],
+    gap: Spacing.md,
+  },
+  analysisSkeletonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  analysisSkeletonText: {
+    flex: 1,
+    gap: Spacing.xs,
   },
   loadingText: {
     marginTop: Spacing.lg,
