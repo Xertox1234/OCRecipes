@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -19,6 +19,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { WeightChart } from "@/components/WeightChart";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -47,6 +48,7 @@ export default function WeightTrackingScreen() {
 
   const [weightInput, setWeightInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
+  const weightInputRef = useRef<TextInput>(null);
   const [goalInput, setGoalInput] = useState("");
   const [showGoalInput, setShowGoalInput] = useState(false);
   const [weightError, setWeightError] = useState<string | null>(null);
@@ -132,6 +134,7 @@ export default function WeightTrackingScreen() {
             </ThemedText>
             <View style={styles.inputRow}>
               <TextInput
+                ref={weightInputRef}
                 style={[
                   styles.weightInput,
                   {
@@ -348,12 +351,14 @@ export default function WeightTrackingScreen() {
               History
             </ThemedText>
             {logs.length === 0 ? (
-              <ThemedText
-                type="caption"
-                style={{ color: theme.textSecondary, textAlign: "center" }}
-              >
-                No weight entries yet
-              </ThemedText>
+              <EmptyState
+                variant="firstTime"
+                icon="trending-up"
+                title="No weight entries yet"
+                description="Log your weight above to start tracking your progress."
+                actionLabel="Log Weight"
+                onAction={() => weightInputRef.current?.focus()}
+              />
             ) : (
               logs.map((log) => (
                 <Pressable

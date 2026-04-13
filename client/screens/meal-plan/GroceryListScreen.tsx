@@ -20,6 +20,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { IngredientIcon } from "@/components/IngredientIcon";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -259,6 +260,11 @@ export default function GroceryListScreen() {
     }));
   }, [list?.items]);
 
+  const allChecked =
+    list?.items != null &&
+    list.items.length > 0 &&
+    list.items.every((i) => i.isChecked);
+
   if (isLoading) {
     return (
       <View
@@ -389,41 +395,53 @@ export default function GroceryListScreen() {
           </View>
         }
         ListFooterComponent={
-          <View style={styles.addItemRow}>
-            <TextInput
-              style={[
-                styles.addItemInput,
-                {
-                  color: theme.text,
-                  borderColor: withOpacity(theme.text, 0.15),
-                  backgroundColor: withOpacity(theme.text, 0.03),
-                },
-              ]}
-              value={newItemName}
-              onChangeText={setNewItemName}
-              placeholder="Add item..."
-              placeholderTextColor={theme.textSecondary}
-              returnKeyType="done"
-              onSubmitEditing={handleAddItem}
-              accessibilityLabel="Add grocery item"
-            />
-            <Pressable
-              onPress={handleAddItem}
-              disabled={!newItemName.trim() || addItemMutation.isPending}
-              style={[
-                styles.addItemButton,
-                {
-                  backgroundColor: theme.link,
-                  opacity:
-                    !newItemName.trim() || addItemMutation.isPending ? 0.4 : 1,
-                },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Add item to list"
-            >
-              <Feather name="plus" size={20} color={theme.buttonText} />
-            </Pressable>
-          </View>
+          <>
+            {allChecked && (
+              <EmptyState
+                variant="temporary"
+                icon="check-circle"
+                title="All done!"
+                description="You've checked off everything on your list."
+              />
+            )}
+            <View style={styles.addItemRow}>
+              <TextInput
+                style={[
+                  styles.addItemInput,
+                  {
+                    color: theme.text,
+                    borderColor: withOpacity(theme.text, 0.15),
+                    backgroundColor: withOpacity(theme.text, 0.03),
+                  },
+                ]}
+                value={newItemName}
+                onChangeText={setNewItemName}
+                placeholder="Add item..."
+                placeholderTextColor={theme.textSecondary}
+                returnKeyType="done"
+                onSubmitEditing={handleAddItem}
+                accessibilityLabel="Add grocery item"
+              />
+              <Pressable
+                onPress={handleAddItem}
+                disabled={!newItemName.trim() || addItemMutation.isPending}
+                style={[
+                  styles.addItemButton,
+                  {
+                    backgroundColor: theme.link,
+                    opacity:
+                      !newItemName.trim() || addItemMutation.isPending
+                        ? 0.4
+                        : 1,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Add item to list"
+              >
+                <Feather name="plus" size={20} color={theme.buttonText} />
+              </Pressable>
+            </View>
+          </>
         }
         stickySectionHeadersEnabled
       />

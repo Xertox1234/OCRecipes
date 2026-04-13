@@ -33,7 +33,7 @@ describe("EmptyState", () => {
     expect(screen.getByText("Scan Now")).toBeDefined();
   });
 
-  it("does not render action button for temporary variant", () => {
+  it("renders action button for temporary variant", () => {
     renderComponent(
       <EmptyState
         variant="temporary"
@@ -42,6 +42,18 @@ describe("EmptyState", () => {
         description="Add items to your meal plan"
         actionLabel="Plan Now"
         onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Plan Now")).toBeDefined();
+  });
+
+  it("does not render action button when actionLabel is not provided", () => {
+    renderComponent(
+      <EmptyState
+        variant="temporary"
+        icon="calendar"
+        title="No meals planned"
+        description="Add items to your meal plan"
       />,
     );
     expect(screen.queryByText("Plan Now")).toBeNull();
