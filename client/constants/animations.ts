@@ -64,3 +64,18 @@ export const speedDialStaggerDelay = 50;
 
 /** Pixels threshold to trigger date strip week change */
 export const dateStripSwipeThreshold = 50;
+
+/** Spring configuration for success pop animations (favourite, confirm) —
+ *  allows overshoot for a snappy bounce feel */
+export const successPopConfig: WithSpringConfig = {
+  damping: 12,
+  mass: 0.3,
+  stiffness: 200,
+  overshootClamping: false,
+};
+
+/** Timing configuration for the fade-out phase of a success flash */
+export const successFlashConfig: WithTimingConfig = {
+  duration: 200,
+  easing: Easing.out(Easing.cubic),
+};

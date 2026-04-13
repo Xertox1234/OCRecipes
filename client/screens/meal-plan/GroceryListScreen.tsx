@@ -15,6 +15,12 @@ import { useRoute, type RouteProp } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
+import { useAccessibility } from "@/hooks/useAccessibility";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SwipeableRow } from "@/components/SwipeableRow";
@@ -52,7 +58,11 @@ function GroceryItemRow({
 }) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
   const toggleMutation = useToggleGroceryItem();
+
+  // Strikethrough animation: progress 0 → 1 draws a line across the name
+  const strikeProgress = useSharedValue(item.isChecked ? 1 : 0);
 
   const handleToggle = useCallback(() => {
     haptics.selection();
@@ -65,13 +75,30 @@ function GroceryItemRow({
       },
       {
         onSuccess: () => {
-          if (willBeChecked && onChecked) {
-            onChecked(item);
+          if (willBeChecked) {
+            strikeProgress.value = reducedMotion
+              ? 1
+              : withTiming(1, { duration: 250 });
+            onChecked?.(item);
+          } else {
+            strikeProgress.value = 0;
           }
         },
       },
     );
-  }, [haptics, toggleMutation, listId, item, onChecked]);
+  }, [
+    haptics,
+    toggleMutation,
+    listId,
+    item,
+    onChecked,
+    strikeProgress,
+    reducedMotion,
+  ]);
+
+  const strikethroughStyle = useAnimatedStyle(() => ({
+    width: `${strikeProgress.value * 100}%` as unknown as number,
+  }));
 
   const quantityStr = item.quantity
     ? `${parseFloat(item.quantity)}${item.unit ? ` ${item.unit}` : ""}`
@@ -106,18 +133,25 @@ function GroceryItemRow({
         size={24}
       />
       <View style={styles.itemContent}>
-        <ThemedText
-          style={[
-            styles.itemName,
-            item.isChecked && {
-              textDecorationLine: "line-through",
-              color: theme.textSecondary,
-            },
-          ]}
-          numberOfLines={1}
-        >
-          {item.name}
-        </ThemedText>
+        <View style={styles.itemNameContainer}>
+          <ThemedText
+            style={[
+              styles.itemName,
+              item.isChecked && { color: theme.textSecondary },
+            ]}
+            numberOfLines={1}
+          >
+            {item.name}
+          </ThemedText>
+          <Animated.View
+            style={[
+              styles.strikethroughLine,
+              { backgroundColor: theme.textSecondary },
+              strikethroughStyle,
+            ]}
+            pointerEvents="none"
+          />
+        </View>
         {quantityStr ? (
           <ThemedText
             style={[styles.itemQuantity, { color: theme.textSecondary }]}
@@ -549,9 +583,19 @@ const styles = StyleSheet.create({
   itemContent: {
     flex: 1,
   },
+  itemNameContainer: {
+    position: "relative",
+    justifyContent: "center",
+  },
   itemName: {
     fontSize: 15,
     fontFamily: FontFamily.medium,
+  },
+  strikethroughLine: {
+    position: "absolute",
+    height: 1.5,
+    left: 0,
+    top: "50%",
   },
   itemQuantity: {
     fontSize: 12,

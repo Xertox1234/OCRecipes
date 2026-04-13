@@ -22,6 +22,7 @@ import Animated, {
   withSequence,
   cancelAnimation,
 } from "react-native-reanimated";
+import { useSuccessFlash } from "@/hooks/useSuccessAnimation";
 import {
   useNavigation,
   useIsFocused,
@@ -142,6 +143,7 @@ export default function ScanScreen() {
           withSpring(1.2, { damping: 10 }),
           withSpring(1, { damping: 15 }),
         );
+        triggerScanFlash();
 
         // Navigate after brief delay for animation (with cleanup tracking)
         navigationTimeoutRef.current = setTimeout(() => {
@@ -168,6 +170,10 @@ export default function ScanScreen() {
   const cornerOpacity = useSharedValue(0.6);
   const scanSuccessScale = useSharedValue(0);
   const cornerGlow = useSharedValue(0);
+
+  // Green flash overlay on barcode scan success
+  const { trigger: triggerScanFlash, animatedStyle: scanFlashStyle } =
+    useSuccessFlash(0.15);
 
   // Start corner pulse animation on mount (respects reduced motion preference)
   useEffect(() => {
@@ -544,6 +550,21 @@ export default function ScanScreen() {
             ]}
           />
 
+          {/* Green flash overlay on successful barcode scan */}
+          <Animated.View
+            style={[
+              styles.scanFlashOverlay,
+              {
+                width: frame.WIDTH,
+                height: frame.HEIGHT,
+                backgroundColor: theme.success,
+                borderRadius: frame.CORNER_RADIUS,
+              },
+              scanFlashStyle,
+            ]}
+            pointerEvents="none"
+          />
+
           <AnimatedView
             style={[
               styles.successPulse,
@@ -715,6 +736,9 @@ const styles = StyleSheet.create({
   glowBorder: {
     position: "absolute",
     borderWidth: 2,
+  },
+  scanFlashOverlay: {
+    position: "absolute",
   },
   successPulse: {
     position: "absolute",

@@ -24,6 +24,7 @@ import { Card } from "@/components/Card";
 import { VoiceLogButton } from "@/components/VoiceLogButton";
 import { ParsedFoodPreview } from "@/components/ParsedFoodPreview";
 import { AdaptiveGoalCard } from "@/components/AdaptiveGoalCard";
+import { AnimatedCheckmark } from "@/components/AnimatedCheckmark";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
@@ -82,6 +83,7 @@ export default function QuickLogScreen() {
   const [textInput, setTextInput] = useState("");
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
   const [tip] = useState(randomTip);
+  const [showCheckmark, setShowCheckmark] = useState(false);
 
   const {
     isListening,
@@ -216,13 +218,18 @@ export default function QuickLogScreen() {
       toast.success("Food items logged");
       setParsedItems([]);
       setTextInput("");
-      navigation.goBack();
+      setShowCheckmark(true);
     },
     onError: () => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error("Failed to log some items. Please try again.");
     },
   });
+
+  const handleCheckmarkComplete = useCallback(() => {
+    setShowCheckmark(false);
+    navigation.goBack();
+  }, [navigation]);
 
   const handleLogAll = useCallback(() => {
     if (parsedItems.length === 0) return;
@@ -427,6 +434,15 @@ export default function QuickLogScreen() {
           </View>
         )}
       </ScrollView>
+      {showCheckmark && (
+        <View style={styles.checkmarkOverlay} pointerEvents="none">
+          <AnimatedCheckmark
+            visible={showCheckmark}
+            size={64}
+            onComplete={handleCheckmarkComplete}
+          />
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -516,5 +532,10 @@ const styles = StyleSheet.create({
   exampleText: {
     fontSize: 14,
     fontFamily: FontFamily.regular,
+  },
+  checkmarkOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
   },
 });

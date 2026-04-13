@@ -1,10 +1,12 @@
 import React, { useCallback } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
+import Animated from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useSuccessPop } from "@/hooks/useSuccessAnimation";
 import {
   useToggleFavouriteRecipe,
   useShareRecipe,
@@ -33,11 +35,23 @@ export const RecipeActionBar = React.memo(function RecipeActionBar({
   const haptics = useHaptics();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
   const { share } = useShareRecipe();
+  const { trigger: triggerHeartPop, animatedStyle: heartPopStyle } =
+    useSuccessPop(1.4);
 
   const handleFavourite = useCallback(() => {
     haptics.impact();
     toggleFavourite({ recipeId, recipeType });
-  }, [haptics, toggleFavourite, recipeId, recipeType]);
+    if (!isFavourited) {
+      triggerHeartPop();
+    }
+  }, [
+    haptics,
+    toggleFavourite,
+    recipeId,
+    recipeType,
+    isFavourited,
+    triggerHeartPop,
+  ]);
 
   const handleShare = useCallback(() => {
     haptics.impact();
@@ -67,11 +81,13 @@ export const RecipeActionBar = React.memo(function RecipeActionBar({
         }
         accessibilityState={{ selected: isFavourited }}
       >
-        <Ionicons
-          name={isFavourited ? "heart" : "heart-outline"}
-          size={20}
-          color={isFavourited ? theme.error : theme.textSecondary}
-        />
+        <Animated.View style={heartPopStyle}>
+          <Ionicons
+            name={isFavourited ? "heart" : "heart-outline"}
+            size={20}
+            color={isFavourited ? theme.error : theme.textSecondary}
+          />
+        </Animated.View>
         <ThemedText
           style={[
             styles.actionLabel,
