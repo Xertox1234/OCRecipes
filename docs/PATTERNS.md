@@ -17,7 +17,8 @@ Patterns are organized into domain-specific files under `docs/patterns/`:
 | Design System | [design-system.md](patterns/design-system.md) | Color opacity, semantic theme values, border radius naming                                                                                     |
 | Architecture  | [architecture.md](patterns/architecture.md)   | Storage module decomposition, route registration, service patterns, storage layer purity, structured logging conventions                       |
 | Hooks         | [hooks.md](patterns/hooks.md)                 | TanStack Query CRUD modules, FormData uploads, SSE streaming                                                                                   |
-| Testing       | [testing.md](patterns/testing.md)             | Pure function extraction, vi.resetModules, pre-commit hooks, ESLint rules                                                                      |
+| AI Prompting  | [ai-prompting.md](patterns/ai-prompting.md)   | Pre-compute context, few-shot examples, safety refusals, completion budget, markdown restrictions                                              |
+| Testing       | [testing.md](patterns/testing.md)             | Pure function extraction, vi.resetModules, pre-commit hooks, ESLint rules, LLM evals                                                           |
 | Documentation | [documentation.md](patterns/documentation.md) | Todo structure, design decisions, form state hooks, bottom-sheet lifecycle                                                                     |
 
 **Before implementing:** Check if a pattern exists in the relevant file above.

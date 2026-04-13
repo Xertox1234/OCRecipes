@@ -782,6 +782,27 @@ if (containsDangerousDietaryAdvice(result.text)) {
 - `server/lib/__tests__/ai-safety.test.ts` -- 28 test cases covering injection patterns and dietary advice detection
 - `server/services/food-nlp.ts`, `server/services/nutrition-coach.ts`, `server/services/photo-analysis.ts` -- consumers
 
+### Safety Regex Must Exclude Legitimate Use
+
+`containsDangerousDietaryAdvice()` scans AI output for dangerous patterns via regex. When adding new patterns, **always verify they don't match the coach's own safe advice.** The coach's streaming safety check (`nutrition-coach.ts`) runs these patterns against the response _it is generating_ — a false positive triggers a mid-response disclaimer that confuses users.
+
+```typescript
+// ❌ BAD: Catches "16-hour fast" (standard IF) and "just eat 1800 cal" (safe)
+/\d+[- ](?:hour|hr)\s+(?:water\s+)?fast/i
+/(?:only|just)\s+(?:eat|consume|have)\s+[1-9]\d{2,3}\s*cal/i
+
+// ✅ GOOD: Scoped to dangerous ranges only
+/(?:2[4-9]|[3-9]\d|\d{3,})[- ](?:hour|hr)\s+(?:water\s+)?fast/i  // 24+ hours only
+/(?:only|just)\s+(?:eat|consume|have)\s+(?:[1-9]\d{2}|1[01]\d{2})\s*cal/i  // 100-1199 only
+```
+
+**When adding safety regex:** Test against both dangerous examples AND the coach's expected safe responses. The eval framework (`npm run eval:coach`) can reveal false positives — if the safety dimension scores drop after a regex change, check for false triggers.
+
+**References:**
+
+- `server/lib/ai-safety.ts` — `DANGEROUS_DIETARY_PATTERNS` array
+- `server/lib/__tests__/ai-safety.test.ts` — test against false positives here
+
 ### Sanitize ALL User Profile Fields in AI Prompts
 
 When an AI service builds a prompt that includes user profile data (dietary preferences, allergies, goals, cooking skill, cuisine preferences), **every** user-controlled string must pass through `sanitizeUserInput()` before interpolation. User profile fields are indirect prompt injection vectors -- an attacker can set their "food dislikes" to an injection payload that executes when the field is interpolated into a meal suggestion or menu analysis prompt.
@@ -1309,6 +1330,7 @@ const navigateActionSchema = z.object({
 **Why:** Without a whitelist, the AI model can suggest navigation to any screen. If navigation actions are wired up without validation, this could expose admin, settings, or onboarding screens to unintended access.
 
 **References:**
+
 - `shared/schemas/coach-blocks.ts` — `navigateActionSchema` with `NAVIGABLE_SCREENS` enum
 - `server/services/coach-blocks.ts` — `validateBlocks()` drops blocks that fail schema validation
 
@@ -1337,6 +1359,7 @@ await storage.createNotebookEntries(
 **When to use:** Any pipeline where AI-generated text is written to the database, especially if that content is later served in API responses or displayed in contexts beyond the originating client.
 
 **References:**
+
 - `server/services/notebook-extraction.ts` — sanitizes extracted notebook entries
 - `server/lib/ai-safety.ts` — `sanitizeContextField()` strips zero-width chars, control chars, and injection patterns
 

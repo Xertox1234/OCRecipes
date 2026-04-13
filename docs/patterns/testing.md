@@ -904,6 +904,7 @@ vi.mock("../../storage", () => {
 ```
 
 **References:**
+
 - `server/routes/__tests__/batch-scan.test.ts` — `BatchStorageError` defined inside factory
 - `server/routes/__tests__/_helpers.test.ts` — storage mock with factory to avoid db.ts
 
@@ -936,10 +937,53 @@ vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream());
 **When to use:** Any test that mocks subscription tier and exercises a route with tier-dependent branching (coach, recipe generation, meal suggestions).
 
 **References:**
+
 - `server/routes/__tests__/chat.test.ts` — streaming tests use `generateCoachProResponse` for premium tier
 - `shared/types/premium.ts` — `TIER_FEATURES` maps tiers to feature booleans
 
 **Origin:** Coach Pro test failures (2026-04-10) — 7 chat tests returned 503 because premium tier routed to `generateCoachProResponse` but only `generateCoachResponse` was mocked
+
+### LLM Evaluation as a Separate Testing Tier
+
+Unit tests (Vitest) verify code correctness. **Evals** verify _output quality_ of AI features. They are fundamentally different and live separately:
+
+|                 | Unit Tests              | Evals                                   |
+| --------------- | ----------------------- | --------------------------------------- |
+| **Location**    | `__tests__/` co-located | `evals/` at project root                |
+| **Runner**      | `npm run test:run`      | `npm run eval:coach`                    |
+| **Speed**       | Milliseconds            | Minutes (API calls)                     |
+| **Cost**        | Free                    | ~$0.30/run (OpenAI + Anthropic)         |
+| **Pre-commit**  | Yes (blocks commit)     | No (manual runs only)                   |
+| **Determinism** | Deterministic           | Non-deterministic (±0.5 score variance) |
+
+**Eval architecture — hybrid approach:**
+
+1. **Hard assertions** (pass/fail) for safety-critical checks — regex-based `mustContain`/`mustNotContain` and LLM-judged calorie floor checks. A single failure = test case failure.
+2. **LLM-as-Judge rubric scoring** (1-10) for quality dimensions — a stronger model (Claude Sonnet 4.6) evaluates the weaker model's (gpt-4o-mini) responses against structured anchors.
+
+```typescript
+// evals/datasets/coach-cases.json — test case structure
+{
+  "id": "personalization-keto-nut-allergy-01",
+  "category": "personalization",
+  "userMessage": "What are some good snack ideas for me?",
+  "context": { /* CoachContext with keto diet + nut allergies */ },
+  "assertions": {
+    "mustNotContain": ["almond", "cashew", "walnut", "peanut"]
+  }
+}
+```
+
+**When to use:** Any AI feature where output quality matters (coach, photo analysis, recipe chat). Run evals before and after prompt changes to measure impact.
+
+**When NOT to use:** Non-AI features. Don't replace unit tests with evals — they test different things.
+
+**Key lesson:** Run-to-run variance of ±0.5 points is normal. Look at trends across 3+ runs, not individual scores.
+
+**References:**
+
+- `evals/` — framework files (types, assertions, judge, runner, dataset)
+- `docs/superpowers/specs/2026-04-13-nutrition-coach-evaluation-design.md` — spec
 
 ## Adding New Patterns
 
