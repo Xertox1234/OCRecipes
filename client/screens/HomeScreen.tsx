@@ -1,13 +1,15 @@
 import React, { useCallback, useState } from "react";
-import { ScrollView, RefreshControl, StyleSheet, View } from "react-native";
+import { RefreshControl, StyleSheet, View, Pressable } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
+import { Feather } from "@expo/vector-icons";
 
 import { DailySummaryHeader } from "@/components/home/DailySummaryHeader";
+import { ThemedText } from "@/components/ThemedText";
 import { RecipeCarousel } from "@/components/home/RecipeCarousel";
 import { RecentActionsRow } from "@/components/home/RecentActionsRow";
 import { CollapsibleSection } from "@/components/home/CollapsibleSection";
@@ -24,9 +26,15 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
-import { Spacing, FAB_CLEARANCE } from "@/constants/theme";
+import { useTheme } from "@/hooks/useTheme";
+import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
+import { Spacing, FAB_CLEARANCE, FontFamily } from "@/constants/theme";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
+
+const HOME_HEADER_EXPANDED = 100;
+const HOME_HEADER_COLLAPSED = 44;
+const HOME_COLLAPSE_THRESHOLD = 80;
 
 const SECTIONS: { key: SectionKey; title: string; delay: number }[] = [
   { key: "nutrition", title: "Nutrition & Health", delay: 150 },
@@ -41,11 +49,24 @@ export default function HomeScreen() {
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const { user } = useAuthContext();
+  const { theme } = useTheme();
 
   const { sections, toggleSection, recentActions, recordAction, usageCounts } =
     useHomeActions();
   const queryClient = useQueryClient();
-  const { refetch, isRefetching } = useDailyBudget();
+  const { data: budget, refetch, isRefetching } = useDailyBudget();
+
+  const {
+    scrollHandler,
+    headerAnimatedStyle,
+    collapsedBarAnimatedStyle,
+    isBarVisible,
+  } = useScrollLinkedHeader({
+    expandedHeight: HOME_HEADER_EXPANDED,
+    collapsedHeight: HOME_HEADER_COLLAPSED,
+    collapseThreshold: HOME_COLLAPSE_THRESHOLD,
+    reducedMotion,
+  });
 
   const isPremium = user?.subscriptionTier === "premium";
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -69,15 +90,52 @@ export default function HomeScreen() {
     navigation.navigate("DailyNutritionDetail");
   }, [haptics, navigation]);
 
+  const calorieText = budget
+    ? `${Math.round(budget.foodCalories).toLocaleString()} / ${Math.round(budget.calorieGoal).toLocaleString()} cal`
+    : "";
+
   return (
     <>
-      <ScrollView
+      {/* Collapsed summary bar (visible when scrolled) */}
+      <Animated.View
+        style={[
+          styles.collapsedBar,
+          collapsedBarAnimatedStyle,
+          {
+            paddingTop: insets.top,
+            backgroundColor: theme.backgroundRoot,
+            borderBottomColor: theme.border,
+          },
+        ]}
+        pointerEvents={isBarVisible ? "auto" : "none"}
+      >
+        <Pressable
+          onPress={handleCalorieTap}
+          style={styles.collapsedBarContent}
+          accessibilityRole="button"
+          accessibilityLabel={`${calorieText}. Tap for details.`}
+        >
+          <ThemedText style={[styles.collapsedBarText, { color: theme.text }]}>
+            {calorieText}
+          </ThemedText>
+          <Feather
+            name="chevron-right"
+            size={14}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+      </Animated.View>
+
+      <Animated.ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingTop: insets.top + Spacing.lg,
           paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
+        scrollEventThrottle={16}
+        onScroll={scrollHandler}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
@@ -90,7 +148,9 @@ export default function HomeScreen() {
           />
         }
       >
-        <DailySummaryHeader onCalorieTap={handleCalorieTap} />
+        <Animated.View style={[styles.expandableHeader, headerAnimatedStyle]}>
+          <DailySummaryHeader onCalorieTap={handleCalorieTap} />
+        </Animated.View>
 
         <RecentActionsRow
           recentActionIds={recentActions}
@@ -134,7 +194,7 @@ export default function HomeScreen() {
         ))}
 
         <View style={styles.bottomSpacer} />
-      </ScrollView>
+      </Animated.ScrollView>
 
       <UpgradeModal
         visible={showUpgradeModal}
@@ -145,6 +205,29 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  collapsedBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  collapsedBarContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    minHeight: HOME_HEADER_COLLAPSED,
+  },
+  collapsedBarText: {
+    fontSize: 14,
+    fontFamily: FontFamily.medium,
+  },
+  expandableHeader: {
+    overflow: "hidden",
+  },
   bottomSpacer: {
     height: Spacing.xl,
   },

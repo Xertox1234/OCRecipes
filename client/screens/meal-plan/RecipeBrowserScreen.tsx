@@ -16,6 +16,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
+import Animated from "react-native-reanimated";
+import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
+import { useAccessibility } from "@/hooks/useAccessibility";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Chip } from "@/components/Chip";
@@ -50,6 +53,9 @@ import { planBannerA11yLabel } from "@/components/coach/coach-chat-utils";
 import type { MealPlanRecipe, CommunityRecipe } from "@shared/schema";
 
 const SPOONACULAR_PAGE_SIZE = 20;
+const RECIPE_HEADER_EXPANDED = 160;
+const RECIPE_HEADER_COLLAPSED = 0;
+const RECIPE_COLLAPSE_THRESHOLD = 100;
 
 type RecipeBrowserRouteProp = RouteProp<
   MealPlanStackParamList,
@@ -376,6 +382,10 @@ const CatalogCard = React.memo(function CatalogCard({
 
 // ── Main Screen ──────────────────────────────────────────────────────
 
+const AnimatedFlatList = Animated.createAnimatedComponent(
+  FlatList,
+) as typeof FlatList;
+
 export default function RecipeBrowserScreen() {
   const navigation = useNavigation<RecipeBrowserScreenNavigationProp>();
   const route = useRoute<RecipeBrowserRouteProp>();
@@ -383,6 +393,14 @@ export default function RecipeBrowserScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const { reducedMotion } = useAccessibility();
+
+  const { scrollHandler, headerAnimatedStyle } = useScrollLinkedHeader({
+    expandedHeight: RECIPE_HEADER_EXPANDED,
+    collapsedHeight: RECIPE_HEADER_COLLAPSED,
+    collapseThreshold: RECIPE_COLLAPSE_THRESHOLD,
+    reducedMotion,
+  });
 
   const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
 
@@ -646,13 +664,19 @@ export default function RecipeBrowserScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <View
-        style={[styles.headerArea, { paddingTop: headerHeight + Spacing.sm }]}
+        style={[
+          styles.headerAreaOuter,
+          { paddingTop: headerHeight + Spacing.sm },
+        ]}
       >
-        {/* Search bar */}
+        {/* Search bar always visible */}
         <View
           style={[
             styles.searchBar,
-            { backgroundColor: withOpacity(theme.text, 0.06) },
+            {
+              backgroundColor: withOpacity(theme.text, 0.06),
+              marginHorizontal: Spacing.lg,
+            },
           ]}
         >
           <Feather name="search" size={16} color={theme.textSecondary} />
@@ -682,7 +706,10 @@ export default function RecipeBrowserScreen() {
             </Pressable>
           )}
         </View>
-
+      </View>
+      <Animated.View
+        style={[styles.headerArea, headerAnimatedStyle, { overflow: "hidden" }]}
+      >
         {/* Action row (no tabs) */}
         <View style={styles.actionRow}>
           <View style={{ flex: 1 }} />
@@ -769,7 +796,7 @@ export default function RecipeBrowserScreen() {
             />
           ))}
         </ScrollView>
-      </View>
+      </Animated.View>
 
       {/* AI meal plan summary banner */}
       {planDays && planDays.length > 0 && (
@@ -860,7 +887,7 @@ export default function RecipeBrowserScreen() {
           )}
         </View>
       ) : (
-        <FlatList
+        <AnimatedFlatList
           {...FLATLIST_DEFAULTS}
           data={allRecipes}
           renderItem={renderItem}
@@ -871,6 +898,8 @@ export default function RecipeBrowserScreen() {
           }}
           ItemSeparatorComponent={ItemSeparator}
           ListFooterComponent={renderFooter}
+          scrollEventThrottle={16}
+          onScroll={scrollHandler}
         />
       )}
     </View>
@@ -880,6 +909,9 @@ export default function RecipeBrowserScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerAreaOuter: {
+    paddingBottom: Spacing.sm,
   },
   headerArea: {
     paddingHorizontal: Spacing.lg,
