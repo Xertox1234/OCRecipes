@@ -19,7 +19,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getUserProfile: vi.fn(),
     getDailySummary: vi.fn(),
-    getLatestWeight: vi.fn(),
+    getWeightLogs: vi.fn(),
     getChatMessages: vi.fn(),
     getActiveNotebookEntries: vi.fn(),
     getCoachCachedResponse: vi.fn(),
@@ -129,9 +129,9 @@ function setupDefaultStorage() {
     totalCarbs: "100",
     totalFat: "30",
   } as any);
-  vi.mocked(storage.getLatestWeight).mockResolvedValue({
-    weight: "75.0",
-  } as any);
+  vi.mocked(storage.getWeightLogs).mockResolvedValue([
+    { weight: "75.0", loggedAt: new Date() },
+  ] as any);
   vi.mocked(storage.getChatMessages).mockResolvedValue([]);
   vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([]);
   vi.mocked(storage.getCoachCachedResponse).mockResolvedValue(null);

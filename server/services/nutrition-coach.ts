@@ -58,6 +58,7 @@ function buildSystemPrompt(context: CoachContext): string {
     "- If intake already exceeds goals, acknowledge it without shame and suggest lighter options.",
     "- If allergies or dislikes are listed, NEVER suggest those foods under any circumstances.",
     "- If the user's message is vague or unclear, ask ONE specific clarifying question rather than guessing. For example: 'What kind of help are you looking for — meal ideas, feedback on your day, or something else?'",
+    "- Consider the time of day when making meal suggestions (breakfast vs dinner). If it's late and the user has eaten very little, address this gently.",
     "",
     "EXAMPLE EXCHANGE:",
     "User: 'I don't know what to eat for dinner.'",
@@ -77,6 +78,25 @@ function buildSystemPrompt(context: CoachContext): string {
   parts.push(
     `Today's intake: ${context.todayIntake.calories} cal, ${context.todayIntake.protein}g protein, ${context.todayIntake.carbs}g carbs, ${context.todayIntake.fat}g fat`,
   );
+
+  // Pre-compute remaining macros so the model doesn't have to do arithmetic
+  if (context.goals) {
+    const rem = {
+      cal: context.goals.calories - context.todayIntake.calories,
+      protein: context.goals.protein - context.todayIntake.protein,
+      carbs: context.goals.carbs - context.todayIntake.carbs,
+      fat: context.goals.fat - context.todayIntake.fat,
+    };
+    if (rem.cal >= 0) {
+      parts.push(
+        `Remaining today: ${rem.cal} cal, ${rem.protein}g protein, ${rem.carbs}g carbs, ${rem.fat}g fat`,
+      );
+    } else {
+      parts.push(
+        `Remaining today: OVER by ${Math.abs(rem.cal)} cal, ${rem.protein >= 0 ? `${rem.protein}g protein needed` : `over by ${Math.abs(rem.protein)}g protein`}, ${rem.carbs >= 0 ? `${rem.carbs}g carbs left` : `over by ${Math.abs(rem.carbs)}g carbs`}, ${rem.fat >= 0 ? `${rem.fat}g fat left` : `over by ${Math.abs(rem.fat)}g fat`}`,
+      );
+    }
+  }
 
   if (context.weightTrend.currentWeight) {
     parts.push(
@@ -98,6 +118,14 @@ function buildSystemPrompt(context: CoachContext): string {
       `Food dislikes: ${context.dietaryProfile.dislikes.map(sanitizeUserInput).join(", ")}`,
     );
   }
+
+  // Inject current time so the model can suggest contextually appropriate meals
+  const now = new Date();
+  const hours = now.getHours();
+  const minutes = now.getMinutes().toString().padStart(2, "0");
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHour = hours % 12 || 12;
+  parts.push(`Current time: ${displayHour}:${minutes} ${period}`);
 
   if (context.screenContext) {
     parts.push(

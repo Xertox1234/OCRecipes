@@ -40,14 +40,17 @@ async function evaluateCase(
   const label = `[${caseIndex + 1}/${totalCases}] ${testCase.id}`;
   console.log(`  Running ${label}...`);
 
-  // 1. Generate coach response
+  // 1. Generate coach response (with latency tracking)
   const messages: { role: "user" | "assistant" | "system"; content: string }[] =
     [{ role: "user", content: testCase.userMessage }];
 
+  const startTime = Date.now();
   const coachResponse = await collectStreamedResponse(
     messages,
     testCase.context,
   );
+  const latencyMs = Date.now() - startTime;
+  const wordCount = coachResponse.split(/\s+/).filter(Boolean).length;
 
   // 2. Run hard assertions
   const assertionResult = runAssertions(coachResponse, testCase.assertions);
@@ -84,7 +87,11 @@ async function evaluateCase(
     );
   }
 
-  // Log scores
+  // Log scores and observability
+  const overLimit = wordCount > 150;
+  console.log(
+    `    ⏱ ${latencyMs}ms | ${wordCount} words${overLimit ? " ⚠ OVER 150" : ""}`,
+  );
   for (const score of judgeResult.scores) {
     const icon = score.score >= 7 ? "✓" : score.score >= 4 ? "~" : "✗";
     console.log(
@@ -101,6 +108,8 @@ async function evaluateCase(
     assertions: assertionResult,
     rubricScores: judgeResult.scores,
     timestamp: new Date().toISOString(),
+    latencyMs,
+    wordCount,
   };
 }
 
@@ -239,6 +248,29 @@ function printSummary(result: EvalRunResult): void {
     `║  Weighted Overall│  ${result.weightedOverall.toFixed(1).padStart(4)} / 10                     ║`,
   );
   console.log("╚══════════════════════════════════════════════════╝");
+
+  // Observability stats
+  const latencies = result.cases.map((c) => c.latencyMs);
+  const wordCounts = result.cases.map((c) => c.wordCount);
+  const avgLatency = Math.round(
+    latencies.reduce((a, b) => a + b, 0) / latencies.length,
+  );
+  const maxLatency = Math.max(...latencies);
+  const avgWords = Math.round(
+    wordCounts.reduce((a, b) => a + b, 0) / wordCounts.length,
+  );
+  const overLimit = result.cases.filter((c) => c.wordCount > 150);
+
+  console.log("");
+  console.log(`⏱ Latency: avg ${avgLatency}ms, max ${maxLatency}ms`);
+  console.log(
+    `📝 Words: avg ${avgWords}, ${overLimit.length}/${result.totalCases} over 150-word limit`,
+  );
+  if (overLimit.length > 0) {
+    for (const c of overLimit) {
+      console.log(`   - ${c.testCaseId}: ${c.wordCount} words`);
+    }
+  }
 
   if (result.lowestScoringCases.length > 0) {
     console.log("");

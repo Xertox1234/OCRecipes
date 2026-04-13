@@ -103,6 +103,20 @@ export function formatContextSummary(context: {
     `Today's intake: ${context.todayIntake.calories} cal, ${context.todayIntake.protein}g protein, ${context.todayIntake.carbs}g carbs, ${context.todayIntake.fat}g fat`,
   );
 
+  if (context.goals) {
+    const rem = {
+      cal: context.goals.calories - context.todayIntake.calories,
+      protein: context.goals.protein - context.todayIntake.protein,
+    };
+    if (rem.cal >= 0) {
+      lines.push(`Remaining: ${rem.cal} cal, ${rem.protein}g protein`);
+    } else {
+      lines.push(
+        `Remaining: OVER by ${Math.abs(rem.cal)} cal, ${rem.protein >= 0 ? `${rem.protein}g protein needed` : `over by ${Math.abs(rem.protein)}g protein`}`,
+      );
+    }
+  }
+
   if (context.weightTrend.currentWeight) {
     lines.push(
       `Weight: ${context.weightTrend.currentWeight}kg${context.weightTrend.weeklyRate ? `, trend: ${context.weightTrend.weeklyRate}kg/week` : ""}`,

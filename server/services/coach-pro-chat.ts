@@ -69,12 +69,28 @@ export async function* handleCoachChat(
   } = params;
 
   const today = new Date();
-  const [profile, dailySummary, latestWeight, history] = await Promise.all([
+  const [profile, dailySummary, recentWeights, history] = await Promise.all([
     storage.getUserProfile(userId),
     storage.getDailySummary(userId, today),
-    storage.getLatestWeight(userId),
+    storage.getWeightLogs(userId, { limit: 14 }),
     storage.getChatMessages(conversationId, 20),
   ]);
+
+  // Calculate weekly weight change rate from recent logs
+  const latestWeight = recentWeights[0] ?? undefined;
+  let weeklyRate: number | null = null;
+  if (recentWeights.length >= 2) {
+    const newest = recentWeights[0];
+    const oldest = recentWeights[recentWeights.length - 1];
+    const daysDiff =
+      (new Date(newest.loggedAt).getTime() -
+        new Date(oldest.loggedAt).getTime()) /
+      (1000 * 60 * 60 * 24);
+    if (daysDiff >= 3) {
+      const weightDiff = parseFloat(newest.weight) - parseFloat(oldest.weight);
+      weeklyRate = Math.round((weightDiff / daysDiff) * 7 * 10) / 10;
+    }
+  }
 
   const context: CoachContext = {
     goals: user.dailyCalorieGoal
@@ -93,7 +109,7 @@ export async function* handleCoachChat(
     },
     weightTrend: {
       currentWeight: latestWeight ? parseFloat(latestWeight.weight) : null,
-      weeklyRate: null,
+      weeklyRate,
     },
     dietaryProfile: {
       dietType: profile?.dietType || null,

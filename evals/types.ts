@@ -54,6 +54,8 @@ export interface EvalCaseResult {
   assertions: AssertionResult;
   rubricScores: RubricScore[];
   timestamp: string;
+  latencyMs: number;
+  wordCount: number;
 }
 
 export interface EvalRunResult {
