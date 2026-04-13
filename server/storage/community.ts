@@ -10,6 +10,11 @@ import {
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, or, ilike } from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
+import {
+  addToIndex,
+  removeFromIndex,
+  communityToSearchable,
+} from "../services/recipe-search";
 
 // ============================================================================
 // COMMUNITY RECIPES
@@ -85,6 +90,9 @@ export async function createCommunityRecipe(
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
 ): Promise<CommunityRecipe> {
   const [recipe] = await db.insert(communityRecipes).values(data).returning();
+  if (recipe.isPublic) {
+    addToIndex(communityToSearchable(recipe));
+  }
   return recipe;
 }
 
@@ -145,6 +153,13 @@ export async function updateRecipePublicStatus(
       ),
     )
     .returning();
+  if (recipe) {
+    if (recipe.isPublic) {
+      addToIndex(communityToSearchable(recipe));
+    } else {
+      removeFromIndex(`community:${recipe.id}`);
+    }
+  }
   return recipe || undefined;
 }
 
@@ -217,6 +232,8 @@ export async function deleteCommunityRecipe(
       .where(and(eq(communityRecipes.id, recipeId), ownershipCondition))
       .returning({ id: communityRecipes.id });
     if (result.length === 0) return false;
+
+    removeFromIndex(`community:${recipeId}`);
 
     // Clean up junction rows that referenced this recipe
     await Promise.all([

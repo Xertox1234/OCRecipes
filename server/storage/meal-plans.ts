@@ -43,6 +43,11 @@ import {
   notInArray,
 } from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
+import {
+  addToIndex,
+  removeFromIndex,
+  mealPlanToSearchable,
+} from "../services/recipe-search";
 
 // ============================================================================
 // MEAL PLAN RECIPES
@@ -132,11 +137,14 @@ export async function createMealPlanRecipe(
           displayOrder: ing.displayOrder ?? idx,
         })),
       );
+      const ingNames = ingredients.map((i) => i.name);
+      addToIndex(mealPlanToSearchable(created, ingNames));
       return created;
     });
   }
 
   const [created] = await db.insert(mealPlanRecipes).values(recipe).returning();
+  addToIndex(mealPlanToSearchable(created, []));
   return created;
 }
 
@@ -215,6 +223,18 @@ export async function updateMealPlanRecipe(
     .set({ ...updates, updatedAt: new Date() })
     .where(and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)))
     .returning();
+  if (recipe) {
+    const ings = await db
+      .select({ name: recipeIngredients.name })
+      .from(recipeIngredients)
+      .where(eq(recipeIngredients.recipeId, id));
+    addToIndex(
+      mealPlanToSearchable(
+        recipe,
+        ings.map((i) => i.name),
+      ),
+    );
+  }
   return recipe || undefined;
 }
 
@@ -230,6 +250,8 @@ export async function deleteMealPlanRecipe(
       )
       .returning({ id: mealPlanRecipes.id });
     if (result.length === 0) return false;
+
+    removeFromIndex(`personal:${id}`);
 
     // Clean up junction rows that referenced this recipe
     await Promise.all([
