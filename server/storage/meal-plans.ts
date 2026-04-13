@@ -254,6 +254,40 @@ export async function deleteMealPlanRecipe(
   });
 }
 
+/**
+ * Load all meal-plan recipes for search index initialization.
+ * No user filter — returns every recipe in the table.
+ */
+export async function getAllMealPlanRecipes(): Promise<MealPlanRecipe[]> {
+  return db
+    .select()
+    .from(mealPlanRecipes)
+    .orderBy(desc(mealPlanRecipes.createdAt));
+}
+
+/**
+ * Load all recipe ingredients, keyed by recipeId, for search index initialization.
+ */
+export async function getAllRecipeIngredients(): Promise<
+  Map<number, RecipeIngredient[]>
+> {
+  const rows = await db
+    .select()
+    .from(recipeIngredients)
+    .orderBy(recipeIngredients.recipeId, recipeIngredients.displayOrder);
+
+  const map = new Map<number, RecipeIngredient[]>();
+  for (const row of rows) {
+    const existing = map.get(row.recipeId);
+    if (existing) {
+      existing.push(row);
+    } else {
+      map.set(row.recipeId, [row]);
+    }
+  }
+  return map;
+}
+
 export async function getUnifiedRecipes(params: {
   userId: string;
   query?: string;

@@ -177,6 +177,24 @@ export async function getFeaturedRecipes(
     .offset(offset);
 }
 
+/**
+ * Load all public community recipes for search index initialization.
+ */
+export async function getAllPublicCommunityRecipes(): Promise<
+  CommunityRecipe[]
+> {
+  return db
+    .select()
+    .from(communityRecipes)
+    .where(
+      and(
+        eq(communityRecipes.isPublic, true),
+        sql`COALESCE(jsonb_array_length(${communityRecipes.instructions}), 0) > 0`,
+      ),
+    )
+    .orderBy(desc(communityRecipes.createdAt));
+}
+
 export async function deleteCommunityRecipe(
   recipeId: number,
   authorId: string,
