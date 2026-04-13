@@ -146,14 +146,17 @@ describe("Coach Notebook Storage", () => {
     });
 
     it("returns at most 100 entries (bounded query)", async () => {
-      // Insert 105 active entries via batch
-      const entries = Array.from({ length: 105 }, (_, i) => ({
-        userId: testUser.id,
-        type: "insight" as const,
-        content: `Entry ${i}`,
-        status: "active" as const,
-      }));
-      await createNotebookEntries(entries);
+      // Insert 105 active entries in batches (MAX_ENTRIES_PER_BATCH = 10)
+      for (let batch = 0; batch < 11; batch++) {
+        const batchSize = batch < 10 ? 10 : 5;
+        const entries = Array.from({ length: batchSize }, (_, i) => ({
+          userId: testUser.id,
+          type: "insight" as const,
+          content: `Entry ${batch * 10 + i}`,
+          status: "active" as const,
+        }));
+        await createNotebookEntries(entries);
+      }
 
       const result = await getActiveNotebookEntries(testUser.id);
 

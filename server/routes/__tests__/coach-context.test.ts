@@ -9,6 +9,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
     getUserProfile: vi.fn(),
+    getUser: vi.fn(),
     getDailySummary: vi.fn(),
     getActiveNotebookEntries: vi.fn(),
     getCommitmentsWithDueFollowUp: vi.fn(),
@@ -61,6 +62,29 @@ describe("Coach Context Routes", () => {
   describe("GET /api/coach/context", () => {
     it("returns context with notebook, commitments, and suggestions", async () => {
       setupPremiumMock();
+      vi.mocked(storage.getUser).mockResolvedValue({
+        id: "1",
+        username: "test",
+        displayName: null,
+        avatarUrl: null,
+        dailyCalorieGoal: 2000,
+        dailyProteinGoal: 150,
+        dailyCarbsGoal: 250,
+        dailyFatGoal: 65,
+        weight: null,
+        height: null,
+        age: null,
+        gender: null,
+        goalWeight: null,
+        goalsCalculatedAt: null,
+        adaptiveGoalsEnabled: false,
+        lastGoalAdjustmentAt: null,
+        onboardingCompleted: true,
+        tokenVersion: 0,
+        subscriptionTier: "free",
+        subscriptionExpiresAt: null,
+        createdAt: new Date(),
+      });
       vi.mocked(storage.getUserProfile).mockResolvedValue({
         id: 1,
         userId: "1",
@@ -129,7 +153,7 @@ describe("Coach Context Routes", () => {
       expect(res.body).toHaveProperty("dietaryProfile");
       expect(res.body.dietaryProfile).toEqual({
         dietType: "vegetarian",
-        allergies: [{ name: "peanuts", severity: "severe" as const }],
+        allergies: ["peanuts"],
         dislikes: ["liver"],
       });
     });
@@ -147,6 +171,7 @@ describe("Coach Context Routes", () => {
 
     it("returns null dietaryProfile when no user profile exists", async () => {
       setupPremiumMock();
+      vi.mocked(storage.getUser).mockResolvedValue(undefined);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
         totalCalories: 0,
@@ -175,6 +200,29 @@ describe("Coach Context Routes", () => {
 
     it("generates suggestion chips based on context", async () => {
       setupPremiumMock();
+      vi.mocked(storage.getUser).mockResolvedValue({
+        id: "1",
+        username: "test",
+        displayName: null,
+        avatarUrl: null,
+        dailyCalorieGoal: 2000,
+        dailyProteinGoal: 150,
+        dailyCarbsGoal: 250,
+        dailyFatGoal: 65,
+        weight: null,
+        height: null,
+        age: null,
+        gender: null,
+        goalWeight: null,
+        goalsCalculatedAt: null,
+        adaptiveGoalsEnabled: false,
+        lastGoalAdjustmentAt: null,
+        onboardingCompleted: true,
+        tokenVersion: 0,
+        subscriptionTier: "free",
+        subscriptionExpiresAt: null,
+        createdAt: new Date(),
+      });
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
         totalCalories: 500,

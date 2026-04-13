@@ -24,12 +24,13 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const [profile, todayIntake, notebookEntries, dueCommitments] =
+        const [profile, todayIntake, notebookEntries, dueCommitments, user] =
           await Promise.all([
             storage.getUserProfile(req.userId),
             storage.getDailySummary(req.userId, new Date()),
             storage.getActiveNotebookEntries(req.userId),
             storage.getCommitmentsWithDueFollowUp(req.userId),
+            storage.getUser(req.userId),
           ]);
 
         // Generate contextual suggestion chips
@@ -38,7 +39,7 @@ export function register(app: Express): void {
           suggestions.push(`How did "${dueCommitments[0].content}" go?`);
         }
         if (todayIntake) {
-          const proteinGoal = 150; // Default, could come from profile goals
+          const proteinGoal = user?.dailyProteinGoal ?? 150;
           const proteinLeft = proteinGoal - (todayIntake.totalProtein ?? 0);
           if (proteinLeft > 30) {
             suggestions.push(
@@ -62,7 +63,9 @@ export function register(app: Express): void {
           dietaryProfile: profile
             ? {
                 dietType: profile.dietType,
-                allergies: profile.allergies,
+                allergies: (
+                  (profile.allergies as { name: string }[] | null) || []
+                ).map((a) => a.name),
                 dislikes: profile.foodDislikes,
               }
             : null,

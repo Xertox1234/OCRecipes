@@ -438,15 +438,17 @@ export function register(app: Express): void {
               isAborted: () => aborted,
             })) {
               if (aborted) break;
-              if (event.type === "content") {
-                res.write(
-                  `data: ${JSON.stringify({ content: event.content })}\n\n`,
-                );
-              } else if (event.type === "blocks") {
-                res.write(
-                  `data: ${JSON.stringify({ blocks: event.blocks })}\n\n`,
-                );
+              const eventJson = JSON.stringify(
+                event.type === "content"
+                  ? { content: event.content }
+                  : { blocks: event.blocks },
+              );
+              responseBytes += eventJson.length;
+              if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
+                aborted = true;
+                break;
               }
+              res.write(`data: ${eventJson}\n\n`);
             }
           }
 
