@@ -910,7 +910,11 @@ export default function MealPlanHomeScreen() {
           },
         ]}
       >
-        <View style={styles.skeletonContainer}>
+        <View
+          style={styles.skeletonContainer}
+          accessibilityLabel="Loading..."
+          accessibilityElementsHidden
+        >
           <SkeletonBox width="60%" height={24} borderRadius={8} />
           <View style={{ height: Spacing.lg }} />
           <SkeletonBox width="100%" height={56} borderRadius={12} />
