@@ -20,6 +20,7 @@ export default defineConfig({
     },
     testTimeout: 10000,
     setupFiles: ["./test/setup.ts"],
+    globalSetup: ["./test/global-teardown.ts"],
   },
   resolve: {
     alias: {
