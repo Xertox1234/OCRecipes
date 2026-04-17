@@ -84,9 +84,7 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
                 { backgroundColor: withOpacity(theme.warning, 0.15) },
               ]}
             >
-              <Text
-                style={[styles.suggestedText, { color: theme.warning }]}
-              >
+              <Text style={[styles.suggestedText, { color: theme.warning }]}>
                 suggested
               </Text>
             </View>
@@ -124,7 +122,7 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
                   style={[
                     styles.chipText,
                     {
-                      color: isActive ? "#FFFFFF" : theme.text,
+                      color: isActive ? "#FFFFFF" : theme.text, // hardcoded
                     },
                   ]}
                 >

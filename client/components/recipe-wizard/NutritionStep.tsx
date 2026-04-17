@@ -1,11 +1,5 @@
 import React, { useCallback } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  ScrollView,
-  StyleSheet,
-} from "react-native";
+import { View, Text, TextInput, ScrollView, StyleSheet } from "react-native";
 import type { NutritionData } from "@/hooks/useRecipeForm";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -61,9 +55,7 @@ const FIELDS: NutrientField[] = [
 ];
 
 function sanitizeNumericInput(value: string): string {
-  return value
-    .replace(/[^\d.]/g, "")
-    .replace(/(\..*)\./g, "$1");
+  return value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
 }
 
 export default function NutritionStep({
@@ -99,12 +91,7 @@ export default function NutritionStep({
               },
             ]}
           >
-            <Text
-              style={[
-                styles.cellLabel,
-                { color: theme[field.colorKey] },
-              ]}
-            >
+            <Text style={[styles.cellLabel, { color: theme[field.colorKey] }]}>
               {field.label}
             </Text>
             <TextInput
