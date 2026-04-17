@@ -84,3 +84,136 @@ Do not use headers, tables, or code blocks — they render poorly in chat."
 ```
 
 **When to use:** Any AI feature whose output renders in a chat UI or mobile component with limited markdown support.
+
+### Zod-Parse LLM Responses; Fail Closed on Invalid Shape
+
+LLMs frequently return JSON that almost-matches the expected schema —
+wrong casing on enum values, missing optional fields, extra dimensions.
+Using `JSON.parse(...) as ExpectedType` loses the validation and lets
+invalid data flow downstream silently.
+
+```typescript
+// ❌ Bad: JSON.parse + type assertion; unknown values silently coerce
+const parsed = JSON.parse(text) as {
+  scores: { dimension: string; score: number; reasoning: string }[];
+};
+const scores = parsed.scores.map((s) => ({
+  dimension: s.dimension.toLowerCase() as RubricDimension, // lies if mismatched
+  score: s.score,
+  reasoning: s.reasoning,
+}));
+// Downstream aggregator: if (entry) { ... } silently drops unknown dimensions
+```
+
+```typescript
+// ✅ Good: Zod safeParse with a dimension-enum refinement
+const dimensionSchema = z
+  .string()
+  .transform((s) => s.toLowerCase())
+  .refine((s): s is RubricDimension =>
+    (ALL_DIMENSIONS as string[]).includes(s),
+  );
+
+const judgeResponseSchema = z.object({
+  scores: z.array(
+    z.object({
+      dimension: dimensionSchema,
+      score: z.number().min(1).max(10),
+      reasoning: z.string(),
+    }),
+  ),
+  calorie_assertion_passed: z.boolean().optional(),
+});
+
+const raw = JSON.parse(cleaned);
+const validated = judgeResponseSchema.safeParse(raw);
+if (!validated.success) {
+  // Fail closed — return a sentinel that signals "not measured" to the
+  // aggregator instead of silently dropping data that bypasses validation.
+  return {
+    scores: dimensions.map((d) => ({
+      dimension: d,
+      score: 0,
+      reasoning: "Judge returned invalid schema — score unavailable",
+    })),
+  };
+}
+```
+
+**When to apply:** Any time the LLM's output is structured data consumed
+by code (tool-call args, evaluation judges, classification labels,
+extracted entities). If the output is free-form text for a user to read,
+validation is less critical.
+
+**Fail-closed principle:** For safety-critical assertions (calorie
+thresholds, allergen matches), a parsing failure should default to the
+_conservative_ answer (score = 0, assertion failed), not pass-by-omission.
+
+**Origin:** 2026-04-17 audit H11 — `evals/judge.ts` was `JSON.parse`-ing
+judge output, casting `dimension.toLowerCase()` as `RubricDimension`, and
+the aggregator's `if (entry)` guard silently dropped unknown dimensions
+— biasing dimension averages because "empathy" or "safety score"
+(instead of "safety") were simply missing from the aggregate.
+
+### Version-Anchor LLM Models in Persisted Results
+
+When running evaluations or any LLM pipeline where results will be
+compared across time, never rely on a model alias (`claude-sonnet-4-6`
+without a dated snapshot) to stay stable. Provider alias rolls silently
+shift output quality. Record the exact model string in every persisted
+result record.
+
+```typescript
+// ❌ Bad: hardcoded alias, result doesn't record which model scored it
+const message = await client.messages.create({
+  model: "claude-sonnet-4-6",
+  max_tokens: 1000,
+  messages: [{ role: "user", content: prompt }],
+});
+// EvalRunResult { runId, totalCases, dimensionAverages }  ← no model record
+```
+
+```typescript
+// ✅ Good: env-overridable default, recorded per result
+export const DEFAULT_JUDGE_MODEL =
+  process.env.EVAL_JUDGE_MODEL || "claude-sonnet-4-6";
+
+export async function judgeResponse(params: {
+  dimensions: RubricDimension[];
+  model?: string;
+  // ...
+}): Promise<{ scores: RubricScore[]; judgeModel: string }> {
+  const judgeModel = params.model ?? DEFAULT_JUDGE_MODEL;
+  const message = await client.messages.create({
+    model: judgeModel,
+    temperature: 0, // deterministic — pin this too
+    max_tokens: 1000,
+    messages: [{ role: "user", content: prompt }],
+  });
+  // ...
+  return { scores, judgeModel };
+}
+
+// EvalRunResult now includes judgeModel so regression comparisons know
+// whether a score shift is a real quality change or a provider alias roll.
+export interface EvalRunResult {
+  runId: string;
+  timestamp: string;
+  judgeModel: string;
+  // ...
+}
+```
+
+**When to apply:** Eval judges, benchmark scorers, quality gates, any
+comparison-over-time LLM output. For single-use generation (photo
+analysis, recipe generation) the alias is acceptable since results aren't
+stored for cross-version comparison.
+
+**Also pin:** `temperature: 0` for deterministic scoring; `top_p` if
+relevant. Non-zero temperature on a judge adds variance that looks like
+model drift.
+
+**Origin:** 2026-04-17 audit H8 — `evals/judge.ts` hardcoded the model
+string with no env override and the `EvalRunResult` type didn't record
+which model generated the scores. Reproducing yesterday's run after an
+Anthropic alias change would produce silently different numbers.

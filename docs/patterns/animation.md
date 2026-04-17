@@ -776,3 +776,56 @@ const { scrollHandler, headerStyle, barStyle, isBarVisible } =
 - `client/screens/HomeScreen.tsx` — DailySummaryHeader collapse
 - `client/screens/ProfileScreen.tsx` — ProfileCard collapse
 - `client/screens/meal-plan/RecipeBrowserScreen.tsx` — filter chip collapse
+
+---
+
+## Gate `runOnJS` on Shared-Value Transitions, Not on Every Frame
+
+`useAnimatedScrollHandler.onScroll` fires at 60Hz during scroll. Calling
+`runOnJS(setState)(value)` unconditionally inside the worklet bridges to
+the JS thread every frame, causing unnecessary re-renders of the owning
+component (and all children).
+
+```typescript
+// ❌ Bad: runOnJS fires every scroll frame, even when the value didn't change
+const scrollHandler = useAnimatedScrollHandler({
+  onScroll: (event) => {
+    scrollY.value = event.contentOffset.y;
+    const barShouldBeVisible = event.contentOffset.y > threshold;
+    runOnJS(updateBarVisibility)(barShouldBeVisible);
+  },
+});
+```
+
+```typescript
+// ✅ Good: track the last-reported value on the UI thread; only cross the
+// bridge when it transitions
+const lastBarVisible = useSharedValue(false);
+
+const scrollHandler = useAnimatedScrollHandler({
+  onScroll: (event) => {
+    scrollY.value = event.contentOffset.y;
+    const barShouldBeVisible = event.contentOffset.y > threshold;
+    if (barShouldBeVisible !== lastBarVisible.value) {
+      lastBarVisible.value = barShouldBeVisible;
+      runOnJS(updateBarVisibility)(barShouldBeVisible);
+    }
+  },
+});
+```
+
+**Why:** The `useSharedValue` comparison happens entirely on the UI thread
+— no JS bridge crossing. Only the transition (boolean flip, bucket change,
+threshold crossing) warrants a JS re-render. For a boolean that flips at
+most a few times per scroll gesture, this drops JS bridge traffic from
+60Hz to 2–3 events total.
+
+**When to apply:** Any `runOnJS` inside a Reanimated scroll/gesture/
+animated handler where the value derived on the UI thread is a discrete
+state (boolean, bucket, category) rather than a continuous animated value.
+For continuous values, prefer driving animation entirely via
+`useAnimatedStyle` without ever touching JS state.
+
+**Origin:** 2026-04-17 audit H14 — `useScrollLinkedHeader` was firing
+`runOnJS(updateBarVisibility)` on every `onScroll`, causing 60Hz JS-thread
+re-renders of `ProfileScreen` / `RecipeBrowserScreen` during scroll.

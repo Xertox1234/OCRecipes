@@ -2175,3 +2175,130 @@ remixedFromTitle: text("remixed_from_title"), // snapshot of original title
 **Note:** Requires `AnyPgColumn` import from `drizzle-orm/pg-core` for self-referencing FKs (Drizzle evaluates the lambda lazily).
 
 **Origin:** Recipe Remix feature (2026-04-08)
+
+---
+
+## Side-Effect Ordering Around `db.transaction`
+
+External-state mutations (search-index updates, in-memory caches, pub/sub
+notifications) **must fire AFTER `db.transaction` resolves**, not inside the
+transaction callback. Side effects inside the callback run before commit —
+if the transaction rolls back (serialization failure, constraint violation,
+post-delete junction-cleanup error), the external state is silently
+desynced from the DB, and the desync persists until process restart.
+
+```typescript
+// ❌ Bad: index mutation runs before commit; rollback silently poisons the cache
+export async function deleteMealPlanRecipe(id: number, userId: string) {
+  return db.transaction(async (tx) => {
+    const [row] = await tx.delete(mealPlanRecipes).where(...).returning(...);
+    if (!row) return false;
+
+    removeFromIndex(`personal:${id}`); // fires BEFORE commit
+    await tx.delete(cookbookRecipes).where(...); // if this throws, tx rolls back
+    return true;
+  });
+}
+```
+
+```typescript
+// ✅ Good: capture the transaction result, fire side effects post-commit
+export async function deleteMealPlanRecipe(id: number, userId: string) {
+  const deleted = await db.transaction(async (tx) => {
+    const [row] = await tx.delete(mealPlanRecipes).where(...).returning(...);
+    if (!row) return false;
+    await tx.delete(cookbookRecipes).where(...);
+    return true;
+  });
+
+  // Post-commit side effects — only fire if the transaction actually succeeded
+  if (deleted) removeFromIndex(`personal:${id}`);
+  return deleted;
+}
+```
+
+**Why:** The inverted failure mode — "crash between commit and side effect
+leaves stale cache entry" — is strictly better than "rollback silently
+removes an entry from the cache that still exists in the DB." The stale
+entry is self-healing on next process init; the rollback corruption is
+permanent until restart AND can leak deleted-but-still-cached data to
+other users.
+
+**Applies to:** MiniSearch index mutations, `fireAndForget` cache pokes,
+external service notifications, metrics emissions — any write that touches
+state outside the database.
+
+**Origin:** 2026-04-17 audit H6 — `removeFromIndex` was firing inside
+`db.transaction` callbacks in `deleteMealPlanRecipe` / `deleteCommunityRecipe`.
+
+---
+
+## Column-Restricted SELECT + Narrow `Pick` Types for Cache Loaders
+
+When a storage function loads rows to populate an in-memory cache/index,
+project only the columns the cache consumes — never `SELECT *` on tables
+with JSONB columns. Declare a narrow `Pick<>` type co-located with the
+consumer.
+
+```typescript
+// ❌ Bad: loads all rows including heavy `instructions` JSONB
+export async function getAllMealPlanRecipes(): Promise<MealPlanRecipe[]> {
+  return db
+    .select()
+    .from(mealPlanRecipes)
+    .orderBy(desc(mealPlanRecipes.createdAt));
+}
+```
+
+```typescript
+// ✅ Good: narrow type declares what the index actually reads
+export type SearchIndexableMealPlanRecipe = Pick<
+  MealPlanRecipe,
+  | "id"
+  | "userId"
+  | "title"
+  | "description"
+  | "cuisine"
+  | "dietTags"
+  | "mealTypes"
+  | "difficulty"
+  | "prepTimeMinutes"
+  | "cookTimeMinutes"
+  | "caloriesPerServing"
+  | "proteinPerServing"
+  | "carbsPerServing"
+  | "fatPerServing"
+  | "servings"
+  | "imageUrl"
+  | "sourceUrl"
+  | "createdAt"
+>;
+
+export async function getAllMealPlanRecipes(): Promise<
+  SearchIndexableMealPlanRecipe[]
+> {
+  return db
+    .select({
+      id: mealPlanRecipes.id,
+      userId: mealPlanRecipes.userId,
+      title: mealPlanRecipes.title,
+      // ... only the columns the index reads; JSONB `instructions` omitted
+    })
+    .from(mealPlanRecipes)
+    .orderBy(desc(mealPlanRecipes.createdAt));
+}
+```
+
+**Why:** JSONB columns (recipe `instructions`, ingredient arrays, etc.)
+can be 5–50 KB per row. Index loaders scan the whole table; at N users ×
+M recipes the memory and DB transfer dominate startup cost linearly.
+Projection saves N× the JSONB size.
+
+**Pattern placement:** The `Search/Cache/Index`-able narrow type lives
+next to the loader (or in a shared `server/lib/` module if both storage
+and service need it), **not** in `shared/schema.ts`.
+
+**Origin:** 2026-04-17 audit H5 — `getAllMealPlanRecipes` /
+`getAllPublicCommunityRecipes` / `getAllRecipeIngredients` were loading
+entire rows into the MiniSearch index which only consumes title +
+ingredient names + a few scalars.

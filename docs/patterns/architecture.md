@@ -1134,6 +1134,68 @@ const recipe = await storage.createMealPlanRecipe(
 - `server/storage/meal-plans.ts` — `createMealPlanRecipe()` (no longer imports from services)
 - `server/routes/meal-plan.ts`, `server/routes/recipes.ts` — callers that now compute `mealTypes` before calling storage
 
+#### Escape Hatch: Cross-Cutting Primitives Live in `server/lib/`
+
+When storage AND services both need the same primitive (mutation function,
+singleton state, shared type), the primitive belongs in `server/lib/`,
+**not** in `server/services/`. A `server/lib/` module has no dependencies
+on routes/services/storage — only on `@shared/` and third-party packages
+— so both layers can import from it without creating storage→service edges.
+
+**Example: MiniSearch index primitives.**
+
+Storage needs `addToIndex`/`removeFromIndex` to keep the cache in sync
+with writes. Services need `getIndex`/`getDocumentStore` to query.
+Storage importing from services would violate the purity rule; services
+importing from storage is allowed but conceptually wrong (the primitives
+aren't data-access).
+
+```
+✅ server/lib/search-index.ts   — singleton state + mutation primitives + normalizers
+   ↑                              ↑
+   │                              │
+   server/storage/*.ts            server/services/recipe-search.ts
+   (writers, call addToIndex)     (reader + init, calls getIndex)
+```
+
+```typescript
+// server/lib/search-index.ts — no imports from routes/services/storage
+import MiniSearch from "minisearch";
+import type { SearchableRecipe } from "@shared/types/recipe-search";
+import type { MealPlanRecipe, CommunityRecipe } from "@shared/schema";
+
+export type SearchIndexableMealPlanRecipe = Pick<MealPlanRecipe, ...>;
+export function addToIndex(doc: SearchableRecipe): void { ... }
+export function removeFromIndex(id: string): void { ... }
+export function mealPlanToSearchable(recipe, ingredientNames): SearchableRecipe { ... }
+
+// server/storage/meal-plans.ts
+import { addToIndex, mealPlanToSearchable } from "../lib/search-index";
+// ✅ Storage → lib is fine. No storage → services.
+
+// server/services/recipe-search.ts
+import { getIndex, getDocumentStore, mealPlanToSearchable } from "../lib/search-index";
+// ✅ Service → lib is fine. Service owns `initSearchIndex` + `searchRecipes`.
+```
+
+**Criteria for a `server/lib/` module:**
+
+1. Needed by at least two layers (e.g., storage AND services, or routes AND services).
+2. Has no business logic that belongs in a service (service = domain orchestration).
+3. Has no data-access logic that belongs in storage (storage = SQL/ORM).
+4. Pure mutation primitives, shared types, crypto/hashing, format conversions fit naturally.
+
+**Anti-example:** Don't put full business logic (meal-type inference,
+nutrition calculations, AI prompts) in `lib/`. That belongs in a service
+and routes/storage should import from the service or compute-then-pass
+(see `inferMealTypes` pattern above).
+
+**Origin:** 2026-04-17 audit H3 — MiniSearch singleton + mutation
+primitives were in `server/services/recipe-search.ts`, which forced
+`server/storage/{meal-plans,community}.ts` to import from services
+(violating the layering rule). Extracting to `server/lib/search-index.ts`
+restored the direction.
+
 ### Structured Logging Conventions
 
 All server logging uses pino via `server/lib/logger.ts`. AsyncLocalStorage automatically injects `requestId` and `userId` into every log call within a request context.

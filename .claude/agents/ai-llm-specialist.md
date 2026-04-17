@@ -286,6 +286,20 @@ When reviewing or writing AI service code, verify:
 - [ ] `temperature` set appropriately (low for extraction, higher for creative)
 - [ ] Timeout from correct tier constant (`OPENAI_TIMEOUT_*_MS`)
 - [ ] `response_format: { type: "json_object" }` when expecting JSON
+- [ ] Eval/benchmark models pinned via env-overridable constant (`DEFAULT_JUDGE_MODEL`) AND recorded in the persisted result record so alias rolls don't silently shift historical scores
+- [ ] `temperature: 0` on eval judges and any LLM output consumed by automated comparison
+
+### LLM Output Validation
+
+- [ ] LLM JSON responses consumed by code go through `zod.safeParse()` — never `JSON.parse(...) as T`
+- [ ] Enum-like fields (tool names, dimension labels, classification buckets) use `.refine()` against an explicit allowlist
+- [ ] Safety-critical assertions fail CLOSED on invalid schema (return conservative default, e.g., score = 0, assertion failed)
+- [ ] Aggregation code that iterates LLM output doesn't use `if (entry)` guards that silently drop unrecognized shape — Zod validation should reject them upstream
+
+### Tool-Calling Execution
+
+- [ ] Multiple tool calls in a single assistant turn execute in parallel (`Promise.all(toolCalls.map(...))`) — not in a `for...of await` loop
+- [ ] Parallel execution preserves tool_call_id ↔ result pairing via captured tuples (`{ tc, result }`), not parallel arrays
 
 ### Caching
 
@@ -317,6 +331,9 @@ When reviewing or writing AI service code, verify:
 7. **Missing `checkAiConfigured`** - Route will crash if OpenAI key not set
 8. **Excessive token budget** - `max_completion_tokens: 16000` for a yes/no question
 9. **Tool schema/handler drift** - Handler references `args.X` but `X` isn't in the OpenAI tool schema (phantom param, always undefined). Or schema defines a param that the handler ignores. Every `args.X` must exist in the schema's `properties`, and every schema property must be consumed in the handler.
+10. **Serial tool-call execution** - `for (const tc of toolCallsArray) { await executeToolCall(...) }` serializes independent tool calls into the streaming critical path. Replace with `Promise.all(toolCallsArray.map(...))` capturing `{ tc, result }` tuples, then append results in order (Ref: audit 2026-04-17 H7 — commit `b41245f` subject claimed this was fixed but the code wasn't actually updated; don't trust commit subjects, grep the code).
+11. **`JSON.parse` + type assertion on LLM output** - Casts hide schema drift. Unknown enum values silently coerce via `as RubricDimension`, and aggregators' `if (entry)` guards drop them without signal. Use `zod.safeParse()` with `.refine()` for enum fields; fail closed on invalid shape (Ref: audit 2026-04-17 H11).
+12. **Eval judge on model alias without recording model** - `model: "claude-sonnet-4-6"` (no dated snapshot) without an env override and without persisting `judgeModel` in `EvalRunResult` means Anthropic alias rolls silently shift historical scores. Pin via `DEFAULT_JUDGE_MODEL = process.env.X || "..."`, record per-result, and set `temperature: 0` (Ref: audit 2026-04-17 H8).
 
 ---
 

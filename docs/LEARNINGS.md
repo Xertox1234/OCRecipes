@@ -4,6 +4,9 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Side Effects Inside `db.transaction` Silently Desync State on Rollback (2026-04-17)](#side-effects-inside-dbtransaction-silently-desync-state-on-rollback-2026-04-17)
+- [Commit Subject Drift — A "Parallel Tools" Commit That Wasn't (2026-04-17)](#commit-subject-drift--a-parallel-tools-commit-that-wasnt-2026-04-17)
+- [Two-Level Unsaved-Changes Prompt Fires Twice (2026-04-17)](#two-level-unsaved-changes-prompt-fires-twice-2026-04-17)
 - [Fix One Protocol Handler, Grep All Consumers (2026-04-12)](#fix-one-protocol-handler-grep-all-consumers-2026-04-12)
 - [OpenAI Tool Schema/Handler Drift — Phantom Parameters (2026-04-12)](#openai-tool-schemahandler-drift--phantom-parameters-2026-04-12)
 - [cacheAffectingFields Must Stay in Sync with calculateProfileHash (2026-04-09)](#cacheaffectingfields-must-stay-in-sync-with-calculateprofilehash-2026-04-09)
@@ -48,6 +51,143 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-04-17] Side Effects Inside `db.transaction` Silently Desync State on Rollback
+
+**Category:** Data Integrity Gotcha
+
+**Problem:** `deleteMealPlanRecipe` and `deleteCommunityRecipe` fired
+`removeFromIndex(id)` INSIDE their `db.transaction(async tx => ...)`
+callbacks, before the transaction committed. If the transaction later
+rolled back (post-delete junction cleanup threw, serialization conflict,
+timeout), the recipe was restored in the DB — but the MiniSearch index
+had already forgotten it. The index would return stale results until
+the server restarted and re-ran `initSearchIndex`.
+
+The inverse failure mode — crashing between `COMMIT` and `removeFromIndex`
+— leaves a stale entry pointing to a deleted row. That's strictly better:
+stale-in-index is self-healing on the next `initSearchIndex` (it reads
+the DB, not the cache), whereas the rollback corruption is permanent
+until restart AND can leak deleted-but-still-cached data to other users.
+
+**Rule:** Any external-state mutation (search index, in-memory cache,
+pub/sub notification, metrics emission) MUST fire AFTER `db.transaction`
+resolves, gated on whether the transaction actually succeeded.
+
+```typescript
+// ❌ Wrong
+return db.transaction(async (tx) => {
+  await tx.delete(x).where(...);
+  removeFromIndex(id); // fires even if tx rolls back
+  await tx.delete(junction).where(...);
+});
+
+// ✅ Right
+const deleted = await db.transaction(async (tx) => {
+  const [row] = await tx.delete(x).where(...).returning(...);
+  if (!row) return false;
+  await tx.delete(junction).where(...);
+  return true;
+});
+if (deleted) removeFromIndex(id);
+return deleted;
+```
+
+**Discovered by:** 2026-04-17 audit H6 (Performance specialist agent).
+
+**References:**
+
+- `server/storage/meal-plans.ts` — `deleteMealPlanRecipe` (fixed)
+- `server/storage/community.ts` — `deleteCommunityRecipe` (fixed)
+- `docs/patterns/database.md` — "Side-Effect Ordering Around `db.transaction`"
+
+---
+
+## [2026-04-17] Commit Subject Drift — A "Parallel Tools" Commit That Wasn't
+
+**Category:** Process / Code Review Lesson
+
+**Problem:** The previous audit (2026-04-12) flagged that Coach Pro's
+tool-call execution was serial (`for...of` + `await`) and deferred the
+fix to `todos/coach-pro-service-extraction.md`. A follow-up commit
+`b41245f` titled `refactor: Coach Pro service extraction — cross-route
+import, parallel tools, handler decomposition` landed, marking the todo
+as addressed. The 2026-04-17 audit re-discovered that
+`server/services/nutrition-coach.ts:355-377` still had the serial loop
+— the "parallel tools" part of the commit subject never actually shipped
+(reverted during merge conflict resolution, from commit `75c84bb`).
+
+**Rule:** Audits should verify that commits implement what their subject
+claims. Specialized agents that search by symbol name (like
+`for.*await.*executeToolCall`) can catch regressions where a commit
+message promises a fix that didn't land. Don't trust commit subjects —
+grep the code.
+
+**Observation:** The discovery path from the audit's performance agent
+was: "despite commit b41245f titled 'parallel tools', `nutrition-coach.ts:356`
+still uses `for (const tc of toolCallsArray) { await executeToolCall(...) }`."
+That phrasing — comparing the commit subject to the current code — is a
+useful audit technique for any deferred-then-resolved item.
+
+**Discovered by:** 2026-04-17 audit H7.
+
+**References:**
+
+- Commit `b41245f` (landed) vs `75c84bb` (merge conflict resolution)
+- Fix landed in commit `7cbc8ed`
+
+---
+
+## [2026-04-17] Two-Level Unsaved-Changes Prompt Fires Twice
+
+**Category:** React Navigation Gotcha
+
+**Problem:** `WizardShell` (child component) had a discard-changes Alert
+in its `goBack` handler for step 1. `RecipeCreateScreen` (parent) also
+had a `beforeRemove` listener showing an identical Alert when
+`isDirtyRef.current === true`. Tapping the in-wizard Back on step 1
+triggered the following chain:
+
+1. WizardShell's Alert fires.
+2. User taps "Discard".
+3. `onGoBack` → `navigation.goBack()`.
+4. Screen's `beforeRemove` listener fires → shows a second identical Alert.
+5. User has to tap "Discard" twice to actually exit.
+
+**Root cause:** Two code paths both observed "user is trying to exit
+with unsaved changes" and both implemented the prompt. The `beforeRemove`
+listener is the correct owner because it intercepts ALL exit paths
+(hardware back button, swipe-back gesture, tab switch, deep-link replace)
+— not just the explicit in-wizard Back button.
+
+**Rule:** When a screen uses `beforeRemove` to prompt for unsaved changes,
+child components must NOT duplicate the prompt. Children just call
+`onGoBack()` (or `navigation.goBack()`) and let the listener decide.
+
+```typescript
+// ❌ Child component duplicates the prompt
+if (currentStep === 1 && form.isDirty) {
+  Alert.alert("Discard?", ..., [{ text: "Discard", onPress: onGoBack }]);
+  return;
+}
+onGoBack();
+
+// ✅ Child just delegates; screen's beforeRemove is the sole owner
+if (currentStep === 1) {
+  onGoBack(); // screen's beforeRemove will intercept if form is dirty
+  return;
+}
+```
+
+**Discovered by:** 2026-04-17 audit H13 (Camera/UX specialist agent).
+
+**References:**
+
+- `client/components/recipe-wizard/WizardShell.tsx` — removed duplicate Alert
+- `client/screens/meal-plan/RecipeCreateScreen.tsx` — sole owner via `beforeRemove`
+- `docs/patterns/react-native.md` — "Single Owner of Unsaved-Changes Prompt"
 
 ---
 

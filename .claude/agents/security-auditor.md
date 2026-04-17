@@ -322,6 +322,9 @@ When auditing a route file or service, check every item:
 8. **Raw secret as cache key** - Leaks in heap dumps
 9. **Missing SYSTEM_PROMPT_BOUNDARY** - AI can be role-played away from nutrition context
 10. **ZodError returning 500** - Catch block without handleRouteError
+11. **Seed/cleanup script deletes by name only** - Script matches `normalizedProductName`, `email`, or similar name-like column without also filtering by `authorId`/`userId`. A real user creating a row whose name happens to match the pattern gets silently wiped. Always add `and(authorIdCondition, or(ilike("seed-%"), inArray(TEST_NAMES)))` where `authorIdCondition = or(isNull(authorId), eq(authorId, demoUserId))`. Also consider a `--dry-run` flag and `NODE_ENV !== "production"` gate (Ref: audit 2026-04-17 H1)
+12. **Premium gate missing on a new AI endpoint** - A new route that calls an expensive AI service (recipe generation, photo analysis, coach) must enforce the SAME contract as its sibling endpoint — not just a rate limit. Grep for the sibling that already calls `generateX` / `analyzeX` and confirm the new route uses `checkPremiumFeature()` + `getDailyRecipeGenerationCount()` (or equivalent quota) BEFORE the AI call, and uses the shared limiter from `_rate-limiters.ts` (not inline `rateLimit()`). Rate-limiting free-tier at 5/min × N users still burns real dollars (Ref: audit 2026-04-17 H2)
+13. **Seed script creates demo user with hardcoded credentials** - `bcrypt.hash("demo123", 12)` with no `NODE_ENV` guard. If run in prod (even accidentally via a misrouted `npm run`), it creates an account with a well-known password. Gate on `NODE_ENV !== "production"` or require an explicit `--force` flag (Ref: audit 2026-04-17 M3 — related but deferred)
 
 ---
 

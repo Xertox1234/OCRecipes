@@ -652,3 +652,135 @@ import { FLATLIST_DEFAULTS } from "@/constants/performance";
 
 - `client/constants/performance.ts` — `FLATLIST_DEFAULTS`
 - Used in: `ChatScreen.tsx`, `SavedItemsScreen.tsx`, `GroceryListsScreen.tsx`
+
+---
+
+## Shared Init-Promise for Concurrent Singleton Initialization
+
+Any module-level singleton that loads data asynchronously (search index,
+warm caches, lazy connection pools) needs a shared in-flight promise so
+concurrent callers await the same initialization instead of each running
+the expensive load path.
+
+```typescript
+// ❌ Bad: `if (initialized) return` is not a race guard
+let initialized = false;
+
+export async function initCache(): Promise<void> {
+  if (initialized) return;
+  const docs = await loadAllFromDb(); // expensive
+  index.addAll(docs); // throws on duplicate id if called twice
+  initialized = true;
+}
+// Two concurrent `initCache()` calls both pass the `!initialized` check,
+// both call loadAllFromDb, both call `addAll` → MiniSearch throws "duplicate id".
+```
+
+```typescript
+// ✅ Good: shared promise + atomic reset on failure
+let initialized = false;
+let initPromise: Promise<void> | null = null;
+
+export async function initCache(): Promise<void> {
+  if (initialized) return;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    try {
+      const docs = await loadAllFromDb();
+      index.addAll(docs);
+      initialized = true;
+    } catch (err) {
+      // Atomic reset: a partial addAll would poison retry with duplicate-id
+      // errors. Clear singleton state so the next caller starts fresh.
+      resetCachePrimitive();
+      throw err;
+    }
+  })();
+
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null; // Cleared on both success and failure — retryable
+  }
+}
+```
+
+**Key properties:**
+
+1. **Single load per process lifetime** — second/third/Nth concurrent
+   caller awaits the same `initPromise`, not a new one.
+2. **Atomic init** — if the IIFE throws after partial work, reset primitive
+   state so retry starts clean. Without this, a partial load poisons the
+   singleton permanently (duplicate-id on re-addAll).
+3. **Retryable** — `initPromise = null` in the outer `finally` runs on
+   both success and failure, so a subsequent call after a transient DB
+   error will start a new attempt.
+
+**Origin:** 2026-04-17 audit H4 — `initSearchIndex` had only an
+`if (initialized) return` guard. A server-boot request arriving during
+the ~100–500ms init window would trigger a parallel `addAll` and throw.
+
+---
+
+## `Promise.all` With Ordering Preservation via Captured Tuples
+
+When running independent async work in parallel where the caller needs
+results in the **original input order** (OpenAI tool-call responses,
+batched fetches paired with their keys), capture each input alongside
+its result in a tuple, then walk the tuples in order.
+
+```typescript
+// ❌ Bad: serial await in a loop
+for (const tc of toolCallsArray) {
+  const result = await executeToolCall(tc.function.name, args, userId);
+  conversation.push({
+    role: "tool",
+    content: JSON.stringify(result),
+    tool_call_id: tc.id,
+  });
+}
+```
+
+```typescript
+// ✅ Good: parallel execution + ordering preserved via captured tuples
+const toolResults = await Promise.all(
+  toolCallsArray.map(async (tc) => {
+    try {
+      const args = JSON.parse(tc.function.arguments);
+      const result = await executeToolCall(tc.function.name, args, userId);
+      return { tc, result };
+    } catch (error) {
+      return {
+        tc,
+        result: {
+          error: `Tool ${tc.function.name} is temporarily unavailable`,
+        },
+      };
+    }
+  }),
+);
+
+for (const { tc, result } of toolResults) {
+  conversation.push({
+    role: "tool",
+    content: JSON.stringify(result),
+    tool_call_id: tc.id,
+  });
+}
+```
+
+**Why the tuple:** `Promise.all` preserves input array order, so
+`results[i]` corresponds to `inputs[i]` — but capturing both sides of
+the pair in one object (`{ tc, result }`) prevents parallel-array
+alignment bugs during future refactors. It's also semantically clearer.
+
+**When NOT to use:**
+
+- Work that has real ordering dependencies (streaming, state machines).
+- Calls that compete for a rate-limited external resource — use
+  bounded-parallelism (`p-limit`, chunked batching) instead of unbounded
+  `Promise.all`.
+
+**Origin:** 2026-04-17 audit H7 — `nutrition-coach.ts` tool-call loop
+was still serial despite commit `b41245f`'s "parallel tools" subject.

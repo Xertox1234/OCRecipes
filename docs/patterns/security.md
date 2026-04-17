@@ -1364,3 +1364,142 @@ await storage.createNotebookEntries(
 - `server/lib/ai-safety.ts` — `sanitizeContextField()` strips zero-width chars, control chars, and injection patterns
 
 **Origin:** Coach Pro code review (2026-04-10) — caught as Critical finding (C2)
+
+---
+
+## Seed / Cleanup Scripts Must Scope by `authorId`, Not Just Name
+
+Any script that deletes rows based on name patterns (test data, seed
+recipes, demo fixtures) MUST also scope the WHERE clause by an identity
+column (`authorId`, `userId`, `ownerId`) that distinguishes script-generated
+rows from real user data. Name matches alone are a ticking data-loss bomb
+— a real user can create a row whose name happens to match the pattern.
+
+```typescript
+// ❌ Bad: deletes ANY row where normalizedProductName matches, regardless of author
+const TEST_PRODUCT_NAMES = ["test product", "test food", "original pasta"];
+const junkRecipes = await db
+  .select(...)
+  .from(communityRecipes)
+  .where(
+    or(
+      ilike(communityRecipes.normalizedProductName, "seed-%"),
+      inArray(communityRecipes.normalizedProductName, TEST_PRODUCT_NAMES),
+    ),
+  );
+// A real user recipe titled "Original Pasta" gets wiped along with their
+// cookbook entries, favourites, dismissals, and image file.
+```
+
+```typescript
+// ✅ Good: restrict to orphan (authorId IS NULL) or the known seed-author
+const demoUserRows = await db
+  .select({ id: users.id })
+  .from(users)
+  .where(eq(users.username, "demo"));
+const demoUserId = demoUserRows[0]?.id ?? null;
+
+const authorIdCondition = demoUserId
+  ? or(
+      isNull(communityRecipes.authorId),
+      eq(communityRecipes.authorId, demoUserId),
+    )
+  : isNull(communityRecipes.authorId);
+
+const junkRecipes = await db
+  .select(...)
+  .from(communityRecipes)
+  .where(
+    and(
+      authorIdCondition,
+      or(
+        ilike(communityRecipes.normalizedProductName, "seed-%"),
+        inArray(communityRecipes.normalizedProductName, TEST_PRODUCT_NAMES),
+      ),
+    ),
+  );
+```
+
+**Why:** Name patterns collide accidentally. `authorId` is either a known
+demo/seed user OR `NULL` (orphan from cascaded user delete) — real users
+always have a non-null, non-demo `authorId` and are automatically excluded.
+
+**Additional defensive measures:**
+
+1. Gate destructive scripts on `NODE_ENV !== "production"` unless
+   explicitly overridden with a flag.
+2. Add a `--dry-run` mode that logs what would be deleted without
+   committing.
+3. Log `id` + `title` + `authorId` tuples before deletion so a reviewer
+   can audit.
+
+**Origin:** 2026-04-17 audit H1 — `cleanup-seed-recipes.ts` had
+`TEST_PRODUCT_NAMES` including `"original pasta"` with no `authorId`
+guard; a user recipe with that name would be silently deleted.
+
+---
+
+## Premium-Gate Parity Across Endpoints Hitting Expensive AI Paths
+
+When multiple endpoints call the same expensive AI service (recipe
+generation, photo analysis, coach responses), every endpoint must enforce
+the same premium contract: `checkPremiumFeature(...)` + daily quota via
+`getDailyRecipeGenerationCount` (or equivalent). Rate-limiting alone
+(`recipeGenerationRateLimit`) is not sufficient — a free-tier user can
+still burn the OpenAI budget at 5 heavy calls/minute × N tenants.
+
+```typescript
+// ❌ Bad: new endpoint has only a rate limit, unlike its sibling
+app.post(
+  "/api/meal-plan/recipes/generate",
+  requireAuth,
+  rateLimit({ windowMs: 60_000, max: 5 }),
+  async (req, res) => {
+    const content = await generateRecipeContent(...); // $0.05/call GPT-4
+    res.json(content);
+  },
+);
+
+// Meanwhile /api/recipes/generate enforces checkPremiumFeature +
+// dailyRecipeGenerations and rejects free-tier calls before the AI fires.
+```
+
+```typescript
+// ✅ Good: same contract as the existing premium endpoint
+app.post(
+  "/api/meal-plan/recipes/generate",
+  requireAuth,
+  recipeGenerationRateLimit, // shared limiter from ./_rate-limiters
+  async (req, res) => {
+    const features = await checkPremiumFeature(
+      req, res, "recipeGeneration", "Recipe generation",
+    );
+    if (!features) return;
+
+    const generationsToday = await storage.getDailyRecipeGenerationCount(
+      req.userId, new Date(),
+    );
+    if (generationsToday >= features.dailyRecipeGenerations) {
+      sendError(res, 429, "Daily recipe generation limit reached",
+        ErrorCode.DAILY_LIMIT_REACHED);
+      return;
+    }
+
+    const content = await generateRecipeContent(...);
+    res.json(content);
+  },
+);
+```
+
+**Audit step for any new AI endpoint:**
+
+1. Grep `server/routes/` for sibling endpoints calling the same
+   `generateX`/`analyzeX`/`chatX` service.
+2. Confirm the new endpoint imports from `./_helpers` (`checkPremiumFeature`,
+   `handleRouteError`) and `./_rate-limiters` (not inline `rateLimit()`).
+3. Confirm the daily-quota check runs BEFORE the AI call, not after.
+
+**Origin:** 2026-04-17 audit H2 — `POST /api/meal-plan/recipes/generate`
+(new endpoint supporting the recipe wizard) had only a 5/min inline
+`rateLimit`, while the existing `POST /api/recipes/generate` enforced
+`checkPremiumFeature("recipeGeneration")` + `dailyRecipeGenerations`.

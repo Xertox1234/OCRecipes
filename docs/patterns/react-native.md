@@ -3105,3 +3105,113 @@ useEffect(() => {
 **When to use:** Any screen where form state lives in a child component but the parent needs it for navigation guards, permission checks, or other cross-cutting concerns.
 
 **Reference:** `client/screens/meal-plan/RecipeCreateScreen.tsx`, `client/components/recipe-wizard/WizardShell.tsx`
+
+---
+
+## Single Owner of Unsaved-Changes Prompt
+
+When a screen uses a `beforeRemove` navigation listener to prompt for
+unsaved changes, the child component must NOT also show its own discard
+Alert for the same condition. The two prompts chain: the child's Alert
+fires, user taps Discard, the onDismiss callback calls
+`navigation.goBack()`, and the screen's `beforeRemove` re-fires showing
+an identical second Alert.
+
+```typescript
+// ❌ Bad: child component duplicates the prompt
+// WizardShell.tsx
+const goBack = useCallback(() => {
+  if (currentStep === 1) {
+    if (form.isDirty) {
+      Alert.alert("Discard changes?", "...", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: onGoBack },
+      ]);
+      return;
+    }
+    onGoBack();
+  }
+}, [currentStep, form.isDirty, onGoBack]);
+
+// RecipeCreateScreen.tsx — ALSO shows an Alert via beforeRemove
+navigation.addListener("beforeRemove", (e) => {
+  if (isDirtyRef.current) {
+    e.preventDefault();
+    Alert.alert("Discard changes?", "...", ...); // fires AFTER WizardShell's
+  }
+});
+```
+
+```typescript
+// ✅ Good: child just delegates; screen's beforeRemove is the sole owner
+// WizardShell.tsx
+const goBack = useCallback(() => {
+  if (currentStep === 1) {
+    // Screen-level beforeRemove listener owns the unsaved-changes prompt;
+    // delegating here avoids a double-alert on discard.
+    onGoBack();
+    return;
+  }
+  // ... step-back within wizard
+}, [currentStep, onGoBack]);
+```
+
+**Why the screen should own it:** `beforeRemove` intercepts all exit
+paths — hardware back button, swipe-back gesture, tab switch, deep-link
+replace — not just the explicit "Back" button in the child. Putting the
+prompt in the screen guarantees one code path handles every exit.
+
+**Origin:** 2026-04-17 audit H13 — WizardShell and RecipeCreateScreen
+both had discard Alerts. Tapping the in-wizard Back on step 1 fired the
+wizard's Alert; Discard called `onGoBack()` → `navigation.goBack()` →
+`beforeRemove` → second identical Alert.
+
+---
+
+## Capture Inner `setTimeout` Handles in Outer `useEffect` Closures
+
+A `useEffect` that schedules a timer, then schedules a _nested_ timer
+inside the first callback, must capture both handles via closure
+variables so the cleanup function can clear both. The cleanup only sees
+the variables captured at effect-setup time.
+
+```typescript
+// ❌ Bad: inner setTimeout's handle is never captured
+useEffect(() => {
+  const outer = setTimeout(() => {
+    animate.value = withSequence(withTiming(1), withTiming(0));
+    setTimeout(() => onComplete?.(), 300); // fires on unmounted component!
+  }, 300);
+  return () => clearTimeout(outer); // only clears the outer timer
+}, [visible]);
+```
+
+```typescript
+// ✅ Good: inner timer captured in the outer effect's closure
+useEffect(() => {
+  let completeTimer: ReturnType<typeof setTimeout> | undefined;
+  const outer = setTimeout(() => {
+    animate.value = withSequence(withTiming(1), withTiming(0));
+    completeTimer = setTimeout(() => onComplete?.(), 300);
+  }, 300);
+  return () => {
+    clearTimeout(outer);
+    if (completeTimer) clearTimeout(completeTimer);
+  };
+}, [visible]);
+```
+
+**Why:** The cleanup runs when the effect re-runs or on unmount. The
+inner `setTimeout` may not have been scheduled yet at cleanup time, OR
+it may have already fired. By keeping a closure variable, the cleanup
+function conditionally clears whichever timer is still pending.
+
+**When to apply:** Any effect that schedules chained timers (staggered
+animations, fade-in-then-out-then-complete sequences, debounced
+state-then-side-effect patterns).
+
+**Origin:** 2026-04-17 audit H15 — `AnimatedCheckmark.tsx` scheduled the
+fade-out `setTimeout` from within the draw-complete `setTimeout`. Cleanup
+cleared only the outer handle; the inner callback fired after unmount,
+risking `setState`-on-unmounted warnings and triggering `onComplete`
+after the consumer had already moved on.

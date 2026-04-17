@@ -233,6 +233,7 @@ When reviewing or writing UI code, verify:
 
 - [ ] Safe area insets applied (top and bottom)
 - [ ] KeyboardAvoidingView with correct per-platform behavior
+- [ ] For multi-step forms / wizards: single KAV at the shell/screen root; inner steps use plain `ScrollView` (avoids nested-KAV conflicts)
 - [ ] Responsive across device sizes (iPhone SE through Pro Max)
 - [ ] Content doesn't clip behind navigation bars
 
@@ -250,6 +251,8 @@ When reviewing or writing UI code, verify:
 - [ ] Reduced motion support
 - [ ] Layout animation delays capped
 - [ ] Animations on UI thread (worklets)
+- [ ] `runOnJS` inside `useAnimatedScrollHandler` gated on a shared-value transition — never fired every scroll frame (60Hz)
+- [ ] Chained `setTimeout` inside `useEffect`: inner timer handles captured in closure variables and cleared in cleanup
 
 ### Accessibility
 
@@ -273,6 +276,10 @@ When reviewing or writing UI code, verify:
 8. **Missing haptic feedback** - Important interactions need tactile response
 9. **`accessibilityState={{ invalid: true }}`** - Use `aria-invalid` instead (TS error)
 10. **Alert.alert for form errors** - Use `InlineError` component
+11. **Nested `KeyboardAvoidingView`** - Multi-step wizards/forms often grow a KAV per step. Hoist a single KAV to the shell/screen root; inner steps use plain `ScrollView`. Nested KAVs conflict and fight each other when keyboard shows (Ref: audit 2026-04-17 H12)
+12. **Double discard-changes prompt** - If the screen has a `beforeRemove` Alert for unsaved changes, child components must NOT also show their own Alert for the same condition. The child's Alert → onDiscard → `navigation.goBack()` re-fires `beforeRemove` → second identical Alert. Screen owns the prompt; children just delegate via `onGoBack()` (Ref: audit 2026-04-17 H13)
+13. **`runOnJS` on every scroll frame** - `useAnimatedScrollHandler.onScroll` fires 60Hz. Calling `runOnJS(setState)(value)` unconditionally causes needless JS-thread re-renders. Add a `useSharedValue` snapshot of the last-reported value and only cross the bridge when the value transitions (Ref: audit 2026-04-17 H14)
+14. **Inner `setTimeout` not cleaned up** - `useEffect(() => { setTimeout(() => { ...; setTimeout(onComplete, 300); }, N); return () => clearTimeout(...) })` only clears the outer timer. Capture the inner handle in a closure variable (`let innerTimer: ReturnType<typeof setTimeout> | undefined`) so cleanup can clear both. Otherwise `onComplete` fires after unmount (Ref: audit 2026-04-17 H15)
 
 ---
 

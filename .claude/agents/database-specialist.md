@@ -369,10 +369,19 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 ### Architecture
 
 - [ ] Services don't import `db`
-- [ ] Storage doesn't import from services
+- [ ] Storage doesn't import from services (cross-cutting primitives go in `server/lib/`, not `services/`)
 - [ ] `fireAndForget()` for non-critical background ops
 - [ ] `handleRouteError()` in catch blocks
 - [ ] Sensitive columns excluded from default queries
+
+### Transactions & Side Effects
+
+- [ ] External-state mutations (search index, in-memory cache, pub/sub) fire AFTER `db.transaction` resolves — never inside the callback
+- [ ] Post-commit side effects are gated on the transaction's return value (`if (deleted) ...`)
+- [ ] Cache loaders use column-restricted `.select({...})` — never `SELECT *` on tables with JSONB columns
+- [ ] Narrow `SearchIndexable*` / `Cacheable*` Pick types declared next to the loader (or in `server/lib/` if cross-cutting)
+- [ ] Singleton cache `init()` functions use a shared `initPromise` guard — not just `if (initialized) return`
+- [ ] Concurrent-safe init resets primitive state on failure so retry starts clean
 
 ---
 
@@ -392,6 +401,10 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 12. **Plain INSERT on cache with unique key** - Use `onConflictDoNothing` for idempotent cache inserts to prevent 500 on concurrent writes
 13. **Over-fetching in polymorphic FK resolution** - `.select()` on target tables pulls full rows including large JSONB; use column-restricted `.select({ id, title, ... })` for list/card views (Ref: audit #9 M2)
 14. **Missing orphan cleanup in parent delete** - When adding a new polymorphic junction table, update ALL parent delete functions to clean up the new junction rows. Check both `deleteCommunityRecipe` and `deleteMealPlanRecipe` (Ref: audit #9 M5)
+15. **Side effect inside `db.transaction` callback** - `removeFromIndex`, cache pokes, metrics emissions that fire before the transaction commits silently desync external state on rollback. Move AFTER the `await db.transaction(...)` resolves, gated on its return value (Ref: audit 2026-04-17 H6)
+16. **SELECT \* on cache/index loader with JSONB columns** - `getAllX` style loaders that fill an in-memory cache should use `.select({ col: tbl.col, ... })` projection; loading JSONB columns (`instructions`, `ingredients`) the cache never reads multiplies startup memory and DB transfer. Introduce a narrow `Pick<>` type for the loader's return shape (Ref: audit 2026-04-17 H5)
+17. **Singleton cache init without shared promise** - `let initialized = false; if (initialized) return;` is not a concurrency guard. Two callers in the ~100-500ms init window will both run the load. Add `let initPromise: Promise<void> | null`, return the in-flight promise, and reset primitive state on failure so retry starts clean (Ref: audit 2026-04-17 H4)
+18. **Storage → services import** - When storage needs a primitive that services also use (mutation fn, shared type), put the primitive in `server/lib/`, NOT `services/`. Storage importing from services violates the `routes → services → storage` direction (Ref: audit 2026-04-17 H3)
 
 ---
 
