@@ -20,8 +20,9 @@ import {
   cookbookRecipes,
   favouriteRecipes,
   recipeDismissals,
+  users,
 } from "@shared/schema";
-import { eq, and, ilike, inArray, or, sql } from "drizzle-orm";
+import { eq, and, ilike, inArray, or, sql, isNull } from "drizzle-orm";
 
 const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
 
@@ -30,7 +31,22 @@ const TEST_PRODUCT_NAMES = ["test product", "test food", "original pasta"];
 async function main() {
   console.log("=== Cleanup Junk Recipes ===\n");
 
-  // Find all junk recipes: seeds + leaked test data
+  // Resolve demo user ID so we can restrict deletion to orphan/demo-authored
+  // rows and NEVER touch real user recipes that happen to share a test name.
+  const demoUserRows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.username, "demo"));
+  const demoUserId = demoUserRows[0]?.id ?? null;
+
+  const authorIdCondition = demoUserId
+    ? or(
+        isNull(communityRecipes.authorId),
+        eq(communityRecipes.authorId, demoUserId),
+      )
+    : isNull(communityRecipes.authorId);
+
+  // Find all junk recipes: seeds + leaked test data — scoped to orphan or demo author
   const junkRecipes = await db
     .select({
       id: communityRecipes.id,
@@ -40,9 +56,12 @@ async function main() {
     })
     .from(communityRecipes)
     .where(
-      or(
-        ilike(communityRecipes.normalizedProductName, "seed-%"),
-        inArray(communityRecipes.normalizedProductName, TEST_PRODUCT_NAMES),
+      and(
+        authorIdCondition,
+        or(
+          ilike(communityRecipes.normalizedProductName, "seed-%"),
+          inArray(communityRecipes.normalizedProductName, TEST_PRODUCT_NAMES),
+        ),
       ),
     );
 

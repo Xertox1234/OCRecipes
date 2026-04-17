@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { register } from "../recipe-generate";
 import { generateRecipeContent } from "../../services/recipe-generation";
+import { storage } from "../../storage";
 
 vi.mock("../../services/recipe-generation", () => ({
   generateRecipeContent: vi.fn(),
@@ -12,6 +13,13 @@ vi.mock("../../services/recipe-generation", () => ({
 vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
+
+vi.mock("../../storage", () => ({
+  storage: {
+    getSubscriptionStatus: vi.fn(),
+    getDailyRecipeGenerationCount: vi.fn(),
+  },
+}));
 
 function createApp() {
   const app = express();
@@ -25,7 +33,38 @@ describe("POST /api/meal-plan/recipes/generate", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: premium user with available daily quota
+    vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+      tier: "premium",
+      expiresAt: null,
+    });
+    vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
     app = createApp();
+  });
+
+  it("returns 403 when user lacks premium access", async () => {
+    vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+      tier: "free",
+      expiresAt: null,
+    });
+
+    const res = await request(app)
+      .post("/api/meal-plan/recipes/generate")
+      .set("Authorization", "Bearer test-token")
+      .send({ prompt: "quick chicken stir fry" });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 429 when daily quota exceeded", async () => {
+    vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(9999);
+
+    const res = await request(app)
+      .post("/api/meal-plan/recipes/generate")
+      .set("Authorization", "Bearer test-token")
+      .send({ prompt: "quick chicken stir fry" });
+
+    expect(res.status).toBe(429);
   });
 
   it("returns 400 when prompt is missing", async () => {
