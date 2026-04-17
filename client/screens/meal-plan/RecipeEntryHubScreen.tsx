@@ -12,6 +12,7 @@ import type { RouteProp } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useHeaderHeight } from "@react-navigation/elements";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
@@ -126,6 +127,7 @@ export default function RecipeEntryHubScreen() {
   const route = useRoute<EntryHubRouteProp>();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
 
   const returnToMealPlan = route.params?.returnToMealPlan;
 
@@ -157,7 +159,10 @@ export default function RecipeEntryHubScreen() {
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       contentContainerStyle={[
         styles.content,
-        { paddingBottom: insets.bottom + Spacing.xl },
+        {
+          paddingTop: headerHeight + Spacing.lg,
+          paddingBottom: insets.bottom + Spacing.xl,
+        },
       ]}
       showsVerticalScrollIndicator={false}
     >
@@ -181,8 +186,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl,
-    paddingBottom: Spacing.lg,
     gap: Spacing.sm,
   },
   subtitle: {
