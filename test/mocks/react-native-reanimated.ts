@@ -77,8 +77,10 @@ export const FadeInUp = createLayoutAnimation("FadeInUp");
 export const SlideInRight = createLayoutAnimation("SlideInRight");
 export const SlideInLeft = createLayoutAnimation("SlideInLeft");
 export const SlideOutRight = createLayoutAnimation("SlideOutRight");
+export const SlideOutLeft = createLayoutAnimation("SlideOutLeft");
 export const SlideInUp = createLayoutAnimation("SlideInUp");
 export const SlideOutUp = createLayoutAnimation("SlideOutUp");
+export const SlideOutDown = createLayoutAnimation("SlideOutDown");
 export const LinearTransition = createLayoutAnimation("LinearTransition");
 
 /** Map RN accessibility props to DOM aria attributes, stripping unknown DOM props. */

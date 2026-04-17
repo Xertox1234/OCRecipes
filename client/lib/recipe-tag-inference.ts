@@ -225,6 +225,27 @@ export function inferCuisine(
   return bestScore >= 1 ? bestCuisine : null;
 }
 
+/**
+ * Infer diet tags from an ingredient list.
+ *
+ * Coverage of `DIET_TAG_OPTIONS` (see `components/recipe-wizard/types.ts`):
+ *
+ *   Covered by ingredient heuristics (exclusion of keyword lists):
+ *     - Vegetarian   — no meat/seafood keywords
+ *     - Vegan        — no meat/seafood, dairy, or egg keywords
+ *     - Gluten Free  — no gluten keywords
+ *     - Dairy Free   — no dairy keywords
+ *
+ *   Intentionally NOT inferred here:
+ *     - Keto, Paleo, Low Carb, High Protein
+ *
+ * These four depend on per-serving macronutrient ratios (net carbs, protein
+ * %, ingredient whitelists) that are not reliably derivable from an ingredient
+ * name list alone. We prefer to surface no suggestion over a wrong one — the
+ * user can still toggle these in the TagsStep manually. If we later accept
+ * a nutrition snapshot alongside the ingredient list, inference for these
+ * tags can be added as a second pass.
+ */
 export function inferDietTags(ingredientNames: string[]): DietTag[] {
   if (ingredientNames.length === 0) return [];
 
