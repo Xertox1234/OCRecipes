@@ -535,38 +535,19 @@ export default function RecipeBrowserScreen() {
         <View style={styles.actionRow}>
           <View style={{ flex: 1 }} />
           <Pressable
-            onPress={() => navigation.navigate("RecipeCreate", {})}
+            onPress={() => navigation.navigate("RecipeEntryHub", {})}
             style={[
               styles.headerAction,
               { borderColor: withOpacity(theme.text, 0.15) },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Create recipe"
+            accessibilityLabel="Add recipe"
           >
-            <Feather name="edit-3" size={14} color={theme.link} />
+            <Feather name="plus" size={14} color={theme.link} />
             <ThemedText
               style={[styles.headerActionText, { color: theme.link }]}
             >
-              Create
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => navigation.navigate("RecipeImport")}
-            style={[
-              styles.headerAction,
-              {
-                borderColor: withOpacity(theme.text, 0.15),
-                marginLeft: Spacing.xs,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Import recipe from URL"
-          >
-            <Feather name="link" size={14} color={theme.link} />
-            <ThemedText
-              style={[styles.headerActionText, { color: theme.link }]}
-            >
-              Import
+              Add
             </ThemedText>
           </Pressable>
         </View>
