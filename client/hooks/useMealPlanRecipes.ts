@@ -5,6 +5,7 @@ import type {
   RecipeIngredient,
   CommunityRecipe,
 } from "@shared/schema";
+import type { ImportedRecipeData } from "@shared/types/recipe-import";
 
 type RecipeWithIngredients = MealPlanRecipe & {
   ingredients: RecipeIngredient[];
@@ -187,6 +188,21 @@ export function useImportRecipeFromUrl() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/meal-plan/recipes"] });
       queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
+    },
+  });
+}
+
+export function useParseRecipeFromUrl() {
+  return useMutation({
+    mutationFn: async (url: string): Promise<ImportedRecipeData> => {
+      const res = await apiRequest("POST", "/api/meal-plan/recipes/parse-url", {
+        url,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json();
     },
   });
 }

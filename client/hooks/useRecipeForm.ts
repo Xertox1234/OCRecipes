@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
-import type { DietTag } from "@/components/recipe-builder/types";
+import type { DietTag } from "@/components/recipe-wizard/types";
 import { parseIngredientText } from "@/lib/ingredient-parser";
 
 export interface IngredientRow {

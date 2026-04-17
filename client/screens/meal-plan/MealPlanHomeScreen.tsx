@@ -749,7 +749,7 @@ export default function MealPlanHomeScreen() {
 
   const handleNavigateCreate = useCallback(
     (mt: MealType, date: string) => {
-      navigation.navigate("RecipeCreate", {
+      navigation.navigate("RecipeEntryHub", {
         returnToMealPlan: { mealType: mt, plannedDate: date },
       });
     },

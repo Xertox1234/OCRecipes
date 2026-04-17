@@ -782,6 +782,73 @@ export function register(app: Express): void {
     },
   );
 
+  // POST /api/meal-plan/recipes/parse-url — Parse recipe from URL without saving
+  app.post(
+    "/api/meal-plan/recipes/parse-url",
+    requireAuth,
+    urlImportRateLimit,
+    async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+      try {
+        const parsed = importUrlSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        const result = await importRecipeFromUrl(parsed.data.url);
+
+        if (!result.success) {
+          const messages: Record<string, string> = {
+            FETCH_FAILED: "Could not fetch the URL",
+            NO_RECIPE_DATA: "No recipe data found on this page",
+            PARSE_ERROR: "Could not parse recipe data from this page",
+            TIMEOUT: "The request timed out while fetching the URL",
+            RESPONSE_TOO_LARGE: "The page is too large to import (max 5 MB)",
+          };
+          sendError(
+            res,
+            422,
+            messages[result.error] || "Import failed",
+            result.error,
+          );
+          return;
+        }
+
+        const { data } = result;
+        const importHasInstructions =
+          data.instructions && data.instructions.length > 0;
+        const importHasIngredients =
+          data.ingredients && data.ingredients.length > 0;
+        if (!importHasInstructions && !importHasIngredients) {
+          sendError(
+            res,
+            422,
+            "This recipe has no instructions or ingredients and cannot be imported",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
+        // Normalize imported data before returning to client
+        data.title = normalizeTitle(data.title);
+        data.description = normalizeDescription(data.description ?? null) ?? "";
+        if (data.instructions) {
+          data.instructions = normalizeInstructions(data.instructions);
+        }
+
+        res.status(200).json(data);
+      } catch (error) {
+        logger.error({ err: toError(error) }, "URL parse failed");
+        sendError(res, 500, "Failed to parse recipe", ErrorCode.INTERNAL_ERROR);
+      }
+    },
+  );
+
   // POST /api/meal-plan/recipes/import-url — Import recipe from URL
   app.post(
     "/api/meal-plan/recipes/import-url",

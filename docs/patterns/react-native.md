@@ -3003,3 +3003,105 @@ export function SearchFilterSheet({
 **When to use:** Any list screen with a filter bottom sheet (recipe search, product catalog, activity log filters).
 
 **Reference:** `client/components/meal-plan/SearchFilterSheet.tsx`, `client/screens/meal-plan/RecipeBrowserScreen.tsx`
+
+### Single-Screen Wizard with Reanimated Transitions
+
+For multi-step forms (recipe creation, onboarding), use a single screen component with a `WizardShell` that manages step state internally. Steps are swapped via Reanimated layout animations using a `key` change — not separate navigation screens.
+
+```typescript
+// WizardShell manages: currentStep, direction, validation, progress bar, nav buttons
+const [currentStep, setCurrentStep] = useState<WizardStep>(1);
+const [direction, setDirection] = useState<"forward" | "back">("forward");
+
+// Step transitions via key change + entering/exiting animations
+const entering = direction === "forward" ? SlideInRight.duration(250) : SlideInLeft.duration(250);
+const exiting = direction === "forward" ? SlideOutLeft.duration(250) : SlideOutRight.duration(250);
+
+<Animated.View key={`step-${currentStep}`} entering={entering} exiting={exiting}>
+  {renderStep()}
+</Animated.View>
+```
+
+**Architecture:**
+
+```
+Screen (thin wrapper — extracts route params, provides navigation callbacks)
+└── WizardShell (manages step state, progress bar, nav buttons)
+    ├── Step1Component (pure view + form interactions, receives props)
+    ├── Step2Component
+    └── ...
+```
+
+Each step component is a focused, pure-view component receiving only the data and callbacks it needs. No step component manages navigation or validation — that is centralized in the shell.
+
+**Edit-from-preview pattern:** The final step shows a preview with "Edit" links. Tapping one sets `returnToPreview = true` and jumps back to that step. On the next "Next" tap, `returnToPreview` causes a fast-forward back to Preview, skipping intermediate steps.
+
+```typescript
+const editFromPreview = useCallback((targetStep: WizardStep) => {
+  setReturnToPreview(true);
+  setDirection("back");
+  setCurrentStep(targetStep);
+}, []);
+
+// In goNext:
+if (returnToPreview) {
+  setReturnToPreview(false);
+  setCurrentStep(PREVIEW_STEP);
+  return;
+}
+```
+
+**Why single-screen over navigation stack:**
+
+- Progress bar and nav buttons stay persistent (no re-mount flicker)
+- Step state is trivial (`useState` vs navigation params)
+- Edit-from-preview jumps are simple state changes, not complex `navigation.navigate` calls
+- No risk of stale params or navigation stack depth issues
+
+**When to use:** Multi-step forms with 4+ steps where the user fills data across steps and reviews at the end. Not needed for simple 2-3 step flows where separate screens work fine.
+
+**Reference:** `client/components/recipe-wizard/WizardShell.tsx`, `client/screens/meal-plan/RecipeCreateScreen.tsx`
+
+### Dirty State Sync via Ref Callbacks
+
+When a child component (e.g., `WizardShell`) owns form state but the parent screen needs it for `beforeRemove` navigation guards, use callback props that write to `useRef` values in the parent. The ref avoids re-renders while keeping the `beforeRemove` listener fresh.
+
+```typescript
+// Parent screen
+const isDirtyRef = useRef(false);
+const isSavingRef = useRef(false);
+
+const handleDirtyChange = useCallback((dirty: boolean) => {
+  isDirtyRef.current = dirty;
+}, []);
+
+useEffect(() => {
+  const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+    if (isSavingRef.current) return;  // Let saves through
+    if (!isDirtyRef.current) return;  // Clean form, let go
+
+    e.preventDefault();
+    Alert.alert("Discard changes?", "...", [
+      { text: "Keep editing", style: "cancel" },
+      { text: "Discard", style: "destructive",
+        onPress: () => navigation.dispatch(e.data.action) },
+    ]);
+  });
+  return unsubscribe;
+}, [navigation]);
+
+<WizardShell onDirtyChange={handleDirtyChange} onSavingChange={handleSavingChange} />
+```
+
+```typescript
+// Child component (WizardShell)
+useEffect(() => {
+  onDirtyChange?.(form.isDirty);
+}, [form.isDirty, onDirtyChange]);
+```
+
+**Why refs instead of state:** The `beforeRemove` listener has `[navigation]` as its only dependency — it never re-subscribes. Using state would require adding `isDirty` to the dependency array, causing the listener to re-subscribe on every keystroke. Refs let the listener read the current value without re-subscribing.
+
+**When to use:** Any screen where form state lives in a child component but the parent needs it for navigation guards, permission checks, or other cross-cutting concerns.
+
+**Reference:** `client/screens/meal-plan/RecipeCreateScreen.tsx`, `client/components/recipe-wizard/WizardShell.tsx`

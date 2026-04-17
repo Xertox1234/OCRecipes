@@ -13,8 +13,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import { NotificationFeedbackType } from "expo-haptics";
-
 import { ThemedText } from "@/components/ThemedText";
 import { IngredientIcon } from "@/components/IngredientIcon";
 import { useTheme } from "@/hooks/useTheme";
@@ -28,12 +26,10 @@ import {
 import { useRecipePhotoImport } from "@/hooks/useRecipePhotoImport";
 import { mapPhotoResultToImportedRecipeData } from "@/lib/photo-upload";
 import type { RecipePhotoResult } from "@/lib/photo-upload";
-import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
-import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipePhotoImportScreenNavigationProp } from "@/types/navigation";
 
-type ScreenState = "analyzing" | "review" | "saving" | "error";
+type ScreenState = "analyzing" | "review" | "error";
 
 type RecipePhotoImportRouteProp = RouteProp<
   MealPlanStackParamList,
@@ -50,8 +46,6 @@ export default function RecipePhotoImportScreen() {
 
   const { photoUri, returnToMealPlan } = route.params;
   const photoImportMutation = useRecipePhotoImport();
-  const createRecipeMutation = useCreateMealPlanRecipe();
-  const addItemMutation = useAddMealPlanItem();
 
   const [state, setState] = useState<ScreenState>("analyzing");
   const [result, setResult] = useState<RecipePhotoResult | null>(null);
@@ -107,63 +101,11 @@ export default function RecipePhotoImportScreen() {
     }
   }, [state, result, errorMessage]);
 
-  const handleSave = useCallback(async () => {
-    if (!result) return;
-    setState("saving");
-    haptics.impact();
-
-    try {
-      const recipe = await createRecipeMutation.mutateAsync({
-        title: result.title,
-        description: result.description,
-        cuisine: result.cuisine,
-        servings: result.servings ?? undefined,
-        prepTimeMinutes: result.prepTimeMinutes,
-        cookTimeMinutes: result.cookTimeMinutes,
-        instructions: result.instructions
-          ? result.instructions.split(/\n/).filter((s) => s.trim().length > 0)
-          : undefined,
-        dietTags: result.dietTags,
-        sourceType: "photo_import",
-        caloriesPerServing: result.caloriesPerServing,
-        proteinPerServing: result.proteinPerServing,
-        carbsPerServing: result.carbsPerServing,
-        fatPerServing: result.fatPerServing,
-        ingredients: result.ingredients.map((ing) => ({
-          name: ing.name,
-          quantity: ing.quantity,
-          unit: ing.unit,
-        })),
-      });
-
-      if (returnToMealPlan) {
-        await addItemMutation.mutateAsync({
-          recipeId: recipe.id,
-          mealType: returnToMealPlan.mealType,
-          plannedDate: returnToMealPlan.plannedDate,
-        });
-      }
-
-      haptics.notification(NotificationFeedbackType.Success);
-      navigation.popToTop();
-    } catch {
-      setState("review");
-      haptics.notification(NotificationFeedbackType.Error);
-    }
-  }, [
-    result,
-    haptics,
-    createRecipeMutation,
-    addItemMutation,
-    returnToMealPlan,
-    navigation,
-  ]);
-
-  const handleEdit = useCallback(() => {
+  const handleSave = useCallback(() => {
     if (!result) return;
     haptics.impact();
     const prefill = mapPhotoResultToImportedRecipeData(result);
-    navigation.navigate("RecipeCreate", { prefill, returnToMealPlan });
+    navigation.replace("RecipeCreate", { prefill, returnToMealPlan });
   }, [result, haptics, navigation, returnToMealPlan]);
 
   const handleTryAgain = useCallback(() => {
@@ -214,18 +156,6 @@ export default function RecipePhotoImportScreen() {
               style={[styles.loadingText, { color: theme.textSecondary }]}
             >
               Extracting recipe...
-            </ThemedText>
-          </View>
-        )}
-
-        {/* Saving State */}
-        {state === "saving" && (
-          <View accessibilityLiveRegion="polite" style={styles.centeredContent}>
-            <ActivityIndicator size="large" color={theme.link} />
-            <ThemedText
-              style={[styles.loadingText, { color: theme.textSecondary }]}
-            >
-              Saving recipe...
             </ThemedText>
           </View>
         )}
@@ -412,25 +342,10 @@ export default function RecipePhotoImportScreen() {
               onPress={handleSave}
               style={[styles.actionButton, { backgroundColor: theme.link }]}
               accessibilityRole="button"
-              accessibilityLabel="Save recipe"
+              accessibilityLabel="Review and save recipe"
             >
               <ThemedText style={styles.actionButtonText}>
-                Save Recipe
-              </ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={handleEdit}
-              style={[
-                styles.secondaryButton,
-                { borderColor: withOpacity(theme.text, 0.15) },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Edit before saving"
-            >
-              <ThemedText
-                style={[styles.secondaryButtonText, { color: theme.link }]}
-              >
-                Edit Before Saving
+                Review &amp; Save
               </ThemedText>
             </Pressable>
           </View>

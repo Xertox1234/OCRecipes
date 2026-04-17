@@ -25,12 +25,11 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import { useImportRecipeFromUrl } from "@/hooks/useMealPlanRecipes";
-import { useAddMealPlanItem } from "@/hooks/useMealPlan";
+import { useParseRecipeFromUrl } from "@/hooks/useMealPlanRecipes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeImportScreenNavigationProp } from "@/types/navigation";
 
-type ImportState = "idle" | "loading" | "success" | "error";
+type ImportState = "idle" | "loading" | "error";
 
 type RecipeImportRouteProp = RouteProp<MealPlanStackParamList, "RecipeImport">;
 
@@ -43,26 +42,16 @@ export default function RecipeImportScreen() {
   const haptics = useHaptics();
 
   const returnToMealPlan = route.params?.returnToMealPlan;
-  const importMutation = useImportRecipeFromUrl();
-  const addItemMutation = useAddMealPlanItem();
+  const parseMutation = useParseRecipeFromUrl();
 
   const [url, setUrl] = useState("");
   const [state, setState] = useState<ImportState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
-  const [importedRecipe, setImportedRecipe] = useState<{
-    id: number;
-    title: string;
-    caloriesPerServing: string | null;
-  } | null>(null);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
     if (state === "loading") {
       AccessibilityInfo.announceForAccessibility("Extracting recipe data");
-    } else if (state === "success") {
-      AccessibilityInfo.announceForAccessibility(
-        "Recipe imported successfully",
-      );
     } else if (state === "error") {
       AccessibilityInfo.announceForAccessibility(
         `Import failed: ${errorMessage}`,
@@ -79,26 +68,12 @@ export default function RecipeImportScreen() {
     setErrorMessage("");
 
     try {
-      const recipe = await importMutation.mutateAsync(trimmed);
-
-      if (returnToMealPlan) {
-        await addItemMutation.mutateAsync({
-          recipeId: recipe.id,
-          mealType: returnToMealPlan.mealType,
-          plannedDate: returnToMealPlan.plannedDate,
-        });
-        haptics.notification(NotificationFeedbackType.Success);
-        navigation.popToTop();
-        return;
-      }
-
-      setImportedRecipe({
-        id: recipe.id,
-        title: recipe.title,
-        caloriesPerServing: recipe.caloriesPerServing,
-      });
-      setState("success");
+      const importedData = await parseMutation.mutateAsync(trimmed);
       haptics.notification(NotificationFeedbackType.Success);
+      navigation.replace("RecipeCreate", {
+        prefill: importedData,
+        returnToMealPlan,
+      });
     } catch (error) {
       setState("error");
       haptics.notification(NotificationFeedbackType.Error);
@@ -114,33 +89,16 @@ export default function RecipeImportScreen() {
         setErrorMessage("Something went wrong. Please try again.");
       }
     }
-  }, [
-    url,
-    haptics,
-    importMutation,
-    addItemMutation,
-    returnToMealPlan,
-    navigation,
-  ]);
+  }, [url, haptics, parseMutation, returnToMealPlan, navigation]);
 
   const handleTryAgain = useCallback(() => {
     setState("idle");
     setErrorMessage("");
-    setImportedRecipe(null);
   }, []);
 
   const handleCreateManually = useCallback(() => {
     navigation.navigate("RecipeCreate", { returnToMealPlan });
   }, [navigation, returnToMealPlan]);
-
-  const handleViewRecipe = useCallback(() => {
-    if (importedRecipe) {
-      navigation.navigate("FeaturedRecipeDetail", {
-        recipeId: importedRecipe.id,
-        recipeType: "mealPlan",
-      });
-    }
-  }, [navigation, importedRecipe]);
 
   const inputStyle = [
     styles.urlInput,
@@ -221,59 +179,6 @@ export default function RecipeImportScreen() {
             >
               Extracting recipe data...
             </ThemedText>
-          </View>
-        )}
-
-        {state === "success" && importedRecipe && (
-          <View accessibilityLiveRegion="polite" style={styles.centeredContent}>
-            <View
-              style={[
-                styles.successIcon,
-                { backgroundColor: withOpacity(theme.success, 0.15) },
-              ]}
-            >
-              <Feather name="check" size={32} color={theme.success} />
-            </View>
-            <ThemedText style={styles.heading}>Recipe Imported!</ThemedText>
-            <ThemedText
-              style={[styles.successTitle, { color: theme.text }]}
-              numberOfLines={2}
-            >
-              {importedRecipe.title}
-            </ThemedText>
-            {importedRecipe.caloriesPerServing && (
-              <ThemedText
-                style={[styles.successMeta, { color: theme.textSecondary }]}
-              >
-                {Math.round(parseFloat(importedRecipe.caloriesPerServing))} cal
-                per serving
-              </ThemedText>
-            )}
-            <Pressable
-              onPress={handleViewRecipe}
-              style={[styles.actionButton, { backgroundColor: theme.link }]}
-              accessibilityRole="button"
-              accessibilityLabel="View recipe"
-            >
-              <ThemedText style={styles.actionButtonText}>
-                View Recipe
-              </ThemedText>
-            </Pressable>
-            <Pressable
-              onPress={() => navigation.goBack()}
-              style={[
-                styles.secondaryButton,
-                { borderColor: withOpacity(theme.text, 0.15) },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Done"
-            >
-              <ThemedText
-                style={[styles.secondaryButtonText, { color: theme.link }]}
-              >
-                Done
-              </ThemedText>
-            </Pressable>
           </View>
         )}
 
@@ -386,24 +291,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 15,
     marginTop: Spacing.lg,
-  },
-  successIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: Spacing.lg,
-  },
-  successTitle: {
-    fontSize: 17,
-    fontFamily: FontFamily.semiBold,
-    textAlign: "center",
-    marginBottom: Spacing.xs,
-  },
-  successMeta: {
-    fontSize: 14,
-    marginBottom: Spacing.xl,
   },
   errorIcon: {
     width: 64,

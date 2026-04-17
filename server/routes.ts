@@ -10,6 +10,7 @@ import { register as registerSuggestions } from "./routes/suggestions";
 import { register as registerSavedItems } from "./routes/saved-items";
 import { register as registerRecipes } from "./routes/recipes";
 import { register as registerMealPlan } from "./routes/meal-plan";
+import { register as registerRecipeGenerate } from "./routes/recipe-generate";
 import { register as registerGrocery } from "./routes/grocery";
 import { register as registerPantry } from "./routes/pantry";
 import { register as registerSubscription } from "./routes/subscription";
@@ -56,6 +57,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerSavedItems(app);
   registerRecipes(app);
   registerMealPlan(app);
+  registerRecipeGenerate(app);
   registerGrocery(app);
   registerPantry(app);
   registerSubscription(app);

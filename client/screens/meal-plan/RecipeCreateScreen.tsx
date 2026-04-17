@@ -1,538 +1,77 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  StyleSheet,
-  View,
-  TextInput,
-  ScrollView,
-  Pressable,
-  Keyboard,
-  InteractionManager,
-  AccessibilityInfo,
-  findNodeHandle,
-} from "react-native";
-import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
-import { useHeaderHeight } from "@react-navigation/elements";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import React, { useCallback, useRef } from "react";
+import { Alert } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
-import { NotificationFeedbackType } from "expo-haptics";
-
-import { ThemedText } from "@/components/ThemedText";
-import { useConfirmationModal } from "@/components/ConfirmationModal";
-import { InlineError } from "@/components/InlineError";
-import { SectionRow } from "@/components/recipe-builder/SectionRow";
-import { SheetHeader } from "@/components/recipe-builder/SheetHeader";
-import { TimeServingsSheet } from "@/components/recipe-builder/TimeServingsSheet";
-import { NutritionSheet } from "@/components/recipe-builder/NutritionSheet";
-import { TagsCuisineSheet } from "@/components/recipe-builder/TagsCuisineSheet";
-import { IngredientsSheet } from "@/components/recipe-builder/IngredientsSheet";
-import { InstructionsSheet } from "@/components/recipe-builder/InstructionsSheet";
-import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
-import { useToast } from "@/context/ToastContext";
-import { useRecipeForm } from "@/hooks/useRecipeForm";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
-import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
-import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
-import type { RecipeCreateScreenNavigationProp } from "@/types/navigation";
-import type {
-  SheetSection,
-  SheetLifecycleState,
-} from "@/components/recipe-builder/types";
+import WizardShell from "@/components/recipe-wizard/WizardShell";
+
+type RecipeCreateScreenNavigationProp = NativeStackNavigationProp<
+  MealPlanStackParamList,
+  "RecipeCreate"
+>;
 
 type RecipeCreateRouteProp = RouteProp<MealPlanStackParamList, "RecipeCreate">;
-
-// Module-level snap point constants
-const SNAP_TIME_SERVINGS = ["45%", "70%"];
-const SNAP_NUTRITION = ["50%"];
-const SNAP_TAGS = ["50%"];
-const SNAP_INGREDIENTS = ["70%"];
-const SNAP_INSTRUCTIONS = ["70%"];
 
 export default function RecipeCreateScreen() {
   const navigation = useNavigation<RecipeCreateScreenNavigationProp>();
   const route = useRoute<RecipeCreateRouteProp>();
-  const headerHeight = useHeaderHeight();
-  const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
-  const haptics = useHaptics();
-  const toast = useToast();
-  const { confirm, ConfirmationModal } = useConfirmationModal();
+  const { prefill, returnToMealPlan } = route.params ?? {};
+  const isDirtyRef = useRef(false);
+  const isSavingRef = useRef(false);
 
-  const prefill = route.params?.prefill;
-  const returnToMealPlan = route.params?.returnToMealPlan;
-  const createMutation = useCreateMealPlanRecipe();
-  const addItemMutation = useAddMealPlanItem();
+  const handleGoBack = useCallback(() => {
+    navigation.goBack();
+  }, [navigation]);
 
-  const form = useRecipeForm(prefill);
-  const [validationError, setValidationError] = useState("");
-  const sheetState = useRef<SheetLifecycleState>("IDLE");
-  const activeSheetTrigger = useRef<View | null>(null);
-
-  // Sheet refs
-  const timeServingsRef = useRef<BottomSheetModal>(null);
-  const nutritionRef = useRef<BottomSheetModal>(null);
-  const tagsRef = useRef<BottomSheetModal>(null);
-  const ingredientsRef = useRef<BottomSheetModal>(null);
-  const instructionsRef = useRef<BottomSheetModal>(null);
-
-  // Track which sheets have been opened (for lazy mounting)
-  const [mountedSheets, setMountedSheets] = React.useState<Set<SheetSection>>(
-    new Set(),
-  );
-
-  const sheetRefs: Record<
-    SheetSection,
-    React.RefObject<BottomSheetModal | null>
-  > = {
-    timeServings: timeServingsRef,
-    nutrition: nutritionRef,
-    tags: tagsRef,
-    ingredients: ingredientsRef,
-    instructions: instructionsRef,
-  };
-
-  // Section row trigger refs for focus return
-  const sectionTriggerRefs: Record<
-    SheetSection,
-    React.RefObject<View | null>
-  > = {
-    timeServings: useRef<View>(null),
-    nutrition: useRef<View>(null),
-    tags: useRef<View>(null),
-    ingredients: useRef<View>(null),
-    instructions: useRef<View>(null),
-  };
-
-  // ── Sheet opening with keyboard sequencing ──
-  const openSheet = useCallback(
-    (section: SheetSection) => {
-      if (sheetState.current !== "IDLE") return;
-      sheetState.current = "SHEET_OPEN";
-      activeSheetTrigger.current = sectionTriggerRefs[section].current;
-
-      // Ensure sheet is mounted
-      setMountedSheets((prev) => {
-        if (prev.has(section)) return prev;
-        const next = new Set(prev);
-        next.add(section);
-        return next;
-      });
-
-      // Dismiss keyboard first, then present sheet after animations settle
-      Keyboard.dismiss();
-      InteractionManager.runAfterInteractions(() => {
-        sheetRefs[section].current?.present();
-      });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- all captured values are stable refs and state setters; including them would not change behavior but would obscure the intentional stability
-    [],
-  );
-
-  const handleSheetDismiss = useCallback(() => {
-    sheetState.current = "IDLE";
-    // Return focus to the section row that triggered this sheet
-    if (activeSheetTrigger.current) {
-      const tag = findNodeHandle(activeSheetTrigger.current);
-      if (tag) {
-        requestAnimationFrame(() => {
-          AccessibilityInfo.setAccessibilityFocus(tag);
-        });
-      }
+  const handleSaveComplete = useCallback(() => {
+    isSavingRef.current = true;
+    if (returnToMealPlan) {
+      navigation.popToTop();
+    } else {
+      navigation.goBack();
     }
+  }, [navigation, returnToMealPlan]);
+
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    isDirtyRef.current = dirty;
   }, []);
 
-  // ── Backdrop renderer ──
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.35}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
+  const handleSavingChange = useCallback((saving: boolean) => {
+    isSavingRef.current = saving;
+  }, []);
 
-  // ── Unsaved changes guard ──
-  useEffect(() => {
+  // Guard against hardware back button / swipe-back gesture
+  React.useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", (e) => {
-      if (!form.isDirty || createMutation.isPending) {
-        // Allow navigation if form is clean or save is in progress
-        if (createMutation.isPending) {
-          e.preventDefault();
-        }
-        return;
-      }
+      if (isSavingRef.current) return;
+      if (!isDirtyRef.current) return;
 
       e.preventDefault();
-      const action = e.data.action;
-      confirm({
-        title: "Discard changes?",
-        message: "You have unsaved changes.",
-        confirmLabel: "Discard",
-        cancelLabel: "Keep editing",
-        destructive: true,
-        onConfirm: () => navigation.dispatch(action),
-      });
-    });
-
-    return unsubscribe;
-  }, [navigation, form.isDirty, createMutation.isPending, confirm]);
-
-  // ── Save ──
-  const handleSave = useCallback(async () => {
-    if (form.title.trim().length < 3) {
-      setValidationError("Recipe title must be at least 3 characters.");
-      return;
-    }
-
-    const hasIngredients = form.ingredients.some((i) => i.text.trim());
-    const hasInstructions = form.steps.some((s) => s.text.trim());
-    if (!hasIngredients && !hasInstructions) {
-      setValidationError(
-        "Please add at least one ingredient or instruction step.",
+      Alert.alert(
+        "Discard changes?",
+        "You have unsaved changes. Are you sure you want to go back?",
+        [
+          { text: "Keep editing", style: "cancel" },
+          {
+            text: "Discard",
+            style: "destructive",
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ],
       );
-      return;
-    }
-    setValidationError("");
-    if (sheetState.current !== "IDLE") return;
-
-    sheetState.current = "SAVING";
-
-    try {
-      const newRecipe = await createMutation.mutateAsync(form.formToPayload());
-      haptics.notification(NotificationFeedbackType.Success);
-
-      if (returnToMealPlan) {
-        await addItemMutation.mutateAsync({
-          recipeId: newRecipe.id,
-          mealType: returnToMealPlan.mealType,
-          plannedDate: returnToMealPlan.plannedDate,
-        });
-        navigation.popToTop();
-      } else {
-        navigation.goBack();
-      }
-    } catch {
-      sheetState.current = "IDLE";
-      haptics.notification(NotificationFeedbackType.Error);
-      toast.error("Failed to save recipe. Please try again.");
-    }
-  }, [
-    form,
-    haptics,
-    toast,
-    createMutation,
-    addItemMutation,
-    returnToMealPlan,
-    navigation,
-  ]);
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: headerHeight + Spacing.sm,
-          paddingBottom: insets.bottom + Spacing.xl + 80,
-          paddingHorizontal: Spacing.lg,
-        }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Title */}
-        <TextInput
-          style={[
-            styles.titleInput,
-            {
-              color: theme.text,
-              borderBottomColor: withOpacity(theme.text, 0.1),
-            },
-          ]}
-          value={form.title}
-          onChangeText={(text) => {
-            form.setTitle(text);
-            if (validationError) setValidationError("");
-          }}
-          placeholder="What are you making?"
-          placeholderTextColor={theme.textSecondary}
-          autoFocus
-          accessibilityLabel="Recipe title"
-        />
-        <InlineError
-          message={validationError}
-          style={{ marginTop: Spacing.xs }}
-        />
-
-        {/* Subtitle / Description */}
-        <TextInput
-          style={[styles.subtitleInput, { color: theme.textSecondary }]}
-          value={form.description}
-          onChangeText={form.setDescription}
-          placeholder="Brief description (optional)"
-          placeholderTextColor={withOpacity(theme.textSecondary, 0.6)}
-          accessibilityLabel="Recipe description"
-        />
-
-        {/* Section Rows Card */}
-        <View
-          style={[
-            styles.sectionsCard,
-            {
-              backgroundColor: theme.backgroundSecondary,
-              borderRadius: BorderRadius.card,
-            },
-          ]}
-        >
-          <View ref={sectionTriggerRefs.ingredients}>
-            <SectionRow
-              icon="list"
-              label="Ingredients"
-              summary={form.ingredientsSummary}
-              isFilled={!!form.ingredientsSummary}
-              onPress={() => openSheet("ingredients")}
-            />
-          </View>
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-          <View ref={sectionTriggerRefs.instructions}>
-            <SectionRow
-              icon="file-text"
-              label="Instructions"
-              summary={form.instructionsSummary}
-              isFilled={!!form.instructionsSummary}
-              onPress={() => openSheet("instructions")}
-            />
-          </View>
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-          <View ref={sectionTriggerRefs.timeServings}>
-            <SectionRow
-              icon="clock"
-              label="Time & Servings"
-              summary={form.timeServingsSummary}
-              isFilled={!!form.timeServingsSummary}
-              onPress={() => openSheet("timeServings")}
-            />
-          </View>
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-          <View ref={sectionTriggerRefs.nutrition}>
-            <SectionRow
-              icon="activity"
-              label="Nutrition"
-              summary={form.nutritionSummary}
-              isFilled={!!form.nutritionSummary}
-              onPress={() => openSheet("nutrition")}
-            />
-          </View>
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-          <View ref={sectionTriggerRefs.tags}>
-            <SectionRow
-              icon="tag"
-              label="Tags & Cuisine"
-              summary={form.tagsSummary}
-              isFilled={!!form.tagsSummary}
-              onPress={() => openSheet("tags")}
-            />
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* Save Button */}
-      <View
-        style={[
-          styles.saveBar,
-          {
-            paddingBottom: insets.bottom + Spacing.md,
-            backgroundColor: theme.backgroundRoot,
-            borderTopColor: withOpacity(theme.text, 0.08),
-          },
-        ]}
-      >
-        <Pressable
-          onPress={handleSave}
-          disabled={createMutation.isPending}
-          style={[
-            styles.saveButton,
-            {
-              backgroundColor: createMutation.isPending
-                ? withOpacity(theme.link, 0.5)
-                : theme.link,
-            },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel="Save recipe"
-        >
-          <ThemedText
-            style={[styles.saveButtonText, { color: theme.buttonText }]}
-          >
-            {createMutation.isPending ? "Saving..." : "Save Recipe"}
-          </ThemedText>
-        </Pressable>
-      </View>
-
-      {/* ── Bottom Sheets ── */}
-
-      {mountedSheets.has("ingredients") && (
-        <BottomSheetModal
-          ref={ingredientsRef}
-          snapPoints={SNAP_INGREDIENTS}
-          enableDynamicSizing={false}
-          keyboardBehavior="extend"
-          keyboardBlurBehavior="restore"
-          backdropComponent={renderBackdrop}
-          onDismiss={handleSheetDismiss}
-          accessibilityViewIsModal
-        >
-          <SheetHeader
-            title="Ingredients"
-            onDone={() => ingredientsRef.current?.dismiss()}
-          />
-          <IngredientsSheet
-            data={form.ingredients}
-            onAdd={form.addIngredient}
-            onRemove={form.removeIngredient}
-            onUpdate={form.updateIngredient}
-          />
-        </BottomSheetModal>
-      )}
-
-      {mountedSheets.has("instructions") && (
-        <BottomSheetModal
-          ref={instructionsRef}
-          snapPoints={SNAP_INSTRUCTIONS}
-          enableDynamicSizing={false}
-          keyboardBehavior="extend"
-          keyboardBlurBehavior="restore"
-          backdropComponent={renderBackdrop}
-          onDismiss={handleSheetDismiss}
-          accessibilityViewIsModal
-        >
-          <SheetHeader
-            title="Instructions"
-            onDone={() => instructionsRef.current?.dismiss()}
-          />
-          <InstructionsSheet
-            data={form.steps}
-            onAdd={form.addStep}
-            onRemove={form.removeStep}
-            onUpdate={form.updateStep}
-            onMove={form.moveStep}
-          />
-        </BottomSheetModal>
-      )}
-
-      {mountedSheets.has("timeServings") && (
-        <BottomSheetModal
-          ref={timeServingsRef}
-          snapPoints={SNAP_TIME_SERVINGS}
-          enableDynamicSizing={false}
-          keyboardBehavior="interactive"
-          keyboardBlurBehavior="restore"
-          backdropComponent={renderBackdrop}
-          onDismiss={handleSheetDismiss}
-          accessibilityViewIsModal
-        >
-          <SheetHeader
-            title="Time & Servings"
-            onDone={() => timeServingsRef.current?.dismiss()}
-          />
-          <TimeServingsSheet
-            data={form.timeServings}
-            onChange={form.setTimeServings}
-          />
-        </BottomSheetModal>
-      )}
-
-      {mountedSheets.has("nutrition") && (
-        <BottomSheetModal
-          ref={nutritionRef}
-          snapPoints={SNAP_NUTRITION}
-          enableDynamicSizing={false}
-          keyboardBehavior="interactive"
-          keyboardBlurBehavior="restore"
-          backdropComponent={renderBackdrop}
-          onDismiss={handleSheetDismiss}
-          accessibilityViewIsModal
-        >
-          <SheetHeader
-            title="Nutrition"
-            onDone={() => nutritionRef.current?.dismiss()}
-          />
-          <NutritionSheet data={form.nutrition} onChange={form.setNutrition} />
-        </BottomSheetModal>
-      )}
-
-      {mountedSheets.has("tags") && (
-        <BottomSheetModal
-          ref={tagsRef}
-          snapPoints={SNAP_TAGS}
-          enableDynamicSizing={false}
-          keyboardBehavior="interactive"
-          keyboardBlurBehavior="restore"
-          backdropComponent={renderBackdrop}
-          onDismiss={handleSheetDismiss}
-          accessibilityViewIsModal
-        >
-          <SheetHeader
-            title="Tags & Cuisine"
-            onDone={() => tagsRef.current?.dismiss()}
-          />
-          <TagsCuisineSheet data={form.tags} onChange={form.setTags} />
-        </BottomSheetModal>
-      )}
-      <ConfirmationModal />
-    </View>
+    <WizardShell
+      prefill={prefill}
+      returnToMealPlan={returnToMealPlan}
+      onGoBack={handleGoBack}
+      onSaveComplete={handleSaveComplete}
+      onDirtyChange={handleDirtyChange}
+      onSavingChange={handleSavingChange}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  titleInput: {
-    fontSize: 24,
-    fontFamily: FontFamily.bold,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-    marginBottom: Spacing.xs,
-  },
-  subtitleInput: {
-    fontSize: 15,
-    fontFamily: FontFamily.regular,
-    paddingVertical: Spacing.sm,
-    marginBottom: Spacing.xl,
-  },
-  sectionsCard: {
-    overflow: "hidden",
-  },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginHorizontal: Spacing.lg,
-  },
-  saveBar: {
-    paddingTop: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderTopWidth: 1,
-  },
-  saveButton: {
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.card,
-    alignItems: "center",
-  },
-  saveButtonText: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
-  },
-});

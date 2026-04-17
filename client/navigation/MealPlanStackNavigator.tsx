@@ -13,6 +13,8 @@ import CookbookCreateScreen from "@/screens/meal-plan/CookbookCreateScreen";
 import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
 import CookbookDetailScreen from "@/screens/meal-plan/CookbookDetailScreen";
 import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
+import RecipeEntryHubScreen from "@/screens/meal-plan/RecipeEntryHubScreen";
+import RecipeAIGenerateScreen from "@/screens/meal-plan/RecipeAIGenerateScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
@@ -26,6 +28,12 @@ export type MealPlanStackParamList = {
     searchQuery?: string;
     planDays?: MealPlanDay[];
   };
+  RecipeEntryHub:
+    | { returnToMealPlan?: { mealType: string; plannedDate: string } }
+    | undefined;
+  RecipeAIGenerate:
+    | { returnToMealPlan?: { mealType: string; plannedDate: string } }
+    | undefined;
   RecipeCreate: {
     prefill?: ImportedRecipeData;
     returnToMealPlan?: { mealType: string; plannedDate: string };
@@ -66,6 +74,24 @@ export default function MealPlanStackNavigator() {
         options={{
           headerTitle: () => (
             <HeaderTitle title="Add Recipe" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="RecipeEntryHub"
+        component={RecipeEntryHubScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="Add Recipe" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="RecipeAIGenerate"
+        component={RecipeAIGenerateScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="Generate Recipe" showIcon={false} />
           ),
         }}
       />
