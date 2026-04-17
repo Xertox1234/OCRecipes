@@ -160,6 +160,11 @@ export function useRecipeForm(
   const initialDirty = Boolean(prefill);
   const [isDirty, setIsDirtyState] = useState(initialDirty);
 
+  // Dedupe lives outside the setState updater — React treats updaters as pure
+  // and may call them twice under StrictMode / concurrent rendering, which
+  // would double-fire onDirtyChange if the check were inside.
+  const lastFiredDirtyRef = useRef(initialDirty);
+
   // Mount-only notification of the initial dirty state (empty deps — this is
   // a lifecycle effect, NOT a value-derivation effect. The anti-pattern L22
   // addresses is useEffect deriving callbacks from a *changing* state value;
@@ -172,12 +177,11 @@ export function useRecipeForm(
   }, []);
 
   const setIsDirty = useCallback((value: boolean) => {
-    setIsDirtyState((prev) => {
-      if (prev === value) return prev;
-      // Fire callback on every transition — action-driven, not derived.
+    setIsDirtyState(value);
+    if (lastFiredDirtyRef.current !== value) {
+      lastFiredDirtyRef.current = value;
       onDirtyChangeRef.current?.(value);
-      return value;
-    });
+    }
   }, []);
 
   const markDirty = useCallback(() => {
@@ -244,17 +248,19 @@ export function useRecipeForm(
   const updateIngredient = useCallback(
     (key: string, text: string) => {
       setIngredients((prev) =>
-        prev.map((i) =>
-          i.key === key
-            ? {
-                ...i,
-                text,
-                // Invalidate the structured snapshot — the user has edited the
-                // row, so we can no longer assume the original structure matches.
-                original: undefined,
-              }
-            : i,
-        ),
+        prev.map((i) => {
+          if (i.key !== key) return i;
+          // Keep the original snapshot when text exactly matches what we'd
+          // render from it — handles "revert the edit" so "1/2" doesn't get
+          // lost to parse-normalization. Otherwise invalidate.
+          const keepOriginal =
+            i.original != null && formatIngredientText(i.original) === text;
+          return {
+            ...i,
+            text,
+            original: keepOriginal ? i.original : undefined,
+          };
+        }),
       );
       setIsDirty(true);
     },

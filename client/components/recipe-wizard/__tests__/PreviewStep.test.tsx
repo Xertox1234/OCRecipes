@@ -174,8 +174,24 @@ describe("PreviewStep — section edit labels (M21)", () => {
     renderComponent(<PreviewStep form={makeForm()} onEditStep={vi.fn()} />);
     expect(screen.getByLabelText("Edit Time & Servings")).toBeDefined();
     expect(screen.getByLabelText("Edit Ingredients (1)")).toBeDefined();
+    expect(screen.getByLabelText("Edit Instructions (1 step)")).toBeDefined();
     expect(screen.getByLabelText("Edit Nutrition")).toBeDefined();
     expect(screen.getByLabelText("Edit Tags")).toBeDefined();
+  });
+
+  it("pluralizes 'steps' in the Instructions edit label when count != 1", () => {
+    renderComponent(
+      <PreviewStep
+        form={makeForm({
+          steps: [
+            { key: "step_1", text: "Mix batter" },
+            { key: "step_2", text: "Bake" },
+          ],
+        })}
+        onEditStep={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Edit Instructions (2 steps)")).toBeDefined();
   });
 
   it("calls onEditStep(1) when the title edit button is pressed", () => {

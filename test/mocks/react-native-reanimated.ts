@@ -48,10 +48,13 @@ export const Easing = {
 export type WithSpringConfig = Record<string, unknown>;
 export type WithTimingConfig = Record<string, unknown>;
 
-// Layout animation helper — creates a chainable mock that supports all modifiers
+// Layout animation helper — creates a chainable mock that supports all modifiers.
+// Each invocation produces a uniquely-identifiable object (via __animationName)
+// so tests can distinguish e.g. SlideInRight from SlideOutLeft if needed. The
+// chainable methods still return the same instance so fluent calls like
+// SlideInRight.duration(250).springify() work.
 function createLayoutAnimation(name: string): Record<string, unknown> {
-  const anim: Record<string, (...args: unknown[]) => Record<string, unknown>> =
-    {};
+  const anim: Record<string, unknown> = { __animationName: name };
   const methods = [
     "delay",
     "duration",

@@ -193,8 +193,10 @@ export default function WizardShell({
   }, []);
 
   const handleSave = useCallback(async () => {
-    // Fire onSavingChange from the action itself — mirrors the mutation's
-    // isPending transitions without a derived useEffect.
+    // Fire onSavingChange from the action itself — action-driven (no derived
+    // useEffect on mutation state). Note: "saving" spans BOTH createMutation
+    // and addItemMutation; the parent is notified for the full chain, not
+    // just createMutation.isPending as the pre-L22 effect tracked.
     onSavingChangeRef.current?.(true);
     try {
       const payload = form.formToPayload();
