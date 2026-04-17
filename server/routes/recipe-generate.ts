@@ -1,30 +1,19 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
-import { rateLimit } from "express-rate-limit";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { generateRecipeContent } from "../services/recipe-generation";
-import { createServiceLogger } from "../lib/logger";
+import { checkPremiumFeature, handleRouteError } from "./_helpers";
+import { recipeGenerationRateLimit } from "./_rate-limiters";
+import { storage } from "../storage";
 import type {
   ImportedRecipeData,
   ParsedIngredient,
 } from "@shared/types/recipe-import";
 
-const log = createServiceLogger("recipe-generate");
-
 const generatePromptSchema = z.object({
   prompt: z.string().min(3).max(500),
-});
-
-const generateRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 5,
-  message: {
-    error: "Too many recipe generation requests. Please wait.",
-    code: "RATE_LIMITED",
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 export function register(app: Express): void {
@@ -32,19 +21,44 @@ export function register(app: Express): void {
   app.post(
     "/api/meal-plan/recipes/generate",
     requireAuth,
-    generateRateLimit,
+    recipeGenerationRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-      const parsed = generatePromptSchema.safeParse(req.body);
-      if (!parsed.success) {
-        sendError(
-          res,
-          400,
-          parsed.error.errors[0]?.message ?? "Invalid request",
-        );
-        return;
-      }
-
       try {
+        // Premium gate — same contract as POST /api/recipes/generate
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "recipeGeneration",
+          "Recipe generation",
+        );
+        if (!features) return;
+
+        // Daily quota check
+        const generationsToday = await storage.getDailyRecipeGenerationCount(
+          req.userId,
+          new Date(),
+        );
+        if (generationsToday >= features.dailyRecipeGenerations) {
+          sendError(
+            res,
+            429,
+            "Daily recipe generation limit reached",
+            ErrorCode.DAILY_LIMIT_REACHED,
+          );
+          return;
+        }
+
+        const parsed = generatePromptSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            parsed.error.errors[0]?.message ?? "Invalid request",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
         const content = await generateRecipeContent({
           productName: parsed.data.prompt,
           userProfile: null,
@@ -80,8 +94,7 @@ export function register(app: Express): void {
 
         res.json(result);
       } catch (error) {
-        log.error({ err: error }, "recipe generate endpoint failed");
-        sendError(res, 500, "Failed to generate recipe");
+        handleRouteError(res, error, "recipe generate endpoint failed");
       }
     },
   );
