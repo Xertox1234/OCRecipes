@@ -1,13 +1,5 @@
 import React from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-} from "react-native";
+import { Text, TextInput, StyleSheet, ScrollView } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Spacing,
@@ -32,70 +24,64 @@ export default function TitleStep({
   const { theme } = useTheme();
 
   return (
-    <KeyboardAvoidingView
-      style={styles.kav}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
     >
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Recipe Name */}
-        <Text style={[styles.label, { color: theme.link }]}>RECIPE NAME</Text>
-        <TextInput
-          style={[
-            styles.input,
-            {
-              backgroundColor: theme.backgroundSecondary,
-              borderColor: withOpacity(theme.link, 0.25),
-              color: theme.text,
-            },
-          ]}
-          value={title}
-          onChangeText={setTitle}
-          placeholder="e.g. Creamy Tomato Pasta"
-          placeholderTextColor={theme.textSecondary}
-          autoFocus
-          returnKeyType="next"
-          maxLength={200}
-          accessibilityLabel="Recipe name"
-          accessibilityHint="Enter a name for your recipe"
-        />
+      {/* Recipe Name */}
+      <Text style={[styles.label, { color: theme.link }]}>RECIPE NAME</Text>
+      <TextInput
+        style={[
+          styles.input,
+          {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: withOpacity(theme.link, 0.25),
+            color: theme.text,
+          },
+        ]}
+        value={title}
+        onChangeText={setTitle}
+        placeholder="e.g. Creamy Tomato Pasta"
+        placeholderTextColor={theme.textSecondary}
+        autoFocus
+        returnKeyType="next"
+        maxLength={200}
+        accessibilityLabel="Recipe name"
+        accessibilityHint="Enter a name for your recipe"
+      />
 
-        {/* Description */}
-        <Text
-          style={[styles.label, { color: theme.link, marginTop: Spacing.lg }]}
-        >
-          DESCRIPTION (optional)
-        </Text>
-        <TextInput
-          style={[
-            styles.textArea,
-            {
-              backgroundColor: theme.backgroundSecondary,
-              borderColor: withOpacity(theme.border, 0.5),
-              color: theme.text,
-            },
-          ]}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Briefly describe your recipe…"
-          placeholderTextColor={theme.textSecondary}
-          multiline
-          textAlignVertical="top"
-          maxLength={2000}
-          accessibilityLabel="Recipe description"
-          accessibilityHint="Optional description of your recipe"
-        />
-      </ScrollView>
-    </KeyboardAvoidingView>
+      {/* Description */}
+      <Text
+        style={[styles.label, { color: theme.link, marginTop: Spacing.lg }]}
+      >
+        DESCRIPTION (optional)
+      </Text>
+      <TextInput
+        style={[
+          styles.textArea,
+          {
+            backgroundColor: theme.backgroundSecondary,
+            borderColor: withOpacity(theme.border, 0.5),
+            color: theme.text,
+          },
+        ]}
+        value={description}
+        onChangeText={setDescription}
+        placeholder="Briefly describe your recipe…"
+        placeholderTextColor={theme.textSecondary}
+        multiline
+        textAlignVertical="top"
+        maxLength={2000}
+        accessibilityLabel="Recipe description"
+        accessibilityHint="Optional description of your recipe"
+      />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  kav: { flex: 1 },
   scroll: { flex: 1 },
   content: { paddingBottom: Spacing.xl },
   label: {

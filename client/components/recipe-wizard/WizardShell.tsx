@@ -7,6 +7,8 @@ import {
   StyleSheet,
   AccessibilityInfo,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import Animated, {
   SlideInRight,
@@ -159,17 +161,8 @@ export default function WizardShell({
     setValidationError("");
 
     if (currentStep === 1) {
-      if (form.isDirty) {
-        Alert.alert(
-          "Discard changes?",
-          "You have unsaved changes. Are you sure you want to go back?",
-          [
-            { text: "Keep editing", style: "cancel" },
-            { text: "Discard", style: "destructive", onPress: onGoBack },
-          ],
-        );
-        return;
-      }
+      // Screen-level beforeRemove listener owns the unsaved-changes prompt;
+      // delegating here avoids a double-alert on discard.
       onGoBack();
       return;
     }
@@ -186,7 +179,7 @@ export default function WizardShell({
     AccessibilityInfo.announceForAccessibility(
       `Step ${prevStep} of ${TOTAL_STEPS}, ${STEP_CONFIGS[prevStep - 1].title}`,
     );
-  }, [currentStep, onGoBack, returnToPreview, form.isDirty]);
+  }, [currentStep, onGoBack, returnToPreview]);
 
   const editFromPreview = useCallback((targetStep: WizardStep) => {
     setReturnToPreview(true);
@@ -289,8 +282,9 @@ export default function WizardShell({
   };
 
   return (
-    <View
+    <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       {/* Progress Bar */}
       <View style={styles.progressContainer}>
@@ -397,7 +391,7 @@ export default function WizardShell({
           </Text>
         </Pressable>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -67,15 +67,19 @@ export const AnimatedCheckmark = React.memo(function AnimatedCheckmark({
     });
 
     // Fade out after animation completes
+    let completeTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
       containerOpacity.value = withSequence(
         withTiming(1, { duration: 200 }),
         withTiming(0, { duration: 100 }),
       );
-      setTimeout(() => onComplete?.(), 300);
+      completeTimer = setTimeout(() => onComplete?.(), 300);
     }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (completeTimer) clearTimeout(completeTimer);
+    };
   }, [visible, reducedMotion, drawProgress, containerOpacity, onComplete]);
 
   const animatedProps = useAnimatedProps(() => ({
