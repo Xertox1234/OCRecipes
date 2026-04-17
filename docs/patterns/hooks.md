@@ -942,3 +942,137 @@ export function useShareRecipe() {
 - `client/hooks/useFavouriteRecipes.ts` — `useShareRecipe`
 - `server/routes/favourite-recipes.ts` — `GET /api/recipes/:recipeType/:recipeId/share`
 - `server/storage/favourite-recipes.ts` — `getRecipeSharePayload` (with userId ownership check for mealPlan recipes)
+
+### Action-Driven Callbacks Must Live Outside `setState` Updaters
+
+When a hook exposes an `onXxxChange`-style callback option, fire it from the action handler — **never** from inside a functional `setState(prev => ...)` updater. React documents updater functions as pure; under StrictMode and concurrent rendering, React may invoke an updater twice speculatively, which double-fires any side effect inside it.
+
+```typescript
+// ❌ BAD: dedupe + callback inside the updater — runs twice under StrictMode
+const setIsDirty = useCallback((value: boolean) => {
+  setIsDirtyState((prev) => {
+    if (prev === value) return prev;
+    onDirtyChangeRef.current?.(value); // side effect in a "pure" updater
+    return value;
+  });
+}, []);
+```
+
+```typescript
+// ✅ GOOD: updater stays pure, dedupe + callback live in the action
+const [isDirty, setIsDirtyState] = useState(initialDirty);
+// Dedupe lives outside the updater — updaters must be pure.
+const lastFiredDirtyRef = useRef(initialDirty);
+
+const setIsDirty = useCallback((value: boolean) => {
+  setIsDirtyState(value);
+  if (lastFiredDirtyRef.current !== value) {
+    lastFiredDirtyRef.current = value;
+    onDirtyChangeRef.current?.(value);
+  }
+}, []);
+```
+
+**Review checklist** for any hook that accepts an `onXxx` callback option:
+
+1. Is the callback fired inside a `setState(prev => ...)` updater? Move it out.
+2. Is the "only fire on transition" check inside the updater? Move it out and use a ref to track the last-fired value.
+3. Keep callbacks in a ref (`onDirtyChangeRef.current = options?.onDirtyChange`) so the action's `useCallback` deps stay empty — the ref always holds the latest callback.
+
+**When to use:** Any custom hook with `onDirtyChange`, `onValueChange`, `onSave`, or similar callback options.
+
+**When NOT to use:** Effects intentionally deriving a callback from a _changing_ state value — that's a separate concern (see the mount-only initial-dirty effect in `useRecipeForm` for the narrow case where firing from `useEffect` is correct).
+
+**Rationale:** React's `useState` updater-purity contract is documented at [react.dev — `useState` / "Updater functions should be pure"](https://react.dev/reference/react/useState#updater-functions-should-be-pure). StrictMode double-invokes updaters in dev specifically to surface this bug.
+
+**References:**
+
+- `client/hooks/useRecipeForm.ts:161-186` — canonical implementation
+- Origin: recipe-wizard code-review H1 (commits `fe87638`, `beb18d0`)
+
+### Round-Trip Snapshots for Lossy String Representations
+
+Form state often round-trips a structured value (`{ name, quantity, unit }`) through a single display string (`"1/2 teaspoon salt"`). The render step is lossless, but the reverse — parsing — is normalizing / lossy: `"1/2"` becomes `"0.5"`, `"1 1/2"` becomes `"1.5"`. Naïvely re-parsing on save drops fidelity from data the user never touched.
+
+The pattern has three parts: **snapshot at load**, **drop snapshot only on real edit**, **prefer snapshot on serialize**.
+
+```typescript
+// 1. Snapshot at load — stash the original structured form alongside the text
+interface IngredientRow {
+  key: string;
+  text: string;
+  original?: { name: string; quantity: string | null; unit: string | null };
+}
+
+function buildIngredientsFromPrefill(prefill): IngredientRow[] {
+  return prefill.ingredients.map((ing) => ({
+    key: nextIngredientKey(),
+    text: formatIngredientText(ing),
+    original: { name: ing.name, quantity: ing.quantity, unit: ing.unit },
+  }));
+}
+```
+
+```typescript
+// 2. Drop the snapshot only on real edit — preserve it on revert
+const updateIngredient = useCallback(
+  (key: string, text: string) => {
+    setIngredients((prev) =>
+      prev.map((i) => {
+        if (i.key !== key) return i;
+        // If `text` still matches the rendered snapshot, treat this as a
+        // revert and keep the structured data. Any divergence invalidates it.
+        const keepOriginal =
+          i.original != null && formatIngredientText(i.original) === text;
+        return { ...i, text, original: keepOriginal ? i.original : undefined };
+      }),
+    );
+    setIsDirty(true);
+  },
+  [setIsDirty],
+);
+```
+
+```typescript
+// 3. Prefer the snapshot when serializing to the mutation payload
+const formToPayload = useCallback(() => {
+  const validIngredients = ingredients
+    .filter((i) => i.text.trim())
+    .map((i) => {
+      if (i.original) {
+        return {
+          name: i.original.name,
+          quantity: i.original.quantity,
+          unit: i.original.unit,
+        };
+      }
+      const parsed = parseIngredientText(i.text.trim());
+      return {
+        name: parsed.name,
+        quantity: parsed.quantity,
+        unit: parsed.unit,
+      };
+    });
+  // ...
+}, [ingredients /* ... */]);
+```
+
+**Checklist before shipping a text-edited structured form:**
+
+1. Does `parse(format(x))` equal `x` for every realistic `x`? If not, you need a snapshot.
+2. Does the form distinguish "user reverted the text" from "user made a no-op edit"? The `format(original) === text` check handles both.
+3. Does the save path prefer the snapshot over re-parsing?
+
+**When to use:** Any form where `format(struct) → string → parse(string)` is lossy AND the user edits the string. In this codebase: ingredient rows, instruction steps (`serializeSteps` / `deserializeSteps`), URL-imported recipe metadata, pantry free-text quantities.
+
+**When NOT to use:** Round-trips that are provably lossless (e.g., integer-only fields), or forms where the structured value is never prefilled from external data.
+
+**See also:** [Action-Driven Callbacks Must Live Outside `setState` Updaters](#action-driven-callbacks-must-live-outside-setstate-updaters) — same hook, related design rule about keeping updaters pure.
+
+**References:**
+
+- `client/hooks/useRecipeForm.ts:9-19` — `IngredientRow.original` field doc
+- `client/hooks/useRecipeForm.ts:73-97` — `formatIngredientText` + `buildIngredientsFromPrefill`
+- `client/hooks/useRecipeForm.ts:248-268` — `updateIngredient` revert logic
+- `client/hooks/useRecipeForm.ts:358-378` — `formToPayload` prefers snapshot
+- Origin: recipe-wizard code-review M1 (commits `fe87638`, `beb18d0`)
