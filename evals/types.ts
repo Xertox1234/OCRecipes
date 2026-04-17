@@ -61,6 +61,7 @@ export interface EvalCaseResult {
 export interface EvalRunResult {
   runId: string;
   timestamp: string;
+  judgeModel: string;
   totalCases: number;
   assertionPassRate: number;
   dimensionAverages: Record<RubricDimension, number>;

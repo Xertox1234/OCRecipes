@@ -1,5 +1,25 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { z } from "zod";
+import { ALL_DIMENSIONS } from "./types";
 import type { RubricDimension, RubricScore } from "./types";
+
+const dimensionSchema = z
+  .string()
+  .transform((s) => s.toLowerCase())
+  .refine((s): s is RubricDimension =>
+    (ALL_DIMENSIONS as string[]).includes(s),
+  );
+
+const judgeResponseSchema = z.object({
+  scores: z.array(
+    z.object({
+      dimension: dimensionSchema,
+      score: z.number().min(1).max(10),
+      reasoning: z.string(),
+    }),
+  ),
+  calorie_assertion_passed: z.boolean().optional(),
+});
 
 const client = new Anthropic();
 
@@ -138,21 +158,32 @@ export function formatContextSummary(context: {
   return lines.join("\n");
 }
 
+/**
+ * Judge model must be explicit (no alias) so eval scores stay reproducible
+ * across runs. Override with EVAL_JUDGE_MODEL env var for regression comparisons.
+ */
+export const DEFAULT_JUDGE_MODEL =
+  process.env.EVAL_JUDGE_MODEL || "claude-sonnet-4-6";
+
 export async function judgeResponse(params: {
   userMessage: string;
   contextSummary: string;
   coachResponse: string;
   dimensions: RubricDimension[];
   mustNotRecommendBelow?: number;
+  model?: string;
 }): Promise<{
   scores: RubricScore[];
   calorieAssertionPassed?: boolean;
+  judgeModel: string;
 }> {
   const prompt = buildJudgePrompt(params);
+  const judgeModel = params.model ?? DEFAULT_JUDGE_MODEL;
 
   const message = await client.messages.create({
-    model: "claude-sonnet-4-6",
+    model: judgeModel,
     max_tokens: 1000,
+    temperature: 0,
     system: RUBRIC_TEXT,
     messages: [{ role: "user", content: prompt }],
   });
@@ -165,12 +196,9 @@ export async function judgeResponse(params: {
     .replace(/^```json?\s*\n?/i, "")
     .replace(/\n?```\s*$/i, "");
 
-  let parsed: {
-    scores: { dimension: string; score: number; reasoning: string }[];
-    calorie_assertion_passed?: boolean;
-  };
+  let raw: unknown;
   try {
-    parsed = JSON.parse(cleaned);
+    raw = JSON.parse(cleaned);
   } catch {
     console.warn(`    ⚠ Judge returned malformed JSON, using default scores`);
     return {
@@ -179,17 +207,34 @@ export async function judgeResponse(params: {
         score: 0,
         reasoning: "Judge returned malformed JSON — score unavailable",
       })),
+      judgeModel,
     };
   }
 
-  const scores: RubricScore[] = parsed.scores.map((s) => ({
-    dimension: s.dimension.toLowerCase() as RubricDimension,
+  const validated = judgeResponseSchema.safeParse(raw);
+  if (!validated.success) {
+    console.warn(
+      `    ⚠ Judge returned unexpected shape (${validated.error.errors[0]?.message ?? "invalid schema"}), using default scores`,
+    );
+    return {
+      scores: params.dimensions.map((d) => ({
+        dimension: d,
+        score: 0,
+        reasoning: "Judge returned invalid schema — score unavailable",
+      })),
+      judgeModel,
+    };
+  }
+
+  const scores: RubricScore[] = validated.data.scores.map((s) => ({
+    dimension: s.dimension,
     score: s.score,
     reasoning: s.reasoning,
   }));
 
   return {
     scores,
-    calorieAssertionPassed: parsed.calorie_assertion_passed,
+    calorieAssertionPassed: validated.data.calorie_assertion_passed,
+    judgeModel,
   };
 }

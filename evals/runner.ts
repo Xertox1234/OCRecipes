@@ -3,7 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { generateCoachResponse } from "../server/services/nutrition-coach";
 import { runAssertions } from "./assertions";
-import { judgeResponse, formatContextSummary } from "./judge";
+import {
+  judgeResponse,
+  formatContextSummary,
+  DEFAULT_JUDGE_MODEL,
+} from "./judge";
 import type {
   EvalTestCase,
   EvalCaseResult,
@@ -113,7 +117,10 @@ async function evaluateCase(
   };
 }
 
-function aggregateResults(cases: EvalCaseResult[]): EvalRunResult {
+function aggregateResults(
+  cases: EvalCaseResult[],
+  judgeModel: string,
+): EvalRunResult {
   const timestamp = new Date().toISOString();
   const runId = timestamp.replace(/[:.]/g, "-").slice(0, 19);
 
@@ -208,6 +215,7 @@ function aggregateResults(cases: EvalCaseResult[]): EvalRunResult {
   return {
     runId,
     timestamp,
+    judgeModel,
     totalCases: cases.length,
     assertionPassRate,
     dimensionAverages,
@@ -328,7 +336,7 @@ async function main(): Promise<void> {
   }
 
   // Aggregate and display
-  const runResult = aggregateResults(results);
+  const runResult = aggregateResults(results, DEFAULT_JUDGE_MODEL);
   printSummary(runResult);
 
   // Save results
