@@ -352,23 +352,29 @@ export async function* generateCoachProResponse(
       tool_calls: toolCallsArray,
     });
 
-    // Execute each tool and add results
-    for (const tc of toolCallsArray) {
-      let result: unknown;
-      try {
-        const args = JSON.parse(tc.function.arguments);
-        result = await executeToolCall(tc.function.name, args, userId);
-      } catch (error) {
-        log.warn(
-          { err: toError(error), tool: tc.function.name },
-          "Tool call failed",
-        );
-        // Generic message for AI context; details logged above
-        result = {
-          error: `Tool ${tc.function.name} is temporarily unavailable`,
-        };
-      }
+    // Execute tool calls in parallel — preserve order when appending results
+    const toolResults = await Promise.all(
+      toolCallsArray.map(async (tc) => {
+        try {
+          const args = JSON.parse(tc.function.arguments);
+          const result = await executeToolCall(tc.function.name, args, userId);
+          return { tc, result };
+        } catch (error) {
+          log.warn(
+            { err: toError(error), tool: tc.function.name },
+            "Tool call failed",
+          );
+          return {
+            tc,
+            result: {
+              error: `Tool ${tc.function.name} is temporarily unavailable`,
+            },
+          };
+        }
+      }),
+    );
 
+    for (const { tc, result } of toolResults) {
       conversation.push({
         role: "tool",
         content: JSON.stringify(result),

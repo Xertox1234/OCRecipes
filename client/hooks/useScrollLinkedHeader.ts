@@ -35,6 +35,7 @@ export function useScrollLinkedHeader({
   reducedMotion: boolean;
 }) {
   const scrollY = useSharedValue(0);
+  const lastBarVisible = useSharedValue(false);
   const [isBarVisible, setIsBarVisible] = useState(false);
 
   const updateBarVisibility = useCallback((visible: boolean) => {
@@ -44,10 +45,13 @@ export function useScrollLinkedHeader({
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
-      // Track collapsed bar visibility for pointerEvents on the JS thread
+      // Only cross the UI→JS bridge when the boolean transitions, not every frame
       const barShouldBeVisible =
         event.contentOffset.y > collapseThreshold * 0.5;
-      runOnJS(updateBarVisibility)(barShouldBeVisible);
+      if (barShouldBeVisible !== lastBarVisible.value) {
+        lastBarVisible.value = barShouldBeVisible;
+        runOnJS(updateBarVisibility)(barShouldBeVisible);
+      }
     },
   });
 
