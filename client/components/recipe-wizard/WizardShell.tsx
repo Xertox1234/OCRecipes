@@ -1,5 +1,5 @@
 // client/components/recipe-wizard/WizardShell.tsx
-import React, { useState, useCallback, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -59,7 +59,21 @@ export default function WizardShell({
 }: WizardShellProps) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const form = useRecipeForm(prefill);
+  // Stable refs so useRecipeForm + handleSave always see the latest callbacks
+  // without re-invoking their internal callbacks on every render.
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+  const onSavingChangeRef = useRef(onSavingChange);
+  onSavingChangeRef.current = onSavingChange;
+
+  // Action-driven dirty propagation: useRecipeForm fires onDirtyChange when
+  // isDirty actually transitions. No derived useEffect needed.
+  const form = useRecipeForm(prefill, {
+    onDirtyChange: useCallback(
+      (dirty: boolean) => onDirtyChangeRef.current?.(dirty),
+      [],
+    ),
+  });
   const createMutation = useCreateMealPlanRecipe();
   const addItemMutation = useAddMealPlanItem();
 
@@ -68,15 +82,6 @@ export default function WizardShell({
   const [returnToPreview, setReturnToPreview] = useState(false);
   const [validationError, setValidationError] = useState("");
   const [hasSuggestedTags, setHasSuggestedTags] = useState(false);
-
-  // Sync dirty/saving state to parent for beforeRemove guard
-  useEffect(() => {
-    onDirtyChange?.(form.isDirty);
-  }, [form.isDirty, onDirtyChange]);
-
-  useEffect(() => {
-    onSavingChange?.(createMutation.isPending);
-  }, [createMutation.isPending, onSavingChange]);
 
   const stepConfig = STEP_CONFIGS[currentStep - 1];
 
@@ -188,6 +193,9 @@ export default function WizardShell({
   }, []);
 
   const handleSave = useCallback(async () => {
+    // Fire onSavingChange from the action itself — mirrors the mutation's
+    // isPending transitions without a derived useEffect.
+    onSavingChangeRef.current?.(true);
     try {
       const payload = form.formToPayload();
       const created = await createMutation.mutateAsync(payload);
@@ -204,6 +212,8 @@ export default function WizardShell({
       onSaveComplete();
     } catch {
       Alert.alert("Error", "Failed to save recipe. Please try again.");
+    } finally {
+      onSavingChangeRef.current?.(false);
     }
   }, [form, createMutation, addItemMutation, returnToMealPlan, onSaveComplete]);
 

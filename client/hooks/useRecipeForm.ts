@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import type { ImportedRecipeData } from "@shared/types/recipe-import";
 import type { DietTag } from "@/components/recipe-wizard/types";
 import { parseIngredientText } from "@/lib/ingredient-parser";
@@ -6,6 +6,16 @@ import { parseIngredientText } from "@/lib/ingredient-parser";
 export interface IngredientRow {
   key: string;
   text: string;
+  /**
+   * Structured snapshot captured at prefill time. Preserved verbatim when the
+   * user has not edited the row so round-trip (prefill → formToPayload) does
+   * not lose quantity/unit structure via text-join + re-parse.
+   */
+  original?: {
+    name: string;
+    quantity: string | null;
+    unit: string | null;
+  };
 }
 
 export interface StepRow {
@@ -60,13 +70,27 @@ export function deserializeSteps(text: string): string[] {
     .filter((s) => s.trim());
 }
 
+/** Build the display text for a structured ingredient. */
+export function formatIngredientText(ing: {
+  name: string;
+  quantity?: string | null;
+  unit?: string | null;
+}): string {
+  return [ing.quantity, ing.unit, ing.name].filter(Boolean).join(" ");
+}
+
 function buildIngredientsFromPrefill(
   prefill: ImportedRecipeData | undefined,
 ): IngredientRow[] {
   if (prefill?.ingredients?.length) {
     return prefill.ingredients.map((ing) => ({
       key: nextIngredientKey(),
-      text: [ing.quantity, ing.unit, ing.name].filter(Boolean).join(" "),
+      text: formatIngredientText(ing),
+      original: {
+        name: ing.name,
+        quantity: ing.quantity,
+        unit: ing.unit,
+      },
     }));
   }
   return [{ key: nextIngredientKey(), text: "" }];
@@ -81,7 +105,21 @@ function buildStepsFromPrefill(
   return [{ key: nextStepKey(), text: "" }];
 }
 
-export function useRecipeForm(prefill?: ImportedRecipeData) {
+export interface UseRecipeFormOptions {
+  /** Fired when isDirty transitions from false → true. Action-driven (not
+   *  derived via useEffect on computed state). */
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+export function useRecipeForm(
+  prefill?: ImportedRecipeData,
+  options?: UseRecipeFormOptions,
+) {
+  // Keep the latest onDirtyChange in a ref so transitions fire with the
+  // current callback without adding it to every action's deps.
+  const onDirtyChangeRef = useRef(options?.onDirtyChange);
+  onDirtyChangeRef.current = options?.onDirtyChange;
+
   // ── Title & Description ──
   const [title, setTitle] = useState(prefill?.title || "");
   const [description, setDescription] = useState(prefill?.description || "");
@@ -117,52 +155,153 @@ export function useRecipeForm(prefill?: ImportedRecipeData) {
     dietTags: (prefill?.dietTags as DietTag[]) || [],
   });
 
-  // ── Ingredient Actions ──
-  const addIngredient = useCallback(() => {
-    setIngredients((prev) => [...prev, { key: nextIngredientKey(), text: "" }]);
+  // ── Dirty tracking fired from actions (not derived via useEffect) ──
+  // Prefill counts as "dirty" because backing out would lose the imported data.
+  const initialDirty = Boolean(prefill);
+  const [isDirty, setIsDirtyState] = useState(initialDirty);
+
+  // Mount-only notification of the initial dirty state (empty deps — this is
+  // a lifecycle effect, NOT a value-derivation effect. The anti-pattern L22
+  // addresses is useEffect deriving callbacks from a *changing* state value;
+  // here we only fire once on mount).
+  useEffect(() => {
+    if (initialDirty) {
+      onDirtyChangeRef.current?.(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only effect
   }, []);
 
-  const removeIngredient = useCallback((key: string) => {
-    setIngredients((prev) => {
-      if (prev.length <= 1) return prev;
-      return prev.filter((i) => i.key !== key);
+  const setIsDirty = useCallback((value: boolean) => {
+    setIsDirtyState((prev) => {
+      if (prev === value) return prev;
+      // Fire callback on every transition — action-driven, not derived.
+      onDirtyChangeRef.current?.(value);
+      return value;
     });
   }, []);
 
-  const updateIngredient = useCallback((key: string, text: string) => {
-    setIngredients((prev) =>
-      prev.map((i) => (i.key === key ? { ...i, text } : i)),
-    );
-  }, []);
+  const markDirty = useCallback(() => {
+    setIsDirty(true);
+  }, [setIsDirty]);
+
+  const setTitleDirty = useCallback(
+    (value: string) => {
+      setTitle(value);
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
+
+  const setDescriptionDirty = useCallback(
+    (value: string) => {
+      setDescription(value);
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
+
+  const setTimeServingsDirty = useCallback(
+    (value: TimeServingsData) => {
+      setTimeServings(value);
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
+
+  const setNutritionDirty = useCallback(
+    (value: NutritionData) => {
+      setNutrition(value);
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
+
+  const setTagsDirty = useCallback(
+    (value: TagsData) => {
+      setTags(value);
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
+
+  // ── Ingredient Actions ──
+  const addIngredient = useCallback(() => {
+    setIngredients((prev) => [...prev, { key: nextIngredientKey(), text: "" }]);
+    setIsDirty(true);
+  }, [setIsDirty]);
+
+  const removeIngredient = useCallback(
+    (key: string) => {
+      setIngredients((prev) => {
+        if (prev.length <= 1) return prev;
+        return prev.filter((i) => i.key !== key);
+      });
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
+
+  const updateIngredient = useCallback(
+    (key: string, text: string) => {
+      setIngredients((prev) =>
+        prev.map((i) =>
+          i.key === key
+            ? {
+                ...i,
+                text,
+                // Invalidate the structured snapshot — the user has edited the
+                // row, so we can no longer assume the original structure matches.
+                original: undefined,
+              }
+            : i,
+        ),
+      );
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
 
   // ── Step Actions ──
   const addStep = useCallback(() => {
     setSteps((prev) => [...prev, { key: nextStepKey(), text: "" }]);
-  }, []);
+    setIsDirty(true);
+  }, [setIsDirty]);
 
-  const removeStep = useCallback((key: string) => {
-    setSteps((prev) => {
-      if (prev.length <= 1) return prev;
-      return prev.filter((s) => s.key !== key);
-    });
-  }, []);
+  const removeStep = useCallback(
+    (key: string) => {
+      setSteps((prev) => {
+        if (prev.length <= 1) return prev;
+        return prev.filter((s) => s.key !== key);
+      });
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
 
-  const updateStep = useCallback((key: string, text: string) => {
-    setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, text } : s)));
-  }, []);
+  const updateStep = useCallback(
+    (key: string, text: string) => {
+      setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, text } : s)));
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
 
-  const moveStep = useCallback((key: string, direction: "up" | "down") => {
-    setSteps((prev) => {
-      const idx = prev.findIndex((s) => s.key === key);
-      if (idx === -1) return prev;
-      if (direction === "up" && idx === 0) return prev;
-      if (direction === "down" && idx === prev.length - 1) return prev;
-      const next = [...prev];
-      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
-      return next;
-    });
-  }, []);
+  const moveStep = useCallback(
+    (key: string, direction: "up" | "down") => {
+      setSteps((prev) => {
+        const idx = prev.findIndex((s) => s.key === key);
+        if (idx === -1) return prev;
+        if (direction === "up" && idx === 0) return prev;
+        if (direction === "down" && idx === prev.length - 1) return prev;
+        const next = [...prev];
+        const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+        [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+        return next;
+      });
+      setIsDirty(true);
+    },
+    [setIsDirty],
+  );
 
   // ── Summaries ──
   const ingredientsSummary = useMemo(() => {
@@ -209,25 +348,21 @@ export function useRecipeForm(prefill?: ImportedRecipeData) {
     return parts.length > 0 ? parts.join(", ") : undefined;
   }, [tags]);
 
-  // ── Dirty Check ──
-  const isDirty = useMemo(() => {
-    if (title.trim()) return true;
-    if (description.trim()) return true;
-    if (ingredients.some((i) => i.text.trim())) return true;
-    if (steps.some((s) => s.text.trim())) return true;
-    if (timeServings.prepTime || timeServings.cookTime) return true;
-    if (timeServings.servings !== 2) return true;
-    if (nutrition.calories || nutrition.protein) return true;
-    if (nutrition.carbs || nutrition.fat) return true;
-    if (tags.cuisine || tags.dietTags.length > 0) return true;
-    return false;
-  }, [title, description, ingredients, steps, timeServings, nutrition, tags]);
-
   // ── Serialize to mutation payload ──
   const formToPayload = useCallback(() => {
     const validIngredients = ingredients
       .filter((i) => i.text.trim())
       .map((i) => {
+        // Prefer the structured snapshot captured at prefill time — this
+        // preserves exact quantity/unit strings (e.g. "2.5" or "tablespoons")
+        // that would otherwise be normalized/lost by text-join + re-parse.
+        if (i.original) {
+          return {
+            name: i.original.name,
+            quantity: i.original.quantity,
+            unit: i.original.unit,
+          };
+        }
         const parsed = parseIngredientText(i.text.trim());
         return {
           name: parsed.name,
@@ -264,17 +399,17 @@ export function useRecipeForm(prefill?: ImportedRecipeData) {
   return {
     // State
     title,
-    setTitle,
+    setTitle: setTitleDirty,
     description,
-    setDescription,
+    setDescription: setDescriptionDirty,
     ingredients,
     steps,
     timeServings,
-    setTimeServings,
+    setTimeServings: setTimeServingsDirty,
     nutrition,
-    setNutrition,
+    setNutrition: setNutritionDirty,
     tags,
-    setTags,
+    setTags: setTagsDirty,
 
     // Ingredient actions
     addIngredient,
@@ -296,6 +431,7 @@ export function useRecipeForm(prefill?: ImportedRecipeData) {
 
     // Utilities
     isDirty,
+    markDirty,
     formToPayload,
   };
 }

@@ -1,7 +1,7 @@
 import React from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
-import type { useRecipeForm } from "@/hooks/useRecipeForm";
+import type { useRecipeForm, NutritionData } from "@/hooks/useRecipeForm";
 import type { WizardStep } from "./types";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -16,20 +16,30 @@ interface PreviewStepProps {
   onEditStep: (step: WizardStep) => void;
 }
 
+// ── Pure helpers (exported for testing) ──────────────────────────────────────
+
+/** Returns true if any macro field has content. */
+export function hasNutrition(nutrition: NutritionData): boolean {
+  return Boolean(
+    nutrition.calories || nutrition.protein || nutrition.carbs || nutrition.fat,
+  );
+}
+
 // ── Helper components ────────────────────────────────────────────────────────
 
 interface EditButtonProps {
   onPress: () => void;
   color: string;
+  label: string;
 }
 
-function EditButton({ onPress, color }: EditButtonProps) {
+function EditButton({ onPress, color, label }: EditButtonProps) {
   return (
     <Pressable
       onPress={onPress}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel="Edit"
+      accessibilityLabel={`Edit ${label}`}
     >
       <Text style={[styles.editButtonText, { color }]}>Edit ✎</Text>
     </Pressable>
@@ -57,9 +67,36 @@ function PreviewSection({
         <Text style={[styles.sectionHeaderText, { color: labelColor }]}>
           {label}
         </Text>
-        <EditButton onPress={onEdit} color={editColor} />
+        <EditButton onPress={onEdit} color={editColor} label={label} />
       </View>
       {children}
+    </View>
+  );
+}
+
+interface MacroItemProps {
+  value: string;
+  label: string;
+  valueColor: string;
+  labelColor: string;
+  unit?: string;
+}
+
+/** Single macro cell inside the nutrition row. Exported for testing. */
+export function MacroItem({
+  value,
+  label,
+  valueColor,
+  labelColor,
+  unit = "",
+}: MacroItemProps) {
+  return (
+    <View style={styles.macroItem}>
+      <Text style={[styles.macroValue, { color: valueColor }]}>
+        {value}
+        {unit}
+      </Text>
+      <Text style={[styles.macroLabel, { color: labelColor }]}>{label}</Text>
     </View>
   );
 }
@@ -87,8 +124,7 @@ export default function PreviewStep({ form, onEditStep }: PreviewStepProps) {
     (parseInt(timeServings.prepTime, 10) || 0) +
     (parseInt(timeServings.cookTime, 10) || 0);
 
-  const hasNutrition =
-    nutrition.calories || nutrition.protein || nutrition.carbs || nutrition.fat;
+  const nutritionFilled = hasNutrition(nutrition);
 
   const ingredientSummary =
     filledIngredients.length > 0
@@ -143,7 +179,11 @@ export default function PreviewStep({ form, onEditStep }: PreviewStepProps) {
             >
               {title.trim() || "Untitled Recipe"}
             </Text>
-            <EditButton onPress={() => onEditStep(1)} color={theme.link} />
+            <EditButton
+              onPress={() => onEditStep(1)}
+              color={theme.link}
+              label="Title"
+            />
           </View>
           {description.trim().length > 0 && (
             <Text
@@ -257,81 +297,42 @@ export default function PreviewStep({ form, onEditStep }: PreviewStepProps) {
             editColor={theme.link}
             labelColor={theme.text}
           >
-            {hasNutrition ? (
+            {nutritionFilled ? (
               <View style={styles.nutritionRow}>
                 {nutrition.calories ? (
-                  <View style={styles.macroItem}>
-                    <Text
-                      style={[
-                        styles.macroValue,
-                        { color: theme.calorieAccent },
-                      ]}
-                    >
-                      {nutrition.calories}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.macroLabel,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      cal
-                    </Text>
-                  </View>
+                  <MacroItem
+                    value={nutrition.calories}
+                    label="cal"
+                    valueColor={theme.calorieAccent}
+                    labelColor={theme.textSecondary}
+                  />
                 ) : null}
                 {nutrition.protein ? (
-                  <View style={styles.macroItem}>
-                    <Text
-                      style={[
-                        styles.macroValue,
-                        { color: theme.proteinAccent },
-                      ]}
-                    >
-                      {nutrition.protein}g
-                    </Text>
-                    <Text
-                      style={[
-                        styles.macroLabel,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      protein
-                    </Text>
-                  </View>
+                  <MacroItem
+                    value={nutrition.protein}
+                    unit="g"
+                    label="protein"
+                    valueColor={theme.proteinAccent}
+                    labelColor={theme.textSecondary}
+                  />
                 ) : null}
                 {nutrition.carbs ? (
-                  <View style={styles.macroItem}>
-                    <Text
-                      style={[styles.macroValue, { color: theme.carbsAccent }]}
-                    >
-                      {nutrition.carbs}g
-                    </Text>
-                    <Text
-                      style={[
-                        styles.macroLabel,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      carbs
-                    </Text>
-                  </View>
+                  <MacroItem
+                    value={nutrition.carbs}
+                    unit="g"
+                    label="carbs"
+                    valueColor={theme.carbsAccent}
+                    labelColor={theme.textSecondary}
+                  />
                 ) : null}
                 {nutrition.fat ? (
-                  <View style={styles.macroItem}>
-                    <Text
-                      style={[styles.macroValue, { color: theme.fatAccent }]}
-                    >
-                      {nutrition.fat}g
-                    </Text>
-                    <Text
-                      style={[
-                        styles.macroLabel,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      fat
-                    </Text>
-                  </View>
+                  <MacroItem
+                    value={nutrition.fat}
+                    unit="g"
+                    label="fat"
+                    valueColor={theme.fatAccent}
+                    labelColor={theme.textSecondary}
+                  />
                 ) : null}
               </View>
             ) : (
