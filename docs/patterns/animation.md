@@ -613,20 +613,37 @@ Two variants:
 
 ```typescript
 // client/hooks/useSuccessAnimation.ts
-export function useSuccessFlash(color: string, duration = 300) {
+export function useSuccessFlash(peak = 0.15) {
+  const { reducedMotion } = useAccessibility();
   const opacity = useSharedValue(0);
-  const reduced = useReducedMotion();
 
   const trigger = useCallback(() => {
-    if (reduced) return;
+    // Haptic fires in BOTH motion and reduced-motion paths — tactile
+    // confirmation is not a motion effect and users expect it even when
+    // they've disabled visual animation.
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (reducedMotion) return;
     opacity.value = withSequence(
-      withTiming(0.15, { duration: duration / 2 }),
-      withTiming(0, { duration: duration / 2 }),
+      withTiming(peak, { duration: 100 }),
+      withTiming(0, successFlashConfig),
     );
-  }, [reduced, duration]);
+  }, [reducedMotion, opacity, peak]);
+
+  // Cancel in-flight animation + reset when reducedMotion flips at runtime
+  // or when the component unmounts. Without this, a mid-flash state change
+  // leaves `opacity` stuck at its last interpolation step.
+  useEffect(() => {
+    if (reducedMotion) {
+      cancelAnimation(opacity);
+      opacity.value = 0;
+    }
+    return () => {
+      cancelAnimation(opacity);
+      opacity.value = 0;
+    };
+  }, [reducedMotion, opacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    backgroundColor: color,
     opacity: opacity.value,
   }));
 
@@ -634,36 +651,19 @@ export function useSuccessFlash(color: string, duration = 300) {
 }
 ```
 
-**Pop** — scale bounce on an icon (e.g., heart icon on favourite):
-
-```typescript
-export function useSuccessPop(maxScale = 1.4) {
-  const scale = useSharedValue(1);
-  const reduced = useReducedMotion();
-
-  const trigger = useCallback(() => {
-    if (reduced) return;
-    scale.value = withSequence(
-      withSpring(maxScale, successPopConfig),
-      withSpring(1, successPopConfig),
-    );
-  }, [reduced, maxScale]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return { trigger, animatedStyle };
-}
-```
+**Pop** — scale bounce on an icon (e.g., heart icon on favourite): same shape — haptic fires unconditionally, `cancelAnimation` + reset in the cleanup effect guards against mid-animation teardown.
 
 **Key elements:**
 
 1. **`trigger` is stable** — memoized with `useCallback`, safe as an effect dependency
 2. **GPU-bound** — only `opacity` and `transform` properties, no layout recalculation
 3. **≤300ms duration** — fast enough to not block interaction
-4. **`reducedMotion` guard** — `trigger()` is a no-op when reduced motion is active
-5. **Parent applies style** — `<Animated.View style={[styles.overlay, animatedStyle]} />`
+4. **Haptic fires regardless of `reducedMotion`** — tactile feedback is not motion
+5. **`reducedMotion` guard** — the visual portion of `trigger()` is a no-op when reduced motion is active; the haptic still fires
+6. **`cancelAnimation` + reset in cleanup** — protects against runtime `reducedMotion` flips and unmount-during-animation
+7. **Parent applies style** — `<Animated.View style={[styles.overlay, animatedStyle]} />`
+
+**Pairing with screen-reader announcements.** A visual-only success indicator (SVG checkmark, scale pop, background flash) is invisible to VoiceOver/TalkBack users — they get no confirmation that the action succeeded. When the visual affordance IS the only success feedback, call `AccessibilityInfo.announceForAccessibility("Saved")` alongside the `trigger()` (or from inside the indicator's own `visible → true` effect, as `AnimatedCheckmark` does). This is separate from the haptic, which signals _something happened_ but not _what_.
 
 **When to use:** Inline success feedback on the triggering element (scan reticle, favourite button, log confirmation). Use _instead of_ distant toasts for actions where spatial feedback matters.
 
