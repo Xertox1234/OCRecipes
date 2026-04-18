@@ -784,3 +784,94 @@ alignment bugs during future refactors. It's also semantically clearer.
 
 **Origin:** 2026-04-17 audit H7 — `nutrition-coach.ts` tool-call loop
 was still serial despite commit `b41245f`'s "parallel tools" subject.
+
+---
+
+## Single-Pass Predicate Composition for Filter Chains
+
+When you apply N independent boolean filters to the same array, don't chain
+`.filter()` calls — each one allocates a new intermediate array and re-walks
+the collection. Instead, push each enabled predicate into a single list and
+traverse the array once, short-circuiting on the first failure per element.
+
+```typescript
+// ❌ Bad: 9 separate passes × N elements = O(9·N) with 8 intermediate arrays
+candidates = candidates.filter(
+  (r) => r.source !== "personal" || r.userId === userId,
+);
+if (source) candidates = candidates.filter((r) => r.source === source);
+if (cuisine) candidates = candidates.filter((r) => matchesCuisine(r, cuisine));
+if (diet) candidates = candidates.filter((r) => matchesDiet(r, diet));
+if (mealType)
+  candidates = candidates.filter((r) => matchesMealType(r, mealType));
+// ...4 more
+```
+
+```typescript
+// ✅ Good: single O(N) pass, short-circuits per element
+const predicates: ((r: Candidate) => boolean)[] = [];
+
+// IDOR guard always applied
+predicates.push((r) => r.source !== "personal" || r.userId === userId);
+
+if (source) predicates.push((r) => r.source === source);
+if (cuisine) predicates.push((r) => matchesCuisine(r, cuisine));
+if (diet) predicates.push((r) => matchesDiet(r, diet));
+if (mealType) predicates.push((r) => matchesMealType(r, mealType));
+// ...conditionally add the rest
+
+candidates = candidates.filter((r) => {
+  for (const p of predicates) {
+    if (!p(r)) return false;
+  }
+  return true;
+});
+```
+
+**Why this matters:**
+
+- **Fewer allocations** — one output array instead of N intermediate arrays.
+  On empty-query searches where `candidates = [...documentStore.values()]`
+  is the full corpus (10k+ docs), the intermediate allocations dominate.
+- **Cache-friendlier** — each element is visited once; the predicates stay
+  in the inner loop and benefit from the CPU branch predictor.
+- **Short-circuit per element** — as soon as one predicate fails, the rest
+  are skipped for that element.
+
+**When to use:**
+
+- Post-query filter chains where all predicates are independent booleans
+  against the same item (search filters, access-control sieves, list views
+  with multiple toggles).
+- Any pipeline where you'd otherwise write 3+ `.filter()` calls back-to-back.
+
+**When NOT to use:**
+
+- Predicates that depend on transformed output of earlier ones (use `map`
+  - `filter` or a custom reducer).
+- Filters that need to run at different stages (e.g., before vs. after
+  sorting).
+- Very short candidate lists (<50) where readability wins over allocation
+  savings.
+
+**Preserving filter-metadata side effects.** Many search pipelines also
+record which filters were applied for response metadata (`filters.cuisine =
+cuisine`, etc.). Keep those assignments next to the `predicates.push(...)`
+call so the recorded set matches what was actually evaluated:
+
+```typescript
+if (cuisine) {
+  filters.cuisine = cuisine;
+  predicates.push((r) => matchesCuisine(r, cuisine));
+}
+```
+
+**References:**
+
+- `server/services/recipe-search.ts` — `predicates` array applied once
+  after IDOR/source/cuisine/diet/mealType/difficulty/maxPrepTime/
+  maxCalories/minProtein filter eligibility is resolved.
+
+**Origin:** 2026-04-17 audit M22 — `searchRecipes` chained 9 sequential
+`candidates = candidates.filter(...)` calls, allocating 8 throwaway arrays
+per request. Predicate composition reduced this to a single O(N) pass.

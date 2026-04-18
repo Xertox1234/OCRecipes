@@ -493,6 +493,7 @@ export const communityRecipes = pgTable(
     timeEstimate: text("time_estimate"),
     servings: integer("servings").default(2),
     dietTags: jsonb("diet_tags").$type<string[]>().default([]),
+    mealTypes: jsonb("meal_types").$type<string[]>().default([]),
     instructions: jsonb("instructions").$type<string[]>().notNull(),
     ingredients: jsonb("ingredients")
       .$type<{ name: string; quantity: string; unit: string }[]>()
@@ -529,6 +530,10 @@ export const communityRecipes = pgTable(
     dietTagsGinIdx: index("community_recipes_diet_tags_gin_idx").using(
       "gin",
       table.dietTags,
+    ),
+    mealTypesGinIdx: index("community_recipes_meal_types_gin_idx").using(
+      "gin",
+      table.mealTypes,
     ),
     isPublicCreatedAtIdx: index(
       "community_recipes_is_public_created_at_idx",

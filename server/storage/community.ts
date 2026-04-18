@@ -16,6 +16,21 @@ import {
   communityToSearchable,
   type SearchIndexableCommunityRecipe,
 } from "../lib/search-index";
+import { inferMealTypes } from "../lib/meal-type-inference";
+
+/**
+ * Ensures the caller-supplied `data` has a populated `mealTypes` array.
+ * Falls back to `inferMealTypes(title, ingredientNames)` when callers don't
+ * provide one so the community search index can filter symmetrically with
+ * meal-plan recipes (M9 fix — community recipes used to hard-code `[]`).
+ */
+function withInferredMealTypes<
+  T extends Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
+>(data: T): T {
+  if (data.mealTypes && data.mealTypes.length > 0) return data;
+  const ingredientNames = (data.ingredients ?? []).map((i) => i.name);
+  return { ...data, mealTypes: inferMealTypes(data.title, ingredientNames) };
+}
 
 // ============================================================================
 // COMMUNITY RECIPES
@@ -90,7 +105,8 @@ export async function getCommunityRecipes(
 export async function createCommunityRecipe(
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
 ): Promise<CommunityRecipe> {
-  const [recipe] = await db.insert(communityRecipes).values(data).returning();
+  const values = withInferredMealTypes(data);
+  const [recipe] = await db.insert(communityRecipes).values(values).returning();
   if (recipe.isPublic) {
     addToIndex(communityToSearchable(recipe));
   }
@@ -126,10 +142,11 @@ export async function createRecipeWithLimitCheck(
       return null;
     }
 
-    // Create recipe
+    // Create recipe (classify meal types if caller didn't supply any — M9)
+    const values = withInferredMealTypes(data);
     const [created] = await tx
       .insert(communityRecipes)
-      .values(data)
+      .values(values)
       .returning();
 
     // Log the generation
@@ -217,6 +234,7 @@ export async function getAllPublicCommunityRecipes(): Promise<
       description: communityRecipes.description,
       ingredients: communityRecipes.ingredients,
       dietTags: communityRecipes.dietTags,
+      mealTypes: communityRecipes.mealTypes,
       difficulty: communityRecipes.difficulty,
       servings: communityRecipes.servings,
       imageUrl: communityRecipes.imageUrl,
@@ -230,6 +248,59 @@ export async function getAllPublicCommunityRecipes(): Promise<
       ),
     )
     .orderBy(desc(communityRecipes.createdAt));
+}
+
+// ============================================================================
+// MEAL TYPE BACKFILL (used by backfill-community-meal-types script)
+// ============================================================================
+
+/**
+ * Get community recipes with empty or null mealTypes. Returns the data needed
+ * to infer mealTypes (title + ingredient names).
+ *
+ * Note: community recipe ingredients live in the JSONB `ingredients` column
+ * (unlike meal-plan recipes which use a separate `recipe_ingredients` table),
+ * so there's no join here.
+ */
+export async function getCommunityRecipesWithEmptyMealTypes(): Promise<
+  {
+    id: number;
+    title: string;
+    ingredients: { name: string; quantity: string; unit: string }[] | null;
+  }[]
+> {
+  return db
+    .select({
+      id: communityRecipes.id,
+      title: communityRecipes.title,
+      ingredients: communityRecipes.ingredients,
+    })
+    .from(communityRecipes)
+    .where(
+      sql`${communityRecipes.mealTypes}::jsonb = '[]'::jsonb OR ${communityRecipes.mealTypes} IS NULL`,
+    );
+}
+
+/**
+ * Update mealTypes for multiple community recipes in a single transaction.
+ */
+export async function batchUpdateCommunityMealTypes(
+  updates: { id: number; mealTypes: string[] }[],
+): Promise<number> {
+  if (updates.length === 0) return 0;
+
+  let updated = 0;
+  await db.transaction(async (tx) => {
+    for (const { id, mealTypes } of updates) {
+      await tx
+        .update(communityRecipes)
+        .set({ mealTypes, updatedAt: new Date() })
+        .where(eq(communityRecipes.id, id));
+      updated++;
+    }
+  });
+
+  return updated;
 }
 
 export async function deleteCommunityRecipe(

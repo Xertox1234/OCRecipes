@@ -87,6 +87,7 @@ const communityRecipeDefaults: CommunityRecipe = {
   timeEstimate: null,
   servings: 2,
   dietTags: [],
+  mealTypes: [],
   instructions: ["Test instructions"],
   ingredients: [],
   imageUrl: null,

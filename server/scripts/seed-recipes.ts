@@ -21,6 +21,7 @@ import {
   generateRecipeImage,
   normalizeProductName,
 } from "../services/recipe-generation";
+import { inferMealTypes } from "../lib/meal-type-inference";
 
 const MIN_INGREDIENTS = 4;
 const MIN_INSTRUCTIONS = 4;
@@ -326,6 +327,10 @@ async function main() {
         timeEstimate: content.timeEstimate,
         servings: 2,
         dietTags: [...new Set([...content.dietTags, ...target.dietTags])],
+        mealTypes: inferMealTypes(
+          content.title,
+          content.ingredients.map((i) => i.name),
+        ),
         instructions: content.instructions,
         ingredients: content.ingredients,
         imageUrl,

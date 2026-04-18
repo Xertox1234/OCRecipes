@@ -72,6 +72,7 @@ const baseCommunityRecipe: CommunityRecipe = {
   timeEstimate: "20 min",
   servings: 2,
   dietTags: ["vegetarian"],
+  mealTypes: ["lunch"],
   instructions: ["Grill chicken", "Toss salad"],
   ingredients: [
     { name: "Chicken breast", quantity: "2", unit: "pieces" },
@@ -178,7 +179,7 @@ describe("communityToSearchable", () => {
     const doc = communityToSearchable(baseCommunityRecipe);
 
     expect(doc.cuisine).toBeNull();
-    expect(doc.mealTypes).toEqual([]);
+    expect(doc.mealTypes).toEqual(["lunch"]);
     expect(doc.caloriesPerServing).toBeNull();
     expect(doc.proteinPerServing).toBeNull();
     expect(doc.carbsPerServing).toBeNull();

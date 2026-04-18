@@ -46,6 +46,7 @@ export type SearchIndexableCommunityRecipe = Pick<
   | "description"
   | "ingredients"
   | "dietTags"
+  | "mealTypes"
   | "difficulty"
   | "servings"
   | "imageUrl"
@@ -115,7 +116,7 @@ export function communityToSearchable(
     ingredients: ingredientList.map((i) => i.name),
     cuisine: null,
     dietTags: recipe.dietTags ?? [],
-    mealTypes: [],
+    mealTypes: recipe.mealTypes ?? [],
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: null,
     cookTimeMinutes: null,
