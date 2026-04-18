@@ -9,10 +9,28 @@
  *   - At least 4 instruction steps
  *   - Description must be non-empty
  *
- * Usage: npm run seed:recipes
+ * Usage:
+ *   npm run seed:recipes                  # dev / test only
+ *   npm run seed:recipes -- --allow-prod-seed   # required in production
+ *
+ * Performance:
+ *   Up to CONTENT_CONCURRENCY (3) recipes run their full pipeline
+ *   (content + image + insert) in parallel. Image generation retries stay
+ *   serial-per-recipe (5s sleep inside generateImageWithRetry) to respect
+ *   Runware/DALL-E rate limits while still allowing 3 recipes to be in
+ *   flight at once. Expected wall-clock: ~1.5 min for 25 recipes vs. the
+ *   original ~6+ min serial path.
+ *
+ * Safety:
+ *   ensureDemoUser() refuses to run in NODE_ENV=production unless
+ *   --allow-prod-seed is passed. The demo user's password is a
+ *   cryptographically-random 24-char string (or $SEED_DEMO_PASSWORD if set)
+ *   and is printed to stdout once on first creation.
  */
 import "dotenv/config";
 import bcrypt from "bcrypt";
+import crypto from "node:crypto";
+import pLimit from "p-limit";
 import { db, pool } from "../db";
 import { users, userProfiles, communityRecipes } from "@shared/schema";
 import { eq, ilike } from "drizzle-orm";
@@ -25,7 +43,19 @@ import {
 const MIN_INGREDIENTS = 4;
 const MIN_INSTRUCTIONS = 4;
 const IMAGE_RETRIES = 2;
-const RATE_LIMIT_DELAY_MS = 15_000;
+
+/**
+ * Concurrency for the full per-recipe pipeline (content + image + insert).
+ * OpenAI tier-1 chat RPM is 500 and image RPM is 50+, so 3 concurrent
+ * recipes stays well under both. Tune via SEED_CONCURRENCY env var for
+ * bigger accounts. DO NOT raise without checking current OpenAI quota.
+ * Clamped to [1, 10] to guard against negative/absurd inputs — p-limit
+ * throws on non-positive concurrency.
+ */
+const CONTENT_CONCURRENCY = Math.max(
+  1,
+  Math.min(10, Number(process.env.SEED_CONCURRENCY) || 3),
+);
 
 const RECIPE_TARGETS = [
   // ── American (4) ─────────────────────────────────────────────────────
@@ -166,6 +196,16 @@ const RECIPE_TARGETS = [
   },
 ] as const;
 
+/**
+ * Create or return the demo user. In production, creation requires the
+ * --allow-prod-seed flag (enforced by the caller in main()). The default
+ * password is a cryptographically-random 24-char hex string unless the
+ * SEED_DEMO_PASSWORD env var is set, and is logged to stdout exactly once
+ * on first creation so the operator can record it.
+ *
+ * M3 (audit 2026-04-17): removed hardcoded "demo123" password; prod guard
+ * lives in main() so the script exits before touching any state.
+ */
 async function ensureDemoUser(): Promise<string> {
   const existing = await db
     .select()
@@ -177,7 +217,9 @@ async function ensureDemoUser(): Promise<string> {
     return existing[0].id;
   }
 
-  const hashedPassword = await bcrypt.hash("demo123", 12);
+  const plaintextPassword =
+    process.env.SEED_DEMO_PASSWORD ?? crypto.randomBytes(12).toString("hex"); // 24 hex chars
+  const hashedPassword = await bcrypt.hash(plaintextPassword, 12);
   const [user] = await db
     .insert(users)
     .values({
@@ -199,6 +241,14 @@ async function ensureDemoUser(): Promise<string> {
   });
 
   console.log(`Created demo user: ${user.id}`);
+  console.log(
+    `  Demo user password (shown ONCE, save it now): ${plaintextPassword}`,
+  );
+  if (!process.env.SEED_DEMO_PASSWORD) {
+    console.log(
+      "  Tip: set SEED_DEMO_PASSWORD in your shell/.env for reproducible logins.",
+    );
+  }
   return user.id;
 }
 
@@ -227,10 +277,127 @@ async function generateImageWithRetry(
   return null;
 }
 
+/**
+ * Result discriminator for a single recipe pipeline run.
+ *
+ * `inserted`       - content generated, image generated, row written
+ * `alreadyExisted` - seed-key already present in DB; no work done
+ * `skipped`        - quality gate rejected (content too short, no image, …)
+ */
+type RecipeResult = "inserted" | "alreadyExisted" | "skipped";
+
+/**
+ * Runs the full pipeline for a single recipe target: content generation,
+ * quality gates, image generation (serial retry inside), and insert.
+ * Designed to be launched CONTENT_CONCURRENCY-at-a-time via p-limit —
+ * OpenAI content + image retries each have their own internal pacing so
+ * the outer orchestration only needs to cap concurrency.
+ */
+async function seedOneRecipe(
+  target: (typeof RECIPE_TARGETS)[number],
+  index: number,
+  alreadySeeded: Set<string>,
+  demoUserId: string,
+): Promise<RecipeResult> {
+  const prefix = `[${index + 1}/${RECIPE_TARGETS.length}] ${target.ingredient}`;
+  const seedKey = `seed-${normalizeProductName(target.ingredient)}`;
+
+  if (alreadySeeded.has(seedKey)) {
+    console.log(`${prefix}: already seeded, skipping`);
+    return "alreadyExisted";
+  }
+
+  console.log(`${prefix}: generating (${target.cuisine})...`);
+
+  try {
+    const content = await generateRecipeContent({
+      productName: target.ingredient,
+      dietPreferences: [target.cuisine, ...target.dietTags],
+      userProfile: null,
+    });
+    console.log(`${prefix}: title = ${content.title}`);
+
+    // ── Quality gate: content checks ───────────────────────────────
+    if (content.ingredients.length < MIN_INGREDIENTS) {
+      console.log(
+        `${prefix}: SKIPPED — only ${content.ingredients.length} ingredients (need ≥${MIN_INGREDIENTS})`,
+      );
+      return "skipped";
+    }
+    if (content.instructions.length < MIN_INSTRUCTIONS) {
+      console.log(
+        `${prefix}: SKIPPED — only ${content.instructions.length} instructions (need ≥${MIN_INSTRUCTIONS})`,
+      );
+      return "skipped";
+    }
+    if (!content.description || content.description.trim().length < 10) {
+      console.log(`${prefix}: SKIPPED — description too short or missing`);
+      return "skipped";
+    }
+
+    // ── Quality gate: image required (serial-per-recipe retry) ─────
+    const imageUrl = await generateImageWithRetry(
+      content.title,
+      target.ingredient,
+    );
+    if (!imageUrl) {
+      console.log(`${prefix}: SKIPPED — image generation failed after retries`);
+      return "skipped";
+    }
+
+    // ── Insert ─────────────────────────────────────────────────────
+    await db.insert(communityRecipes).values({
+      authorId: demoUserId,
+      barcode: null,
+      normalizedProductName: seedKey,
+      title: content.title,
+      description: content.description,
+      difficulty: content.difficulty,
+      timeEstimate: content.timeEstimate,
+      servings: 2,
+      dietTags: [...new Set([...content.dietTags, ...target.dietTags])],
+      instructions: content.instructions,
+      ingredients: content.ingredients,
+      imageUrl,
+      isPublic: true,
+      likeCount: 0,
+    });
+    console.log(`${prefix}: ✓ inserted`);
+    return "inserted";
+  } catch (error) {
+    console.error(`${prefix}: FAILED —`, error);
+    return "skipped";
+  }
+}
+
 async function main() {
   console.log("=== Seed Recipes Script ===\n");
+
+  // ── M3: production guard ───────────────────────────────────────────
+  // ensureDemoUser() writes a privileged "demo" user with a scripted
+  // password. Refuse to run in prod unless the caller explicitly opts in.
+  const allowProdSeed = process.argv.includes("--allow-prod-seed");
+  if (process.env.NODE_ENV === "production" && !allowProdSeed) {
+    console.error(
+      "Refusing to seed in NODE_ENV=production without --allow-prod-seed.",
+    );
+    console.error(
+      "Re-run as: npm run seed:recipes -- --allow-prod-seed   (you will be held to this)",
+    );
+    await pool.end();
+    process.exit(1);
+  }
+  if (process.env.NODE_ENV === "production" && allowProdSeed) {
+    console.warn(
+      "⚠  NODE_ENV=production with --allow-prod-seed: creating demo user in a live DB.",
+    );
+  }
+
   console.log(
-    `Quality gates: ≥${MIN_INGREDIENTS} ingredients, ≥${MIN_INSTRUCTIONS} instructions, image required\n`,
+    `Quality gates: ≥${MIN_INGREDIENTS} ingredients, ≥${MIN_INSTRUCTIONS} instructions, image required`,
+  );
+  console.log(
+    `Concurrency: ${CONTENT_CONCURRENCY} recipes in-flight at once (tune via SEED_CONCURRENCY)\n`,
   );
 
   const alreadySeeded = await getSeededIngredients();
@@ -249,111 +416,29 @@ async function main() {
 
   const demoUserId = await ensureDemoUser();
 
-  // Counters are split so re-runs don't mask partial failures: a previously-
-  // seeded recipe is `alreadyExisted`, a newly-written one is `inserted`, and
-  // quality-gate / error rows are `skippedCount`. Conflating "already present"
-  // with "successfully inserted" would hide the case where every new attempt
-  // silently fails.
-  let insertedCount = 0;
-  let alreadyExistedCount = 0;
-  let skippedCount = 0;
+  // ── M26: parallel pipeline ─────────────────────────────────────────
+  // Each recipe's content+image+insert pipeline runs concurrently up to
+  // CONTENT_CONCURRENCY at a time. The previous serial-with-15s-sleep
+  // implementation took ~6 min for 25 recipes; at concurrency 3 the
+  // wall-clock drops to ~1.5 min while still honoring per-recipe image
+  // retry pacing (5s sleep inside generateImageWithRetry).
+  const limit = pLimit(CONTENT_CONCURRENCY);
+  const results = await Promise.all(
+    RECIPE_TARGETS.map((target, i) =>
+      limit(() => seedOneRecipe(target, i, alreadySeeded, demoUserId)),
+    ),
+  );
 
-  for (let i = 0; i < RECIPE_TARGETS.length; i++) {
-    const target = RECIPE_TARGETS[i];
-    const seedKey = `seed-${normalizeProductName(target.ingredient)}`;
-
-    if (alreadySeeded.has(seedKey)) {
-      console.log(
-        `\n[${i + 1}/${RECIPE_TARGETS.length}] Skipping: ${target.ingredient} (already seeded)`,
-      );
-      alreadyExistedCount++;
-      continue;
-    }
-
-    console.log(
-      `\n[${i + 1}/${RECIPE_TARGETS.length}] Generating: ${target.ingredient} (${target.cuisine})...`,
-    );
-
-    try {
-      // Generate recipe content
-      const content = await generateRecipeContent({
-        productName: target.ingredient,
-        dietPreferences: [target.cuisine, ...target.dietTags],
-        userProfile: null,
-      });
-
-      console.log(`  Title: ${content.title}`);
-
-      // ── Quality gate: content checks ───────────────────────────────
-      if (content.ingredients.length < MIN_INGREDIENTS) {
-        console.log(
-          `  SKIPPED: only ${content.ingredients.length} ingredients (need ≥${MIN_INGREDIENTS})`,
-        );
-        skippedCount++;
-        continue;
-      }
-      if (content.instructions.length < MIN_INSTRUCTIONS) {
-        console.log(
-          `  SKIPPED: only ${content.instructions.length} instructions (need ≥${MIN_INSTRUCTIONS})`,
-        );
-        skippedCount++;
-        continue;
-      }
-      if (!content.description || content.description.trim().length < 10) {
-        console.log("  SKIPPED: description too short or missing");
-        skippedCount++;
-        continue;
-      }
-
-      console.log(
-        `  ${content.ingredients.length} ingredients, ${content.instructions.length} steps`,
-      );
-
-      // ── Quality gate: image required ───────────────────────────────
-      const imageUrl = await generateImageWithRetry(
-        content.title,
-        target.ingredient,
-      );
-      if (!imageUrl) {
-        console.log("  SKIPPED: image generation failed after retries");
-        skippedCount++;
-        continue;
-      }
-      console.log(`  Image: ${imageUrl}`);
-
-      // ── Insert ─────────────────────────────────────────────────────
-      await db.insert(communityRecipes).values({
-        authorId: demoUserId,
-        barcode: null,
-        normalizedProductName: seedKey,
-        title: content.title,
-        description: content.description,
-        difficulty: content.difficulty,
-        timeEstimate: content.timeEstimate,
-        servings: 2,
-        dietTags: [...new Set([...content.dietTags, ...target.dietTags])],
-        instructions: content.instructions,
-        ingredients: content.ingredients,
-        imageUrl,
-        isPublic: true,
-        likeCount: 0,
-      });
-
-      insertedCount++;
-      console.log("  ✓ Inserted");
-
-      // Rate-limit delay between image generation calls
-      if (i < RECIPE_TARGETS.length - 1) {
-        console.log(
-          `  Waiting ${RATE_LIMIT_DELAY_MS / 1000}s for rate limit...`,
-        );
-        await new Promise((r) => setTimeout(r, RATE_LIMIT_DELAY_MS));
-      }
-    } catch (error) {
-      console.error(`  FAILED for ${target.ingredient}:`, error);
-      skippedCount++;
-    }
-  }
+  // Counters are split so re-runs don't mask partial failures: a
+  // previously-seeded recipe is `alreadyExisted`, a newly-written one is
+  // `inserted`, and quality-gate / error rows are `skippedCount`.
+  // Conflating "already present" with "successfully inserted" would hide
+  // the case where every new attempt silently fails.
+  const insertedCount = results.filter((r) => r === "inserted").length;
+  const alreadyExistedCount = results.filter(
+    (r) => r === "alreadyExisted",
+  ).length;
+  const skippedCount = results.filter((r) => r === "skipped").length;
 
   console.log(
     `\n=== Done! ${insertedCount} inserted, ${alreadyExistedCount} already existed, ${skippedCount} skipped (quality gate). ===`,
