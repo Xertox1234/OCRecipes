@@ -11,6 +11,7 @@ import { db } from "../db";
 import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
+import { inferMealTypes } from "../lib/meal-type-inference";
 
 // ============================================================================
 // CHAT CONVERSATIONS
@@ -394,7 +395,9 @@ export async function saveRecipeFromChat(
     if (!parsed.success) return null;
     const { recipe } = parsed.data;
 
-    // 5. Create communityRecipe (private by default)
+    // 5. Create communityRecipe (private by default). Classify meal types
+    //    so the recipe participates in meal-type search filters if later
+    //    made public (M9 — community recipes used to hard-code `mealTypes: []`).
     const [created] = await tx
       .insert(communityRecipes)
       .values({
@@ -406,6 +409,10 @@ export async function saveRecipeFromChat(
         timeEstimate: recipe.timeEstimate,
         servings: recipe.servings ?? 2,
         dietTags: recipe.dietTags ?? [],
+        mealTypes: inferMealTypes(
+          recipe.title,
+          recipe.ingredients.map((i) => i.name),
+        ),
         instructions: recipe.instructions,
         ingredients: recipe.ingredients,
         imageUrl: parsed.data.imageUrl ?? null,

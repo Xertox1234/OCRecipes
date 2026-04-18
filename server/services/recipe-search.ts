@@ -193,23 +193,34 @@ export async function searchRecipes(
     candidates = [...documentStore.values()];
   }
 
-  // ── IDOR protection: personal recipes only visible to their owner ────────
-  candidates = candidates.filter(
-    (r) => r.source !== "personal" || r.userId === userId,
-  );
-
-  // ── Post-search filters ──────────────────────────────────────────────────
+  // ── Predicate composition ────────────────────────────────────────────────
+  // Build a single composed predicate so we traverse `candidates` exactly once
+  // (M22 audit fix: was 9 sequential `.filter()` calls allocating intermediate
+  // arrays per pass — O(9·N) → O(N), critical on empty-query requests where
+  // the candidate pool is the full documentStore).
+  //
+  // NOTE: Filter asymmetry is intentional. Numeric caps/mins (maxCalories,
+  // minProtein, maxPrepTime) EXCLUDE recipes with null values — a user asking
+  // for "≤400 cal" doesn't want unknown-calorie recipes mixed in. The
+  // mealType filter INCLUDES recipes with an empty `mealTypes` array — legacy
+  // community recipes may predate M9 classification, so excluding them here
+  // would hide the entire pre-backfill community pool from every meal-type
+  // search. See audit 2026-04-17 H10 + M9.
   const filters: Record<string, string | number | boolean> = {};
+  const predicates: ((r: SearchableRecipe) => boolean)[] = [];
+
+  // IDOR protection: personal recipes only visible to their owner.
+  predicates.push((r) => r.source !== "personal" || r.userId === userId);
 
   if (source && source !== "all") {
     filters.source = source;
-    candidates = candidates.filter((r) => r.source === source);
+    predicates.push((r) => r.source === source);
   }
 
   if (cuisine) {
     filters.cuisine = cuisine;
     const lc = cuisine.toLowerCase();
-    candidates = candidates.filter(
+    predicates.push(
       (r) =>
         r.cuisine?.toLowerCase() === lc ||
         r.dietTags.some((t) => t.toLowerCase() === lc),
@@ -219,22 +230,13 @@ export async function searchRecipes(
   if (diet) {
     filters.diet = diet;
     const lc = diet.toLowerCase();
-    candidates = candidates.filter((r) =>
-      r.dietTags.some((t) => t.toLowerCase() === lc),
-    );
+    predicates.push((r) => r.dietTags.some((t) => t.toLowerCase() === lc));
   }
 
-  // NOTE: Filter asymmetry is intentional. Numeric caps/mins (maxCalories,
-  // minProtein, maxPrepTime) EXCLUDE recipes with null values — a user asking
-  // for "≤400 cal" doesn't want unknown-calorie recipes mixed in. The
-  // mealType filter INCLUDES recipes with an empty `mealTypes` array —
-  // community recipes hard-code `mealTypes: []` (no classification), so
-  // excluding them here would hide the entire community pool from every
-  // meal-type search. See audit 2026-04-17 H10 + M9.
   if (mealType) {
     filters.mealType = mealType;
     const lc = mealType.toLowerCase();
-    candidates = candidates.filter(
+    predicates.push(
       (r) =>
         r.mealTypes.length === 0 ||
         r.mealTypes.some((m) => m.toLowerCase() === lc),
@@ -243,19 +245,19 @@ export async function searchRecipes(
 
   if (difficulty) {
     filters.difficulty = difficulty;
-    candidates = candidates.filter((r) => r.difficulty === difficulty);
+    predicates.push((r) => r.difficulty === difficulty);
   }
 
   if (maxPrepTime !== undefined) {
     filters.maxPrepTime = maxPrepTime;
-    candidates = candidates.filter(
+    predicates.push(
       (r) => r.totalTimeMinutes !== null && r.totalTimeMinutes <= maxPrepTime,
     );
   }
 
   if (maxCalories !== undefined) {
     filters.maxCalories = maxCalories;
-    candidates = candidates.filter(
+    predicates.push(
       (r) =>
         r.caloriesPerServing !== null && r.caloriesPerServing <= maxCalories,
     );
@@ -263,10 +265,18 @@ export async function searchRecipes(
 
   if (minProtein !== undefined) {
     filters.minProtein = minProtein;
-    candidates = candidates.filter(
+    predicates.push(
       (r) => r.proteinPerServing !== null && r.proteinPerServing >= minProtein,
     );
   }
+
+  // Single O(N) traversal — short-circuits on first failing predicate per doc.
+  candidates = candidates.filter((r) => {
+    for (const p of predicates) {
+      if (!p(r)) return false;
+    }
+    return true;
+  });
 
   // ── Sorting ──────────────────────────────────────────────────────────────
   if (sort === "relevance" && q) {

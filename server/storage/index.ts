@@ -176,6 +176,9 @@ export const storage = {
   getCommunityRecipe: community.getCommunityRecipe,
   getFeaturedRecipes: community.getFeaturedRecipes,
   getAllPublicCommunityRecipes: community.getAllPublicCommunityRecipes,
+  getCommunityRecipesWithEmptyMealTypes:
+    community.getCommunityRecipesWithEmptyMealTypes,
+  batchUpdateCommunityMealTypes: community.batchUpdateCommunityMealTypes,
   deleteCommunityRecipe: community.deleteCommunityRecipe,
   getUserRecipes: community.getUserRecipes,
 
