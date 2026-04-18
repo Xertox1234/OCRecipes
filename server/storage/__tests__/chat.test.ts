@@ -315,12 +315,15 @@ describe("chat storage", () => {
 
   describe("saveRecipeFromChat — lineage", () => {
     it("creates recipe with remixedFromId and remixedFromTitle when lineage provided", async () => {
-      // Create a source recipe so the FK constraint is satisfied
+      // Create a source recipe so the FK constraint is satisfied.
+      // `test-` prefix: ensures global-teardown / cleanup-seed-recipes
+      // catches any row that leaks past transaction rollback. See
+      // `server/scripts/cleanup-seed-recipes-utils.ts`.
       const [sourceRecipe] = await tx
         .insert(communityRecipes)
         .values({
           authorId: testUser.id,
-          normalizedProductName: "original pasta",
+          normalizedProductName: "test-original pasta",
           title: "Original Pasta",
           instructions: ["Boil pasta"],
         })

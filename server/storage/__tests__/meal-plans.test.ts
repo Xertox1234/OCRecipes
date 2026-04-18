@@ -127,7 +127,10 @@ async function createTestCommunityRecipe(
     authorId: userId,
     title: "Community Recipe",
     description: "Community test",
-    normalizedProductName: "community food",
+    // `test-` prefix: ensures global-teardown / cleanup-seed-recipes
+    // catches any row that leaks past transaction rollback. See
+    // `server/scripts/cleanup-seed-recipes-utils.ts`.
+    normalizedProductName: "test-community food",
     instructions: ["Mix and serve"],
     isPublic: true,
     dietTags: [] as string[],

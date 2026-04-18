@@ -1392,7 +1392,8 @@ const junkRecipes = await db
 ```
 
 ```typescript
-// ✅ Good: restrict to orphan (authorId IS NULL) or the known seed-author
+// ✅ Good: restrict to orphan (authorId IS NULL) or the known seed-author,
+// AND match by prefix convention (no hand-maintained name allowlist)
 const demoUserRows = await db
   .select({ id: users.id })
   .from(users)
@@ -1413,8 +1414,13 @@ const junkRecipes = await db
     and(
       authorIdCondition,
       or(
-        ilike(communityRecipes.normalizedProductName, "seed-%"),
-        inArray(communityRecipes.normalizedProductName, TEST_PRODUCT_NAMES),
+        ilike(communityRecipes.normalizedProductName, "seed-%"), // seed script
+        ilike(communityRecipes.normalizedProductName, "test-%"), // Vitest data
+        // back-compat for pre-prefix-convention dev DBs only
+        inArray(
+          communityRecipes.normalizedProductName,
+          LEGACY_TEST_PRODUCT_NAMES,
+        ),
       ),
     ),
   );
@@ -1432,10 +1438,20 @@ always have a non-null, non-demo `authorId` and are automatically excluded.
    committing.
 3. Log `id` + `title` + `authorId` tuples before deletion so a reviewer
    can audit.
+4. Use a **prefix convention** (`seed-`, `test-`) on the matched column so
+   new fixtures are caught automatically — no allowlist coordination cost.
+   Test factories that insert into `communityRecipes` MUST set
+   `normalizedProductName` starting with `test-` (L-4, audit 2026-04-17).
+   The pure classifier in
+   `server/scripts/cleanup-seed-recipes-utils.ts` is unit-tested against
+   this contract so a refactor that drops the prefix branch will fail CI.
 
 **Origin:** 2026-04-17 audit H1 — `cleanup-seed-recipes.ts` had
 `TEST_PRODUCT_NAMES` including `"original pasta"` with no `authorId`
 guard; a user recipe with that name would be silently deleted.
+2026-04-18 (L-4 follow-up): switched the inner name filter from
+hand-maintained allowlist to `seed-%` / `test-%` prefix so new test
+fixtures don't require touching cleanup scripts.
 
 ---
 

@@ -49,7 +49,10 @@ async function createTestRecipe(
     authorId: userId,
     title: "Test Recipe",
     description: "Test description",
-    normalizedProductName: "test food",
+    // `test-` prefix: ensures global-teardown / cleanup-seed-recipes
+    // catches any row that leaks past transaction rollback. See
+    // `server/scripts/cleanup-seed-recipes-utils.ts`.
+    normalizedProductName: "test-food",
     instructions: ["Mix and bake"],
     isPublic: true,
   };
@@ -128,7 +131,7 @@ describe("community storage", () => {
     it("finds public recipes by exact barcode match", async () => {
       await createTestRecipe(testUser.id, {
         barcode: "1234567890",
-        normalizedProductName: "granola bar",
+        normalizedProductName: "test-granola bar",
       });
 
       const results = await getCommunityRecipes("1234567890", "something else");
@@ -138,24 +141,25 @@ describe("community storage", () => {
 
     it("finds public recipes by product name (no barcode)", async () => {
       await createTestRecipe(testUser.id, {
-        normalizedProductName: "oat milk",
+        normalizedProductName: "test-oat milk",
       });
 
+      // ILIKE %oat milk% still matches "test-oat milk"
       const results = await getCommunityRecipes(null, "oat milk");
       expect(results).toHaveLength(1);
-      expect(results[0].normalizedProductName).toBe("oat milk");
+      expect(results[0].normalizedProductName).toBe("test-oat milk");
     });
 
     it("finds recipes by barcode OR name when barcode is provided", async () => {
       await createTestRecipe(testUser.id, {
         title: "By Barcode",
         barcode: "AAA111",
-        normalizedProductName: "unrelated product",
+        normalizedProductName: "test-unrelated product",
       });
       await createTestRecipe(testUser.id, {
         title: "By Name",
         barcode: null,
-        normalizedProductName: "chocolate chip cookies",
+        normalizedProductName: "test-chocolate chip cookies",
       });
 
       const results = await getCommunityRecipes("AAA111", "chocolate chip");
@@ -165,7 +169,7 @@ describe("community storage", () => {
     it("does not return private recipes", async () => {
       await createTestRecipe(testUser.id, {
         barcode: "PRIVATE1",
-        normalizedProductName: "secret food",
+        normalizedProductName: "test-secret food",
         isPublic: false,
       });
 
@@ -175,7 +179,7 @@ describe("community storage", () => {
 
     it("performs case-insensitive name matching", async () => {
       await createTestRecipe(testUser.id, {
-        normalizedProductName: "Peanut Butter",
+        normalizedProductName: "test-Peanut Butter",
       });
 
       const results = await getCommunityRecipes(null, "peanut butter");
@@ -192,7 +196,7 @@ describe("community storage", () => {
         authorId: testUser.id,
         title: "My New Recipe",
         description: "Delicious",
-        normalizedProductName: "pasta",
+        normalizedProductName: "test-pasta",
         instructions: ["Boil then serve"],
         isPublic: true,
         dietTags: ["vegan"],
@@ -201,7 +205,7 @@ describe("community storage", () => {
       expect(recipe.id).toBeDefined();
       expect(recipe.title).toBe("My New Recipe");
       expect(recipe.authorId).toBe(testUser.id);
-      expect(recipe.normalizedProductName).toBe("pasta");
+      expect(recipe.normalizedProductName).toBe("test-pasta");
       expect(recipe.dietTags).toEqual(["vegan"]);
       expect(recipe.createdAt).toBeInstanceOf(Date);
     });

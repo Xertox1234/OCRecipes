@@ -80,7 +80,10 @@ const communityRecipeDefaults: CommunityRecipe = {
   id: 1,
   authorId: "1",
   barcode: null,
-  normalizedProductName: "test product",
+  // `test-` prefix: lets `npm run cleanup:seeds` catch leaks automatically
+  // without needing to update an allowlist. See
+  // `server/scripts/cleanup-seed-recipes-utils.ts`.
+  normalizedProductName: "test-product",
   title: "Test Community Recipe",
   description: null,
   difficulty: null,

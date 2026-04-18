@@ -73,7 +73,10 @@ async function createTestCommunityRecipe(
     .values({
       authorId,
       title: "Test Community Recipe",
-      normalizedProductName: "test product",
+      // `test-` prefix: ensures global-teardown / cleanup-seed-recipes
+      // catches any row that leaks past transaction rollback. See
+      // `server/scripts/cleanup-seed-recipes-utils.ts`.
+      normalizedProductName: "test-product",
       instructions: ["Step 1"],
       ...overrides,
     })

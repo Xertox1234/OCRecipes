@@ -4,9 +4,16 @@
  * along with their associated image files, generation logs, cookbook refs,
  * and favourites.
  *
- * Identifies junk by:
- *   - normalizedProductName starting with "seed-"  (seed script output)
- *   - normalizedProductName in known test patterns  (Vitest test data leaks)
+ * Identifies junk by `normalizedProductName` prefix:
+ *   - `seed-*` → seed script output (`server/scripts/seed-recipes.ts`)
+ *   - `test-*` → Vitest test data (test factories + storage `__tests__`
+ *     insert helpers). New tests MUST use a `test-` prefix so cleanup
+ *     catches the row automatically — see
+ *     `cleanup-seed-recipes-utils.ts` for the convention.
+ *
+ * `LEGACY_TEST_PRODUCT_NAMES` is a one-off back-compat allowlist for dev
+ * databases that still contain pre-prefix-convention leaks. Safe to drop
+ * after a few release cycles. (L-4, audit 2026-04-17.)
  *
  * Safety:
  *   - Defaults to DRY-RUN. Pass `--commit` to actually delete.
@@ -32,10 +39,13 @@ import {
   users,
 } from "@shared/schema";
 import { eq, and, ilike, inArray, or, sql, isNull } from "drizzle-orm";
+import {
+  LEGACY_TEST_PRODUCT_NAMES,
+  SEED_PREFIX,
+  TEST_PREFIX,
+} from "./cleanup-seed-recipes-utils";
 
 const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
-
-const TEST_PRODUCT_NAMES = ["test product", "test food", "original pasta"];
 
 // Accept only filenames with safe chars and an image extension. This blocks
 // path-traversal (`../`) and absolute paths that could be injected via a
@@ -85,8 +95,15 @@ async function main() {
       and(
         authorIdCondition,
         or(
-          ilike(communityRecipes.normalizedProductName, "seed-%"),
-          inArray(communityRecipes.normalizedProductName, TEST_PRODUCT_NAMES),
+          // `seed-*` → seed script output
+          ilike(communityRecipes.normalizedProductName, `${SEED_PREFIX}%`),
+          // `test-*` → Vitest test factories / insert helpers
+          ilike(communityRecipes.normalizedProductName, `${TEST_PREFIX}%`),
+          // Back-compat for pre-convention dev DBs
+          inArray(
+            communityRecipes.normalizedProductName,
+            LEGACY_TEST_PRODUCT_NAMES,
+          ),
         ),
       ),
     );
@@ -97,13 +114,18 @@ async function main() {
     return;
   }
 
+  // Bucket counts so the operator can see at a glance whether they're
+  // wiping fresh test leaks vs. legacy pre-convention rows.
   const seedCount = junkRecipes.filter((r) =>
-    r.normalizedProductName.startsWith("seed-"),
+    r.normalizedProductName.toLowerCase().startsWith(SEED_PREFIX),
   ).length;
-  const testCount = junkRecipes.length - seedCount;
+  const testPrefixCount = junkRecipes.filter((r) =>
+    r.normalizedProductName.toLowerCase().startsWith(TEST_PREFIX),
+  ).length;
+  const legacyCount = junkRecipes.length - seedCount - testPrefixCount;
 
   console.log(
-    `Found ${junkRecipes.length} junk recipes (${seedCount} seeds, ${testCount} test leaks)\n`,
+    `Found ${junkRecipes.length} junk recipes (${seedCount} seeds, ${testPrefixCount} test-prefix, ${legacyCount} legacy)\n`,
   );
 
   // List each target so reviewers can audit before committing.
