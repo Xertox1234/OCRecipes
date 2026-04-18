@@ -20,6 +20,13 @@ npm run expo:dev      # Expo frontend with tunneling (camera won't work in Expo 
 # Database
 npm run db:push       # Push Drizzle schema to PostgreSQL
 
+# Seed data (dev/test only — refuses NODE_ENV=production without --allow-prod-seed)
+npm run seed:recipes              # ~1.5 min (3 recipes in parallel, 25 targets)
+npm run seed:recipes -- --allow-prod-seed   # required if NODE_ENV=production
+SEED_CONCURRENCY=5 npm run seed:recipes     # raise concurrency if your OpenAI quota allows
+SEED_DEMO_PASSWORD=... npm run seed:recipes # reproducible demo login (default: random 24 hex chars, printed once)
+npm run cleanup:seeds             # remove seed + test recipes (orphan/demo-authored only)
+
 # Code quality
 npm run lint          # ESLint check
 npm run lint:fix      # ESLint auto-fix
