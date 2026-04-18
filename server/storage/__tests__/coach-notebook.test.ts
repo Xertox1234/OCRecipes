@@ -24,6 +24,11 @@ vi.mock("../../db", () => ({
   },
 }));
 
+// Mock the logger so we can assert on M-4 dedupeKey-missing warns
+vi.mock("../../lib/logger", () => ({
+  logger: { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+}));
+
 // Import AFTER mocking
 const {
   getActiveNotebookEntries,
@@ -34,6 +39,7 @@ const {
   archiveOldEntries,
   getNotebookEntryCount,
 } = await import("../coach-notebook");
+const { logger } = await import("../../lib/logger");
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
@@ -103,6 +109,99 @@ describe("Coach Notebook Storage", () => {
       expect(result).toHaveLength(2);
       expect(result[0].type).toBe("insight");
       expect(result[1].type).toBe("goal");
+    });
+
+    // M-4: defense-in-depth warn when dedupeKey is missing. NULL dedupeKeys
+    // bypass the unique-index dedup because Postgres treats NULLs as distinct,
+    // so we log-warn so call sites can be tracked down and fixed.
+    it("warns once per call when entries are missing dedupeKey", async () => {
+      vi.mocked(logger.warn).mockClear();
+
+      await createNotebookEntries([
+        {
+          userId: testUser.id,
+          type: "insight",
+          content: "No dedupeKey A",
+          status: "active",
+        },
+        {
+          userId: testUser.id,
+          type: "goal",
+          content: "No dedupeKey B",
+          status: "active",
+        },
+      ]);
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: "coach_notebook.dedupeKey_missing",
+          userId: testUser.id,
+          missingDedupeKey: 2,
+          totalEntries: 2,
+        }),
+        expect.stringContaining("missing dedupeKey"),
+      );
+    });
+
+    it("does not warn when all entries have a dedupeKey", async () => {
+      vi.mocked(logger.warn).mockClear();
+
+      await createNotebookEntries([
+        {
+          userId: testUser.id,
+          type: "insight",
+          content: "With key A",
+          status: "active",
+          dedupeKey: "fingerprint-a",
+        },
+        {
+          userId: testUser.id,
+          type: "goal",
+          content: "With key B",
+          status: "active",
+          dedupeKey: "fingerprint-b",
+        },
+      ]);
+
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it("warns with partial missing count when only some entries lack a dedupeKey", async () => {
+      vi.mocked(logger.warn).mockClear();
+
+      await createNotebookEntries([
+        {
+          userId: testUser.id,
+          type: "insight",
+          content: "With key",
+          status: "active",
+          dedupeKey: "fingerprint-c",
+        },
+        {
+          userId: testUser.id,
+          type: "goal",
+          content: "Empty-string key",
+          status: "active",
+          dedupeKey: "",
+        },
+        {
+          userId: testUser.id,
+          type: "preference",
+          content: "Null key",
+          status: "active",
+        },
+      ]);
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: "coach_notebook.dedupeKey_missing",
+          missingDedupeKey: 2,
+          totalEntries: 3,
+        }),
+        expect.any(String),
+      );
     });
   });
 

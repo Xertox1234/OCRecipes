@@ -8,6 +8,7 @@ import type {
   NotebookEntryType,
 } from "@shared/schemas/coach-notebook";
 import { db } from "../db";
+import { logger } from "../lib/logger";
 import { eq, and, desc, lte, sql, inArray } from "drizzle-orm";
 
 export async function getActiveNotebookEntries(
@@ -48,6 +49,27 @@ export async function createNotebookEntries(
     ...e,
     content: e.content.slice(0, MAX_ENTRY_CONTENT_LENGTH),
   }));
+  // M-4 (defense-in-depth): warn when entries arrive without a dedupeKey.
+  // Postgres treats NULLs as distinct in unique indexes, so NULL-keyed rows
+  // bypass the `onConflictDoNothing` dedup below — every retry inserts a new
+  // duplicate. The full fix is a backfill + NOT NULL migration (deferred,
+  // see todo session-2026-04-17 M-4); this warn surfaces leaking call sites
+  // until that lands. One log per call (not per entry) keeps signal tight.
+  const missingDedupeKey = clamped.filter(
+    (e) => e.dedupeKey == null || e.dedupeKey === "",
+  ).length;
+  if (missingDedupeKey > 0) {
+    const userId = clamped.find((e) => e.userId)?.userId;
+    logger.warn(
+      {
+        reason: "coach_notebook.dedupeKey_missing",
+        userId,
+        missingDedupeKey,
+        totalEntries: clamped.length,
+      },
+      "createNotebookEntries: missing dedupeKey bypasses unique-index dedup; see todo session-2026-04-17 M-4",
+    );
+  }
   // `dedupeKey` carries a SHA-256 fingerprint of the conversation turn; the
   // unique index makes this insert idempotent when the SSE stream is retried.
   // Rows without a `dedupeKey` (legacy/manual inserts) still insert normally
