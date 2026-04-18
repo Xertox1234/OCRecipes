@@ -1,5 +1,5 @@
 import type { MealPlanItem, MealPlanRecipe, ScannedItem } from "@shared/schema";
-import type { MealPlanDay } from "@shared/schemas/coach-blocks";
+import type { MealPlanDay } from "@shared/schemas/meal-plan";
 
 export type { MealPlanDay };
 

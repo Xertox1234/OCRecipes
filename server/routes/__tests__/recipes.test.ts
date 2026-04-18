@@ -10,7 +10,10 @@ import {
 } from "../../services/recipe-catalog";
 import { importRecipeFromUrl } from "../../services/recipe-import";
 import { searchRecipes } from "../../services/recipe-search";
-import { register } from "../recipes";
+import { register as registerRecipes } from "../recipes";
+import { register as registerRecipeSearch } from "../recipe-search";
+import { register as registerRecipeCatalog } from "../recipe-catalog";
+import { register as registerRecipeImport } from "../recipe-import";
 
 import {
   createMockCommunityRecipe,
@@ -77,7 +80,16 @@ vi.mock("express-rate-limit");
 function createApp() {
   const app = express();
   app.use(express.json());
-  register(app);
+  // Register all four split recipe route modules so tests cover the full
+  // surface after the route split (recipes.ts, recipe-search.ts,
+  // recipe-catalog.ts, recipe-import.ts).
+  // Register recipe-search BEFORE recipes — the `/api/recipes/search` and
+  // `/api/recipes/browse` routes must be matched before `/api/recipes/:id`,
+  // otherwise Express will try to parse "search"/"browse" as an int id.
+  registerRecipeSearch(app);
+  registerRecipes(app);
+  registerRecipeCatalog(app);
+  registerRecipeImport(app);
   return app;
 }
 

@@ -9,6 +9,9 @@ import { register as registerPhotos } from "./routes/photos";
 import { register as registerSuggestions } from "./routes/suggestions";
 import { register as registerSavedItems } from "./routes/saved-items";
 import { register as registerRecipes } from "./routes/recipes";
+import { register as registerRecipeSearch } from "./routes/recipe-search";
+import { register as registerRecipeCatalog } from "./routes/recipe-catalog";
+import { register as registerRecipeImport } from "./routes/recipe-import";
 import { register as registerMealPlan } from "./routes/meal-plan";
 import { register as registerRecipeGenerate } from "./routes/recipe-generate";
 import { register as registerGrocery } from "./routes/grocery";
@@ -55,7 +58,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPhotos(app);
   registerSuggestions(app);
   registerSavedItems(app);
+  // Register recipe-search BEFORE recipes — the `/api/recipes/search` and
+  // `/api/recipes/browse` routes must be matched before `/api/recipes/:id`,
+  // otherwise Express will try to parse "search"/"browse" as an int id.
+  registerRecipeSearch(app);
   registerRecipes(app);
+  registerRecipeCatalog(app);
+  registerRecipeImport(app);
   registerMealPlan(app);
   registerRecipeGenerate(app);
   registerGrocery(app);
