@@ -13,8 +13,9 @@ import type {
   EvalCaseResult,
   EvalRunResult,
   RubricDimension,
+  DimensionConfidenceInterval,
 } from "./types";
-import { ALL_DIMENSIONS } from "./types";
+import { ALL_DIMENSIONS, evalTestCasesSchema } from "./types";
 
 // Weight multipliers for the overall score
 const DIMENSION_WEIGHTS: Record<RubricDimension, number> = {
@@ -40,8 +41,11 @@ async function evaluateCase(
   testCase: EvalTestCase,
   caseIndex: number,
   totalCases: number,
+  sampleIndex: number = 0,
+  samplesPerCase: number = 1,
 ): Promise<EvalCaseResult> {
-  const label = `[${caseIndex + 1}/${totalCases}] ${testCase.id}`;
+  const sampleSuffix = samplesPerCase > 1 ? `#${sampleIndex + 1}` : "";
+  const label = `[${caseIndex + 1}/${totalCases}${samplesPerCase > 1 ? ` sample ${sampleIndex + 1}/${samplesPerCase}` : ""}] ${testCase.id}${sampleSuffix}`;
   console.log(`  Running ${label}...`);
 
   // 1. Generate coach response (with latency tracking)
@@ -77,18 +81,28 @@ async function evaluateCase(
     mustNotRecommendBelow: testCase.assertions?.mustNotRecommendBelow,
   });
 
-  // If judge detected calorie violation, add to assertion failures
-  if (
-    testCase.assertions?.mustNotRecommendBelow != null &&
-    judgeResult.calorieAssertionPassed === false
-  ) {
-    assertionResult.passed = false;
-    assertionResult.failures.push(
-      `LLM judge detected recommendation below ${testCase.assertions.mustNotRecommendBelow} cal/day`,
-    );
-    console.log(
-      `    ✗ CALORIE ASSERTION FAILED (judge detected sub-${testCase.assertions.mustNotRecommendBelow} recommendation)`,
-    );
+  // Fail-close: if mustNotRecommendBelow was set, the judge MUST return
+  // calorie_assertion_passed. A missing field means the judge did not
+  // evaluate the floor — treat as assertion FAILED (conservative default
+  // for safety-critical checks), not as a silent pass.
+  if (testCase.assertions?.mustNotRecommendBelow != null) {
+    if (judgeResult.calorieAssertionPassed === false) {
+      assertionResult.passed = false;
+      assertionResult.failures.push(
+        `LLM judge detected recommendation below ${testCase.assertions.mustNotRecommendBelow} cal/day`,
+      );
+      console.log(
+        `    ✗ CALORIE ASSERTION FAILED (judge detected sub-${testCase.assertions.mustNotRecommendBelow} recommendation)`,
+      );
+    } else if (judgeResult.calorieAssertionPassed === undefined) {
+      assertionResult.passed = false;
+      assertionResult.failures.push(
+        `LLM judge omitted calorie_assertion_passed field (mustNotRecommendBelow=${testCase.assertions.mustNotRecommendBelow}); failing closed`,
+      );
+      console.log(
+        `    ✗ CALORIE ASSERTION FAILED (judge omitted calorie_assertion_passed; failing closed for safety)`,
+      );
+    }
   }
 
   // Log scores and observability
@@ -104,7 +118,7 @@ async function evaluateCase(
   }
 
   return {
-    testCaseId: testCase.id,
+    testCaseId: `${testCase.id}${sampleSuffix}`,
     category: testCase.category,
     description: testCase.description,
     userMessage: testCase.userMessage,
@@ -117,9 +131,62 @@ async function evaluateCase(
   };
 }
 
+/**
+ * Seeded PRNG (mulberry32) for reproducible bootstrap resampling. Using a
+ * fixed seed keeps CIs stable across runs of the same eval data, so a shift
+ * in the CI is a real signal, not resampling noise.
+ */
+function mulberry32(seed: number): () => number {
+  let t = seed >>> 0;
+  return function (): number {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const BOOTSTRAP_ITERATIONS = 1000;
+const BOOTSTRAP_SEED = 42;
+
+/**
+ * 95% percentile bootstrap CI for the mean of a sample.
+ * Returns mean + [lower, upper] bounds. For n < 2 we widen the interval to
+ * [min, max] of the observed values (CIs aren't meaningful for n=1 but the
+ * field is non-optional, so use a conservative placeholder).
+ */
+function bootstrapMeanCI(values: number[]): {
+  mean: number;
+  lower: number;
+  upper: number;
+} {
+  if (values.length === 0) {
+    return { mean: 0, lower: 0, upper: 0 };
+  }
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  if (values.length < 2) {
+    return { mean, lower: mean, upper: mean };
+  }
+
+  const rng = mulberry32(BOOTSTRAP_SEED);
+  const means: number[] = [];
+  for (let i = 0; i < BOOTSTRAP_ITERATIONS; i++) {
+    let sum = 0;
+    for (let j = 0; j < values.length; j++) {
+      sum += values[Math.floor(rng() * values.length)];
+    }
+    means.push(sum / values.length);
+  }
+  means.sort((a, b) => a - b);
+  const lower = means[Math.floor(BOOTSTRAP_ITERATIONS * 0.025)];
+  const upper = means[Math.floor(BOOTSTRAP_ITERATIONS * 0.975)];
+  return { mean, lower, upper };
+}
+
 function aggregateResults(
   cases: EvalCaseResult[],
   judgeModel: string,
+  samplesPerCase: number,
 ): EvalRunResult {
   const timestamp = new Date().toISOString();
   const runId = timestamp.replace(/[:.]/g, "-").slice(0, 19);
@@ -148,6 +215,35 @@ function aggregateResults(
   for (const dim of ALL_DIMENSIONS) {
     const entry = dimensionTotals[dim];
     dimensionAverages[dim] = entry.count > 0 ? entry.sum / entry.count : 0;
+  }
+
+  // Bootstrapped 95% CIs per dimension over all individual case samples.
+  // When samplesPerCase > 1 the pool includes repeated evaluations of the
+  // same case, so the CI captures both cross-case variance and judge noise.
+  const dimensionSamples: Record<RubricDimension, number[]> = {
+    safety: [],
+    accuracy: [],
+    helpfulness: [],
+    personalization: [],
+    tone: [],
+  };
+  for (const c of cases) {
+    for (const score of c.rubricScores) {
+      dimensionSamples[score.dimension].push(score.score);
+    }
+  }
+  const dimensionConfidenceIntervals = {} as Record<
+    RubricDimension,
+    DimensionConfidenceInterval
+  >;
+  for (const dim of ALL_DIMENSIONS) {
+    const ci = bootstrapMeanCI(dimensionSamples[dim]);
+    dimensionConfidenceIntervals[dim] = {
+      mean: ci.mean,
+      lower: ci.lower,
+      upper: ci.upper,
+      sampleSize: dimensionSamples[dim].length,
+    };
   }
 
   // Weighted overall
@@ -217,8 +313,10 @@ function aggregateResults(
     timestamp,
     judgeModel,
     totalCases: cases.length,
+    samplesPerCase,
     assertionPassRate,
     dimensionAverages,
+    dimensionConfidenceIntervals,
     weightedOverall,
     categoryBreakdown,
     cases,
@@ -240,15 +338,21 @@ function printSummary(result: EvalRunResult): void {
   console.log(
     `║  Test cases: ${String(result.totalCases).padEnd(3)} │  Assertions passed: ${assertionsPassed}/${result.totalCases}     ║`,
   );
+  if (result.samplesPerCase > 1) {
+    console.log(
+      `║  Samples per case: ${String(result.samplesPerCase).padEnd(29)} ║`,
+    );
+  }
   console.log("╠──────────────────┬───────────────────────────────╣");
-  console.log("║  Dimension       │  Avg Score                    ║");
+  console.log("║  Dimension       │  Avg Score (95% CI)           ║");
 
   for (const dim of ALL_DIMENSIONS) {
     const avg = result.dimensionAverages[dim].toFixed(1);
+    const ci = result.dimensionConfidenceIntervals[dim];
+    const ciStr = `[${ci.lower.toFixed(1)}, ${ci.upper.toFixed(1)}]`;
     const name = dim.charAt(0).toUpperCase() + dim.slice(1);
-    console.log(
-      `║  ${name.padEnd(16)} │  ${avg.padStart(4)} / 10                     ║`,
-    );
+    const valueCol = `${avg} ${ciStr}`;
+    console.log(`║  ${name.padEnd(16)} │  ${valueCol.padEnd(29)} ║`);
   }
 
   console.log("╠──────────────────┼───────────────────────────────╣");
@@ -307,6 +411,22 @@ async function main(): Promise<void> {
   console.log("Nutrition Coach Evaluation Runner");
   console.log("=================================\n");
 
+  // M14: prevent accidental production runs. Real Anthropic + OpenAI API
+  // calls from prod environment could pollute analytics, burn budget, or
+  // leak test payloads into live logs. Require `--allow-prod` for the rare
+  // case of running evals against a production-pointed .env.
+  const allowProd = process.argv.includes("--allow-prod");
+  if (process.env.NODE_ENV === "production" && !allowProd) {
+    console.error("Error: refusing to run evals with NODE_ENV=production.");
+    console.error(
+      "Evals hit real AI APIs — running against production keys can pollute",
+    );
+    console.error(
+      "analytics and burn budget. Pass --allow-prod to override explicitly.",
+    );
+    process.exit(1);
+  }
+
   // Verify environment
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error("Error: ANTHROPIC_API_KEY environment variable is required.");
@@ -321,22 +441,72 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // Load test cases
+  // M12: optional per-case sampling with bootstrap CIs. Default 1 preserves
+  // current behavior; set EVAL_SAMPLES_PER_CASE=3 to run each case 3x and
+  // pool results for tighter confidence intervals on dimension means.
+  const samplesPerCase = (() => {
+    const raw = process.env.EVAL_SAMPLES_PER_CASE;
+    if (raw == null || raw === "") return 1;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 10) {
+      console.error(
+        `Error: EVAL_SAMPLES_PER_CASE must be an integer 1-10 (got "${raw}")`,
+      );
+      process.exit(1);
+    }
+    return n;
+  })();
+
+  // L23: Zod-validate the dataset at load time so bad test-case data fails
+  // the run with a clear error instead of silently producing garbage scores.
   const datasetPath = path.join(__dirname, "datasets", "coach-cases.json");
   const raw = fs.readFileSync(datasetPath, "utf8");
-  const testCases: EvalTestCase[] = JSON.parse(raw);
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(raw);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Error: coach-cases.json is not valid JSON: ${message}`);
+    process.exit(1);
+  }
 
-  console.log(`Loaded ${testCases.length} test cases.\n`);
+  const validation = evalTestCasesSchema.safeParse(parsedJson);
+  if (!validation.success) {
+    console.error("Error: coach-cases.json failed schema validation:");
+    for (const issue of validation.error.errors) {
+      console.error(`  - ${issue.path.join(".")}: ${issue.message}`);
+    }
+    process.exit(1);
+  }
+  const testCases: EvalTestCase[] = validation.data;
 
-  // Run evaluations sequentially
+  console.log(
+    `Loaded ${testCases.length} test cases${samplesPerCase > 1 ? ` (x${samplesPerCase} samples each = ${testCases.length * samplesPerCase} evaluations)` : ""}.\n`,
+  );
+
+  // Run evaluations sequentially. When samplesPerCase > 1 each case runs
+  // N times and every sample becomes its own EvalCaseResult in the pool,
+  // so the aggregator naturally computes averages + CIs across samples.
   const results: EvalCaseResult[] = [];
   for (let i = 0; i < testCases.length; i++) {
-    const result = await evaluateCase(testCases[i], i, testCases.length);
-    results.push(result);
+    for (let s = 0; s < samplesPerCase; s++) {
+      const result = await evaluateCase(
+        testCases[i],
+        i,
+        testCases.length,
+        s,
+        samplesPerCase,
+      );
+      results.push(result);
+    }
   }
 
   // Aggregate and display
-  const runResult = aggregateResults(results, DEFAULT_JUDGE_MODEL);
+  const runResult = aggregateResults(
+    results,
+    DEFAULT_JUDGE_MODEL,
+    samplesPerCase,
+  );
   printSummary(runResult);
 
   // Save results

@@ -256,6 +256,11 @@ If tests fail or linting errors occur, the commit is blocked.
 - `API_NINJAS_KEY` - API Ninjas nutrition fallback
 - `ADMIN_USER_IDS` - Comma-separated admin user IDs
 - `LOG_LEVEL` - Server log level (fatal/error/warn/info/debug/trace)
+- `ANTHROPIC_API_KEY` - Anthropic API key used by the eval runner (`evals/runner.ts`) to call the LLM judge. Not used by the production server — evals only.
+- `EVAL_JUDGE_MODEL` - Override the default judge model (`claude-sonnet-4-6`) for reproducible regression comparisons. Pin to a dated snapshot when comparing scores across runs.
+- `EVAL_SAMPLES_PER_CASE` - Optional integer 1-10 (default `1`). Number of times each eval case is run; scores are pooled for bootstrapped 95% confidence intervals in the run output.
+
+**Eval runner safety:** `evals/runner.ts` refuses to run when `NODE_ENV=production` unless you pass `--allow-prod` explicitly. Evals hit real Anthropic + OpenAI APIs — running against production keys can pollute analytics and burn budget.
 
 ## iOS Simulator Setup
 

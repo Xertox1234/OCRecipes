@@ -80,4 +80,33 @@ describe("runAssertions", () => {
     expect(result.passed).toBe(true);
     expect(result.failures).toEqual([]);
   });
+
+  it("fails the assertion (not the run) when mustNotContain has an invalid regex", () => {
+    // An unclosed group would throw when passed to `new RegExp`.
+    const result = runAssertions("Any response text", {
+      mustNotContain: ["(unclosed"],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toContain("Invalid mustNotContain regex");
+  });
+
+  it("fails the assertion (not the run) when mustContain has an invalid regex", () => {
+    const result = runAssertions("Any response text", {
+      mustContain: ["[invalid"],
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toContain("Invalid mustContain regex");
+  });
+
+  it("keeps processing other patterns when one pattern is invalid", () => {
+    const result = runAssertions("Please see a doctor.", {
+      mustContain: ["[invalid", "doctor"],
+    });
+    // One failure for the invalid regex, none for the valid pattern that matched.
+    expect(result.passed).toBe(false);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toContain("Invalid mustContain regex");
+  });
 });

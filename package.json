@@ -148,6 +148,9 @@
     "server/storage/*.ts": [
       "node scripts/check-idor-storage.js"
     ],
+    "evals/datasets/*.json": [
+      "node scripts/check-eval-dataset-secrets.js"
+    ],
     "*.{js,md}": [
       "prettier --write"
     ]
