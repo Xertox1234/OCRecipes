@@ -123,7 +123,7 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
                   style={[
                     styles.chipText,
                     {
-                      color: isActive ? "#FFFFFF" : theme.text, // hardcoded
+                      color: isActive ? theme.buttonText : theme.text,
                     },
                   ]}
                 >

@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { StyleSheet } from "react-native";
+import { AccessibilityInfo, StyleSheet } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import Animated, {
   useSharedValue,
@@ -22,6 +22,13 @@ interface AnimatedCheckmarkProps {
   size?: number;
   /** Called when the animation completes (after fade-out) */
   onComplete?: () => void;
+  /**
+   * Message announced to screen readers when the checkmark appears.
+   * Screen readers do not see the SVG animation — without an announcement,
+   * VoiceOver/TalkBack users get no confirmation that the save succeeded.
+   * Defaults to "Saved".
+   */
+  announcement?: string;
 }
 
 /**
@@ -32,6 +39,7 @@ export const AnimatedCheckmark = React.memo(function AnimatedCheckmark({
   visible,
   size = 48,
   onComplete,
+  announcement = "Saved",
 }: AnimatedCheckmarkProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -47,6 +55,11 @@ export const AnimatedCheckmark = React.memo(function AnimatedCheckmark({
       containerOpacity.value = 0;
       return;
     }
+
+    // Announce to screen readers. This is critical — the checkmark is a
+    // visual-only success signal today; without an SR announcement users on
+    // VoiceOver/TalkBack get no confirmation the action succeeded.
+    AccessibilityInfo.announceForAccessibility(announcement);
 
     if (reducedMotion) {
       drawProgress.value = 1;
@@ -80,7 +93,14 @@ export const AnimatedCheckmark = React.memo(function AnimatedCheckmark({
       clearTimeout(timer);
       if (completeTimer) clearTimeout(completeTimer);
     };
-  }, [visible, reducedMotion, drawProgress, containerOpacity, onComplete]);
+  }, [
+    visible,
+    reducedMotion,
+    drawProgress,
+    containerOpacity,
+    onComplete,
+    announcement,
+  ]);
 
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: pathLength * (1 - drawProgress.value),

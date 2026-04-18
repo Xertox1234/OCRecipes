@@ -13,6 +13,16 @@ export type DietTag = (typeof DIET_TAG_OPTIONS)[number];
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
+// Named step constants — prefer these over numeric literals in branch logic
+// (`nextStep === STEP_TAGS` reads better than `nextStep === 6`).
+export const STEP_TITLE: WizardStep = 1;
+export const STEP_INGREDIENTS: WizardStep = 2;
+export const STEP_INSTRUCTIONS: WizardStep = 3;
+export const STEP_TIME_SERVINGS: WizardStep = 4;
+export const STEP_NUTRITION: WizardStep = 5;
+export const STEP_TAGS: WizardStep = 6;
+export const STEP_PREVIEW: WizardStep = 7;
+
 export interface StepConfig {
   step: WizardStep;
   title: string;

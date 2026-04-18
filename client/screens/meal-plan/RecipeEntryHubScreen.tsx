@@ -27,6 +27,15 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 
+// Keys into the theme palette for per-card brand accents. Narrowed to the
+// 5 feature-hub tokens so typos surface at compile time.
+type AccentKey =
+  | "accentPurple"
+  | "accentAmber"
+  | "accentGreen"
+  | "accentBlue"
+  | "accentPink";
+
 type EntryHubNavigationProp = NativeStackNavigationProp<
   MealPlanStackParamList,
   "RecipeEntryHub"
@@ -38,7 +47,13 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 interface CardDef {
   id: string;
   icon: React.ComponentProps<typeof Feather>["name"];
-  color: string;
+  /**
+   * Key into the theme palette rather than a literal hex. Each feature-hub
+   * card has an intentional brand colour (purple/amber/green/blue/pink). The
+   * backing hex is defined in `client/constants/theme.ts` and can differ
+   * between light/dark if needed in the future.
+   */
+  accent: AccentKey;
   title: string;
   description: string;
 }
@@ -47,35 +62,35 @@ const CARDS: CardDef[] = [
   {
     id: "write",
     icon: "edit-2",
-    color: "#7c6ffa", // hardcoded
+    accent: "accentPurple",
     title: "Write from scratch",
     description: "Type your own recipe step by step",
   },
   {
     id: "ai",
     icon: "zap",
-    color: "#f59e0b", // hardcoded
+    accent: "accentAmber",
     title: "Generate with AI",
     description: "Describe what you want, AI does the rest",
   },
   {
     id: "url",
     icon: "link",
-    color: "#22c55e", // hardcoded
+    accent: "accentGreen",
     title: "Import from URL",
     description: "Paste a link from any recipe site",
   },
   {
     id: "photo",
     icon: "camera",
-    color: "#3b82f6", // hardcoded
+    accent: "accentBlue",
     title: "Scan a recipe",
     description: "Take a photo of a cookbook or card",
   },
   {
     id: "browse",
     icon: "search",
-    color: "#ec4899", // hardcoded
+    accent: "accentPink",
     title: "Browse recipes",
     description: "Search community & catalog recipes",
   },
@@ -116,8 +131,10 @@ function ActionCard({ card, onPress }: { card: CardDef; onPress: () => void }) {
       accessibilityLabel={card.title}
       accessibilityHint={card.description}
     >
-      <View style={[styles.iconContainer, { backgroundColor: card.color }]}>
-        <Feather name={card.icon} size={20} color="#ffffff" /* hardcoded */ />
+      <View
+        style={[styles.iconContainer, { backgroundColor: theme[card.accent] }]}
+      >
+        <Feather name={card.icon} size={20} color={theme.buttonText} />
       </View>
       <View style={styles.cardContent}>
         <Text style={[styles.cardTitle, { color: theme.text }]}>

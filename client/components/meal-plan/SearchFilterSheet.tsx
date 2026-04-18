@@ -104,6 +104,16 @@ export function SearchFilterSheet({
         minimumTrackTintColor={theme.link}
         maximumTrackTintColor={withOpacity(theme.text, 0.15)}
         thumbTintColor={theme.link}
+        accessibilityLabel="Maximum prep time in minutes"
+        accessibilityHint="Adjust to filter recipes by prep time. Zero means no limit."
+        accessibilityValue={{
+          min: 0,
+          max: 120,
+          now: filters.maxPrepTime ?? 0,
+          text: filters.maxPrepTime
+            ? `${filters.maxPrepTime} minutes`
+            : "Any prep time",
+        }}
       />
 
       {/* Calories */}
@@ -124,6 +134,16 @@ export function SearchFilterSheet({
         minimumTrackTintColor={theme.link}
         maximumTrackTintColor={withOpacity(theme.text, 0.15)}
         thumbTintColor={theme.link}
+        accessibilityLabel="Maximum calories per serving"
+        accessibilityHint="Adjust to filter recipes by calories. Zero means no limit."
+        accessibilityValue={{
+          min: 0,
+          max: 1000,
+          now: filters.maxCalories ?? 0,
+          text: filters.maxCalories
+            ? `${filters.maxCalories} calories`
+            : "Any calories",
+        }}
       />
 
       {/* Protein */}
@@ -143,6 +163,16 @@ export function SearchFilterSheet({
         minimumTrackTintColor={theme.link}
         maximumTrackTintColor={withOpacity(theme.text, 0.15)}
         thumbTintColor={theme.link}
+        accessibilityLabel="Minimum protein in grams"
+        accessibilityHint="Adjust to filter recipes by protein. Zero means no minimum."
+        accessibilityValue={{
+          min: 0,
+          max: 60,
+          now: filters.minProtein ?? 0,
+          text: filters.minProtein
+            ? `${filters.minProtein} grams`
+            : "Any protein",
+        }}
       />
 
       {/* Source */}
