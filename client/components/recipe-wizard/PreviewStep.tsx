@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, ScrollView, Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import type { useRecipeForm, NutritionData } from "@/hooks/useRecipeForm";
@@ -116,9 +116,19 @@ export default function PreviewStep({ form, onEditStep }: PreviewStepProps) {
     tags,
   } = form;
 
-  // Derived values
-  const filledIngredients = ingredients.filter((i) => i.text.trim());
-  const filledSteps = steps.filter((s) => s.text.trim());
+  // Derived values — memoized so they only recompute when their source
+  // arrays change. Ingredient/instruction arrays change on every keystroke
+  // inside another step, but the Preview step is only mounted at step 7, so
+  // the real win is avoiding the .filter + .map work on unrelated re-renders
+  // (theme flip, safe-area change, parent state).
+  const filledIngredients = useMemo(
+    () => ingredients.filter((i) => i.text.trim()),
+    [ingredients],
+  );
+  const filledSteps = useMemo(
+    () => steps.filter((s) => s.text.trim()),
+    [steps],
+  );
 
   const totalTime =
     (parseInt(timeServings.prepTime, 10) || 0) +
@@ -126,15 +136,21 @@ export default function PreviewStep({ form, onEditStep }: PreviewStepProps) {
 
   const nutritionFilled = hasNutrition(nutrition);
 
-  const ingredientSummary =
-    filledIngredients.length > 0
-      ? filledIngredients.map((i) => `• ${i.text.trim()}`).join("  ")
-      : "None added";
+  const ingredientSummary = useMemo(
+    () =>
+      filledIngredients.length > 0
+        ? filledIngredients.map((i) => `• ${i.text.trim()}`).join("  ")
+        : "None added",
+    [filledIngredients],
+  );
 
-  const instructionSummary =
-    filledSteps.length > 0
-      ? filledSteps.map((s, idx) => `${idx + 1}. ${s.text.trim()}`).join("  ")
-      : "None added";
+  const instructionSummary = useMemo(
+    () =>
+      filledSteps.length > 0
+        ? filledSteps.map((s, idx) => `${idx + 1}. ${s.text.trim()}`).join("  ")
+        : "None added",
+    [filledSteps],
+  );
 
   return (
     <ScrollView

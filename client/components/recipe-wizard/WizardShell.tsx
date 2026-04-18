@@ -20,6 +20,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/hooks/useTheme";
+import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   Spacing,
   BorderRadius,
@@ -30,7 +31,18 @@ import { useRecipeForm } from "@/hooks/useRecipeForm";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import { inferCuisine, inferDietTags } from "@/lib/recipe-tag-inference";
-import { STEP_CONFIGS, TOTAL_STEPS, type WizardStep } from "./types";
+import {
+  STEP_CONFIGS,
+  STEP_INGREDIENTS,
+  STEP_INSTRUCTIONS,
+  STEP_NUTRITION,
+  STEP_PREVIEW,
+  STEP_TAGS,
+  STEP_TIME_SERVINGS,
+  STEP_TITLE,
+  TOTAL_STEPS,
+  type WizardStep,
+} from "./types";
 import TitleStep from "./TitleStep";
 import IngredientsStep from "./IngredientsStep";
 import InstructionsStep from "./InstructionsStep";
@@ -58,6 +70,7 @@ export default function WizardShell({
   onSavingChange,
 }: WizardShellProps) {
   const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
   const insets = useSafeAreaInsets();
   // Stable refs so useRecipeForm + handleSave always see the latest callbacks
   // without re-invoking their internal callbacks on every render.
@@ -77,7 +90,7 @@ export default function WizardShell({
   const createMutation = useCreateMealPlanRecipe();
   const addItemMutation = useAddMealPlanItem();
 
-  const [currentStep, setCurrentStep] = useState<WizardStep>(1);
+  const [currentStep, setCurrentStep] = useState<WizardStep>(STEP_TITLE);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [returnToPreview, setReturnToPreview] = useState(false);
   const [validationError, setValidationError] = useState("");
@@ -114,13 +127,13 @@ export default function WizardShell({
   const validateStep = useCallback((): boolean => {
     setValidationError("");
     switch (currentStep) {
-      case 1:
+      case STEP_TITLE:
         if (form.title.trim().length < 3) {
           setValidationError("Recipe name must be at least 3 characters");
           return false;
         }
         return true;
-      case 2: {
+      case STEP_INGREDIENTS: {
         const hasIngredient = form.ingredients.some((i) => i.text.trim());
         if (!hasIngredient) {
           setValidationError("Add at least one ingredient");
@@ -128,7 +141,7 @@ export default function WizardShell({
         }
         return true;
       }
-      case 3: {
+      case STEP_INSTRUCTIONS: {
         const hasStep = form.steps.some((s) => s.text.trim());
         if (!hasStep) {
           setValidationError("Add at least one instruction step");
@@ -147,12 +160,12 @@ export default function WizardShell({
 
     if (returnToPreview) {
       setReturnToPreview(false);
-      setCurrentStep(7);
+      setCurrentStep(STEP_PREVIEW);
       return;
     }
 
     const nextStep = (currentStep + 1) as WizardStep;
-    if (nextStep === 6) applySuggestions();
+    if (nextStep === STEP_TAGS) applySuggestions();
     setCurrentStep(nextStep);
     setValidationError("");
 
@@ -165,7 +178,7 @@ export default function WizardShell({
     setDirection("back");
     setValidationError("");
 
-    if (currentStep === 1) {
+    if (currentStep === STEP_TITLE) {
       // Screen-level beforeRemove listener owns the unsaved-changes prompt;
       // delegating here avoids a double-alert on discard.
       onGoBack();
@@ -174,7 +187,7 @@ export default function WizardShell({
 
     if (returnToPreview) {
       setReturnToPreview(false);
-      setCurrentStep(7);
+      setCurrentStep(STEP_PREVIEW);
       return;
     }
 
@@ -226,23 +239,26 @@ export default function WizardShell({
     !form.nutrition.fat;
 
   const nextButtonLabel = useMemo(() => {
-    if (currentStep === 7) return "Save Recipe";
-    if (currentStep === 5 && isNutritionEmpty) return "Skip";
+    if (currentStep === STEP_PREVIEW) return "Save Recipe";
+    if (currentStep === STEP_NUTRITION && isNutritionEmpty) return "Skip";
     return `Next: ${stepConfig.nextLabel}`;
   }, [currentStep, isNutritionEmpty, stepConfig.nextLabel]);
 
-  const entering =
-    direction === "forward"
+  // Respect reduced motion — skip the slide animation, still remount via key.
+  const entering = reducedMotion
+    ? undefined
+    : direction === "forward"
       ? SlideInRight.duration(250)
       : SlideInLeft.duration(250);
-  const exiting =
-    direction === "forward"
+  const exiting = reducedMotion
+    ? undefined
+    : direction === "forward"
       ? SlideOutLeft.duration(250)
       : SlideOutRight.duration(250);
 
   const renderStep = () => {
     switch (currentStep) {
-      case 1:
+      case STEP_TITLE:
         return (
           <TitleStep
             title={form.title}
@@ -251,7 +267,7 @@ export default function WizardShell({
             setDescription={form.setDescription}
           />
         );
-      case 2:
+      case STEP_INGREDIENTS:
         return (
           <IngredientsStep
             ingredients={form.ingredients}
@@ -260,7 +276,7 @@ export default function WizardShell({
             updateIngredient={form.updateIngredient}
           />
         );
-      case 3:
+      case STEP_INSTRUCTIONS:
         return (
           <InstructionsStep
             steps={form.steps}
@@ -270,23 +286,23 @@ export default function WizardShell({
             moveStep={form.moveStep}
           />
         );
-      case 4:
+      case STEP_TIME_SERVINGS:
         return (
           <TimeServingsStep
             timeServings={form.timeServings}
             setTimeServings={form.setTimeServings}
           />
         );
-      case 5:
+      case STEP_NUTRITION:
         return (
           <NutritionStep
             nutrition={form.nutrition}
             setNutrition={form.setNutrition}
           />
         );
-      case 6:
+      case STEP_TAGS:
         return <TagsStep tags={form.tags} setTags={form.setTags} />;
-      case 7:
+      case STEP_PREVIEW:
         return <PreviewStep form={form} onEditStep={editFromPreview} />;
       default:
         return null;
@@ -350,7 +366,7 @@ export default function WizardShell({
       {/* Validation Error */}
       {validationError ? (
         <Animated.View
-          entering={FadeIn.duration(200)}
+          entering={reducedMotion ? undefined : FadeIn.duration(200)}
           style={styles.errorContainer}
         >
           <Text style={[styles.errorText, { color: theme.error }]}>
@@ -366,7 +382,7 @@ export default function WizardShell({
           { paddingBottom: Math.max(insets.bottom, Spacing.md) },
         ]}
       >
-        {currentStep > 1 && (
+        {currentStep > STEP_TITLE && (
           <Pressable
             onPress={goBack}
             style={[
@@ -384,21 +400,19 @@ export default function WizardShell({
         )}
 
         <Pressable
-          onPress={currentStep === 7 ? handleSave : goNext}
+          onPress={currentStep === STEP_PREVIEW ? handleSave : goNext}
           disabled={createMutation.isPending}
           style={[
             styles.navButton,
             styles.nextButton,
             { backgroundColor: theme.link },
-            currentStep === 1 && styles.fullWidth,
+            currentStep === STEP_TITLE && styles.fullWidth,
             createMutation.isPending && { opacity: 0.6 },
           ]}
           accessibilityRole="button"
           accessibilityLabel={nextButtonLabel}
         >
-          <Text
-            style={[styles.navButtonText, { color: "#FFFFFF" /* hardcoded */ }]}
-          >
+          <Text style={[styles.navButtonText, { color: theme.buttonText }]}>
             {createMutation.isPending ? "Saving..." : nextButtonLabel}
           </Text>
         </Pressable>

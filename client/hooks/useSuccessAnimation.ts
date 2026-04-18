@@ -1,5 +1,6 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import {
+  cancelAnimation,
   useSharedValue,
   useAnimatedStyle,
   withSequence,
@@ -8,6 +9,7 @@ import {
   type SharedValue,
   type AnimatedStyle,
 } from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { successPopConfig, successFlashConfig } from "@/constants/animations";
@@ -33,6 +35,9 @@ export function useSuccessFlash(peak = 0.15): {
   const opacity = useSharedValue(0);
 
   const trigger = useCallback(() => {
+    // Always fire haptic feedback — even with reduced motion, users expect
+    // tactile confirmation of success. Haptics is not motion.
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (reducedMotion) {
       // No visual flash for reduced motion — state is already correct
       return;
@@ -42,6 +47,21 @@ export function useSuccessFlash(peak = 0.15): {
       withTiming(0, successFlashConfig),
     );
   }, [reducedMotion, opacity, peak]);
+
+  // Cancel any in-flight animation + reset when reducedMotion flips at
+  // runtime (e.g. user toggles the OS preference mid-session) or when the
+  // component unmounts. Without this a mid-flash state change would leave
+  // `opacity` stuck at its last interpolation step.
+  useEffect(() => {
+    if (reducedMotion) {
+      cancelAnimation(opacity);
+      opacity.value = 0;
+    }
+    return () => {
+      cancelAnimation(opacity);
+      opacity.value = 0;
+    };
+  }, [reducedMotion, opacity]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -62,6 +82,8 @@ export function useSuccessPop(peakScale = 1.4): {
   const scale = useSharedValue(1);
 
   const trigger = useCallback(() => {
+    // Always fire haptic feedback — tactile confirmation doesn't rely on motion.
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (reducedMotion) {
       // Instant state change — no animation
       return;
@@ -71,6 +93,19 @@ export function useSuccessPop(peakScale = 1.4): {
       withSpring(1, successPopConfig),
     );
   }, [reducedMotion, scale, peakScale]);
+
+  // Cancel in-flight animation + reset scale to 1 when reducedMotion flips
+  // at runtime or the component unmounts — prevents a frozen mid-pop scale.
+  useEffect(() => {
+    if (reducedMotion) {
+      cancelAnimation(scale);
+      scale.value = 1;
+    }
+    return () => {
+      cancelAnimation(scale);
+      scale.value = 1;
+    };
+  }, [reducedMotion, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

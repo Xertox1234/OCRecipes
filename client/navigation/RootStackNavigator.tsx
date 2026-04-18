@@ -392,7 +392,7 @@ export default function RootStackNavigator() {
               headerLeft: () => (
                 <Pressable
                   onPress={() => navigation.goBack()}
-                  hitSlop={8}
+                  hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Close"
                 >
@@ -412,7 +412,7 @@ export default function RootStackNavigator() {
               headerLeft: () => (
                 <Pressable
                   onPress={() => navigation.goBack()}
-                  hitSlop={8}
+                  hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Close"
                 >
@@ -432,7 +432,7 @@ export default function RootStackNavigator() {
               headerLeft: () => (
                 <Pressable
                   onPress={() => navigation.goBack()}
-                  hitSlop={8}
+                  hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Close"
                 >
@@ -452,7 +452,7 @@ export default function RootStackNavigator() {
               headerLeft: () => (
                 <Pressable
                   onPress={() => navigation.goBack()}
-                  hitSlop={8}
+                  hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Close"
                 >
@@ -472,7 +472,7 @@ export default function RootStackNavigator() {
               headerLeft: () => (
                 <Pressable
                   onPress={() => navigation.goBack()}
-                  hitSlop={8}
+                  hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="Close"
                 >

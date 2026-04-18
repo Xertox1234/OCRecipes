@@ -258,12 +258,13 @@ export default function RecipeBrowserScreen() {
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
 
-  const { scrollHandler, headerAnimatedStyle } = useScrollLinkedHeader({
-    expandedHeight: RECIPE_HEADER_EXPANDED,
-    collapsedHeight: RECIPE_HEADER_COLLAPSED,
-    collapseThreshold: RECIPE_COLLAPSE_THRESHOLD,
-    reducedMotion,
-  });
+  const { scrollHandler, headerAnimatedStyle, isBarVisible } =
+    useScrollLinkedHeader({
+      expandedHeight: RECIPE_HEADER_EXPANDED,
+      collapsedHeight: RECIPE_HEADER_COLLAPSED,
+      collapseThreshold: RECIPE_COLLAPSE_THRESHOLD,
+      reducedMotion,
+    });
 
   const { mealType, plannedDate, searchQuery, planDays } = route.params || {};
 
@@ -529,6 +530,14 @@ export default function RecipeBrowserScreen() {
         </View>
       </View>
       <Animated.View
+        // When the header collapses (opacity interpolates to 0), the invisible
+        // chips still intercept taps at the boundary. Flip pointerEvents to
+        // "none" once the collapsed bar is visible so cards below receive
+        // those taps cleanly. `isBarVisible` transitions at 50% of the
+        // collapse threshold (see useScrollLinkedHeader), after which header
+        // opacity is < 0.2 — early enough to prevent visible-but-untappable
+        // chips, late enough that expanded-state taps are unaffected.
+        pointerEvents={isBarVisible ? "none" : "auto"}
         style={[styles.headerArea, headerAnimatedStyle, { overflow: "hidden" }]}
       >
         {/* Action row (no tabs) */}

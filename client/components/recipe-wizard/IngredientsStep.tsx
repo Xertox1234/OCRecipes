@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useMemo } from "react";
 import {
   Text,
   TextInput,
@@ -18,6 +18,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { shouldShowIngredientDelete } from "./ingredients-step-utils";
 
 interface IngredientsStepProps {
@@ -26,6 +27,75 @@ interface IngredientsStepProps {
   removeIngredient: (key: string) => void;
   updateIngredient: (key: string, text: string) => void;
 }
+
+// ── Row component (memoized) ─────────────────────────────────────────────────
+// Extracted + React.memo so changing one row's text doesn't re-render every
+// other row. `ingredients.length` is hoisted to `showDelete` at the parent
+// and passed in; rows themselves never depend on sibling rows.
+
+interface IngredientRowViewProps {
+  item: IngredientRow;
+  showDelete: boolean;
+  onUpdate: (key: string, text: string) => void;
+  onRemove: (key: string) => void;
+  onSubmit: () => void;
+  registerRef: (key: string, ref: TextInput | null) => void;
+}
+
+const IngredientRowView = React.memo(function IngredientRowView({
+  item,
+  showDelete,
+  onUpdate,
+  onRemove,
+  onSubmit,
+  registerRef,
+}: IngredientRowViewProps) {
+  const { theme } = useTheme();
+
+  return (
+    <Animated.View
+      entering={FadeIn.duration(200)}
+      exiting={FadeOut.duration(150)}
+      style={[
+        styles.row,
+        {
+          backgroundColor: theme.backgroundSecondary,
+          borderColor: withOpacity(theme.border, 0.5),
+        },
+      ]}
+    >
+      {/* Purple bullet */}
+      <Text style={[styles.bullet, { color: theme.link }]}>•</Text>
+
+      {/* Ingredient input */}
+      <TextInput
+        ref={(ref) => registerRef(item.key, ref)}
+        style={[styles.rowInput, { color: theme.text }]}
+        value={item.text}
+        onChangeText={(text) => onUpdate(item.key, text)}
+        placeholder="e.g. 2 cups flour"
+        placeholderTextColor={theme.textSecondary}
+        returnKeyType="done"
+        onSubmitEditing={onSubmit}
+        accessibilityLabel="Ingredient"
+        accessibilityHint="Enter an ingredient. Press return to add another."
+      />
+
+      {/* Delete button — hidden when only 1 row */}
+      {showDelete && (
+        <Pressable
+          onPress={() => onRemove(item.key)}
+          style={styles.deleteButton}
+          accessibilityRole="button"
+          accessibilityLabel="Remove ingredient"
+          hitSlop={12}
+        >
+          <Feather name="x" size={18} color={theme.error} />
+        </Pressable>
+      )}
+    </Animated.View>
+  );
+});
 
 export default function IngredientsStep({
   ingredients,
@@ -50,60 +120,33 @@ export default function IngredientsStep({
     [removeIngredient],
   );
 
+  const registerRef = useCallback((key: string, ref: TextInput | null) => {
+    if (ref) {
+      inputRefs.current.set(key, ref);
+    } else {
+      inputRefs.current.delete(key);
+    }
+  }, []);
+
+  // `showDelete` is the only row-level prop that depends on siblings; derive
+  // it once here and pass as a primitive prop so rows stay pure.
+  const showDelete = useMemo(
+    () => shouldShowIngredientDelete(ingredients.length),
+    [ingredients.length],
+  );
+
   const renderItem = useCallback(
-    ({ item }: { item: IngredientRow }) => {
-      const showDelete = shouldShowIngredientDelete(ingredients.length);
-      return (
-        <Animated.View
-          entering={FadeIn.duration(200)}
-          exiting={FadeOut.duration(150)}
-          style={[
-            styles.row,
-            {
-              backgroundColor: theme.backgroundSecondary,
-              borderColor: withOpacity(theme.border, 0.5),
-            },
-          ]}
-        >
-          {/* Purple bullet */}
-          <Text style={[styles.bullet, { color: theme.link }]}>•</Text>
-
-          {/* Ingredient input */}
-          <TextInput
-            ref={(ref) => {
-              if (ref) {
-                inputRefs.current.set(item.key, ref);
-              } else {
-                inputRefs.current.delete(item.key);
-              }
-            }}
-            style={[styles.rowInput, { color: theme.text }]}
-            value={item.text}
-            onChangeText={(text) => updateIngredient(item.key, text)}
-            placeholder="e.g. 2 cups flour"
-            placeholderTextColor={theme.textSecondary}
-            returnKeyType="done"
-            onSubmitEditing={handleAdd}
-            accessibilityLabel="Ingredient"
-            accessibilityHint="Enter an ingredient. Press return to add another."
-          />
-
-          {/* Delete button — hidden when only 1 row */}
-          {showDelete && (
-            <Pressable
-              onPress={() => handleRemove(item.key)}
-              style={styles.deleteButton}
-              accessibilityRole="button"
-              accessibilityLabel="Remove ingredient"
-              hitSlop={8}
-            >
-              <Feather name="x" size={18} color={theme.error} />
-            </Pressable>
-          )}
-        </Animated.View>
-      );
-    },
-    [ingredients.length, theme, updateIngredient, handleAdd, handleRemove],
+    ({ item }: { item: IngredientRow }) => (
+      <IngredientRowView
+        item={item}
+        showDelete={showDelete}
+        onUpdate={updateIngredient}
+        onRemove={handleRemove}
+        onSubmit={handleAdd}
+        registerRef={registerRef}
+      />
+    ),
+    [showDelete, updateIngredient, handleRemove, handleAdd, registerRef],
   );
 
   const ListFooterComponent = (
@@ -128,6 +171,7 @@ export default function IngredientsStep({
 
   return (
     <FlatList
+      {...FLATLIST_DEFAULTS}
       data={ingredients}
       keyExtractor={(item) => item.key}
       renderItem={renderItem}

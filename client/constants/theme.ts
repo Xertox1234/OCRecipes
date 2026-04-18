@@ -29,6 +29,16 @@ export const Colors = {
     proteinAccent: "#008A38",
     carbsAccent: "#C94E1A",
     fatAccent: "#8C6800",
+    // Feature-hub brand accents — intentional per-card differentiation on
+    // the Recipe Entry Hub. These are decorative backgrounds for icons whose
+    // meaning is conveyed by adjacent text labels, so they're exempt from
+    // WCAG 1.4.11 (non-text contrast). Do NOT use these as the sole carrier
+    // of meaning.
+    accentPurple: "#7c6ffa",
+    accentAmber: "#f59e0b",
+    accentGreen: "#22c55e",
+    accentBlue: "#3b82f6",
+    accentPink: "#ec4899",
   },
   dark: {
     // Text - from Figma dark mode
@@ -58,6 +68,14 @@ export const Colors = {
     proteinAccent: "#00E676",
     carbsAccent: "#FF8A65",
     fatAccent: "#FFD54F",
+    // Feature-hub brand accents — same hex as light mode. These appear on
+    // icon-container backgrounds (not text or meaning-bearing surfaces), so
+    // dark-mode contrast to the background does not impair usability.
+    accentPurple: "#7c6ffa",
+    accentAmber: "#f59e0b",
+    accentGreen: "#22c55e",
+    accentBlue: "#3b82f6",
+    accentPink: "#ec4899",
   },
 };
 
