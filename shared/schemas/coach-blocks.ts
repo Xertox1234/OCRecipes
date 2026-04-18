@@ -1,5 +1,6 @@
 // shared/schemas/coach-blocks.ts
 import { z } from "zod";
+import { mealPlanDaySchema, type MealPlanDay } from "./meal-plan";
 
 // ── Action types for cards ──────────────────────────────────────────
 
@@ -164,23 +165,7 @@ export const recipeCardSchema = z.object({
 export const mealPlanCardSchema = z.object({
   type: z.literal("meal_plan_card"),
   title: z.string(),
-  days: z.array(
-    z.object({
-      label: z.string(),
-      meals: z.array(
-        z.object({
-          type: z.enum(["breakfast", "lunch", "dinner", "snack"]),
-          title: z.string(),
-          calories: z.number(),
-          protein: z.number(),
-        }),
-      ),
-      totals: z.object({
-        calories: z.number(),
-        protein: z.number(),
-      }),
-    }),
-  ),
+  days: z.array(mealPlanDaySchema),
 });
 
 // ── Discriminated union of all blocks ───────────────────────────────
@@ -203,7 +188,12 @@ export type CommitmentCard = z.infer<typeof commitmentCardSchema>;
 export type QuickReplies = z.infer<typeof quickRepliesSchema>;
 export type RecipeCard = z.infer<typeof recipeCardSchema>;
 export type MealPlanCard = z.infer<typeof mealPlanCardSchema>;
-export type MealPlanDay = MealPlanCard["days"][number];
+/**
+ * Re-exported from `@shared/schemas/meal-plan` for backward compatibility.
+ * New code should import `MealPlanDay` directly from `@shared/types/meal-plan`
+ * (or `@shared/schemas/meal-plan`) rather than from coach-blocks.
+ */
+export type { MealPlanDay };
 export type BlockAction = z.infer<typeof blockActionSchema>;
 export type LogFoodAction = z.infer<typeof logFoodActionSchema>;
 export type NavigateAction = z.infer<typeof navigateActionSchema>;
