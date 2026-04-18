@@ -1,6 +1,7 @@
 import "dotenv/config"; // Load .env before any service imports read process.env
 import * as fs from "fs";
 import * as path from "path";
+import pLimit from "p-limit";
 import { generateCoachResponse } from "../server/services/nutrition-coach";
 import { runAssertions } from "./assertions";
 import {
@@ -43,10 +44,23 @@ async function evaluateCase(
   totalCases: number,
   sampleIndex: number = 0,
   samplesPerCase: number = 1,
+  logBuffer: string[] | null = null,
 ): Promise<EvalCaseResult> {
+  // When running in parallel (L-6: EVAL_PARALLELISM > 1) we buffer per-sample
+  // log lines and flush them in order after all samples finish. In serial
+  // mode (default) logBuffer is null and we write straight to console, which
+  // matches the original debug-friendly behavior exactly.
+  const log = (line: string): void => {
+    if (logBuffer) {
+      logBuffer.push(line);
+    } else {
+      console.log(line);
+    }
+  };
+
   const sampleSuffix = samplesPerCase > 1 ? `#${sampleIndex + 1}` : "";
   const label = `[${caseIndex + 1}/${totalCases}${samplesPerCase > 1 ? ` sample ${sampleIndex + 1}/${samplesPerCase}` : ""}] ${testCase.id}${sampleSuffix}`;
-  console.log(`  Running ${label}...`);
+  log(`  Running ${label}...`);
 
   // 1. Generate coach response (with latency tracking)
   const messages: { role: "user" | "assistant" | "system"; content: string }[] =
@@ -64,9 +78,7 @@ async function evaluateCase(
   const assertionResult = runAssertions(coachResponse, testCase.assertions);
 
   if (!assertionResult.passed) {
-    console.log(
-      `    ✗ ASSERTION FAILED: ${assertionResult.failures.join("; ")}`,
-    );
+    log(`    ✗ ASSERTION FAILED: ${assertionResult.failures.join("; ")}`);
   }
 
   // 3. Send to LLM judge
@@ -91,7 +103,7 @@ async function evaluateCase(
       assertionResult.failures.push(
         `LLM judge detected recommendation below ${testCase.assertions.mustNotRecommendBelow} cal/day`,
       );
-      console.log(
+      log(
         `    ✗ CALORIE ASSERTION FAILED (judge detected sub-${testCase.assertions.mustNotRecommendBelow} recommendation)`,
       );
     } else if (judgeResult.calorieAssertionPassed === undefined) {
@@ -99,7 +111,7 @@ async function evaluateCase(
       assertionResult.failures.push(
         `LLM judge omitted calorie_assertion_passed field (mustNotRecommendBelow=${testCase.assertions.mustNotRecommendBelow}); failing closed`,
       );
-      console.log(
+      log(
         `    ✗ CALORIE ASSERTION FAILED (judge omitted calorie_assertion_passed; failing closed for safety)`,
       );
     }
@@ -107,12 +119,12 @@ async function evaluateCase(
 
   // Log scores and observability
   const overLimit = wordCount > 150;
-  console.log(
+  log(
     `    ⏱ ${latencyMs}ms | ${wordCount} words${overLimit ? " ⚠ OVER 150" : ""}`,
   );
   for (const score of judgeResult.scores) {
     const icon = score.score >= 7 ? "✓" : score.score >= 4 ? "~" : "✗";
-    console.log(
+    log(
       `    ${icon} ${score.dimension}: ${score.score}/10 — ${score.reasoning}`,
     );
   }
@@ -151,10 +163,16 @@ const BOOTSTRAP_ITERATIONS = 1000;
 const BOOTSTRAP_SEED = 42;
 
 /**
- * 95% percentile bootstrap CI for the mean of a sample.
- * Returns mean + [lower, upper] bounds. For n < 2 we widen the interval to
- * [min, max] of the observed values (CIs aren't meaningful for n=1 but the
- * field is non-optional, so use a conservative placeholder).
+ * 95% percentile bootstrap CI on the pooled sample mean. Conflates judge
+ * noise (within-case) and cross-case variance — NOT a within-case
+ * stability measure. When samplesPerCase > 1, repeated evaluations of the
+ * same case are pooled with other cases, so the returned interval widens
+ * with both sources of variation. For per-case judge-stability, run a
+ * blocked bootstrap on each case's samples separately.
+ *
+ * Returns mean + [lower, upper] bounds. For n < 2 we collapse the interval
+ * to [mean, mean] (CIs aren't meaningful for n=1 but the field is
+ * non-optional, so use a conservative placeholder).
  */
 function bootstrapMeanCI(values: number[]): {
   mean: number;
@@ -219,8 +237,11 @@ function aggregateResults(
   }
 
   // Bootstrapped 95% CIs per dimension over all individual case samples.
-  // When samplesPerCase > 1 the pool includes repeated evaluations of the
-  // same case, so the CI captures both cross-case variance and judge noise.
+  // NOTE: this is a pooled-sample-mean CI, not a within-case judge-stability
+  // measure. When samplesPerCase > 1 the pool mixes repeated evaluations of
+  // the same case with other cases, so the CI conflates judge noise
+  // (within-case) and cross-case variance. For per-case judge-stability,
+  // run a blocked bootstrap on each case's samples separately.
   const dimensionSamples: Record<RubricDimension, number[]> = {
     safety: [],
     accuracy: [],
@@ -458,6 +479,23 @@ async function main(): Promise<void> {
     return n;
   })();
 
+  // L-6: optional parallelism for case×sample evaluations. Default 1 keeps
+  // runs serial and debug-friendly (live streaming logs, predictable order).
+  // Raise with EVAL_PARALLELISM=5 to cut wall time on large datasets at the
+  // cost of interleaved-API pressure (Anthropic + OpenAI concurrency).
+  const parallelism = (() => {
+    const raw = process.env.EVAL_PARALLELISM;
+    if (raw == null || raw === "") return 1;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 10) {
+      console.error(
+        `Error: EVAL_PARALLELISM must be an integer 1-10 (got "${raw}")`,
+      );
+      process.exit(1);
+    }
+    return n;
+  })();
+
   // L23: Zod-validate the dataset at load time so bad test-case data fails
   // the run with a clear error instead of silently producing garbage scores.
   const datasetPath = path.join(__dirname, "datasets", "coach-cases.json");
@@ -482,25 +520,61 @@ async function main(): Promise<void> {
   const testCases: EvalTestCase[] = validation.data;
 
   console.log(
-    `Loaded ${testCases.length} test cases${samplesPerCase > 1 ? ` (x${samplesPerCase} samples each = ${testCases.length * samplesPerCase} evaluations)` : ""}.\n`,
+    `Loaded ${testCases.length} test cases${samplesPerCase > 1 ? ` (x${samplesPerCase} samples each = ${testCases.length * samplesPerCase} evaluations)` : ""}${parallelism > 1 ? ` (parallelism=${parallelism})` : ""}.\n`,
   );
 
-  // Run evaluations sequentially. When samplesPerCase > 1 each case runs
-  // N times and every sample becomes its own EvalCaseResult in the pool,
-  // so the aggregator naturally computes averages + CIs across samples.
-  const results: EvalCaseResult[] = [];
+  // Build the flat list of (caseIndex, sampleIndex) tasks. When
+  // samplesPerCase > 1 each case runs N times and every sample becomes its
+  // own EvalCaseResult in the pool, so the aggregator naturally computes
+  // averages + CIs across samples.
+  //
+  // Parallelism (L-6): pLimit(N) caps concurrent evaluateCase() invocations.
+  // With parallelism=1 (default) we pass logBuffer=null so logs stream live
+  // exactly as before. With parallelism>1 each task buffers its own lines
+  // and we flush the buffers in submission order once all promises settle,
+  // so the transcript stays readable.
+  const limit = pLimit(parallelism);
+  type Task = {
+    caseIndex: number;
+    sampleIndex: number;
+    logBuffer: string[] | null;
+  };
+  const tasks: Task[] = [];
   for (let i = 0; i < testCases.length; i++) {
     for (let s = 0; s < samplesPerCase; s++) {
-      const result = await evaluateCase(
-        testCases[i],
-        i,
-        testCases.length,
-        s,
-        samplesPerCase,
-      );
-      results.push(result);
+      tasks.push({
+        caseIndex: i,
+        sampleIndex: s,
+        logBuffer: parallelism > 1 ? [] : null,
+      });
     }
   }
+
+  const settled = await Promise.all(
+    tasks.map((task) =>
+      limit(() =>
+        evaluateCase(
+          testCases[task.caseIndex],
+          task.caseIndex,
+          testCases.length,
+          task.sampleIndex,
+          samplesPerCase,
+          task.logBuffer,
+        ),
+      ),
+    ),
+  );
+
+  // Flush buffered logs in submission order (no-op when parallelism === 1).
+  for (const task of tasks) {
+    if (task.logBuffer) {
+      for (const line of task.logBuffer) {
+        console.log(line);
+      }
+    }
+  }
+
+  const results: EvalCaseResult[] = settled;
 
   // Aggregate and display
   const runResult = aggregateResults(
