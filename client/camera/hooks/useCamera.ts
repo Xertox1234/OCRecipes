@@ -31,6 +31,9 @@ export interface UseCameraReturn {
  * - Same barcode within debounceMs is silently ignored
  * - Same barcode after debounceMs fires callback with isRepeat=true
  */
+/** Maximum entries retained in the batch-mode scanned barcodes Map. */
+const BATCH_MAP_MAX_SIZE = 200;
+
 export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
   const { onBarcodeScanned, debounceMs = 2000, batch = false } = options;
 
@@ -80,6 +83,19 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
         }
 
         const isRepeat = lastTime !== undefined;
+
+        // Evict oldest entry when the Map reaches its size cap to prevent
+        // unbounded growth in long-running batch sessions.
+        if (
+          !isRepeat &&
+          scannedBarcodesRef.current.size >= BATCH_MAP_MAX_SIZE
+        ) {
+          const oldestKey = scannedBarcodesRef.current.keys().next().value;
+          if (oldestKey !== undefined) {
+            scannedBarcodesRef.current.delete(oldestKey);
+          }
+        }
+
         scannedBarcodesRef.current.set(result.data, now);
         setLastScannedData(result.data);
         setIsScanning(true);

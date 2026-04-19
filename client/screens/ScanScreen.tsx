@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -133,39 +133,6 @@ export default function ScanScreen() {
     onUpgradeNeeded,
   });
 
-  // Camera hook with debouncing
-  const { cameraRef, isScanning, handleBarcodeScanned, resetScanning } =
-    useCamera({
-      onBarcodeScanned: async (result: BarcodeResult) => {
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
-
-        scanSuccessScale.value = withSequence(
-          withSpring(1.2, { damping: 10 }),
-          withSpring(1, { damping: 15 }),
-        );
-        triggerScanFlash();
-
-        // Navigate after brief delay for animation (with cleanup tracking)
-        navigationTimeoutRef.current = setTimeout(() => {
-          navigation.navigate("NutritionDetail", { barcode: result.data });
-          // Refresh scan count after navigation
-          refreshScanCount();
-          resetTimeoutRef.current = setTimeout(() => {
-            resetScanning();
-            scanSuccessScale.value = 0;
-          }, SCAN_TIMING.RESET_DELAY_MS);
-        }, SCAN_TIMING.NAVIGATION_DELAY_MS);
-      },
-      debounceMs: SCAN_TIMING.SCAN_DEBOUNCE_MS,
-    });
-
-  // Announce scanning state changes for iOS (accessibilityLiveRegion is Android-only)
-  useEffect(() => {
-    if (isScanning) {
-      AccessibilityInfo.announceForAccessibility("Scanning");
-    }
-  }, [isScanning]);
-
   const pulseScale = useSharedValue(1);
   const cornerOpacity = useSharedValue(0.6);
   const scanSuccessScale = useSharedValue(0);
@@ -174,6 +141,58 @@ export default function ScanScreen() {
   // Green flash overlay on barcode scan success
   const { trigger: triggerScanFlash, animatedStyle: scanFlashStyle } =
     useSuccessFlash(0.15);
+
+  // Ref used to call resetScanning inside onBarcodeScanSuccess without creating
+  // a circular dependency (onBarcodeScanSuccess → useCamera → resetScanning).
+  const resetScanningRef = useRef<() => void>(() => {});
+
+  // Memoized callback prevents re-registration of the native scanner on every render.
+  // triggerScanFlash owns the haptic (Success) — do not add a separate haptics call here.
+  const onBarcodeScanSuccess = useCallback(
+    async (result: BarcodeResult) => {
+      scanSuccessScale.value = withSequence(
+        withSpring(1.2, { damping: 10 }),
+        withSpring(1, { damping: 15 }),
+      );
+      triggerScanFlash();
+
+      // Navigate after brief delay for animation (with cleanup tracking)
+      navigationTimeoutRef.current = setTimeout(() => {
+        navigation.navigate("NutritionDetail", { barcode: result.data });
+        // Refresh scan count after navigation
+        refreshScanCount();
+        resetTimeoutRef.current = setTimeout(() => {
+          resetScanningRef.current();
+          scanSuccessScale.value = 0;
+        }, SCAN_TIMING.RESET_DELAY_MS);
+      }, SCAN_TIMING.NAVIGATION_DELAY_MS);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scanSuccessScale is a stable useSharedValue ref that never changes identity
+    [
+      triggerScanFlash,
+      navigationTimeoutRef,
+      navigation,
+      refreshScanCount,
+      resetTimeoutRef,
+    ],
+  );
+
+  // Camera hook with debouncing
+  const { cameraRef, isScanning, handleBarcodeScanned, resetScanning } =
+    useCamera({
+      onBarcodeScanned: onBarcodeScanSuccess,
+      debounceMs: SCAN_TIMING.SCAN_DEBOUNCE_MS,
+    });
+
+  // Keep the ref in sync so the memoized callback always calls the latest resetScanning
+  resetScanningRef.current = resetScanning;
+
+  // Announce scanning state changes for iOS (accessibilityLiveRegion is Android-only)
+  useEffect(() => {
+    if (isScanning) {
+      AccessibilityInfo.announceForAccessibility("Scanning");
+    }
+  }, [isScanning]);
 
   // Start corner pulse animation on mount (respects reduced motion preference)
   useEffect(() => {

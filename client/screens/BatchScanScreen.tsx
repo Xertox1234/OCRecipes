@@ -56,12 +56,6 @@ export default function BatchScanScreen() {
   // Announcement cadence tracking
   const announcementCountRef = React.useRef(0);
 
-  // Start session on mount
-  useEffect(() => {
-    startSession();
-    announcementCountRef.current = 0;
-  }, [startSession]);
-
   // Local animated toast
   const toastOpacity = useSharedValue(0);
   const [toastText, setToastText] = useState("");
@@ -125,11 +119,19 @@ export default function BatchScanScreen() {
     [itemCount, haptics, incrementQuantity, addItemAndLookup, showScanToast],
   );
 
-  const { cameraRef, handleBarcodeScanned } = useCamera({
+  const { cameraRef, handleBarcodeScanned, resetScanning } = useCamera({
     onBarcodeScanned,
     batch: true,
     debounceMs: 2000,
   });
+
+  // Start session on mount. Also reset the scan debounce Map so stale
+  // timestamps from a previous session don't suppress re-scans on fast refresh.
+  useEffect(() => {
+    startSession();
+    resetScanning();
+    announcementCountRef.current = 0;
+  }, [startSession, resetScanning]);
 
   // Back gesture interception
   useEffect(() => {
