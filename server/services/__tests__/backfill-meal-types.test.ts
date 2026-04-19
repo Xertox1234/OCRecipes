@@ -51,7 +51,7 @@ describe("backfillMealTypes", () => {
     expect(oatmealUpdate?.mealTypes).toContain("breakfast");
   });
 
-  it("falls back to all-meal-types for unclassified recipes", async () => {
+  it("tags unclassified recipes with the 'unclassified' sentinel", async () => {
     const recipes = [{ id: 3, title: "Mystery Dish XyzAbc" }];
     vi.mocked(storage.getRecipesWithEmptyMealTypes).mockResolvedValue({
       recipes,
@@ -62,12 +62,7 @@ describe("backfillMealTypes", () => {
     await backfillMealTypes();
 
     const updates = vi.mocked(storage.batchUpdateMealTypes).mock.calls[0][0];
-    expect(updates[0].mealTypes).toEqual([
-      "breakfast",
-      "lunch",
-      "dinner",
-      "snack",
-    ]);
+    expect(updates[0].mealTypes).toEqual(["unclassified"]);
   });
 
   it("uses ingredient names when provided to improve inference", async () => {
