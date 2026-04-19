@@ -401,6 +401,12 @@ export async function executeToolCall(
     }
 
     case "search_recipes": {
+      const parsed = searchRecipesSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          error: `Invalid search_recipes args: ${parsed.error.message}`,
+        };
+      }
       // M2: resolve user allergens and pass as intolerances so Spoonacular
       // filters them out — AI exclusion prompts are insufficient alone.
       const profile = await storage.getUserProfile(userId);
@@ -410,10 +416,10 @@ export async function executeToolCall(
         .map((a) => a?.name)
         .filter(Boolean);
       const result = await searchCatalogRecipes({
-        query: String(args.query ?? ""),
-        diet: args.diet ? String(args.diet) : undefined,
-        cuisine: args.cuisine ? String(args.cuisine) : undefined,
-        maxReadyTime: args.maxReadyTime ? Number(args.maxReadyTime) : undefined,
+        query: parsed.data.query,
+        diet: parsed.data.diet,
+        cuisine: parsed.data.cuisine,
+        maxReadyTime: parsed.data.maxReadyTime,
         intolerances:
           allergyNames.length > 0 ? allergyNames.join(",") : undefined,
         number: 5,
@@ -422,8 +428,13 @@ export async function executeToolCall(
     }
 
     case "get_daily_log_details": {
-      const dateStr = args.date ? String(args.date) : undefined;
-      const date = dateStr ? new Date(dateStr) : new Date();
+      const parsed = getDailyLogDetailsSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          error: `Invalid get_daily_log_details args: ${parsed.error.message}`,
+        };
+      }
+      const date = parsed.data.date ? new Date(parsed.data.date) : new Date();
 
       const [logs, totals] = await Promise.all([
         storage.getDailyLogs(userId, date),
@@ -458,10 +469,13 @@ export async function executeToolCall(
     }
 
     case "get_pantry_items": {
-      const expiringWithinDays = args.expiringWithinDays
-        ? Number(args.expiringWithinDays)
-        : undefined;
-
+      const parsed = getPantryItemsSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          error: `Invalid get_pantry_items args: ${parsed.error.message}`,
+        };
+      }
+      const { expiringWithinDays } = parsed.data;
       if (expiringWithinDays !== undefined) {
         const items = await storage.getExpiringPantryItems(
           userId,
@@ -475,73 +489,85 @@ export async function executeToolCall(
     }
 
     case "get_meal_plan": {
+      const parsed = getMealPlanSchema.safeParse(args);
+      if (!parsed.success) {
+        return { error: `Invalid get_meal_plan args: ${parsed.error.message}` };
+      }
       const today = new Date().toISOString().split("T")[0];
-      const startDate = args.startDate ? String(args.startDate) : today;
+      const startDate = parsed.data.startDate ?? today;
       const defaultEnd = new Date(
         new Date(startDate).getTime() + 6 * 24 * 60 * 60 * 1000,
       )
         .toISOString()
         .split("T")[0];
-      const endDate = args.endDate ? String(args.endDate) : defaultEnd;
+      const endDate = parsed.data.endDate ?? defaultEnd;
 
       const items = await storage.getMealPlanItems(userId, startDate, endDate);
       return { startDate, endDate, items };
     }
 
     case "add_to_meal_plan": {
+      const parsed = addToMealPlanSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          error: `Invalid add_to_meal_plan args: ${parsed.error.message}`,
+        };
+      }
       // Return proposal — client renders as meal plan card for user confirmation
       return {
         proposal: true,
         action: "add_meal_plan",
-        plannedDate: String(
-          args.plannedDate ?? new Date().toISOString().split("T")[0],
-        ),
-        mealType: String(args.mealType ?? "lunch"),
-        notes: args.notes ? String(args.notes) : undefined,
+        plannedDate:
+          parsed.data.plannedDate ?? new Date().toISOString().split("T")[0],
+        mealType: parsed.data.mealType ?? "lunch",
+        notes: parsed.data.notes,
         message: "I've prepared this meal plan addition. Please confirm below.",
       };
     }
 
     case "add_to_grocery_list": {
+      const parsed = addToGroceryListSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          error: `Invalid add_to_grocery_list args: ${parsed.error.message}`,
+        };
+      }
       // Return proposal — client renders for user confirmation
-      const rawItems = Array.isArray(args.items) ? args.items : [];
       return {
         proposal: true,
         action: "add_grocery_list",
-        listName: args.listName ? String(args.listName) : "Coach Grocery List",
-        items: rawItems.map((i: unknown) => {
-          const item = i as Record<string, unknown>;
-          return {
-            name: String(item.name ?? ""),
-            quantity: item.quantity ? String(item.quantity) : null,
-            unit: item.unit ? String(item.unit) : null,
-          };
-        }),
+        listName: parsed.data.listName ?? "Coach Grocery List",
+        items: (parsed.data.items ?? []).map((i) => ({
+          name: i.name,
+          quantity: i.quantity ?? null,
+          unit: i.unit ?? null,
+        })),
         message:
           "Here are the items I'd add to your grocery list. Please confirm below.",
       };
     }
 
     case "get_substitutions": {
+      const parsed = getSubstitutionsSchema.safeParse(args);
+      if (!parsed.success) {
+        return {
+          error: `Invalid get_substitutions args: ${parsed.error.message}`,
+        };
+      }
       // Lazy import to avoid circular dependency with recipe-catalog
       const { getSubstitutions } = await import("./ingredient-substitution");
-      const rawIngredients = Array.isArray(args.ingredients)
-        ? args.ingredients
-        : [];
+      const rawIngredients = parsed.data.ingredients ?? [];
 
-      const ingredients = rawIngredients.map((i: unknown, index: number) => {
-        const item = i as Record<string, unknown>;
-        return {
-          id: String(index + 1),
-          name: String(item.name ?? ""),
-          quantity: 1,
-          unit: item.unit ? String(item.unit) : "",
-          confidence: 1,
-          category: "other" as const,
-          photoId: "",
-          userEdited: false,
-        };
-      });
+      const ingredients = rawIngredients.map((item, index) => ({
+        id: String(index + 1),
+        name: item.name,
+        quantity: 1,
+        unit: item.unit ?? "",
+        confidence: 1,
+        category: "other" as const,
+        photoId: "",
+        userEdited: false,
+      }));
 
       const result = await getSubstitutions(ingredients, null);
       return result;
