@@ -11,7 +11,9 @@ const MEAL_TYPE_KEYWORDS: Record<string, string[]> = {
   breakfast: [
     "oatmeal",
     "pancake",
+    "pancakes",
     "waffle",
+    "waffles",
     "cereal",
     "omelet",
     "omelette",
@@ -35,13 +37,7 @@ const MEAL_TYPE_KEYWORDS: Record<string, string[]> = {
   ],
   lunch: [
     "sandwich",
-    "wrap",
-    "salad",
-    "soup",
-    "bowl",
     "quesadilla",
-    "taco",
-    "burrito",
     "panini",
     "pita",
     "sushi",
@@ -85,6 +81,8 @@ const MEAL_TYPE_KEYWORDS: Record<string, string[]> = {
     "biryani",
     "shepherd pie",
     "pot pie",
+    "stew",
+    "chili",
   ],
   snack: [
     "energy ball",
@@ -103,16 +101,14 @@ const MEAL_TYPE_KEYWORDS: Record<string, string[]> = {
     "cracker",
     "nuts",
     "fruit cup",
-    "smoothie",
     "snack",
     "bites",
-    "muffin",
   ],
 };
 
 // Keywords that belong to multiple meal types. Checked before MEAL_TYPE_KEYWORDS
-// so both types are added. Entries here may also appear in MEAL_TYPE_KEYWORDS above
-// — the Set deduplicates.
+// so both types are added. Entries here must NOT also appear in MEAL_TYPE_KEYWORDS
+// (removing duplicates avoids dead entries).
 const MULTI_TYPE_OVERRIDES: Record<string, string[]> = {
   muffin: ["breakfast", "snack"],
   smoothie: ["breakfast", "snack"],
@@ -121,6 +117,9 @@ const MULTI_TYPE_OVERRIDES: Record<string, string[]> = {
   bowl: ["lunch", "dinner"],
   taco: ["lunch", "dinner"],
   burrito: ["lunch", "dinner"],
+  salad: ["lunch", "dinner"],
+  soup: ["lunch", "dinner"],
+  "breakfast burrito": ["breakfast", "lunch"],
 };
 
 /** Word-boundary match to avoid substring false positives (e.g. "chip" in "chipotle"). */
@@ -153,9 +152,12 @@ export function inferMealTypes(
     }
   }
 
-  // Universal recipe if nothing matched
+  // Unclassified: no keywords matched. Callers that want "show in all meal
+  // types" must opt in by including "unclassified" in their mealType filter
+  // logic. Returning all 4 types defeated the GIN index on mealTypes because
+  // every recipe would match every meal-type query. See L10 audit finding.
   if (matched.size === 0) {
-    return ["breakfast", "lunch", "dinner", "snack"];
+    return ["unclassified"];
   }
 
   return [...matched];

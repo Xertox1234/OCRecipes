@@ -11,6 +11,7 @@ const weightLogDefaults: WeightLog = {
   id: 1,
   userId: "1",
   weight: "75.00",
+  unit: "kg",
   source: "manual",
   note: null,
   loggedAt: new Date("2024-01-01"),

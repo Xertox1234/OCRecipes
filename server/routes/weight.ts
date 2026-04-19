@@ -16,6 +16,7 @@ import { calculateWeightTrend } from "../services/weight-trend";
 
 const createWeightLogSchema = z.object({
   weight: z.number().positive().max(999),
+  unit: z.enum(["lb", "kg"]).default("lb"),
   source: z.enum(["manual", "healthkit", "scale"]).default("manual"),
   note: z.string().max(500).optional(),
   loggedAt: z.string().datetime().optional(),
@@ -113,10 +114,18 @@ export function register(app: Express): void {
       try {
         const validated = createWeightLogSchema.parse(req.body);
 
+        // Normalize to kg for storage consistency. HealthKit already sends kg;
+        // manual entries from the UI default to lb. See M25 audit finding.
+        const weightKg =
+          validated.unit === "lb"
+            ? validated.weight * 0.453592
+            : validated.weight;
+
         // Create weight log and update user's current weight atomically
         const log = await storage.createWeightLogAndUpdateUser({
           userId: req.userId,
-          weight: validated.weight.toString(),
+          weight: weightKg.toFixed(2),
+          unit: "kg",
           source: validated.source,
           note: validated.note,
         });

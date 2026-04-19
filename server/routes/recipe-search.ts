@@ -27,7 +27,7 @@ const searchQuerySchema = z.object({
   sort: z
     .enum(["relevance", "newest", "quickest", "calories_asc", "popular"])
     .optional(),
-  source: z.enum(["all", "personal", "community", "spoonacular"]).optional(),
+  source: z.enum(["all", "personal", "community"]).optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });

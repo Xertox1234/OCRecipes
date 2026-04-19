@@ -49,6 +49,10 @@ export type SearchIndexableCommunityRecipe = Pick<
   | "mealTypes"
   | "difficulty"
   | "servings"
+  | "caloriesPerServing"
+  | "proteinPerServing"
+  | "carbsPerServing"
+  | "fatPerServing"
   | "imageUrl"
   | "createdAt"
 >;
@@ -121,10 +125,10 @@ export function communityToSearchable(
     prepTimeMinutes: null,
     cookTimeMinutes: null,
     totalTimeMinutes: null,
-    caloriesPerServing: null,
-    proteinPerServing: null,
-    carbsPerServing: null,
-    fatPerServing: null,
+    caloriesPerServing: parseNum(recipe.caloriesPerServing),
+    proteinPerServing: parseNum(recipe.proteinPerServing),
+    carbsPerServing: parseNum(recipe.carbsPerServing),
+    fatPerServing: parseNum(recipe.fatPerServing),
     servings: recipe.servings ?? null,
     imageUrl: recipe.imageUrl ?? null,
     sourceUrl: null,

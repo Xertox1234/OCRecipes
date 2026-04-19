@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [useRef to Break Circular Hook Dependency (2026-04-18)](#useref-to-break-circular-hook-dependency-2026-04-18)
 - [Parallel Filter Paths Drift: Fix One, Audit the Others (2026-04-18)](#parallel-filter-paths-drift-fix-one-audit-the-others-2026-04-18)
 - [Premium-Gate Parity Missed the Read Endpoints (2026-04-18)](#premium-gate-parity-missed-the-read-endpoints-2026-04-18)
 - [`setState` + `mutateAsync` Same Microtask — Closure Sees Pre-Render State (2026-04-18)](#setstate--mutateasync-same-microtask--closure-sees-pre-render-state-2026-04-18)
@@ -54,6 +55,61 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+---
+
+## [2026-04-18] useRef to Break Circular Hook Dependency
+
+**Category:** Gotcha
+
+### Context
+
+`ScanScreen` wanted to memoize its `onBarcodeScanned` callback with `useCallback` to prevent the native barcode scanner from re-registering on every render (audit L21). The callback was passed to `useCamera()`, which returned `resetScanning`. The callback needed to call `resetScanning` to clear debounce state after navigation.
+
+### Problem
+
+A direct circular dependency: the `useCallback` for `onBarcodeScanned` needs `resetScanning` as a dependency, but `resetScanning` is returned by `useCamera()` which takes `onBarcodeScanned` as an option. TypeScript reports a "used before declaration" error if you declare the callback before the hook call, and adding `resetScanning` to the `useCallback` deps would break memoization on any render where `resetScanning` identity changes.
+
+### Solution
+
+Use a `useRef` to hold the latest `resetScanning` and update it synchronously after every render. The `useCallback` closes over the ref object (which is stable) and calls `.current()` at invocation time:
+
+```typescript
+// 1. Stable ref initialized to a no-op
+const resetScanningRef = useRef<() => void>(() => {});
+
+// 2. Memoized callback — closes over the ref, not the function itself
+const onBarcodeScanSuccess = useCallback(
+  async (result: BarcodeResult) => {
+    // ... animation ...
+    setTimeout(() => {
+      resetScanningRef.current(); // always calls the latest resetScanning
+    }, RESET_DELAY_MS);
+  },
+  [
+    /* other stable deps — resetScanningRef intentionally omitted */
+  ],
+);
+
+// 3. Pass memoized callback to hook
+const { resetScanning } = useCamera({ onBarcodeScanned: onBarcodeScanSuccess });
+
+// 4. Keep ref current — runs synchronously during render, before any effects
+resetScanningRef.current = resetScanning;
+```
+
+### Takeaways
+
+- When hook A's return value is needed by a callback passed into hook A, use a ref to hold the returned value. The ref object identity is stable; `.current` is updated synchronously.
+- `resetScanning` from `useCamera` is itself a stable `useCallback([], [])`, so in practice it never changes — but the pattern handles the general case correctly.
+- Do NOT put `resetScanningRef` in the `useCallback` dependency array. It's stable by definition and adding it would create a linting warning.
+- Declare the `useSharedValue` / `useSuccessFlash` calls BEFORE the `useCallback` that uses them to avoid "used before declaration" TypeScript errors.
+
+### References
+
+- `client/screens/ScanScreen.tsx` — `onBarcodeScanSuccess` + `resetScanningRef`
+- `client/camera/hooks/useCamera.ts` — the hook that creates the circular dependency
+- Audit finding: L21 (ScanScreen.onBarcodeScanned not memoized)
 
 ---
 

@@ -498,6 +498,10 @@ export const communityRecipes = pgTable(
     ingredients: jsonb("ingredients")
       .$type<{ name: string; quantity: string; unit: string }[]>()
       .default([]),
+    caloriesPerServing: text("calories_per_serving"),
+    proteinPerServing: text("protein_per_serving"),
+    carbsPerServing: text("carbs_per_serving"),
+    fatPerServing: text("fat_per_serving"),
     imageUrl: text("image_url"),
     isPublic: boolean("is_public").default(true),
     likeCount: integer("like_count").default(0),
@@ -797,6 +801,7 @@ export const weightLogs = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     weight: decimal("weight", { precision: 6, scale: 2 }).notNull(),
+    unit: text("unit").default("lb").notNull(),
     source: text("source").default("manual"),
     note: text("note"),
     loggedAt: timestamp("logged_at")

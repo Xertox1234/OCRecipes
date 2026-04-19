@@ -78,6 +78,10 @@ const baseCommunityRecipe: CommunityRecipe = {
     { name: "Chicken breast", quantity: "2", unit: "pieces" },
     { name: "Mixed greens", quantity: "4", unit: "cups" },
   ],
+  caloriesPerServing: "350",
+  proteinPerServing: "40",
+  carbsPerServing: "10",
+  fatPerServing: "15",
   imageUrl: null,
   isPublic: true,
   likeCount: 5,
@@ -175,18 +179,35 @@ describe("communityToSearchable", () => {
     expect(doc.createdAt).toBe(new Date("2024-05-01").toISOString());
   });
 
-  it("has null for nutrition and time fields", () => {
+  it("maps nutrition columns and has null for time fields", () => {
     const doc = communityToSearchable(baseCommunityRecipe);
 
     expect(doc.cuisine).toBeNull();
     expect(doc.mealTypes).toEqual(["lunch"]);
+    // baseCommunityRecipe now has real nutrition values (M22 — 2026-04-18)
+    expect(doc.caloriesPerServing).toBe(350);
+    expect(doc.proteinPerServing).toBe(40);
+    expect(doc.carbsPerServing).toBe(10);
+    expect(doc.fatPerServing).toBe(15);
+    // Community recipes have no time columns — always null
+    expect(doc.prepTimeMinutes).toBeNull();
+    expect(doc.cookTimeMinutes).toBeNull();
+    expect(doc.totalTimeMinutes).toBeNull();
+  });
+
+  it("has null nutrition when community recipe has no macros", () => {
+    const noMacroRecipe: CommunityRecipe = {
+      ...baseCommunityRecipe,
+      caloriesPerServing: null,
+      proteinPerServing: null,
+      carbsPerServing: null,
+      fatPerServing: null,
+    };
+    const doc = communityToSearchable(noMacroRecipe);
     expect(doc.caloriesPerServing).toBeNull();
     expect(doc.proteinPerServing).toBeNull();
     expect(doc.carbsPerServing).toBeNull();
     expect(doc.fatPerServing).toBeNull();
-    expect(doc.prepTimeMinutes).toBeNull();
-    expect(doc.cookTimeMinutes).toBeNull();
-    expect(doc.totalTimeMinutes).toBeNull();
   });
 
   it("extracts ingredient names from JSONB array", () => {
@@ -435,20 +456,24 @@ describe("searchRecipes — filtering", () => {
     });
   });
 
-  it("passes through community recipes with null calories under maxCalories (H10 — 2026-04-18)", async () => {
-    // Community recipes don't yet have per-serving nutrition (no columns
-    // on the table). Excluding them would silently hide the entire
-    // community pool from any macro-filtered search — a worse UX than
-    // showing recipes whose calorie count is simply unknown.
+  it("filters community recipes by maxCalories using real nutrition columns (M22 — 2026-04-18)", async () => {
+    // Community recipes now have real per-serving nutrition columns.
+    // baseCommunityRecipe has caloriesPerServing: "350".
+    // maxCalories=100 should exclude it; maxCalories=400 should include it.
     resetSearchIndex();
     mockedStorage.getAllMealPlanRecipes.mockResolvedValue([]);
     mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
       baseCommunityRecipe,
     ]);
     await initSearchIndex();
-    const result = await searchRecipes({ maxCalories: 100 }, "user1");
-    const ids = result.results.map((r) => r.id);
-    expect(ids).toContain("community:10");
+
+    const excludedResult = await searchRecipes({ maxCalories: 100 }, "user1");
+    expect(excludedResult.results.map((r) => r.id)).not.toContain(
+      "community:10",
+    );
+
+    const includedResult = await searchRecipes({ maxCalories: 400 }, "user1");
+    expect(includedResult.results.map((r) => r.id)).toContain("community:10");
   });
 
   it("filters by minProtein", async () => {
@@ -461,17 +486,23 @@ describe("searchRecipes — filtering", () => {
     });
   });
 
-  it("passes through community recipes with null protein under minProtein (H10 — 2026-04-18)", async () => {
-    // Same rationale as maxCalories above — unknown > excluded for community.
+  it("filters community recipes by minProtein using real nutrition columns (M22 — 2026-04-18)", async () => {
+    // baseCommunityRecipe has proteinPerServing: "40".
+    // minProtein=100 should exclude it; minProtein=30 should include it.
     resetSearchIndex();
     mockedStorage.getAllMealPlanRecipes.mockResolvedValue([]);
     mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
       baseCommunityRecipe,
     ]);
     await initSearchIndex();
-    const result = await searchRecipes({ minProtein: 100 }, "user1");
-    const ids = result.results.map((r) => r.id);
-    expect(ids).toContain("community:10");
+
+    const excludedResult = await searchRecipes({ minProtein: 100 }, "user1");
+    expect(excludedResult.results.map((r) => r.id)).not.toContain(
+      "community:10",
+    );
+
+    const includedResult = await searchRecipes({ minProtein: 30 }, "user1");
+    expect(includedResult.results.map((r) => r.id)).toContain("community:10");
   });
 
   it("still excludes personal recipes with null calories under maxCalories", async () => {

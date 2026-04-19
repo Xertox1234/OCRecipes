@@ -47,7 +47,8 @@ describe("HealthKit Sync", () => {
     expect(result.weightsSynced).toBe(1);
     expect(mockStorage.createWeightLog).toHaveBeenCalledWith({
       userId: "user-1",
-      weight: "80.5",
+      weight: "80.50",
+      unit: "kg",
       source: "healthkit",
     });
     expect(mockStorage.updateHealthKitLastSync).toHaveBeenCalledWith(
@@ -63,6 +64,7 @@ describe("HealthKit Sync", () => {
         id: 1,
         userId: "user-1",
         weight: "80.5",
+        unit: "kg",
         source: "healthkit",
         note: null,
         loggedAt: new Date("2026-02-20T08:00:00Z"),

@@ -141,9 +141,11 @@ describe("Weight Routes", () => {
         .send({ weight: 75.5 });
 
       expect(res.status).toBe(201);
+      // 75.5 lb → kg: 75.5 * 0.453592 ≈ 34.25 kg (stored in kg)
       expect(storage.createWeightLogAndUpdateUser).toHaveBeenCalledWith({
         userId: "1",
-        weight: "75.5",
+        weight: "34.25",
+        unit: "kg",
         source: "manual",
         note: undefined,
       });

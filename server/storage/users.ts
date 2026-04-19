@@ -417,7 +417,12 @@ export async function createWeightLog(
     .values(log)
     .onConflictDoUpdate({
       target: [weightLogs.userId, weightLogs.loggedAt],
-      set: { weight: log.weight, source: log.source, note: log.note },
+      set: {
+        weight: log.weight,
+        unit: log.unit,
+        source: log.source,
+        note: log.note,
+      },
     })
     .returning();
   return created;
@@ -433,7 +438,12 @@ export async function createWeightLogAndUpdateUser(
       .values(log)
       .onConflictDoUpdate({
         target: [weightLogs.userId, weightLogs.loggedAt],
-        set: { weight: log.weight, source: log.source, note: log.note },
+        set: {
+          weight: log.weight,
+          unit: log.unit,
+          source: log.source,
+          note: log.note,
+        },
       })
       .returning();
     await tx

@@ -26,6 +26,7 @@
     "ios": "expo run:ios",
     "seed:recipes": "tsx server/scripts/seed-recipes.ts",
     "cleanup:seeds": "tsx server/scripts/cleanup-seed-recipes.ts",
+    "backfill:community-nutrition": "tsx server/scripts/backfill-community-nutrition.ts",
     "e2e": "maestro test e2e/flows/",
     "e2e:smoke": "maestro test --tags smoke e2e/flows/",
     "eval:coach": "npx tsx evals/runner.ts",

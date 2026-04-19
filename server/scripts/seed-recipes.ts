@@ -40,6 +40,7 @@ import {
   normalizeProductName,
 } from "../services/recipe-generation";
 import { inferMealTypes } from "../lib/meal-type-inference";
+import { openai, MODEL_FAST } from "../lib/openai";
 
 const MIN_INGREDIENTS = 4;
 const MIN_INSTRUCTIONS = 4;
@@ -278,6 +279,77 @@ async function generateImageWithRetry(
   return null;
 }
 
+interface RecipeMacros {
+  caloriesPerServing: string;
+  proteinPerServing: string;
+  carbsPerServing: string;
+  fatPerServing: string;
+}
+
+/**
+ * Estimate per-serving macros for a recipe using GPT. Returns null if the
+ * estimation fails — the recipe is still inserted without macros rather than
+ * being skipped.
+ */
+async function estimateMacros(
+  title: string,
+  ingredients: { name: string; quantity: string; unit: string }[],
+  servings: number,
+): Promise<RecipeMacros | null> {
+  const ingredientList = ingredients
+    .map((i) => `${i.quantity} ${i.unit} ${i.name}`.trim())
+    .join(", ");
+  try {
+    const response = await openai.chat.completions.create(
+      {
+        model: MODEL_FAST,
+        temperature: 0,
+        max_completion_tokens: 200,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a nutritionist. Given a recipe title, ingredient list, and servings, estimate the per-serving macros. " +
+              'Respond with JSON only: {"calories": number, "protein": number, "carbs": number, "fat": number}. ' +
+              "Values are per serving, rounded to integers.",
+          },
+          {
+            role: "user",
+            content: `Recipe: ${title}\nIngredients: ${ingredientList}\nServings: ${servings}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      { timeout: 15_000 },
+    );
+    const raw = JSON.parse(response.choices[0]?.message?.content ?? "{}");
+    const cal = Math.round(Number(raw.calories));
+    const protein = Math.round(Number(raw.protein));
+    const carbs = Math.round(Number(raw.carbs));
+    const fat = Math.round(Number(raw.fat));
+    if (
+      Number.isFinite(cal) &&
+      cal >= 0 &&
+      Number.isFinite(protein) &&
+      protein >= 0 &&
+      Number.isFinite(carbs) &&
+      carbs >= 0 &&
+      Number.isFinite(fat) &&
+      fat >= 0
+    ) {
+      return {
+        caloriesPerServing: String(cal),
+        proteinPerServing: String(protein),
+        carbsPerServing: String(carbs),
+        fatPerServing: String(fat),
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Result discriminator for a single recipe pipeline run.
  *
@@ -346,6 +418,22 @@ async function seedOneRecipe(
       return "skipped";
     }
 
+    // ── Macro estimation (best-effort, non-blocking) ───────────────
+    const macros = await estimateMacros(
+      content.title,
+      content.ingredients,
+      2, // seed recipes default to 2 servings
+    );
+    if (macros) {
+      console.log(
+        `${prefix}: macros: ${macros.caloriesPerServing} kcal / ${macros.proteinPerServing}g protein`,
+      );
+    } else {
+      console.log(
+        `${prefix}: macro estimation failed, inserting without macros`,
+      );
+    }
+
     // ── Insert ─────────────────────────────────────────────────────
     await db.insert(communityRecipes).values({
       authorId: demoUserId,
@@ -363,6 +451,7 @@ async function seedOneRecipe(
       ),
       instructions: content.instructions,
       ingredients: content.ingredients,
+      ...(macros ?? {}),
       imageUrl,
       isPublic: true,
       likeCount: 0,

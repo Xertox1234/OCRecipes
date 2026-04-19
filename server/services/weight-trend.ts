@@ -41,7 +41,10 @@ export function calculateWeeklyRate(logs: WeightEntry[]): number | null {
       new Date(oldest.loggedAt).getTime()) /
     (1000 * 60 * 60 * 24);
   if (daysDiff < WEEKLY_RATE_MIN_DAYS) return null;
-  const weightDiff = parseFloat(newest.weight) - parseFloat(oldest.weight);
+  const newestVal = parseFloat(newest.weight);
+  const oldestVal = parseFloat(oldest.weight);
+  if (!Number.isFinite(newestVal) || !Number.isFinite(oldestVal)) return null;
+  const weightDiff = newestVal - oldestVal;
   return Math.round((weightDiff / daysDiff) * 7 * 10) / 10;
 }
 

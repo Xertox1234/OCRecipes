@@ -27,9 +27,13 @@ export async function syncHealthKitData(
         limit: 1,
       });
       if (existing.length === 0) {
+        // HealthKit always sends weight in kg. Store with explicit unit so the
+        // trend math stays unit-consistent with manually-entered weights (which
+        // are normalized to kg in the weight route before storage). See M25.
         await storage.createWeightLog({
           userId,
-          weight: sample.weight.toString(),
+          weight: sample.weight.toFixed(2),
+          unit: "kg",
           source: "healthkit",
         });
         weightsSynced++;

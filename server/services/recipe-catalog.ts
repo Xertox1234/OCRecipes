@@ -145,7 +145,20 @@ function findNutrient(
   const n = nutrients.find(
     (nut) => nut.name.toLowerCase() === name.toLowerCase(),
   );
-  return n ? n.amount : null;
+  if (!n) return null;
+  // Defense-in-depth: Spoonacular normally returns kcal for Calories, but if
+  // the contract shifts to kJ we'd silently store 4.18× the real value.
+  if (name.toLowerCase() === "calories" && n.unit !== "kcal") {
+    log.warn(
+      { unit: n.unit, amount: n.amount },
+      "Spoonacular Calories nutrient has unexpected unit — expected kcal",
+    );
+    // Best-effort conversion if kJ
+    if (n.unit === "kJ") {
+      return Math.round(n.amount / 4.184);
+    }
+  }
+  return n.amount;
 }
 
 function mapToMealPlanRecipe(

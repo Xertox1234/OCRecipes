@@ -206,6 +206,10 @@ export async function searchRecipes(
   // community recipes may predate M9 classification, so excluding them here
   // would hide the entire pre-backfill community pool from every meal-type
   // search. See audit 2026-04-17 H10 + M9.
+  //
+  // maxPrepTime filters on `prepTimeMinutes` (not `totalTimeMinutes`) so that
+  // a crockpot recipe with 10 min prep + 6h cook is correctly included by
+  // maxPrepTime=15. See nutrition-accuracy-2026-04-18 M22.
   const filters: Record<string, string | number | boolean> = {};
   const predicates: ((r: SearchableRecipe) => boolean)[] = [];
 
@@ -239,6 +243,7 @@ export async function searchRecipes(
     predicates.push(
       (r) =>
         r.mealTypes.length === 0 ||
+        r.mealTypes.includes("unclassified") ||
         r.mealTypes.some((m) => m.toLowerCase() === lc),
     );
   }
@@ -248,21 +253,10 @@ export async function searchRecipes(
     predicates.push((r) => r.difficulty === difficulty);
   }
 
-  // Community recipes don't yet carry per-serving nutrition (see H10 —
-  // 2026-04-18); until the schema + backfill lands, pass them through any
-  // numeric filter rather than silently excluding the entire community pool
-  // (which, compounded by the source filter, would show an empty list). For
-  // personal recipes (authored by the user) `null` still means "exclude" —
-  // the user's own data is expected to be well-formed.
-  const numericPassThrough = (r: SearchableRecipe, value: number | null) =>
-    r.source === "community" && value === null;
-
   if (maxPrepTime !== undefined) {
     filters.maxPrepTime = maxPrepTime;
     predicates.push(
-      (r) =>
-        numericPassThrough(r, r.totalTimeMinutes) ||
-        (r.totalTimeMinutes !== null && r.totalTimeMinutes <= maxPrepTime),
+      (r) => r.prepTimeMinutes !== null && r.prepTimeMinutes <= maxPrepTime,
     );
   }
 
@@ -270,17 +264,14 @@ export async function searchRecipes(
     filters.maxCalories = maxCalories;
     predicates.push(
       (r) =>
-        numericPassThrough(r, r.caloriesPerServing) ||
-        (r.caloriesPerServing !== null && r.caloriesPerServing <= maxCalories),
+        r.caloriesPerServing !== null && r.caloriesPerServing <= maxCalories,
     );
   }
 
   if (minProtein !== undefined) {
     filters.minProtein = minProtein;
     predicates.push(
-      (r) =>
-        numericPassThrough(r, r.proteinPerServing) ||
-        (r.proteinPerServing !== null && r.proteinPerServing >= minProtein),
+      (r) => r.proteinPerServing !== null && r.proteinPerServing >= minProtein,
     );
   }
 

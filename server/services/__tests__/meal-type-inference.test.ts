@@ -33,13 +33,9 @@ describe("inferMealTypes", () => {
     expect(types).toContain("dinner");
   });
 
-  it("returns all 4 types as universal fallback for unrecognized titles", () => {
+  it("returns ['unclassified'] when no keywords match", () => {
     const types = inferMealTypes("Mystery Dish");
-    expect(types).toHaveLength(4);
-    expect(types).toContain("breakfast");
-    expect(types).toContain("lunch");
-    expect(types).toContain("dinner");
-    expect(types).toContain("snack");
+    expect(types).toEqual(["unclassified"]);
   });
 
   it("is case insensitive", () => {
@@ -57,7 +53,7 @@ describe("inferMealTypes", () => {
 
   it("handles empty title gracefully", () => {
     const types = inferMealTypes("");
-    expect(types).toHaveLength(4); // universal fallback
+    expect(types).toEqual(["unclassified"]);
   });
 
   it("handles undefined ingredients", () => {

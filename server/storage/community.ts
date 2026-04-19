@@ -269,6 +269,10 @@ export async function getAllPublicCommunityRecipes(): Promise<
       mealTypes: communityRecipes.mealTypes,
       difficulty: communityRecipes.difficulty,
       servings: communityRecipes.servings,
+      caloriesPerServing: communityRecipes.caloriesPerServing,
+      proteinPerServing: communityRecipes.proteinPerServing,
+      carbsPerServing: communityRecipes.carbsPerServing,
+      fatPerServing: communityRecipes.fatPerServing,
       imageUrl: communityRecipes.imageUrl,
       createdAt: communityRecipes.createdAt,
     })
