@@ -493,6 +493,14 @@ describe("Recipes Routes", () => {
   });
 
   describe("GET /api/meal-plan/catalog/search", () => {
+    beforeEach(() => {
+      // Catalog search requires premium as of H7 — 2026-04-18.
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+    });
+
     it("searches catalog recipes", async () => {
       vi.mocked(searchCatalogRecipes).mockResolvedValue({
         results: [],
@@ -515,9 +523,31 @@ describe("Recipes Routes", () => {
 
       expect(res.status).toBe(400);
     });
+
+    it("returns 403 for non-premium users (H7 — 2026-04-18)", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+
+      const res = await request(app)
+        .get("/api/meal-plan/catalog/search?query=chicken")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(403);
+      // Service must not be called — free users never hit Spoonacular quota.
+      expect(searchCatalogRecipes).not.toHaveBeenCalled();
+    });
   });
 
   describe("GET /api/meal-plan/catalog/:id", () => {
+    beforeEach(() => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium",
+        expiresAt: null,
+      });
+    });
+
     it("returns catalog recipe detail", async () => {
       vi.mocked(getCatalogRecipeDetail).mockResolvedValue({
         recipe: createMockMealPlanRecipe({ title: "Chicken" }),
@@ -539,6 +569,20 @@ describe("Recipes Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(404);
+    });
+
+    it("returns 403 for non-premium users (H7 — 2026-04-18)", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+
+      const res = await request(app)
+        .get("/api/meal-plan/catalog/123")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(403);
+      expect(getCatalogRecipeDetail).not.toHaveBeenCalled();
     });
   });
 

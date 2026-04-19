@@ -14,6 +14,7 @@ import {
   addToIndex,
   removeFromIndex,
   communityToSearchable,
+  getDocumentStore,
   type SearchIndexableCommunityRecipe,
 } from "../lib/search-index";
 import { inferMealTypes } from "../lib/meal-type-inference";
@@ -63,6 +64,37 @@ export async function logRecipeGeneration(
   await db.insert(recipeGenerationLog).values({
     userId,
     recipeId,
+  });
+}
+
+/**
+ * Atomically re-check the daily generation quota and log a generation in one
+ * transaction. Returns false when the caller is over the limit so the route
+ * can respond 429. Used by preview endpoints that burn an AI call without
+ * persisting a recipe — pass `recipeId: null` for those so the row still
+ * counts against the quota.
+ */
+export async function logRecipeGenerationWithLimitCheck(
+  userId: string,
+  dailyLimit: number,
+  recipeId: number | null = null,
+): Promise<boolean> {
+  return await db.transaction(async (tx) => {
+    const { startOfDay, endOfDay } = getDayBounds(new Date());
+    const result = await tx
+      .select({ count: sql<number>`count(*)` })
+      .from(recipeGenerationLog)
+      .where(
+        and(
+          eq(recipeGenerationLog.userId, userId),
+          gte(recipeGenerationLog.generatedAt, startOfDay),
+          lt(recipeGenerationLog.generatedAt, endOfDay),
+        ),
+      );
+    const count = Number(result[0]?.count ?? 0);
+    if (count >= dailyLimit) return false;
+    await tx.insert(recipeGenerationLog).values({ userId, recipeId });
+    return true;
   });
 }
 
@@ -282,25 +314,32 @@ export async function getCommunityRecipesWithEmptyMealTypes(): Promise<
 }
 
 /**
- * Update mealTypes for multiple community recipes in a single transaction.
+ * Update mealTypes for multiple community recipes in a single round-trip and
+ * refresh the MiniSearch index so the backfill is visible without a server
+ * restart. (H8 — 2026-04-18: was a per-row UPDATE loop with no index call.)
  */
 export async function batchUpdateCommunityMealTypes(
   updates: { id: number; mealTypes: string[] }[],
 ): Promise<number> {
   if (updates.length === 0) return 0;
 
-  let updated = 0;
-  await db.transaction(async (tx) => {
-    for (const { id, mealTypes } of updates) {
-      await tx
-        .update(communityRecipes)
-        .set({ mealTypes, updatedAt: new Date() })
-        .where(eq(communityRecipes.id, id));
-      updated++;
-    }
-  });
+  const valueTuples = updates.map(
+    (u) => sql`(${u.id}::int, ${JSON.stringify(u.mealTypes)}::jsonb)`,
+  );
+  await db.execute(
+    sql`UPDATE ${communityRecipes}
+        SET meal_types = v.meal_types, updated_at = NOW()
+        FROM (VALUES ${sql.join(valueTuples, sql`, `)}) AS v(id, meal_types)
+        WHERE ${communityRecipes.id} = v.id`,
+  );
 
-  return updated;
+  const store = getDocumentStore();
+  for (const { id, mealTypes } of updates) {
+    const existing = store.get(`community:${id}`);
+    if (existing) addToIndex({ ...existing, mealTypes });
+  }
+
+  return updates.length;
 }
 
 export async function deleteCommunityRecipe(

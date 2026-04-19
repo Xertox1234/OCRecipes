@@ -248,10 +248,21 @@ export async function searchRecipes(
     predicates.push((r) => r.difficulty === difficulty);
   }
 
+  // Community recipes don't yet carry per-serving nutrition (see H10 —
+  // 2026-04-18); until the schema + backfill lands, pass them through any
+  // numeric filter rather than silently excluding the entire community pool
+  // (which, compounded by the source filter, would show an empty list). For
+  // personal recipes (authored by the user) `null` still means "exclude" —
+  // the user's own data is expected to be well-formed.
+  const numericPassThrough = (r: SearchableRecipe, value: number | null) =>
+    r.source === "community" && value === null;
+
   if (maxPrepTime !== undefined) {
     filters.maxPrepTime = maxPrepTime;
     predicates.push(
-      (r) => r.totalTimeMinutes !== null && r.totalTimeMinutes <= maxPrepTime,
+      (r) =>
+        numericPassThrough(r, r.totalTimeMinutes) ||
+        (r.totalTimeMinutes !== null && r.totalTimeMinutes <= maxPrepTime),
     );
   }
 
@@ -259,14 +270,17 @@ export async function searchRecipes(
     filters.maxCalories = maxCalories;
     predicates.push(
       (r) =>
-        r.caloriesPerServing !== null && r.caloriesPerServing <= maxCalories,
+        numericPassThrough(r, r.caloriesPerServing) ||
+        (r.caloriesPerServing !== null && r.caloriesPerServing <= maxCalories),
     );
   }
 
   if (minProtein !== undefined) {
     filters.minProtein = minProtein;
     predicates.push(
-      (r) => r.proteinPerServing !== null && r.proteinPerServing >= minProtein,
+      (r) =>
+        numericPassThrough(r, r.proteinPerServing) ||
+        (r.proteinPerServing !== null && r.proteinPerServing >= minProtein),
     );
   }
 

@@ -169,6 +169,8 @@ export const storage = {
   // Community recipes
   getDailyRecipeGenerationCount: community.getDailyRecipeGenerationCount,
   logRecipeGeneration: community.logRecipeGeneration,
+  logRecipeGenerationWithLimitCheck:
+    community.logRecipeGenerationWithLimitCheck,
   getCommunityRecipes: community.getCommunityRecipes,
   createCommunityRecipe: community.createCommunityRecipe,
   createRecipeWithLimitCheck: community.createRecipeWithLimitCheck,

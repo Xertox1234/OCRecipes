@@ -39,13 +39,25 @@ interface AddPhotoResult extends CookingSessionResponse {
   newDetections: number;
 }
 
-export function useAddCookPhoto(sessionId: string | null) {
+export interface AddCookPhotoVars {
+  sessionId: string;
+  photoUri: string;
+}
+
+/**
+ * Uploads a photo to an existing cook session.
+ *
+ * `sessionId` is a mutation variable (not a hook arg) so callers that just
+ * created the session via `ensureSession()` in the same microtask can pass
+ * the fresh id through — a closure-captured `sessionId` would still be the
+ * pre-`setState` value (`null`) and throw "No active session".
+ * (H12 — 2026-04-18.)
+ */
+export function useAddCookPhoto() {
   const queryClient = useQueryClient();
 
-  return useMutation<AddPhotoResult, Error, string>({
-    mutationFn: async (photoUri: string) => {
-      if (!sessionId) throw new Error("No active session");
-
+  return useMutation<AddPhotoResult, Error, AddCookPhotoVars>({
+    mutationFn: async ({ sessionId, photoUri }) => {
       const compressed = await compressImage(photoUri, {
         maxWidth: 1536,
         maxHeight: 1536,
@@ -78,7 +90,7 @@ export function useAddCookPhoto(sessionId: string | null) {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, { sessionId }) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/cooking/sessions", sessionId],
       });

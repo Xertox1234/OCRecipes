@@ -5,6 +5,10 @@
  * history so the final message send can skip the DB round-trip.
  *
  * Extracted from server/routes/coach-context.ts to avoid cross-route imports.
+ *
+ * Note: the backing `SessionStore` primitive is a storage concern and lives
+ * in `server/storage/sessions.ts`. This file composes a coach-specific
+ * cache key + TTL-aware consume() on top of it.
  */
 
 import crypto from "crypto";
@@ -97,7 +101,10 @@ export function consumeWarmUp(
   warmUpId: string,
 ): WarmUpMessage[] | null {
   const key = cacheKey(userId, conversationId);
-  const cached = warmUpStore._internals.store.get(key);
+  // Use the public `.get()` API — the `_internals` field is test-only.
+  // (H9 — 2026-04-18: was reading `warmUpStore._internals.store.get(key)`,
+  // bypassing the session-store contract.)
+  const cached = warmUpStore.get(key);
   if (!cached || cached.warmUpId !== warmUpId) return null;
   if (Date.now() - cached.createdAt > WARM_UP_TTL_MS) {
     warmUpStore.clear(key);

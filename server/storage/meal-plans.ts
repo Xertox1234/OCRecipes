@@ -47,6 +47,7 @@ import {
   addToIndex,
   removeFromIndex,
   mealPlanToSearchable,
+  getDocumentStore,
   type SearchIndexableMealPlanRecipe,
 } from "../lib/search-index";
 
@@ -418,12 +419,19 @@ export async function getUnifiedRecipes(params: {
   }
 
   if (mealType) {
-    // Only filter personal recipes by mealType — community recipes have no
-    // mealTypes column and are returned unfiltered.
-    personalConditions.push(
+    // Symmetric meal-type filter. Commit 945df21 (M9 / 2026-04-17) added
+    // `mealTypes` to community_recipes + a GIN index; the previous "return
+    // community unfiltered" branch was stale. Allow empty/null mealTypes
+    // through so pre-backfill rows stay visible until classified.
+    const mealTypeMatch = or(
+      sql`${mealPlanRecipes.mealTypes}::jsonb @> ${JSON.stringify([mealType])}::jsonb`,
+      sql`${mealPlanRecipes.mealTypes}::jsonb = '[]'::jsonb OR ${mealPlanRecipes.mealTypes} IS NULL`,
+    )!;
+    personalConditions.push(mealTypeMatch);
+    communityConditions.push(
       or(
-        sql`${mealPlanRecipes.mealTypes}::jsonb @> ${JSON.stringify([mealType])}::jsonb`,
-        sql`${mealPlanRecipes.mealTypes}::jsonb = '[]'::jsonb OR ${mealPlanRecipes.mealTypes} IS NULL`,
+        sql`${communityRecipes.mealTypes}::jsonb @> ${JSON.stringify([mealType])}::jsonb`,
+        sql`${communityRecipes.mealTypes}::jsonb = '[]'::jsonb OR ${communityRecipes.mealTypes} IS NULL`,
       )!,
     );
   }
@@ -1201,23 +1209,38 @@ export async function getRecipesWithEmptyMealTypes(): Promise<{
 }
 
 /**
- * Update mealTypes for multiple recipes in a single transaction.
+ * Update mealTypes for multiple recipes in a single round-trip and refresh
+ * any affected entries in the MiniSearch index so callers see the new
+ * classifications without a server restart. (H8 — 2026-04-18: was a per-row
+ * UPDATE loop that also skipped the index refresh, leaving the in-memory
+ * index stale until the next boot.)
  */
 export async function batchUpdateMealTypes(
   updates: { id: number; mealTypes: string[] }[],
 ): Promise<number> {
   if (updates.length === 0) return 0;
 
-  let updated = 0;
-  await db.transaction(async (tx) => {
-    for (const { id, mealTypes } of updates) {
-      await tx
-        .update(mealPlanRecipes)
-        .set({ mealTypes })
-        .where(eq(mealPlanRecipes.id, id));
-      updated++;
-    }
-  });
+  // Single round-trip via `UPDATE … FROM (VALUES …)` — matches the DB-level
+  // write shape used elsewhere (see the seed + backfill paths). JSON.stringify
+  // is safe here because Drizzle's `sql` tag parameterizes the values.
+  const valueTuples = updates.map(
+    (u) => sql`(${u.id}::int, ${JSON.stringify(u.mealTypes)}::jsonb)`,
+  );
+  await db.execute(
+    sql`UPDATE ${mealPlanRecipes}
+        SET meal_types = v.meal_types
+        FROM (VALUES ${sql.join(valueTuples, sql`, `)}) AS v(id, meal_types)
+        WHERE ${mealPlanRecipes.id} = v.id`,
+  );
 
-  return updated;
+  // Refresh in-memory search index for any previously-indexed docs.
+  // `addToIndex` replaces the existing entry so searches see new mealTypes
+  // immediately. Docs not yet in the index (cold boot) are no-op.
+  const store = getDocumentStore();
+  for (const { id, mealTypes } of updates) {
+    const existing = store.get(`personal:${id}`);
+    if (existing) addToIndex({ ...existing, mealTypes });
+  }
+
+  return updates.length;
 }

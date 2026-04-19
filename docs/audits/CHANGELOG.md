@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-04-18 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit — ~30 commits / ~3.6K net LOC since audit #11 (recipes.ts 4-way split, MealPlanDay type-dep inversion, Coach Pro hardening, MiniSearch filter-chain consolidation + community mealType classification, seed-recipes prod guard + parallel pipeline, SkeletonBox shared shimmer timer, eval framework hardening, recipe-wizard a11y polish, cleanup script hardening, catalog save + URL import premium gating)
+- **Manifest:** [docs/audits/2026-04-18-full.md](2026-04-18-full.md)
+- **Findings:** 0 critical, 12 high, 40 medium, 31 low (83 total, 91 raw from 8 agents)
+- **Resolved:** 12 high verified, 71 medium/low deferred (9 themed todos), 0 false-positive
+- **Commits:** _(pending)_
+- **Note:** Key fixes: recipe-generate preview now logs generation (H1 atomic `logRecipeGenerationWithLimitCheck` tx) + passes user profile (H2 allergen safety); `getUnifiedRecipes` symmetric mealType filter for community (H3); coach cache key now includes `isCoachPro` + UTC day bucket (H4/H5); Coach Pro tool-call budget exit yields closing message (H6); `GET /catalog/search` + `/:id` premium-gated (H7); `batchUpdateMealTypes` + `batchUpdateCommunityMealTypes` single-round-trip UPDATE + MiniSearch index refresh (H8); `coach-warm-up` consumes via public `.get()` (H9 partial); source-aware `numericPassThrough` lets community recipes with null nutrition surface in macro-filtered search (H10); `createChatMessageWithLimitCheck` enforces conversation ownership inside the tx (H11); `useAddCookPhoto` takes `sessionId` as mutation variable, not hook arg, fixing auto-analyze stale-closure bug (H12). +13 tests net (3 H1/H2, 1 H3, 2 H4/H5, 2 H7, 1 H8, 1 H10, 1 H11, plus 2 signature updates). Remaining 71 findings routed to 8 themed todos.
+
 ## 2026-04-17 — Full Codebase Audit
 
 - **Trigger:** Periodic full audit — 8 commits / ~20K LOC since audit #10 (recipe creation wizard, recipe search overhaul with MiniSearch, nutrition coach evaluation framework, seed-recipes script overhaul, profile hub modal close buttons, collapsing headers, custom screen transitions, success feedback animations)

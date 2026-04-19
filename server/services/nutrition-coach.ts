@@ -336,6 +336,14 @@ export async function* generateCoachProResponse(
     toolCallCount += pendingToolCalls.size;
     if (toolCallCount > MAX_TOOL_CALLS_PER_RESPONSE) {
       log.warn("Coach Pro: exceeded max tool calls per response");
+      // Without this fallback, the response can end mid-thought when the
+      // model was only emitting tool calls this round — the user sees a
+      // truncated or empty reply. Yielding a short wrap-up keeps the
+      // conversation coherent and signals why we stopped. (H6 — 2026-04-18)
+      const truncationMsg =
+        "\n\n*I've run out of tool-call budget for this response. Please ask a follow-up and I'll continue.*";
+      fullResponse += truncationMsg;
+      yield truncationMsg;
       break;
     }
 

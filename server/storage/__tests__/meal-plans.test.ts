@@ -62,6 +62,7 @@ const {
   getMealPlanIngredientsForDateRange,
   getFrequentRecipesForMealType,
   createMealPlanFromSuggestions,
+  batchUpdateMealTypes,
 } = await import("../meal-plans");
 
 // Widen the insert type to allow passing `createdAt` for ordering tests.
@@ -532,6 +533,49 @@ describe("meal-plans storage", () => {
         mealType: "breakfast",
       });
       expect(result.personal).toHaveLength(2);
+    });
+
+    it("batchUpdateMealTypes writes all rows in one round-trip (H8 — 2026-04-18)", async () => {
+      const a = await createTestMealPlanRecipe(testUser.id, {
+        title: "A",
+        mealTypes: [],
+      });
+      const b = await createTestMealPlanRecipe(testUser.id, {
+        title: "B",
+        mealTypes: [],
+      });
+
+      const updated = await batchUpdateMealTypes([
+        { id: a.id, mealTypes: ["breakfast"] },
+        { id: b.id, mealTypes: ["dinner"] },
+      ]);
+
+      expect(updated).toBe(2);
+
+      const ra = await getMealPlanRecipe(a.id);
+      const rb = await getMealPlanRecipe(b.id);
+      expect(ra?.mealTypes).toEqual(["breakfast"]);
+      expect(rb?.mealTypes).toEqual(["dinner"]);
+    });
+
+    it("filters community recipes by mealType (H3 — 2026-04-18)", async () => {
+      const breakfast = await createTestCommunityRecipe(testUser.id, {
+        title: "Community Breakfast Unique",
+        mealTypes: ["breakfast"],
+      });
+      const dinner = await createTestCommunityRecipe(testUser.id, {
+        title: "Community Dinner Unique",
+        mealTypes: ["dinner"],
+      });
+
+      const result = await getUnifiedRecipes({
+        userId: testUser.id,
+        mealType: "breakfast",
+      });
+
+      const titles = result.community.map((r) => r.title);
+      expect(titles).toContain(breakfast.title);
+      expect(titles).not.toContain(dinner.title);
     });
   });
 

@@ -62,13 +62,23 @@ const catalogSearchSchema = z.object({
 });
 
 export function register(app: Express): void {
-  // GET /api/meal-plan/catalog/search — Spoonacular search
+  // GET /api/meal-plan/catalog/search — Spoonacular search (premium)
+  // Every call burns a Spoonacular quota unit, so this must be gated
+  // alongside the sibling /save + /import-url endpoints. See H7 — 2026-04-18.
   app.get(
     "/api/meal-plan/catalog/search",
     requireAuth,
     mealPlanRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "catalogSave",
+          "Recipe catalog",
+        );
+        if (!features) return;
+
         const parsed = catalogSearchSchema.safeParse(req.query);
         if (!parsed.success) {
           sendError(
@@ -105,13 +115,24 @@ export function register(app: Express): void {
     },
   );
 
-  // GET /api/meal-plan/catalog/:id — Spoonacular recipe detail (preview)
+  // GET /api/meal-plan/catalog/:id — Spoonacular recipe detail (premium)
+  // Fetching detail also costs a Spoonacular quota unit (cache TTL is 60 min
+  // with a 200-entry cap, so free users could still drain quota via fresh
+  // IDs). Gated together with /search + /save. See H7 — 2026-04-18.
   app.get(
     "/api/meal-plan/catalog/:id",
     requireAuth,
     mealPlanRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "catalogSave",
+          "Recipe catalog",
+        );
+        if (!features) return;
+
         const id = parsePositiveIntParam(req.params.id);
         if (!id) {
           sendError(res, 400, "Invalid catalog ID", ErrorCode.VALIDATION_ERROR);

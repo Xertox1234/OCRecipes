@@ -18,6 +18,8 @@ vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
     getDailyRecipeGenerationCount: vi.fn(),
+    getUserProfile: vi.fn(),
+    logRecipeGenerationWithLimitCheck: vi.fn(),
   },
 }));
 
@@ -39,6 +41,10 @@ describe("POST /api/meal-plan/recipes/generate", () => {
       expiresAt: null,
     });
     vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
+    vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+    vi.mocked(storage.logRecipeGenerationWithLimitCheck).mockResolvedValue(
+      true,
+    );
     app = createApp();
   });
 
@@ -116,6 +122,77 @@ describe("POST /api/meal-plan/recipes/generate", () => {
     ]);
     expect(res.body.dietTags).toEqual(["Dairy Free", "Gluten Free"]);
     expect(res.body.sourceUrl).toBe("");
+  });
+
+  it("logs the generation against the daily quota (H1)", async () => {
+    vi.mocked(generateRecipeContent).mockResolvedValue({
+      title: "X",
+      description: "test",
+      difficulty: "Easy",
+      timeEstimate: "10 minutes",
+      ingredients: [],
+      instructions: [],
+      dietTags: [],
+    });
+
+    await request(app)
+      .post("/api/meal-plan/recipes/generate")
+      .set("Authorization", "Bearer test-token")
+      .send({ prompt: "banana bread" });
+
+    expect(storage.logRecipeGenerationWithLimitCheck).toHaveBeenCalledTimes(1);
+    expect(storage.logRecipeGenerationWithLimitCheck).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Number),
+      null,
+    );
+  });
+
+  it("returns 429 when the atomic re-check rejects (TOCTOU)", async () => {
+    vi.mocked(generateRecipeContent).mockResolvedValue({
+      title: "X",
+      description: "test",
+      difficulty: "Easy",
+      timeEstimate: "10 minutes",
+      ingredients: [],
+      instructions: [],
+      dietTags: [],
+    });
+    vi.mocked(storage.logRecipeGenerationWithLimitCheck).mockResolvedValue(
+      false,
+    );
+
+    const res = await request(app)
+      .post("/api/meal-plan/recipes/generate")
+      .set("Authorization", "Bearer test-token")
+      .send({ prompt: "banana bread" });
+
+    expect(res.status).toBe(429);
+  });
+
+  it("passes the user profile to generateRecipeContent (H2)", async () => {
+    const profile = { allergies: ["peanuts"], dietaryRestrictions: ["vegan"] };
+    vi.mocked(storage.getUserProfile).mockResolvedValue(
+      profile as unknown as Awaited<ReturnType<typeof storage.getUserProfile>>,
+    );
+    vi.mocked(generateRecipeContent).mockResolvedValue({
+      title: "X",
+      description: "test",
+      difficulty: "Easy",
+      timeEstimate: "10 minutes",
+      ingredients: [],
+      instructions: [],
+      dietTags: [],
+    });
+
+    await request(app)
+      .post("/api/meal-plan/recipes/generate")
+      .set("Authorization", "Bearer test-token")
+      .send({ prompt: "peanut butter cookies" });
+
+    expect(generateRecipeContent).toHaveBeenCalledWith(
+      expect.objectContaining({ userProfile: profile }),
+    );
   });
 
   it("returns 500 when generation fails", async () => {
