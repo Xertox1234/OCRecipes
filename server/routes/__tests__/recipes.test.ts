@@ -47,16 +47,16 @@ vi.mock("../../services/recipe-generation", () => ({
   normalizeProductName: vi.fn((name: string) => name.toLowerCase()),
 }));
 
-vi.mock("../../services/recipe-catalog", () => ({
-  searchCatalogRecipes: vi.fn(),
-  getCatalogRecipeDetail: vi.fn(),
-  CatalogQuotaError: class CatalogQuotaError extends Error {
-    constructor(msg: string) {
-      super(msg);
-      this.name = "CatalogQuotaError";
-    }
-  },
-}));
+vi.mock("../../services/recipe-catalog", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../services/recipe-catalog")
+  >("../../services/recipe-catalog");
+  return {
+    ...actual,
+    searchCatalogRecipes: vi.fn(),
+    getCatalogRecipeDetail: vi.fn(),
+  };
+});
 
 vi.mock("../../services/recipe-import", () => ({
   importRecipeFromUrl: vi.fn(),

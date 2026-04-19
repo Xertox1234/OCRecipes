@@ -1,4 +1,8 @@
-import type { ChatConversation, ChatMessage } from "@shared/schema";
+import type {
+  ChatConversation,
+  ChatMessage,
+  CoachNotebookEntry,
+} from "@shared/schema";
 
 const chatConversationDefaults: ChatConversation = {
   id: 1,
@@ -29,4 +33,23 @@ export function createMockChatMessage(
   overrides: Partial<ChatMessage> = {},
 ): ChatMessage {
   return { ...chatMessageDefaults, ...overrides };
+}
+
+const coachNotebookEntryDefaults: CoachNotebookEntry = {
+  id: 1,
+  userId: "1",
+  type: "observation",
+  content: "Test notebook entry",
+  status: "active",
+  followUpDate: null,
+  sourceConversationId: null,
+  dedupeKey: null,
+  createdAt: new Date("2024-01-01"),
+  updatedAt: new Date("2024-01-01"),
+};
+
+export function createMockCoachNotebookEntry(
+  overrides: Partial<CoachNotebookEntry> = {},
+): CoachNotebookEntry {
+  return { ...coachNotebookEntryDefaults, ...overrides };
 }

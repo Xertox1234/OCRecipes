@@ -280,10 +280,14 @@ describe("community storage", () => {
 
       // Use a large limit to get all
       const featured = await getFeaturedRecipes(1000, 0);
-      // Our public recipe should be included
-      expect(featured.some((r) => r.title === "PublicTestUnique")).toBe(true);
+      // Our public recipe should be included exactly once
+      expect(
+        featured.filter((r) => r.title === "PublicTestUnique"),
+      ).toHaveLength(1);
       // Our private recipe should not be included
-      expect(featured.some((r) => r.title === "PrivateTestUnique")).toBe(false);
+      expect(
+        featured.filter((r) => r.title === "PrivateTestUnique"),
+      ).toHaveLength(0);
       // All returned recipes should be public (verified by query's where clause)
     });
 

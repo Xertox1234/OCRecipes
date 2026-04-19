@@ -290,7 +290,7 @@ describe("searchRecipes — text search", () => {
   });
 
   it("concurrent initSearchIndex calls share a single in-flight load", async () => {
-    resetSearchIndex();
+    // resetSearchIndex() is already called in beforeEach; no need to repeat it here.
     // Both callers start before initialized = true; without the init-promise
     // guard, both would call storage.* twice and addAll duplicate docs.
     const [a, b] = await Promise.all([initSearchIndex(), initSearchIndex()]);
