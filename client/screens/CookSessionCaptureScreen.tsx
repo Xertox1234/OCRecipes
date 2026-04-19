@@ -267,7 +267,7 @@ export default function CookSessionCaptureScreen() {
       <CameraView
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
-        isActive={isFocused && !isAnalyzing}
+        isActive={isFocused}
         barcodeTypes={[]}
       />
 
