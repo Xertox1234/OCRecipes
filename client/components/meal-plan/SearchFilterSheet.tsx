@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { StyleSheet, View, Pressable } from "react-native";
 import Slider from "@react-native-community/slider";
 
@@ -60,6 +60,31 @@ export function SearchFilterSheet({
   const { theme } = useTheme();
   const haptics = useHaptics();
 
+  // Live slider values for SR announcements during drag. onSlidingComplete
+  // commits the final value to the parent; onValueChange updates local state
+  // so accessibilityValue reflects the current thumb position in real time,
+  // letting VoiceOver/TalkBack read the value during the drag gesture.
+  const [liveMaxPrepTime, setLiveMaxPrepTime] = useState(
+    filters.maxPrepTime ?? 0,
+  );
+  const [liveMaxCalories, setLiveMaxCalories] = useState(
+    filters.maxCalories ?? 0,
+  );
+  const [liveMinProtein, setLiveMinProtein] = useState(filters.minProtein ?? 0);
+
+  // Sync live state when committed filter values change externally (e.g., Reset).
+  // Without this, onReset() resets parent state but live values remain stale,
+  // causing accessibilityValue.text to mismatch the slider's visual position.
+  useEffect(() => {
+    setLiveMaxPrepTime(filters.maxPrepTime ?? 0);
+  }, [filters.maxPrepTime]);
+  useEffect(() => {
+    setLiveMaxCalories(filters.maxCalories ?? 0);
+  }, [filters.maxCalories]);
+  useEffect(() => {
+    setLiveMinProtein(filters.minProtein ?? 0);
+  }, [filters.minProtein]);
+
   const updateFilter = useCallback(
     <K extends keyof SearchFilters>(key: K, value: SearchFilters[K]) => {
       haptics.selection();
@@ -98,9 +123,11 @@ export function SearchFilterSheet({
         maximumValue={120}
         step={5}
         value={filters.maxPrepTime ?? 0}
-        onSlidingComplete={(val: number) =>
-          updateFilter("maxPrepTime", val > 0 ? val : undefined)
-        }
+        onValueChange={(val: number) => setLiveMaxPrepTime(val)}
+        onSlidingComplete={(val: number) => {
+          setLiveMaxPrepTime(val);
+          updateFilter("maxPrepTime", val > 0 ? val : undefined);
+        }}
         minimumTrackTintColor={theme.link}
         maximumTrackTintColor={withOpacity(theme.text, 0.15)}
         thumbTintColor={theme.link}
@@ -109,10 +136,11 @@ export function SearchFilterSheet({
         accessibilityValue={{
           min: 0,
           max: 120,
-          now: filters.maxPrepTime ?? 0,
-          text: filters.maxPrepTime
-            ? `${filters.maxPrepTime} minutes`
-            : "Any prep time",
+          now: liveMaxPrepTime,
+          text:
+            liveMaxPrepTime > 0
+              ? `${liveMaxPrepTime} minutes`
+              : "Any prep time",
         }}
       />
 
@@ -128,9 +156,11 @@ export function SearchFilterSheet({
         maximumValue={1000}
         step={50}
         value={filters.maxCalories ?? 0}
-        onSlidingComplete={(val: number) =>
-          updateFilter("maxCalories", val > 0 ? val : undefined)
-        }
+        onValueChange={(val: number) => setLiveMaxCalories(val)}
+        onSlidingComplete={(val: number) => {
+          setLiveMaxCalories(val);
+          updateFilter("maxCalories", val > 0 ? val : undefined);
+        }}
         minimumTrackTintColor={theme.link}
         maximumTrackTintColor={withOpacity(theme.text, 0.15)}
         thumbTintColor={theme.link}
@@ -139,10 +169,11 @@ export function SearchFilterSheet({
         accessibilityValue={{
           min: 0,
           max: 1000,
-          now: filters.maxCalories ?? 0,
-          text: filters.maxCalories
-            ? `${filters.maxCalories} calories`
-            : "Any calories",
+          now: liveMaxCalories,
+          text:
+            liveMaxCalories > 0
+              ? `${liveMaxCalories} calories`
+              : "Any calories",
         }}
       />
 
@@ -157,9 +188,11 @@ export function SearchFilterSheet({
         maximumValue={60}
         step={5}
         value={filters.minProtein ?? 0}
-        onSlidingComplete={(val: number) =>
-          updateFilter("minProtein", val > 0 ? val : undefined)
-        }
+        onValueChange={(val: number) => setLiveMinProtein(val)}
+        onSlidingComplete={(val: number) => {
+          setLiveMinProtein(val);
+          updateFilter("minProtein", val > 0 ? val : undefined);
+        }}
         minimumTrackTintColor={theme.link}
         maximumTrackTintColor={withOpacity(theme.text, 0.15)}
         thumbTintColor={theme.link}
@@ -168,10 +201,8 @@ export function SearchFilterSheet({
         accessibilityValue={{
           min: 0,
           max: 60,
-          now: filters.minProtein ?? 0,
-          text: filters.minProtein
-            ? `${filters.minProtein} grams`
-            : "Any protein",
+          now: liveMinProtein,
+          text: liveMinProtein > 0 ? `${liveMinProtein} grams` : "Any protein",
         }}
       />
 

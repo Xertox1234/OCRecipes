@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   Text,
   TextInput,
@@ -39,7 +39,6 @@ interface IngredientRowViewProps {
   onUpdate: (key: string, text: string) => void;
   onRemove: (key: string) => void;
   onSubmit: () => void;
-  registerRef: (key: string, ref: TextInput | null) => void;
 }
 
 const IngredientRowView = React.memo(function IngredientRowView({
@@ -48,7 +47,6 @@ const IngredientRowView = React.memo(function IngredientRowView({
   onUpdate,
   onRemove,
   onSubmit,
-  registerRef,
 }: IngredientRowViewProps) {
   const { theme } = useTheme();
 
@@ -69,7 +67,6 @@ const IngredientRowView = React.memo(function IngredientRowView({
 
       {/* Ingredient input */}
       <TextInput
-        ref={(ref) => registerRef(item.key, ref)}
         style={[styles.rowInput, { color: theme.text }]}
         value={item.text}
         onChangeText={(text) => onUpdate(item.key, text)}
@@ -104,7 +101,6 @@ export default function IngredientsStep({
   updateIngredient,
 }: IngredientsStepProps) {
   const { theme } = useTheme();
-  const inputRefs = useRef<Map<string, TextInput>>(new Map());
 
   const handleAdd = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -119,14 +115,6 @@ export default function IngredientsStep({
     },
     [removeIngredient],
   );
-
-  const registerRef = useCallback((key: string, ref: TextInput | null) => {
-    if (ref) {
-      inputRefs.current.set(key, ref);
-    } else {
-      inputRefs.current.delete(key);
-    }
-  }, []);
 
   // `showDelete` is the only row-level prop that depends on siblings; derive
   // it once here and pass as a primitive prop so rows stay pure.
@@ -143,10 +131,9 @@ export default function IngredientsStep({
         onUpdate={updateIngredient}
         onRemove={handleRemove}
         onSubmit={handleAdd}
-        registerRef={registerRef}
       />
     ),
-    [showDelete, updateIngredient, handleRemove, handleAdd, registerRef],
+    [showDelete, updateIngredient, handleRemove, handleAdd],
   );
 
   const ListFooterComponent = (

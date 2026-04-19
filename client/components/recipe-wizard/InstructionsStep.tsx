@@ -176,6 +176,9 @@ export default function InstructionsStep({
     (key: string, direction: "up" | "down") => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       moveStep(key, direction);
+      AccessibilityInfo.announceForAccessibility(
+        direction === "up" ? "Step moved up" : "Step moved down",
+      );
     },
     [moveStep],
   );

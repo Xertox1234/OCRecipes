@@ -160,6 +160,9 @@ export default function WizardShell({
 
     if (returnToPreview) {
       setReturnToPreview(false);
+      // Return to Preview is always a "forward" direction semantically —
+      // the user is progressing back toward the final summary, not stepping
+      // backward through the wizard. direction is already "forward" here.
       setCurrentStep(STEP_PREVIEW);
       return;
     }
@@ -187,6 +190,10 @@ export default function WizardShell({
 
     if (returnToPreview) {
       setReturnToPreview(false);
+      // Return to Preview is semantically "forward" — Preview is the last
+      // step. Discarding edit changes and going back to Preview should feel
+      // like moving ahead, not retreating further into the wizard.
+      setDirection("forward");
       setCurrentStep(STEP_PREVIEW);
       return;
     }
@@ -203,6 +210,9 @@ export default function WizardShell({
     setReturnToPreview(true);
     setDirection("back");
     setCurrentStep(targetStep);
+    AccessibilityInfo.announceForAccessibility(
+      `Step ${targetStep} of ${TOTAL_STEPS}, ${STEP_CONFIGS[targetStep - 1].title}`,
+    );
   }, []);
 
   const handleSave = useCallback(async () => {
