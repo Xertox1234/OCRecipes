@@ -174,7 +174,11 @@ export async function createChatMessageWithLimitCheck(
 ): Promise<ChatMessage | null> {
   return db.transaction(async (tx) => {
     // Advisory lock per user to serialize concurrent generation attempts
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+    // hashtextextended returns a 64-bit bigint, eliminating the ~65k-user
+    // birthday-collision risk of the 32-bit hashtext() form (L31).
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`,
+    );
 
     // Enforce conversation ownership inside the tx so storage is safe to
     // call from any route, not just the ones that pre-check via
@@ -485,7 +489,10 @@ export async function getCoachCachedResponse(
   questionHash: string,
 ): Promise<string | null> {
   const [cached] = await db
-    .select()
+    .select({
+      id: coachResponseCache.id,
+      response: coachResponseCache.response,
+    })
     .from(coachResponseCache)
     .where(
       and(

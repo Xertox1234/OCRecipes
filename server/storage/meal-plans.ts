@@ -330,16 +330,20 @@ export async function getAllMealPlanRecipes(): Promise<
 
 /**
  * Load all recipe ingredients, keyed by recipeId, for search index initialization.
+ * Only fetches recipeId + name — the search index only needs ingredient names.
  */
 export async function getAllRecipeIngredients(): Promise<
-  Map<number, RecipeIngredient[]>
+  Map<number, { recipeId: number; name: string }[]>
 > {
   const rows = await db
-    .select()
+    .select({
+      recipeId: recipeIngredients.recipeId,
+      name: recipeIngredients.name,
+    })
     .from(recipeIngredients)
     .orderBy(recipeIngredients.recipeId, recipeIngredients.displayOrder);
 
-  const map = new Map<number, RecipeIngredient[]>();
+  const map = new Map<number, { recipeId: number; name: string }[]>();
   for (const row of rows) {
     const existing = map.get(row.recipeId);
     if (existing) {
@@ -1170,6 +1174,10 @@ export async function getMealPlanIngredientsForDateRange(
 /**
  * Get recipes with empty or null mealTypes, along with their ingredients.
  * Used by the meal-type inference backfill job.
+ *
+ * Defense-in-depth (L28): if a `discardedAt` soft-delete column is ever added
+ * to `mealPlanRecipes`, add `isNull(mealPlanRecipes.discardedAt)` to the where
+ * clause below so discarded recipes are excluded from backfill processing.
  */
 export async function getRecipesWithEmptyMealTypes(): Promise<{
   recipes: { id: number; title: string }[];

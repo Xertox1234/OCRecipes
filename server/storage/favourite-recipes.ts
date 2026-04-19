@@ -36,8 +36,12 @@ export async function toggleFavouriteRecipe(
   }
 
   return db.transaction(async (tx) => {
-    // Serialize concurrent toggles for the same user to prevent limit bypass
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+    // Serialize concurrent toggles for the same user to prevent limit bypass.
+    // hashtextextended returns a 64-bit bigint, eliminating the ~65k-user
+    // birthday-collision risk of the 32-bit hashtext() form (L31).
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`,
+    );
 
     const [existing] = await tx
       .select({ id: favouriteRecipes.id })

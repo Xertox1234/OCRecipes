@@ -34,6 +34,7 @@ import pLimit from "p-limit";
 import { db, pool } from "../db";
 import { users, userProfiles, communityRecipes } from "@shared/schema";
 import { eq, ilike } from "drizzle-orm";
+import { storage } from "../storage";
 import {
   generateRecipeContent,
   generateRecipeImage,
@@ -434,8 +435,9 @@ async function seedOneRecipe(
       );
     }
 
-    // ── Insert ─────────────────────────────────────────────────────
-    await db.insert(communityRecipes).values({
+    // ── Insert via storage so addToIndex is called and seeds are
+    // ── immediately searchable without a server restart (M21).
+    await storage.createCommunityRecipe({
       authorId: demoUserId,
       barcode: null,
       normalizedProductName: seedKey,
