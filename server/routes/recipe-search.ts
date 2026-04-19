@@ -1,44 +1,13 @@
 import type { Express, Response } from "express";
-import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { searchRecipes } from "../services/recipe-search";
-import { logger, toError } from "../lib/logger";
 import { instructionsRateLimit } from "./_rate-limiters";
-import { formatZodError } from "./_helpers";
+import { formatZodError, handleRouteError } from "./_helpers";
 import { stripAuthorId } from "./_recipe-helpers";
-
-const searchQuerySchema = z.object({
-  q: z.string().max(200).optional(),
-  ingredients: z.string().max(500).optional(),
-  pantry: z
-    .enum(["true", "false"])
-    .transform((v) => v === "true")
-    .optional(),
-  cuisine: z.string().max(50).optional(),
-  diet: z.string().max(50).optional(),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
-  difficulty: z.enum(["easy", "medium", "hard"]).optional(),
-  maxPrepTime: z.coerce.number().int().min(1).max(480).optional(),
-  maxCalories: z.coerce.number().int().min(1).max(5000).optional(),
-  minProtein: z.coerce.number().int().min(0).max(500).optional(),
-  sort: z
-    .enum(["relevance", "newest", "quickest", "calories_asc", "popular"])
-    .optional(),
-  source: z.enum(["all", "personal", "community"]).optional(),
-  limit: z.coerce.number().int().min(1).max(50).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
-});
-
-const browseQuerySchema = z.object({
-  query: z.string().max(200).optional(),
-  cuisine: z.string().max(50).optional(),
-  diet: z.string().max(50).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
-});
+import { searchQuerySchema, browseQuerySchema } from "@shared/schemas/recipe";
 
 export function register(app: Express): void {
   // GET /api/recipes/search - Unified recipe search (MiniSearch)
@@ -62,13 +31,7 @@ export function register(app: Express): void {
         const result = await searchRecipes(parsed.data, req.userId);
         res.json(result);
       } catch (error) {
-        logger.error({ err: toError(error) }, "recipe search failed");
-        sendError(
-          res,
-          500,
-          "Failed to search recipes",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "search recipes");
       }
     },
   );
@@ -111,13 +74,7 @@ export function register(app: Express): void {
           frequent,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "browse recipes failed");
-        sendError(
-          res,
-          500,
-          "Failed to browse recipes",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "browse recipes");
       }
     },
   );

@@ -1,5 +1,4 @@
 import type { Express, Response } from "express";
-import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -14,7 +13,6 @@ import {
   getCatalogRecipeDetail,
   CatalogQuotaError,
 } from "../services/recipe-catalog";
-import { logger, toError } from "../lib/logger";
 import { mealPlanRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
@@ -22,6 +20,7 @@ import {
   handleRouteError,
   parsePositiveIntParam,
 } from "./_helpers";
+import { catalogSearchSchema } from "@shared/schemas/recipe";
 
 /**
  * Maps OCRecipes allergen IDs to Spoonacular intolerance parameter values.
@@ -50,16 +49,6 @@ function buildIntolerancesParam(allergies: unknown): string | undefined {
   }
   return values.length > 0 ? values.join(",") : undefined;
 }
-
-const catalogSearchSchema = z.object({
-  query: z.string().min(1).max(200),
-  cuisine: z.string().max(100).optional(),
-  diet: z.string().max(100).optional(),
-  type: z.string().max(100).optional(),
-  maxReadyTime: z.coerce.number().int().min(1).max(1440).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
-  number: z.coerce.number().int().min(1).max(50).optional(),
-});
 
 export function register(app: Express): void {
   // GET /api/meal-plan/catalog/search — Spoonacular search (premium)
@@ -104,13 +93,7 @@ export function register(app: Express): void {
           sendError(res, 402, error.message, ErrorCode.CATALOG_QUOTA_EXCEEDED);
           return;
         }
-        logger.error({ err: toError(error) }, "catalog search failed");
-        sendError(
-          res,
-          500,
-          "Failed to search recipes",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "search recipes");
       }
     },
   );
@@ -156,13 +139,7 @@ export function register(app: Express): void {
           sendError(res, 402, error.message, ErrorCode.CATALOG_QUOTA_EXCEEDED);
           return;
         }
-        logger.error({ err: toError(error) }, "catalog detail failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch recipe detail",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch recipe detail");
       }
     },
   );

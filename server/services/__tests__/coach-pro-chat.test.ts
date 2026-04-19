@@ -59,6 +59,7 @@ vi.mock("../notebook-extraction", () => ({
 
 vi.mock("../../lib/ai-safety", () => ({
   sanitizeContextField: vi.fn((text: string) => text),
+  containsDangerousDietaryAdvice: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("../../lib/fire-and-forget", () => ({

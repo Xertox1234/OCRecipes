@@ -101,5 +101,8 @@ export async function extractNotebookEntries(
 }
 
 export function shouldUpdateStrategy(currentCount: number): boolean {
-  return currentCount > 0 && currentCount % 5 === 0;
+  // M9 (2026-04-18): count=0 means new user — strategy was never extracted.
+  // Original `count > 0 && count % 5 === 0` caused a self-locking gate that
+  // prevented new users from ever getting a coaching_strategy entry.
+  return currentCount === 0 || currentCount % 5 === 0;
 }

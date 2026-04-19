@@ -23,7 +23,10 @@ import {
 } from "./nutrition-coach";
 import { parseBlocksFromContent, BLOCKS_SYSTEM_PROMPT } from "./coach-blocks";
 import { extractNotebookEntries } from "./notebook-extraction";
-import { sanitizeContextField } from "../lib/ai-safety";
+import {
+  sanitizeContextField,
+  containsDangerousDietaryAdvice,
+} from "../lib/ai-safety";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { consumeWarmUp } from "./coach-warm-up";
 import { calculateWeeklyRate } from "./weight-trend";
@@ -54,6 +57,12 @@ export interface CoachChatParams {
   };
   /** Called each iteration to check if the client disconnected. */
   isAborted: () => boolean;
+  /**
+   * AbortSignal wired to the HTTP close event. Passed to the OpenAI SDK so
+   * in-flight generation is cancelled when the client disconnects, stopping
+   * token consumption immediately. (M8 — 2026-04-18)
+   */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -197,6 +206,7 @@ export async function* handleCoachChat(
     isCoachPro,
     user,
     isAborted,
+    abortSignal,
   } = params;
 
   const today = new Date();
@@ -234,10 +244,15 @@ export async function* handleCoachChat(
     dietaryProfile: {
       dietType: profile?.dietType || null,
       // Use the shared `Allergy` schema type instead of an inline `{ name }` cast.
+      // Sanitize at the context boundary (M40 — 2026-04-18) so both the prompt
+      // builder and any future consumers see clean values.
       allergies: ((profile?.allergies as Allergy[] | null) || [])
         .map((a) => a?.name)
-        .filter(Boolean),
-      dislikes: (profile?.foodDislikes as string[]) || [],
+        .filter(Boolean)
+        .map((name) => sanitizeContextField(name, 100)),
+      dislikes: ((profile?.foodDislikes as string[]) || []).map((d) =>
+        sanitizeContextField(d, 100),
+      ),
     },
     screenContext,
   };
@@ -303,6 +318,14 @@ export async function* handleCoachChat(
     cachedResponse = await storage.getCoachCachedResponse(questionHash);
   }
 
+  // M6 (2026-04-18): Re-scan cached responses for dangerous dietary advice before
+  // serving. A response may have been cached before the safety filter existed, or
+  // safety thresholds may have been tightened since it was stored. Discarding the
+  // entry forces a fresh generation that goes through the live safety checks.
+  if (cachedResponse && containsDangerousDietaryAdvice(cachedResponse)) {
+    cachedResponse = null;
+  }
+
   let fullResponse = "";
 
   if (cachedResponse) {
@@ -326,13 +349,18 @@ export async function* handleCoachChat(
       messageHistory,
       context,
       userId,
+      abortSignal,
     )) {
       if (isAborted()) break;
       fullResponse += chunk;
       yield { type: "content", content: chunk };
     }
   } else {
-    for await (const chunk of generateCoachResponse(messageHistory, context)) {
+    for await (const chunk of generateCoachResponse(
+      messageHistory,
+      context,
+      abortSignal,
+    )) {
       if (isAborted()) break;
       fullResponse += chunk;
       yield { type: "content", content: chunk };

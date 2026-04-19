@@ -25,6 +25,11 @@ export const ErrorCode = {
   DATE_RANGE_LIMIT: "DATE_RANGE_LIMIT",
   AI_NOT_CONFIGURED: "AI_NOT_CONFIGURED",
   ALREADY_CONFIRMED: "ALREADY_CONFIRMED",
+  // Recipe import error codes — mirror the ImportError union in recipe-import.ts
+  FETCH_FAILED: "FETCH_FAILED",
+  NO_RECIPE_DATA: "NO_RECIPE_DATA",
+  PARSE_ERROR: "PARSE_ERROR",
+  RESPONSE_TOO_LARGE: "RESPONSE_TOO_LARGE",
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- intentional: merging value + type

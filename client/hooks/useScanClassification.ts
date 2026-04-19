@@ -29,10 +29,18 @@ export function useScanClassification({
   isPremium,
   refreshScanCount,
   onUpgradeNeeded,
+  isFocused,
 }: {
   isPremium: boolean;
   refreshScanCount: () => void;
   onUpgradeNeeded: () => void;
+  /**
+   * Pass `useIsFocused()` from the consuming screen. When the screen loses
+   * focus while a classification is in-flight, `isClassifyingRef` is reset
+   * to prevent navigating the user away from an unrelated screen.
+   * (L20 — 2026-04-18)
+   */
+  isFocused?: boolean;
 }) {
   const navigation = useNavigation<ScanScreenNavigationProp>();
 
@@ -59,6 +67,23 @@ export function useScanClassification({
         clearTimeout(autoRouteTimeoutRef.current);
     };
   }, []);
+
+  // L20 (2026-04-18): Reset in-flight classifying state when the screen loses
+  // focus. Without this, a pending upload could navigate the user away from
+  // a completely different screen after they had already left ScanScreen.
+  useEffect(() => {
+    if (isFocused === false) {
+      isClassifyingRef.current = false;
+      if (classifyTimeoutRef.current) {
+        clearTimeout(classifyTimeoutRef.current);
+        classifyTimeoutRef.current = null;
+      }
+      if (autoRouteTimeoutRef.current) {
+        clearTimeout(autoRouteTimeoutRef.current);
+        autoRouteTimeoutRef.current = null;
+      }
+    }
+  }, [isFocused]);
 
   /** Navigate to the appropriate screen based on classification result */
   const routeFromClassification = useCallback(

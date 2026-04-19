@@ -155,6 +155,7 @@ function buildSystemPrompt(context: CoachContext): string {
 export async function* generateCoachResponse(
   messages: { role: "user" | "assistant" | "system"; content: string }[],
   context: CoachContext,
+  abortSignal?: AbortSignal,
 ): AsyncGenerator<string> {
   const systemPrompt = buildSystemPrompt(context);
 
@@ -177,7 +178,7 @@ export async function* generateCoachResponse(
         max_completion_tokens: 1500,
         temperature: 0.5,
       },
-      { timeout: OPENAI_TIMEOUT_STREAM_MS },
+      { timeout: OPENAI_TIMEOUT_STREAM_MS, signal: abortSignal },
     );
   } catch (error) {
     log.error({ err: toError(error) }, "coach API error");
@@ -225,6 +226,7 @@ export async function* generateCoachProResponse(
   messages: { role: "user" | "assistant" | "system"; content: string }[],
   context: CoachContext,
   userId: string,
+  abortSignal?: AbortSignal,
 ): AsyncGenerator<string> {
   const systemPrompt = buildSystemPrompt(context);
   const tools = getToolDefinitions();
@@ -263,7 +265,7 @@ export async function* generateCoachProResponse(
           max_completion_tokens: 1500,
           temperature: 0.5,
         },
-        { timeout: OPENAI_TIMEOUT_STREAM_MS },
+        { timeout: OPENAI_TIMEOUT_STREAM_MS, signal: abortSignal },
       );
     } catch (error) {
       log.error({ err: toError(error) }, "coach pro API error");

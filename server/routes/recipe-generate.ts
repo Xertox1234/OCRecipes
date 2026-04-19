@@ -1,5 +1,4 @@
 import type { Express, Response } from "express";
-import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -11,10 +10,7 @@ import type {
   ImportedRecipeData,
   ParsedIngredient,
 } from "@shared/types/recipe-import";
-
-const generatePromptSchema = z.object({
-  prompt: z.string().min(3).max(500),
-});
+import { generatePromptSchema } from "@shared/schemas/recipe";
 
 export function register(app: Express): void {
   // POST /api/meal-plan/recipes/generate — Generate a recipe from a prompt (no DB save)
@@ -24,7 +20,8 @@ export function register(app: Express): void {
     recipeGenerationRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        // Premium gate — same contract as POST /api/recipes/generate.
+        // Premium gate — mirrors POST /api/recipes/generate. Both endpoints
+        // call the AI generator and must be restricted to premium users.
         const features = await checkPremiumFeature(
           req,
           res,

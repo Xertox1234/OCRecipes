@@ -1046,6 +1046,195 @@ describe("Recipes Routes", () => {
     });
   });
 
+  describe("POST /api/meal-plan/recipes/parse-url", () => {
+    it("returns parsed recipe data without saving to DB", async () => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: true,
+        data: {
+          title: "Parsed Recipe",
+          description: "A preview",
+          sourceUrl: "https://example.com/recipe",
+          cuisine: null,
+          servings: 2,
+          prepTimeMinutes: 5,
+          cookTimeMinutes: 15,
+          imageUrl: null,
+          instructions: ["Step 1"],
+          dietTags: [],
+          caloriesPerServing: null,
+          proteinPerServing: null,
+          carbsPerServing: null,
+          fatPerServing: null,
+          ingredients: [{ name: "Flour", quantity: "1", unit: "cup" }],
+        },
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/recipe" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe("Parsed Recipe");
+      // parse-url must NOT persist to the database
+      expect(storage.createMealPlanRecipe).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 for an invalid URL", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "not-a-url" });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for a non-HTTP URL", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "ftp://example.com/recipe" });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when url field is missing", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({});
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 422 with FETCH_FAILED code on fetch error", async () => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: false,
+        error: "FETCH_FAILED",
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/bad" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe("FETCH_FAILED");
+    });
+
+    it("returns 422 with NO_RECIPE_DATA code when no recipe found on page", async () => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: false,
+        error: "NO_RECIPE_DATA",
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/article" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe("NO_RECIPE_DATA");
+    });
+
+    it("returns 422 with VALIDATION_ERROR for an unknown error code", async () => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: false,
+        // Intentionally unrecognized code to test fallback path
+        error: "UNKNOWN_ERROR" as "FETCH_FAILED",
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/bad" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toBe("Import failed");
+      expect(res.body.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 422 when parsed recipe has no instructions or ingredients", async () => {
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: true,
+        data: {
+          title: "Empty Recipe",
+          description: "",
+          sourceUrl: "https://example.com/empty",
+          cuisine: null,
+          servings: null,
+          prepTimeMinutes: null,
+          cookTimeMinutes: null,
+          imageUrl: null,
+          instructions: [],
+          dietTags: [],
+          caloriesPerServing: null,
+          proteinPerServing: null,
+          carbsPerServing: null,
+          fatPerServing: null,
+          ingredients: [],
+        },
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/empty" });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toMatch(/no instructions or ingredients/);
+    });
+
+    it("returns 500 when importer service throws", async () => {
+      vi.mocked(importRecipeFromUrl).mockRejectedValue(
+        new Error("Network error"),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/recipe" });
+
+      expect(res.status).toBe(500);
+    });
+
+    it("does not require premium (parse-url is a free preview endpoint)", async () => {
+      // Free tier — getSubscriptionStatus returns free
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+      vi.mocked(importRecipeFromUrl).mockResolvedValue({
+        success: true,
+        data: {
+          title: "Free Preview",
+          description: "",
+          sourceUrl: "https://example.com/recipe",
+          cuisine: null,
+          servings: null,
+          prepTimeMinutes: null,
+          cookTimeMinutes: null,
+          imageUrl: null,
+          instructions: ["Cook it"],
+          dietTags: [],
+          caloriesPerServing: null,
+          proteinPerServing: null,
+          carbsPerServing: null,
+          fatPerServing: null,
+          ingredients: [],
+        },
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/recipes/parse-url")
+        .set("Authorization", "Bearer token")
+        .send({ url: "https://example.com/recipe" });
+
+      // Must succeed for free users — no premium gate on parse-url
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe("GET /api/recipes/:recipeType/:recipeId/share", () => {
     it("returns share payload for community recipe", async () => {
       vi.mocked(storage.getRecipeSharePayload).mockResolvedValue({

@@ -91,8 +91,9 @@ describe("Notebook Extraction", () => {
     expect(entries).toEqual([]);
   });
 
-  it("shouldUpdateStrategy returns true every 5 conversations (but not at 0)", () => {
-    expect(shouldUpdateStrategy(0)).toBe(false);
+  it("shouldUpdateStrategy returns true for count=0 and every multiple of 5 (M9 — 2026-04-18)", () => {
+    // count=0 → new user, never extracted → must extract now
+    expect(shouldUpdateStrategy(0)).toBe(true);
     expect(shouldUpdateStrategy(1)).toBe(false);
     expect(shouldUpdateStrategy(4)).toBe(false);
     expect(shouldUpdateStrategy(5)).toBe(true);

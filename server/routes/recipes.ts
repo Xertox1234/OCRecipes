@@ -8,7 +8,6 @@ import {
   generateFullRecipe,
   normalizeProductName,
 } from "../services/recipe-generation";
-import { logger, toError } from "../lib/logger";
 import {
   normalizeTitle,
   normalizeDescription,
@@ -24,19 +23,49 @@ import {
   parseQueryInt,
   parseStringParam,
   checkPremiumFeature,
-  getPremiumFeatures,
   parseQueryString,
 } from "./_helpers";
 import { stripAuthorId, stripAuthorIdOne } from "./_recipe-helpers";
+import { recipeGenerationSchema } from "@shared/schemas/recipe";
+import {
+  TIER_FEATURES,
+  isValidSubscriptionTier,
+  type PremiumFeatures,
+} from "@shared/types/premium";
 
-// Zod schemas for community CRUD endpoints
-const recipeGenerationSchema = z.object({
-  productName: z.string().min(3).max(200),
-  barcode: z.string().max(100).optional().nullable(),
-  servings: z.number().int().min(1).max(20).optional(),
-  dietPreferences: z.array(z.string().max(50)).max(10).optional(),
-  timeConstraint: z.string().max(50).optional(),
-});
+// ---------------------------------------------------------------------------
+// Subscription-tier cache for GET /api/recipes/generation-status
+//
+// This endpoint is polled frequently (banners, header counters) so we cache
+// each user's resolved PremiumFeatures for 60 s. The tier changes only on
+// IAP confirmation — a 60-second stale window is acceptable.
+// ---------------------------------------------------------------------------
+const GENERATION_STATUS_TIER_TTL_MS = 60_000;
+const generationStatusTierCache = new Map<
+  string,
+  { features: PremiumFeatures; expiresAt: number }
+>();
+
+function getGenerationStatusTierCached(userId: string): PremiumFeatures | null {
+  const entry = generationStatusTierCache.get(userId);
+  if (!entry || Date.now() > entry.expiresAt) return null;
+  return entry.features;
+}
+
+async function resolveGenerationStatusFeatures(
+  userId: string,
+): Promise<PremiumFeatures> {
+  const cached = getGenerationStatusTierCached(userId);
+  if (cached) return cached;
+  const subscription = await storage.getSubscriptionStatus(userId);
+  const tier = subscription?.tier ?? "free";
+  const features = TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
+  generationStatusTierCache.set(userId, {
+    features,
+    expiresAt: Date.now() + GENERATION_STATUS_TIER_TTL_MS,
+  });
+  return features;
+}
 
 const recipeShareSchema = z.object({
   isPublic: z.boolean(),
@@ -59,13 +88,7 @@ export function register(app: Express): void {
         const recipes = await storage.getFeaturedRecipes(limit, offset);
         res.json(stripAuthorId(recipes));
       } catch (error) {
-        logger.error({ err: toError(error) }, "get featured recipes failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch featured recipes",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch featured recipes");
       }
     },
   );
@@ -98,13 +121,7 @@ export function register(app: Express): void {
 
         res.json(stripAuthorId(recipes));
       } catch (error) {
-        logger.error({ err: toError(error) }, "get community recipes failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch recipes",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch community recipes");
       }
     },
   );
@@ -116,7 +133,7 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        const features = await getPremiumFeatures(req);
+        const features = await resolveGenerationStatusFeatures(req.userId);
 
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
@@ -131,13 +148,7 @@ export function register(app: Express): void {
             generationsToday < features.dailyRecipeGenerations,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "get generation status failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch generation status",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch generation status");
       }
     },
   );
@@ -309,13 +320,7 @@ export function register(app: Express): void {
 
         res.json(recipe);
       } catch (error) {
-        logger.error({ err: toError(error) }, "recipe share failed");
-        sendError(
-          res,
-          500,
-          "Failed to update recipe sharing",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "update recipe sharing");
       }
     },
   );
@@ -330,13 +335,7 @@ export function register(app: Express): void {
         const recipes = await storage.getUserRecipes(req.userId);
         res.json(recipes);
       } catch (error) {
-        logger.error({ err: toError(error) }, "get user recipes failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch your recipes",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch user recipes");
       }
     },
   );
@@ -369,8 +368,7 @@ export function register(app: Express): void {
 
         res.json(stripAuthorIdOne(recipe));
       } catch (error) {
-        logger.error({ err: toError(error) }, "get recipe failed");
-        sendError(res, 500, "Failed to fetch recipe", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "fetch recipe");
       }
     },
   );
@@ -405,13 +403,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        logger.error({ err: toError(error) }, "delete recipe failed");
-        sendError(
-          res,
-          500,
-          "Failed to delete recipe",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "delete recipe");
       }
     },
   );

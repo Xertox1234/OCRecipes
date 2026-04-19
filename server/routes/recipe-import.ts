@@ -1,5 +1,4 @@
 import type { Express, Response } from "express";
-import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
@@ -20,20 +19,7 @@ import {
   formatZodError,
   handleRouteError,
 } from "./_helpers";
-
-const importUrlSchema = z.object({
-  url: z
-    .string()
-    .url()
-    // 1024 matches typical browser/proxy URL limits (Chrome/IE are ~2KB total,
-    // but most origin servers reject anything over ~1KB). Longer URLs almost
-    // always indicate tracking params or pasted junk, not real recipe pages.
-    .max(1024)
-    .refine(
-      (url) => /^https?:\/\//.test(url),
-      "Only HTTP/HTTPS URLs are supported",
-    ),
-});
+import { importUrlSchema } from "@shared/schemas/recipe";
 
 export function register(app: Express): void {
   // POST /api/meal-plan/recipes/parse-url — Parse recipe from URL without saving
@@ -64,12 +50,11 @@ export function register(app: Express): void {
             TIMEOUT: "The request timed out while fetching the URL",
             RESPONSE_TOO_LARGE: "The page is too large to import (max 5 MB)",
           };
-          sendError(
-            res,
-            422,
-            messages[result.error] || "Import failed",
-            result.error,
-          );
+          const code =
+            result.error in ErrorCode
+              ? ErrorCode[result.error as keyof typeof ErrorCode]
+              : ErrorCode.VALIDATION_ERROR;
+          sendError(res, 422, messages[result.error] || "Import failed", code);
           return;
         }
 
@@ -139,12 +124,11 @@ export function register(app: Express): void {
             TIMEOUT: "The request timed out while fetching the URL",
             RESPONSE_TOO_LARGE: "The page is too large to import (max 5 MB)",
           };
-          sendError(
-            res,
-            422,
-            messages[result.error] || "Import failed",
-            result.error,
-          );
+          const code =
+            result.error in ErrorCode
+              ? ErrorCode[result.error as keyof typeof ErrorCode]
+              : ErrorCode.VALIDATION_ERROR;
+          sendError(res, 422, messages[result.error] || "Import failed", code);
           return;
         }
 
