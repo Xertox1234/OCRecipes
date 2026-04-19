@@ -57,12 +57,44 @@ export interface CoachChatParams {
 }
 
 /**
- * Build the SHA-256 cache key used for coach-response caching. Hash includes
- * the userId so different users do not share answers.
+ * Version tag included in the coach cache key. Bump when the system prompt,
+ * the tool set, or any other logic that affects the cached response text
+ * changes — old entries will then be cache-missed and regenerated instead
+ * of served stale. (H5 — 2026-04-18)
  */
-export function hashCoachCacheKey(userId: string, content: string): string {
+const COACH_CACHE_VERSION = "v2-2026-04-18";
+
+/** UTC day bucket — e.g. `"2026-04-18"`. Used to expire cached coach answers
+ *  whose prompt includes today's numeric context (goals, intake, weight). */
+function getUtcDayBucket(d: Date = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Build the SHA-256 cache key used for coach-response caching. The key includes:
+ *  - userId  — different users must not share answers
+ *  - isCoachPro — Pro and non-Pro prompts diverge (tools, notebook); a cached
+ *    non-Pro answer must never be replayed to a Pro user (H4 — 2026-04-18)
+ *  - dayBucket — the prompt embeds `todayIntake`, `goals`, `weightTrend`,
+ *    so entries stale out at UTC midnight (H5 — 2026-04-18)
+ *  - version — lets us roll the cache forward when prompts/tools change
+ */
+export function hashCoachCacheKey(
+  userId: string,
+  content: string,
+  isCoachPro: boolean,
+  dayBucket: string = getUtcDayBucket(),
+): string {
   return createHash("sha256")
-    .update(`${userId}:${content.trim().toLowerCase()}`)
+    .update(
+      [
+        COACH_CACHE_VERSION,
+        userId,
+        isCoachPro ? "pro" : "free",
+        dayBucket,
+        content.trim().toLowerCase(),
+      ].join("\u001f"),
+    )
     .digest("hex")
     .slice(0, 32);
 }
@@ -256,9 +288,15 @@ export async function* handleCoachChat(
     }
   }
 
-  // Check cache for predefined questions (no screenContext = universal answer)
-  const isCacheable = !screenContext && history.length <= 1;
-  const questionHash = isCacheable ? hashCoachCacheKey(userId, content) : null;
+  // Check cache for predefined questions (no screenContext = universal answer).
+  // Pro responses are excluded because they inject a per-user notebook and
+  // reference tool-call results — caching them would serve stale context to
+  // the same user (and the cache key is too coarse to distinguish Pro vs
+  // non-Pro prompts across users). See H4 — 2026-04-18.
+  const isCacheable = !screenContext && history.length <= 1 && !isCoachPro;
+  const questionHash = isCacheable
+    ? hashCoachCacheKey(userId, content, isCoachPro)
+    : null;
 
   let cachedResponse: string | null = null;
   if (questionHash) {

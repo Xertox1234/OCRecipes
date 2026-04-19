@@ -62,7 +62,7 @@ export default function CookSessionCaptureScreen() {
   const sessionPromiseRef = useRef<Promise<string> | null>(null);
 
   const createSession = useCreateCookSession();
-  const addPhoto = useAddCookPhoto(sessionId);
+  const addPhoto = useAddCookPhoto();
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (sessionId) return sessionId;
@@ -96,10 +96,15 @@ export default function CookSessionCaptureScreen() {
       setIsAnalyzing(true);
       try {
         const sid = await ensureSession();
-        // Update sessionId in addPhoto hook needs latest sid
+        // sessionId state update is async — thread `sid` directly into
+        // the mutation variables so we don't depend on a re-render.
+        // (H12 — 2026-04-18.)
         setSessionId(sid);
 
-        const result = await addPhoto.mutateAsync(photoUri);
+        const result = await addPhoto.mutateAsync({
+          sessionId: sid,
+          photoUri,
+        });
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         setIngredientCount(result.ingredients.length);
         setPhotos((prev) => [...prev, photoUri]);

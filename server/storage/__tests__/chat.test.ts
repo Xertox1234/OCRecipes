@@ -248,6 +248,26 @@ describe("chat storage", () => {
       expect(msg!.content).toBe("Make it spicy");
     });
 
+    it("returns null when the conversation belongs to a different user (H11 — 2026-04-18)", async () => {
+      const otherUser = await createTestUser(tx);
+      const otherConv = await createChatConversation(
+        otherUser.id,
+        "Their Chat",
+        "coach",
+      );
+
+      // testUser attempts to post into otherUser's conversation — storage
+      // must refuse even without any route-level ownership check.
+      const msg = await createChatMessageWithLimitCheck(
+        otherConv.id,
+        testUser.id,
+        "sneaky message",
+        50,
+        "coach",
+      );
+      expect(msg).toBeNull();
+    });
+
     it("second message in same remix conversation does NOT count against quota", async () => {
       const conv = await createChatConversation(
         testUser.id,

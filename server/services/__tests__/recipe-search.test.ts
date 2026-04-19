@@ -435,7 +435,11 @@ describe("searchRecipes — filtering", () => {
     });
   });
 
-  it("excludes recipes with null calories when filtering by maxCalories", async () => {
+  it("passes through community recipes with null calories under maxCalories (H10 — 2026-04-18)", async () => {
+    // Community recipes don't yet have per-serving nutrition (no columns
+    // on the table). Excluding them would silently hide the entire
+    // community pool from any macro-filtered search — a worse UX than
+    // showing recipes whose calorie count is simply unknown.
     resetSearchIndex();
     mockedStorage.getAllMealPlanRecipes.mockResolvedValue([]);
     mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
@@ -444,7 +448,7 @@ describe("searchRecipes — filtering", () => {
     await initSearchIndex();
     const result = await searchRecipes({ maxCalories: 100 }, "user1");
     const ids = result.results.map((r) => r.id);
-    expect(ids).not.toContain("community:10");
+    expect(ids).toContain("community:10");
   });
 
   it("filters by minProtein", async () => {
@@ -457,7 +461,8 @@ describe("searchRecipes — filtering", () => {
     });
   });
 
-  it("excludes recipes with null protein when filtering by minProtein", async () => {
+  it("passes through community recipes with null protein under minProtein (H10 — 2026-04-18)", async () => {
+    // Same rationale as maxCalories above — unknown > excluded for community.
     resetSearchIndex();
     mockedStorage.getAllMealPlanRecipes.mockResolvedValue([]);
     mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
@@ -466,7 +471,25 @@ describe("searchRecipes — filtering", () => {
     await initSearchIndex();
     const result = await searchRecipes({ minProtein: 100 }, "user1");
     const ids = result.results.map((r) => r.id);
-    expect(ids).not.toContain("community:10");
+    expect(ids).toContain("community:10");
+  });
+
+  it("still excludes personal recipes with null calories under maxCalories", async () => {
+    // Personal recipes are user-authored with well-formed nutrition — null
+    // values there are a data defect, not a "we don't know" marker.
+    resetSearchIndex();
+    const nullCalRecipe: MealPlanRecipe = {
+      ...baseMealPlanRecipe,
+      id: 42,
+      title: "Null Cal Recipe",
+      caloriesPerServing: null,
+    };
+    mockedStorage.getAllMealPlanRecipes.mockResolvedValue([nullCalRecipe]);
+    mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([]);
+    await initSearchIndex();
+    const result = await searchRecipes({ maxCalories: 100 }, "user1");
+    const ids = result.results.map((r) => r.id);
+    expect(ids).not.toContain("personal:42");
   });
 
   it("filters by mealType (includes when mealTypes empty)", async () => {

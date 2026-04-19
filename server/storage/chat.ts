@@ -175,6 +175,25 @@ export async function createChatMessageWithLimitCheck(
     // Advisory lock per user to serialize concurrent generation attempts
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
 
+    // Enforce conversation ownership inside the tx so storage is safe to
+    // call from any route, not just the ones that pre-check via
+    // `getChatConversation(id, userId)`. Without this, a malicious caller
+    // who forged `userId` would lock their own advisory slot while writing
+    // into another user's conversation. (H11 — 2026-04-18.)
+    const ownership = await tx
+      .select({ id: chatConversations.id })
+      .from(chatConversations)
+      .where(
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.userId, userId),
+        ),
+      )
+      .limit(1);
+    if (ownership.length === 0) {
+      return null;
+    }
+
     const { startOfDay, endOfDay } = getDayBounds(new Date());
 
     // For remix conversations, only the first user message counts against the

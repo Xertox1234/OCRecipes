@@ -24,7 +24,7 @@ export function register(app: Express): void {
     recipeGenerationRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        // Premium gate — same contract as POST /api/recipes/generate
+        // Premium gate — same contract as POST /api/recipes/generate.
         const features = await checkPremiumFeature(
           req,
           res,
@@ -33,7 +33,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        // Daily quota check
+        // Non-transactional fast-path quota check to avoid the expensive
+        // AI call when clearly over limit. Re-checked atomically below.
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
           new Date(),
@@ -59,10 +60,34 @@ export function register(app: Express): void {
           return;
         }
 
+        // Fetch user profile so allergens/diet preferences are honored by
+        // the AI generator — sibling /api/recipes/generate does the same.
+        const userProfile = await storage.getUserProfile(req.userId);
+
         const content = await generateRecipeContent({
           productName: parsed.data.prompt,
-          userProfile: null,
+          userProfile,
         });
+
+        // Atomic re-check + log. Even though this endpoint does not persist
+        // the recipe, the AI call burns MODEL_HEAVY tokens and must count
+        // against the daily quota (H1 from 2026-04-18 audit). Without this
+        // the quota check at the top always reads 0 and the user can call
+        // unlimited generations. recipeId is null for preview.
+        const logged = await storage.logRecipeGenerationWithLimitCheck(
+          req.userId,
+          features.dailyRecipeGenerations,
+          null,
+        );
+        if (!logged) {
+          sendError(
+            res,
+            429,
+            "Daily recipe generation limit reached",
+            ErrorCode.DAILY_LIMIT_REACHED,
+          );
+          return;
+        }
 
         const ingredients: ParsedIngredient[] = content.ingredients.map(
           (ing) => ({

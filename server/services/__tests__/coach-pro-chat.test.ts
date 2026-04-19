@@ -229,10 +229,12 @@ describe("handleCoachChat", () => {
       vi.mocked(storage.getChatMessages).mockResolvedValue([]);
       vi.mocked(storage.getCoachCachedResponse).mockResolvedValue(null);
 
+      // Cache is only consulted for non-Pro users (H4 — 2026-04-18).
       const params = makeParams({
         userId: "user-42",
         content: "Hello",
         screenContext: undefined,
+        isCoachPro: false,
       });
 
       await collectEvents(handleCoachChat(params));
@@ -244,7 +246,7 @@ describe("handleCoachChat", () => {
       // Now run with a DIFFERENT userId but same content — hash must differ
       vi.clearAllMocks();
       setupDefaultStorage();
-      vi.mocked(generateCoachProResponse).mockReturnValue(fakeStream(["Hi"]));
+      vi.mocked(generateCoachResponse).mockReturnValue(fakeStream(["Hi"]));
       vi.mocked(parseBlocksFromContent).mockReturnValue({
         text: "Hi",
         blocks: [],
@@ -254,6 +256,7 @@ describe("handleCoachChat", () => {
         userId: "user-99",
         content: "Hello",
         screenContext: undefined,
+        isCoachPro: false,
       });
 
       await collectEvents(handleCoachChat(params2));
@@ -524,7 +527,8 @@ describe("handleCoachChat", () => {
       });
 
       const params = makeParams({
-        isCoachPro: true,
+        // Cache is only consulted for non-Pro (H4 — 2026-04-18).
+        isCoachPro: false,
         screenContext: undefined,
       });
       const events = await collectEvents(handleCoachChat(params));
@@ -720,22 +724,34 @@ describe("handleCoachChat", () => {
 
 describe("hashCoachCacheKey", () => {
   it("produces deterministic 32-char hex for the same input", () => {
-    const a = hashCoachCacheKey("user-1", "what should I eat?");
-    const b = hashCoachCacheKey("user-1", "what should I eat?");
+    const a = hashCoachCacheKey("user-1", "what should I eat?", false);
+    const b = hashCoachCacheKey("user-1", "what should I eat?", false);
     expect(a).toBe(b);
     expect(a).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it("produces different keys for different users with the same content", () => {
-    const a = hashCoachCacheKey("user-1", "hello");
-    const b = hashCoachCacheKey("user-2", "hello");
+    const a = hashCoachCacheKey("user-1", "hello", false);
+    const b = hashCoachCacheKey("user-2", "hello", false);
     expect(a).not.toBe(b);
   });
 
   it("normalizes whitespace and case", () => {
-    const a = hashCoachCacheKey("user-1", "Hello World");
-    const b = hashCoachCacheKey("user-1", "  hello world  ");
+    const a = hashCoachCacheKey("user-1", "Hello World", false);
+    const b = hashCoachCacheKey("user-1", "  hello world  ", false);
     expect(a).toBe(b);
+  });
+
+  it("scopes Pro and non-Pro under separate keys (H4 — 2026-04-18)", () => {
+    const pro = hashCoachCacheKey("user-1", "hello", true);
+    const free = hashCoachCacheKey("user-1", "hello", false);
+    expect(pro).not.toBe(free);
+  });
+
+  it("buckets by UTC day so next-day intake/goals don't hit stale cache (H5 — 2026-04-18)", () => {
+    const today = hashCoachCacheKey("user-1", "hello", false, "2026-04-18");
+    const tomorrow = hashCoachCacheKey("user-1", "hello", false, "2026-04-19");
+    expect(today).not.toBe(tomorrow);
   });
 });
 
