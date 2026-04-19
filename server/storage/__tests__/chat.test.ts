@@ -163,8 +163,6 @@ describe("chat storage", () => {
       const conv = await createChatConversation(testUser.id, "Chat");
       const before = conv.updatedAt;
 
-      // Small delay to ensure timestamp difference
-      await new Promise((r) => setTimeout(r, 10));
       const msg = await createChatMessage(conv.id, "user", "Hello!");
       expect(msg.id).toBeDefined();
       expect(msg.conversationId).toBe(conv.id);
@@ -172,7 +170,7 @@ describe("chat storage", () => {
       expect(msg.content).toBe("Hello!");
 
       const updatedConv = await getChatConversation(conv.id, testUser.id);
-      expect(updatedConv!.updatedAt.getTime()).toBeGreaterThanOrEqual(
+      expect(updatedConv!.updatedAt.getTime()).toBeGreaterThan(
         before.getTime(),
       );
     });

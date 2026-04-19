@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -29,12 +29,16 @@ function runCheck(targetFile: string): {
   };
 }
 
+/** Track temp directories created during a test so we can clean them up. */
+const tmpDirs: string[] = [];
+
 /**
  * Create a dataset file under a temp `evals/datasets/` path so the script's
  * path filter accepts it.
  */
 function writeDataset(contents: string): string {
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), "eval-secrets-check-"));
+  tmpDirs.push(tmpBase);
   const dir = path.join(tmpBase, "evals", "datasets");
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, "cases.json");
@@ -43,6 +47,11 @@ function writeDataset(contents: string): string {
 }
 
 describe("check-eval-dataset-secrets.js", () => {
+  afterEach(() => {
+    for (const dir of tmpDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it("exits 0 when the dataset contains no secrets or PII", () => {
     const file = writeDataset(
       JSON.stringify([
@@ -115,6 +124,7 @@ describe("check-eval-dataset-secrets.js", () => {
     const tmpBase = fs.mkdtempSync(
       path.join(os.tmpdir(), "eval-secrets-check-"),
     );
+    tmpDirs.push(tmpBase);
     const dir = path.join(tmpBase, "evals", "datasets");
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, "cases.json");

@@ -439,10 +439,10 @@ describe("meal-plans storage", () => {
 
       const result = await getUnifiedRecipes({ userId: testUser.id });
       expect(result.personal).toHaveLength(1);
-      // Community recipes include pre-existing public ones, so just check ours is included
-      expect(result.community.some((r) => r.title === "Community Pasta")).toBe(
-        true,
-      );
+      // Community recipes include pre-existing public ones, so just check ours is included exactly once
+      expect(
+        result.community.filter((r) => r.title === "Community Pasta"),
+      ).toHaveLength(1);
       expect(result.personal[0].title).toBe("Personal Pasta");
     });
 

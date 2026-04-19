@@ -23,7 +23,11 @@ export {
   createMockGroceryListItem,
   createMockPantryItem,
 } from "./grocery";
-export { createMockChatConversation, createMockChatMessage } from "./chat";
+export {
+  createMockChatConversation,
+  createMockChatMessage,
+  createMockCoachNotebookEntry,
+} from "./chat";
 export {
   createMockWeightLog,
   createMockHealthKitSync,

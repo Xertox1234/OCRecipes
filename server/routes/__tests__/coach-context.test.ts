@@ -4,6 +4,13 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register } from "../coach-context";
+import {
+  createMockUser,
+  createMockUserProfile,
+  createMockCoachNotebookEntry,
+  createMockChatConversation,
+  createMockChatMessage,
+} from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -63,48 +70,23 @@ describe("Coach Context Routes", () => {
   describe("GET /api/coach/context", () => {
     it("returns context with notebook, commitments, and suggestions", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getUser).mockResolvedValue({
-        id: "1",
-        username: "test",
-        displayName: null,
-        avatarUrl: null,
-        dailyCalorieGoal: 2000,
-        dailyProteinGoal: 150,
-        dailyCarbsGoal: 250,
-        dailyFatGoal: 65,
-        weight: null,
-        height: null,
-        age: null,
-        gender: null,
-        goalWeight: null,
-        goalsCalculatedAt: null,
-        adaptiveGoalsEnabled: false,
-        lastGoalAdjustmentAt: null,
-        onboardingCompleted: true,
-        tokenVersion: 0,
-        subscriptionTier: "free",
-        subscriptionExpiresAt: null,
-        createdAt: new Date(),
-      });
-      vi.mocked(storage.getUserProfile).mockResolvedValue({
-        id: 1,
-        userId: "1",
-        dietType: "vegetarian",
-        allergies: [{ name: "peanuts", severity: "severe" as const }],
-        healthConditions: [],
-        primaryGoal: null,
-        activityLevel: null,
-        householdSize: 1,
-        cuisinePreferences: [],
-        cookingSkillLevel: null,
-        cookingTimeAvailable: null,
-        glp1Mode: false,
-        glp1Medication: null,
-        glp1StartDate: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        foodDislikes: ["liver"],
-      });
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({
+          username: "test",
+          dailyCalorieGoal: 2000,
+          dailyProteinGoal: 150,
+          dailyCarbsGoal: 250,
+          dailyFatGoal: 65,
+          onboardingCompleted: true,
+        }),
+      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({
+          dietType: "vegetarian",
+          allergies: [{ name: "peanuts", severity: "severe" as const }],
+          foodDislikes: ["liver"],
+        }),
+      );
       vi.mocked(storage.getDailySummary).mockResolvedValue({
         totalCalories: 1200,
         totalProtein: 40,
@@ -113,32 +95,20 @@ describe("Coach Context Routes", () => {
         itemCount: 5,
       });
       vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([
-        {
-          id: 1,
-          userId: "1",
+        createMockCoachNotebookEntry({
           type: "observation",
           content: "User prefers morning workouts",
-          status: "active",
-          followUpDate: null,
           sourceConversationId: 1,
-          dedupeKey: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
+        }),
       ]);
       vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([
-        {
+        createMockCoachNotebookEntry({
           id: 2,
-          userId: "1",
           type: "commitment",
           content: "Drink 8 glasses of water daily",
-          status: "active",
           followUpDate: new Date(),
           sourceConversationId: 2,
-          dedupeKey: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
+        }),
       ]);
 
       const res = await request(app)
@@ -203,29 +173,16 @@ describe("Coach Context Routes", () => {
 
     it("generates suggestion chips based on context", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getUser).mockResolvedValue({
-        id: "1",
-        username: "test",
-        displayName: null,
-        avatarUrl: null,
-        dailyCalorieGoal: 2000,
-        dailyProteinGoal: 150,
-        dailyCarbsGoal: 250,
-        dailyFatGoal: 65,
-        weight: null,
-        height: null,
-        age: null,
-        gender: null,
-        goalWeight: null,
-        goalsCalculatedAt: null,
-        adaptiveGoalsEnabled: false,
-        lastGoalAdjustmentAt: null,
-        onboardingCompleted: true,
-        tokenVersion: 0,
-        subscriptionTier: "free",
-        subscriptionExpiresAt: null,
-        createdAt: new Date(),
-      });
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({
+          username: "test",
+          dailyCalorieGoal: 2000,
+          dailyProteinGoal: 150,
+          dailyCarbsGoal: 250,
+          dailyFatGoal: 65,
+          onboardingCompleted: true,
+        }),
+      );
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getDailySummary).mockResolvedValue({
         totalCalories: 500,
@@ -236,18 +193,12 @@ describe("Coach Context Routes", () => {
       });
       vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([]);
       vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([
-        {
-          id: 1,
-          userId: "1",
+        createMockCoachNotebookEntry({
           type: "commitment",
           content: "Eat more greens",
-          status: "active",
           followUpDate: new Date(),
           sourceConversationId: 1,
-          dedupeKey: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
+        }),
       ]);
 
       const res = await request(app)
@@ -286,24 +237,11 @@ describe("Coach Context Routes", () => {
   describe("POST /api/coach/warm-up", () => {
     it("returns warmUpId when valid body and conversation ownership", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getChatConversation).mockResolvedValue({
-        id: 1,
-        userId: "1",
-        title: "Test",
-        type: "coach",
-        metadata: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+      vi.mocked(storage.getChatConversation).mockResolvedValue(
+        createMockChatConversation({ title: "Test" }),
+      );
       vi.mocked(storage.getChatMessages).mockResolvedValue([
-        {
-          id: 1,
-          conversationId: 1,
-          role: "user",
-          content: "Hello",
-          metadata: null,
-          createdAt: new Date(),
-        },
+        createMockChatMessage({ role: "user", content: "Hello" }),
       ]);
 
       const res = await request(app)

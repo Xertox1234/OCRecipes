@@ -1,10 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { calculateWeeklyRate, calculateWeightTrend } from "../weight-trend";
 
+const FIXED_NOW = new Date("2026-04-18T12:00:00.000Z");
+
+beforeAll(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(FIXED_NOW);
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
+
 function makeWeightEntry(weight: number, daysAgo: number) {
-  const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
-  date.setHours(8, 0, 0, 0); // Normalize to morning
+  const date = new Date(FIXED_NOW);
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  date.setUTCHours(8, 0, 0, 0);
   return {
     weight: weight.toString(),
     loggedAt: date,
