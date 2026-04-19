@@ -18,6 +18,8 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import {
+  MIN_SERVINGS,
+  MAX_SERVINGS,
   clampServings,
   computeTotalMinutes,
   isServingsAtMax,
@@ -98,7 +100,12 @@ export default function TimeServingsStep({
             style={stepperButtonStyle}
             accessibilityRole="button"
             accessibilityLabel="Decrease servings"
-            hitSlop={8}
+            accessibilityValue={{
+              now: servings,
+              min: MIN_SERVINGS,
+              max: MAX_SERVINGS,
+              text: `${servings} servings`,
+            }}
           >
             <Feather
               name="minus"
@@ -107,9 +114,14 @@ export default function TimeServingsStep({
             />
           </Pressable>
 
+          {/* Decorative number — the +/− buttons carry accessibilityValue, so
+              this label is hidden from VoiceOver/TalkBack to prevent double
+              announcement. The accessibilityLabel is retained for test queries. */}
           <Text
             style={[styles.servingsNumber, { color: theme.text }]}
             accessibilityLabel={`${servings} servings`}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
           >
             {servings}
           </Text>
@@ -120,7 +132,12 @@ export default function TimeServingsStep({
             style={stepperButtonStyle}
             accessibilityRole="button"
             accessibilityLabel="Increase servings"
-            hitSlop={8}
+            accessibilityValue={{
+              now: servings,
+              min: MIN_SERVINGS,
+              max: MAX_SERVINGS,
+              text: `${servings} servings`,
+            }}
           >
             <Feather
               name="plus"
@@ -225,9 +242,10 @@ const styles = StyleSheet.create({
     gap: Spacing["2xl"],
   },
   stepperButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    // iOS HIG + WCAG 2.5.8: 44×44 minimum visible tap target.
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",

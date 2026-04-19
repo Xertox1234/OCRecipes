@@ -231,14 +231,48 @@ function StandaloneSkeletonBox({
 }: SkeletonBoxProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
+
+  // Short-circuit under reduced motion: skip useAnimatedStyle entirely.
+  // A single standalone box outside SkeletonProvider still spawns a
+  // withRepeat worklet + useAnimatedStyle reader; when reducedMotion is on
+  // there's no animation, so both are wasted. Render a static View instead.
+  if (reducedMotion) {
+    return (
+      <View
+        style={[
+          {
+            width,
+            height,
+            borderRadius,
+            backgroundColor: theme.backgroundSecondary,
+            opacity: 0.7,
+          },
+          style,
+        ]}
+      />
+    );
+  }
+
+  return (
+    <AnimatedStandaloneSkeletonBox
+      width={width}
+      height={height}
+      borderRadius={borderRadius}
+      style={style}
+    />
+  );
+}
+
+function AnimatedStandaloneSkeletonBox({
+  width = "100%",
+  height = 16,
+  borderRadius = 4,
+  style,
+}: SkeletonBoxProps) {
+  const { theme } = useTheme();
   const shimmerValue = useSharedValue(0);
 
   useEffect(() => {
-    if (reducedMotion) {
-      shimmerValue.value = 0.5;
-      return;
-    }
-
     shimmerValue.value = withRepeat(
       withTiming(1, { duration: 1200 }),
       -1,
@@ -249,7 +283,7 @@ function StandaloneSkeletonBox({
       cancelAnimation(shimmerValue);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shimmerValue is a stable ref from useSharedValue that never changes identity
-  }, [reducedMotion]);
+  }, []);
 
   const shimmerStyle = useAnimatedStyle(() => {
     const opacity = interpolate(

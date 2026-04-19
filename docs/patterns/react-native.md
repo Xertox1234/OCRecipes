@@ -1717,6 +1717,86 @@ function LoadingFooter() {
 
 **Why:** Screen reader users need to know when an action is in progress. `accessibilityLiveRegion="polite"` announces the content when it appears without interrupting current speech.
 
+### Slider Live SR Feedback Pattern
+
+`@react-native-community/slider` only fires `onSlidingComplete` by default — `accessibilityValue.now` stays stale during the drag gesture, so VoiceOver/TalkBack users hear the committed value, not the live thumb position. Fix with local state driven by `onValueChange`:
+
+```typescript
+// accessibilityValue driven by local live state — updated on every frame
+const [livePrepTime, setLivePrepTime] = useState(filters.maxPrepTime ?? 0);
+
+// Sync back when parent resets (e.g. "Reset filters" button)
+useEffect(() => {
+  setLivePrepTime(filters.maxPrepTime ?? 0);
+}, [filters.maxPrepTime]);
+
+<Slider
+  value={filters.maxPrepTime ?? 0}
+  onValueChange={(val) => setLivePrepTime(val)}        // live SR feedback
+  onSlidingComplete={(val) => {
+    setLivePrepTime(val);                               // keep in sync
+    onFiltersChange({ ...filters, maxPrepTime: val > 0 ? val : undefined });
+  }}
+  accessibilityValue={{
+    min: 0, max: 120,
+    now: livePrepTime,
+    text: livePrepTime > 0 ? `${livePrepTime} minutes` : "Any prep time",
+  }}
+/>
+```
+
+**Key points:**
+
+- `onValueChange` updates local state only (no parent call on every frame — no filter churn)
+- `onSlidingComplete` commits to parent AND updates local state (prevents stale value on release)
+- `useEffect` syncs local state when committed filter changes externally (e.g. Reset button) — without this the SR text shows the last dragged value even after reset
+
+**References:** `client/components/meal-plan/SearchFilterSheet.tsx`
+
+### Stepper +/− Button accessibilityValue Pattern
+
+Numeric steppers (+/− Pressable pair) should carry `accessibilityValue` on each button so VoiceOver announces the current value after activation. The decorative number text in between should be hidden from the accessibility tree to prevent double-announcement.
+
+```typescript
+import { MIN_SERVINGS, MAX_SERVINGS } from "./step-utils";
+
+<Pressable
+  onPress={() => handleChange(-1)}
+  disabled={atMin}
+  accessibilityRole="button"
+  accessibilityLabel="Decrease servings"
+  accessibilityValue={{
+    now: servings,
+    min: MIN_SERVINGS,
+    max: MAX_SERVINGS,
+    text: `${servings} servings`,
+  }}
+>
+  <Feather name="minus" ... />
+</Pressable>
+
+{/* Hide from VoiceOver — value is on the buttons */}
+<Text
+  accessibilityElementsHidden
+  importantForAccessibility="no"
+>
+  {servings}
+</Text>
+
+<Pressable
+  onPress={() => handleChange(1)}
+  accessibilityRole="button"
+  accessibilityLabel="Increase servings"
+  accessibilityValue={{ now: servings, min: MIN_SERVINGS, max: MAX_SERVINGS, text: `${servings} servings` }}
+>
+  <Feather name="plus" ... />
+</Pressable>
+```
+
+**Why `accessibilityElementsHidden` + `importantForAccessibility="no"`:** These are the correct cross-platform RN props for hiding decorative elements from the accessibility tree. `accessibilityElementsHidden` covers iOS VoiceOver; `importantForAccessibility="no"` covers Android TalkBack. Do NOT use `aria-hidden` — it is a web HTML attribute and is silently ignored in React Native.
+
+**References:** `client/components/recipe-wizard/TimeServingsStep.tsx`
+
 ### Query Error Retry Pattern
 
 Provide retry functionality for failed data fetching with accessible controls:

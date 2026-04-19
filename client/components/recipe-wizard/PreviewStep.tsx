@@ -37,7 +37,7 @@ function EditButton({ onPress, color, label }: EditButtonProps) {
   return (
     <Pressable
       onPress={onPress}
-      hitSlop={8}
+      style={styles.editButton}
       accessibilityRole="button"
       accessibilityLabel={`Edit ${label}`}
     >
@@ -464,6 +464,14 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.semiBold,
     fontSize: 13,
     // color applied dynamically
+  },
+  editButton: {
+    // WCAG 2.5.5 — 44×44 minimum tap target. The text is small (13px) but
+    // the pressable region is padded to 44×44 so the button is easily tapped.
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "flex-end",
+    justifyContent: "center",
   },
   editButtonText: {
     fontFamily: FontFamily.regular,
