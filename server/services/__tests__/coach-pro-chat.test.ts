@@ -47,6 +47,7 @@ vi.mock("../../storage", () => ({
 vi.mock("../nutrition-coach", () => ({
   generateCoachProResponse: vi.fn(),
   generateCoachResponse: vi.fn(),
+  getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test-version-hash"),
 }));
 
 vi.mock("../coach-blocks", () => ({

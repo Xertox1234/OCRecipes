@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { openai, OPENAI_TIMEOUT_STREAM_MS, MODEL_FAST } from "../lib/openai";
 import {
   sanitizeUserInput,
@@ -39,7 +40,10 @@ export interface CoachContext {
   notebookSummary?: string;
 }
 
-function buildSystemPrompt(context: CoachContext): string {
+function buildSystemPrompt(
+  context: CoachContext,
+  now: Date = new Date(),
+): string {
   const parts = [
     "You are NutriCoach, a friendly and knowledgeable nutrition coach AI built into the OCRecipes app.",
     "Be conversational, supportive, and evidence-based. Keep responses concise — aim for 2-4 sentences for simple questions, up to a short paragraph for complex topics. Use bullet points when listing foods or suggestions. Never write more than 150 words unless the user asks for detail.",
@@ -122,7 +126,6 @@ function buildSystemPrompt(context: CoachContext): string {
   }
 
   // Inject current time so the model can suggest contextually appropriate meals
-  const now = new Date();
   const hours = now.getHours();
   const minutes = now.getMinutes().toString().padStart(2, "0");
   const period = hours >= 12 ? "PM" : "AM";
@@ -152,6 +155,31 @@ function buildSystemPrompt(context: CoachContext): string {
   parts.push("", SYSTEM_PROMPT_BOUNDARY);
 
   return parts.join("\n");
+}
+
+/** Fixed reference time — makes the template hash deterministic across restarts. */
+const TEMPLATE_REFERENCE_TIME = new Date(0);
+
+let _systemPromptTemplateVersion: string | undefined;
+
+/**
+ * Returns a stable hex hash of the static system prompt template.
+ * Memoized for the process lifetime — automatically changes when the
+ * prompt prose is edited, eliminating the manual COACH_CACHE_VERSION bump.
+ */
+export function getSystemPromptTemplateVersion(): string {
+  if (_systemPromptTemplateVersion) return _systemPromptTemplateVersion;
+  const emptyContext: CoachContext = {
+    goals: null,
+    todayIntake: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    weightTrend: { currentWeight: null, weeklyRate: null },
+    dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
+  };
+  _systemPromptTemplateVersion = createHash("sha256")
+    .update(buildSystemPrompt(emptyContext, TEMPLATE_REFERENCE_TIME))
+    .digest("hex")
+    .slice(0, 16);
+  return _systemPromptTemplateVersion;
 }
 
 export async function* generateCoachResponse(

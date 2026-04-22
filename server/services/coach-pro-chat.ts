@@ -19,6 +19,7 @@ import { storage } from "../storage";
 import {
   generateCoachResponse,
   generateCoachProResponse,
+  getSystemPromptTemplateVersion,
   type CoachContext,
 } from "./nutrition-coach";
 import { parseBlocksFromContent, BLOCKS_SYSTEM_PROMPT } from "./coach-blocks";
@@ -65,14 +66,6 @@ export interface CoachChatParams {
   abortSignal?: AbortSignal;
 }
 
-/**
- * Version tag included in the coach cache key. Bump when the system prompt,
- * the tool set, or any other logic that affects the cached response text
- * changes — old entries will then be cache-missed and regenerated instead
- * of served stale. (H5 — 2026-04-18)
- */
-const COACH_CACHE_VERSION = "v2-2026-04-18";
-
 /** UTC day bucket — e.g. `"2026-04-18"`. Used to expire cached coach answers
  *  whose prompt includes today's numeric context (goals, intake, weight). */
 function getUtcDayBucket(d: Date = new Date()): string {
@@ -81,12 +74,14 @@ function getUtcDayBucket(d: Date = new Date()): string {
 
 /**
  * Build the SHA-256 cache key used for coach-response caching. The key includes:
+ *  - prompt template version — automatically derived from the static system
+ *    prompt hash so cache entries stale out when the prompt prose changes,
+ *    eliminating the need for a manual version bump (H5 — 2026-04-18)
  *  - userId  — different users must not share answers
  *  - isCoachPro — Pro and non-Pro prompts diverge (tools, notebook); a cached
  *    non-Pro answer must never be replayed to a Pro user (H4 — 2026-04-18)
  *  - dayBucket — the prompt embeds `todayIntake`, `goals`, `weightTrend`,
  *    so entries stale out at UTC midnight (H5 — 2026-04-18)
- *  - version — lets us roll the cache forward when prompts/tools change
  */
 export function hashCoachCacheKey(
   userId: string,
@@ -97,7 +92,7 @@ export function hashCoachCacheKey(
   return createHash("sha256")
     .update(
       [
-        COACH_CACHE_VERSION,
+        getSystemPromptTemplateVersion(),
         userId,
         isCoachPro ? "pro" : "free",
         dayBucket,
