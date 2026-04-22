@@ -46,7 +46,7 @@ function notFound(message: string): ToolErrorResult {
   return { error: true, code: "NOT_FOUND", message };
 }
 
-function serviceUnavailable(toolName: string): ToolErrorResult {
+export function serviceUnavailable(toolName: string): ToolErrorResult {
   return {
     error: true,
     code: "SERVICE_UNAVAILABLE",

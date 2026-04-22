@@ -36,6 +36,11 @@ vi.mock("../coach-tools", () => ({
   ]),
   executeToolCall: vi.fn(),
   MAX_TOOL_CALLS_PER_RESPONSE: 5,
+  serviceUnavailable: vi.fn((toolName: string) => ({
+    error: true,
+    code: "SERVICE_UNAVAILABLE",
+    message: `${toolName} is temporarily unavailable`,
+  })),
 }));
 
 vi.mock("../../lib/ai-safety", () => ({

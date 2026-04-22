@@ -10,6 +10,8 @@ import {
   getToolDefinitions,
   executeToolCall,
   MAX_TOOL_CALLS_PER_RESPONSE,
+  type ToolErrorResult,
+  serviceUnavailable,
 } from "./coach-tools";
 
 const log = createServiceLogger("nutrition-coach");
@@ -379,11 +381,7 @@ export async function* generateCoachProResponse(
           );
           return {
             tc,
-            result: {
-              error: true,
-              code: "SERVICE_UNAVAILABLE",
-              message: `${tc.function.name} is temporarily unavailable`,
-            },
+            result: serviceUnavailable(tc.function.name),
           };
         }
       }),
