@@ -1,11 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   buildRecipeContext,
   checkRecipeAllergens,
   recipeChatMetadataSchema,
   RECIPE_SUGGESTION_CHIPS,
+  generateRecipeChatResponse,
 } from "../recipe-chat";
 import type { ChatMessage } from "@shared/schema";
+
+import { openai } from "../../lib/openai";
+import { generateRecipeImage } from "../recipe-generation";
 
 function createMessage(
   overrides: Partial<ChatMessage> & { role: string; content: string },
@@ -211,5 +215,108 @@ describe("recipe-chat service", () => {
         expect(chip.prompt.length).toBeGreaterThan(10);
       }
     });
+  });
+});
+
+vi.mock("../../lib/openai", () => ({
+  openai: {
+    chat: {
+      completions: {
+        create: vi.fn(),
+      },
+    },
+  },
+  OPENAI_TIMEOUT_HEAVY_MS: 30_000,
+  OPENAI_TIMEOUT_IMAGE_MS: 15_000,
+  MODEL_HEAVY: "gpt-4o",
+}));
+
+vi.mock("../recipe-generation", () => ({
+  generateRecipeImage: vi.fn(),
+}));
+
+vi.mock("../../lib/logger", () => ({
+  createServiceLogger: () => ({
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  }),
+  toError: (e: unknown) => (e instanceof Error ? e : new Error(String(e))),
+}));
+
+vi.mock("../../lib/ai-safety", () => ({
+  sanitizeUserInput: vi.fn((text: string) => text),
+  SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
+}));
+
+vi.mock("../../lib/dietary-context", () => ({
+  buildDietaryContext: vi.fn().mockReturnValue(""),
+}));
+
+describe("generateRecipeChatResponse — imageUnavailable on timeout", () => {
+  it("yields imageUnavailable when image generation times out", async () => {
+    // Build a minimal valid recipe JSON
+    const recipeJson = JSON.stringify({
+      title: "Test Recipe",
+      description: "A test.",
+      difficulty: "Easy" as const,
+      timeEstimate: "10 min",
+      servings: 2,
+      ingredients: [{ name: "egg", quantity: "2", unit: "pcs" }],
+      instructions: ["Boil the egg"],
+      dietTags: [],
+    });
+
+    // Simulate streamed response with a valid recipe JSON
+    const fakeChunks = [
+      {
+        choices: [
+          {
+            delta: { content: "Here you go!\n\n```json\n" },
+            finish_reason: null,
+          },
+        ],
+      },
+      {
+        choices: [{ delta: { content: recipeJson }, finish_reason: null }],
+      },
+      {
+        choices: [{ delta: { content: "\n```" }, finish_reason: "stop" }],
+      },
+    ];
+
+    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+      (async function* () {
+        for (const c of fakeChunks) yield c;
+      })() as any,
+    );
+
+    // Image generation never resolves — simulates a timeout
+    vi.mocked(generateRecipeImage).mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    vi.useFakeTimers();
+    const gen = generateRecipeChatResponse(
+      [{ role: "user", content: "make me a recipe" }],
+      null,
+    );
+
+    const events: unknown[] = [];
+    const collectionPromise = (async () => {
+      for await (const event of gen) {
+        events.push(event);
+      }
+    })();
+
+    await vi.runAllTimersAsync();
+    await collectionPromise;
+    vi.useRealTimers();
+
+    const unavailableEvent = events.find(
+      (e) => typeof e === "object" && e !== null && "imageUnavailable" in e,
+    );
+    expect(unavailableEvent).toEqual({ content: "", imageUnavailable: true });
   });
 });

@@ -35,6 +35,7 @@ export type RecipeChatSSEEvent =
       messageId?: number;
     }
   | { content: ""; imageUrl: string; messageId?: number }
+  | { content: ""; imageUnavailable: true }
   | { done: true };
 
 export interface RecipeChatRecipe {
@@ -437,9 +438,12 @@ export async function* generateRecipeChatResponse(
       ]);
       if (imageUrl) {
         yield { content: "", imageUrl };
+      } else {
+        yield { content: "", imageUnavailable: true as const };
       }
     } catch (error) {
       log.warn({ err: toError(error) }, "recipe image generation failed");
+      yield { content: "", imageUnavailable: true as const };
     }
   }
 

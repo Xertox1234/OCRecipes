@@ -389,6 +389,11 @@ export function register(app: Express): void {
               } else if ("imageUrl" in event && event.imageUrl) {
                 recipeImageUrl = event.imageUrl;
                 res.write(`data: ${eventJson}\n\n`);
+              } else if (
+                "imageUnavailable" in event &&
+                event.imageUnavailable
+              ) {
+                res.write(`data: ${eventJson}\n\n`);
               } else if ("content" in event && event.content) {
                 fullTextResponse += event.content;
                 res.write(`data: ${eventJson}\n\n`);
