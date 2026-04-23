@@ -319,4 +319,58 @@ describe("generateRecipeChatResponse — imageUnavailable on timeout", () => {
     );
     expect(unavailableEvent).toEqual({ content: "", imageUnavailable: true });
   });
+
+  it("yields imageUnavailable when image generation throws", async () => {
+    const { generateRecipeChatResponse } = await import("../recipe-chat");
+    const { openai } = await import("../../lib/openai");
+    const { generateRecipeImage } = await import("../recipe-generation");
+
+    const recipeJson = JSON.stringify({
+      title: "Test Recipe",
+      description: "A test.",
+      difficulty: "Easy" as const,
+      timeEstimate: "10 min",
+      servings: 2,
+      ingredients: [{ name: "egg", quantity: "2", unit: "pcs" }],
+      instructions: ["Boil the egg"],
+      dietTags: [],
+    });
+
+    const fakeChunks = [
+      {
+        choices: [
+          {
+            delta: { content: "Here you go!\n\n```json\n" },
+            finish_reason: null,
+          },
+        ],
+      },
+      { choices: [{ delta: { content: recipeJson }, finish_reason: null }] },
+      { choices: [{ delta: { content: "\n```" }, finish_reason: "stop" }] },
+    ];
+
+    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+      (async function* () {
+        for (const c of fakeChunks) yield c;
+      })() as any,
+    );
+
+    vi.mocked(generateRecipeImage).mockRejectedValueOnce(
+      new Error("network failure"),
+    );
+
+    const events: unknown[] = [];
+    const gen = generateRecipeChatResponse(
+      [{ role: "user", content: "make me a recipe" }],
+      null,
+    );
+    for await (const event of gen) {
+      events.push(event);
+    }
+
+    const unavailableEvent = events.find(
+      (e) => typeof e === "object" && e !== null && "imageUnavailable" in e,
+    );
+    expect(unavailableEvent).toEqual({ content: "", imageUnavailable: true });
+  });
 });
