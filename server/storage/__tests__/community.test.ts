@@ -289,6 +289,8 @@ describe("community storage", () => {
         featured.filter((r) => r.title === "PrivateTestUnique"),
       ).toHaveLength(0);
       // All returned recipes should be public (verified by query's where clause)
+      // Column projection: instructions JSONB must be excluded (heavy, not needed for display)
+      expect(featured[0]).not.toHaveProperty("instructions");
     });
 
     it("respects limit parameter", async () => {
