@@ -2006,12 +2006,20 @@ Use `aria-invalid` (not `accessibilityState={{ invalid: true }}`) to mark inputs
 ```tsx
 <RNTextInput
   aria-invalid={error ? true : undefined}
-  accessibilityHint={error && errorMessage ? errorMessage : undefined}
+  accessibilityHint={
+    error && errorMessage
+      ? props.accessibilityHint
+        ? `${props.accessibilityHint}. ${errorMessage}`
+        : errorMessage
+      : props.accessibilityHint
+  }
   {...props}
 />
 ```
 
 **Why:** React Native's `AccessibilityState` type does not include `invalid` — using `accessibilityState={{ invalid: true }}` causes a TypeScript error. The `aria-invalid` prop is the correct cross-platform ARIA prop supported since RN 0.71.
+
+**Hint preservation:** When an error occurs, append the error message to the caller-supplied `accessibilityHint` rather than replacing it. Replacing it silently discards the caller's hint (e.g., "Enter a valid email address"). Appending with `. ` preserves both: VoiceOver/TalkBack reads the original hint then the error detail.
 
 **References:**
 
