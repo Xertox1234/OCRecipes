@@ -209,22 +209,25 @@ export default function InstructionsStep({
     [stepCount, showDelete, updateStep, handleRemove, handleMove],
   );
 
-  const ListFooterComponent = (
-    <Pressable
-      onPress={handleAdd}
-      style={[
-        styles.addRow,
-        {
-          borderColor: withOpacity(theme.link, 0.4),
-          backgroundColor: withOpacity(theme.link, 0.04),
-        },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel="Add step"
-    >
-      <Feather name="plus" size={16} color={theme.link} />
-      <Text style={[styles.addText, { color: theme.link }]}>Add step…</Text>
-    </Pressable>
+  const ListFooterComponent = useMemo(
+    () => (
+      <Pressable
+        onPress={handleAdd}
+        style={[
+          styles.addRow,
+          {
+            borderColor: withOpacity(theme.link, 0.4),
+            backgroundColor: withOpacity(theme.link, 0.04),
+          },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel="Add step"
+      >
+        <Feather name="plus" size={16} color={theme.link} />
+        <Text style={[styles.addText, { color: theme.link }]}>Add step…</Text>
+      </Pressable>
+    ),
+    [handleAdd, theme.link],
   );
 
   return (

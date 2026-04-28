@@ -2,10 +2,15 @@ import type { UserProfile, CommunityRecipe } from "@shared/schema";
 import type { CarouselRecipeCard } from "@shared/types/carousel";
 import { storage } from "../storage";
 
+type CarouselRecipe = Pick<
+  CommunityRecipe,
+  "id" | "title" | "imageUrl" | "timeEstimate" | "remixedFromId" | "dietTags"
+>;
+
 // ── Normalization ────────────────────────────────────────────────────
 
 function normalizeCommunity(
-  recipe: CommunityRecipe,
+  recipe: CarouselRecipe,
   profile: UserProfile | null,
 ): CarouselRecipeCard {
   return {
@@ -27,7 +32,7 @@ function parseTimeEstimate(timeEstimate: string | null): number | null {
 }
 
 function generateCommunityReason(
-  recipe: CommunityRecipe,
+  recipe: CarouselRecipe,
   profile: UserProfile | null,
 ): string {
   if (!profile) return "Recently added recipe";

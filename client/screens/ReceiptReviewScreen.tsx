@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from "react";
 import {
   StyleSheet,
   View,
@@ -39,6 +45,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -272,6 +279,15 @@ export default function ReceiptReviewScreen() {
     [theme, handleRemoveItem, handleUpdateName, handleUpdateQuantity],
   );
 
+  const separatorColor = useMemo(
+    () => withOpacity(theme.text, 0.08),
+    [theme.text],
+  );
+  const renderSeparator = useCallback(
+    () => <ItemSeparator color={separatorColor} />,
+    [separatorColor],
+  );
+
   // Loading state — only block if no local preview items yet
   if (scanMutation.isPending && items.length === 0) {
     return (
@@ -424,13 +440,12 @@ export default function ReceiptReviewScreen() {
       )}
 
       <FlatList
+        {...FLATLIST_DEFAULTS}
         data={items}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => (
-          <ItemSeparator color={withOpacity(theme.text, 0.08)} />
-        )}
+        ItemSeparatorComponent={renderSeparator}
       />
 
       {/* AI-updated toast */}

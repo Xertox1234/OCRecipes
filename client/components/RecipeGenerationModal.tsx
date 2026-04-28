@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -64,7 +64,7 @@ export function RecipeGenerationModal({
   const [shareToPublic, setShareToPublic] = useState(true);
 
   const accentColor = theme.link;
-  const accentBg = withOpacity(accentColor, 0.12);
+  const accentBg = useMemo(() => withOpacity(accentColor, 0.12), [accentColor]);
 
   // Generate recipe mutation
   const generateMutation = useMutation({
@@ -107,10 +107,11 @@ export function RecipeGenerationModal({
     }
   }, [generateMutation.isError, generateMutation.error]);
 
-  const handleGenerate = () => {
+  const handleGenerate = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     generateMutation.mutate();
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- generateMutation.mutate is stable in TQ v5; including the full object causes unnecessary re-creation
+  }, [haptics, generateMutation.mutate]);
 
   const toggleDiet = useCallback(
     (diet: string) => {
@@ -129,6 +130,11 @@ export function RecipeGenerationModal({
   }, [generateMutation.isPending, onClose]);
 
   const isGenerating = generateMutation.isPending;
+
+  const foodsLabel = useMemo(
+    () => (foods?.length ? foods.map((f) => f.name).join(", ") : productName),
+    [foods, productName],
+  );
 
   return (
     <Modal
@@ -209,9 +215,7 @@ export function RecipeGenerationModal({
                   style={{ fontFamily: FontFamily.semiBold }}
                   numberOfLines={2}
                 >
-                  {foods?.length
-                    ? foods.map((f) => f.name).join(", ")
-                    : productName}
+                  {foodsLabel}
                 </ThemedText>
               </View>
             </View>

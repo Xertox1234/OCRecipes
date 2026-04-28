@@ -243,12 +243,44 @@ export async function getCommunityRecipe(
   return recipe || undefined;
 }
 
+/**
+ * Display columns for browse/featured endpoints.
+ * Excludes the heavy `instructions` JSONB column — browse cards never render step-by-step instructions.
+ */
+const FEATURED_COLUMNS = {
+  id: communityRecipes.id,
+  authorId: communityRecipes.authorId,
+  barcode: communityRecipes.barcode,
+  normalizedProductName: communityRecipes.normalizedProductName,
+  title: communityRecipes.title,
+  description: communityRecipes.description,
+  difficulty: communityRecipes.difficulty,
+  timeEstimate: communityRecipes.timeEstimate,
+  servings: communityRecipes.servings,
+  dietTags: communityRecipes.dietTags,
+  mealTypes: communityRecipes.mealTypes,
+  ingredients: communityRecipes.ingredients,
+  caloriesPerServing: communityRecipes.caloriesPerServing,
+  proteinPerServing: communityRecipes.proteinPerServing,
+  carbsPerServing: communityRecipes.carbsPerServing,
+  fatPerServing: communityRecipes.fatPerServing,
+  imageUrl: communityRecipes.imageUrl,
+  isPublic: communityRecipes.isPublic,
+  likeCount: communityRecipes.likeCount,
+  remixedFromId: communityRecipes.remixedFromId,
+  remixedFromTitle: communityRecipes.remixedFromTitle,
+  createdAt: communityRecipes.createdAt,
+  updatedAt: communityRecipes.updatedAt,
+} as const;
+
+export type FeaturedRecipe = Omit<CommunityRecipe, "instructions">;
+
 export async function getFeaturedRecipes(
   limit = 12,
   offset = 0,
-): Promise<CommunityRecipe[]> {
+): Promise<FeaturedRecipe[]> {
   return db
-    .select()
+    .select(FEATURED_COLUMNS)
     .from(communityRecipes)
     .where(
       and(

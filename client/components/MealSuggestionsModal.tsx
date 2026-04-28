@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import {
   AccessibilityInfo,
   Platform,
@@ -52,7 +52,7 @@ function SuggestionSkeleton() {
   );
 }
 
-function SuggestionCard({
+const SuggestionCard = React.memo(function SuggestionCard({
   suggestion,
   onSelect,
 }: {
@@ -129,9 +129,9 @@ function SuggestionCard({
       </Pressable>
     </View>
   );
-}
+});
 
-function PopularPickCard({
+const PopularPickCard = React.memo(function PopularPickCard({
   pick,
   onSelect,
 }: {
@@ -249,7 +249,7 @@ function PopularPickCard({
       </Pressable>
     </View>
   );
-}
+});
 
 export function MealSuggestionsModal({
   visible,
@@ -298,7 +298,10 @@ export function MealSuggestionsModal({
     mutation.error instanceof ApiError &&
     mutation.error.code === "DAILY_LIMIT_REACHED";
 
-  const mealLabel = mealType.charAt(0).toUpperCase() + mealType.slice(1);
+  const mealLabel = useMemo(
+    () => mealType.charAt(0).toUpperCase() + mealType.slice(1),
+    [mealType],
+  );
 
   return (
     <Modal

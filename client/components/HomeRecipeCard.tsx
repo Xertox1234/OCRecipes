@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -44,9 +44,28 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
   );
   const imageUri = resolveImageUrl(recipe.imageUrl);
 
-  const enteringAnimation = reducedMotion
-    ? undefined
-    : FadeInDown.delay(Math.min(index, MAX_ANIMATED_INDEX) * 80).duration(400);
+  const enteringAnimation = useMemo(
+    () =>
+      reducedMotion
+        ? undefined
+        : FadeInDown.delay(Math.min(index, MAX_ANIMATED_INDEX) * 80).duration(
+            400,
+          ),
+    [reducedMotion, index],
+  );
+
+  const allergenDotColor = useMemo(
+    () => withOpacity(theme.error, 0.9),
+    [theme.error],
+  );
+  const remixBadgeColor = useMemo(
+    () => withOpacity(theme.link, 0.9),
+    [theme.link],
+  );
+  const fallbackStyle = useMemo(
+    () => ({ backgroundColor: theme.backgroundSecondary }),
+    [theme.backgroundSecondary],
+  );
 
   return (
     <Animated.View entering={enteringAnimation} style={styles.wrapper}>
@@ -61,9 +80,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
           <FallbackImage
             source={{ uri: imageUri ?? undefined }}
             style={styles.image}
-            fallbackStyle={{
-              backgroundColor: theme.backgroundSecondary,
-            }}
+            fallbackStyle={fallbackStyle}
             fallbackIcon="image"
             fallbackIconSize={40}
             resizeMode="cover"
@@ -89,7 +106,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
             <View
               style={[
                 styles.allergenDot,
-                { backgroundColor: withOpacity(theme.error, 0.9) },
+                { backgroundColor: allergenDotColor },
               ]}
               accessible={false}
             >
@@ -105,10 +122,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
           {/* Remix badge */}
           {recipe.remixedFromId != null ? (
             <View
-              style={[
-                styles.remixBadge,
-                { backgroundColor: withOpacity(theme.link, 0.9) },
-              ]}
+              style={[styles.remixBadge, { backgroundColor: remixBadgeColor }]}
               accessible={false}
             >
               <Ionicons

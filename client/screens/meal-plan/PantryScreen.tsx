@@ -28,6 +28,7 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import {
   usePantryItems,
   useCreatePantryItem,
@@ -256,6 +257,7 @@ export default function PantryScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
       <SectionList
+        {...FLATLIST_DEFAULTS}
         sections={sections}
         keyExtractor={(item) => String(item.id)}
         renderItem={({ item }) => (

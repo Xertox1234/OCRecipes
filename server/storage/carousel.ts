@@ -6,6 +6,19 @@ import {
 import { db } from "../db";
 import { eq, and, desc, gte, notInArray, isNotNull } from "drizzle-orm";
 
+/**
+ * Display columns needed for the recipe carousel.
+ * Excludes the heavy `instructions` JSONB column — carousel cards never show step-by-step instructions.
+ */
+const CAROUSEL_COLUMNS = {
+  id: communityRecipes.id,
+  title: communityRecipes.title,
+  imageUrl: communityRecipes.imageUrl,
+  timeEstimate: communityRecipes.timeEstimate,
+  remixedFromId: communityRecipes.remixedFromId,
+  dietTags: communityRecipes.dietTags,
+} as const;
+
 // ============================================================================
 // RECIPE DISMISSALS
 // ============================================================================
@@ -78,7 +91,7 @@ export async function getRecentCommunityRecipes(
   }
 
   return db
-    .select()
+    .select(CAROUSEL_COLUMNS)
     .from(communityRecipes)
     .where(and(...conditions))
     .orderBy(desc(communityRecipes.createdAt))
