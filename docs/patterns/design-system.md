@@ -87,13 +87,14 @@ color: "white"; // Same problem
 
 **Common mappings:**
 
-| Hardcoded | Theme Value           |
-| --------- | --------------------- |
-| `#FFFFFF` | `theme.buttonText`    |
-| `#000000` | `theme.text`          |
-| `#00C853` | `theme.primary`       |
-| `#FF6B35` | `theme.calorieAccent` |
-| `#F5F5F5` | `theme.background`    |
+| Hardcoded | Theme Value            |
+| --------- | ---------------------- |
+| `#FFFFFF` | `theme.buttonText`     |
+| `#000000` | `theme.text`           |
+| `#B5451C` | `theme.link`           |
+| `#C94E1A` | `theme.calorieAccent`  |
+| `#007A30` | `theme.success`        |
+| `#FAF6F0` | `theme.backgroundRoot` |
 
 ### Semantic BorderRadius Naming
 
@@ -145,3 +146,57 @@ export const BorderRadius = {
 2. **Single source of truth** - Change once, updates everywhere
 3. **Figma alignment** - Names can match Figma component names
 4. **No magic numbers** - Calculations like `chip - 9` hide intent
+
+### WCAG Re-verification After Background Color Change
+
+When rebanding or changing background colours, every foreground colour that was previously WCAG-verified must be re-checked against the **new** background — not just the colours that changed.
+
+**Why it fails silently:** A foreground colour like `#007A30` may pass 4.5:1 on white (`#FFFFFF`) but fail on a warm cream (`#FAF6F0`) because cream has lower luminance. The threshold is the same but the denominator shifted. Green is especially at risk — it typically sits close to the 4.5:1 minimum.
+
+```
+// Example from the 2026-04-25 rebrand:
+// #008A38 on #FFFFFF → 4.48:1  ✓ (barely passes)
+// #008A38 on #FAF6F0 → 4.20:1  ✗ (fails AA — cream bg is darker than white)
+// Fix: darken to #007A30 → 5.1:1 on #FAF6F0 ✓
+```
+
+**Checklist when changing any background:**
+
+1. Identify every foreground colour used against that background (text, links, icons, status indicators).
+2. Recalculate contrast ratio for each using the new background luminance.
+3. Pay particular attention to greens and mid-greys — they are closest to the 4.5:1 boundary.
+4. Update WCAG ratio comments in `theme.ts` to reflect the new accurate values.
+
+**Where it applies:** `backgroundRoot`, `backgroundDefault`, `backgroundSecondary` changes all affect every screen. Even a small luminance shift (white → cream) is enough to break borderline colours.
+
+### Dynamic Color Injection into Static StyleSheet
+
+When a component's `StyleSheet.create` block contains a hardcoded colour that needs to be theme-responsive, inject the theme value via array style at the call site instead of restructuring the entire component.
+
+```typescript
+// Static block — keeps layout/spacing props, drops the colour
+const styles = StyleSheet.create({
+  badge: {
+    position: "absolute",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.chip,
+    backgroundColor: "transparent", // placeholder; overridden below
+  },
+});
+
+// Dynamic override at call site — no component restructuring needed
+<View style={[styles.badge, { backgroundColor: theme.link }]}>
+```
+
+**When to use:**
+
+- A single colour in an otherwise-static stylesheet needs to follow the theme.
+- The component already has `useTheme()` for other purposes.
+- Restructuring the whole stylesheet into a theme-function pattern is disproportionate.
+
+**When NOT to use:**
+
+- If more than 2–3 colours in the stylesheet need theming — at that point restructure into `const styles = (theme: Theme) => StyleSheet.create({...})` and call it inside the component.
+
+**Why:** Static `StyleSheet.create` blocks cannot reference `useTheme()` since they execute at module load time, before any React context exists. The array composition `[styles.foo, { key: value }]` is React Native's standard override mechanism — later entries win.

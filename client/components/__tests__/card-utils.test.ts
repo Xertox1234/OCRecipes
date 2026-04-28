@@ -4,42 +4,42 @@ import { getBackgroundColorForElevation, getBadgeColors } from "../card-utils";
 
 // Minimal theme stubs matching the ThemeColors interface
 const lightTheme = {
-  backgroundRoot: "#FFFFFF",
-  backgroundDefault: "#FFFFFF",
-  backgroundSecondary: "#F2F2F2",
-  backgroundTertiary: "#E8E8E8",
-  success: "#008A38",
+  backgroundRoot: "#FAF6F0",
+  backgroundDefault: "#FAF6F0",
+  backgroundSecondary: "#EEE6DA",
+  backgroundTertiary: "#E2D7CA",
+  success: "#007A30",
   warning: "#F57C00",
   error: "#D32F2F",
   info: "#2196F3",
-  link: "#7C5CBF",
+  link: "#B5451C",
 };
 
 describe("card-utils", () => {
   describe("getBackgroundColorForElevation", () => {
     it("returns backgroundDefault for elevation 1", () => {
-      expect(getBackgroundColorForElevation(1, lightTheme)).toBe("#FFFFFF");
+      expect(getBackgroundColorForElevation(1, lightTheme)).toBe("#FAF6F0");
     });
 
     it("returns backgroundSecondary for elevation 2", () => {
-      expect(getBackgroundColorForElevation(2, lightTheme)).toBe("#F2F2F2");
+      expect(getBackgroundColorForElevation(2, lightTheme)).toBe("#EEE6DA");
     });
 
     it("returns backgroundTertiary for elevation 3", () => {
-      expect(getBackgroundColorForElevation(3, lightTheme)).toBe("#E8E8E8");
+      expect(getBackgroundColorForElevation(3, lightTheme)).toBe("#E2D7CA");
     });
 
     it("falls back to backgroundRoot for unknown elevation", () => {
-      expect(getBackgroundColorForElevation(0, lightTheme)).toBe("#FFFFFF");
-      expect(getBackgroundColorForElevation(99, lightTheme)).toBe("#FFFFFF");
+      expect(getBackgroundColorForElevation(0, lightTheme)).toBe("#FAF6F0");
+      expect(getBackgroundColorForElevation(99, lightTheme)).toBe("#FAF6F0");
     });
   });
 
   describe("getBadgeColors", () => {
     it("returns success colors for success variant", () => {
       const result = getBadgeColors("success", lightTheme);
-      expect(result.text).toBe("#008A38");
-      expect(result.bg).toContain("008A38"); // withOpacity wraps the color
+      expect(result.text).toBe("#007A30");
+      expect(result.bg).toContain("007A30"); // withOpacity wraps the color
     });
 
     it("returns warning colors for warning variant", () => {
@@ -59,7 +59,7 @@ describe("card-utils", () => {
 
     it("returns link colors for default variant", () => {
       const result = getBadgeColors("default", lightTheme);
-      expect(result.text).toBe("#7C5CBF");
+      expect(result.text).toBe("#B5451C");
     });
   });
 });
