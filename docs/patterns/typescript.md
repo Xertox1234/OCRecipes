@@ -474,6 +474,30 @@ export function ThemedText({
 
 **When to apply:** Any component that wraps a React Native primitive and remaps, restricts, or transforms a prop before passing it through.
 
+**Same-name computed transform variant:** When the source prop and target prop share the same name (e.g., computing a derived `accessibilityHint` from the caller's `accessibilityHint`), the same rule applies — destructure the prop normally to remove it from the rest spread:
+
+```typescript
+// ❌ BAD — props.accessibilityHint is still in {...props}, overriding the computed value
+export function TextInput({ error, errorMessage, ...props }: TextInputProps) {
+  return (
+    <RNTextInput
+      accessibilityHint={error ? `${props.accessibilityHint}. ${errorMessage}` : props.accessibilityHint}
+      {...props}  // accessibilityHint from here silently wins (same key, comes last)
+    />
+  );
+}
+
+// ✅ GOOD — destructure to remove from spread
+export function TextInput({ error, errorMessage, accessibilityHint, ...props }: TextInputProps) {
+  return (
+    <RNTextInput
+      accessibilityHint={error ? `${accessibilityHint}. ${errorMessage}` : accessibilityHint}
+      {...props}  // accessibilityHint is gone from props — no override
+    />
+  );
+}
+```
+
 ### Unified Source Normalization
 
 When multiple data sources (different DB tables, external APIs) need to be rendered in a single list, normalize them into a shared type with a `source` discriminator and a prefixed composite ID. This avoids tagged unions and source-specific rendering branches.
