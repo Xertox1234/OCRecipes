@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { shouldReplaceWithAIMenu } from "../menu-scan-result-utils";
+import {
+  shouldReplaceWithAIMenu,
+  mergeMenuItems,
+} from "../menu-scan-result-utils";
 import type { LocalMenuItem } from "@/lib/menu-ocr-parser";
 import type { MenuAnalysisItem } from "@/hooks/useMenuScan";
 
@@ -80,5 +83,50 @@ describe("shouldReplaceWithAIMenu", () => {
 
   it("returns true when local is empty and AI returns nothing (both empty — edge case treated as replace)", () => {
     expect(shouldReplaceWithAIMenu([], [])).toBe(true);
+  });
+});
+
+describe("mergeMenuItems", () => {
+  it("preserves local item name when AI name matches case-insensitively", () => {
+    const local: LocalMenuItem[] = [{ name: "GRILLED SALMON" }];
+    const aiItems = [makeAIItem("Grilled Salmon")];
+    const result = mergeMenuItems(local, aiItems);
+    expect(result[0].name).toBe("GRILLED SALMON");
+    expect(result[0].estimatedCalories).toBe(400);
+  });
+
+  it("uses AI item as-is when no local name matches", () => {
+    const local: LocalMenuItem[] = [{ name: "Burger" }];
+    const aiItems = [makeAIItem("Burger"), makeAIItem("New Item")];
+    const result = mergeMenuItems(local, aiItems);
+    expect(result[1].name).toBe("New Item");
+  });
+
+  it("carries over all AI macro fields onto matched items", () => {
+    const local: LocalMenuItem[] = [{ name: "Pasta" }];
+    const aiItem = {
+      ...makeAIItem("Pasta"),
+      estimatedCalories: 650,
+      tags: ["vegetarian"],
+      recommendation: "good" as const,
+    };
+    const result = mergeMenuItems(local, [aiItem]);
+    expect(result[0].estimatedCalories).toBe(650);
+    expect(result[0].tags).toContain("vegetarian");
+    expect(result[0].recommendation).toBe("good");
+  });
+
+  it("returns all AI items when local is empty", () => {
+    const aiItems = [makeAIItem("A"), makeAIItem("B")];
+    const result = mergeMenuItems([], aiItems);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe(aiItems[0]);
+  });
+
+  it("handles trailing whitespace in names during match", () => {
+    const local: LocalMenuItem[] = [{ name: "  Caesar Salad  " }];
+    const aiItems = [makeAIItem("Caesar Salad")];
+    const result = mergeMenuItems(local, aiItems);
+    expect(result[0].name).toBe("  Caesar Salad  ");
   });
 });

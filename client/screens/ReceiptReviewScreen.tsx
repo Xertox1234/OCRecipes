@@ -126,11 +126,9 @@ export default function ReceiptReviewScreen() {
             : true;
 
         if (replace) {
+          const merged = mergeReceiptItems(localItemsRef.current, result.items);
           setItems(
-            result.items.map((item, i) => ({
-              ...mergeReceiptItems(localItemsRef.current, result.items)[i],
-              id: `${i}-${item.name}`,
-            })),
+            merged.map((item, i) => ({ ...item, id: `${i}-${item.name}` })),
           );
           setIsPartial(result.isPartialExtraction);
           if (dataSourceRef.current === "local") {

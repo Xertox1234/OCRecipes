@@ -22,7 +22,10 @@ import {
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { useMenuScan, type MenuAnalysisItem } from "@/hooks/useMenuScan";
 import { parseMenuFromOCR, type LocalMenuItem } from "@/lib/menu-ocr-parser";
-import { shouldReplaceWithAIMenu } from "./menu-scan-result-utils";
+import {
+  shouldReplaceWithAIMenu,
+  mergeMenuItems,
+} from "./menu-scan-result-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type MenuScanResultRouteProp = RouteProp<RootStackParamList, "MenuScanResult">;
@@ -257,12 +260,15 @@ export default function MenuScanResultScreen() {
             ? shouldReplaceWithAIMenu(localItemsRef.current, result.menuItems)
             : true;
 
-        if (replace) {
-          setItems(result.menuItems);
-          if (dataSourceRef.current === "local") {
-            setShowUpdatedToast(true);
-            toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
-          }
+        // Always push AI items so macros/recommendations are never hidden.
+        // When replace=false, keep local item names but take AI macro fields.
+        const aiDisplayItems = replace
+          ? result.menuItems
+          : mergeMenuItems(localItemsRef.current, result.menuItems);
+        setItems(aiDisplayItems);
+        if (replace && dataSourceRef.current === "local") {
+          setShowUpdatedToast(true);
+          toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
         }
         dataSourceRef.current = "ai";
         setIsAnalyzing(false);
