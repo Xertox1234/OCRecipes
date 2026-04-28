@@ -7,18 +7,18 @@ import {
 
 const lightTheme = {
   error: "#D32F2F",
-  link: "#7C5CBF",
+  link: "#B5451C",
   buttonText: "#FFFFFF",
-  backgroundSecondary: "#F2F2F2",
-  text: "#212832",
+  backgroundSecondary: "#EEE6DA",
+  text: "#1C1410",
 };
 
 const darkTheme = {
   error: "#F16360",
-  link: "#A88BF5",
+  link: "#E07050",
   buttonText: "#FFFFFF",
-  backgroundSecondary: "#393948",
-  text: "#FFFFFF",
+  backgroundSecondary: "#2C2420",
+  text: "#F5EFE6",
 };
 
 describe("getConfirmButtonStyle", () => {
@@ -30,7 +30,7 @@ describe("getConfirmButtonStyle", () => {
 
   it("returns link color for non-destructive", () => {
     const result = getConfirmButtonStyle(false, lightTheme);
-    expect(result.backgroundColor).toBe("#7C5CBF");
+    expect(result.backgroundColor).toBe("#B5451C");
     expect(result.textColor).toBe("#FFFFFF");
   });
 
@@ -43,14 +43,14 @@ describe("getConfirmButtonStyle", () => {
 describe("getCancelButtonStyle", () => {
   it("returns secondary background with text color", () => {
     const result = getCancelButtonStyle(lightTheme);
-    expect(result.backgroundColor).toBe("#F2F2F2");
-    expect(result.textColor).toBe("#212832");
+    expect(result.backgroundColor).toBe("#EEE6DA");
+    expect(result.textColor).toBe("#1C1410");
   });
 
   it("uses dark theme colors", () => {
     const result = getCancelButtonStyle(darkTheme);
-    expect(result.backgroundColor).toBe("#393948");
-    expect(result.textColor).toBe("#FFFFFF");
+    expect(result.backgroundColor).toBe("#2C2420");
+    expect(result.textColor).toBe("#F5EFE6");
   });
 });
 

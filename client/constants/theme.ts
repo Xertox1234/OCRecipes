@@ -2,31 +2,31 @@ import { Platform } from "react-native";
 
 export const Colors = {
   light: {
-    // Text - from Figma light mode
-    text: "#212832",
-    textSecondary: "#717171",
+    // Text
+    text: "#1C1410",
+    textSecondary: "#6B6B6B", // WCAG AA: 4.8:1 on #FAF6F0
     buttonText: "#FFFFFF",
     // Navigation
     tabIconDefault: "#6B6B6B",
-    tabIconSelected: "#7C5CBF",
-    // Links - purple accent (WCAG AA: 4.6:1 on #FFFFFF)
-    link: "#7C5CBF",
-    linkPressed: "#5C3FA3",
-    // Backgrounds - from Figma light mode
-    backgroundRoot: "#FFFFFF",
-    backgroundDefault: "#FFFFFF",
-    backgroundSecondary: "#F2F2F2",
-    backgroundTertiary: "#E8E8E8",
+    tabIconSelected: "#B5451C",
+    // Links - terracotta accent (WCAG AA: 5.1:1 on #FAF6F0, 5.5:1 on #FFFFFF)
+    link: "#B5451C",
+    linkPressed: "#8A3415",
+    // Backgrounds - warm parchment/cream tones
+    backgroundRoot: "#FAF6F0",
+    backgroundDefault: "#FAF6F0",
+    backgroundSecondary: "#EEE6DA",
+    backgroundTertiary: "#E2D7CA",
     // Border
-    border: "#E0E0E0",
+    border: "#D9CFC3",
     // Status colors
     error: "#D32F2F",
     warning: "#F57C00",
-    success: "#008A38",
+    success: "#007A30", // WCAG AA: 5.1:1 on #FAF6F0 (#008A38 fails at 4.2:1 on cream)
     info: "#2196F3",
     // Nutrition accents
     calorieAccent: "#C94E1A",
-    proteinAccent: "#008A38",
+    proteinAccent: "#007A30",
     carbsAccent: "#C94E1A",
     fatAccent: "#8C6800",
     // Feature-hub brand accents — intentional per-card differentiation on
@@ -34,48 +34,48 @@ export const Colors = {
     // meaning is conveyed by adjacent text labels, so they're exempt from
     // WCAG 1.4.11 (non-text contrast). Do NOT use these as the sole carrier
     // of meaning.
-    accentPurple: "#7c6ffa",
+    accentPurple: "#C4521A", // terracotta (property name kept for compat)
     accentAmber: "#f59e0b",
     accentGreen: "#22c55e",
     accentBlue: "#3b82f6",
-    accentPink: "#ec4899",
+    accentPink: "#E07050", // warm salmon (property name kept for compat)
   },
   dark: {
-    // Text - from Figma dark mode
-    text: "#FFFFFF",
-    textSecondary: "#C4C4C4",
+    // Text
+    text: "#F5EFE6", // warm off-white (vs cold #FFFFFF)
+    textSecondary: "#B8A898", // warm taupe
     buttonText: "#FFFFFF",
     // Navigation
-    tabIconDefault: "#C4C4C4",
-    tabIconSelected: "#A88BF5",
-    // Links - purple accent (WCAG AA: 5.0:1 on #212832)
-    link: "#A88BF5",
-    linkPressed: "#8A6BDB",
-    // Backgrounds - from Figma dark mode (warm navy)
-    backgroundRoot: "#212832",
-    backgroundDefault: "#212832",
-    backgroundSecondary: "#393948",
-    backgroundTertiary: "#4A4A5A",
+    tabIconDefault: "#907A6E",
+    tabIconSelected: "#E07050",
+    // Links - warm coral (WCAG AA: 5.5:1 on #1E1814)
+    link: "#E07050",
+    linkPressed: "#C4521A",
+    // Backgrounds - deep charcoal-brown (cast iron, slate)
+    backgroundRoot: "#1E1814",
+    backgroundDefault: "#1E1814",
+    backgroundSecondary: "#2C2420",
+    backgroundTertiary: "#3C302A",
     // Border
-    border: "#4A4A5A",
+    border: "#4D3C34",
     // Status colors
-    error: "#F16360", // WCAG AA: 4.7:1 on #212832
+    error: "#F16360", // WCAG AA: 5.8:1 on #1E1814
     warning: "#FFB74D",
-    success: "#00E676",
+    success: "#4CAF7D", // herb green, WCAG AA: 6.5:1 on #1E1814
     info: "#64B5F6",
     // Nutrition accents
     calorieAccent: "#FF8A65",
-    proteinAccent: "#00E676",
+    proteinAccent: "#4CAF7D",
     carbsAccent: "#FF8A65",
     fatAccent: "#FFD54F",
     // Feature-hub brand accents — same hex as light mode. These appear on
     // icon-container backgrounds (not text or meaning-bearing surfaces), so
     // dark-mode contrast to the background does not impair usability.
-    accentPurple: "#7c6ffa",
+    accentPurple: "#E07050", // warm coral (property name kept for compat)
     accentAmber: "#f59e0b",
     accentGreen: "#22c55e",
     accentBlue: "#3b82f6",
-    accentPink: "#ec4899",
+    accentPink: "#F0956B", // warm peach (property name kept for compat)
   },
 };
 

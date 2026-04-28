@@ -53,8 +53,8 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
 
     // Figma design colors
     const backgroundColor = isDark
-      ? theme.backgroundSecondary // #393948 in dark
-      : theme.backgroundDefault; // white in light
+      ? theme.backgroundSecondary // #2C2420 in dark
+      : theme.backgroundDefault; // #FAF6F0 in light
 
     const borderColor = error
       ? theme.error

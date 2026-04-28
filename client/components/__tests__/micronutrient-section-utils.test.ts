@@ -119,9 +119,9 @@ describe("classifyMicronutrients", () => {
 
 describe("getDVColor", () => {
   const theme = {
-    success: "#00C853",
+    success: "#007A30",
     warning: "#FF9800",
-    textSecondary: "#717171",
+    textSecondary: "#6B6B6B",
   };
 
   it("returns success color for >50% DV", () => {
