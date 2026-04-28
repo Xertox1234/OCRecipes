@@ -118,7 +118,7 @@ export function useScanClassification({
           navigation.navigate("LabelAnalysis", { imageUri });
           break;
         case "restaurant_menu":
-          navigation.navigate("PhotoAnalysis", { imageUri, intent: "menu" });
+          navigation.navigate("MenuScanResult", { imageUri });
           break;
         case "raw_ingredients":
           navigation.navigate("CookSessionCapture", {

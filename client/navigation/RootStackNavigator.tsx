@@ -30,7 +30,6 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Colors } from "@/constants/theme";
 import type { PhotoIntent } from "@shared/constants/preparation";
-import type { MenuAnalysisItem } from "@/hooks/useMenuScan";
 import type {
   CookingSessionIngredient,
   SubstitutionResult,
@@ -86,9 +85,8 @@ export type RootStackParamList = {
   QuickLog: undefined;
   DailyNutritionDetail: undefined;
   MenuScanResult: {
-    items: MenuAnalysisItem[];
-    restaurantName?: string;
-    cuisine?: string;
+    imageUri: string;
+    localOCRText?: string;
   };
   ReceiptCapture: undefined;
   ReceiptReview: { photoUris: string[] };
