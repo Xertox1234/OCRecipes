@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -15,6 +15,7 @@ import {
 import { useMutation } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -23,9 +24,10 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
-import { confirmFrontLabel } from "@/lib/photo-upload";
+import { uploadFrontLabelPhoto, confirmFrontLabel } from "@/lib/photo-upload";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 
 type NavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -38,29 +40,79 @@ export default function FrontLabelConfirmScreen() {
   const route = useRoute<ScreenRoute>();
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  const { imageUri, barcode, sessionId, data } = route.params;
+  const { imageUri, barcode, data: initialData } = route.params;
 
-  const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(
+    route.params.sessionId,
+  );
+  const [data, setData] = useState<FrontLabelExtractionResult>(initialData);
+  const [dataSource, setDataSource] = useState<"local" | "ai">(
+    route.params.sessionId ? "ai" : "local",
+  );
+  const [showUpdatedToast, setShowUpdatedToast] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const localDataRef = useRef<FrontLabelExtractionResult>(initialData);
+
+  // When launched with sessionId=null, run the AI upload in the background
+  useEffect(() => {
+    if (route.params.sessionId !== null) return;
+
+    let cancelled = false;
+    let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+    uploadFrontLabelPhoto(imageUri, barcode)
+      .then((result) => {
+        if (cancelled) return;
+        const shouldReplace =
+          result.data.confidence > 0.7 ||
+          result.data.brand !== localDataRef.current.brand ||
+          result.data.productName !== localDataRef.current.productName ||
+          result.data.netWeight !== localDataRef.current.netWeight;
+
+        if (shouldReplace) {
+          setData(result.data);
+          if (dataSource === "local") {
+            setShowUpdatedToast(true);
+            toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
+          }
+        }
+        setSessionId(result.sessionId);
+        setDataSource("ai");
+      })
+      .catch((err: Error) => {
+        if (cancelled) return;
+        setUploadError(
+          err.message || "Could not analyze front label. Please try again.",
+        );
+      });
+
+    return () => {
+      cancelled = true;
+      if (toastTimer) clearTimeout(toastTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
+  }, []);
+
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   const confirmMutation = useMutation({
-    mutationFn: () => confirmFrontLabel(sessionId, barcode),
+    mutationFn: () => confirmFrontLabel(sessionId!, barcode),
     onSuccess: () => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       AccessibilityInfo.announceForAccessibility(
         "Product details saved successfully",
       );
-      // Pop back to NutritionDetail
       navigation.pop(2);
     },
     onError: (err: Error) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setError(err.message || "Failed to save product details");
+      setConfirmError(err.message || "Failed to save product details");
     },
   });
 
   const handleConfirm = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setError(null);
+    setConfirmError(null);
     confirmMutation.mutate();
   }, [confirmMutation]);
 
@@ -71,6 +123,9 @@ export default function FrontLabelConfirmScreen() {
 
   const hasAnyData =
     data.brand || data.productName || data.netWeight || data.claims.length > 0;
+
+  const isConfirmDisabled =
+    !sessionId || confirmMutation.isPending || !!uploadError;
 
   return (
     <ThemedView
@@ -91,10 +146,53 @@ export default function FrontLabelConfirmScreen() {
             ]}
             accessibilityLabel="Front of package photo"
           />
+          {/* Source badge */}
+          {dataSource === "local" && !uploadError && (
+            <View
+              style={[
+                styles.sourceBadge,
+                { backgroundColor: withOpacity(theme.warning, 0.15) },
+              ]}
+            >
+              <ThemedText
+                style={[styles.sourceBadgeText, { color: theme.warning }]}
+              >
+                Scanned locally
+              </ThemedText>
+            </View>
+          )}
         </View>
 
+        {/* AI-updated toast */}
+        {showUpdatedToast && (
+          <Animated.View
+            entering={FadeInUp}
+            style={[styles.toast, { backgroundColor: theme.link }]}
+            accessibilityLiveRegion="polite"
+          >
+            <ThemedText style={styles.toastText}>
+              Updated with AI analysis
+            </ThemedText>
+          </Animated.View>
+        )}
+
+        {/* Upload error */}
+        {uploadError && (
+          <View
+            style={[
+              styles.errorBanner,
+              { backgroundColor: withOpacity(theme.error, 0.12) },
+            ]}
+            accessibilityRole="alert"
+          >
+            <ThemedText style={[styles.errorText, { color: theme.error }]}>
+              {uploadError}
+            </ThemedText>
+          </View>
+        )}
+
         {/* Confidence warning */}
-        {data.confidence < 0.7 && (
+        {data.confidence < 0.7 && dataSource === "ai" && (
           <View
             style={[
               styles.warningBanner,
@@ -105,6 +203,23 @@ export default function FrontLabelConfirmScreen() {
             <Feather name="alert-triangle" size={16} color={theme.warning} />
             <ThemedText style={[styles.warningText, { color: theme.warning }]}>
               Low confidence — some details may be inaccurate
+            </ThemedText>
+          </View>
+        )}
+
+        {/* Waiting for AI hint */}
+        {dataSource === "local" && !uploadError && (
+          <View
+            style={[
+              styles.warningBanner,
+              { backgroundColor: withOpacity(theme.textSecondary, 0.08) },
+            ]}
+          >
+            <Feather name="clock" size={16} color={theme.textSecondary} />
+            <ThemedText
+              style={[styles.warningText, { color: theme.textSecondary }]}
+            >
+              Verifying with AI — Confirm will enable shortly
             </ThemedText>
           </View>
         )}
@@ -157,7 +272,7 @@ export default function FrontLabelConfirmScreen() {
           </ThemedText>
         )}
 
-        {error && (
+        {confirmError && (
           <View
             style={[
               styles.errorBanner,
@@ -166,7 +281,7 @@ export default function FrontLabelConfirmScreen() {
             accessibilityRole="alert"
           >
             <ThemedText style={[styles.errorText, { color: theme.error }]}>
-              {error}
+              {confirmError}
             </ThemedText>
           </View>
         )}
@@ -185,9 +300,13 @@ export default function FrontLabelConfirmScreen() {
         <Button
           onPress={handleConfirm}
           loading={confirmMutation.isPending}
-          disabled={confirmMutation.isPending}
+          disabled={isConfirmDisabled}
           style={styles.confirmButton}
-          accessibilityLabel="Confirm and save product details"
+          accessibilityLabel={
+            sessionId
+              ? "Confirm and save product details"
+              : "Waiting for AI analysis before confirming"
+          }
         >
           Looks Good
         </Button>
@@ -231,12 +350,33 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     alignItems: "center",
+    gap: Spacing.xs,
   },
   thumbnail: {
     width: 200,
     height: 200,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
+  },
+  sourceBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+  },
+  sourceBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  toast: {
+    alignSelf: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  toastText: {
+    color: "#FFFFFF", // hardcoded
+    fontSize: 13,
+    fontWeight: "600",
   },
   warningBanner: {
     flexDirection: "row",
@@ -248,6 +388,13 @@ const styles = StyleSheet.create({
   warningText: {
     fontSize: 13,
     flex: 1,
+  },
+  errorBanner: {
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  errorText: {
+    fontSize: 13,
   },
   dataCard: {
     gap: Spacing.sm,
@@ -303,13 +450,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
-  },
-  errorBanner: {
-    padding: Spacing.sm,
-    borderRadius: BorderRadius.md,
-  },
-  errorText: {
-    fontSize: 13,
   },
   buttonRow: {
     flexDirection: "row",

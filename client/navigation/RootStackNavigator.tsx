@@ -106,7 +106,7 @@ export type RootStackParamList = {
   FrontLabelConfirm: {
     imageUri: string;
     barcode: string;
-    sessionId: string;
+    sessionId: string | null;
     data: FrontLabelExtractionResult;
   };
   BatchScan: undefined;
