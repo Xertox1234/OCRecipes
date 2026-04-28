@@ -89,7 +89,7 @@ export type RootStackParamList = {
     localOCRText?: string;
   };
   ReceiptCapture: undefined;
-  ReceiptReview: { photoUris: string[] };
+  ReceiptReview: { photoUris: string[]; ocrTexts?: string[] };
   CookSessionCapture: { initialPhotoUri?: string };
   CookSessionReview: {
     sessionId: string;

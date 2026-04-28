@@ -46,6 +46,7 @@ export default function ReceiptCaptureScreen() {
 
   const cameraRef = useRef<CameraRef>(null);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [ocrTexts, setOcrTexts] = useState<(string | undefined)[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
 
   // Premium gate on mount
@@ -62,8 +63,11 @@ export default function ReceiptCaptureScreen() {
         skipProcessing: Platform.OS === "android",
       });
       if (photo?.uri) {
+        // Snapshot OCR immediately before any re-render to avoid stale cache
+        const ocrResult = cameraRef.current?.getLatestOCRResult?.();
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         setPhotos((prev) => [...prev, photo.uri]);
+        setOcrTexts((prev) => [...prev, ocrResult?.resultText]);
       }
     } catch (error) {
       console.error("Capture error:", error);
@@ -85,10 +89,10 @@ export default function ReceiptCaptureScreen() {
 
     if (!result.canceled && result.assets.length > 0) {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-      setPhotos((prev) => [
-        ...prev,
-        ...result.assets.map((a) => a.uri).slice(0, remaining),
-      ]);
+      const galleryUris = result.assets.map((a) => a.uri).slice(0, remaining);
+      setPhotos((prev) => [...prev, ...galleryUris]);
+      // Gallery photos have no frame-processor OCR available
+      setOcrTexts((prev) => [...prev, ...galleryUris.map(() => undefined)]);
     }
   }, [photos.length, haptics]);
 
@@ -96,6 +100,7 @@ export default function ReceiptCaptureScreen() {
     (index: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setPhotos((prev) => prev.filter((_, i) => i !== index));
+      setOcrTexts((prev) => prev.filter((_, i) => i !== index));
     },
     [haptics],
   );
@@ -103,8 +108,14 @@ export default function ReceiptCaptureScreen() {
   const handleDone = useCallback(() => {
     if (photos.length === 0) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    navigation.replace("ReceiptReview", { photoUris: photos });
-  }, [photos, haptics, navigation]);
+    const definedOcrTexts = ocrTexts.filter(
+      (t): t is string => typeof t === "string",
+    );
+    navigation.replace("ReceiptReview", {
+      photoUris: photos,
+      ocrTexts: definedOcrTexts.length > 0 ? definedOcrTexts : undefined,
+    });
+  }, [photos, ocrTexts, haptics, navigation]);
 
   // Permission states
   if (permissionLoading) {
@@ -189,6 +200,7 @@ export default function ReceiptCaptureScreen() {
           style={StyleSheet.absoluteFill}
           facing="back"
           barcodeTypes={[]}
+          enableOCR={true}
           isActive={isFocused}
         />
       )}
