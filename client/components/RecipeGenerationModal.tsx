@@ -58,8 +58,7 @@ export function RecipeGenerationModal({
   );
   const [shareToPublic, setShareToPublic] = useState(true);
 
-  // Purple accent
-  const accentColor = "#7C5CBF"; // hardcoded — recipe generation branded purple
+  const accentColor = theme.link;
   const accentBg = withOpacity(accentColor, 0.12);
 
   // Generate recipe mutation
@@ -75,30 +74,16 @@ export function RecipeGenerationModal({
         servings,
         dietPreferences: selectedDiets,
         timeConstraint,
-        // Pass foods as structured data if the API supports it
-        ingredients: foods,
+        shareToPublic,
       });
       return response.json() as Promise<CommunityRecipe>;
     },
-    onSuccess: async (recipe) => {
+    onSuccess: (recipe) => {
       haptics.notification(Haptics.NotificationFeedbackType.Success);
-
-      // If user wants to share, update the recipe
-      if (shareToPublic) {
-        try {
-          await apiRequest("POST", `/api/recipes/${recipe.id}/share`, {
-            isPublic: true,
-          });
-        } catch (error) {
-          console.error("Failed to share recipe:", error);
-        }
-      }
-
       onComplete(recipe);
     },
-    onError: (error) => {
+    onError: () => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      console.error("Recipe generation error:", error);
     },
   });
 
@@ -507,8 +492,7 @@ export function RecipeGenerationModal({
                 marginTop: Spacing.md,
               }}
             >
-              This may take up to 30 seconds while we create your recipe and
-              generate an image...
+              This may take a few seconds while we create your recipe...
             </ThemedText>
           )}
         </ScrollView>
@@ -594,6 +578,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.chip,
     borderWidth: 1,
+    minHeight: 44,
   },
   checkIcon: {
     marginRight: Spacing.xs,

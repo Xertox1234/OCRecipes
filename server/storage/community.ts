@@ -223,6 +223,16 @@ export async function updateRecipePublicStatus(
   return recipe || undefined;
 }
 
+export async function updateCommunityRecipeImageUrl( // idor-safe: internal background patcher — recipeId from DB result, no user input
+  recipeId: number,
+  imageUrl: string,
+): Promise<void> {
+  await db
+    .update(communityRecipes)
+    .set({ imageUrl, updatedAt: new Date() })
+    .where(eq(communityRecipes.id, recipeId));
+}
+
 export async function getCommunityRecipe(
   id: number,
 ): Promise<CommunityRecipe | undefined> {

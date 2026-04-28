@@ -6,6 +6,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
   generateFullRecipe,
+  generateAndPatchRecipeImage,
   normalizeProductName,
 } from "../services/recipe-generation";
 import {
@@ -203,6 +204,7 @@ export function register(app: Express): void {
           servings,
           dietPreferences,
           timeConstraint,
+          shareToPublic,
         } = parsed.data;
 
         // Get user profile for dietary context
@@ -257,7 +259,7 @@ export function register(app: Express): void {
             instructions: generatedRecipe.instructions,
             ingredients: generatedRecipe.ingredients,
             imageUrl: generatedRecipe.imageUrl,
-            isPublic: false, // Private until user shares
+            isPublic: shareToPublic ?? false,
           },
         );
 
@@ -272,6 +274,14 @@ export function register(app: Express): void {
         }
 
         res.status(201).json(recipe);
+
+        // Kick off image generation after responding — adds 5-30s if awaited here.
+        // generateAndPatchRecipeImage updates the DB row when the image is ready.
+        void generateAndPatchRecipeImage(
+          recipe.id,
+          generatedRecipe.title,
+          productName,
+        );
       } catch (error) {
         handleRouteError(res, error, "generate recipe");
       }

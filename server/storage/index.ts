@@ -175,6 +175,7 @@ export const storage = {
   createCommunityRecipe: community.createCommunityRecipe,
   createRecipeWithLimitCheck: community.createRecipeWithLimitCheck,
   updateRecipePublicStatus: community.updateRecipePublicStatus,
+  updateCommunityRecipeImageUrl: community.updateCommunityRecipeImageUrl,
   getCommunityRecipe: community.getCommunityRecipe,
   getFeaturedRecipes: community.getFeaturedRecipes,
   getAllPublicCommunityRecipes: community.getAllPublicCommunityRecipes,

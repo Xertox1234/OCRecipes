@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-04-26 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit — uncommitted modifications to `HomeRecipeCard.tsx`, `RecipeGenerationModal.tsx`, `TextInput.tsx`, `theme.ts`, new `scripts/generate-app-assets.ts`, and agent/eval files since 2026-04-18
+- **Manifest:** [docs/audits/2026-04-26-full.md](2026-04-26-full.md)
+- **Findings:** 0 critical, 3 high, 15 medium, 29 low (47 total, from 6 agents)
+- **Resolved:** 6 verified, 41 deferred (6 themed todos), 0 false-positive
+- **Commits:** _(pending)_
+- **Note:** Key fixes: remix badge now announced by screen readers (H1 parent label + accessible=false on badge); recipe image generation decoupled — `generateFullRecipe` returns immediately, `generateAndPatchRecipeImage` fires void after DB save saving 5-30s user-visible latency (H3); `shareToPublic` flag added to `recipeGenerationSchema` replacing two-step generate+share client calls (M1); `generate-app-assets.ts` refactored to dynamic-import `server/lib/runware.ts` removing 60-line HTTP client duplicate (M10); `dietChip` `minHeight: 44` added matching `optionChip` (M15); Prettier formatting errors cleared — 15 lint errors → 0 (L22). +1 test updated (recipe-generation: imageUrl now null from generateFullRecipe). Deferred 41 items to 6 todos: schema/data-integrity debt, accessibility remaining, performance/memoization, security hardening, architecture refactors, code quality.
+
 ## 2026-04-18 — Full Codebase Audit
 
 - **Trigger:** Periodic full audit — ~30 commits / ~3.6K net LOC since audit #11 (recipes.ts 4-way split, MealPlanDay type-dep inversion, Coach Pro hardening, MiniSearch filter-chain consolidation + community mealType classification, seed-recipes prod guard + parallel pipeline, SkeletonBox shared shimmer timer, eval framework hardening, recipe-wizard a11y polish, cleanup script hardening, catalog save + URL import premium gating)

@@ -18,6 +18,7 @@ export default defineConfig({
       reporter: ["text", "json", "html"],
       exclude: ["node_modules", "server_dist", "**/*.test.ts"],
     },
+    pool: "forks",
     testTimeout: 10000,
     setupFiles: ["./test/setup.ts"],
     globalSetup: ["./test/global-teardown.ts"],

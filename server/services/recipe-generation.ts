@@ -365,29 +365,38 @@ async function saveImageBuffer(buffer: Buffer): Promise<string> {
 }
 
 /**
- * Generate a complete recipe with content and image
+ * Generate recipe content only. Image generation is kicked off separately
+ * via generateAndPatchRecipeImage so the recipe is saved and returned to the
+ * user without waiting for the image (which adds 5–30s).
  */
 export async function generateFullRecipe(
   input: RecipeGenerationInput,
 ): Promise<GeneratedRecipe> {
-  // Generate recipe content first
   const content = await generateRecipeContent(input);
+  return { ...content, imageUrl: null };
+}
 
-  // Generate image (non-blocking, recipe still usable without image)
-  let imageUrl: string | null = null;
+/**
+ * Generate an image for a saved recipe and patch its imageUrl in the DB.
+ * Intended to be called fire-and-forget after the recipe row is committed.
+ */
+export async function generateAndPatchRecipeImage(
+  recipeId: number,
+  recipeTitle: string,
+  productName: string,
+): Promise<void> {
   try {
-    imageUrl = await generateRecipeImage(content.title, input.productName);
+    const imageUrl = await generateRecipeImage(recipeTitle, productName);
+    if (imageUrl) {
+      const { storage } = await import("../storage/index");
+      await storage.updateCommunityRecipeImageUrl(recipeId, imageUrl);
+    }
   } catch (error) {
     log.error(
-      { err: toError(error) },
-      "image generation failed, continuing without image",
+      { err: toError(error), recipeId },
+      "background image generation failed",
     );
   }
-
-  return {
-    ...content,
-    imageUrl,
-  };
 }
 
 /**

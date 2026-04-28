@@ -53,7 +53,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
       <Card
         elevation={2}
         onPress={handlePress}
-        accessibilityLabel={`${recipe.title}. ${hasAllergenWarning ? "Contains your allergens. " : ""}${recipe.difficulty ? `Difficulty: ${recipe.difficulty}. ` : ""}Tap to view recipe.`}
+        accessibilityLabel={`${recipe.title}. ${recipe.remixedFromId != null ? "Remixed recipe. " : ""}${hasAllergenWarning ? "Contains your allergens. " : ""}${recipe.difficulty ? `Difficulty: ${recipe.difficulty}. ` : ""}Tap to view recipe.`}
         accessibilityHint="Opens recipe details"
       >
         {/* Image section */}
@@ -73,7 +73,9 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
 
           {/* Difficulty badge */}
           {recipe.difficulty ? (
-            <View style={styles.difficultyBadge}>
+            <View
+              style={[styles.difficultyBadge, { backgroundColor: theme.link }]}
+            >
               <ThemedText
                 maxScale={MAX_FONT_SCALE_CONSTRAINED}
                 style={styles.difficultyText}
@@ -109,7 +111,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
                 styles.remixBadge,
                 { backgroundColor: withOpacity(theme.link, 0.9) },
               ]}
-              accessibilityLabel="Remixed recipe"
+              accessible={false}
             >
               <Ionicons
                 name="shuffle-outline"
@@ -176,7 +178,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: Spacing.sm,
     left: Spacing.sm,
-    backgroundColor: "#7C5CBF", // hardcoded — accent purple for badge visibility
+    backgroundColor: "transparent", // overridden dynamically with theme.link
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.chip,

@@ -4,6 +4,7 @@ import {
   generateRecipeContent,
   generateRecipeImage,
   generateFullRecipe,
+  generateAndPatchRecipeImage,
 } from "../recipe-generation";
 
 import { openai, dalleClient } from "../../lib/openai";
@@ -51,6 +52,14 @@ vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_IMAGE_MS: 120_000,
   MODEL_FAST: "gpt-4o-mini",
   MODEL_HEAVY: "gpt-4o",
+}));
+
+// Mock storage for generateAndPatchRecipeImage
+const mockUpdateCommunityRecipeImageUrl = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../storage/index", () => ({
+  storage: {
+    updateCommunityRecipeImageUrl: mockUpdateCommunityRecipeImageUrl,
+  },
 }));
 
 // Mock the runware module — isRunwareConfigured is controlled via a mutable ref
@@ -460,7 +469,7 @@ describe("Recipe Generation", () => {
       vi.clearAllMocks();
     });
 
-    it("returns recipe content with image", async () => {
+    it("returns recipe content with imageUrl null (image generated async via generateAndPatchRecipeImage)", async () => {
       const recipe = {
         title: "Grilled Salmon",
         description: "Delicious salmon",
@@ -475,37 +484,48 @@ describe("Recipe Generation", () => {
         choices: [{ message: { content: JSON.stringify(recipe) } }],
       } as any);
 
-      mockImageGenerate.mockResolvedValue({
-        data: [{ b64_json: "imagedata" }],
-      } as any);
-
       const result = await generateFullRecipe({ productName: "Salmon" });
 
       expect(result.title).toBe("Grilled Salmon");
-      expect(result.imageUrl).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
+      expect(result.imageUrl).toBeNull();
+    });
+  });
+
+  describe("generateAndPatchRecipeImage", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
     });
 
-    it("returns recipe without image on image generation failure", async () => {
-      const recipe = {
-        title: "Simple Pasta",
-        description: "Quick pasta dish",
-        difficulty: "Easy",
-        timeEstimate: "15 min",
-        ingredients: [{ name: "pasta", quantity: "200", unit: "g" }],
-        instructions: "Cook pasta\nAdd sauce",
-        dietTags: [],
-      };
-
-      mockCreate.mockResolvedValue({
-        choices: [{ message: { content: JSON.stringify(recipe) } }],
+    it("patches DB with imageUrl when image generation succeeds", async () => {
+      mockImageGenerate.mockResolvedValue({
+        data: [{ b64_json: "abc123base64data" }],
       } as any);
 
+      await generateAndPatchRecipeImage(42, "Grilled Salmon", "Salmon");
+
+      expect(mockUpdateCommunityRecipeImageUrl).toHaveBeenCalledWith(
+        42,
+        expect.stringMatching(/^\/api\/recipe-images\/recipe-.+\.png$/),
+      );
+    });
+
+    it("skips DB update when generateRecipeImage returns null", async () => {
+      mockImageGenerate.mockResolvedValue({
+        data: [{ b64_json: undefined }],
+      } as any);
+
+      await generateAndPatchRecipeImage(42, "Grilled Salmon", "Salmon");
+
+      expect(mockUpdateCommunityRecipeImageUrl).not.toHaveBeenCalled();
+    });
+
+    it("catches and swallows errors without rethrowing", async () => {
       mockImageGenerate.mockRejectedValue(new Error("DALL-E unavailable"));
 
-      const result = await generateFullRecipe({ productName: "Pasta" });
-
-      expect(result.title).toBe("Simple Pasta");
-      expect(result.imageUrl).toBeNull();
+      await expect(
+        generateAndPatchRecipeImage(42, "Grilled Salmon", "Salmon"),
+      ).resolves.toBeUndefined();
+      expect(mockUpdateCommunityRecipeImageUrl).not.toHaveBeenCalled();
     });
   });
 });

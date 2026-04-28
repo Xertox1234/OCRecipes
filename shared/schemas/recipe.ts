@@ -44,6 +44,7 @@ export const recipeGenerationSchema = z.object({
   servings: z.number().int().min(1).max(20).optional(),
   dietPreferences: z.array(z.string().max(50)).max(10).optional(),
   timeConstraint: z.string().max(50).optional(),
+  shareToPublic: z.boolean().optional(),
 });
 
 export type RecipeGenerationParams = z.infer<typeof recipeGenerationSchema>;
