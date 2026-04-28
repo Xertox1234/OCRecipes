@@ -39,6 +39,14 @@ export interface SessionStoreOptions {
 export interface SessionStore<T extends { userId: string; createdAt: number }> {
   /** Check whether a new session can be created for this user */
   canCreate(userId: string): SessionCheckResult;
+  /**
+   * Atomically check the per-user and global caps, then create a new session.
+   * Prefer this over the separate canCreate → create pair to eliminate the
+   * TOCTOU window between the check and the increment.
+   */
+  createIfAllowed(
+    data: T,
+  ): { ok: true; id: string } | { ok: false; reason: string; code: string };
   /** Store a new session, returning a random UUID key */
   create(data: T): string;
   /**
@@ -128,6 +136,39 @@ export function createSessionStore<
         };
       }
       return { allowed: true };
+    },
+
+    createIfAllowed(
+      data: T,
+    ): { ok: true; id: string } | { ok: false; reason: string; code: string } {
+      // Perform both cap checks and the increment atomically (synchronous Map
+      // ops — no await gap — so there is no TOCTOU window under Node's
+      // single-threaded event loop).
+      if (store.size >= opts.maxGlobal) {
+        return {
+          ok: false,
+          reason: "Server is busy, please try again later",
+          code: "SESSION_LIMIT_REACHED",
+        };
+      }
+      const count = userCount.get(data.userId) ?? 0;
+      if (count >= opts.maxPerUser) {
+        return {
+          ok: false,
+          reason: `Too many ${label} sessions. Please confirm or wait for existing sessions to expire.`,
+          code: "USER_SESSION_LIMIT",
+        };
+      }
+      const id = crypto.randomUUID();
+      if ("id" in data) {
+        (data as Record<string, unknown>).id = id;
+      }
+      store.set(id, data);
+      userCount.set(data.userId, count + 1);
+      const timeoutId = setTimeout(() => clearSession(id), opts.timeoutMs);
+      (timeoutId as unknown as { unref?: () => void }).unref?.();
+      timeouts.set(id, timeoutId);
+      return { ok: true, id };
     },
 
     create(data: T): string {
@@ -254,6 +295,18 @@ export function canCreateAnalysisSession(userId: string): SessionCheckResult {
   return analysisStore.canCreate(userId);
 }
 
+/** Atomically check caps and create an analysis session in one synchronous call. */
+export function createAnalysisSessionIfAllowed(
+  userId: string,
+  result: AnalysisResult,
+): { ok: true; id: string } | { ok: false; reason: string; code: string } {
+  return analysisStore.createIfAllowed({
+    userId,
+    result,
+    createdAt: Date.now(),
+  });
+}
+
 export function createAnalysisSession(
   userId: string,
   result: AnalysisResult,
@@ -280,6 +333,20 @@ export function clearAnalysisSession(sessionId: string): void {
 
 export function canCreateLabelSession(userId: string): SessionCheckResult {
   return labelStore.canCreate(userId);
+}
+
+/** Atomically check caps and create a label session in one synchronous call. */
+export function createLabelSessionIfAllowed(
+  userId: string,
+  labelData: LabelExtractionResult,
+  barcode?: string,
+): { ok: true; id: string } | { ok: false; reason: string; code: string } {
+  return labelStore.createIfAllowed({
+    userId,
+    labelData,
+    barcode,
+    createdAt: Date.now(),
+  });
 }
 
 export function createLabelSession(

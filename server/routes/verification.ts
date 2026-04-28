@@ -319,12 +319,6 @@ export function register(app: Express): void {
         }
         const barcode = barcodeResult.data;
 
-        // Check session bounds
-        const check = frontLabelStore.canCreate(req.userId);
-        if (!check.allowed) {
-          return sendError(res, 429, check.reason, check.code);
-        }
-
         // User must have back-label verified this barcode first
         const hasVerified = await storage.hasUserVerified(barcode, req.userId);
         if (!hasVerified) {
@@ -341,13 +335,18 @@ export function register(app: Express): void {
         const imageBase64 = req.file.buffer.toString("base64");
         const data = await analyzeFrontLabel(imageBase64);
 
-        // Store session for confirm step (factory handles timeout + user count)
-        const sessionId = frontLabelStore.create({
+        // Atomically check session cap and create in one call to eliminate the
+        // TOCTOU window between a separate canCreate + create (L12 fix).
+        const sessionResult = frontLabelStore.createIfAllowed({
           userId: req.userId,
           data,
           barcode,
           createdAt: Date.now(),
         });
+        if (!sessionResult.ok) {
+          return sendError(res, 429, sessionResult.reason, sessionResult.code);
+        }
+        const sessionId = sessionResult.id;
 
         res.json({ sessionId, data });
       } catch (error) {

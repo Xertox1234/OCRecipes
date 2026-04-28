@@ -143,7 +143,7 @@ export function register(app: Express): void {
 
         // ── Auto-classification flow ──────────────────────────────
         if (intentRaw === "auto") {
-          // Validate session bounds BEFORE calling paid APIs
+          // Validate session bounds BEFORE calling paid APIs to avoid wasted credits
           if (req.file.buffer.length > MAX_IMAGE_SIZE_BYTES) {
             return sendError(
               res,
@@ -153,9 +153,9 @@ export function register(app: Express): void {
             );
           }
 
-          const sessionCheck = storage.canCreateAnalysisSession(req.userId);
-          if (!sessionCheck.allowed) {
-            return sendError(res, 429, sessionCheck.reason, sessionCheck.code);
+          const earlyCheck = storage.canCreateAnalysisSession(req.userId);
+          if (!earlyCheck.allowed) {
+            return sendError(res, 429, earlyCheck.reason, earlyCheck.code);
           }
 
           const classified = await classifyAndAnalyze(imageBase64);
@@ -185,9 +185,25 @@ export function register(app: Express): void {
               }));
             }
 
-            const sessionId = intentConfig.needsSession
-              ? storage.createAnalysisSession(req.userId, analysisResult)
-              : crypto.randomUUID();
+            let sessionId: string;
+            if (intentConfig.needsSession) {
+              // Atomic check+create eliminates the TOCTOU window (L12 fix).
+              const sessionResult = storage.createAnalysisSessionIfAllowed(
+                req.userId,
+                analysisResult,
+              );
+              if (!sessionResult.ok) {
+                return sendError(
+                  res,
+                  429,
+                  sessionResult.reason,
+                  sessionResult.code,
+                );
+              }
+              sessionId = sessionResult.id;
+            } else {
+              sessionId = crypto.randomUUID();
+            }
 
             return res.json({
               sessionId,
@@ -236,9 +252,9 @@ export function register(app: Express): void {
             );
           }
 
-          const sessionCheck = storage.canCreateAnalysisSession(req.userId);
-          if (!sessionCheck.allowed) {
-            return sendError(res, 429, sessionCheck.reason, sessionCheck.code);
+          const earlyCheck = storage.canCreateAnalysisSession(req.userId);
+          if (!earlyCheck.allowed) {
+            return sendError(res, 429, earlyCheck.reason, earlyCheck.code);
           }
         }
 
@@ -264,10 +280,25 @@ export function register(app: Express): void {
           }));
         }
 
-        // Generate session ID (needed for follow-ups and confirm)
-        const sessionId = intentConfig.needsSession
-          ? storage.createAnalysisSession(req.userId, analysisResult)
-          : crypto.randomUUID();
+        // Generate session ID — atomic check+create eliminates TOCTOU (L12 fix).
+        let sessionId: string;
+        if (intentConfig.needsSession) {
+          const sessionResult = storage.createAnalysisSessionIfAllowed(
+            req.userId,
+            analysisResult,
+          );
+          if (!sessionResult.ok) {
+            return sendError(
+              res,
+              429,
+              sessionResult.reason,
+              sessionResult.code,
+            );
+          }
+          sessionId = sessionResult.id;
+        } else {
+          sessionId = crypto.randomUUID();
+        }
 
         const response = {
           sessionId,
@@ -545,20 +576,34 @@ export function register(app: Express): void {
             : undefined
           : undefined;
 
-        // Check label session bounds before calling paid APIs
-        const labelCheck = storage.canCreateLabelSession(req.userId);
-        if (!labelCheck.allowed) {
-          return sendError(res, 429, labelCheck.reason, labelCheck.code);
+        // Early guard — reject before calling paid APIs to avoid wasted credits.
+        const earlyLabelCheck = storage.canCreateLabelSession(req.userId);
+        if (!earlyLabelCheck.allowed) {
+          return sendError(
+            res,
+            429,
+            earlyLabelCheck.reason,
+            earlyLabelCheck.code,
+          );
         }
 
         const labelData = await analyzeLabelPhoto(imageBase64);
 
-        // Store session for confirm step
-        const sessionId = storage.createLabelSession(
+        // Atomic check+create eliminates the TOCTOU window (L12 fix).
+        const labelSessionResult = storage.createLabelSessionIfAllowed(
           req.userId,
           labelData,
           barcode,
         );
+        if (!labelSessionResult.ok) {
+          return sendError(
+            res,
+            429,
+            labelSessionResult.reason,
+            labelSessionResult.code,
+          );
+        }
+        const sessionId = labelSessionResult.id;
 
         res.json({
           sessionId,

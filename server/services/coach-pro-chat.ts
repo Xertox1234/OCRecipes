@@ -387,7 +387,12 @@ export async function* handleCoachChat(
     if (questionHash && fullResponse && !isAborted()) {
       fireAndForget(
         "coach-cache-response",
-        storage.setCoachCachedResponse(questionHash, content, fullResponse),
+        storage.setCoachCachedResponse(
+          userId,
+          questionHash,
+          content,
+          fullResponse,
+        ),
       );
     }
   }

@@ -278,11 +278,13 @@ export const storage = {
 
   // Sessions (in-memory photo analysis workflow state)
   canCreateAnalysisSession: sessions.canCreateAnalysisSession,
+  createAnalysisSessionIfAllowed: sessions.createAnalysisSessionIfAllowed,
   createAnalysisSession: sessions.createAnalysisSession,
   getAnalysisSession: sessions.getAnalysisSession,
   updateAnalysisSession: sessions.updateAnalysisSession,
   clearAnalysisSession: sessions.clearAnalysisSession,
   canCreateLabelSession: sessions.canCreateLabelSession,
+  createLabelSessionIfAllowed: sessions.createLabelSessionIfAllowed,
   createLabelSession: sessions.createLabelSession,
   getLabelSession: sessions.getLabelSession,
   clearLabelSession: sessions.clearLabelSession,

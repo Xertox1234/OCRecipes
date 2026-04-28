@@ -47,7 +47,6 @@ const baseRecipe = {
   carbsPerServing: null,
   fatPerServing: null,
   isPublic: true,
-  likeCount: 0,
   remixedFromId: null,
   remixedFromTitle: null,
 };

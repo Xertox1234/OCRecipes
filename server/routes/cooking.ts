@@ -123,18 +123,17 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const check = cookStore.canCreate(req.userId);
-        if (!check.allowed) {
-          return sendError(res, 429, check.reason, check.code);
-        }
-
-        const sessionId = cookStore.create({
+        const result = cookStore.createIfAllowed({
           id: "", // auto-set by factory to match store key
           userId: req.userId,
           ingredients: [],
           photos: [],
           createdAt: Date.now(),
         });
+        if (!result.ok) {
+          return sendError(res, 429, result.reason, result.code);
+        }
+        const sessionId = result.id;
         const session = cookStore.get(sessionId)!;
 
         res.status(201).json({

@@ -402,6 +402,7 @@ export async function getCoachCachedResponse(
  * Uses upsert to handle concurrent first-asks.
  */
 export async function setCoachCachedResponse(
+  userId: string,
   questionHash: string,
   question: string,
   response: string,
@@ -412,7 +413,7 @@ export async function setCoachCachedResponse(
 
   await db
     .insert(coachResponseCache)
-    .values({ questionHash, question, response, expiresAt })
+    .values({ userId, questionHash, question, response, expiresAt })
     .onConflictDoUpdate({
       target: coachResponseCache.questionHash,
       set: { response, expiresAt, hitCount: 0 },

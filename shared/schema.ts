@@ -19,6 +19,8 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
+import type { MealSuggestion } from "./types/meal-suggestions";
+import type { CarouselRecipeCard } from "./types/carousel";
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -498,15 +500,18 @@ export const communityRecipes = pgTable(
     ingredients: jsonb("ingredients")
       .$type<{ name: string; quantity: string; unit: string }[]>()
       .default([]),
-    // text (not decimal) mirrors scannedItems.calories convention — values parsed
-    // and validated (>= 0) at the application boundary via parseNutritionValue().
-    caloriesPerServing: text("calories_per_serving"),
-    proteinPerServing: text("protein_per_serving"),
-    carbsPerServing: text("carbs_per_serving"),
-    fatPerServing: text("fat_per_serving"),
+    caloriesPerServing: decimal("calories_per_serving", {
+      precision: 10,
+      scale: 2,
+    }),
+    proteinPerServing: decimal("protein_per_serving", {
+      precision: 10,
+      scale: 2,
+    }),
+    carbsPerServing: decimal("carbs_per_serving", { precision: 10, scale: 2 }),
+    fatPerServing: decimal("fat_per_serving", { precision: 10, scale: 2 }),
     imageUrl: text("image_url"),
     isPublic: boolean("is_public").default(true),
-    likeCount: integer("like_count").default(0),
     remixedFromId: integer("remixed_from_id").references(
       (): AnyPgColumn => communityRecipes.id,
       { onDelete: "set null" },
@@ -544,6 +549,16 @@ export const communityRecipes = pgTable(
     isPublicCreatedAtIdx: index(
       "community_recipes_is_public_created_at_idx",
     ).on(table.isPublic, table.createdAt),
+    caloriesNonNeg: check(
+      "cr_calories_gte0",
+      sql`${table.caloriesPerServing} >= 0`,
+    ),
+    proteinNonNeg: check(
+      "cr_protein_gte0",
+      sql`${table.proteinPerServing} >= 0`,
+    ),
+    carbsNonNeg: check("cr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
+    fatNonNeg: check("cr_fat_gte0", sql`${table.fatPerServing} >= 0`),
   }),
 );
 
@@ -811,9 +826,11 @@ export const weightLogs = pgTable(
       .notNull(),
   },
   (table) => ({
+    // One entry per user per calendar day — keyed on DATE(logged_at) so that
+    // multiple entries at different times on the same day collapse to one row.
     userDateIdx: uniqueIndex("weight_logs_user_date_idx").on(
       table.userId,
-      table.loggedAt,
+      sql`DATE(${table.loggedAt})`,
     ),
   }),
 );
@@ -1034,7 +1051,7 @@ export const medicationLogs = pgTable(
     ),
     appetiteRange: check(
       "medication_appetite_range",
-      sql`${table.appetiteLevel} >= 1 AND ${table.appetiteLevel} <= 5`,
+      sql`${table.appetiteLevel} IS NULL OR (${table.appetiteLevel} >= 1 AND ${table.appetiteLevel} <= 5)`,
     ),
   }),
 );
@@ -1372,7 +1389,7 @@ export const mealSuggestionCache = pgTable(
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
     cacheKey: varchar("cache_key", { length: 255 }).notNull().unique(),
-    suggestions: jsonb("suggestions").notNull(),
+    suggestions: jsonb("suggestions").$type<MealSuggestion[]>().notNull(),
     hitCount: integer("hit_count").default(0),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
@@ -1403,6 +1420,9 @@ export const coachResponseCache = pgTable(
   "coach_response_cache",
   {
     id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
     questionHash: varchar("question_hash", { length: 64 }).notNull().unique(),
     question: text("question").notNull(),
     response: text("response").notNull(),
@@ -1417,6 +1437,17 @@ export const coachResponseCache = pgTable(
       table.questionHash,
     ),
     expiresAtIdx: index("coach_response_cache_expires_idx").on(table.expiresAt),
+    userIdIdx: index("coach_response_cache_user_idx").on(table.userId),
+  }),
+);
+
+export const coachResponseCacheRelations = relations(
+  coachResponseCache,
+  ({ one }) => ({
+    user: one(users, {
+      fields: [coachResponseCache.userId],
+      references: [users.id],
+    }),
   }),
 );
 
@@ -1888,7 +1919,7 @@ export const carouselSuggestionCache = pgTable(
       .notNull(),
     profileHash: text("profile_hash").notNull(),
     mealType: text("meal_type").notNull(),
-    suggestions: jsonb("suggestions").notNull(),
+    suggestions: jsonb("suggestions").$type<CarouselRecipeCard[]>().notNull(),
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)

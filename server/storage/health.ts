@@ -7,7 +7,7 @@ import {
   users,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 
 // ============================================================================
 // WEIGHT LOGS
@@ -33,23 +33,31 @@ export async function getWeightLogs(
     .limit(effectiveLimit);
 }
 
+/** Upsert a weight log, enforcing one entry per user per calendar day. */
 export async function createWeightLog(
   log: InsertWeightLog,
 ): Promise<WeightLog> {
-  const [created] = await db
-    .insert(weightLogs)
-    .values(log)
-    .onConflictDoUpdate({
-      target: [weightLogs.userId, weightLogs.loggedAt],
-      set: {
-        weight: log.weight,
-        unit: log.unit,
-        source: log.source,
-        note: log.note,
-      },
-    })
-    .returning();
-  return created;
+  // The unique index keys on (user_id, DATE(logged_at)) -- a functional index
+  // that Drizzle's typed `target:` array cannot reference directly.
+  // Use raw SQL so PostgreSQL resolves the conflict against the expression index.
+  const result = await db.execute<WeightLog>(
+    sql`INSERT INTO weight_logs (user_id, weight, unit, source, note)
+        VALUES (
+          ${log.userId},
+          ${log.weight},
+          ${log.unit ?? "lb"},
+          ${log.source ?? "manual"},
+          ${log.note ?? null}
+        )
+        ON CONFLICT (user_id, DATE(logged_at))
+        DO UPDATE SET
+          weight = EXCLUDED.weight,
+          unit   = EXCLUDED.unit,
+          source = EXCLUDED.source,
+          note   = EXCLUDED.note
+        RETURNING *`,
+  );
+  return result.rows[0] as WeightLog;
 }
 
 /** Create weight log and update user's current weight atomically */
@@ -57,19 +65,24 @@ export async function createWeightLogAndUpdateUser(
   log: InsertWeightLog,
 ): Promise<WeightLog> {
   return db.transaction(async (tx) => {
-    const [created] = await tx
-      .insert(weightLogs)
-      .values(log)
-      .onConflictDoUpdate({
-        target: [weightLogs.userId, weightLogs.loggedAt],
-        set: {
-          weight: log.weight,
-          unit: log.unit,
-          source: log.source,
-          note: log.note,
-        },
-      })
-      .returning();
+    const result = await tx.execute<WeightLog>(
+      sql`INSERT INTO weight_logs (user_id, weight, unit, source, note)
+          VALUES (
+            ${log.userId},
+            ${log.weight},
+            ${log.unit ?? "lb"},
+            ${log.source ?? "manual"},
+            ${log.note ?? null}
+          )
+          ON CONFLICT (user_id, DATE(logged_at))
+          DO UPDATE SET
+            weight = EXCLUDED.weight,
+            unit   = EXCLUDED.unit,
+            source = EXCLUDED.source,
+            note   = EXCLUDED.note
+          RETURNING *`,
+    );
+    const created = result.rows[0] as WeightLog;
     await tx
       .update(users)
       .set({ weight: log.weight })
