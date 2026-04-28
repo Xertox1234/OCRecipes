@@ -55,6 +55,21 @@ describe("TextInput", () => {
     expect(input.getAttribute("aria-hint")).toBe("Invalid email address");
   });
 
+  it("appends error message to caller-supplied accessibilityHint when error is set", () => {
+    renderComponent(
+      <TextInput
+        placeholder="Email"
+        error
+        errorMessage="Invalid email address"
+        accessibilityHint="Enter a valid email address"
+      />,
+    );
+    const input = screen.getByPlaceholderText("Email");
+    expect(input.getAttribute("aria-hint")).toBe(
+      "Enter a valid email address. Invalid email address",
+    );
+  });
+
   it("uses rightIconAccessibilityLabel for icon button", () => {
     renderComponent(
       <TextInput
