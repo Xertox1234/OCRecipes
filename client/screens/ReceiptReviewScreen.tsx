@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import Animated, { FadeInUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
@@ -24,6 +25,14 @@ import {
   useReceiptConfirm,
   type ReceiptItem,
 } from "@/hooks/useReceiptScan";
+import {
+  parseReceiptItemsFromOCR,
+  type LocalReceiptItem,
+} from "@/lib/receipt-ocr-parser";
+import {
+  shouldReplaceWithAIReceipt,
+  mergeReceiptItems,
+} from "./receipt-review-utils";
 import {
   Spacing,
   BorderRadius,
@@ -66,27 +75,77 @@ export default function ReceiptReviewScreen() {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, "ReceiptReview">>();
 
-  const { photoUris } = route.params;
+  const { photoUris, ocrTexts } = route.params;
   const scanMutation = useReceiptScan();
   const confirmMutation = useReceiptConfirm();
 
   const [items, setItems] = useState<EditableItem[]>([]);
   const [isPartial, setIsPartial] = useState(false);
   const [showMealPlanPrompt, setShowMealPlanPrompt] = useState(false);
+  const [showUpdatedToast, setShowUpdatedToast] = useState(false);
 
-  // Trigger scan on mount
+  const dataSourceRef = useRef<"local" | "ai" | null>(null);
+  const localItemsRef = useRef<LocalReceiptItem[]>([]);
+
+  // Parse local OCR for instant skeleton preview
   useEffect(() => {
+    if (!ocrTexts || ocrTexts.length === 0) return;
+    const parsed = parseReceiptItemsFromOCR(ocrTexts);
+    if (parsed.confidence >= 0.5 && parsed.items.length > 0) {
+      localItemsRef.current = parsed.items;
+      setItems(
+        parsed.items.map((item, i) => ({
+          name: item.rawName,
+          originalName: item.rawName,
+          quantity: item.quantity,
+          unit: "each",
+          category: "other",
+          isFood: true,
+          estimatedShelfLifeDays: 7,
+          confidence: 0.5,
+          id: `local-${i}-${item.rawName}`,
+        })),
+      );
+      dataSourceRef.current = "local";
+    }
+    // ocrTexts is stable for the lifetime of this screen
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Trigger AI scan on mount (races with local preview)
+  useEffect(() => {
+    let cancelled = false;
+    let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
     scanMutation.mutate(photoUris, {
       onSuccess: (result) => {
-        setItems(
-          result.items.map((item, i) => ({
-            ...item,
-            id: `${i}-${item.name}`,
-          })),
-        );
-        setIsPartial(result.isPartialExtraction);
+        if (cancelled) return;
+        const replace =
+          dataSourceRef.current === "local"
+            ? shouldReplaceWithAIReceipt(localItemsRef.current, result)
+            : true;
+
+        if (replace) {
+          setItems(
+            result.items.map((item, i) => ({
+              ...mergeReceiptItems(localItemsRef.current, result.items)[i],
+              id: `${i}-${item.name}`,
+            })),
+          );
+          setIsPartial(result.isPartialExtraction);
+          if (dataSourceRef.current === "local") {
+            setShowUpdatedToast(true);
+            toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
+          }
+        }
+        dataSourceRef.current = "ai";
       },
     });
+
+    return () => {
+      cancelled = true;
+      if (toastTimer) clearTimeout(toastTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
   }, []);
 
@@ -215,8 +274,8 @@ export default function ReceiptReviewScreen() {
     [theme, handleRemoveItem, handleUpdateName, handleUpdateQuantity],
   );
 
-  // Loading state
-  if (scanMutation.isPending) {
+  // Loading state — only block if no local preview items yet
+  if (scanMutation.isPending && items.length === 0) {
     return (
       <View
         style={[
@@ -376,6 +435,19 @@ export default function ReceiptReviewScreen() {
         )}
       />
 
+      {/* AI-updated toast */}
+      {showUpdatedToast && (
+        <Animated.View
+          entering={FadeInUp}
+          style={[styles.toast, { backgroundColor: theme.link }]}
+          accessibilityLiveRegion="polite"
+        >
+          <ThemedText style={styles.toastText}>
+            Updated with AI analysis
+          </ThemedText>
+        </Animated.View>
+      )}
+
       {/* Bottom action bar */}
       <View
         style={[
@@ -527,5 +599,18 @@ const styles = StyleSheet.create({
   confirmText: {
     fontSize: 16,
     fontWeight: "700",
+  },
+  toast: {
+    position: "absolute",
+    bottom: 100,
+    alignSelf: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  toastText: {
+    color: "#FFFFFF", // hardcoded
+    fontSize: 13,
+    fontWeight: "600",
   },
 });
