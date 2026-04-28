@@ -23,7 +23,7 @@ All styling goes through the theme system in `client/constants/theme.ts`:
 const { colors, spacing, fonts, borderRadius } = useTheme();
 ```
 
-- **Colors**: Primary `#00C853`, Calorie Accent `#FF6B35`, semantic color tokens
+- **Colors**: Primary `#B5451C` (terracotta), Calorie Accent `#C94E1A`, semantic color tokens
 - **Spacing**: Constants from theme (`Spacing.xs`, `Spacing.sm`, `Spacing.md`, etc.)
 - **Typography**: Inter font family via theme
 - **Border radius**: Theme constants for consistent rounding
@@ -294,3 +294,11 @@ When reviewing or writing UI code, verify:
 - `docs/patterns/performance.md` - Memoization, FlatList, delay capping
 - `docs/patterns/design-system.md` - Colors, opacity, semantic values
 - `docs/patterns/hooks.md` - TanStack Query patterns
+
+### Decorative Badges and Status Indicators
+
+- [ ] Decorative badges (remix, lock, allergen dot) set `accessible={false}`
+- [ ] Parent interactive component (Pressable, button) includes badge status in `accessibilityLabel`
+- [ ] Badge text/icon not duplicated in parent label (e.g., "Remixed recipe." not "Remix badge remixed recipe")
+- [ ] Pattern applied to: remix badge, lock icon, allergen indicator, premium status
+- [ ] Reference: "Parent Label Prefix for Decorative Child Elements" in `docs/patterns/react-native.md`

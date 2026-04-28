@@ -1304,3 +1304,123 @@ export function addToIndex(doc: SearchableRecipe): void {
 **When NOT to use:** Full-text search over 100K+ documents, geospatial queries, or when PostgreSQL `pg_trgm` trigram indexes already meet your needs.
 
 **Reference:** `server/services/recipe-search.ts`, `shared/types/recipe-search.ts`
+
+### Dynamic Import for Deferred Environment-Dependent Module Evaluation
+
+When a module reads `process.env` at the top level (module load time) and is only used in scripts or late-loading code paths, use dynamic `import()` to defer evaluation until the environment is ready. This is essential in build scripts where `loadEnv()` must run before any env-dependent modules are imported.
+
+```typescript
+// ❌ Bad: Static import evaluates at module load — env may not be ready
+import { runware } from "../server/lib/runware"; // Reads RUNWARE_API_KEY at module load
+
+export async function generateIcon(prompt: string): Promise<Buffer> {
+  const result = await runware.generateImage(prompt);
+  return result.imageBuffer;
+}
+
+// scripts/generate-app-assets.ts
+import { loadEnv } from "vite";
+import { generateIcon } from "../server/services/image-generation";
+
+loadEnv("production", process.cwd());
+// But generateIcon's import already happened before loadEnv!
+// RUNWARE_API_KEY is undefined
+```
+
+```typescript
+// ✅ Good: Dynamic import deferred until after loadEnv()
+export async function generateIcon(prompt: string): Promise<Buffer> {
+  // Import inside the async function — runs when called, after loadEnv()
+  const { runware } = await import("../server/lib/runware");
+  const result = await runware.generateImage(prompt);
+  return result.imageBuffer;
+}
+
+// scripts/generate-app-assets.ts
+import { loadEnv } from "vite";
+
+loadEnv("production", process.cwd());
+// NOW environment is loaded
+
+const { generateIcon } = await import("../server/services/image-generation");
+const imageUrl = await generateIcon(prompt);
+```
+
+**Key elements:**
+
+1. **Use async function** — dynamic import returns a Promise
+2. **Import inside the function body** — defers evaluation until the function is called
+3. **Call `loadEnv()` before using the module** — ensures env vars are available
+4. **Apply to the entire async call chain** — if `generateIcon` calls `generateAsset`, both should use dynamic imports
+
+**Pattern structure:**
+
+```typescript
+// server/lib/env-dependent-module.ts
+export const API_KEY = process.env.RUNWARE_API_KEY;
+if (!API_KEY) {
+  throw new Error("RUNWARE_API_KEY must be set");
+}
+
+export async function callApi() {
+  /* ... */
+}
+
+// server/services/using-module.ts
+async function myService() {
+  // Dynamic import defers env reading
+  const { callApi } = await import("../lib/env-dependent-module");
+  return await callApi();
+}
+
+// scripts/build-script.ts
+import { loadEnv } from "vite";
+loadEnv("production", process.cwd());
+
+// Now safe to import
+const { myService } = await import("../server/services/using-module");
+await myService();
+```
+
+**When to use:**
+
+- Build/generation scripts that call `loadEnv()`
+- Lazy-loaded handlers or plugins that need env vars
+- Initialization code that runs after env is configured
+
+**When NOT to use:**
+
+- Normal server code (use the `failFast` pattern instead — env validation at module load)
+- Modules that don't read `process.env` (no benefit, just adds async overhead)
+
+**Why:** In Node.js/build-tool execution, static imports execute when the module loads, which is before `loadEnv()` can populate `process.env`. The async chain ensures loading order:
+
+1. Script starts
+2. `loadEnv()` runs → populates `process.env`
+3. `await import()` runs → module evaluates with env ready
+4. Business logic executes
+
+Without this pattern, `process.env.API_KEY` is undefined, causing runtime errors or test failures.
+
+**Error handling:**
+
+```typescript
+// The module's static env validation will run during import
+// If env is missing, the import will throw
+try {
+  const { runware } = await import("../server/lib/runware");
+} catch (err) {
+  if (err instanceof Error && err.message.includes("RUNWARE_API_KEY")) {
+    console.error("⚠️  RUNWARE_API_KEY not set — skipping icon generation");
+    return null;
+  }
+  throw err;
+}
+```
+
+**References:**
+
+- `server/lib/runware.ts` — reads `process.env.RUNWARE_API_KEY` at module load
+- `scripts/generate-app-assets.ts` — uses dynamic import after `loadEnv()`
+- `scripts/generate-ingredient-icons.ts` — same pattern
+- Audit finding M10 (2026-04-26)

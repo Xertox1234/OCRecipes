@@ -53,6 +53,9 @@ export function isAccessTokenPayload(
 - [ ] `sendError()` calls pass an `ErrorCode.*` constant (from `@shared/constants/error-codes.ts`) — no ad-hoc string literals for codes that belong in `ErrorCode`
 - [ ] Route body schemas with numeric string fields use `numericStringField` / `nullableNumericStringField` from `_helpers.ts` — no repeated `z.union([z.string(), z.number()]).optional().transform(...)` inline
 - [ ] When 2+ handlers in a route file return the same object shape, a `serializeX()` helper extracts the mapping — no copy-pasted field lists across handlers
+- [ ] **Multi-mutation atomicity** — Operations involving 2+ related state changes (generate + share, create + enable) must be handled atomically in a single request, not as two-step client flow. Schema should include flags like `shareToPublic: z.boolean().optional()` and the server must set all fields in one transaction. (Ref: `docs/patterns/api.md` "Atomic Operations in Single Request", audit M1 2026-04-26)
+- [ ] **Fire-and-forget response order** — Image/asset generation, async indexing, and notifications should return immediate response with `null` for pending fields, then trigger background work via `void fn().catch(...)` after `res.status(201).json()`. (Ref: `docs/patterns/api.md` "Fire-and-Forget Background Operations", audit H3 2026-04-26)
+- [ ] **Dynamic import for env-dependent modules** — Modules that read `process.env` at top level, when used in build scripts after `loadEnv()`, should use `await import()` inside async functions to defer evaluation until env is ready. (Ref: `docs/patterns/architecture.md` "Dynamic Import for Deferred Environment-Dependent Module Evaluation", audit M10 2026-04-26)
 
 **Pattern Reference:**
 
@@ -149,7 +152,7 @@ const handleBarCodeScanned = (result: BarcodeScanningResult) => {
 
 ### 6. Design Guidelines Compliance
 
-- [ ] Colors from theme system (Primary: #00C853, Calorie Accent: #FF6B35)
+- [ ] Colors from theme system (Primary: #B5451C terracotta, Calorie Accent: #C94E1A)
 - [ ] Spacing constants from `client/constants/theme.ts`
 - [ ] Border radius from theme constants
 - [ ] Typography uses Inter font family

@@ -197,6 +197,78 @@ const canSetMacros = usePremiumFeature("macroGoals");
 - Append "(Premium required)" to `accessibilityLabel` so screen readers announce the restriction
 - The calculated server values still save normally — free users get defaults, premium users can override
 
+### Parent Label Prefix for Decorative Child Elements (Accessibility)
+
+When a component has a decorative badge or status indicator that is a visual child of an interactive parent (like a `Pressable`), prevent double-announcement by:
+
+1. Prefixing the parent's `accessibilityLabel` with the badge status
+2. Setting `accessible={false}` on the child element
+
+This pattern applies to any card, button, or interactive component with a decorative badge (remix badge, premium lock, allergen indicator, etc.).
+
+```typescript
+// ❌ Bad: Child badge announces separately — VoiceOver hears "Remixed recipe" twice
+<Pressable
+  accessibilityLabel="Pasta Carbonara by Alice"
+  accessibilityRole="button"
+>
+  <View>
+    <Image source={{ uri: imageUrl }} />
+    <Text>Pasta Carbonara</Text>
+    {remixedFromId && (
+      <View style={styles.remixBadge}>
+        <Feather name="repeat-2" size={12} />
+        <Text accessibilityLabel="Remixed recipe">Remixed</Text>
+      </View>
+    )}
+  </View>
+</Pressable>
+```
+
+```typescript
+// ✅ Good: Parent label includes badge status; child is invisible to a11y tree
+<Pressable
+  accessibilityLabel={
+    remixedFromId
+      ? "Remixed recipe. Pasta Carbonara by Alice"
+      : "Pasta Carbonara by Alice"
+  }
+  accessibilityRole="button"
+>
+  <View>
+    <Image source={{ uri: imageUrl }} />
+    <Text>Pasta Carbonara</Text>
+    {remixedFromId && (
+      <View
+        style={styles.remixBadge}
+        accessible={false}  // Hide from a11y tree
+      >
+        <Feather name="repeat-2" size={12} />
+        <Text>Remixed</Text>
+      </View>
+    )}
+  </View>
+</Pressable>
+```
+
+**When to use:**
+
+- Decorative badges in card/button components (remix badge, lock icon, allergen dot)
+- Status indicators that are visual-only (not tappable)
+- Components where the badge semantics should roll into the parent label
+
+**When NOT to use:**
+
+- Interactive badges or controls (if the badge itself is tappable, it needs its own label)
+- Informational text that provides different meaning than the parent (e.g., an error message that contradicts the parent label)
+
+**Why:** React Native's accessibility system (iOS VoiceOver, Android TalkBack) announce all interactive element labels in hierarchy. A child with `accessibilityLabel` inside a parent `Pressable` causes both to announce, resulting in repetition. Setting `accessible={false}` removes the child from the a11y tree while keeping it visually rendered. Prefixing the parent's label ensures the information is still available to screen reader users.
+
+**Related checks:**
+
+- Code reviewer: "Decorative badges must set `accessible={false}` and parent label must include badge status"
+- Touch target: Badge wrapper itself should never be tappable (hit target only on parent)
+
 ### Intentional useEffect Dependencies
 
 When you deliberately use a derived value (like `array.length`) instead of the array itself in a useEffect dependency, document WHY to prevent "fixes" that break the intended behavior:
@@ -3295,3 +3367,47 @@ fade-out `setTimeout` from within the draw-complete `setTimeout`. Cleanup
 cleared only the outer handle; the inner callback fired after unmount,
 risking `setState`-on-unmounted warnings and triggering `onComplete`
 after the consumer had already moved on.
+
+### iOS Native Asset Sync for Persistent `ios/` Directory
+
+`npx expo run:ios` only runs `expo prebuild` when the `ios/` directory does not exist. Because this project keeps a persistent `ios/` directory (with custom Podfile patches for MLKit), **changes to `assets/images/icon.png`, `assets/images/splash-icon.png`, or `app.json` splash config are silently ignored by subsequent builds.**
+
+You must manually sync these files in the iOS asset catalog after any asset change:
+
+**App icon (`assets/images/icon.png`):**
+
+```bash
+cp assets/images/icon.png \
+  ios/OCRecipes/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png
+```
+
+**Splash screen image (`assets/images/splash-icon.png`):**
+
+```bash
+LOGO_DIR="ios/OCRecipes/Images.xcassets/SplashScreenLogo.imageset"
+SRC="assets/images/splash-icon.png"
+sips -z 200 200 "$SRC" --out "$LOGO_DIR/image.png"
+sips -z 400 400 "$SRC" --out "$LOGO_DIR/image@2x.png"
+cp "$SRC" "$LOGO_DIR/image@3x.png"
+```
+
+**Splash background colour** (`ios/OCRecipes/Images.xcassets/SplashScreenBackground.colorset/Contents.json`):
+Colours are stored as 0–1 float components per channel, not hex. Convert:
+
+```
+#FAF6F0 → red: 0.9804, green: 0.9647, blue: 0.9412   (light)
+#1E1814 → red: 0.1176, green: 0.0941, blue: 0.0784   (dark)
+```
+
+**After syncing, always clear the build cache and simulator:**
+
+```bash
+rm -rf ~/Library/Developer/Xcode/DerivedData/OCRecipes-*
+xcrun simctl shutdown <simulator-id> && xcrun simctl erase <simulator-id>
+# Then rebuild:
+npx expo run:ios
+```
+
+**Note:** The simulator icon/splash cache is separate from Xcode's DerivedData cache — both must be cleared. Deleting the app from the simulator alone is not sufficient; the Springboard icon cache persists until the simulator is erased.
+
+**Origin:** 2026-04-25 rebrand — icon and splash changes in `app.json` and `assets/images/` had no effect on the build until the iOS asset catalog was manually updated.

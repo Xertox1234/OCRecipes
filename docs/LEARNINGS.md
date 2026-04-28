@@ -4,6 +4,8 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Decorative Badge Double-Announcement (2026-04-26)](#decorative-badge-double-announcement--parent-label-prefix--accessible-false-2026-04-26)
+
 - [useRef to Break Circular Hook Dependency (2026-04-18)](#useref-to-break-circular-hook-dependency-2026-04-18)
 - [Parallel Filter Paths Drift: Fix One, Audit the Others (2026-04-18)](#parallel-filter-paths-drift-fix-one-audit-the-others-2026-04-18)
 - [Premium-Gate Parity Missed the Read Endpoints (2026-04-18)](#premium-gate-parity-missed-the-read-endpoints-2026-04-18)
@@ -55,6 +57,76 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## [2026-04-26] Decorative Badge Double-Announcement — Parent Label Prefix + accessible={false}
+
+**Category:** Accessibility Gotcha
+
+### Context
+
+`HomeRecipeCard` displays a remix badge (`View` with icon and text) as a visual child of an interactive `Pressable` parent. The remix badge had its own `accessibilityLabel="Remixed recipe"`, as did the parent `Pressable` card label.
+
+### Problem
+
+iOS VoiceOver and Android TalkBack announce both the child and parent labels to screen reader users:
+
+- User taps card
+- VoiceOver reads: "Remixed recipe" (from badge) → "Pasta Carbonara by Alice" (from parent)
+- **Double announcement** of "remixed" status confuses users
+
+### Solution
+
+Two-part fix:
+
+1. Prefix the parent's `accessibilityLabel` with the badge status: `"Remixed recipe. Pasta Carbonara by Alice"`
+2. Set `accessible={false}` on the badge `View` to remove it from the a11y tree
+
+```typescript
+<Pressable
+  accessibilityLabel={
+    remixedFromId
+      ? "Remixed recipe. Pasta Carbonara by Alice"
+      : "Pasta Carbonara by Alice"
+  }
+>
+  {remixedFromId && (
+    <View accessible={false}>  {/* Hidden from a11y tree */}
+      <Feather name="repeat-2" size={12} />
+      <Text>Remixed</Text>
+    </View>
+  )}
+</Pressable>
+```
+
+### Investigation
+
+- VoiceOver/TalkBack traverse the view hierarchy and announce all `accessibilityLabel` values they encounter
+- React Native doesn't automatically suppress child labels when parent has a label
+- Setting `accessible={false}` removes the entire element from the accessibility tree while keeping it visually rendered
+
+### Outcome
+
+- Single announcement per card interaction — no duplication
+- Remix status still communicated to screen reader users (in parent label)
+- Pattern generalizes to all decorative badges: lock icon, allergen dot, premium status
+
+### Takeaways
+
+- Decorative visual elements should NEVER have their own `accessibilityLabel` if they're inside an interactive parent
+- Always prefix parent labels when badge status is semantically important
+- Use `accessible={false}` to hide decorative badge Views from the a11y tree
+- This pattern applies to any card, button, or interactive component with badges
+
+### Related Patterns
+
+- "Parent Label Prefix for Decorative Child Elements" in `docs/patterns/react-native.md`
+- Code reviewer check: "Decorative badges must set `accessible={false}`"
+
+### References
+
+- Fixed in: `client/components/HomeRecipeCard.tsx:56,106–121`
+- Audit: H1 (2026-04-26)
+- WCAG: [1.3.1 Info and Relationships (Level A)](https://www.w3.org/WAI/WCAG21/Understanding/info-and-relationships.html)
 
 ---
 

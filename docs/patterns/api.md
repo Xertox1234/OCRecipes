@@ -2305,3 +2305,200 @@ const COACH_CACHE_VERSION = "v2-2026-04-18";
 ```
 
 **References:** `server/services/coach-pro-chat.ts` → `hashCoachCacheKey`, `COACH_CACHE_VERSION`, audit finding M6 (2026-04-18)
+
+### Fire-and-Forget Background Operations After Response
+
+When an operation needs to complete asynchronously but the client should receive an immediate response (e.g., image generation, async indexing, webhook notifications), trigger the background work **after** the HTTP response is sent using `void` and error suppression:
+
+```typescript
+// ❌ Bad: Image generation blocks the response
+app.post("/api/recipes", requireAuth, async (req, res) => {
+  const recipe = await createRecipe(req.body);
+  const imageUrl = await generateRecipeImage(recipe); // 5-30 seconds
+  recipe.imageUrl = imageUrl;
+  res.status(201).json(recipe);
+  // Client waits 30+ seconds for response
+});
+
+// ✅ Good: Image generated async; client gets immediate response
+app.post("/api/recipes", requireAuth, async (req, res) => {
+  const recipe = await createRecipe(req.body);
+  res.status(201).json({ ...recipe, imageUrl: null }); // Immediate response
+
+  // Fire and forget — runs after response completes
+  void generateAndPatchRecipeImage(recipe.id).catch((err) => {
+    console.error(`Failed to generate image for recipe ${recipe.id}:`, err);
+  });
+});
+
+async function generateAndPatchRecipeImage(recipeId: string): Promise<void> {
+  const { imageUrl } = await generateRecipeImage(recipeId);
+  await storage.updateRecipeImageUrl(recipeId, imageUrl);
+  // Consumer can poll or use a webhook to detect image ready
+}
+```
+
+**Dynamic import for env-dependent modules:**
+
+When a fire-and-forget function needs to import a module that reads `process.env` at the top level, defer the import until after `loadEnv()` completes:
+
+```typescript
+// ❌ Bad: Static import evaluates at module load — env not ready
+import { runware } from "../server/lib/runware"; // reads process.env.RUNWARE_API_KEY at module load
+
+async function generateAssetImage(prompt: string): Promise<Buffer> {
+  const result = await runware.generateImage(prompt);
+  return result.imageBuffer;
+}
+
+// ✅ Good: Dynamic import deferred until after env is loaded
+async function generateAssetImage(prompt: string): Promise<Buffer> {
+  const { runware } = await import("../server/lib/runware"); // loads after env ready
+  const result = await runware.generateImage(prompt);
+  return result.imageBuffer;
+}
+
+// In scripts/generate-app-assets.ts
+import { loadEnv } from "vite";
+loadEnv("production", process.cwd());
+
+const imageUrl = await generateAssetImage(prompt);
+```
+
+**Key elements:**
+
+1. **Return immediately** from the route handler with `res.status(201).json(recipe)` — don't await the background operation
+2. **Prefix with `void`** and `.catch()` to suppress the "unawaited promise" lint warning
+3. **Return `null` for in-progress fields** in the response (e.g., `imageUrl: null`) so the client knows the data is pending
+4. **Use `process.env` or dynamic imports** for context-dependent code — runware client, AI services, etc.
+5. **Log errors explicitly** in the catch block — fire-and-forget has no caller to propagate errors to
+
+**When to use:**
+
+- Image/asset generation (recipe images, ingredient icons)
+- Search index updates
+- Email/notification sending
+- Webhook notifications
+- Analytics/metrics collection
+
+**When NOT to use:**
+
+- Critical data mutations (use atomic transactions instead)
+- Operations that must complete before the client proceeds
+- Data that the response depends on
+
+**Related patterns:**
+
+- "Atomic Recipe Sharing" — alternative for operations that MUST complete atomically
+- Code reviewer: Ensure fire-and-forget has `.catch()` with error logging
+
+**References:**
+
+- `server/services/recipe-generation.ts` — `generateAndPatchRecipeImage`
+- `server/routes/recipes.ts` — fire-and-forget trigger after response
+- `scripts/generate-app-assets.ts` — dynamic import pattern
+
+### Atomic Operations in Single Request (No Two-Step Race Condition)
+
+When an operation involves multiple related state changes (e.g., "generate and share a recipe"), avoid a two-step client flow (generate → then share) that leaves a race window where the resource exists but hasn't been shared yet. Instead, accept a flag in the first request and handle both atomically on the server.
+
+```typescript
+// ❌ Bad: Two-step client flow leaves race condition
+// Step 1: Client generates recipe
+POST /api/recipes { title: "...", shareToPublic: ??? }
+→ res: { id: "r123", isPublic: false }
+
+// Step 2: Client shares recipe (separate request)
+POST /api/recipes/r123/share { isPublic: true }
+→ Window: recipe exists but is private; if server crashes between steps, recipe is stuck private
+
+// ✅ Good: Atomic flag in single request
+POST /api/recipes { title: "...", shareToPublic: true }
+→ Server sets isPublic atomically inside the transaction
+→ res: { id: "r123", isPublic: true }
+```
+
+**Implementation:**
+
+```typescript
+// shared/schemas/recipe.ts
+export const recipeGenerationSchema = z.object({
+  title: z.string().max(200),
+  servings: z.number().int().positive().optional(),
+  shareToPublic: z.boolean().optional(), // Add atomic flag
+  // ... other fields
+});
+
+// server/routes/recipes.ts
+app.post("/api/recipes", requireAuth, async (req, res) => {
+  const { title, servings, shareToPublic } = req.body;
+
+  // Validate and create atomically
+  const recipe = await db.transaction(async (tx) => {
+    const newRecipe = await tx
+      .insert(recipes)
+      .values({
+        userId: req.userId,
+        title,
+        servings,
+        isPublic: shareToPublic ?? false, // Set atomically
+        createdAt: new Date(),
+      })
+      .returning();
+    return newRecipe[0];
+  });
+
+  res.status(201).json(recipe);
+});
+
+// client/components/RecipeGenerationModal.tsx
+const handleGenerate = async () => {
+  const response = await fetch("/api/recipes", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "...",
+      shareToPublic: shouldShare, // Single request
+    }),
+  });
+  const recipe = await response.json();
+  // No second share step needed
+};
+```
+
+**Key elements:**
+
+1. **Add the state flag to the schema** (e.g., `shareToPublic: z.boolean().optional()`)
+2. **Handle atomically on the server** inside a transaction (set `isPublic` based on the flag)
+3. **Remove the second client-side request** that updates the state after creation
+4. **Return the full result** so client sees the correct final state immediately
+
+**Why:** Two-step flows create a race condition window where:
+
+- The first request succeeds but the second fails (network error, server crash, etc.)
+- The resource is partially updated
+- The client retry logic may hit race conditions if not carefully designed
+
+Atomic operations ensure: "Either the entire operation succeeds with all flags set correctly, or nothing happens." No partial states.
+
+**When to use:**
+
+- Generate + share (recipe, meal plan)
+- Create + enable (feature, subscription)
+- Upload + process (image, document)
+- Any operation where multiple related fields should be set together
+
+**When NOT to use:**
+
+- Independent sequential operations (no causal link)
+- Operations where the client needs to decide step 2 based on step 1's result
+
+**Related patterns:**
+
+- "Fire-and-Forget Background Operations" — for async work that doesn't block the response
+- Code reviewer: "Multi-mutation endpoints should be atomic or use explicit ordering"
+
+**References:**
+
+- `shared/schemas/recipe.ts` — `recipeGenerationSchema` with `shareToPublic`
+- `server/routes/recipes.ts` — atomic recipe creation
+- Audit finding M1 (2026-04-26)
