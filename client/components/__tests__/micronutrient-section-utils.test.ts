@@ -4,7 +4,7 @@ import {
   classifyMicronutrients,
   getDVColor,
   type MicronutrientData,
-} from "../MicronutrientSection";
+} from "../micronutrient-section-utils";
 
 describe("classifyMicronutrients", () => {
   it("classifies vitamins and minerals correctly", () => {

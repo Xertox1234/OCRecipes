@@ -19,7 +19,12 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import {
+  Spacing,
+  BorderRadius,
+  FontFamily,
+  withOpacity,
+} from "@/constants/theme";
 import {
   DIET_OPTIONS,
   TIME_OPTIONS,
@@ -80,6 +85,11 @@ export function RecipeGenerationModal({
     },
     onSuccess: (recipe) => {
       haptics.notification(Haptics.NotificationFeedbackType.Success);
+      // Reset form state so re-opening the modal starts fresh (not inheriting previous generation's preferences)
+      setServings(2);
+      setSelectedDiets([]);
+      setTimeConstraint(undefined);
+      setShareToPublic(true);
       onComplete(recipe);
     },
     onError: () => {
@@ -196,7 +206,7 @@ export function RecipeGenerationModal({
                 </ThemedText>
                 <ThemedText
                   type="body"
-                  style={{ fontWeight: "600" }}
+                  style={{ fontFamily: FontFamily.semiBold }}
                   numberOfLines={2}
                 >
                   {foods?.length
@@ -244,7 +254,10 @@ export function RecipeGenerationModal({
                     type="small"
                     style={{
                       color: servings === option ? accentColor : theme.text,
-                      fontWeight: servings === option ? "600" : "400",
+                      fontFamily:
+                        servings === option
+                          ? FontFamily.semiBold
+                          : FontFamily.regular,
                     }}
                   >
                     {option}
@@ -298,8 +311,10 @@ export function RecipeGenerationModal({
                         timeConstraint === option.value
                           ? accentColor
                           : theme.text,
-                      fontWeight:
-                        timeConstraint === option.value ? "600" : "400",
+                      fontFamily:
+                        timeConstraint === option.value
+                          ? FontFamily.semiBold
+                          : FontFamily.regular,
                     }}
                   >
                     {option.label}
@@ -347,7 +362,9 @@ export function RecipeGenerationModal({
                       type="small"
                       style={{
                         color: isSelected ? accentColor : theme.text,
-                        fontWeight: isSelected ? "600" : "400",
+                        fontFamily: isSelected
+                          ? FontFamily.semiBold
+                          : FontFamily.regular,
                       }}
                     >
                       {diet}
@@ -381,7 +398,10 @@ export function RecipeGenerationModal({
                   color={shareToPublic ? accentColor : theme.textSecondary}
                 />
                 <View style={styles.shareToggleText}>
-                  <ThemedText type="body" style={{ fontWeight: "500" }}>
+                  <ThemedText
+                    type="body"
+                    style={{ fontFamily: FontFamily.medium }}
+                  >
                     Share to Community
                   </ThemedText>
                   <ThemedText
@@ -458,7 +478,7 @@ export function RecipeGenerationModal({
                   style={{
                     color: theme.textSecondary,
                     marginLeft: Spacing.md,
-                    fontWeight: "600",
+                    fontFamily: FontFamily.semiBold,
                   }}
                 >
                   Generating...
@@ -472,7 +492,7 @@ export function RecipeGenerationModal({
                   style={{
                     color: theme.buttonText,
                     marginLeft: Spacing.sm,
-                    fontWeight: "600",
+                    fontFamily: FontFamily.semiBold,
                   }}
                 >
                   Generate Recipe
@@ -516,7 +536,7 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   headerTitle: {
-    fontWeight: "600",
+    fontFamily: FontFamily.semiBold,
   },
   headerSpacer: {
     width: 32,
@@ -550,7 +570,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xl,
   },
   sectionTitle: {
-    fontWeight: "600",
+    fontFamily: FontFamily.semiBold,
     marginBottom: Spacing.md,
   },
   optionsRow: {

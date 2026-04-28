@@ -164,14 +164,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: BorderRadius.card,
     borderTopRightRadius: BorderRadius.card,
   },
-  imagePlaceholder: {
-    width: "100%",
-    height: IMAGE_HEIGHT,
-    borderTopLeftRadius: BorderRadius.card,
-    borderTopRightRadius: BorderRadius.card,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   difficultyBadge: {
     position: "absolute",
     bottom: Spacing.sm,

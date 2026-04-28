@@ -19,6 +19,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const ASSETS = path.join(ROOT, "assets/images");
 
+// PNG magic bytes (89 50 4E 47) — validate before writing to disk to prevent
+// a corrupted API response from silently overwriting app assets.
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+// 1 KB floor — rejects near-empty or truncated API responses
+const MIN_PNG_SIZE_BYTES = 1_024;
+
 async function loadEnv(): Promise<void> {
   try {
     const { default: dotenv } = await import("dotenv");
@@ -60,6 +66,19 @@ async function main(): Promise<void> {
       throw new Error(
         `Runware returned no image for ${path.basename(opts.outputPath)}`,
       );
+
+    // Validate PNG magic bytes and minimum size before writing to disk.
+    // A corrupted or malformed API response would otherwise silently overwrite app assets.
+    if (buf.length < 4 || !buf.slice(0, 4).equals(PNG_MAGIC)) {
+      throw new Error(
+        `Runware response for ${path.basename(opts.outputPath)} is not a valid PNG (bad magic bytes)`,
+      );
+    }
+    if (buf.length < MIN_PNG_SIZE_BYTES) {
+      throw new Error(
+        `Runware response for ${path.basename(opts.outputPath)} is too small (${buf.length} bytes) — likely corrupted`,
+      );
+    }
 
     fs.writeFileSync(opts.outputPath, buf);
     console.log(`  ✓ Saved (${(buf.length / 1024).toFixed(0)} KB)`);

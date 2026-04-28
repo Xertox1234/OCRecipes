@@ -5,6 +5,10 @@ import { renderComponent } from "../../../../test/utils/render-component";
 import { SearchFilterSheet } from "../SearchFilterSheet";
 
 vi.mock("@react-native-community/slider", () => {
+  // `require` is used here instead of `import` because vi.mock factories are
+  // hoisted to the top of the file before any ES module imports are evaluated.
+  // Using `import` inside a hoisted factory would reference an unresolved binding.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require("react");
   return {
     __esModule: true,
