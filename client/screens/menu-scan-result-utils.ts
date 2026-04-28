@@ -12,3 +12,20 @@ export function shouldReplaceWithAIMenu(
   if (local.length === 0) return true;
   return aiItems.length >= local.length * 1.5;
 }
+
+/**
+ * Merges AI macros into the displayed items when shouldReplaceWithAIMenu
+ * returns false. Keeps local item names where a case-insensitive match
+ * exists; takes the AI item as-is otherwise.
+ */
+export function mergeMenuItems(
+  local: LocalMenuItem[],
+  aiItems: MenuAnalysisItem[],
+): MenuAnalysisItem[] {
+  return aiItems.map((aiItem) => {
+    const match = local.find(
+      (l) => l.name.toLowerCase().trim() === aiItem.name.toLowerCase().trim(),
+    );
+    return match ? { ...aiItem, name: match.name } : aiItem;
+  });
+}

@@ -52,6 +52,9 @@ export default function FrontLabelConfirmScreen() {
   const [showUpdatedToast, setShowUpdatedToast] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const localDataRef = useRef<FrontLabelExtractionResult>(initialData);
+  const dataSourceRef = useRef<"local" | "ai">(
+    route.params.sessionId ? "ai" : "local",
+  );
 
   // When launched with sessionId=null, run the AI upload in the background
   useEffect(() => {
@@ -71,12 +74,13 @@ export default function FrontLabelConfirmScreen() {
 
         if (shouldReplace) {
           setData(result.data);
-          if (dataSource === "local") {
+          if (dataSourceRef.current === "local") {
             setShowUpdatedToast(true);
             toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
           }
         }
         setSessionId(result.sessionId);
+        dataSourceRef.current = "ai";
         setDataSource("ai");
       })
       .catch((err: Error) => {

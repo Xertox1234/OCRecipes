@@ -7,6 +7,7 @@ import {
   Linking,
   ActivityIndicator,
   AccessibilityInfo,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -39,6 +40,7 @@ import { Spacing, BorderRadius, CameraColors } from "@/constants/theme";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { uploadFrontLabelPhoto } from "@/lib/photo-upload";
 import { parseFrontLabelFromOCR } from "@/lib/front-label-ocr-parser";
 
 // Camera abstraction imports
@@ -282,24 +284,44 @@ export default function ScanScreen() {
 
         if (photo?.uri) {
           if (isFrontLabelMode && verifyBarcode) {
-            // Snapshot OCR immediately, then navigate — AI upload runs inside the screen
             const ocrResult = cameraRef.current?.getLatestOCRResult?.();
             const localOCRText = ocrResult?.resultText ?? undefined;
             const localData = localOCRText
               ? parseFrontLabelFromOCR(localOCRText)
               : null;
-            navigation.navigate("FrontLabelConfirm", {
-              imageUri: photo.uri,
-              barcode: verifyBarcode,
-              sessionId: null,
-              data: localData ?? {
-                brand: null,
-                productName: null,
-                netWeight: null,
-                claims: [],
-                confidence: 0,
-              },
-            });
+
+            if (localData && localData.confidence >= 0.5) {
+              // Fast path: local OCR confident enough — navigate immediately,
+              // AI upload runs inside FrontLabelConfirmScreen
+              navigation.navigate("FrontLabelConfirm", {
+                imageUri: photo.uri,
+                barcode: verifyBarcode,
+                sessionId: null,
+                data: localData,
+              });
+            } else {
+              // Fallback: OCR confidence too low — upload first, then navigate
+              try {
+                const result = await uploadFrontLabelPhoto(
+                  photo.uri,
+                  verifyBarcode,
+                );
+                navigation.navigate("FrontLabelConfirm", {
+                  imageUri: photo.uri,
+                  barcode: verifyBarcode,
+                  sessionId: result.sessionId,
+                  data: result.data,
+                });
+              } catch (err) {
+                haptics.notification(Haptics.NotificationFeedbackType.Error);
+                Alert.alert(
+                  "Upload Failed",
+                  err instanceof Error
+                    ? err.message
+                    : "Could not analyze front label. Please try again.",
+                );
+              }
+            }
           } else if (isLabelMode) {
             // Get cached OCR result from the frame processor
             const ocrResult = cameraRef.current?.getLatestOCRResult?.();
