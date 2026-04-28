@@ -3424,3 +3424,118 @@ npx expo run:ios
 **Note:** The simulator icon/splash cache is separate from Xcode's DerivedData cache — both must be cleared. Deleting the app from the simulator alone is not sufficient; the Springboard icon cache persists until the simulator is erased.
 
 **Origin:** 2026-04-25 rebrand — icon and splash changes in `app.json` and `assets/images/` had no effect on the build until the iOS asset catalog was manually updated.
+
+---
+
+## Camera Scan Screen — On-Device OCR Race+Swap State Machine
+
+Scan screens that pair an on-device OCR parser with an AI backend call use a two-`useEffect` mount pattern. One effect seeds the UI immediately from local OCR text; the second fires the AI call and swaps the result in when it arrives.
+
+```typescript
+const dataSourceRef = useRef<"local" | "ai" | null>(null);
+const localItemsRef = useRef<LocalItem[]>([]);
+
+// Effect 1 — instant local preview (runs once on mount)
+useEffect(() => {
+  if (!localOCRText) return;
+  const parsed = parseItemsFromOCR(localOCRText);
+  if (parsed.confidence >= CONFIDENCE_THRESHOLD && parsed.items.length > 0) {
+    localItemsRef.current = parsed.items;
+    setItems(toDisplayItems(parsed.items));
+    dataSourceRef.current = "local";
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
+// Effect 2 — AI call, races with Effect 1 (runs once on mount)
+useEffect(() => {
+  let cancelled = false;
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+  runAIMutation(input, {
+    onSuccess: (result) => {
+      if (cancelled) return;
+      const replace =
+        dataSourceRef.current === "local"
+          ? shouldReplaceWithAI(localItemsRef.current, result)
+          : true;
+
+      if (replace) {
+        setItems(toDisplayItems(result.items));
+        if (dataSourceRef.current === "local") {
+          setShowUpdatedToast(true);
+          toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
+        }
+      } else {
+        // Still merge AI fields (macros, categories) even when keeping local names
+        setItems(mergeAIFields(localItemsRef.current, result.items));
+      }
+      dataSourceRef.current = "ai";
+    },
+  });
+
+  return () => {
+    cancelled = true;
+    if (toastTimer) clearTimeout(toastTimer);
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
+}, []);
+```
+
+**Critical rules:**
+
+- Always read `dataSourceRef.current` (not state) inside Effects — it avoids stale closures from the `[]` dependency array.
+- The `cancelled` flag must be the **first check** in every async callback branch.
+- The `toastTimer` handle must be captured in the Effect's local scope and cleared in the cleanup.
+- Toast uses `FadeInUp` from `react-native-reanimated` with a 3-second auto-dismiss.
+- Loading guard: only show a blocking spinner when `isPending && items.length === 0`. When local items exist, the list renders immediately.
+
+**Confidence thresholds (2026-04-28):** back-label 0.6, menu/receipt/front-label 0.5.
+
+**References:** `LabelAnalysisScreen.tsx` (canonical), `MenuScanResultScreen.tsx`, `ReceiptReviewScreen.tsx`, `FrontLabelConfirmScreen.tsx`.
+
+---
+
+### OCR Parser Module Contract
+
+Every scan flow that uses local OCR has two co-located modules:
+
+- `client/lib/*-ocr-parser.ts` — pure function, no React, no network. Returns `{ items, confidence }` (and flow-specific fields). Confidence is a 0–1 number gating whether the local preview is shown.
+- `client/screens/*-utils.ts` — exports two functions: `shouldReplaceWithAI*(local, aiResult): boolean` and `mergeItems*(local, aiItems): AIItem[]`.
+
+**`shouldReplaceWithAI*`** decides whether the AI result replaces local items. Typical triggers: local had no items, AI confidence is high, or item counts differ beyond a threshold.
+
+**`mergeItems*`** is called even when `shouldReplaceWithAI*` returns false. It propagates AI-only fields (macros, categories, recommendations) onto items whose names matched locally — the user sees AI-enriched data without a full list swap. Never discard AI data when the swap rule returns false; always merge.
+
+```typescript
+// Always called — even when replace=false
+const aiDisplayItems = replace
+  ? result.items
+  : mergeItems(localItemsRef.current, result.items);
+setItems(aiDisplayItems);
+```
+
+**When to add a new flow:** create `lib/*-ocr-parser.ts` + tests, `screens/*-utils.ts` + tests, then wire into the screen with the two-`useEffect` pattern above. No shared `useRaceAndSwap` hook — evaluate that abstraction if a fifth concrete user is added.
+
+---
+
+### Advisory-Only Local Rendering in Scan Screens
+
+When local OCR seeds a scan screen before the AI result arrives, only render fields that the parser can reliably extract. Never fabricate AI-only fields.
+
+| Field                             | Local OCR can provide | AI-only (show placeholder) |
+| --------------------------------- | --------------------- | -------------------------- |
+| Item / product name               | ✓ (raw/abbreviated)   | —                          |
+| Price, quantity                   | ✓                     | —                          |
+| Category, shelf life              | ✗                     | Default (`"other"`, `7`)   |
+| Calories, macros, recommendations | ✗                     | `"Analysing nutrition…"`   |
+
+**Implementation:**
+
+- Populate AI-only fields with safe defaults in the local item object (`category: "other"`, `estimatedShelfLifeDays: 7`).
+- Guard their display in the card component with an `isLocal` prop or a `_isLocal` tag on the item — hide or replace with a placeholder string when true.
+- Never use `0` for calorie/macro defaults — this is misleading. Use `undefined` or omit the field so the UI can show a placeholder instead of a zero.
+
+**Why:** showing `0 cal` for a local item would appear as though the scanner detected a zero-calorie food, which is more confusing than showing "Analysing…".
+
+**References:** `MenuItemCard` in `MenuScanResultScreen.tsx` (guards on `isLocal`), `ReceiptReviewScreen.tsx` (category badge defaults to `"other"`).
