@@ -1033,18 +1033,55 @@ const cookStore = createSessionStore<CookingSession>({
   label: "active cooking", // Used in error messages
 });
 
-// Route handler usage:
-const check = cookStore.canCreate(req.userId!);
-if (!check.allowed) {
-  return sendError(res, 429, check.reason, check.code);
-}
-const sessionId = cookStore.create({
+// Route handler usage — always use createIfAllowed (not canCreate + create):
+const result = cookStore.createIfAllowed({
+  id: "",
   userId: req.userId!,
   ingredients: [],
   photos: [],
   createdAt: Date.now(),
 });
+if (!result.ok) {
+  return sendError(res, 429, result.reason, result.code);
+}
+const sessionId = result.id;
 const session = cookStore.get(sessionId)!;
+```
+
+**Avoid the TOCTOU pattern — use `createIfAllowed`, not `canCreate` + `create`:**
+
+```typescript
+// WRONG — TOCTOU window between check and create
+const check = cookStore.canCreate(req.userId!);
+if (!check.allowed) return sendError(res, 429, check.reason, check.code);
+const sessionId = cookStore.create({ ... }); // cap may be exceeded by now
+
+// CORRECT — atomic check + create in one synchronous operation
+const result = cookStore.createIfAllowed({ ... });
+if (!result.ok) return sendError(res, 429, result.reason, result.code);
+const sessionId = result.id;
+```
+
+**Exception — early guard before expensive paid APIs:**
+
+When the route calls a paid AI service between the cap check and the session creation, keep an early `canCreate()` check to avoid wasting credits, but still use `createIfAllowed()` for the actual creation:
+
+```typescript
+// Early credit-saving guard (reject before AI call)
+const earlyCheck = storage.canCreateAnalysisSession(req.userId);
+if (!earlyCheck.allowed)
+  return sendError(res, 429, earlyCheck.reason, earlyCheck.code);
+
+const analysisResult = await analyzePhoto(imageBase64); // paid API call
+
+// Atomic check+create at the point of actual session creation
+const sessionResult = storage.createAnalysisSessionIfAllowed(
+  req.userId,
+  analysisResult,
+);
+if (!sessionResult.ok)
+  return sendError(res, 429, sessionResult.reason, sessionResult.code);
+const sessionId = sessionResult.id;
 ```
 
 **Test access via `_internals`:**
@@ -1065,9 +1102,10 @@ The `_internals` property exposes the underlying `Map` instances so tests can in
 **Key elements:**
 
 1. **Type parameter `T extends { userId: string; createdAt: number }`** — ensures every session has the fields needed for user-count tracking and diagnostics
-2. **`canCreate()` returns a discriminated union** — `{ allowed: true }` or `{ allowed: false; reason: string; code: string }` so the caller can forward the error message directly to `sendError()`
-3. **`create()` auto-generates UUID and auto-sets timeout** — no manual `crypto.randomUUID()` + `setTimeout()` boilerplate
-4. **`_internals` for test access** — exposes the three internal Maps without polluting the public interface
+2. **`createIfAllowed()` returns `{ ok: true; id: string } | { ok: false; reason: string; code: string }`** — performs both cap checks and the increment in a single synchronous block with no `await` gap; no TOCTOU window under Node.js's single-threaded event loop
+3. **`canCreate()` is for read-only checks only** — e.g., early guards before expensive operations; never use it as the gate for the session creation itself
+4. **`create()` auto-generates UUID and auto-sets timeout** — available for deterministic-key scenarios; prefer `createWithKey()` or `createIfAllowed()` in routes
+5. **`_internals` for test access** — exposes the three internal Maps without polluting the public interface
 
 **When to use:**
 
