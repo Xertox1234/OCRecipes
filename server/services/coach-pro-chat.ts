@@ -35,6 +35,10 @@ import {
   truncateNotebookToBudget,
   DEFAULT_NOTEBOOK_MAX_CHARS,
 } from "./notebook-budget";
+import {
+  truncateHistoryToBudget,
+  DEFAULT_HISTORY_TOKEN_BUDGET,
+} from "../lib/chat-history-truncate";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import type { Allergy } from "@shared/schema";
 
@@ -307,6 +311,21 @@ export async function* handleCoachChat(
       messageHistory = warmedUp;
     }
   }
+
+  // ── Token-budget truncation (both DB history and warm-up paths) ──
+  // Drop oldest tool-result messages first, then oldest assistant messages,
+  // to keep total history under the budget. The last user message is always
+  // preserved. Applied after warm-up substitution so both paths are covered.
+  messageHistory = truncateHistoryToBudget(
+    messageHistory.map((m) => ({
+      role: m.role as "user" | "assistant" | "system" | "tool",
+      content: m.content,
+    })),
+    DEFAULT_HISTORY_TOKEN_BUDGET,
+  ).map((m) => ({
+    role: m.role as "user" | "assistant" | "system",
+    content: m.content,
+  }));
 
   // Check cache for predefined questions (no screenContext = universal answer).
   // Pro responses are excluded because they inject a per-user notebook and
