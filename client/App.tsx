@@ -16,9 +16,11 @@ import {
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import * as Notifications from "expo-notifications";
 
 import RootStackNavigator from "@/navigation/RootStackNavigator";
 import { linking } from "@/navigation/linking";
+import { navigationRef } from "@/navigation/navigationRef";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { PremiumProvider } from "@/context/PremiumContext";
@@ -37,7 +39,7 @@ function AppContent() {
         <BottomSheetModalProvider>
           <ToastProvider>
             <BatchScanProvider>
-              <NavigationContainer linking={linking}>
+              <NavigationContainer ref={navigationRef} linking={linking}>
                 <RootStackNavigator />
               </NavigationContainer>
             </BatchScanProvider>
@@ -52,8 +54,21 @@ function AppContent() {
 
 export default function App() {
   // Set up Android notification channel once at app startup (no-op on iOS)
+  // and register a tap listener that deep-links commitment reminders to
+  // the relevant NotebookEntry screen.
   useEffect(() => {
     setupNotificationChannel();
+    const sub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const entryId = response.notification.request.content.data?.entryId as
+          | number
+          | undefined;
+        if (entryId && navigationRef.isReady()) {
+          navigationRef.navigate("NotebookEntry", { entryId });
+        }
+      },
+    );
+    return () => sub.remove();
   }, []);
 
   const [fontsLoaded] = useFonts({
