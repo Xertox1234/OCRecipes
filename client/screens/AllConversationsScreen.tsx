@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -45,22 +45,28 @@ export default function AllConversationsScreen() {
   const route = useRoute<RouteProp<RootStackParamList, "AllConversations">>();
 
   const [search, setSearch] = useState("");
-  const { data: conversations = [], isLoading } = useChatConversations("coach");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data: conversations = [], isLoading } = useChatConversations(
+    "coach",
+    {
+      search: debouncedSearch || undefined,
+    },
+  );
   const pinConversation = usePinConversation();
   const deleteConversation = useDeleteConversation();
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return conversations;
-    const q = search.toLowerCase();
-    return conversations.filter((c) => c.title.toLowerCase().includes(q));
-  }, [conversations, search]);
-
   const { pinned, unpinned } = useMemo(
     () => ({
-      pinned: filtered.filter((c) => c.isPinned),
-      unpinned: filtered.filter((c) => !c.isPinned),
+      pinned: conversations.filter((c) => c.isPinned),
+      unpinned: conversations.filter((c) => !c.isPinned),
     }),
-    [filtered],
+    [conversations],
   );
 
   const handleTogglePin = useCallback(
@@ -212,7 +218,7 @@ export default function AllConversationsScreen() {
               {unpinned.map(renderRow)}
             </>
           )}
-          {filtered.length === 0 && (
+          {conversations.length === 0 && (
             <Text style={[styles.empty, { color: theme.textSecondary }]}>
               No conversations found
             </Text>

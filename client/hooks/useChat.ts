@@ -36,17 +36,23 @@ export interface StreamingRecipe {
   imageUrl?: string | null;
 }
 
-export function useChatConversations(type?: "coach" | "recipe") {
+export function useChatConversations(
+  type?: "coach" | "recipe",
+  opts?: { search?: string; page?: number },
+) {
   const queryKey = type
-    ? ["/api/chat/conversations", { type }]
-    : ["/api/chat/conversations"];
+    ? ["/api/chat/conversations", { type, ...opts }]
+    : ["/api/chat/conversations", opts];
 
   return useQuery<ChatConversation[]>({
     queryKey,
     queryFn: async () => {
-      const url = type
-        ? `/api/chat/conversations?type=${type}`
-        : "/api/chat/conversations";
+      const params = new URLSearchParams();
+      if (type) params.set("type", type);
+      if (opts?.search) params.set("search", opts.search);
+      if (opts?.page) params.set("page", String(opts.page));
+      const query = params.toString();
+      const url = `/api/chat/conversations${query ? `?${query}` : ""}`;
       const res = await apiRequest("GET", url);
       return res.json();
     },
