@@ -19,6 +19,7 @@ import {
   type NotebookEntry,
 } from "@/hooks/useChat";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NotebookEntryNavigationProp } from "@/types/navigation";
@@ -84,6 +85,8 @@ export default function NotebookEntryScreen() {
   const createEntry = useCreateNotebookEntry();
   const updateEntry = useUpdateNotebookEntry();
   const isSaving = createEntry.isPending || updateEntry.isPending;
+  const { scheduleCommitmentReminder, cancelCommitmentReminder } =
+    useNotebookNotifications();
 
   const isDirty = isCreate
     ? content.trim().length > 0
@@ -96,19 +99,31 @@ export default function NotebookEntryScreen() {
 
   const handleSave = useCallback(async () => {
     if (!content.trim()) return;
+    let savedEntry: NotebookEntry | undefined;
     if (isCreate) {
-      await createEntry.mutateAsync({
+      savedEntry = await createEntry.mutateAsync({
         type,
         content: content.trim(),
         followUpDate,
       });
     } else if (entryId) {
-      await updateEntry.mutateAsync({
+      savedEntry = await updateEntry.mutateAsync({
         id: entryId,
         type,
         content: content.trim(),
         followUpDate,
       });
+    }
+    if (savedEntry && savedEntry.type === "commitment") {
+      if (savedEntry.followUpDate) {
+        await scheduleCommitmentReminder(
+          savedEntry.id,
+          savedEntry.content,
+          new Date(savedEntry.followUpDate).toISOString().slice(0, 10),
+        );
+      } else {
+        await cancelCommitmentReminder(savedEntry.id);
+      }
     }
     navigation.goBack();
   }, [
@@ -119,6 +134,8 @@ export default function NotebookEntryScreen() {
     followUpDate,
     createEntry,
     updateEntry,
+    scheduleCommitmentReminder,
+    cancelCommitmentReminder,
     navigation,
   ]);
 
@@ -130,11 +147,12 @@ export default function NotebookEntryScreen() {
         text: "Complete",
         onPress: async () => {
           await updateEntry.mutateAsync({ id: entryId, status: "completed" });
+          await cancelCommitmentReminder(entryId);
           navigation.goBack();
         },
       },
     ]);
-  }, [entryId, updateEntry, navigation]);
+  }, [entryId, updateEntry, cancelCommitmentReminder, navigation]);
 
   const handleArchive = useCallback(() => {
     if (!entryId) return;
@@ -144,11 +162,12 @@ export default function NotebookEntryScreen() {
         text: "Archive",
         onPress: async () => {
           await updateEntry.mutateAsync({ id: entryId, status: "archived" });
+          await cancelCommitmentReminder(entryId);
           navigation.goBack();
         },
       },
     ]);
-  }, [entryId, updateEntry, navigation]);
+  }, [entryId, updateEntry, cancelCommitmentReminder, navigation]);
 
   const sourceLabel = isCreate
     ? "Added by you"

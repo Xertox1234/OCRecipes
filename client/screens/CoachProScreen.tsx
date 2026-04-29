@@ -1,11 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  AppState,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
-import { useChatConversations, useCreateConversation } from "@/hooks/useChat";
+import {
+  useChatConversations,
+  useCreateConversation,
+  useNotebookEntries,
+} from "@/hooks/useChat";
+import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -51,6 +63,23 @@ export default function CoachProScreen() {
     if (conversationId || threadBarConversations.length === 0) return;
     setConversationId(threadBarConversations[0].id);
   }, [conversationId, threadBarConversations]);
+
+  const { cancelStaleReminders } = useNotebookNotifications();
+  const { data: notebookEntries = [] } = useNotebookEntries({
+    status: "active",
+  });
+
+  useEffect(() => {
+    const activeIds = notebookEntries
+      .filter((e) => e.type === "commitment")
+      .map((e) => e.id);
+    cancelStaleReminders(activeIds);
+
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") cancelStaleReminders(activeIds);
+    });
+    return () => sub.remove();
+  }, [notebookEntries, cancelStaleReminders]);
 
   const handleCreateConversation = useCallback(async () => {
     const result = await createConversation.mutateAsync({ type: "coach" });
