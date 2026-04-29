@@ -1608,3 +1608,127 @@ const prompt = `<coach_response>\n${safeResponse}\n</coach_response>`;
 - See also: [AI Input Sanitization Boundary](#ai-input-sanitization-boundary), [Sanitize ALL User Profile Fields in AI Prompts](#sanitize-all-user-profile-fields-in-ai-prompts)
 
 **Origin:** 2026-04-18 audit L2
+
+---
+
+### Buffer-then-Check for Streaming LLM Safety
+
+When a service streams an LLM response token-by-token, safety regex patterns **cannot be applied to individual chunks** — an unsafe phrase like `"you likely have diabetes"` or a calorie recommendation below the threshold can straddle multiple chunks and only form completely in the accumulated buffer.
+
+**Pattern:** collect the full response into a buffer before yielding any content, then run `containsUnsafeCoachAdvice()` once. On violation, yield the refusal message instead of the buffered text.
+
+```typescript
+// ✅ CORRECT — buffer full response, check once
+let fullResponse = "";
+for await (const chunk of stream) {
+  const delta = chunk.choices[0]?.delta?.content;
+  if (delta) fullResponse += delta;
+}
+
+if (containsUnsafeCoachAdvice(fullResponse)) {
+  yield "I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a healthcare provider.";
+  return;
+}
+yield fullResponse;
+
+// ❌ WRONG — scanning individual chunks misses cross-chunk patterns
+for await (const chunk of stream) {
+  const delta = chunk.choices[0]?.delta?.content;
+  if (delta && !containsUnsafeCoachAdvice(delta)) yield delta; // "you likely" passes; "have diabetes" passes; full phrase is never caught
+}
+```
+
+**When to use:** Any streaming LLM response path where the content is safety-critical (medical context, nutrition advice, dietary restrictions). Accept the latency tradeoff — users see the full response or the refusal, never a partial response cut off mid-sentence.
+
+**When NOT to use:** Non-safety-critical streaming where partial display is acceptable (recipe text, general descriptions).
+
+**References:**
+
+- `server/services/nutrition-coach.ts` — `generateCoachResponse` and `generateCoachProResponse` — buffered streaming + `containsUnsafeCoachAdvice` check
+- `server/lib/ai-safety.ts` — `containsUnsafeCoachAdvice()`, `containsDangerousDietaryAdvice()`, `containsUnsafeMedicalAdvice()`
+
+**Origin:** 2026-04-29 audit H1
+
+---
+
+### Filter LLM Memory Extraction with Safety Checks Before Persistence
+
+When using an LLM to extract structured memories from conversation history (e.g., notebook entries, commitments, goals), the extractor itself can be misled by user messages that contain dangerous dietary goals. A user saying "my plan is to eat 300 cal/day" may cause the extractor to persist that as a commitment — which then gets reinjected into future coach prompts.
+
+**Pattern:** after extraction, filter every entry through `containsUnsafeCoachAdvice()` before persisting. Additionally, include `SYSTEM_PROMPT_BOUNDARY` in the extractor's system prompt so it resists prompt injection via conversation content.
+
+```typescript
+// ✅ CORRECT
+import {
+  containsUnsafeCoachAdvice,
+  SYSTEM_PROMPT_BOUNDARY,
+} from "../lib/ai-safety";
+
+const extractorSystemPrompt = `You extract structured memories from conversations. ${SYSTEM_PROMPT_BOUNDARY}`;
+
+const extracted = await callExtractor(conversation, extractorSystemPrompt);
+
+// Filter unsafe entries before persisting
+const safe = extracted.entries.filter(
+  (entry) => !containsUnsafeCoachAdvice(entry.content),
+);
+await storage.upsertNotebookEntries(userId, safe);
+```
+
+**Why this matters:** The coach's output safety check only covers what the coach says. The extractor runs separately and has its own exposure to user-authored content — it is an independent injection surface.
+
+**References:**
+
+- `server/services/notebook-extraction.ts` — `extractNotebookEntries()` with boundary + filter
+- `server/lib/ai-safety.ts` — `containsUnsafeCoachAdvice()`
+
+**Origin:** 2026-04-29 audit M2
+
+---
+
+### Validate Storage-Layer Write Ownership for Chat Messages
+
+`createChatMessage` (and any storage function that inserts rows attached to a parent entity) must verify that the authenticated user owns the parent before inserting. Accepting only `conversationId` without a user ownership predicate creates an IDOR vector where an attacker can inject messages into another user's conversation by guessing or enumerating conversation IDs.
+
+**Pattern:** inside a transaction, confirm the parent row exists AND belongs to the caller's `userId` before inserting the child row. Also validate the `role` value at the storage boundary — never pass arbitrary role strings through from upstream.
+
+```typescript
+// ✅ CORRECT
+async function createChatMessage(
+  conversationId: number,
+  userId: string, // ← required
+  role: "user" | "assistant" | "system", // ← typed, not string
+  content: string,
+) {
+  return db.transaction(async (tx) => {
+    const [conv] = await tx
+      .select({ id: chatConversations.id })
+      .from(chatConversations)
+      .where(
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.userId, userId), // ← ownership check
+        ),
+      )
+      .limit(1);
+    if (!conv) throw new Error("Conversation not found");
+    await tx.insert(chatMessages).values({ conversationId, role, content });
+    await tx
+      .update(chatConversations)
+      .set({ updatedAt: new Date() })
+      .where(
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.userId, userId), // ← ownership on update too
+        ),
+      );
+  });
+}
+```
+
+**References:**
+
+- `server/storage/chat.ts` — `createChatMessage` with `userId` param and ownership predicate
+- See also: [IDOR Protection in Storage Layer](#idor-protection-in-storage-layer)
+
+**Origin:** 2026-04-29 audit L1
