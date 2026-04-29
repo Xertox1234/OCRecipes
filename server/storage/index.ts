@@ -151,6 +151,7 @@ export const storage = {
   deleteChatConversation: chat.deleteChatConversation,
   deleteChatMessage: chat.deleteChatMessage,
   updateChatConversationTitle: chat.updateChatConversationTitle,
+  pinChatConversation: chat.pinChatConversation,
   getDailyChatMessageCount: chat.getDailyChatMessageCount,
   createChatMessageWithLimitCheck: chat.createChatMessageWithLimitCheck,
   saveRecipeFromChat: recipeFromChat.saveRecipeFromChat,

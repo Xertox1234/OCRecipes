@@ -39,17 +39,27 @@ export async function getChatConversations(
   userId: string,
   limit = 50,
   type?: "coach" | "recipe" | "remix",
+  opts?: { search?: string; page?: number },
 ): Promise<ChatConversation[]> {
+  const page = opts?.page ?? 1;
+  const offset = (page - 1) * limit;
   const conditions = [eq(chatConversations.userId, userId)];
-  if (type) {
-    conditions.push(eq(chatConversations.type, type));
+  if (type) conditions.push(eq(chatConversations.type, type));
+  if (opts?.search) {
+    conditions.push(
+      sql`lower(${chatConversations.title}) like ${"%" + opts.search.toLowerCase() + "%"}`,
+    );
   }
   return db
     .select()
     .from(chatConversations)
     .where(and(...conditions))
-    .orderBy(desc(chatConversations.updatedAt))
-    .limit(limit);
+    .orderBy(
+      desc(chatConversations.isPinned),
+      desc(chatConversations.updatedAt),
+    )
+    .limit(limit)
+    .offset(offset);
 }
 
 export async function createChatConversation(
@@ -212,6 +222,24 @@ export async function updateChatConversationTitle(
   const [updated] = await db
     .update(chatConversations)
     .set({ title, updatedAt: new Date() })
+    .where(
+      and(eq(chatConversations.id, id), eq(chatConversations.userId, userId)),
+    )
+    .returning();
+  return updated || undefined;
+}
+
+export async function pinChatConversation(
+  id: number,
+  userId: string,
+  isPinned: boolean,
+): Promise<ChatConversation | undefined> {
+  const [updated] = await db
+    .update(chatConversations)
+    .set({
+      isPinned,
+      pinnedAt: isPinned ? new Date() : null,
+    })
     .where(
       and(eq(chatConversations.id, id), eq(chatConversations.userId, userId)),
     )
