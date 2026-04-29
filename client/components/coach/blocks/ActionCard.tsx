@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -20,23 +20,36 @@ interface Props {
 export default function ActionCard({ block, onAction, onPressAsync }: Props) {
   const { theme } = useTheme();
   const [state, setState] = useState<FeedbackState>("idle");
+  const stateRef = useRef<FeedbackState>("idle");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setFeedbackState = useCallback((s: FeedbackState) => {
+    stateRef.current = s;
+    setState(s);
+  }, []);
 
   const handlePress = useCallback(async () => {
-    if (state !== "idle") return;
+    if (stateRef.current !== "idle") return;
     if (onPressAsync) {
-      setState("loading");
+      setFeedbackState("loading");
       try {
         await onPressAsync();
-        setState("success");
-        setTimeout(() => setState("idle"), 1500);
+        setFeedbackState("success");
+        timerRef.current = setTimeout(() => setFeedbackState("idle"), 1500);
       } catch {
-        setState("error");
-        setTimeout(() => setState("idle"), 1500);
+        setFeedbackState("error");
+        timerRef.current = setTimeout(() => setFeedbackState("idle"), 1500);
       }
     } else {
       onAction?.(block.action as Record<string, unknown>);
     }
-  }, [state, onPressAsync, onAction, block.action]);
+  }, [onPressAsync, onAction, block.action, setFeedbackState]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
   const label =
     state === "success"
@@ -47,7 +60,7 @@ export default function ActionCard({ block, onAction, onPressAsync }: Props) {
 
   const buttonBg =
     state === "success"
-      ? "#008A38" // hardcoded success color
+      ? "#008A38" // hardcoded
       : state === "error"
         ? theme.error
         : theme.link;
@@ -66,7 +79,7 @@ export default function ActionCard({ block, onAction, onPressAsync }: Props) {
       <Pressable
         style={[styles.button, { backgroundColor: buttonBg }]}
         onPress={handlePress}
-        disabled={state === "loading"}
+        disabled={state !== "idle"}
         accessibilityRole="button"
         accessibilityLabel={label}
       >
