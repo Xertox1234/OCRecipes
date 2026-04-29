@@ -56,6 +56,7 @@ export async function getChatConversations(
     .where(and(...conditions))
     .orderBy(
       desc(chatConversations.isPinned),
+      desc(chatConversations.pinnedAt),
       desc(chatConversations.updatedAt),
     )
     .limit(limit)
