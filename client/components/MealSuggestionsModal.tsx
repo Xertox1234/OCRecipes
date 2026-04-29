@@ -62,18 +62,18 @@ const SuggestionCard = React.memo(function SuggestionCard({
   const { theme } = useTheme();
   const haptics = useHaptics();
 
+  const cardBackground = useMemo(
+    () => withOpacity(theme.text, 0.04),
+    [theme.text],
+  );
+
   const handlePick = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     onSelect(suggestion);
   }, [haptics, onSelect, suggestion]);
 
   return (
-    <View
-      style={[
-        styles.suggestionCard,
-        { backgroundColor: withOpacity(theme.text, 0.04) },
-      ]}
-    >
+    <View style={[styles.suggestionCard, { backgroundColor: cardBackground }]}>
       <ThemedText style={styles.suggestionTitle}>{suggestion.title}</ThemedText>
       <ThemedText
         style={[styles.suggestionDescription, { color: theme.textSecondary }]}
@@ -141,6 +141,15 @@ const PopularPickCard = React.memo(function PopularPickCard({
   const { theme } = useTheme();
   const haptics = useHaptics();
 
+  const cardBackground = useMemo(
+    () => withOpacity(theme.text, 0.04),
+    [theme.text],
+  );
+  const badgeBackground = useMemo(
+    () => withOpacity(theme.link, 0.12),
+    [theme.link],
+  );
+
   const handlePick = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     // Convert PopularPick to MealSuggestion shape for the existing onSelectSuggestion flow
@@ -166,21 +175,13 @@ const PopularPickCard = React.memo(function PopularPickCard({
   }, [haptics, onSelect, pick]);
 
   return (
-    <View
-      style={[
-        styles.suggestionCard,
-        { backgroundColor: withOpacity(theme.text, 0.04) },
-      ]}
-    >
+    <View style={[styles.suggestionCard, { backgroundColor: cardBackground }]}>
       <View style={styles.popularPickHeader}>
         <ThemedText style={[styles.suggestionTitle, { flex: 1 }]}>
           {pick.title}
         </ThemedText>
         <View
-          style={[
-            styles.pickCountBadge,
-            { backgroundColor: withOpacity(theme.link, 0.12) },
-          ]}
+          style={[styles.pickCountBadge, { backgroundColor: badgeBackground }]}
         >
           <Feather name="users" size={10} color={theme.link} />
           <ThemedText style={[styles.pickCountText, { color: theme.link }]}>
@@ -262,13 +263,14 @@ export function MealSuggestionsModal({
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const mutation = useMealSuggestions();
+  const { mutate, reset } = mutation;
 
   // Auto-fetch on open
   useEffect(() => {
     if (visible && !mutation.isPending && !mutation.data) {
-      mutation.mutate({ date, mealType });
+      mutate({ date, mealType });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation excluded to prevent infinite re-renders (changes identity on mutate)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutate excluded to prevent infinite re-renders (changes identity on mutate)
   }, [visible, date, mealType]);
 
   useEffect(() => {
@@ -286,13 +288,13 @@ export function MealSuggestionsModal({
 
   const handleSuggestMore = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    mutation.mutate({ date, mealType });
-  }, [haptics, mutation, date, mealType]);
+    mutate({ date, mealType });
+  }, [haptics, mutate, date, mealType]);
 
   const handleClose = useCallback(() => {
-    mutation.reset();
+    reset();
     onClose();
-  }, [mutation, onClose]);
+  }, [reset, onClose]);
 
   const isLimitReached =
     mutation.error instanceof ApiError &&

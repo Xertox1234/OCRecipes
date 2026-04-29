@@ -284,7 +284,15 @@ export default function ReceiptReviewScreen() {
         </SwipeableRow>
       );
     },
-    [theme, handleRemoveItem, handleUpdateName, handleUpdateQuantity],
+    [
+      theme.error,
+      theme.backgroundSecondary,
+      theme.text,
+      theme.textSecondary,
+      handleRemoveItem,
+      handleUpdateName,
+      handleUpdateQuantity,
+    ],
   );
 
   const separatorColor = useMemo(

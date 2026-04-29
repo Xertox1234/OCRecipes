@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -154,7 +154,10 @@ export function MicronutrientSection({
     setIsExpanded((prev) => !prev);
   };
 
-  const { vitamins, minerals } = classifyMicronutrients(micronutrients);
+  const { vitamins, minerals } = useMemo(
+    () => classifyMicronutrients(micronutrients),
+    [micronutrients],
+  );
   const nutrientCount = micronutrients.length;
 
   return (
