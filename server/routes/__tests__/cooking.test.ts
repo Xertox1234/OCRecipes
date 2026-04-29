@@ -938,6 +938,7 @@ describe("Cooking Routes", () => {
         .post(`/api/cooking/sessions/${sessionId}/recipe`)
         .set("Authorization", "Bearer token");
 
+      expect(generateRecipeContent).toHaveBeenCalledOnce();
       expect(res.status).toBe(429);
     });
 

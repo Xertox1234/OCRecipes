@@ -147,8 +147,9 @@ export default function ReceiptReviewScreen() {
       },
       onError: () => {
         if (cancelled) return;
-        // Error is surfaced via scanMutation.isError in the render path,
-        // but only when no local OCR items are available as fallback.
+        // No state updates needed — scanMutation.isError drives the render path.
+        // The cancelled guard is retained so any future state writes added here
+        // are automatically safe against unmounted-component updates.
       },
     });
 

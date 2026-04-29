@@ -5,7 +5,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 ## Table of Contents
 
 - [parseInt on req.userId Returns NaN (2026-04-28)](#parseint-on-requserid-returns-nan-2026-04-28)
-- [onConflictDoNothing on Cache Tables Causes expired-entry Skip + ! Crash (2026-04-28)](#onconflictdoNothing-on-cache-tables-causes-expired-entry-skip---crash-2026-04-28)
+- [onConflictDoNothing on Cache Tables Causes expired-entry Skip + ! Crash (2026-04-28)](#onconflictdonothing-on-cache-tables-causes-expired-entry-skip---crash-2026-04-28)
 - [OCR Race+Swap Error Guard Must Also Check items.length (2026-04-28)](#ocr-raceswap-error-guard-must-also-check-itemslength-2026-04-28)
 - [New Recipe Generation Endpoint Skipped Quota Check (2026-04-28)](#new-recipe-generation-endpoint-skipped-quota-check-2026-04-28)
 - [Optional Hook Safety Param Silently Dropped at Call Site (2026-04-28)](#optional-hook-safety-param-silently-dropped-at-call-site-2026-04-28)

@@ -411,6 +411,11 @@ export async function setNutritionCache(
 /**
  * Cache a nutrition result only if not already present (insert-or-ignore).
  * Used for seeding cache without overwriting existing entries.
+ *
+ * Intentionally uses onConflictDoNothing ("first write wins") because callers
+ * want to seed without clobbering a fresher existing entry. If an expired row
+ * exists with the same queryKey it will be silently skipped — callers that need
+ * guaranteed-fresh data should use setNutritionCache (which uses onConflictDoUpdate).
  */
 export async function setNutritionCacheIfAbsent(
   queryKey: string,
