@@ -115,10 +115,29 @@ export default function CoachProScreen() {
         </View>
       )}
       {context && (
-        <CoachDashboard
-          context={context}
-          onSuggestionPress={handleSuggestionPress}
-        />
+        <>
+          <View
+            style={[styles.notebookHeader, { borderBottomColor: theme.border }]}
+          >
+            <Pressable
+              onPress={() => navigation.navigate("NotebookScreen")}
+              style={[styles.notebookBtn, { borderColor: theme.border }]}
+              accessibilityRole="button"
+              accessibilityLabel="Open notebook"
+            >
+              <Feather name="book-open" size={16} color={theme.textSecondary} />
+              <Text
+                style={[styles.notebookBtnText, { color: theme.textSecondary }]}
+              >
+                Notebook
+              </Text>
+            </Pressable>
+          </View>
+          <CoachDashboard
+            context={context}
+            onSuggestionPress={handleSuggestionPress}
+          />
+        </>
       )}
       <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
         <Pressable
@@ -271,4 +290,21 @@ const styles = StyleSheet.create({
   },
   pinIcon: { marginRight: 3 },
   seeAllChip: { width: 72 },
+  notebookHeader: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  notebookBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+  },
+  notebookBtnText: { fontSize: 13 },
 });
