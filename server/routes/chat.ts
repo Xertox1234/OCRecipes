@@ -539,4 +539,29 @@ export function register(app: Express): void {
       }
     },
   );
+
+  // DELETE /api/chat/messages/:id - Delete message
+  app.delete(
+    "/api/chat/messages/:id",
+    requireAuth,
+    chatRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid message ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const deleted = await storage.deleteChatMessage(id, req.userId);
+        if (!deleted)
+          return sendError(res, 404, "Message not found", ErrorCode.NOT_FOUND);
+        res.status(204).send();
+      } catch (error) {
+        handleRouteError(res, error, "delete chat message");
+      }
+    },
+  );
 }

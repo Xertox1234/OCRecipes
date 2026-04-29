@@ -149,6 +149,7 @@ export const storage = {
   getChatMessageById: chat.getChatMessageById,
   createChatMessage: chat.createChatMessage,
   deleteChatConversation: chat.deleteChatConversation,
+  deleteChatMessage: chat.deleteChatMessage,
   updateChatConversationTitle: chat.updateChatConversationTitle,
   getDailyChatMessageCount: chat.getDailyChatMessageCount,
   createChatMessageWithLimitCheck: chat.createChatMessageWithLimitCheck,

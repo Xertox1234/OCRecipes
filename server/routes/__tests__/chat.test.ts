@@ -32,6 +32,7 @@ vi.mock("../../storage", () => ({
     getWeightLogs: vi.fn(),
     updateChatConversationTitle: vi.fn(),
     deleteChatConversation: vi.fn(),
+    deleteChatMessage: vi.fn(),
     getCoachCachedResponse: vi.fn().mockResolvedValue(null),
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
     getCommunityRecipe: vi.fn(),
@@ -581,6 +582,32 @@ describe("Chat Routes", () => {
         .delete("/api/chat/conversations/abc")
         .set("Authorization", "Bearer token");
 
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("DELETE /api/chat/messages/:id", () => {
+    it("deletes a message and returns 204", async () => {
+      vi.mocked(storage.deleteChatMessage).mockResolvedValue(true);
+      const res = await request(app)
+        .delete("/api/chat/messages/5")
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(204);
+      expect(storage.deleteChatMessage).toHaveBeenCalledWith(5, "1");
+    });
+
+    it("returns 404 when message not found or not owned", async () => {
+      vi.mocked(storage.deleteChatMessage).mockResolvedValue(false);
+      const res = await request(app)
+        .delete("/api/chat/messages/999")
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 for invalid message id", async () => {
+      const res = await request(app)
+        .delete("/api/chat/messages/abc")
+        .set("Authorization", "Bearer valid-token");
       expect(res.status).toBe(400);
     });
   });

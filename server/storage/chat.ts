@@ -6,7 +6,7 @@ import {
   coachResponseCache,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lt, sql, inArray } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 import { fireAndForget } from "../lib/fire-and-forget";
 
@@ -179,6 +179,28 @@ export async function deleteChatConversation(
       and(eq(chatConversations.id, id), eq(chatConversations.userId, userId)),
     )
     .returning({ id: chatConversations.id });
+  return result.length > 0;
+}
+
+export async function deleteChatMessage(
+  messageId: number,
+  userId: string,
+): Promise<boolean> {
+  const result = await db
+    .delete(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.id, messageId),
+        inArray(
+          chatMessages.conversationId,
+          db
+            .select({ id: chatConversations.id })
+            .from(chatConversations)
+            .where(eq(chatConversations.userId, userId)),
+        ),
+      ),
+    )
+    .returning({ id: chatMessages.id });
   return result.length > 0;
 }
 
