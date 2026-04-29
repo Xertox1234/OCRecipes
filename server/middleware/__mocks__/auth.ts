@@ -3,14 +3,12 @@
 import { vi } from "vitest";
 import type { Request, Response, NextFunction } from "express";
 
-export const requireAuth = (
-  req: Request,
-  _res: Response,
-  next: NextFunction,
-) => {
-  req.userId = "1";
-  next();
-};
+export const requireAuth = vi.fn(
+  (req: Request, _res: Response, next: NextFunction) => {
+    req.userId = "1";
+    next();
+  },
+);
 
 export const generateToken = vi.fn().mockReturnValue("mock-jwt-token");
 

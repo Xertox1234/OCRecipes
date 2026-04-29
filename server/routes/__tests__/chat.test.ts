@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { sendError } from "../../lib/api-errors";
+import { requireAuth } from "../../middleware/auth";
 import {
   generateCoachResponse,
   generateCoachProResponse,
@@ -68,16 +69,7 @@ vi.mock("../../lib/openai", () => ({
   OPENAI_VISION_TIMEOUT_MS: 60000,
 }));
 
-vi.mock("../../middleware/auth", () => ({
-  requireAuth: (req: any, res: any, next: any) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith("Bearer ")) {
-      return sendError(res, 401, "No token provided");
-    }
-    req.userId = "1"; // Mock user ID
-    next();
-  },
-}));
+vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
@@ -622,6 +614,9 @@ describe("Chat Routes", () => {
     });
 
     it("returns 401 without auth", async () => {
+      vi.mocked(requireAuth).mockImplementationOnce((_req, res, _next) => {
+        sendError(res, 401, "Unauthorized");
+      });
       const res = await request(app).delete("/api/chat/messages/5");
       expect(res.status).toBe(401);
     });
