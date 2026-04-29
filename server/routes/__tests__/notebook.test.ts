@@ -19,6 +19,10 @@ const app = express();
 app.use(express.json());
 register(app);
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("GET /api/coach/notebook", () => {
   it("returns entries for the authenticated user", async () => {
     const entries = [createMockCoachNotebookEntry({ type: "insight" })];
