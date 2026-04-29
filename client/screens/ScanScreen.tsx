@@ -132,6 +132,7 @@ export default function ScanScreen() {
     isPremium,
     refreshScanCount,
     onUpgradeNeeded,
+    isFocused,
   });
 
   const pulseScale = useSharedValue(1);

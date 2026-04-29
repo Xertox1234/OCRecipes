@@ -179,13 +179,11 @@ export async function createMealSuggestionCache(
   const [created] = await db
     .insert(mealSuggestionCache)
     .values({ cacheKey, userId, suggestions, expiresAt })
-    .onConflictDoNothing({ target: mealSuggestionCache.cacheKey })
+    .onConflictDoUpdate({
+      target: mealSuggestionCache.cacheKey,
+      set: { suggestions, expiresAt },
+    })
     .returning();
-  // On conflict, return the existing entry
-  if (!created) {
-    const existing = await getMealSuggestionCache(cacheKey);
-    return existing!;
-  }
   return created;
 }
 

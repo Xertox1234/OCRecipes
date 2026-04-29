@@ -2,7 +2,11 @@ import type { Express, Response } from "express";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { crudRateLimit, createRateLimiter } from "./_rate-limiters";
+import {
+  crudRateLimit,
+  createRateLimiter,
+  recipeGenerationRateLimit,
+} from "./_rate-limiters";
 import { createImageUpload } from "./_upload";
 import {
   formatZodError,
@@ -469,7 +473,7 @@ export function register(app: Express): void {
   app.post(
     "/api/cooking/sessions/:id/recipe",
     requireAuth,
-    cookingPhotoRateLimit,
+    recipeGenerationRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const features = await checkPremiumFeature(
@@ -479,6 +483,21 @@ export function register(app: Express): void {
           "Recipe generation",
         );
         if (!features) return;
+
+        // Early limit check (non-transactional fast path)
+        const generationsToday = await storage.getDailyRecipeGenerationCount(
+          req.userId,
+          new Date(),
+        );
+        if (generationsToday >= features.dailyRecipeGenerations) {
+          sendError(
+            res,
+            429,
+            "Daily recipe generation limit reached",
+            ErrorCode.DAILY_LIMIT_REACHED,
+          );
+          return;
+        }
 
         const session = getSessionForUser(
           req,
@@ -509,6 +528,22 @@ export function register(app: Express): void {
           productName: ingredientList,
           userProfile,
         });
+
+        // Atomically re-check quota and log the generation (recipeId: null — not persisted)
+        const allowed = await storage.logRecipeGenerationWithLimitCheck(
+          req.userId,
+          features.dailyRecipeGenerations,
+          null,
+        );
+        if (!allowed) {
+          sendError(
+            res,
+            429,
+            "Daily recipe generation limit reached",
+            ErrorCode.DAILY_LIMIT_REACHED,
+          );
+          return;
+        }
 
         res.json(recipe);
       } catch (error) {

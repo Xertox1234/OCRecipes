@@ -145,6 +145,11 @@ export default function ReceiptReviewScreen() {
         }
         dataSourceRef.current = "ai";
       },
+      onError: () => {
+        if (cancelled) return;
+        // Error is surfaced via scanMutation.isError in the render path,
+        // but only when no local OCR items are available as fallback.
+      },
     });
 
     return () => {
@@ -312,8 +317,8 @@ export default function ReceiptReviewScreen() {
     );
   }
 
-  // Error / failed state
-  if (scanMutation.isError) {
+  // Error / failed state — only show when no local OCR items are available as fallback
+  if (scanMutation.isError && items.length === 0) {
     return (
       <View
         style={[

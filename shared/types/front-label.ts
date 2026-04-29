@@ -6,7 +6,7 @@ export const frontLabelDataSchema = z.object({
   productName: z.string().nullable(),
   netWeight: z.string().nullable(),
   claims: z.array(z.string()).max(20),
-  scannedByUserId: z.number(),
+  scannedByUserId: z.string(),
   scannedAt: z.string(),
 });
 export type FrontLabelData = z.infer<typeof frontLabelDataSchema>;

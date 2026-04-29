@@ -409,7 +409,7 @@ export function register(app: Express): void {
           productName: session.data.productName,
           netWeight: session.data.netWeight,
           claims: session.data.claims,
-          scannedByUserId: parseInt(req.userId, 10),
+          scannedByUserId: req.userId,
           scannedAt: new Date().toISOString(),
         };
 

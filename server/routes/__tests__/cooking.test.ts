@@ -35,6 +35,8 @@ vi.mock("../../storage", async () => {
       getSubscriptionStatus: vi.fn(),
       getUserProfile: vi.fn(),
       createScannedItemWithLog: vi.fn(),
+      getDailyRecipeGenerationCount: vi.fn().mockResolvedValue(0),
+      logRecipeGenerationWithLimitCheck: vi.fn().mockResolvedValue(true),
       cookingSessionStore: sessions.cookingSessionStore,
     },
   };
@@ -883,6 +885,60 @@ describe("Cooking Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(400);
+    });
+
+    it("returns 429 when daily recipe generation limit is reached (early check)", async () => {
+      setupPremiumMock();
+      vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(5);
+
+      const sessionId = "recipe-limit-session";
+      cookingSessionStore._internals.store.set(sessionId, {
+        id: sessionId,
+        userId: "1",
+        ingredients: [{ ...mockIngredient }],
+        photos: [],
+        createdAt: Date.now(),
+      });
+
+      const res = await request(app)
+        .post(`/api/cooking/sessions/${sessionId}/recipe`)
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(429);
+    });
+
+    it("returns 429 when atomic quota check fails (TOCTOU race)", async () => {
+      setupPremiumMock();
+      vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
+      vi.mocked(storage.logRecipeGenerationWithLimitCheck).mockResolvedValue(
+        false,
+      );
+
+      const sessionId = "recipe-race-session";
+      cookingSessionStore._internals.store.set(sessionId, {
+        id: sessionId,
+        userId: "1",
+        ingredients: [{ ...mockIngredient }],
+        photos: [],
+        createdAt: Date.now(),
+      });
+
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(generateRecipeContent).mockResolvedValue({
+        title: "Grilled Chicken",
+        description: "Simple grilled chicken breast",
+        difficulty: "Easy",
+        timeEstimate: "20 minutes",
+        ingredients: [{ name: "chicken breast", quantity: "2", unit: "" }],
+        instructions: ["Season and grill"],
+        dietTags: [],
+      } satisfies RecipeContent);
+
+      const res = await request(app)
+        .post(`/api/cooking/sessions/${sessionId}/recipe`)
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(429);
     });
 
     it("returns 500 when recipe generation fails", async () => {

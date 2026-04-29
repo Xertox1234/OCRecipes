@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-04-28 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit — 27 commits since 2026-04-26: OCR race+swap extended to front-label/receipt/menu scan flows, Coach Pro history truncation, storage decomposition, security/schema fixes
+- **Manifest:** [docs/audits/2026-04-28-full.md](2026-04-28-full.md)
+- **Findings:** 0 critical, 8 high, 17 medium, 21 low (47 total, from 6 agents)
+- **Resolved:** 6 verified (C1, H1, H2, H3, H4, H5), 41 deferred (7 themed todos), 0 false-positive
+- **Commit(s):** _(pending)_
+- **Note:** Key fixes: `isFocused` re-wired to `useScanClassification` (L20 guard had been added but never connected — C1); `parseInt(UUID)` = NaN crash on every front-label confirm resolved by switching schema to `z.string()` (H2); `mealSuggestionCache` `onConflictDoNothing` + forced `!` crash on expired entries fixed with `onConflictDoUpdate` (H3); cooking session recipe endpoint now enforces daily quota + uses correct 3/min rate limiter (H1); `ReceiptReviewScreen` now preserves local OCR items when AI scan fails (H4+H5). Deferred 41 items to 7 todos: perf/DB column projection, RN memoization, security hardening (storage-layer defense-in-depth), data integrity schema gaps, architecture refactors, code quality/test coverage, camera/a11y.
+
 ## 2026-04-26 — Full Codebase Audit
 
 - **Trigger:** Periodic full audit — uncommitted modifications to `HomeRecipeCard.tsx`, `RecipeGenerationModal.tsx`, `TextInput.tsx`, `theme.ts`, new `scripts/generate-app-assets.ts`, and agent/eval files since 2026-04-18
