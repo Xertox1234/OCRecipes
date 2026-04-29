@@ -27,7 +27,7 @@ import CoachMicButton from "@/components/coach/CoachMicButton";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useChatMessages,
-  useDeleteChatMessage,
+  useDeleteChatMessageForRetry,
   type ChatMessage,
 } from "@/hooks/useChat";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
@@ -159,7 +159,7 @@ export default function CoachChat({
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
   const hasVoice = usePremiumFeature("coachPro");
-  const deleteChatMessage = useDeleteChatMessage();
+  const deleteChatMessage = useDeleteChatMessageForRetry();
   const queryClient = useQueryClient();
 
   const [inputText, setInputText] = useState("");
