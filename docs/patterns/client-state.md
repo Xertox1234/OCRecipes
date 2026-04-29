@@ -365,6 +365,35 @@ pages: old.pages.map((page) => {
 - `client/hooks/useDiscardItem.ts` -- removal with per-page total correction
 - Related learning: "Optimistic Total Must Target Correct Page" in LEARNINGS.md
 
+### Optimistic Mutation with Snapshot Rollback
+
+For mutations that optimistically update the cache but may fail, always
+capture a snapshot before writing so a failure can restore the exact
+pre-mutation state instead of refetching:
+
+```typescript
+const snapshot = queryClient.getQueryData<T[]>(queryKey);
+queryClient.setQueryData<T[]>(queryKey, (old) => optimisticTransform(old));
+try {
+  await mutation.mutateAsync(...);
+} catch {
+  queryClient.setQueryData(queryKey, snapshot); // restore
+  setError("...");
+  return;
+}
+```
+
+**Why `setQueryData` for rollback instead of `invalidateQueries`:**
+`invalidateQueries` triggers a refetch which reflects actual server
+state — potentially partial mutation results, or stale data the user
+already saw "removed." Restoring from the snapshot gives the user the
+exact pre-mutation state they had a moment ago. Use `setQueryData` for
+rollback, `invalidateQueries` for post-success refresh.
+
+**Reference:** `client/components/coach/CoachChat.tsx` `handleRetry` —
+captures `snapshot` of the message list before optimistically removing
+the failed assistant turn, restores on retry failure.
+
 ### Client-Side API Timeout with Promise.race
 
 When a client-side API call gates a UX decision (e.g., navigate to screen A vs screen B), wrap it in `Promise.race` with a timeout to prevent the user from being stuck on slow or unresponsive networks. Unlike server-side `AbortSignal.timeout()`, this pattern works with `apiRequest()` which doesn't accept a signal parameter.
