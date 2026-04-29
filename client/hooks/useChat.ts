@@ -8,6 +8,8 @@ export interface ChatConversation {
   userId: string;
   title: string;
   type: string; // 'coach' | 'recipe'
+  isPinned: boolean;
+  pinnedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,17 +36,23 @@ export interface StreamingRecipe {
   imageUrl?: string | null;
 }
 
-export function useChatConversations(type?: "coach" | "recipe") {
+export function useChatConversations(
+  type?: "coach" | "recipe",
+  opts?: { search?: string; page?: number },
+) {
   const queryKey = type
-    ? ["/api/chat/conversations", { type }]
-    : ["/api/chat/conversations"];
+    ? ["/api/chat/conversations", { type, ...opts }]
+    : ["/api/chat/conversations", opts];
 
   return useQuery<ChatConversation[]>({
     queryKey,
     queryFn: async () => {
-      const url = type
-        ? `/api/chat/conversations?type=${type}`
-        : "/api/chat/conversations";
+      const params = new URLSearchParams();
+      if (type) params.set("type", type);
+      if (opts?.search) params.set("search", opts.search);
+      if (opts?.page) params.set("page", String(opts.page));
+      const query = params.toString();
+      const url = `/api/chat/conversations${query ? `?${query}` : ""}`;
       const res = await apiRequest("GET", url);
       return res.json();
     },
@@ -262,6 +270,35 @@ export function useSendMessage(conversationId: number | null) {
   };
 }
 
+export function useDeleteChatMessageForRetry() {
+  return useMutation({
+    mutationFn: async (messageId: number) => {
+      await apiRequest("DELETE", `/api/chat/messages/${messageId}`);
+    },
+    onSuccess: () => {
+      // Intentionally no cache invalidation — CoachChat manages
+      // message state directly during retry to avoid UI flicker.
+    },
+  });
+}
+
+export function usePinConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
+      const res = await apiRequest(
+        "PATCH",
+        `/api/chat/conversations/${id}/pin`,
+        { isPinned },
+      );
+      return (await res.json()) as ChatConversation;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+    },
+  });
+}
+
 /** Save a recipe from a chat message to the user's library */
 export function useSaveRecipeFromChat() {
   const queryClient = useQueryClient();
@@ -282,6 +319,98 @@ export function useSaveRecipeFromChat() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+    },
+  });
+}
+
+// ---- NOTEBOOK ----
+
+export interface NotebookEntry {
+  id: number;
+  userId: string;
+  type: string;
+  content: string;
+  status: string;
+  followUpDate: string | null;
+  sourceConversationId: number | null;
+  dedupeKey: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function useNotebookEntries(opts?: {
+  type?: string;
+  status?: string;
+  page?: number;
+}) {
+  const params = new URLSearchParams();
+  if (opts?.type) params.set("type", opts.type);
+  if (opts?.status) params.set("status", opts.status);
+  if (opts?.page) params.set("page", String(opts.page));
+  const query = params.toString();
+  return useQuery<NotebookEntry[]>({
+    queryKey: ["/api/coach/notebook", opts],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/coach/notebook${query ? `?${query}` : ""}`,
+      );
+      return res.json();
+    },
+  });
+}
+
+export function useCreateNotebookEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      type: string;
+      content: string;
+      followUpDate?: string | null;
+    }) => {
+      const res = await apiRequest("POST", "/api/coach/notebook", data);
+      return (await res.json()) as NotebookEntry;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+    },
+  });
+}
+
+export function useUpdateNotebookEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...updates
+    }: {
+      id: number;
+      content?: string;
+      type?: string;
+      followUpDate?: string | null;
+      status?: string;
+    }) => {
+      const res = await apiRequest(
+        "PATCH",
+        `/api/coach/notebook/${id}`,
+        updates,
+      );
+      return (await res.json()) as NotebookEntry;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+    },
+  });
+}
+
+export function useDeleteNotebookEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/coach/notebook/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
   });
 }

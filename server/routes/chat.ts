@@ -38,7 +38,12 @@ export function register(app: Express): void {
     chatRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const limit = parseQueryInt(req.query.limit, { default: 50, max: 50 });
+        const limit = parseQueryInt(req.query.limit, { default: 20, max: 50 });
+        const page = parseQueryInt(req.query.page, {
+          default: 1,
+          min: 1,
+          max: 100,
+        });
         const typeParam = req.query.type as string | undefined;
         const type =
           typeParam === "coach" ||
@@ -46,10 +51,15 @@ export function register(app: Express): void {
           typeParam === "remix"
             ? typeParam
             : undefined;
+        const search =
+          typeof req.query.search === "string"
+            ? req.query.search.trim()
+            : undefined;
         const conversations = await storage.getChatConversations(
           req.userId,
           limit,
           type,
+          { search, page },
         );
         res.json(conversations);
       } catch (error) {
@@ -536,6 +546,75 @@ export function register(app: Express): void {
         res.status(204).send();
       } catch (error) {
         handleRouteError(res, error, "delete conversation");
+      }
+    },
+  );
+
+  // PATCH /api/chat/conversations/:id/pin
+  const pinSchema = z.object({ isPinned: z.boolean() });
+
+  app.patch(
+    "/api/chat/conversations/:id/pin",
+    requireAuth,
+    chatRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid conversation ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const parsed = pinSchema.safeParse(req.body);
+        if (!parsed.success)
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const updated = await storage.pinChatConversation(
+          id,
+          req.userId,
+          parsed.data.isPinned,
+        );
+        if (!updated)
+          return sendError(
+            res,
+            404,
+            "Conversation not found",
+            ErrorCode.NOT_FOUND,
+          );
+        res.json(updated);
+      } catch (error) {
+        handleRouteError(res, error, "pin conversation");
+      }
+    },
+  );
+
+  // DELETE /api/chat/messages/:id - Delete message
+  app.delete(
+    "/api/chat/messages/:id",
+    requireAuth,
+    chatRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid message ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        const deleted = await storage.deleteChatMessage(id, req.userId);
+        if (!deleted)
+          return sendError(res, 404, "Message not found", ErrorCode.NOT_FOUND);
+        res.status(204).send();
+      } catch (error) {
+        handleRouteError(res, error, "delete chat message");
       }
     },
   );

@@ -1,15 +1,70 @@
-import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import type { ActionCard as ActionCardType } from "@shared/schemas/coach-blocks";
+
+type FeedbackState = "idle" | "loading" | "success" | "error";
 
 interface Props {
   block: ActionCardType;
   onAction?: (action: Record<string, unknown>) => void;
+  onPressAsync?: () => Promise<void>;
 }
 
-export default function ActionCard({ block, onAction }: Props) {
+export default function ActionCard({ block, onAction, onPressAsync }: Props) {
   const { theme } = useTheme();
+  const [state, setState] = useState<FeedbackState>("idle");
+  const stateRef = useRef<FeedbackState>("idle");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setFeedbackState = useCallback((s: FeedbackState) => {
+    stateRef.current = s;
+    setState(s);
+  }, []);
+
+  const handlePress = useCallback(async () => {
+    if (stateRef.current !== "idle") return;
+    if (onPressAsync) {
+      setFeedbackState("loading");
+      try {
+        await onPressAsync();
+        setFeedbackState("success");
+        timerRef.current = setTimeout(() => setFeedbackState("idle"), 1500);
+      } catch {
+        setFeedbackState("error");
+        timerRef.current = setTimeout(() => setFeedbackState("idle"), 1500);
+      }
+    } else {
+      onAction?.(block.action as Record<string, unknown>);
+    }
+  }, [onPressAsync, onAction, block.action, setFeedbackState]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const label =
+    state === "success"
+      ? "Done"
+      : state === "error"
+        ? "Failed"
+        : block.actionLabel;
+
+  const buttonBg =
+    state === "success"
+      ? "#008A38" // hardcoded
+      : state === "error"
+        ? theme.error
+        : theme.link;
+
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
@@ -22,12 +77,17 @@ export default function ActionCard({ block, onAction }: Props) {
         </Text>
       </View>
       <Pressable
-        style={[styles.button, { backgroundColor: theme.link }]}
-        onPress={() => onAction?.(block.action as Record<string, unknown>)}
+        style={[styles.button, { backgroundColor: buttonBg }]}
+        onPress={handlePress}
+        disabled={state !== "idle"}
         accessibilityRole="button"
-        accessibilityLabel={block.actionLabel}
+        accessibilityLabel={label}
       >
-        <Text style={styles.buttonText}>{block.actionLabel}</Text>
+        {state === "loading" ? (
+          <ActivityIndicator size="small" color="#FFFFFF" /> // hardcoded
+        ) : (
+          <Text style={styles.buttonText}>{label}</Text>
+        )}
       </Pressable>
     </View>
   );
@@ -47,6 +107,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 12, marginTop: 2 },
   button: {
     minHeight: 44,
+    minWidth: 64,
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 14,

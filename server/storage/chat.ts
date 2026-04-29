@@ -6,8 +6,8 @@ import {
   coachResponseCache,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
-import { getDayBounds } from "./helpers";
+import { eq, desc, and, gte, lt, sql, inArray, ilike } from "drizzle-orm";
+import { getDayBounds, escapeLike } from "./helpers";
 import { fireAndForget } from "../lib/fire-and-forget";
 
 type ChatMessageRole = "user" | "assistant" | "system";
@@ -39,17 +39,28 @@ export async function getChatConversations(
   userId: string,
   limit = 50,
   type?: "coach" | "recipe" | "remix",
+  opts?: { search?: string; page?: number },
 ): Promise<ChatConversation[]> {
+  const page = opts?.page ?? 1;
+  const offset = (page - 1) * limit;
   const conditions = [eq(chatConversations.userId, userId)];
-  if (type) {
-    conditions.push(eq(chatConversations.type, type));
+  if (type) conditions.push(eq(chatConversations.type, type));
+  if (opts?.search) {
+    conditions.push(
+      ilike(chatConversations.title, `%${escapeLike(opts.search)}%`),
+    );
   }
   return db
     .select()
     .from(chatConversations)
     .where(and(...conditions))
-    .orderBy(desc(chatConversations.updatedAt))
-    .limit(limit);
+    .orderBy(
+      desc(chatConversations.isPinned),
+      desc(chatConversations.pinnedAt),
+      desc(chatConversations.updatedAt),
+    )
+    .limit(limit)
+    .offset(offset);
 }
 
 export async function createChatConversation(
@@ -182,6 +193,28 @@ export async function deleteChatConversation(
   return result.length > 0;
 }
 
+export async function deleteChatMessage(
+  messageId: number,
+  userId: string,
+): Promise<boolean> {
+  const result = await db
+    .delete(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.id, messageId),
+        inArray(
+          chatMessages.conversationId,
+          db
+            .select({ id: chatConversations.id })
+            .from(chatConversations)
+            .where(eq(chatConversations.userId, userId)),
+        ),
+      ),
+    )
+    .returning({ id: chatMessages.id });
+  return result.length > 0;
+}
+
 export async function updateChatConversationTitle(
   id: number,
   userId: string,
@@ -190,6 +223,24 @@ export async function updateChatConversationTitle(
   const [updated] = await db
     .update(chatConversations)
     .set({ title, updatedAt: new Date() })
+    .where(
+      and(eq(chatConversations.id, id), eq(chatConversations.userId, userId)),
+    )
+    .returning();
+  return updated || undefined;
+}
+
+export async function pinChatConversation(
+  id: number,
+  userId: string,
+  isPinned: boolean,
+): Promise<ChatConversation | undefined> {
+  const [updated] = await db
+    .update(chatConversations)
+    .set({
+      isPinned,
+      pinnedAt: isPinned ? new Date() : null,
+    })
     .where(
       and(eq(chatConversations.id, id), eq(chatConversations.userId, userId)),
     )

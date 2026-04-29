@@ -887,6 +887,8 @@ export const chatConversations = pgTable(
     title: text("title").notNull(),
     type: text("type").notNull().default("coach"), // 'coach' | 'recipe' | 'remix'
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    isPinned: boolean("is_pinned").default(false).notNull(),
+    pinnedAt: timestamp("pinned_at"),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),

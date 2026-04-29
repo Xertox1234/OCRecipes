@@ -149,7 +149,9 @@ export const storage = {
   getChatMessageById: chat.getChatMessageById,
   createChatMessage: chat.createChatMessage,
   deleteChatConversation: chat.deleteChatConversation,
+  deleteChatMessage: chat.deleteChatMessage,
   updateChatConversationTitle: chat.updateChatConversationTitle,
+  pinChatConversation: chat.pinChatConversation,
   getDailyChatMessageCount: chat.getDailyChatMessageCount,
   createChatMessageWithLimitCheck: chat.createChatMessageWithLimitCheck,
   saveRecipeFromChat: recipeFromChat.saveRecipeFromChat,
@@ -309,4 +311,7 @@ export const storage = {
   getCommitmentsWithDueFollowUp: coachNotebook.getCommitmentsWithDueFollowUp,
   archiveOldEntries: coachNotebook.archiveOldEntries,
   getNotebookEntryCount: coachNotebook.getNotebookEntryCount,
+  getNotebookEntries: coachNotebook.getNotebookEntries,
+  updateNotebookEntry: coachNotebook.updateNotebookEntry,
+  deleteNotebookEntry: coachNotebook.deleteNotebookEntry,
 };
