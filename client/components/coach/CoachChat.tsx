@@ -554,7 +554,10 @@ export default function CoachChat({
           placeholder="Ask your coach..."
           placeholderTextColor={theme.textSecondary}
           value={inputText}
-          onChangeText={setInputText}
+          onChangeText={(text) => {
+            setInputText(text);
+            if (isCoachPro) warmUpHook.sendTextWarmUp(text);
+          }}
           onSubmitEditing={() => handleSend()}
           returnKeyType="send"
           multiline={false}
