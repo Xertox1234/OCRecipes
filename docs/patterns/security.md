@@ -125,6 +125,46 @@ export async function getCookbookRecipes(
 - `server/storage/cookbooks.ts` — `getCookbookRecipes(cookbookId, userId)`
 - See also: [Storage-Layer Defense-in-Depth](#storage-layer-defense-in-depth) (the parent pattern for direct-owned tables)
 
+#### Wire Optional Defense-in-Depth Parameters at Every Call Site
+
+When a storage function gains an optional `userId` parameter for defense-in-depth, every existing call site that has `userId` in scope must pass it — even if that call site already pre-verifies ownership at the route level. An optional parameter that no caller passes is effectively dead code: the storage-layer guard is present but never activated.
+
+**The failure mode:**
+
+```typescript
+// Storage function updated with optional userId:
+export async function getChatMessages(
+  conversationId: number,
+  limit: number,
+  userId?: string,  // ← added for defense-in-depth
+): Promise<ChatMessage[]> {
+  return db.select().from(chatMessages)
+    .where(and(
+      eq(chatMessages.conversationId, conversationId),
+      userId ? eq(chatMessages.userId, userId) : undefined,
+    ));
+}
+
+// ❌ BAD: Call site has userId but doesn't pass it — defense is aspirational only
+const conversation = await storage.getChatConversation(id, req.userId); // pre-check
+if (!conversation) return sendError(...);
+const messages = await storage.getChatMessages(id, 100); // userId ignored!
+
+// ✅ GOOD: Pass userId — storage layer independently enforces ownership
+const messages = await storage.getChatMessages(id, 100, req.userId);
+```
+
+**Rule of thumb:** After adding an optional `userId` to any storage function, immediately grep all call sites and update every one where `userId` (or `req.userId`) is in scope. If a call site genuinely cannot provide `userId` (e.g., a migration script, a background job), document why in a comment.
+
+**Why "optional" is not enough:** Making the parameter optional preserves backwards compatibility for internal tools and migration scripts. But route handlers always have `req.userId` — there is no reason to omit it there. Without a convention to wire it, the parameter accumulates technical debt: the function signature looks hardened, the tests pass, but the guard never fires in production.
+
+**Origin:** 2026-04-28 audit security todo added `userId` to `getChatMessages` as optional — but all 4 production call sites continued passing 2 arguments. The defense-in-depth was only realized after a session-level code review caught the gap.
+
+**References:**
+
+- `server/storage/chat.ts` — `getChatMessages(conversationId, limit, userId?)`
+- `server/routes/chat.ts`, `server/routes/coach-context.ts`, `server/services/coach-pro-chat.ts` — wired in commit `23d6e82`
+
 #### Lightweight Ownership Verification for Mutations
 
 Mutation endpoints (PUT, PATCH, DELETE) that only need to confirm the resource belongs to the user should use a lightweight ownership query — not fetch the full entity with all relations.
