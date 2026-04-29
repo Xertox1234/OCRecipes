@@ -1,5 +1,11 @@
 import React, { useState, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import type { ActionCard as ActionCardType } from "@shared/schemas/coach-blocks";
 
@@ -33,18 +39,23 @@ export default function ActionCard({ block, onAction, onPressAsync }: Props) {
   }, [state, onPressAsync, onAction, block.action]);
 
   const label =
-    state === "success" ? "Done" :
-    state === "error" ? "Failed" :
-    block.actionLabel;
+    state === "success"
+      ? "Done"
+      : state === "error"
+        ? "Failed"
+        : block.actionLabel;
 
   const buttonBg =
-    state === "success" ? "#008A38" : // hardcoded success color
-    state === "error" ? theme.error :
-    theme.link;
+    state === "success"
+      ? "#008A38" // hardcoded success color
+      : state === "error"
+        ? theme.error
+        : theme.link;
 
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
+      accessible={false}
     >
       <View style={styles.content}>
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
