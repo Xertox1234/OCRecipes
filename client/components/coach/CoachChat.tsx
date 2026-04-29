@@ -32,6 +32,7 @@ import {
 } from "@/hooks/useChat";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { useQueryClient } from "@tanstack/react-query";
 import { getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
@@ -159,6 +160,7 @@ export default function CoachChat({
   const navigation = useNavigation<CoachChatNavigationProp>();
   const hasVoice = usePremiumFeature("coachPro");
   const deleteChatMessage = useDeleteChatMessage();
+  const queryClient = useQueryClient();
 
   const [inputText, setInputText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -354,16 +356,30 @@ export default function CoachChat({
     const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
     if (!lastUserMsg) return;
 
+    const msgQueryKey = [`/api/chat/conversations/${conversationId}/messages`];
+    queryClient.setQueryData<ChatMessage[]>(
+      msgQueryKey,
+      (old) => old?.filter((m) => m.id !== lastMsg.id) ?? [],
+    );
+
     try {
       // Delete assistant then user message (in order — each was "most recent" at time of delete)
       await deleteChatMessage.mutateAsync(lastMsg.id);
       await deleteChatMessage.mutateAsync(lastUserMsg.id);
     } catch {
+      queryClient.invalidateQueries({ queryKey: msgQueryKey });
       setStreamingError("Retry failed. Check your connection and try again.");
       return;
     }
     handleSend(lastUserMsg.content);
-  }, [messages, isStreaming, deleteChatMessage, handleSend]);
+  }, [
+    messages,
+    isStreaming,
+    conversationId,
+    deleteChatMessage,
+    queryClient,
+    handleSend,
+  ]);
 
   // Auto-send suggestion chip messages
   useEffect(() => {
