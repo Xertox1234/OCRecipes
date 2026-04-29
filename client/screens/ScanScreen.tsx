@@ -212,6 +212,7 @@ export default function ScanScreen() {
       -1,
       true,
     );
+    return () => cancelAnimation(cornerOpacity);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cornerOpacity is a stable useSharedValue ref that never changes identity
   }, [reducedMotion]);
 
@@ -335,7 +336,8 @@ export default function ScanScreen() {
             });
             if (!verifyBarcode) refreshScanCount();
           } else {
-            handleSmartScan(photo.uri);
+            const ocrResult = cameraRef.current?.getLatestOCRResult?.();
+            handleSmartScan(photo.uri, ocrResult?.resultText ?? undefined);
           }
         }
       } catch {
