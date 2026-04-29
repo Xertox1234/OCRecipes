@@ -24,14 +24,18 @@ describe("ActionCard", () => {
 
   it("shows success state after onPressAsync resolves", async () => {
     const onPressAsync = vi.fn().mockResolvedValue(undefined);
-    renderComponent(<ActionCard block={mockBlock} onPressAsync={onPressAsync} />);
+    renderComponent(
+      <ActionCard block={mockBlock} onPressAsync={onPressAsync} />,
+    );
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(screen.getByText("Done")).toBeDefined());
   });
 
   it("shows error state after onPressAsync rejects", async () => {
     const onPressAsync = vi.fn().mockRejectedValue(new Error("fail"));
-    renderComponent(<ActionCard block={mockBlock} onPressAsync={onPressAsync} />);
+    renderComponent(
+      <ActionCard block={mockBlock} onPressAsync={onPressAsync} />,
+    );
     fireEvent.click(screen.getByRole("button"));
     await waitFor(() => expect(screen.getByText("Failed")).toBeDefined());
   });
