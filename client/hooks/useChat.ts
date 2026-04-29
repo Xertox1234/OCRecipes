@@ -8,6 +8,8 @@ export interface ChatConversation {
   userId: string;
   title: string;
   type: string; // 'coach' | 'recipe'
+  isPinned: boolean;
+  pinnedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -270,6 +272,23 @@ export function useDeleteChatMessage() {
     onSuccess: () => {
       // Intentionally no cache invalidation — CoachChat manages
       // message state directly during retry to avoid UI flicker.
+    },
+  });
+}
+
+export function usePinConversation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isPinned }: { id: number; isPinned: boolean }) => {
+      const res = await apiRequest(
+        "PATCH",
+        `/api/chat/conversations/${id}/pin`,
+        { isPinned },
+      );
+      return (await res.json()) as ChatConversation;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
     },
   });
 }

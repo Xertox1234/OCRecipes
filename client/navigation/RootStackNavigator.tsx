@@ -47,6 +47,7 @@ import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
 import PantryScreen from "@/screens/meal-plan/PantryScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
 import FastingScreen from "@/screens/FastingScreen";
+import AllConversationsScreen from "@/screens/AllConversationsScreen";
 
 export type RootStackParamList = {
   Login: undefined;
@@ -136,6 +137,7 @@ export type RootStackParamList = {
       }
     | undefined;
   FastingModal: undefined;
+  AllConversations: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -478,6 +480,15 @@ export default function RootStackNavigator() {
                 </Pressable>
               ),
             })}
+          />
+          <Stack.Screen
+            name="AllConversations"
+            component={AllConversationsScreen}
+            options={{
+              headerShown: false,
+              presentation: "fullScreenModal",
+              animation: reducedMotion ? "none" : "slide_from_bottom",
+            }}
           />
         </>
       )}

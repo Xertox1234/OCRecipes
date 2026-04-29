@@ -272,3 +272,12 @@ export type MenuScanResultScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "MenuScanResult"
 >;
+
+/**
+ * Navigation prop for AllConversationsScreen
+ * Can use goBack or navigate within RootStack
+ */
+export type AllConversationsNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  "AllConversations"
+>;
