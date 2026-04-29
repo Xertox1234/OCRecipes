@@ -338,10 +338,15 @@ export interface NotebookEntry {
   updatedAt: string;
 }
 
-export function useNotebookEntries(opts?: { type?: string; status?: string }) {
+export function useNotebookEntries(opts?: {
+  type?: string;
+  status?: string;
+  page?: number;
+}) {
   const params = new URLSearchParams();
   if (opts?.type) params.set("type", opts.type);
   if (opts?.status) params.set("status", opts.status);
+  if (opts?.page) params.set("page", String(opts.page));
   const query = params.toString();
   return useQuery<NotebookEntry[]>({
     queryKey: ["/api/coach/notebook", opts],
