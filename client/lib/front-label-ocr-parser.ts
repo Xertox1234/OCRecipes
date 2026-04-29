@@ -1,4 +1,4 @@
-export interface ParsedFrontLabel {
+interface ParsedFrontLabel {
   brand: string | null;
   productName: string | null;
   netWeight: string | null;

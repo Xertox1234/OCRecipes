@@ -4,7 +4,7 @@ export interface LocalReceiptItem {
   quantity: number;
 }
 
-export interface ParsedReceipt {
+interface ParsedReceipt {
   items: LocalReceiptItem[];
   storeName: string | null;
   totalAmount: string | null;
