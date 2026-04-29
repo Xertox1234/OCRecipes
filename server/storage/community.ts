@@ -247,7 +247,7 @@ export async function getCommunityRecipe(
  * Display columns for browse/featured endpoints.
  * Excludes the heavy `instructions` JSONB column — browse cards never render step-by-step instructions.
  */
-const FEATURED_COLUMNS = {
+export const FEATURED_COLUMNS = {
   id: communityRecipes.id,
   authorId: communityRecipes.authorId,
   barcode: communityRecipes.barcode,
@@ -446,10 +446,10 @@ export async function getUserRecipes(
   userId: string,
   limit = 50,
   offset = 0,
-): Promise<{ items: CommunityRecipe[]; total: number }> {
+): Promise<{ items: FeaturedRecipe[]; total: number }> {
   const [items, countResult] = await Promise.all([
     db
-      .select()
+      .select(FEATURED_COLUMNS)
       .from(communityRecipes)
       .where(eq(communityRecipes.authorId, userId))
       .orderBy(desc(communityRecipes.createdAt))

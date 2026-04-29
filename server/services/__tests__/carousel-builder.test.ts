@@ -104,14 +104,23 @@ describe("carousel-builder", () => {
     expect(cards[0].recommendationReason).toBe("Matches your keto diet");
   });
 
-  it("filters out dismissed recipes", async () => {
-    vi.mocked(storage.getDismissedRecipeIds).mockResolvedValue(new Set([1]));
-    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue(
-      mockCommunityRecipes,
-    );
+  it("passes dismissedIds to storage so dismissed recipes are excluded at the DB level", async () => {
+    const dismissedIds = new Set([1]);
+    vi.mocked(storage.getDismissedRecipeIds).mockResolvedValue(dismissedIds);
+    // Storage already filtered: only recipe 2 is returned
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      mockCommunityRecipes[1],
+    ]);
 
     const cards = await buildCarousel("1", mockProfile);
 
+    // Verify storage was called with the dismissed set
+    expect(storage.getRecentCommunityRecipes).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ dismissedIds }),
+    );
+    // Result contains no dismissed IDs
+    expect(cards.map((c) => c.id)).not.toContain(1);
     expect(cards).toHaveLength(1);
     expect(cards[0].id).toBe(2);
   });

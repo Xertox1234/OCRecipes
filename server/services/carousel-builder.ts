@@ -81,8 +81,7 @@ export async function buildCarousel(
     dismissedIds,
   });
 
-  return recipes
-    .filter((r) => !dismissedIds.has(r.id))
-    .map((r) => normalizeCommunity(r, userProfile))
-    .slice(0, 8);
+  // getRecentCommunityRecipes already excludes dismissed IDs at the DB level
+  // (notInArray clause). No post-DB filter needed here.
+  return recipes.map((r) => normalizeCommunity(r, userProfile)).slice(0, 8);
 }

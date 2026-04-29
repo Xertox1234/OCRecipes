@@ -6,7 +6,6 @@ import {
   type InsertRecipeIngredient,
   type MealPlanItem,
   type InsertMealPlanItem,
-  type CommunityRecipe,
   scannedItems,
   dailyLogs,
   mealPlanRecipes,
@@ -16,6 +15,7 @@ import {
   cookbookRecipes,
   favouriteRecipes,
 } from "@shared/schema";
+import { FEATURED_COLUMNS, type FeaturedRecipe } from "./community";
 import { toDateString } from "@shared/lib/date";
 import { db } from "../db";
 import {
@@ -45,6 +45,41 @@ import {
 // ============================================================================
 // MEAL PLAN RECIPES
 // ============================================================================
+
+/**
+ * Display columns for the unified recipe browser (personal arm).
+ * Mirrors FEATURED_COLUMNS for community recipes — excludes the heavy
+ * `instructions` JSONB column since browser cards never render step-by-step instructions.
+ */
+const UNIFIED_PERSONAL_COLUMNS = {
+  id: mealPlanRecipes.id,
+  userId: mealPlanRecipes.userId,
+  title: mealPlanRecipes.title,
+  description: mealPlanRecipes.description,
+  sourceType: mealPlanRecipes.sourceType,
+  sourceUrl: mealPlanRecipes.sourceUrl,
+  externalId: mealPlanRecipes.externalId,
+  cuisine: mealPlanRecipes.cuisine,
+  difficulty: mealPlanRecipes.difficulty,
+  servings: mealPlanRecipes.servings,
+  prepTimeMinutes: mealPlanRecipes.prepTimeMinutes,
+  cookTimeMinutes: mealPlanRecipes.cookTimeMinutes,
+  imageUrl: mealPlanRecipes.imageUrl,
+  dietTags: mealPlanRecipes.dietTags,
+  mealTypes: mealPlanRecipes.mealTypes,
+  caloriesPerServing: mealPlanRecipes.caloriesPerServing,
+  proteinPerServing: mealPlanRecipes.proteinPerServing,
+  carbsPerServing: mealPlanRecipes.carbsPerServing,
+  fatPerServing: mealPlanRecipes.fatPerServing,
+  fiberPerServing: mealPlanRecipes.fiberPerServing,
+  sugarPerServing: mealPlanRecipes.sugarPerServing,
+  sodiumPerServing: mealPlanRecipes.sodiumPerServing,
+  createdAt: mealPlanRecipes.createdAt,
+  updatedAt: mealPlanRecipes.updatedAt,
+} as const;
+
+/** Personal recipe row without heavy `instructions` JSONB. */
+export type PersonalRecipeBrief = Omit<MealPlanRecipe, "instructions">;
 
 export async function findMealPlanRecipeByExternalId(
   userId: string,
@@ -355,7 +390,7 @@ export async function getUnifiedRecipes(params: {
   diet?: string;
   mealType?: string;
   limit?: number;
-}): Promise<{ community: CommunityRecipe[]; personal: MealPlanRecipe[] }> {
+}): Promise<{ community: FeaturedRecipe[]; personal: PersonalRecipeBrief[] }> {
   const { userId, query, cuisine, diet, mealType } = params;
   // Limit is applied independently to each source, so the total result
   // set may contain up to 2x this value (community + personal).
@@ -435,13 +470,13 @@ export async function getUnifiedRecipes(params: {
 
   const [community, personal] = await Promise.all([
     db
-      .select()
+      .select(FEATURED_COLUMNS)
       .from(communityRecipes)
       .where(and(...communityConditions))
       .orderBy(desc(communityRecipes.createdAt))
       .limit(resultLimit),
     db
-      .select()
+      .select(UNIFIED_PERSONAL_COLUMNS)
       .from(mealPlanRecipes)
       .where(and(...personalConditions))
       .orderBy(desc(mealPlanRecipes.createdAt))
