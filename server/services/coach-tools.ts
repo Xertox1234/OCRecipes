@@ -18,10 +18,12 @@
 
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { z } from "zod";
+import { createHash } from "crypto";
 import { storage } from "../storage";
 import { lookupNutrition } from "./nutrition-lookup";
 import { searchCatalogRecipes } from "./recipe-catalog";
 import { logger } from "../lib/logger";
+import { isValidCalendarDate } from "../utils/date-validation";
 
 // ---------------------------------------------------------------------------
 // Structured error type returned by all tool call paths.
@@ -70,8 +72,13 @@ const searchRecipesSchema = z.object({
   maxReadyTime: z.number().optional(),
 });
 
+const isoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD")
+  .refine(isValidCalendarDate, "Must be a real calendar date");
+
 const getDailyLogDetailsSchema = z.object({
-  date: z.string().optional(),
+  date: isoDateSchema.optional(),
 });
 
 const logFoodItemSchema = z.object({
@@ -88,8 +95,8 @@ const getPantryItemsSchema = z.object({
 });
 
 const getMealPlanSchema = z.object({
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
+  startDate: isoDateSchema.optional(),
+  endDate: isoDateSchema.optional(),
 });
 
 const addToMealPlanSchema = z.object({
@@ -123,6 +130,64 @@ const getSubstitutionsSchema = z.object({
 
 /** Maximum number of tool calls the coach may make in a single response turn. */
 export const MAX_TOOL_CALLS_PER_RESPONSE = 5;
+const MAX_MEAL_PLAN_RANGE_DAYS = 14;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function hashUserId(userId: string): string {
+  return createHash("sha256").update(userId).digest("hex").slice(0, 12);
+}
+
+function toIsoDate(date: Date): string {
+  return date.toISOString().split("T")[0];
+}
+
+function parseIsoDate(date: string): Date {
+  return new Date(`${date}T00:00:00.000Z`);
+}
+
+function addDaysIso(date: string, days: number): string {
+  return toIsoDate(new Date(parseIsoDate(date).getTime() + days * DAY_MS));
+}
+
+function getInclusiveDayCount(startDate: string, endDate: string): number {
+  return (
+    Math.floor(
+      (parseIsoDate(endDate).getTime() - parseIsoDate(startDate).getTime()) /
+        DAY_MS,
+    ) + 1
+  );
+}
+
+function compactMealPlanItems(
+  items: Awaited<ReturnType<typeof storage.getMealPlanItems>>,
+) {
+  return items.map((item) => ({
+    id: item.id,
+    plannedDate: item.plannedDate,
+    mealType: item.mealType,
+    servings: item.servings,
+    recipe: item.recipe
+      ? {
+          id: item.recipe.id,
+          title: item.recipe.title,
+          caloriesPerServing: item.recipe.caloriesPerServing,
+          proteinPerServing: item.recipe.proteinPerServing,
+          carbsPerServing: item.recipe.carbsPerServing,
+          fatPerServing: item.recipe.fatPerServing,
+        }
+      : null,
+    scannedItem: item.scannedItem
+      ? {
+          id: item.scannedItem.id,
+          productName: item.scannedItem.productName,
+          calories: item.scannedItem.calories,
+          protein: item.scannedItem.protein,
+          carbs: item.scannedItem.carbs,
+          fat: item.scannedItem.fat,
+        }
+      : null,
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // Tool Definitions
@@ -414,7 +479,10 @@ export async function executeToolCall(
   args: ToolArgs,
   userId: string,
 ): Promise<ToolErrorResult | object> {
-  logger.debug({ toolName, userId }, "Executing coach tool call");
+  logger.debug(
+    { toolName, userIdHash: hashUserId(userId) },
+    "Executing coach tool call",
+  );
 
   switch (toolName) {
     case "lookup_nutrition": {
@@ -459,7 +527,9 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("get_daily_log_details", parsed.error.message);
       }
-      const date = parsed.data.date ? new Date(parsed.data.date) : new Date();
+      const date = parsed.data.date
+        ? parseIsoDate(parsed.data.date)
+        : new Date();
 
       const [logs, totals] = await Promise.all([
         storage.getDailyLogs(userId, date),
@@ -481,7 +551,14 @@ export async function executeToolCall(
       // Return proposal — client renders as action card for user confirmation
       return {
         proposal: true,
-        action: "log_food",
+        action: {
+          type: "log_food",
+          description: parsed.data.name,
+          calories: parsed.data.calories,
+          protein: parsed.data.protein ?? 0,
+          carbs: parsed.data.carbs ?? 0,
+          fat: parsed.data.fat ?? 0,
+        },
         description: parsed.data.name,
         calories: parsed.data.calories,
         protein: parsed.data.protein ?? 0,
@@ -516,17 +593,26 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("get_meal_plan", parsed.error.message);
       }
-      const today = new Date().toISOString().split("T")[0];
+      const today = toIsoDate(new Date());
       const startDate = parsed.data.startDate ?? today;
-      const defaultEnd = new Date(
-        new Date(startDate).getTime() + 6 * 24 * 60 * 60 * 1000,
-      )
-        .toISOString()
-        .split("T")[0];
+      const defaultEnd = addDaysIso(startDate, 6);
       const endDate = parsed.data.endDate ?? defaultEnd;
+      const dayCount = getInclusiveDayCount(startDate, endDate);
+      if (dayCount < 1) {
+        return invalidArgs(
+          "get_meal_plan",
+          "endDate must be on or after startDate",
+        );
+      }
+      if (dayCount > MAX_MEAL_PLAN_RANGE_DAYS) {
+        return invalidArgs(
+          "get_meal_plan",
+          `date range is limited to ${MAX_MEAL_PLAN_RANGE_DAYS} days`,
+        );
+      }
 
       const items = await storage.getMealPlanItems(userId, startDate, endDate);
-      return { startDate, endDate, items };
+      return { startDate, endDate, items: compactMealPlanItems(items) };
     }
 
     case "add_to_meal_plan": {
@@ -537,9 +623,15 @@ export async function executeToolCall(
       // Return proposal — client renders as meal plan card for user confirmation
       return {
         proposal: true,
-        action: "add_meal_plan",
-        plannedDate:
-          parsed.data.plannedDate ?? new Date().toISOString().split("T")[0],
+        action: {
+          type: "navigate",
+          screen: "RecipeBrowserModal",
+          params: {
+            date: parsed.data.plannedDate ?? toIsoDate(new Date()),
+            mealType: parsed.data.mealType ?? "lunch",
+          },
+        },
+        plannedDate: parsed.data.plannedDate ?? toIsoDate(new Date()),
         mealType: parsed.data.mealType ?? "lunch",
         notes: parsed.data.notes,
         message: "I've prepared this meal plan addition. Please confirm below.",
@@ -554,7 +646,10 @@ export async function executeToolCall(
       // Return proposal — client renders for user confirmation
       return {
         proposal: true,
-        action: "add_grocery_list",
+        action: {
+          type: "navigate",
+          screen: "GroceryListsModal",
+        },
         listName: parsed.data.listName ?? "Coach Grocery List",
         items: (parsed.data.items ?? []).map((i) => ({
           name: i.name,

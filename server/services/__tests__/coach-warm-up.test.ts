@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { setWarmUp, consumeWarmUp, WARM_UP_TTL_MS } from "../coach-warm-up";
+import {
+  setWarmUp,
+  consumeWarmUp,
+  WARM_UP_TTL_MS,
+  _testInternals,
+} from "../coach-warm-up";
 
 vi.mock("../../lib/logger", () => ({
   createServiceLogger: () => ({
@@ -56,5 +61,12 @@ describe("consumeWarmUp", () => {
     const second = consumeWarmUp("user1", 1, "wuid-3");
     expect(first).toEqual(MESSAGES);
     expect(second).toBeNull();
+  });
+
+  it("uses hashed user identifiers in warm-up cache keys", () => {
+    const key = _testInternals.cacheKey("user1", 42);
+
+    expect(key).toMatch(/^[0-9a-f]{12}:42$/);
+    expect(key).not.toContain("user1");
   });
 });

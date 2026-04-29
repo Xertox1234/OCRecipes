@@ -5,6 +5,8 @@ import {
   sanitizeContextField,
   validateAiResponse,
   containsDangerousDietaryAdvice,
+  containsUnsafeMedicalAdvice,
+  containsUnsafeCoachAdvice,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../ai-safety";
 
@@ -226,6 +228,47 @@ describe("containsDangerousDietaryAdvice", () => {
     ).toBe(true);
     expect(containsDangerousDietaryAdvice("try a zero-fat diet")).toBe(true);
     expect(containsDangerousDietaryAdvice("zero protein diet")).toBe(true);
+  });
+});
+
+describe("containsUnsafeMedicalAdvice", () => {
+  it("detects diagnosis-style medical claims", () => {
+    expect(containsUnsafeMedicalAdvice("You likely have diabetes.")).toBe(true);
+    expect(
+      containsUnsafeMedicalAdvice("This confirms you have an eating disorder."),
+    ).toBe(true);
+    expect(
+      containsUnsafeMedicalAdvice("I diagnose you with prediabetes."),
+    ).toBe(true);
+  });
+
+  it("detects medication change advice", () => {
+    expect(containsUnsafeMedicalAdvice("You should stop taking insulin.")).toBe(
+      true,
+    );
+    expect(containsUnsafeMedicalAdvice("You should start metformin.")).toBe(
+      true,
+    );
+  });
+
+  it("allows safe referral language", () => {
+    expect(
+      containsUnsafeMedicalAdvice(
+        "Your symptoms are worth discussing with a healthcare professional.",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("containsUnsafeCoachAdvice", () => {
+  it("combines dietary and medical safety checks", () => {
+    expect(containsUnsafeCoachAdvice("Eat only 500 calories per day")).toBe(
+      true,
+    );
+    expect(containsUnsafeCoachAdvice("You likely have diabetes.")).toBe(true);
+    expect(
+      containsUnsafeCoachAdvice("Try a balanced dinner with vegetables."),
+    ).toBe(false);
   });
 });
 

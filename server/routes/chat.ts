@@ -142,6 +142,7 @@ export function register(app: Express): void {
         if (remixSourceRecipe) {
           await storage.createChatMessage(
             conversation.id,
+            req.userId,
             "system",
             JSON.stringify({
               title: remixSourceRecipe.title,
@@ -384,6 +385,12 @@ export function register(app: Express): void {
               responseBytes += eventJson.length;
               if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
                 aborted = true;
+                abortController.abort();
+                if (!res.writableEnded) {
+                  res.write(
+                    `data: ${JSON.stringify({ error: "Response too large" })}\n\n`,
+                  );
+                }
                 break;
               }
 
@@ -408,7 +415,7 @@ export function register(app: Express): void {
             }
 
             // Save assistant message with recipe in metadata
-            if (fullTextResponse || recipeData) {
+            if (!aborted && (fullTextResponse || recipeData)) {
               const metadata = recipeData
                 ? {
                     metadataVersion: 1,
@@ -420,6 +427,7 @@ export function register(app: Express): void {
 
               await storage.createChatMessage(
                 id,
+                req.userId,
                 "assistant",
                 fullTextResponse || "Here's a recipe for you!",
                 metadata,
@@ -465,6 +473,12 @@ export function register(app: Express): void {
               responseBytes += eventJson.length;
               if (responseBytes > SSE_MAX_RESPONSE_BYTES) {
                 aborted = true;
+                abortController.abort();
+                if (!res.writableEnded) {
+                  res.write(
+                    `data: ${JSON.stringify({ error: "Response too large" })}\n\n`,
+                  );
+                }
                 break;
               }
               res.write(`data: ${eventJson}\n\n`);

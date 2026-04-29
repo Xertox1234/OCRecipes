@@ -34,12 +34,18 @@ export interface NotebookBudgetEntry {
 export const NOTEBOOK_ENTRY_OPEN = "<notebook_entry>";
 export const NOTEBOOK_ENTRY_CLOSE = "</notebook_entry>";
 
+export function escapeNotebookDelimiters(content: string): string {
+  return content
+    .replaceAll(NOTEBOOK_ENTRY_OPEN, "&lt;notebook_entry&gt;")
+    .replaceAll(NOTEBOOK_ENTRY_CLOSE, "&lt;/notebook_entry&gt;");
+}
+
 /**
  * Format a single notebook entry into the line that appears inside the
  * system prompt. The content must already be sanitized by the caller.
  */
 export function formatNotebookLine(entry: NotebookBudgetEntry): string {
-  return `[${entry.type}] ${NOTEBOOK_ENTRY_OPEN}${entry.content}${NOTEBOOK_ENTRY_CLOSE}`;
+  return `[${entry.type}] ${NOTEBOOK_ENTRY_OPEN}${escapeNotebookDelimiters(entry.content)}${NOTEBOOK_ENTRY_CLOSE}`;
 }
 
 /**

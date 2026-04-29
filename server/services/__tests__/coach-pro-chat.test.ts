@@ -13,6 +13,7 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 import {
   handleCoachChat,
+  hashCoachCacheContext,
   hashCoachCacheKey,
   hashNotebookDedupeKey,
   _testInternals as coachProInternals,
@@ -222,6 +223,47 @@ describe("handleCoachChat", () => {
       await collectEvents(handleCoachChat(params));
 
       expect(storage.getCoachCachedResponse).not.toHaveBeenCalled();
+    });
+
+    it("includes same-day coach context fingerprint in cache key", () => {
+      const morning = new Date("2026-04-29T09:15:00Z");
+      const baseHash = hashCoachCacheContext(
+        {
+          goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+          todayIntake: { calories: 800, protein: 40, carbs: 100, fat: 30 },
+          weightTrend: { currentWeight: 75, weeklyRate: -0.5 },
+          dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
+        },
+        morning,
+      );
+      const updatedHash = hashCoachCacheContext(
+        {
+          goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+          todayIntake: { calories: 1200, protein: 80, carbs: 130, fat: 45 },
+          weightTrend: { currentWeight: 75, weeklyRate: -0.5 },
+          dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
+        },
+        morning,
+      );
+
+      expect(baseHash).not.toBe(updatedHash);
+      expect(
+        hashCoachCacheKey(
+          "user-42",
+          "How am I doing?",
+          false,
+          "2026-04-29",
+          baseHash,
+        ),
+      ).not.toBe(
+        hashCoachCacheKey(
+          "user-42",
+          "How am I doing?",
+          false,
+          "2026-04-29",
+          updatedHash,
+        ),
+      );
     });
   });
 
@@ -601,6 +643,7 @@ describe("handleCoachChat", () => {
 
       expect(storage.createChatMessage).toHaveBeenCalledWith(
         1,
+        "user-42",
         "assistant",
         "Test response",
         null,
@@ -628,6 +671,7 @@ describe("handleCoachChat", () => {
 
       expect(storage.createChatMessage).toHaveBeenCalledWith(
         1,
+        "user-42",
         "assistant",
         "Plan here.",
         { blocks: mockBlocks },
@@ -641,6 +685,24 @@ describe("handleCoachChat", () => {
 
       await collectEvents(handleCoachChat(params));
 
+      expect(storage.createChatMessage).not.toHaveBeenCalled();
+    });
+
+    it("does not persist partial assistant message after abort", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        fakeStream(["Partial response"]),
+      );
+      let abortChecks = 0;
+      const params = makeParams({
+        isCoachPro: true,
+        isAborted: () => abortChecks++ > 0,
+      });
+
+      const events = await collectEvents(handleCoachChat(params));
+
+      expect(events).toEqual([
+        { type: "content", content: "Partial response" },
+      ]);
       expect(storage.createChatMessage).not.toHaveBeenCalled();
     });
   });

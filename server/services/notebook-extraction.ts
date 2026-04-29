@@ -6,7 +6,12 @@ import {
 } from "@shared/schemas/coach-notebook";
 import { storage } from "../storage";
 import { logger } from "../lib/logger";
-import { sanitizeContextField, sanitizeUserInput } from "../lib/ai-safety";
+import {
+  containsUnsafeCoachAdvice,
+  sanitizeContextField,
+  sanitizeUserInput,
+  SYSTEM_PROMPT_BOUNDARY,
+} from "../lib/ai-safety";
 
 interface ConversationMessage {
   role: "user" | "assistant" | "system";
@@ -30,7 +35,9 @@ Rules:
 - Conversation summary should be 1-2 sentences covering what was discussed and decided
 - coaching_strategy describes how the user responds best (only include if clear signal)
 - Maximum 10 entries per extraction
-- Return empty entries array if nothing meaningful to extract`;
+- Return empty entries array if nothing meaningful to extract
+
+${SYSTEM_PROMPT_BOUNDARY}`;
 
 export async function extractNotebookEntries(
   messages: ConversationMessage[],
@@ -89,11 +96,13 @@ export async function extractNotebookEntries(
       return [];
     }
 
-    return result.data.entries.map((e) => ({
-      type: e.type,
-      content: sanitizeContextField(e.content, 500),
-      followUpDate: e.followUpDate ?? null,
-    }));
+    return result.data.entries
+      .map((e) => ({
+        type: e.type,
+        content: sanitizeContextField(e.content, 500),
+        followUpDate: e.followUpDate ?? null,
+      }))
+      .filter((entry) => !containsUnsafeCoachAdvice(entry.content));
   } catch (error) {
     logger.error({ error, conversationId }, "Notebook extraction failed");
     return [];

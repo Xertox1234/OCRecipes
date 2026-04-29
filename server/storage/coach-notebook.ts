@@ -9,7 +9,7 @@ import type {
 } from "@shared/schemas/coach-notebook";
 import { db } from "../db";
 import { logger } from "../lib/logger";
-import { eq, and, desc, lte, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, lte, sql, inArray, isNull, ne, or } from "drizzle-orm";
 import { createHash } from "crypto";
 
 export async function getActiveNotebookEntries(
@@ -131,6 +131,11 @@ export async function archiveOldEntries(
         eq(coachNotebook.userId, userId),
         eq(coachNotebook.status, "active"),
         lte(coachNotebook.updatedAt, cutoff),
+        or(
+          ne(coachNotebook.type, "commitment"),
+          isNull(coachNotebook.followUpDate),
+          lte(coachNotebook.followUpDate, new Date()),
+        ),
       ),
     )
     .returning();

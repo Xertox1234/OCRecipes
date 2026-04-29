@@ -8,7 +8,7 @@ import React, {
 import {
   StyleSheet,
   View,
-  ScrollView,
+  FlatList,
   TextInput,
   Pressable,
   KeyboardAvoidingView,
@@ -20,10 +20,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
 import { ChatBubble } from "@/components/ChatBubble";
+import { InlineError } from "@/components/InlineError";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { useTheme } from "@/hooks/useTheme";
-import { useChatMessages } from "@/hooks/useChat";
+import { useChatMessages, type ChatMessage } from "@/hooks/useChat";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { getApiUrl } from "@/lib/query-client";
@@ -48,6 +49,11 @@ interface CoachChatProps {
   initialMessage?: string | null;
   onInitialMessageSent?: () => void;
 }
+
+type ChatListItem =
+  | { type: "message"; id: string; message: ChatMessage }
+  | { type: "optimistic"; id: string; content: string }
+  | { type: "stream"; id: string };
 
 function filterValidBlocks(raw: unknown[]): CoachBlock[] {
   const valid: CoachBlock[] = [];
@@ -77,6 +83,19 @@ async function sendMessageStreaming(
 
     let accumulated = "";
     let lastProcessedIndex = 0;
+    let settled = false;
+
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    const rejectOnce = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
 
     xhr.onreadystatechange = () => {
       if (xhr.readyState >= 3 && xhr.responseText) {
@@ -88,7 +107,7 @@ async function sendMessageStreaming(
             try {
               const data = JSON.parse(line.slice(6));
               if (data.error) {
-                onDone();
+                rejectOnce(new Error(String(data.error)));
                 return;
               }
               if (data.content) {
@@ -100,6 +119,7 @@ async function sendMessageStreaming(
               }
               if (data.done) {
                 onDone();
+                resolveOnce();
               }
             } catch {
               // Ignore incomplete JSON chunks
@@ -108,15 +128,15 @@ async function sendMessageStreaming(
         }
       }
       if (xhr.readyState === 4) {
-        if (xhr.status >= 200 && xhr.status < 300) resolve();
-        else reject(new Error(`${xhr.status}: ${xhr.responseText}`));
+        if (xhr.status >= 200 && xhr.status < 300) resolveOnce();
+        else rejectOnce(new Error(`${xhr.status}: ${xhr.responseText}`));
       }
     };
 
-    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.onerror = () => rejectOnce(new Error("Network error"));
     signal.addEventListener("abort", () => {
       xhr.abort();
-      resolve();
+      resolveOnce();
     });
     xhr.send(JSON.stringify(warmUpId ? { content, warmUpId } : { content }));
   });
@@ -138,14 +158,17 @@ export default function CoachChat({
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
+  const [streamingError, setStreamingError] = useState<string | null>(null);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
     null,
   );
 
-  const scrollRef = useRef<ScrollView>(null);
+  const listRef = useRef<FlatList<ChatListItem>>(null);
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<TextInput>(null);
   const prevStreamingRef = useRef(false);
+  const pendingStreamingDisplayRef = useRef("");
+  const streamingFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Accessibility announcements for streaming state
   useEffect(() => {
@@ -162,6 +185,25 @@ export default function CoachChat({
   }, [isStreaming]);
 
   const { data: messages } = useChatMessages(conversationId);
+
+  const chatItems = useMemo<ChatListItem[]>(() => {
+    const items: ChatListItem[] = (messages ?? []).map((message) => ({
+      type: "message",
+      id: `message-${message.id}`,
+      message,
+    }));
+    if (optimisticMessage) {
+      items.push({
+        type: "optimistic",
+        id: "optimistic",
+        content: optimisticMessage,
+      });
+    }
+    if (isStreaming || streamBlocks.length > 0) {
+      items.push({ type: "stream", id: "stream" });
+    }
+    return items;
+  }, [messages, optimisticMessage, isStreaming, streamBlocks.length]);
 
   // Validate blocks once per messages change, not on every render tick
   const messageBlocks = useMemo(() => {
@@ -215,6 +257,7 @@ export default function CoachChat({
       setIsStreaming(true);
       setStreamingContent("");
       setStreamBlocks([]);
+      setStreamingError(null);
 
       let convId = conversationId;
       if (!convId) {
@@ -254,8 +297,14 @@ export default function CoachChat({
                 ).trim();
               }
             }
-            setStreamingContent(display);
-            scrollRef.current?.scrollToEnd({ animated: false });
+            pendingStreamingDisplayRef.current = display;
+            if (!streamingFlushRef.current) {
+              streamingFlushRef.current = setTimeout(() => {
+                setStreamingContent(pendingStreamingDisplayRef.current);
+                listRef.current?.scrollToEnd({ animated: false });
+                streamingFlushRef.current = null;
+              }, 16);
+            }
           },
           (blocks) => setStreamBlocks(blocks),
           () => {
@@ -268,6 +317,10 @@ export default function CoachChat({
       } catch {
         setIsStreaming(false);
         setOptimisticMessage(null);
+        setInputText(content);
+        setStreamingError(
+          "Message failed. Check your connection and try again.",
+        );
       }
 
       warmUpHook.reset();
@@ -337,6 +390,9 @@ export default function CoachChat({
           case "WeightTracking":
             navigation.navigate("WeightTracking");
             break;
+          case "GoalSetup":
+            navigation.navigate("GoalSetup");
+            break;
           case "GroceryListsModal":
             navigation.navigate("GroceryListsModal");
             break;
@@ -351,6 +407,10 @@ export default function CoachChat({
         // Pass the AI-generated meal plan data through to the recipe browser
         const planDays = parsePlanDays(action.plan);
         navigation.navigate("RecipeBrowserModal", { planDays });
+      } else if (action.type === "add_grocery_list") {
+        navigation.navigate("GroceryListsModal");
+      } else if (action.type === "set_goal") {
+        navigation.navigate("GoalSetup");
       }
     },
     [handleSend, navigation],
@@ -371,40 +431,16 @@ export default function CoachChat({
     [handleSend],
   );
 
-  const handleMicPress = useCallback(() => {
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
-    }
-  }, [isListening, startListening, stopListening]);
-
-  // Auto-scroll when new messages arrive (streaming scroll handled in onChunk callback)
-  useEffect(() => {
-    scrollRef.current?.scrollToEnd({ animated: false });
-  }, [messages]);
-
-  const showSendButton = inputText.trim().length > 0;
-
-  return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={90}
-    >
-      <ScrollView
-        ref={scrollRef}
-        style={styles.messageList}
-        contentContainerStyle={styles.messageContent}
-      >
-        {/* Existing messages */}
-        {messages?.map((msg) => (
-          <View key={msg.id}>
+  const renderItem = useCallback(
+    ({ item }: { item: ChatListItem }) => {
+      if (item.type === "message") {
+        const msg = item.message;
+        return (
+          <View>
             <ChatBubble
               role={msg.role as "user" | "assistant"}
               content={msg.content}
             />
-            {/* Render blocks from memoized validation (validated once per messages change) */}
             {messageBlocks.get(msg.id)?.map((block, i) => (
               <BlockRenderer
                 key={`${msg.id}-block-${i}`}
@@ -415,20 +451,18 @@ export default function CoachChat({
               />
             ))}
           </View>
-        ))}
+        );
+      }
 
-        {/* Optimistic user message */}
-        {optimisticMessage && (
-          <ChatBubble role="user" content={optimisticMessage} />
-        )}
+      if (item.type === "optimistic") {
+        return <ChatBubble role="user" content={item.content} />;
+      }
 
-        {/* Streaming assistant response */}
+      return (
         <View>
           {isStreaming && streamingContent && (
             <ChatBubble role="assistant" content={streamingContent} />
           )}
-
-          {/* Streaming blocks */}
           {streamBlocks.map((block, i) => (
             <BlockRenderer
               key={`stream-block-${i}`}
@@ -438,15 +472,68 @@ export default function CoachChat({
               onCommitmentAccept={handleCommitmentAccept}
             />
           ))}
-
-          {/* Typing indicator */}
           {isStreaming && !streamingContent && (
             <View style={styles.typing}>
               <ActivityIndicator size="small" color={theme.textSecondary} />
             </View>
           )}
         </View>
-      </ScrollView>
+      );
+    },
+    [
+      handleBlockAction,
+      handleCommitmentAccept,
+      handleQuickReply,
+      isStreaming,
+      messageBlocks,
+      streamBlocks,
+      streamingContent,
+      theme.textSecondary,
+    ],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (streamingFlushRef.current) {
+        clearTimeout(streamingFlushRef.current);
+        streamingFlushRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleMicPress = useCallback(() => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isListening, startListening, stopListening]);
+
+  // Auto-scroll when new messages arrive (streaming scroll handled in onChunk callback)
+  useEffect(() => {
+    listRef.current?.scrollToEnd({ animated: false });
+  }, [messages]);
+
+  const showSendButton = inputText.trim().length > 0;
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={90}
+    >
+      <FlatList
+        ref={listRef}
+        data={chatItems}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        style={styles.messageList}
+        contentContainerStyle={styles.messageContent}
+        keyboardShouldPersistTaps="handled"
+        onContentSizeChange={() =>
+          listRef.current?.scrollToEnd({ animated: false })
+        }
+      />
 
       {/* Input bar */}
       <View
@@ -472,6 +559,7 @@ export default function CoachChat({
           returnKeyType="send"
           multiline={false}
           editable={!isStreaming}
+          accessibilityLabel="Message your nutrition coach"
         />
         {showSendButton ? (
           <Pressable
@@ -490,6 +578,7 @@ export default function CoachChat({
           />
         ) : null}
       </View>
+      <InlineError message={streamingError} style={styles.inlineError} />
     </KeyboardAvoidingView>
   );
 }
@@ -514,10 +603,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
+  },
+  inlineError: {
+    marginHorizontal: Spacing.sm,
+    marginBottom: Spacing.sm,
+    padding: Spacing.sm,
   },
 });

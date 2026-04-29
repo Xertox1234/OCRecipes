@@ -214,6 +214,7 @@ export function register(app: Express): void {
         // Save user message with image analysis in metadata
         const message = await storage.createChatMessage(
           id,
+          req.userId,
           "user",
           ingredientAnalysis,
           {

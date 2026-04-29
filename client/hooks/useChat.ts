@@ -12,7 +12,7 @@ export interface ChatConversation {
   updatedAt: string;
 }
 
-interface ChatMessage {
+export interface ChatMessage {
   id: number;
   conversationId: number;
   role: "user" | "assistant" | "system";

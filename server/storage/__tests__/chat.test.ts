@@ -93,7 +93,7 @@ describe("chat storage", () => {
       await createChatConversation(testUser.id, "Older");
       // Make conv2 newer by updating its timestamp via a message
       const conv2 = await createChatConversation(testUser.id, "Newer");
-      await createChatMessage(conv2.id, "user", "Hello");
+      await createChatMessage(conv2.id, testUser.id, "user", "Hello");
 
       const convos = await getChatConversations(testUser.id);
       expect(convos).toHaveLength(2);
@@ -164,7 +164,12 @@ describe("chat storage", () => {
       const conv = await createChatConversation(testUser.id, "Chat");
       const before = conv.updatedAt;
 
-      const msg = await createChatMessage(conv.id, "user", "Hello!");
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "user",
+        "Hello!",
+      );
       expect(msg.id).toBeDefined();
       expect(msg.conversationId).toBe(conv.id);
       expect(msg.role).toBe("user");
@@ -178,18 +183,44 @@ describe("chat storage", () => {
 
     it("stores metadata", async () => {
       const conv = await createChatConversation(testUser.id, "Chat");
-      const msg = await createChatMessage(conv.id, "assistant", "Reply", {
-        tokens: 42,
-      });
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Reply",
+        { tokens: 42 },
+      );
       expect(msg.metadata).toEqual({ tokens: 42 });
+    });
+
+    it("rejects messages for conversations owned by another user", async () => {
+      const otherUser = await createTestUser(tx);
+      const conv = await createChatConversation(otherUser.id, "Other Chat");
+
+      await expect(
+        createChatMessage(conv.id, testUser.id, "assistant", "Nope"),
+      ).rejects.toThrow("Conversation not found");
+    });
+
+    it("rejects invalid roles before insert", async () => {
+      const conv = await createChatConversation(testUser.id, "Chat");
+
+      await expect(
+        createChatMessage(
+          conv.id,
+          testUser.id,
+          "developer" as "assistant",
+          "Nope",
+        ),
+      ).rejects.toThrow("Invalid chat message role");
     });
   });
 
   describe("getChatMessages", () => {
     it("returns messages ordered by createdAt asc", async () => {
       const conv = await createChatConversation(testUser.id, "Chat");
-      await createChatMessage(conv.id, "user", "First");
-      await createChatMessage(conv.id, "assistant", "Second");
+      await createChatMessage(conv.id, testUser.id, "user", "First");
+      await createChatMessage(conv.id, testUser.id, "assistant", "Second");
 
       const messages = await getChatMessages(conv.id);
       expect(messages).toHaveLength(2);
@@ -200,7 +231,7 @@ describe("chat storage", () => {
     it("respects limit", async () => {
       const conv = await createChatConversation(testUser.id, "Chat");
       for (let i = 0; i < 5; i++) {
-        await createChatMessage(conv.id, "user", `Message ${i}`);
+        await createChatMessage(conv.id, testUser.id, "user", `Message ${i}`);
       }
       const messages = await getChatMessages(conv.id, 3);
       expect(messages).toHaveLength(3);
@@ -210,9 +241,9 @@ describe("chat storage", () => {
   describe("getDailyChatMessageCount", () => {
     it("counts user messages for the given day", async () => {
       const conv = await createChatConversation(testUser.id, "Chat");
-      await createChatMessage(conv.id, "user", "Hello");
-      await createChatMessage(conv.id, "assistant", "Hi"); // should not count
-      await createChatMessage(conv.id, "user", "How are you?");
+      await createChatMessage(conv.id, testUser.id, "user", "Hello");
+      await createChatMessage(conv.id, testUser.id, "assistant", "Hi"); // should not count
+      await createChatMessage(conv.id, testUser.id, "user", "How are you?");
 
       const count = await getDailyChatMessageCount(testUser.id, new Date());
       expect(count).toBe(2);
@@ -359,21 +390,27 @@ describe("chat storage", () => {
       );
 
       // Insert an assistant message with valid recipe metadata
-      const msg = await createChatMessage(conv.id, "assistant", "Here it is!", {
-        metadataVersion: 1,
-        recipe: {
-          title: "Spicy Pasta",
-          description: "A spicy version",
-          difficulty: "Easy",
-          timeEstimate: "30 min",
-          servings: 4,
-          ingredients: [{ name: "Pasta", quantity: "200", unit: "g" }],
-          instructions: ["Cook pasta", "Add spice"],
-          dietTags: ["spicy"],
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Here it is!",
+        {
+          metadataVersion: 1,
+          recipe: {
+            title: "Spicy Pasta",
+            description: "A spicy version",
+            difficulty: "Easy",
+            timeEstimate: "30 min",
+            servings: 4,
+            ingredients: [{ name: "Pasta", quantity: "200", unit: "g" }],
+            instructions: ["Cook pasta", "Add spice"],
+            dietTags: ["spicy"],
+          },
+          allergenWarning: null,
+          imageUrl: null,
         },
-        allergenWarning: null,
-        imageUrl: null,
-      });
+      );
 
       const recipe = await saveRecipeFromChat(msg.id, conv.id, testUser.id, {
         remixedFromId: sourceRecipe.id,

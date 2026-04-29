@@ -13,8 +13,7 @@ export default function ActionCard({ block, onAction }: Props) {
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
-      accessibilityRole="button"
-      accessibilityLabel={`${block.title}. ${block.subtitle}. ${block.actionLabel}`}
+      accessible={false}
     >
       <View style={styles.content}>
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
@@ -36,7 +35,7 @@ export default function ActionCard({ block, onAction }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 12,
+    borderRadius: 8,
     padding: 12,
     marginTop: 8,
     flexDirection: "row",
@@ -46,6 +45,13 @@ const styles = StyleSheet.create({
   content: { flex: 1, marginRight: 12 },
   title: { fontSize: 14, fontWeight: "600" },
   subtitle: { fontSize: 12, marginTop: 2 },
-  button: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
+  button: {
+    minHeight: 44,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   buttonText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" }, // hardcoded
 });

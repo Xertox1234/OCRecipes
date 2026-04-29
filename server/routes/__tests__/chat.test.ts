@@ -373,6 +373,7 @@ describe("Chat Routes", () => {
       // Saved assistant message (4th arg is metadata — null when no blocks)
       expect(storage.createChatMessage).toHaveBeenCalledWith(
         1,
+        "1",
         "assistant",
         "Hello world!",
         null,
@@ -398,6 +399,24 @@ describe("Chat Routes", () => {
       expect(res.status).toBe(200);
       expect(res.text).toContain("Partial");
       expect(res.text).toContain("Failed to generate response");
+    });
+
+    it("sends error SSE event instead of done when response exceeds byte limit", async () => {
+      mockStreamingSetup();
+
+      async function* hugeStream() {
+        yield "x".repeat(60 * 1024);
+      }
+      vi.mocked(generateCoachProResponse).mockReturnValue(hugeStream());
+
+      const res = await request(app)
+        .post("/api/chat/conversations/1/messages")
+        .set("Authorization", "Bearer token")
+        .send({ content: "Hello" });
+
+      expect(res.status).toBe(200);
+      expect(res.text).toContain("Response too large");
+      expect(res.text).not.toContain('"done":true');
     });
 
     it("succeeds with null goals when user has no calorie goal", async () => {

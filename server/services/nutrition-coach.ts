@@ -3,7 +3,7 @@ import { openai, OPENAI_TIMEOUT_STREAM_MS, MODEL_FAST } from "../lib/openai";
 import {
   sanitizeUserInput,
   sanitizeContextField,
-  containsDangerousDietaryAdvice,
+  containsUnsafeCoachAdvice,
   SYSTEM_PROMPT_BOUNDARY,
 } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -215,7 +215,6 @@ export async function* generateCoachResponse(
     return;
   }
 
-  // Accumulate full response for content filtering
   let fullResponse = "";
 
   try {
@@ -223,28 +222,20 @@ export async function* generateCoachResponse(
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
         fullResponse += delta;
-
-        // Check periodically (every ~200 chars) for dangerous content
-        if (fullResponse.length % 200 < delta.length) {
-          if (containsDangerousDietaryAdvice(fullResponse)) {
-            yield "\n\n*I need to be careful here. For specific dietary plans, especially very low calorie or fasting protocols, please consult a registered dietitian or healthcare provider who can assess your individual needs.*";
-            return;
-          }
-        }
-
-        yield delta;
       }
     }
   } catch (error) {
     log.error({ err: toError(error) }, "coach streaming error");
-    yield "\n\nSorry, the response was interrupted. Please try again.";
+    yield "Sorry, the response was interrupted. Please try again.";
     return;
   }
 
-  // Final check on complete response
-  if (containsDangerousDietaryAdvice(fullResponse)) {
-    yield "\n\n*Please note: For specific dietary plans, especially restrictive ones, consult a registered dietitian or healthcare provider.*";
+  if (containsUnsafeCoachAdvice(fullResponse)) {
+    yield "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
+    return;
   }
+
+  yield fullResponse;
 }
 
 /**
@@ -324,16 +315,6 @@ export async function* generateCoachProResponse(
         if (textDelta) {
           contentInThisRound += textDelta;
           fullResponse += textDelta;
-
-          // Periodic safety check
-          if (fullResponse.length % 200 < textDelta.length) {
-            if (containsDangerousDietaryAdvice(fullResponse)) {
-              yield "\n\n*I need to be careful here. For specific dietary plans, please consult a registered dietitian or healthcare provider.*";
-              return;
-            }
-          }
-
-          yield textDelta;
         }
 
         // Accumulate tool call deltas
@@ -357,8 +338,17 @@ export async function* generateCoachProResponse(
       }
     } catch (error) {
       log.error({ err: toError(error) }, "coach pro streaming error");
-      yield "\n\nSorry, the response was interrupted. Please try again.";
+      yield "Sorry, the response was interrupted. Please try again.";
       return;
+    }
+
+    if (containsUnsafeCoachAdvice(fullResponse)) {
+      yield "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider.";
+      return;
+    }
+
+    if (contentInThisRound) {
+      yield contentInThisRound;
     }
 
     if (finishReason === "length") {
@@ -427,10 +417,5 @@ export async function* generateCoachProResponse(
     }
 
     // Loop continues — OpenAI will generate response using tool results
-  }
-
-  // Final safety check
-  if (containsDangerousDietaryAdvice(fullResponse)) {
-    yield "\n\n*Please note: For specific dietary plans, especially restrictive ones, consult a registered dietitian or healthcare provider.*";
   }
 }

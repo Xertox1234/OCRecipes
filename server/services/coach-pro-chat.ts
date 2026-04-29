@@ -83,14 +83,16 @@ function getUtcDayBucket(d: Date = new Date()): string {
  *  - userId  — different users must not share answers
  *  - isCoachPro — Pro and non-Pro prompts diverge (tools, notebook); a cached
  *    non-Pro answer must never be replayed to a Pro user (H4 — 2026-04-18)
- *  - dayBucket — the prompt embeds `todayIntake`, `goals`, `weightTrend`,
- *    so entries stale out at UTC midnight (H5 — 2026-04-18)
+ *  - dayBucket — keeps universal first-turn answers from crossing UTC days
+ *  - contextHash — captures goals, intake, weight trend, dietary profile, and
+ *    hour bucket so same-day context changes invalidate cached answers
  */
 export function hashCoachCacheKey(
   userId: string,
   content: string,
   isCoachPro: boolean,
   dayBucket: string = getUtcDayBucket(),
+  contextHash = "no-context",
 ): string {
   return createHash("sha256")
     .update(
@@ -99,11 +101,30 @@ export function hashCoachCacheKey(
         userId,
         isCoachPro ? "pro" : "free",
         dayBucket,
+        contextHash,
         content.trim().toLowerCase(),
       ].join("\u001f"),
     )
     .digest("hex")
     .slice(0, 32);
+}
+
+export function hashCoachCacheContext(
+  context: CoachContext,
+  now: Date = new Date(),
+): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        goals: context.goals,
+        todayIntake: context.todayIntake,
+        weightTrend: context.weightTrend,
+        dietaryProfile: context.dietaryProfile,
+        hour: now.getHours(),
+      }),
+    )
+    .digest("hex")
+    .slice(0, 16);
 }
 
 /**
@@ -326,7 +347,13 @@ export async function* handleCoachChat(
   // non-Pro prompts across users). See H4 — 2026-04-18.
   const isCacheable = !screenContext && history.length <= 1 && !isCoachPro;
   const questionHash = isCacheable
-    ? hashCoachCacheKey(userId, content, isCoachPro)
+    ? hashCoachCacheKey(
+        userId,
+        content,
+        isCoachPro,
+        getUtcDayBucket(today),
+        hashCoachCacheContext(context, today),
+      )
     : null;
 
   let cachedResponse: string | null = null;
@@ -404,9 +431,10 @@ export async function* handleCoachChat(
     blocks = parsedBlocks.blocks;
   }
 
-  if (fullResponse) {
+  if (fullResponse && !isAborted()) {
     await storage.createChatMessage(
       conversationId,
+      userId,
       "assistant",
       textContent,
       blocks.length > 0 ? { blocks } : null,

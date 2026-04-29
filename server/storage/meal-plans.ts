@@ -530,7 +530,12 @@ export async function getMealPlanItems(
       ? db
           .select()
           .from(mealPlanRecipes)
-          .where(inArray(mealPlanRecipes.id, recipeIds))
+          .where(
+            and(
+              inArray(mealPlanRecipes.id, recipeIds),
+              eq(mealPlanRecipes.userId, userId),
+            ),
+          )
       : Promise.resolve([]),
     scannedItemIds.length > 0
       ? db
@@ -539,6 +544,7 @@ export async function getMealPlanItems(
           .where(
             and(
               inArray(scannedItems.id, scannedItemIds),
+              eq(scannedItems.userId, userId),
               isNull(scannedItems.discardedAt),
             ),
           )

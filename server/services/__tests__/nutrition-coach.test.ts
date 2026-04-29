@@ -8,7 +8,7 @@ import { openai } from "../../lib/openai";
 import { executeToolCall } from "../coach-tools";
 import {
   sanitizeUserInput,
-  containsDangerousDietaryAdvice,
+  containsUnsafeCoachAdvice,
 } from "../../lib/ai-safety";
 
 vi.mock("../../lib/openai", () => ({
@@ -46,7 +46,7 @@ vi.mock("../coach-tools", () => ({
 vi.mock("../../lib/ai-safety", () => ({
   sanitizeUserInput: vi.fn((text: string) => text),
   sanitizeContextField: vi.fn((text: string) => text),
-  containsDangerousDietaryAdvice: vi.fn().mockReturnValue(false),
+  containsUnsafeCoachAdvice: vi.fn().mockReturnValue(false),
   SYSTEM_PROMPT_BOUNDARY: "---BOUNDARY---",
 }));
 
@@ -364,7 +364,7 @@ describe("generateCoachProResponse", () => {
     );
   });
 
-  it("yields error message when streaming throws mid-stream", async () => {
+  it("yields error message without partial content when streaming throws mid-stream", async () => {
     const errorStream = {
       [Symbol.asyncIterator]() {
         let count = 0;
@@ -399,8 +399,10 @@ describe("generateCoachProResponse", () => {
       generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
     );
 
-    expect(result).toContain("Partial response");
-    expect(result).toContain("Sorry, the response was interrupted");
+    expect(result).toBe(
+      "Sorry, the response was interrupted. Please try again.",
+    );
+    expect(result).not.toContain("Partial response");
   });
 
   it("handles parallel tool calls via Promise.allSettled", async () => {
@@ -542,7 +544,7 @@ describe("generateCoachProResponse", () => {
 describe("generateCoachResponse", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(containsDangerousDietaryAdvice).mockReturnValue(false);
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
   });
 
   it("sanitizes user messages before sending to OpenAI", async () => {
@@ -560,24 +562,24 @@ describe("generateCoachResponse", () => {
     expect(sanitizeUserInput).toHaveBeenCalledWith("Tell me about pizza");
   });
 
-  it("triggers disclaimer when containsDangerousDietaryAdvice returns true", async () => {
-    // Build a response long enough to trigger the periodic check (every ~200 chars)
+  it("returns only a safe fallback when containsUnsafeCoachAdvice returns true", async () => {
     const longContent = "A".repeat(250);
     const stream = createMockStream([
       { content: longContent },
       { finish_reason: "stop" },
     ]);
     vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
-    vi.mocked(containsDangerousDietaryAdvice).mockReturnValue(true);
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
 
     const messages = [{ role: "user" as const, content: "Extreme diet plan" }];
     const result = await collectStream(
       generateCoachResponse(messages, DEFAULT_CONTEXT),
     );
 
-    expect(result).toContain(
-      "please consult a registered dietitian or healthcare provider",
+    expect(result).toBe(
+      "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.",
     );
+    expect(result).not.toContain(longContent);
   });
 
   it("injects screenContext into the system prompt", async () => {
@@ -634,30 +636,23 @@ describe("generateCoachResponse", () => {
     );
   });
 
-  it("appends final disclaimer when complete response is flagged as dangerous", async () => {
+  it("does not stream unsafe final content before the safety fallback", async () => {
     const stream = createMockStream([
       { content: "Here is advice." },
       { finish_reason: "stop" },
     ]);
     vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
-
-    // Not triggered during streaming but triggered on final check
-    let callCount = 0;
-    vi.mocked(containsDangerousDietaryAdvice).mockImplementation(() => {
-      callCount++;
-      // Only return true on calls after streaming is complete (the final check)
-      // During streaming, short content won't trigger the periodic check
-      return callCount > 0;
-    });
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
 
     const messages = [{ role: "user" as const, content: "Fasting plan" }];
     const result = await collectStream(
       generateCoachResponse(messages, DEFAULT_CONTEXT),
     );
 
-    expect(result).toContain(
-      "consult a registered dietitian or healthcare provider",
+    expect(result).toBe(
+      "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.",
     );
+    expect(result).not.toContain("Here is advice.");
   });
 
   it("includes SYSTEM_PROMPT_BOUNDARY at end of system prompt", async () => {

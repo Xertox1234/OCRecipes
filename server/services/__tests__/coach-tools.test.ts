@@ -4,6 +4,7 @@ import {
   executeToolCall,
   MAX_TOOL_CALLS_PER_RESPONSE,
 } from "../coach-tools";
+import { storage } from "../../storage";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -103,6 +104,141 @@ describe("Coach Tools Service", () => {
   it("executes get_daily_log_details tool", async () => {
     const result = await executeToolCall("get_daily_log_details", {}, "user-1");
     expect(result).toHaveProperty("totals");
+  });
+
+  it("rejects invalid get_daily_log_details dates", async () => {
+    const result = await executeToolCall(
+      "get_daily_log_details",
+      { date: "2026-02-30" },
+      "user-1",
+    );
+
+    expect(result).toMatchObject({
+      error: true,
+      code: "INVALID_ARGS",
+    });
+    expect(storage.getDailyLogs).not.toHaveBeenCalled();
+  });
+
+  it("rejects get_meal_plan ranges over the tool cap", async () => {
+    const result = await executeToolCall(
+      "get_meal_plan",
+      { startDate: "2026-04-01", endDate: "2026-04-30" },
+      "user-1",
+    );
+
+    expect(result).toMatchObject({
+      error: true,
+      code: "INVALID_ARGS",
+      message: expect.stringContaining("14 days"),
+    });
+    expect(storage.getMealPlanItems).not.toHaveBeenCalled();
+  });
+
+  it("returns compact get_meal_plan items", async () => {
+    vi.mocked(storage.getMealPlanItems).mockResolvedValueOnce([
+      {
+        id: 1,
+        userId: "user-1",
+        recipeId: 10,
+        scannedItemId: null,
+        plannedDate: "2026-04-29",
+        mealType: "dinner",
+        servings: "1",
+        sortOrder: 0,
+        createdAt: new Date(),
+        recipe: {
+          id: 10,
+          userId: "user-1",
+          title: "Compact Recipe",
+          description: "Large description should not be returned",
+          cuisine: null,
+          sourceType: "user_created",
+          sourceUrl: null,
+          externalId: null,
+          imageUrl: null,
+          servings: 2,
+          caloriesPerServing: "400",
+          proteinPerServing: "30",
+          carbsPerServing: "40",
+          fatPerServing: "15",
+          fiberPerServing: null,
+          sugarPerServing: null,
+          sodiumPerServing: null,
+          prepTimeMinutes: null,
+          cookTimeMinutes: null,
+          difficulty: null,
+          instructions: ["large", "instruction", "payload"],
+          dietTags: [],
+          mealTypes: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        scannedItem: null,
+      },
+    ] as Awaited<ReturnType<typeof storage.getMealPlanItems>>);
+
+    const result = (await executeToolCall(
+      "get_meal_plan",
+      { startDate: "2026-04-29", endDate: "2026-04-29" },
+      "user-1",
+    )) as { items: { recipe: Record<string, unknown> }[] };
+
+    expect(result.items[0].recipe).toEqual({
+      id: 10,
+      title: "Compact Recipe",
+      caloriesPerServing: "400",
+      proteinPerServing: "30",
+      carbsPerServing: "40",
+      fatPerServing: "15",
+    });
+    expect(result.items[0].recipe).not.toHaveProperty("instructions");
+  });
+
+  it("returns schema-aligned log food proposal actions", async () => {
+    const result = await executeToolCall(
+      "log_food_item",
+      { name: "Greek yogurt", calories: 180, protein: 18, carbs: 10, fat: 4 },
+      "user-1",
+    );
+
+    expect(result).toMatchObject({
+      proposal: true,
+      action: {
+        type: "log_food",
+        description: "Greek yogurt",
+        calories: 180,
+        protein: 18,
+        carbs: 10,
+        fat: 4,
+      },
+    });
+  });
+
+  it("returns schema-aligned navigation proposal actions", async () => {
+    const mealPlanResult = await executeToolCall(
+      "add_to_meal_plan",
+      { plannedDate: "2026-04-29", mealType: "dinner" },
+      "user-1",
+    );
+    const groceryResult = await executeToolCall(
+      "add_to_grocery_list",
+      { items: [{ name: "oats" }] },
+      "user-1",
+    );
+
+    expect(mealPlanResult).toMatchObject({
+      proposal: true,
+      action: {
+        type: "navigate",
+        screen: "RecipeBrowserModal",
+        params: { date: "2026-04-29", mealType: "dinner" },
+      },
+    });
+    expect(groceryResult).toMatchObject({
+      proposal: true,
+      action: { type: "navigate", screen: "GroceryListsModal" },
+    });
   });
 
   it("executes search_recipes tool", async () => {

@@ -467,6 +467,35 @@ describe("Coach Notebook Storage", () => {
       const count = await archiveOldEntries(testUser.id, 30);
       expect(count).toBe(0);
     });
+
+    it("does not archive active commitments with future follow-up dates", async () => {
+      const { coachNotebook } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 14);
+      const entry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Try breakfast prep this week",
+        status: "active",
+        followUpDate: futureDate,
+      });
+
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 60);
+      await tx
+        .update(coachNotebook)
+        .set({ updatedAt: oldDate })
+        .where(eq(coachNotebook.id, entry.id));
+
+      const count = await archiveOldEntries(testUser.id, 30);
+
+      expect(count).toBe(0);
+      const active = await getActiveNotebookEntries(testUser.id);
+      expect(active).toHaveLength(1);
+      expect(active[0].content).toBe("Try breakfast prep this week");
+    });
   });
 
   // --------------------------------------------------------------------------

@@ -667,6 +667,52 @@ describe("meal-plans storage", () => {
       expect(items).toHaveLength(0);
     });
 
+    it("does not enrich corrupted recipe references owned by another user", async () => {
+      const otherUser = await createTestUser(tx);
+      const otherRecipe = await createTestMealPlanRecipe(otherUser.id, {
+        title: "Other User Recipe",
+      });
+      await addMealPlanItem({
+        userId: testUser.id,
+        recipeId: otherRecipe.id,
+        plannedDate: "2025-06-15",
+        mealType: "dinner",
+      });
+
+      const items = await getMealPlanItems(
+        testUser.id,
+        "2025-06-15",
+        "2025-06-15",
+      );
+
+      expect(items).toHaveLength(1);
+      expect(items[0].recipeId).toBe(otherRecipe.id);
+      expect(items[0].recipe).toBeNull();
+    });
+
+    it("does not enrich corrupted scanned item references owned by another user", async () => {
+      const otherUser = await createTestUser(tx);
+      const otherScanned = await createTestScannedItem(otherUser.id, {
+        productName: "Other User Food",
+      });
+      await addMealPlanItem({
+        userId: testUser.id,
+        scannedItemId: otherScanned.id,
+        plannedDate: "2025-06-15",
+        mealType: "lunch",
+      });
+
+      const items = await getMealPlanItems(
+        testUser.id,
+        "2025-06-15",
+        "2025-06-15",
+      );
+
+      expect(items).toHaveLength(1);
+      expect(items[0].scannedItemId).toBe(otherScanned.id);
+      expect(items[0].scannedItem).toBeNull();
+    });
+
     it("excludes soft-deleted scanned items from enrichment", async () => {
       const scanned = await createTestScannedItem(testUser.id, {
         discardedAt: new Date(),

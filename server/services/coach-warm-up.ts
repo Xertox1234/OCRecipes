@@ -30,8 +30,12 @@ export type WarmUpMessageRole = "user" | "assistant" | "system";
 
 export type { WarmUpMessage };
 
+function hashStableId(value: string): string {
+  return crypto.createHash("sha256").update(value).digest("hex").slice(0, 12);
+}
+
 function cacheKey(userId: string, conversationId: number): string {
-  return `${userId}:${conversationId}`;
+  return `${hashStableId(userId)}:${conversationId}`;
 }
 
 /** Generate a warm-up id using cryptographic randomness (defense-in-depth). */
@@ -80,20 +84,21 @@ export function consumeWarmUp(
   warmUpId: string,
 ): WarmUpMessage[] | null {
   const key = cacheKey(userId, conversationId);
+  const userIdHash = hashStableId(userId);
   // Use the public `.get()` API — the `_internals` field is test-only.
   // (H9 — 2026-04-18: was reading `warmUpStore._internals.store.get(key)`,
   // bypassing the session-store contract.)
   const cached = warmUpStore.get(key);
   if (!cached) {
-    log.debug({ userId, conversationId }, "warm_up_not_found");
+    log.debug({ userIdHash, conversationId }, "warm_up_not_found");
     return null;
   }
   if (cached.warmUpId !== warmUpId) {
-    log.debug({ userId, conversationId }, "warm_up_id_mismatch");
+    log.debug({ userIdHash, conversationId }, "warm_up_id_mismatch");
     return null;
   }
   if (Date.now() - cached.createdAt > WARM_UP_TTL_MS) {
-    log.debug({ userId, conversationId }, "warm_up_expired");
+    log.debug({ userIdHash, conversationId }, "warm_up_expired");
     warmUpStore.clear(key);
     return null;
   }
@@ -103,5 +108,6 @@ export function consumeWarmUp(
 
 /** Test-only internals — never import from production code. */
 export const _testInternals = {
+  cacheKey,
   warmUpStore,
 };

@@ -6,6 +6,7 @@ import {
   shouldUpdateStrategy,
 } from "../notebook-extraction";
 import { openai } from "../../lib/openai";
+import { SYSTEM_PROMPT_BOUNDARY } from "../../lib/ai-safety";
 
 function mockCompletion(content: string): ChatCompletion {
   return {
@@ -78,6 +79,56 @@ describe("Notebook Extraction", () => {
     expect(entries[0].type).toBe("preference");
     expect(entries[1].type).toBe("commitment");
     expect(entries[1].followUpDate).toBe("2026-04-13");
+  });
+
+  it("adds the shared system prompt boundary to the extractor prompt", async () => {
+    mockCreate.mockResolvedValue(
+      mockCompletion(JSON.stringify({ entries: [] })),
+    );
+
+    await extractNotebookEntries(
+      [{ role: "user", content: "Remember this preference" }],
+      "user-1",
+      1,
+    );
+
+    const request = mockCreate.mock.calls[0][0];
+    expect(request.messages[0].content).toContain(SYSTEM_PROMPT_BOUNDARY);
+  });
+
+  it("filters unsafe extracted medical advice before persistence", async () => {
+    mockCreate.mockResolvedValue(
+      mockCompletion(
+        JSON.stringify({
+          entries: [
+            {
+              type: "insight",
+              content: "You likely have diabetes.",
+              followUpDate: null,
+            },
+            {
+              type: "preference",
+              content: "Prefers quick lunches with vegetables",
+              followUpDate: null,
+            },
+          ],
+        }),
+      ),
+    );
+
+    const entries = await extractNotebookEntries(
+      [{ role: "user", content: "I need quick lunch ideas" }],
+      "user-1",
+      1,
+    );
+
+    expect(entries).toEqual([
+      {
+        type: "preference",
+        content: "Prefers quick lunches with vegetables",
+        followUpDate: null,
+      },
+    ]);
   });
 
   it("returns empty array on parse failure", async () => {

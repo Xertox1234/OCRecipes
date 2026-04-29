@@ -63,7 +63,7 @@ When appropriate, you can include structured interactive content blocks in your 
 To do this, add a fenced code block with the language tag \`coach_blocks\` containing a JSON array of block objects.
 
 Available block types:
-- action_card: { type: "action_card", title, subtitle, action: { type: "log_food"|"navigate"|"set_goal", ... }, actionLabel }
+- action_card: { type: "action_card", title, subtitle, action: { type: "log_food"|"navigate"|"set_goal"|"add_meal_plan"|"add_grocery_list", ... }, actionLabel }
 - suggestion_list: { type: "suggestion_list", items: [{ title, subtitle, action: { type: "navigate", screen, params } | null }] }
 - inline_chart: { type: "inline_chart", chartType: "bar"|"progress"|"stat_row", title, data: [{ label, value, target?, hit? }], summary? }
 - commitment_card: { type: "commitment_card", title, followUpText, followUpDate: "YYYY-MM-DD" }

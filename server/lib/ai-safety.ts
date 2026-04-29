@@ -126,6 +126,23 @@ export function containsDangerousDietaryAdvice(text: string): boolean {
   return DANGEROUS_DIETARY_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const UNSAFE_MEDICAL_ADVICE_PATTERNS: RegExp[] = [
+  /\byou\s+(?:likely|probably|definitely)\s+have\s+(?:diabetes|prediabetes|an\s+eating\s+disorder|anorexia|bulimia|cancer|thyroid\s+disease)\b/i,
+  /\bthis\s+(?:means|indicates|proves|confirms)\s+you\s+have\s+(?:diabetes|prediabetes|an\s+eating\s+disorder|anorexia|bulimia|cancer|thyroid\s+disease)\b/i,
+  /\bi\s+(?:diagnose|diagnosed)\s+you\s+with\b/i,
+  /\byou\s+should\s+(?:stop|start|change)\s+(?:taking\s+)?(?:insulin|metformin|ozempic|wegovy|mounjaro|zepbound|antidepressants?|blood\s+pressure\s+medication)\b/i,
+];
+
+export function containsUnsafeMedicalAdvice(text: string): boolean {
+  return UNSAFE_MEDICAL_ADVICE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function containsUnsafeCoachAdvice(text: string): boolean {
+  return (
+    containsDangerousDietaryAdvice(text) || containsUnsafeMedicalAdvice(text)
+  );
+}
+
 /**
  * Sanitize a screen context field for safe inclusion in AI system prompts.
  * Strips zero-width Unicode characters, control chars, and injection patterns.

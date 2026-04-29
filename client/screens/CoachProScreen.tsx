@@ -1,9 +1,9 @@
-import React, { useCallback, useState } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
-import { useCreateConversation } from "@/hooks/useChat";
+import { useChatConversations, useCreateConversation } from "@/hooks/useChat";
 import { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -28,7 +28,17 @@ export default function CoachProScreen() {
   } = useCoachContext(contextEnabled);
   const createConversation = useCreateConversation();
   const [conversationId, setConversationId] = useState<number | null>(null);
+  const { data: coachConversations = [] } = useChatConversations("coach");
+  const recentConversations = useMemo(
+    () => coachConversations.slice(0, 6),
+    [coachConversations],
+  );
   const warmUpHook = useCoachWarmUp(conversationId);
+
+  useEffect(() => {
+    if (conversationId || recentConversations.length === 0) return;
+    setConversationId(recentConversations[0].id);
+  }, [conversationId, recentConversations]);
 
   const handleCreateConversation = useCallback(async () => {
     const result = await createConversation.mutateAsync({ type: "coach" });
@@ -98,6 +108,61 @@ export default function CoachProScreen() {
           onSuggestionPress={handleSuggestionPress}
         />
       )}
+      <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
+        <Pressable
+          onPress={() => setConversationId(null)}
+          style={({ pressed }) => [
+            styles.newThreadButton,
+            {
+              borderColor: theme.border,
+              backgroundColor: pressed
+                ? theme.backgroundSecondary
+                : theme.backgroundDefault,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Start a new coach conversation"
+        >
+          <Text style={[styles.newThreadText, { color: theme.link }]}>New</Text>
+        </Pressable>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.threadList}
+        >
+          {recentConversations.map((conversation) => {
+            const isSelected = conversation.id === conversationId;
+            return (
+              <Pressable
+                key={conversation.id}
+                onPress={() => setConversationId(conversation.id)}
+                style={[
+                  styles.threadChip,
+                  {
+                    borderColor: isSelected ? theme.link : theme.border,
+                    backgroundColor: isSelected
+                      ? theme.backgroundSecondary
+                      : theme.backgroundDefault,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`Open coach conversation ${conversation.title}`}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.threadTitle,
+                    { color: isSelected ? theme.text : theme.textSecondary },
+                  ]}
+                >
+                  {conversation.title || "Coach conversation"}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
       <CoachChat
         conversationId={conversationId}
         onCreateConversation={handleCreateConversation}
@@ -126,6 +191,43 @@ const styles = StyleSheet.create({
   },
   retryText: {
     fontSize: 13,
+    fontWeight: "600",
+  },
+  threadBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  newThreadButton: {
+    minHeight: 36,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  newThreadText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  threadList: {
+    gap: Spacing.sm,
+    paddingRight: Spacing.md,
+  },
+  threadChip: {
+    width: 148,
+    minHeight: 36,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  threadTitle: {
+    fontSize: 12,
     fontWeight: "600",
   },
 });

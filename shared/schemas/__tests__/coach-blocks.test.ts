@@ -30,6 +30,65 @@ describe("Coach Block Schemas", () => {
     expect(actionCardSchema.parse(card)).toEqual(card);
   });
 
+  it("validates meal-plan and grocery action cards", () => {
+    const mealPlanActionCard = {
+      type: "action_card",
+      title: "Add the day plan",
+      subtitle: "Save this plan to your week",
+      action: {
+        type: "add_meal_plan",
+        plan: [
+          {
+            label: "Today",
+            meals: [
+              {
+                type: "lunch",
+                title: "Turkey wrap",
+                calories: 430,
+                protein: 32,
+              },
+            ],
+            totals: { calories: 430, protein: 32 },
+          },
+        ],
+      },
+      actionLabel: "Add plan",
+    };
+
+    const groceryActionCard = {
+      type: "action_card",
+      title: "Add grocery items",
+      subtitle: "Save these ingredients",
+      action: {
+        type: "add_grocery_list",
+        listName: "Coach Grocery List",
+        items: [{ name: "Greek yogurt", quantity: "2", unit: "cups" }],
+      },
+      actionLabel: "Add groceries",
+    };
+
+    expect(actionCardSchema.parse(mealPlanActionCard)).toEqual(
+      mealPlanActionCard,
+    );
+    expect(actionCardSchema.parse(groceryActionCard)).toEqual(
+      groceryActionCard,
+    );
+  });
+
+  it("validates set_goal navigation to GoalSetup", () => {
+    const list = {
+      type: "suggestion_list",
+      items: [
+        {
+          title: "Adjust my goals",
+          subtitle: "Open goal settings",
+          action: { type: "navigate", screen: "GoalSetup" },
+        },
+      ],
+    };
+    expect(suggestionListSchema.parse(list)).toEqual(list);
+  });
+
   it("validates a suggestion list", () => {
     const list = {
       type: "suggestion_list",

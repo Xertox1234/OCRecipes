@@ -23,6 +23,7 @@ const NAVIGABLE_SCREENS = [
   "DailyNutritionDetail",
   "Scan",
   "WeightTracking",
+  "GoalSetup",
   "RecipeChat",
   "RecipeBrowserModal",
   "GroceryListsModal",
@@ -51,11 +52,30 @@ const setGoalActionSchema = z.object({
   value: z.number().optional(),
 });
 
+const addMealPlanActionSchema = z.object({
+  type: z.literal("add_meal_plan"),
+  plan: z.array(mealPlanDaySchema),
+});
+
+const addGroceryListActionSchema = z.object({
+  type: z.literal("add_grocery_list"),
+  listName: z.string().optional(),
+  items: z.array(
+    z.object({
+      name: z.string(),
+      quantity: z.string().nullable().optional(),
+      unit: z.string().nullable().optional(),
+    }),
+  ),
+});
+
 const blockActionSchema = z
   .discriminatedUnion("type", [
     logFoodActionSchema,
     navigateActionSchema,
     setGoalActionSchema,
+    addMealPlanActionSchema,
+    addGroceryListActionSchema,
   ])
   .superRefine((val, ctx) => {
     if (val.type === "navigate") {
@@ -197,3 +217,6 @@ export type { MealPlanDay };
 export type BlockAction = z.infer<typeof blockActionSchema>;
 export type LogFoodAction = z.infer<typeof logFoodActionSchema>;
 export type NavigateAction = z.infer<typeof navigateActionSchema>;
+export type SetGoalAction = z.infer<typeof setGoalActionSchema>;
+export type AddMealPlanAction = z.infer<typeof addMealPlanActionSchema>;
+export type AddGroceryListAction = z.infer<typeof addGroceryListActionSchema>;

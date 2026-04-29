@@ -10,6 +10,14 @@ import { eq, desc, and, gte, lt, sql } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 import { fireAndForget } from "../lib/fire-and-forget";
 
+type ChatMessageRole = "user" | "assistant" | "system";
+
+function assertChatMessageRole(role: string): asserts role is ChatMessageRole {
+  if (role !== "user" && role !== "assistant" && role !== "system") {
+    throw new Error(`Invalid chat message role: ${role}`);
+  }
+}
+
 // ============================================================================
 // CHAT CONVERSATIONS
 // ============================================================================
@@ -114,11 +122,28 @@ export async function getChatMessageById( // idor-safe: callers must pre-verify 
 
 export async function createChatMessage(
   conversationId: number,
-  role: string,
+  userId: string,
+  role: ChatMessageRole,
   content: string,
   metadata?: Record<string, unknown> | null,
 ): Promise<ChatMessage> {
+  assertChatMessageRole(role);
   return db.transaction(async (tx) => {
+    const [conversation] = await tx
+      .select({ id: chatConversations.id })
+      .from(chatConversations)
+      .where(
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
     const [message] = await tx
       .insert(chatMessages)
       .values({
@@ -133,7 +158,12 @@ export async function createChatMessage(
     await tx
       .update(chatConversations)
       .set({ updatedAt: new Date() })
-      .where(eq(chatConversations.id, conversationId));
+      .where(
+        and(
+          eq(chatConversations.id, conversationId),
+          eq(chatConversations.userId, userId),
+        ),
+      );
 
     return message;
   });
