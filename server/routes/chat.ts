@@ -39,7 +39,11 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const limit = parseQueryInt(req.query.limit, { default: 20, max: 50 });
-        const page = parseQueryInt(req.query.page, { default: 1, max: 100 });
+        const page = parseQueryInt(req.query.page, {
+          default: 1,
+          min: 1,
+          max: 100,
+        });
         const typeParam = req.query.type as string | undefined;
         const type =
           typeParam === "coach" ||

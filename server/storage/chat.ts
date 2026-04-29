@@ -6,8 +6,8 @@ import {
   coachResponseCache,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lt, sql, inArray } from "drizzle-orm";
-import { getDayBounds } from "./helpers";
+import { eq, desc, and, gte, lt, sql, inArray, ilike } from "drizzle-orm";
+import { getDayBounds, escapeLike } from "./helpers";
 import { fireAndForget } from "../lib/fire-and-forget";
 
 type ChatMessageRole = "user" | "assistant" | "system";
@@ -47,7 +47,7 @@ export async function getChatConversations(
   if (type) conditions.push(eq(chatConversations.type, type));
   if (opts?.search) {
     conditions.push(
-      sql`lower(${chatConversations.title}) like ${"%" + opts.search.toLowerCase() + "%"}`,
+      ilike(chatConversations.title, `%${escapeLike(opts.search)}%`),
     );
   }
   return db
