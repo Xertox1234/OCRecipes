@@ -88,9 +88,9 @@ Items marked `deferred` must have a linked todo and rationale.
 
 ## Fix Commits
 
-| Commit | Description |
-| ------ | ----------- |
-| —      | —           |
+| Commit    | Description                                       |
+| --------- | ------------------------------------------------- |
+| `3ed8b5d` | fix: harden coach chat platform (all 14 findings) |
 
 ## Codification (Phase 7)
 
@@ -98,21 +98,26 @@ Completed after fixes are committed. Each row links to the docs change.
 
 ### Patterns Extracted
 
-| Finding | Pattern | Added To |
-| ------- | ------- | -------- |
-| —       | —       | —        |
+| Finding | Pattern                                                            | Added To                    |
+| ------- | ------------------------------------------------------------------ | --------------------------- |
+| H1      | Buffer-then-Check for Streaming LLM Safety                         | `docs/patterns/security.md` |
+| M1      | Validate LLM Tool Call Date Parameters with Calendar Check         | `docs/patterns/api.md`      |
+| M2      | Filter LLM Memory Extraction with Safety Checks Before Persistence | `docs/patterns/security.md` |
+| L1      | Validate Storage-Layer Write Ownership for Chat Messages           | `docs/patterns/security.md` |
 
 ### Learnings Extracted
 
-| Finding | Learning Title | Category |
-| ------- | -------------- | -------- |
-| —       | —              | —        |
+| Finding | Learning Title                                                       | Category  |
+| ------- | -------------------------------------------------------------------- | --------- |
+| H1      | Streaming LLM safety checks require full-response buffering          | AI Safety |
+| M2      | LLM memory extractors inherit the same injection risk as chat inputs | AI Safety |
 
 ### Code Reviewer Updates
 
-| Finding | New Check Added |
-| ------- | --------------- |
-| —       | —               |
+| Finding | New Check Added                                                                                                          |
+| ------- | ------------------------------------------------------------------------------------------------------------------------ |
+| H1      | Streaming LLM responses that contain safety-critical content must buffer the full response before yielding               |
+| L1      | `createChatMessage` and similar storage writes must require `userId` and verify parent ownership in the same transaction |
 
 ### Specialist Agent Updates
 
@@ -126,5 +131,5 @@ Completed after fixes are committed. Each row links to the docs change.
 
 - Baseline lint warning count includes warnings under `.claude/worktrees/` plus current workspace warnings.
 - Deduped older/fixed variants from recent audits, including Coach Pro/non-Pro cache mixing, cache re-scan, warm-up type guard, direct `_internals` use, and `getChatMessages` optional ownership.
-- All 14 findings are fixed and verified in this working tree; no commit has been created.
+- All 14 findings are fixed and verified; fixes shipped in commit `3ed8b5d`.
 - `evals/datasets/coach-cases.json` is included intentionally as the M7 eval-coverage follow-up and validates via `evals/__tests__/types.test.ts`.

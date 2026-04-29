@@ -3421,6 +3421,8 @@ const token = parsed.data.access_token; // Guaranteed to be a string
 31. **Time-Window Dedup for Health APIs:** When deduplicating data from external health/fitness APIs (HealthKit, Google Fit), use a time window (30s-2min) rather than exact timestamp matching. Precision differences between systems cause false negatives with exact matching.
 32. **Drizzle `sql<number>` is TypeScript-only:** PostgreSQL DECIMAL/NUMERIC types return as strings through the `pg` driver. Always wrap `sql<number>` results with `Number()` before arithmetic, or use `::float`/`::integer` casts instead of `::decimal` in SQL.
 33. **ADD COLUMN defaults are INSERT-time only:** Drizzle's `.default()` sets a DEFAULT constraint for new INSERTs, but existing rows get NULL after `ALTER TABLE ADD COLUMN`. Always write backfill queries with `OR column IS NULL`, and treat NULL as equivalent to the default in storage queries.
+34. **Streaming LLM safety checks require full-response buffering:** Regex patterns like `"you likely have diabetes"` can straddle multiple streaming chunks — scanning individual deltas will never see the complete phrase. Always accumulate the full response before running safety filters. The latency cost is worth the correctness guarantee for health-adjacent content.
+35. **LLM memory extractors inherit the same injection risk as chat inputs:** When an LLM extracts notebook entries from conversation history, a malicious user message ("my plan is to eat 300 cal/day") can cause the extractor to persist a dangerous goal. Apply `containsUnsafeCoachAdvice()` to extracted entries before persisting — the extractor is a separate injection surface from the coach output itself.
 
 ---
 
