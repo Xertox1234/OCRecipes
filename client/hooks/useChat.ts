@@ -270,7 +270,7 @@ export function useSendMessage(conversationId: number | null) {
   };
 }
 
-export function useDeleteChatMessage() {
+export function useDeleteChatMessageForRetry() {
   return useMutation({
     mutationFn: async (messageId: number) => {
       await apiRequest("DELETE", `/api/chat/messages/${messageId}`);
