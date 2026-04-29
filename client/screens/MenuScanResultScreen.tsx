@@ -5,7 +5,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { View, StyleSheet, FlatList, ActivityIndicator } from "react-native";
+import {
+  View,
+  StyleSheet,
+  FlatList,
+  ActivityIndicator,
+  AccessibilityInfo,
+  Platform,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRoute, type RouteProp } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
@@ -269,6 +276,11 @@ export default function MenuScanResultScreen() {
         if (replace && dataSourceRef.current === "local") {
           setShowUpdatedToast(true);
           toastTimer = setTimeout(() => setShowUpdatedToast(false), 3000);
+          if (Platform.OS === "ios") {
+            AccessibilityInfo.announceForAccessibility(
+              "Updated with AI analysis",
+            );
+          }
         }
         dataSourceRef.current = "ai";
         setIsAnalyzing(false);
@@ -363,6 +375,7 @@ export default function MenuScanResultScreen() {
             styles.toast,
             { backgroundColor: theme.success, top: insets.top + Spacing.sm },
           ]}
+          accessibilityLiveRegion="polite"
         >
           <ThemedText style={styles.toastText}>
             Updated with AI analysis

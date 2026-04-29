@@ -231,6 +231,7 @@ export default function ReceiptReviewScreen() {
                 value={item.name}
                 onChangeText={(text) => handleUpdateName(item.id, text)}
                 placeholderTextColor={theme.textSecondary}
+                accessibilityLabel={`Item name: ${item.name}`}
               />
               <ThemedText
                 style={[styles.originalName, { color: theme.textSecondary }]}
@@ -252,6 +253,7 @@ export default function ReceiptReviewScreen() {
                 value={String(item.quantity)}
                 onChangeText={(text) => handleUpdateQuantity(item.id, text)}
                 keyboardType="numeric"
+                accessibilityLabel={`Quantity for ${item.name}`}
               />
 
               <View
@@ -429,6 +431,7 @@ export default function ReceiptReviewScreen() {
       style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={headerHeight}
+      accessibilityViewIsModal
     >
       {/* Partial extraction warning */}
       {isPartial && (
@@ -490,6 +493,9 @@ export default function ReceiptReviewScreen() {
           ]}
           accessibilityRole="button"
           accessibilityLabel={`Add ${items.length} items to pantry`}
+          accessibilityState={{
+            disabled: confirmMutation.isPending || items.length === 0,
+          }}
         >
           {confirmMutation.isPending ? (
             <ActivityIndicator size="small" color={theme.buttonText} />
