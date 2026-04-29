@@ -262,6 +262,18 @@ export function useSendMessage(conversationId: number | null) {
   };
 }
 
+export function useDeleteChatMessage() {
+  return useMutation({
+    mutationFn: async (messageId: number) => {
+      await apiRequest("DELETE", `/api/chat/messages/${messageId}`);
+    },
+    onSuccess: () => {
+      // Intentionally no cache invalidation — CoachChat manages
+      // message state directly during retry to avoid UI flicker.
+    },
+  });
+}
+
 /** Save a recipe from a chat message to the user's library */
 export function useSaveRecipeFromChat() {
   const queryClient = useQueryClient();

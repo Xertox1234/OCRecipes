@@ -15,6 +15,7 @@ import {
   Platform,
   ActivityIndicator,
   AccessibilityInfo,
+  Text,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -24,7 +25,11 @@ import { InlineError } from "@/components/InlineError";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { useTheme } from "@/hooks/useTheme";
-import { useChatMessages, type ChatMessage } from "@/hooks/useChat";
+import {
+  useChatMessages,
+  useDeleteChatMessage,
+  type ChatMessage,
+} from "@/hooks/useChat";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { getApiUrl } from "@/lib/query-client";
@@ -153,6 +158,7 @@ export default function CoachChat({
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
   const hasVoice = usePremiumFeature("coachPro");
+  const deleteChatMessage = useDeleteChatMessage();
 
   const [inputText, setInputText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -218,6 +224,12 @@ export default function CoachChat({
       }
     }
     return map;
+  }, [messages]);
+
+  const lastAssistantMessageId = useMemo(() => {
+    if (!messages || messages.length === 0) return null;
+    const last = messages[messages.length - 1];
+    return last.role === "assistant" ? last.id : null;
   }, [messages]);
 
   const {
@@ -335,6 +347,24 @@ export default function CoachChat({
     ],
   );
 
+  const handleRetry = useCallback(async () => {
+    if (!messages || messages.length < 2 || isStreaming) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.role !== "assistant") return;
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUserMsg) return;
+
+    try {
+      // Delete assistant then user message (in order — each was "most recent" at time of delete)
+      await deleteChatMessage.mutateAsync(lastMsg.id);
+      await deleteChatMessage.mutateAsync(lastUserMsg.id);
+    } catch {
+      setStreamingError("Retry failed. Check your connection and try again.");
+      return;
+    }
+    handleSend(lastUserMsg.content);
+  }, [messages, isStreaming, deleteChatMessage, handleSend]);
+
   // Auto-send suggestion chip messages
   useEffect(() => {
     if (initialMessage) {
@@ -435,6 +465,10 @@ export default function CoachChat({
     ({ item }: { item: ChatListItem }) => {
       if (item.type === "message") {
         const msg = item.message;
+        const isRetryTarget =
+          !isStreaming &&
+          msg.role === "assistant" &&
+          msg.id === lastAssistantMessageId;
         return (
           <View>
             <ChatBubble
@@ -450,6 +484,20 @@ export default function CoachChat({
                 onCommitmentAccept={handleCommitmentAccept}
               />
             ))}
+            {isRetryTarget && (
+              <Pressable
+                onPress={handleRetry}
+                style={styles.retryButton}
+                accessibilityRole="button"
+                accessibilityLabel="Regenerate response"
+              >
+                <Text
+                  style={[styles.retryText, { color: theme.textSecondary }]}
+                >
+                  ↺ Regenerate
+                </Text>
+              </Pressable>
+            )}
           </View>
         );
       }
@@ -484,7 +532,9 @@ export default function CoachChat({
       handleBlockAction,
       handleCommitmentAccept,
       handleQuickReply,
+      handleRetry,
       isStreaming,
+      lastAssistantMessageId,
       messageBlocks,
       streamBlocks,
       streamingContent,
@@ -617,4 +667,11 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
     padding: Spacing.sm,
   },
+  retryButton: {
+    alignSelf: "flex-start",
+    paddingVertical: 4,
+    paddingHorizontal: Spacing.sm,
+    marginTop: 2,
+  },
+  retryText: { fontSize: 12 },
 });
