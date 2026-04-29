@@ -1423,7 +1423,7 @@ export const coachResponseCache = pgTable(
     userId: varchar("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
-    questionHash: varchar("question_hash", { length: 64 }).notNull().unique(),
+    questionHash: varchar("question_hash", { length: 64 }).notNull(),
     question: text("question").notNull(),
     response: text("response").notNull(),
     hitCount: integer("hit_count").default(0),
@@ -1433,7 +1433,11 @@ export const coachResponseCache = pgTable(
     expiresAt: timestamp("expires_at").notNull(),
   },
   (table) => ({
-    questionHashIdx: uniqueIndex("coach_response_cache_hash_idx").on(
+    // Composite unique index matching semantic intent: one cache entry per
+    // (user, question). The questionHash already embeds userId (see
+    // hashCoachCacheKey), so this makes the DB constraint align with intent.
+    userQuestionHashIdx: uniqueIndex("coach_response_cache_hash_idx").on(
+      table.userId,
       table.questionHash,
     ),
     expiresAtIdx: index("coach_response_cache_expires_idx").on(table.expiresAt),

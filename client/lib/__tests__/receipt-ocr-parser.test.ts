@@ -70,6 +70,17 @@ describe("parseReceiptItemsFromOCR", () => {
     expect(result.items[1].quantity).toBe(3);
   });
 
+  it("caps quantity at 99 to avoid absurd OCR misreads", () => {
+    const text = ["STORE", "999 @ 0.01 BULK ITEM 9.99", "200x CHIPS 2.49"].join(
+      "\n",
+    );
+
+    const result = parseReceiptItemsFromOCR([text]);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0].quantity).toBe(99);
+    expect(result.items[1].quantity).toBe(99);
+  });
+
   it("deduplicates items across multiple photos by name+price", () => {
     const photo1 = ["SAFEWAY", "BREAD 3.49", "BUTTER 4.99"].join("\n");
     const photo2 = ["SAFEWAY", "BREAD 3.49", "ORANGE JUICE 5.99"].join("\n");

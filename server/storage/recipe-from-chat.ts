@@ -7,7 +7,6 @@ import {
 import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
 import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
-import { inferMealTypes } from "../lib/meal-type-inference";
 
 // ============================================================================
 // CROSS-DOMAIN: RECIPE CHAT — SAVE RECIPE FROM CHAT
@@ -28,6 +27,7 @@ export async function saveRecipeFromChat(
   conversationId: number,
   userId: string,
   lineage?: { remixedFromId: number; remixedFromTitle: string },
+  mealTypes?: string[],
 ): Promise<CommunityRecipe | null> {
   return db.transaction(async (tx) => {
     // 1. Verify conversation ownership
@@ -82,9 +82,8 @@ export async function saveRecipeFromChat(
     if (!parsed.success) return null;
     const { recipe } = parsed.data;
 
-    // 5. Create communityRecipe (private by default). Classify meal types
-    //    so the recipe participates in meal-type search filters if later
-    //    made public (M9 — community recipes used to hard-code `mealTypes: []`).
+    // 5. Create communityRecipe (private by default). mealTypes must be
+    //    pre-computed by the caller (storage-layer purity — M5).
     const [created] = await tx
       .insert(communityRecipes)
       .values({
@@ -96,10 +95,7 @@ export async function saveRecipeFromChat(
         timeEstimate: recipe.timeEstimate,
         servings: recipe.servings ?? 2,
         dietTags: recipe.dietTags ?? [],
-        mealTypes: inferMealTypes(
-          recipe.title,
-          recipe.ingredients.map((i) => i.name),
-        ),
+        mealTypes: mealTypes ?? [],
         instructions: recipe.instructions,
         ingredients: recipe.ingredients,
         imageUrl: parsed.data.imageUrl ?? null,

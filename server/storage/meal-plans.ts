@@ -966,7 +966,7 @@ export async function batchUpdateMealTypes(
   );
   await db.execute(
     sql`UPDATE ${mealPlanRecipes}
-        SET meal_types = v.meal_types
+        SET meal_types = v.meal_types, updated_at = NOW()
         FROM (VALUES ${sql.join(valueTuples, sql`, `)}) AS v(id, meal_types)
         WHERE ${mealPlanRecipes.id} = v.id`,
   );

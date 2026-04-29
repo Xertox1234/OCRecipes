@@ -331,7 +331,7 @@ export async function* handleCoachChat(
 
   let cachedResponse: string | null = null;
   if (questionHash) {
-    cachedResponse = await storage.getCoachCachedResponse(questionHash);
+    cachedResponse = await storage.getCoachCachedResponse(userId, questionHash);
   }
 
   // M6 (2026-04-18): Re-scan cached responses for dangerous dietary advice before

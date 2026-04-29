@@ -88,6 +88,30 @@ export async function getChatMessages(
     .limit(limit);
 }
 
+/**
+ * Get a single chat message by ID, verifying it belongs to the given
+ * conversation. Returns undefined if not found or mismatched.
+ *
+ * Note: does not verify user ownership of the conversation. Callers must
+ * pre-check ownership (e.g., via `getChatConversation(id, userId)`) before
+ * using this function.
+ */
+export async function getChatMessageById( // idor-safe: callers must pre-verify conversation ownership via getChatConversation(id, userId)
+  messageId: number,
+  conversationId: number,
+): Promise<ChatMessage | undefined> {
+  const [message] = await db
+    .select()
+    .from(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.id, messageId),
+        eq(chatMessages.conversationId, conversationId),
+      ),
+    );
+  return message || undefined;
+}
+
 export async function createChatMessage(
   conversationId: number,
   role: string,
@@ -383,10 +407,11 @@ export async function createChatMessageWithLimitCheck(
 // ============================================================================
 
 /**
- * Get a cached coach response by question hash.
+ * Get a cached coach response by user + question hash.
  * Returns null if not found or expired. Increments hit count on cache hit.
  */
 export async function getCoachCachedResponse(
+  userId: string,
   questionHash: string,
 ): Promise<string | null> {
   const [cached] = await db
@@ -397,6 +422,7 @@ export async function getCoachCachedResponse(
     .from(coachResponseCache)
     .where(
       and(
+        eq(coachResponseCache.userId, userId),
         eq(coachResponseCache.questionHash, questionHash),
         gte(coachResponseCache.expiresAt, new Date()),
       ),
@@ -434,7 +460,7 @@ export async function setCoachCachedResponse(
     .insert(coachResponseCache)
     .values({ userId, questionHash, question, response, expiresAt })
     .onConflictDoUpdate({
-      target: coachResponseCache.questionHash,
+      target: [coachResponseCache.userId, coachResponseCache.questionHash],
       set: { response, expiresAt, hitCount: 0 },
     });
 }

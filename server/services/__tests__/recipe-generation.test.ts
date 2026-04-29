@@ -55,7 +55,9 @@ vi.mock("../../lib/openai", () => ({
 }));
 
 // Mock storage for generateAndPatchRecipeImage
-const mockUpdateCommunityRecipeImageUrl = vi.fn().mockResolvedValue(undefined);
+const mockUpdateCommunityRecipeImageUrl = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(undefined),
+);
 vi.mock("../../storage/index", () => ({
   storage: {
     updateCommunityRecipeImageUrl: mockUpdateCommunityRecipeImageUrl,

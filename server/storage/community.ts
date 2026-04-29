@@ -17,21 +17,6 @@ import {
   getDocumentStore,
   type SearchIndexableCommunityRecipe,
 } from "../lib/search-index";
-import { inferMealTypes } from "../lib/meal-type-inference";
-
-/**
- * Ensures the caller-supplied `data` has a populated `mealTypes` array.
- * Falls back to `inferMealTypes(title, ingredientNames)` when callers don't
- * provide one so the community search index can filter symmetrically with
- * meal-plan recipes (M9 fix — community recipes used to hard-code `[]`).
- */
-function withInferredMealTypes<
-  T extends Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
->(data: T): T {
-  if (data.mealTypes && data.mealTypes.length > 0) return data;
-  const ingredientNames = (data.ingredients ?? []).map((i) => i.name);
-  return { ...data, mealTypes: inferMealTypes(data.title, ingredientNames) };
-}
 
 // ============================================================================
 // COMMUNITY RECIPES
@@ -137,8 +122,7 @@ export async function getCommunityRecipes(
 export async function createCommunityRecipe(
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
 ): Promise<CommunityRecipe> {
-  const values = withInferredMealTypes(data);
-  const [recipe] = await db.insert(communityRecipes).values(values).returning();
+  const [recipe] = await db.insert(communityRecipes).values(data).returning();
   if (recipe.isPublic) {
     addToIndex(communityToSearchable(recipe));
   }
@@ -174,11 +158,10 @@ export async function createRecipeWithLimitCheck(
       return null;
     }
 
-    // Create recipe (classify meal types if caller didn't supply any — M9)
-    const values = withInferredMealTypes(data);
+    // Create recipe — callers must supply pre-computed mealTypes (storage-layer purity)
     const [created] = await tx
       .insert(communityRecipes)
-      .values(values)
+      .values(data)
       .returning();
 
     // Log the generation

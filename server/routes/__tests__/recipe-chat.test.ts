@@ -12,6 +12,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getChatConversation: vi.fn(),
+    getChatMessageById: vi.fn().mockResolvedValue(undefined),
     saveRecipeFromChat: vi.fn(),
   },
 }));
@@ -63,10 +64,16 @@ describe("Recipe Chat Routes", () => {
       expect(res.status).toBe(201);
       expect(res.body.remixedFromId).toBe(42);
       expect(res.body.remixedFromTitle).toBe("Original Pasta");
-      expect(storage.saveRecipeFromChat).toHaveBeenCalledWith(10, 5, "1", {
-        remixedFromId: 42,
-        remixedFromTitle: "Original Pasta",
-      });
+      expect(storage.saveRecipeFromChat).toHaveBeenCalledWith(
+        10,
+        5,
+        "1",
+        {
+          remixedFromId: 42,
+          remixedFromTitle: "Original Pasta",
+        },
+        undefined, // mealTypes — undefined when message has no parseable recipe metadata
+      );
     });
   });
 });

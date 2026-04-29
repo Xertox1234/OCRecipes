@@ -38,7 +38,7 @@ export type { UpdatableUserFields } from "./users";
 export type { FeaturedRecipe } from "./community";
 export type { PersonalRecipeBrief } from "./meal-plans";
 export { BatchStorageError } from "./batch";
-export { MAX_IMAGE_SIZE_BYTES } from "./sessions";
+export { MAX_IMAGE_SIZE_BYTES, warmUpStore } from "./sessions";
 export type { CookingSession } from "./sessions";
 
 export const storage = {
@@ -146,6 +146,7 @@ export const storage = {
   getChatConversations: chat.getChatConversations,
   createChatConversation: chat.createChatConversation,
   getChatMessages: chat.getChatMessages,
+  getChatMessageById: chat.getChatMessageById,
   createChatMessage: chat.createChatMessage,
   deleteChatConversation: chat.deleteChatConversation,
   updateChatConversationTitle: chat.updateChatConversationTitle,

@@ -18,7 +18,11 @@ import {
   analyzeImageForRecipe,
   RECIPE_SUGGESTION_CHIPS,
 } from "../services/recipe-chat";
-import { remixConversationMetadataSchema } from "@shared/schemas/recipe-chat";
+import {
+  remixConversationMetadataSchema,
+  recipeChatMetadataSchema,
+} from "@shared/schemas/recipe-chat";
+import { inferMealTypes } from "../services/meal-type-inference";
 
 // 5MB limit for recipe ingredient photos
 const recipeImageUpload = createImageUpload(5 * 1024 * 1024);
@@ -68,7 +72,10 @@ export function register(app: Express): void {
           );
 
         // Check if this is a remix conversation — pass lineage if so
-        const conversation = await storage.getChatConversation(id, req.userId);
+        const [conversation, chatMessage] = await Promise.all([
+          storage.getChatConversation(id, req.userId),
+          storage.getChatMessageById(parsed.data.messageId, id),
+        ]);
         let lineage:
           | { remixedFromId: number; remixedFromTitle: string }
           | undefined;
@@ -84,11 +91,27 @@ export function register(app: Express): void {
           }
         }
 
+        // Compute mealTypes at the route layer (storage-layer purity — M5).
+        // Pre-read the message metadata to infer types before the storage transaction.
+        let mealTypes: string[] | undefined;
+        if (chatMessage?.metadata) {
+          const parsedMeta = recipeChatMetadataSchema.safeParse(
+            chatMessage.metadata,
+          );
+          if (parsedMeta.success) {
+            mealTypes = inferMealTypes(
+              parsedMeta.data.recipe.title,
+              parsedMeta.data.recipe.ingredients.map((i) => i.name),
+            );
+          }
+        }
+
         const recipe = await storage.saveRecipeFromChat(
           parsed.data.messageId,
           id,
           req.userId,
           lineage,
+          mealTypes,
         );
 
         if (!recipe)

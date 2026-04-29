@@ -21,6 +21,7 @@ import {
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { createServiceLogger, toError } from "../lib/logger";
+import { storage } from "../storage";
 
 const log = createServiceLogger("recipe-generation");
 
@@ -392,7 +393,6 @@ export async function generateAndPatchRecipeImage(
   try {
     const imageUrl = await generateRecipeImage(recipeTitle, productName);
     if (imageUrl) {
-      const { storage } = await import("../storage/index");
       await storage.updateCommunityRecipeImageUrl(recipeId, imageUrl);
     }
   } catch (error) {

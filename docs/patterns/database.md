@@ -2511,3 +2511,26 @@ no nutrition columns. Once those columns were added and backfilled, the
 pass-through was removed and community recipes are filtered on real data.
 **The preferred fix is always to populate the schema** — source-aware null
 pass-through is a temporary bridge, not a permanent architecture decision.
+
+### `dailyLogs.recipeId` References Only `mealPlanRecipes` (Intentional)
+
+`dailyLogs.recipeId` is a FK to `mealPlanRecipes.id` only. It does **not**
+reference `communityRecipes`. This is intentional: community recipes are not
+logged directly as `dailyLogs` entries. The logging flow is:
+
+1. User adds a community recipe to their meal plan → creates a `mealPlanRecipes`
+   row owned by the user (a personal copy).
+2. Confirming or logging that meal plan item links `dailyLogs.recipeId` →
+   the user-owned `mealPlanRecipes` row.
+
+A `recipeType` discriminator on `dailyLogs` is therefore **not needed** —
+every logged recipe is already a `mealPlanRecipes` row. Adding `recipeType`
+would only make sense if community recipes could be logged without first being
+imported into a meal plan, which is not the current product behaviour.
+
+If that flow changes (e.g., "log a community recipe directly"), add
+`recipeType text` to `dailyLogs` alongside a nullable `communityRecipeId` FK,
+following the polymorphic FK pattern used in `cookbookRecipes`. Until then,
+`dailyLogs.recipeId` pointing exclusively to `mealPlanRecipes` is correct.
+
+**Origin:** 2026-04-28 audit M3 — evaluated and documented as intentional design.

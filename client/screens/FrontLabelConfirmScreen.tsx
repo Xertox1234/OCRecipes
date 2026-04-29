@@ -25,6 +25,7 @@ import { useTheme } from "@/hooks/useTheme";
 
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { uploadFrontLabelPhoto, confirmFrontLabel } from "@/lib/photo-upload";
+import { shouldReplaceWithAIFrontLabel } from "@/screens/front-label-confirm-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
@@ -66,11 +67,10 @@ export default function FrontLabelConfirmScreen() {
     uploadFrontLabelPhoto(imageUri, barcode)
       .then((result) => {
         if (cancelled) return;
-        const shouldReplace =
-          result.data.confidence > 0.7 ||
-          result.data.brand !== localDataRef.current.brand ||
-          result.data.productName !== localDataRef.current.productName ||
-          result.data.netWeight !== localDataRef.current.netWeight;
+        const shouldReplace = shouldReplaceWithAIFrontLabel(
+          localDataRef.current,
+          result.data,
+        );
 
         if (shouldReplace) {
           setData(result.data);

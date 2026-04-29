@@ -28,45 +28,8 @@ import {
 } from "./_helpers";
 import { stripAuthorId, stripAuthorIdOne } from "./_recipe-helpers";
 import { recipeGenerationSchema } from "@shared/schemas/recipe";
-import {
-  TIER_FEATURES,
-  isValidSubscriptionTier,
-  type PremiumFeatures,
-} from "@shared/types/premium";
-
-// ---------------------------------------------------------------------------
-// Subscription-tier cache for GET /api/recipes/generation-status
-//
-// This endpoint is polled frequently (banners, header counters) so we cache
-// each user's resolved PremiumFeatures for 60 s. The tier changes only on
-// IAP confirmation — a 60-second stale window is acceptable.
-// ---------------------------------------------------------------------------
-const GENERATION_STATUS_TIER_TTL_MS = 60_000;
-const generationStatusTierCache = new Map<
-  string,
-  { features: PremiumFeatures; expiresAt: number }
->();
-
-function getGenerationStatusTierCached(userId: string): PremiumFeatures | null {
-  const entry = generationStatusTierCache.get(userId);
-  if (!entry || Date.now() > entry.expiresAt) return null;
-  return entry.features;
-}
-
-async function resolveGenerationStatusFeatures(
-  userId: string,
-): Promise<PremiumFeatures> {
-  const cached = getGenerationStatusTierCached(userId);
-  if (cached) return cached;
-  const subscription = await storage.getSubscriptionStatus(userId);
-  const tier = subscription?.tier ?? "free";
-  const features = TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
-  generationStatusTierCache.set(userId, {
-    features,
-    expiresAt: Date.now() + GENERATION_STATUS_TIER_TTL_MS,
-  });
-  return features;
-}
+import { inferMealTypes } from "../services/meal-type-inference";
+import { resolveSubscriptionTierFeatures } from "../services/subscription-tier-cache";
 
 const recipeShareSchema = z.object({
   isPublic: z.boolean(),
@@ -134,7 +97,7 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
-        const features = await resolveGenerationStatusFeatures(req.userId);
+        const features = await resolveSubscriptionTierFeatures(req.userId);
 
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
@@ -241,6 +204,12 @@ export function register(app: Express): void {
           );
         }
 
+        // Compute meal types at the route layer (storage-layer purity — M4)
+        const mealTypes = inferMealTypes(
+          generatedRecipe.title,
+          (generatedRecipe.ingredients ?? []).map((i) => i.name),
+        );
+
         // Atomically re-check limit + create recipe + log generation in a transaction
         // This prevents TOCTOU race where concurrent requests both pass the early check
         const recipe = await storage.createRecipeWithLimitCheck(
@@ -256,6 +225,7 @@ export function register(app: Express): void {
             timeEstimate: generatedRecipe.timeEstimate,
             servings: servings || 2,
             dietTags: generatedRecipe.dietTags,
+            mealTypes,
             instructions: generatedRecipe.instructions,
             ingredients: generatedRecipe.ingredients,
             imageUrl: generatedRecipe.imageUrl,

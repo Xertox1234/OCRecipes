@@ -8,6 +8,7 @@ import {
   dailyLogs,
   savedItems,
   favouriteScannedItems,
+  mealPlanItems,
   mealPlanRecipes,
   users,
 } from "@shared/schema";
@@ -153,6 +154,16 @@ export async function softDeleteScannedItem(
       await tx
         .delete(favouriteScannedItems)
         .where(eq(favouriteScannedItems.scannedItemId, id));
+      // Remove meal plan items that solely reference this scanned item to avoid
+      // orphan rows that violate the hasNutritionSource CHECK constraint.
+      await tx
+        .delete(mealPlanItems)
+        .where(
+          and(
+            eq(mealPlanItems.scannedItemId, id),
+            isNull(mealPlanItems.recipeId),
+          ),
+        );
     }
 
     return !!updated;

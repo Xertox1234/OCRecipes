@@ -89,12 +89,12 @@ export function parseReceiptItemsFromOCR(texts: string[]): ParsedReceipt {
 
       const atMatch = name.match(QTY_AT_RE);
       if (atMatch) {
-        quantity = parseInt(atMatch[1], 10);
+        quantity = Math.min(parseInt(atMatch[1], 10), 99);
         name = name.replace(QTY_AT_RE, "").trim();
       } else {
         const xMatch = name.match(QTY_X_RE);
         if (xMatch) {
-          quantity = parseInt(xMatch[1], 10);
+          quantity = Math.min(parseInt(xMatch[1], 10), 99);
           name = name.replace(QTY_X_RE, "").trim();
         }
       }

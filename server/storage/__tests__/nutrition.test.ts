@@ -22,6 +22,7 @@ import {
   dailyLogs,
   savedItems,
   favouriteScannedItems,
+  mealPlanItems,
   mealPlanRecipes,
 } from "@shared/schema";
 
@@ -400,6 +401,31 @@ describe("nutrition storage", () => {
         .from(favouriteScannedItems)
         .where(eq(favouriteScannedItems.scannedItemId, item.id));
       expect(afterRows).toHaveLength(0);
+    });
+
+    it("deletes orphaned mealPlanItems rows that reference the scanned item", async () => {
+      const item = await insertScannedItem(testUser.id);
+      const t = getTestTx();
+
+      // Insert a meal plan item referencing this scanned item only (no recipeId)
+      const [mealPlanItem] = await t
+        .insert(mealPlanItems)
+        .values({
+          userId: testUser.id,
+          scannedItemId: item.id,
+          plannedDate: "2026-01-01",
+          mealType: "breakfast",
+        })
+        .returning();
+
+      await softDeleteScannedItem(item.id, testUser.id);
+
+      // The mealPlanItem row should be deleted because it had no recipeId fallback
+      const rows = await t
+        .select()
+        .from(mealPlanItems)
+        .where(eq(mealPlanItems.id, mealPlanItem.id));
+      expect(rows).toHaveLength(0);
     });
 
     it("does not delete favourite rows when soft-delete fails (wrong user)", async () => {
