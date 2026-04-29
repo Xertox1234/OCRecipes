@@ -117,8 +117,11 @@ export function register(app: Express): void {
           return;
         }
 
-        const recipe = await storage.getMealPlanRecipeWithIngredients(id);
-        if (!recipe || recipe.userId !== req.userId) {
+        const recipe = await storage.getMealPlanRecipeWithIngredients(
+          id,
+          req.userId,
+        );
+        if (!recipe) {
           sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
         }
@@ -409,8 +412,11 @@ export function register(app: Express): void {
 
         // IDOR: verify recipe or scanned item belongs to user
         if (parsed.data.recipeId) {
-          const recipe = await storage.getMealPlanRecipe(parsed.data.recipeId);
-          if (!recipe || recipe.userId !== req.userId) {
+          const recipe = await storage.getMealPlanRecipe(
+            parsed.data.recipeId,
+            req.userId,
+          );
+          if (!recipe) {
             sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
             return;
           }

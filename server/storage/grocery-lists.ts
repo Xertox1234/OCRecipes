@@ -136,7 +136,21 @@ export async function updateGroceryListItemChecked(
   id: number,
   groceryListId: number,
   isChecked: boolean,
+  userId?: string,
 ): Promise<GroceryListItem | undefined> {
+  if (userId) {
+    // Defense-in-depth: verify list ownership via JOIN before mutating
+    const [owned] = await db
+      .select({ id: groceryLists.id })
+      .from(groceryLists)
+      .where(
+        and(
+          eq(groceryLists.id, groceryListId),
+          eq(groceryLists.userId, userId),
+        ),
+      );
+    if (!owned) return undefined;
+  }
   const [updated] = await db
     .update(groceryListItems)
     .set({
@@ -156,7 +170,21 @@ export async function updateGroceryListItemChecked(
 export async function deleteGroceryListItem(
   id: number,
   groceryListId: number,
+  userId?: string,
 ): Promise<boolean> {
+  if (userId) {
+    // Defense-in-depth: verify list ownership via JOIN before mutating
+    const [owned] = await db
+      .select({ id: groceryLists.id })
+      .from(groceryLists)
+      .where(
+        and(
+          eq(groceryLists.id, groceryListId),
+          eq(groceryLists.userId, userId),
+        ),
+      );
+    if (!owned) return false;
+  }
   const result = await db
     .delete(groceryListItems)
     .where(
@@ -173,7 +201,21 @@ export async function updateGroceryListItemPantryFlag(
   id: number,
   groceryListId: number,
   addedToPantry: boolean,
+  userId?: string,
 ): Promise<GroceryListItem | undefined> {
+  if (userId) {
+    // Defense-in-depth: verify list ownership via JOIN before mutating
+    const [owned] = await db
+      .select({ id: groceryLists.id })
+      .from(groceryLists)
+      .where(
+        and(
+          eq(groceryLists.id, groceryListId),
+          eq(groceryLists.userId, userId),
+        ),
+      );
+    if (!owned) return undefined;
+  }
   const [updated] = await db
     .update(groceryListItems)
     .set({ addedToPantry })

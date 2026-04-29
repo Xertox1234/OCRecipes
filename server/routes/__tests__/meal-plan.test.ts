@@ -113,11 +113,10 @@ describe("Meal Plan Routes", () => {
     });
 
     it("returns 404 for other user's recipe", async () => {
-      vi.mocked(storage.getMealPlanRecipeWithIngredients).mockResolvedValue({
-        ...mockRecipe,
-        userId: "2",
-        ingredients: [],
-      });
+      // Storage now enforces userId — returns undefined when recipe not owned
+      vi.mocked(storage.getMealPlanRecipeWithIngredients).mockResolvedValue(
+        undefined,
+      );
 
       const res = await request(app)
         .get("/api/meal-plan/recipes/1")
@@ -355,9 +354,8 @@ describe("Meal Plan Routes", () => {
     });
 
     it("returns 404 for recipe not owned by user", async () => {
-      vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(
-        createMockMealPlanRecipe({ title: "Chicken Salad", userId: "2" }),
-      );
+      // Storage now enforces userId — returns undefined when recipe not owned
+      vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(undefined);
 
       const res = await request(app)
         .post("/api/meal-plan/items")

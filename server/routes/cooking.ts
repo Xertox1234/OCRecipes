@@ -39,6 +39,7 @@ import {
   parseUserAllergies,
   type AllergenMatch,
 } from "@shared/constants/allergens";
+import { detectImageMimeType } from "../lib/image-mime";
 
 import { storage, type CookingSession } from "../storage";
 
@@ -212,6 +213,16 @@ export function register(app: Express): void {
         }
 
         if (!checkAiConfigured(res)) return;
+
+        // Validate image content via magic bytes (don't trust client mimetype)
+        if (!detectImageMimeType(req.file.buffer)) {
+          return sendError(
+            res,
+            400,
+            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
 
         const imageBase64 = req.file.buffer.toString("base64");
         const photoId = crypto.randomUUID();

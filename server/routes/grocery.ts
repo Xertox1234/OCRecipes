@@ -280,6 +280,7 @@ export function register(app: Express): void {
             itemId,
             listId,
             parsed.data.isChecked,
+            req.userId,
           );
           if (!updated) {
             sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);
@@ -291,6 +292,7 @@ export function register(app: Express): void {
               itemId,
               listId,
               parsed.data.addedToPantry,
+              req.userId,
             );
             if (flagged) {
               res.json(flagged);
@@ -307,6 +309,7 @@ export function register(app: Express): void {
             itemId,
             listId,
             parsed.data.addedToPantry,
+            req.userId,
           );
           if (!updated) {
             sendError(res, 404, "Item not found", ErrorCode.NOT_FOUND);

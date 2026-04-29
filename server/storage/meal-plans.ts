@@ -64,19 +64,21 @@ export async function findMealPlanRecipeByExternalId(
 
 export async function getMealPlanRecipe(
   id: number,
+  userId?: string,
 ): Promise<MealPlanRecipe | undefined> {
-  const [recipe] = await db
-    .select()
-    .from(mealPlanRecipes)
-    .where(eq(mealPlanRecipes.id, id));
+  const condition = userId
+    ? and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId))
+    : eq(mealPlanRecipes.id, id);
+  const [recipe] = await db.select().from(mealPlanRecipes).where(condition);
   return recipe || undefined;
 }
 
 export async function getMealPlanRecipeWithIngredients(
   id: number,
+  userId?: string,
 ): Promise<(MealPlanRecipe & { ingredients: RecipeIngredient[] }) | undefined> {
   const [recipe, ingredients] = await Promise.all([
-    getMealPlanRecipe(id),
+    getMealPlanRecipe(id, userId),
     db
       .select()
       .from(recipeIngredients)

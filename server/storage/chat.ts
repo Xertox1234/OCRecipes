@@ -60,7 +60,26 @@ export async function createChatConversation(
 export async function getChatMessages(
   conversationId: number,
   limit = 100,
+  userId?: string,
 ): Promise<ChatMessage[]> {
+  if (userId) {
+    const rows = await db
+      .select({ message: chatMessages })
+      .from(chatMessages)
+      .innerJoin(
+        chatConversations,
+        eq(chatMessages.conversationId, chatConversations.id),
+      )
+      .where(
+        and(
+          eq(chatMessages.conversationId, conversationId),
+          eq(chatConversations.userId, userId),
+        ),
+      )
+      .orderBy(chatMessages.createdAt)
+      .limit(limit);
+    return rows.map((r) => r.message);
+  }
   return db
     .select()
     .from(chatMessages)
