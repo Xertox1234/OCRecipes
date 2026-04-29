@@ -71,6 +71,7 @@ export default function ReceiptCaptureScreen() {
       }
     } catch (error) {
       console.error("Capture error:", error);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsCapturing(false);
     }
@@ -187,6 +188,7 @@ export default function ReceiptCaptureScreen() {
   return (
     <View
       style={[styles.container, { backgroundColor: CameraColors.background }]}
+      accessibilityViewIsModal
     >
       {/* Upgrade modal for free users */}
       {shouldShowUpgrade && (

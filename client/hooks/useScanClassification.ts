@@ -53,6 +53,7 @@ export function useScanClassification({
   const autoRouteTimeoutRef = useRef<TimeoutRef>(null);
   const navigationTimeoutRef = useRef<TimeoutRef>(null);
   const resetTimeoutRef = useRef<TimeoutRef>(null);
+  const latestOCRTextRef = useRef<string | undefined>(undefined);
 
   // Timer refs must be read at cleanup time (not captured at setup) — these are
   // timer IDs, not React DOM refs, so the exhaustive-deps warning is inapplicable.
@@ -118,7 +119,10 @@ export function useScanClassification({
           navigation.navigate("LabelAnalysis", { imageUri });
           break;
         case "restaurant_menu":
-          navigation.navigate("MenuScanResult", { imageUri });
+          navigation.navigate("MenuScanResult", {
+            imageUri,
+            localOCRText: latestOCRTextRef.current,
+          });
           break;
         case "raw_ingredients":
           navigation.navigate("CookSessionCapture", {
@@ -147,9 +151,10 @@ export function useScanClassification({
 
   /** Run smart scan classification on a photo */
   const handleSmartScan = useCallback(
-    async (imageUri: string) => {
+    async (imageUri: string, localOCRText?: string) => {
       if (isClassifyingRef.current) return;
       isClassifyingRef.current = true;
+      latestOCRTextRef.current = localOCRText;
       setClassifyState("classifying");
       setClassifyImageUri(imageUri);
 
