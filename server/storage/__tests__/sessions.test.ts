@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createSessionStore, type SessionStoreOptions } from "../sessions";
 
 interface TestSession {
@@ -114,6 +114,78 @@ describe("createSessionStore", () => {
       // createIfAllowed fails the second time (cap enforced atomically)
       const r2 = store.createIfAllowed(makeSession("user-1"));
       expect(r2.ok).toBe(false);
+    });
+  });
+
+  describe("createWithKey", () => {
+    it("stores a session under the supplied key and returns ok:true", () => {
+      const store = makeStore();
+      const result = store.createWithKey("my-key", makeSession("user-1"));
+      expect(result.ok).toBe(true);
+      expect(store.get("my-key")).toBeDefined();
+      expect(store.get("my-key")?.userId).toBe("user-1");
+    });
+
+    it("replaces an existing session at the same key for the same user without tripping the per-user cap", () => {
+      const store = makeStore({ maxPerUser: 1, maxGlobal: 10 });
+      // Create the first entry — fills the per-user slot
+      const r1 = store.createWithKey("key-a", makeSession("user-1"));
+      expect(r1.ok).toBe(true);
+      expect(store._internals.userCount.get("user-1")).toBe(1);
+
+      // Replace it — should not reject because the freed slot nets to 0
+      const r2 = store.createWithKey("key-a", makeSession("user-1"));
+      expect(r2.ok).toBe(true);
+      // Count stays at 1 after the replacement (old slot freed, new slot added)
+      expect(store._internals.userCount.get("user-1")).toBe(1);
+      expect(store.get("key-a")?.data).toBe("payload");
+    });
+
+    it("returns ok:false with SESSION_LIMIT_REACHED when global cap would be exceeded after accounting for freed slot", () => {
+      // maxGlobal: 2, two sessions already held by different users.
+      // A third createWithKey for a brand-new key should fail.
+      const store = makeStore({ maxPerUser: 5, maxGlobal: 2 });
+      store.createWithKey("key-a", makeSession("user-1"));
+      store.createWithKey("key-b", makeSession("user-2"));
+
+      const result = store.createWithKey("key-c", makeSession("user-3"));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("SESSION_LIMIT_REACHED");
+      }
+    });
+
+    it("allows a replacement at an existing key even when global cap is at maxGlobal (net session count stays the same)", () => {
+      const store = makeStore({ maxPerUser: 5, maxGlobal: 2 });
+      store.createWithKey("key-a", makeSession("user-1"));
+      store.createWithKey("key-b", makeSession("user-2"));
+
+      // Replacing key-a: evict 1, add 1 → net global unchanged → should succeed
+      const result = store.createWithKey(
+        "key-a",
+        makeSession("user-1", "updated"),
+      );
+      expect(result.ok).toBe(true);
+      expect(store.get("key-a")?.data).toBe("updated");
+    });
+
+    it("returns ok:false with USER_SESSION_LIMIT when the per-user cap would be exceeded by a different user replacing an existing key", () => {
+      // user-1 has maxPerUser sessions already (under a different key).
+      // user-2 tries to replace key-a (previously owned by user-1).
+      // After the replacement user-2 would own 1 new session which is fine,
+      // but this test checks the per-user cap for the incoming data.userId.
+      const store = makeStore({ maxPerUser: 1, maxGlobal: 10 });
+      // user-2 already has 1 session at key-b (fills their cap)
+      store.createWithKey("key-b", makeSession("user-2"));
+      // user-1 owns key-a
+      store.createWithKey("key-a", makeSession("user-1"));
+
+      // user-2 tries to take key-a — their slot is full
+      const result = store.createWithKey("key-a", makeSession("user-2"));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("USER_SESSION_LIMIT");
+      }
     });
   });
 });

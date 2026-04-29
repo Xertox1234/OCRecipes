@@ -11,7 +11,6 @@ import {
   getToolDefinitions,
   executeToolCall,
   MAX_TOOL_CALLS_PER_RESPONSE,
-  type ToolErrorResult,
   serviceUnavailable,
 } from "./coach-tools";
 
