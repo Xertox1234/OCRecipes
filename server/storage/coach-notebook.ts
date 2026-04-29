@@ -158,3 +158,61 @@ export async function getNotebookEntryCount(
     );
   return result?.count ?? 0;
 }
+
+export async function getNotebookEntries(
+  userId: string,
+  opts?: {
+    type?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  },
+): Promise<CoachNotebookEntry[]> {
+  const limit = opts?.limit ?? 50;
+  const page = opts?.page ?? 1;
+  const offset = (page - 1) * limit;
+  const conditions = [eq(coachNotebook.userId, userId)];
+  if (opts?.type) conditions.push(eq(coachNotebook.type, opts.type));
+  if (opts?.status) {
+    conditions.push(eq(coachNotebook.status, opts.status));
+  } else {
+    // Default: exclude archived
+    conditions.push(ne(coachNotebook.status, "archived"));
+  }
+  return db
+    .select()
+    .from(coachNotebook)
+    .where(and(...conditions))
+    .orderBy(desc(coachNotebook.updatedAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function updateNotebookEntry(
+  id: number,
+  userId: string,
+  updates: {
+    content?: string;
+    type?: string;
+    followUpDate?: Date | null;
+    status?: string;
+  },
+): Promise<CoachNotebookEntry | undefined> {
+  const [updated] = await db
+    .update(coachNotebook)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
+    .returning();
+  return updated || undefined;
+}
+
+export async function deleteNotebookEntry(
+  id: number,
+  userId: string,
+): Promise<boolean> {
+  const result = await db
+    .delete(coachNotebook)
+    .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
+    .returning({ id: coachNotebook.id });
+  return result.length > 0;
+}

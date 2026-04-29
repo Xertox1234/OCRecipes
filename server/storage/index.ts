@@ -311,4 +311,7 @@ export const storage = {
   getCommitmentsWithDueFollowUp: coachNotebook.getCommitmentsWithDueFollowUp,
   archiveOldEntries: coachNotebook.archiveOldEntries,
   getNotebookEntryCount: coachNotebook.getNotebookEntryCount,
+  getNotebookEntries: coachNotebook.getNotebookEntries,
+  updateNotebookEntry: coachNotebook.updateNotebookEntry,
+  deleteNotebookEntry: coachNotebook.deleteNotebookEntry,
 };
