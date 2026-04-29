@@ -143,6 +143,7 @@ When reviewing or writing camera code, verify:
 - [ ] `isScanning` state prevents duplicate triggers
 - [ ] Haptic feedback on successful scan
 - [ ] Scan result validated before navigation
+- [ ] `isFocused` (from `useIsFocused()`) is passed to `useScanClassification` at ALL call sites — a declared-but-not-passed `isFocused` silently disables the stale-navigation guard with no TypeScript warning (Ref: audit 2026-04-28 C1)
 
 ### Image Handling
 
@@ -150,6 +151,11 @@ When reviewing or writing camera code, verify:
 - [ ] FormData uses `as unknown as Blob` cast
 - [ ] Image quality/compression configured appropriately
 - [ ] Gallery picker provided as alternative to camera
+
+### OCR Race+Swap Screens
+
+- [ ] Error render guard is `scanMutation.isError && items.length === 0` — not just `isError` alone (prevents discarding valid local OCR items when AI call fails)
+- [ ] Both `onSuccess` and `onError` callbacks passed to `mutation.mutate()` check the `cancelled` ref from `useEffect` cleanup before calling any state setters
 
 ### Performance
 
@@ -181,6 +187,8 @@ When reviewing or writing camera code, verify:
 6. **Expo Go testing** - Camera features require dev client build, not Expo Go
 7. **OCR regex keyword collisions** - "Calories from Fat" matches before "Calories 250"; use negative lookahead `(?!from\b)` for nutrition label parsing
 8. **Aggressive OCR char corrections** - `S→5` replacement must be context-sensitive (only adjacent to digits); blanket replacement corrupts label text
+9. **OCR race+swap error guard omits `items.length` check** - In screens using the OCR race+swap pattern (local OCR races AI; `dataSourceRef` tracks which source won), the error render guard must be `scanMutation.isError && items.length === 0`, NOT just `scanMutation.isError`. Showing the error screen when `items.length > 0` discards valid locally-parsed data already shown to the user. AI failure should degrade gracefully to local OCR results (Ref: `MenuScanResultScreen` reference implementation, audit 2026-04-28 H4)
+10. **`mutate` onError missing `cancelled` unmount guard** - In `useEffect` callbacks that call `mutation.mutate({ onSuccess, onError })`, BOTH `onSuccess` AND `onError` must check the `cancelled` ref at entry. A `cancelled` guard on only `onSuccess` leaves the `onError` path free to call `setState` on an unmounted component (Ref: audit 2026-04-28 H5)
 
 ---
 

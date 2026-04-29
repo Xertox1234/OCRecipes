@@ -4,6 +4,12 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [parseInt on req.userId Returns NaN (2026-04-28)](#parseint-on-requserid-returns-nan-2026-04-28)
+- [onConflictDoNothing on Cache Tables Causes expired-entry Skip + ! Crash (2026-04-28)](#onconflictdoNothing-on-cache-tables-causes-expired-entry-skip---crash-2026-04-28)
+- [OCR Race+Swap Error Guard Must Also Check items.length (2026-04-28)](#ocr-raceswap-error-guard-must-also-check-itemslength-2026-04-28)
+- [New Recipe Generation Endpoint Skipped Quota Check (2026-04-28)](#new-recipe-generation-endpoint-skipped-quota-check-2026-04-28)
+- [Optional Hook Safety Param Silently Dropped at Call Site (2026-04-28)](#optional-hook-safety-param-silently-dropped-at-call-site-2026-04-28)
+- [mutate onError Missing cancelled Guard (2026-04-28)](#mutate-onerror-missing-cancelled-guard-2026-04-28)
 - [Decorative Badge Double-Announcement (2026-04-26)](#decorative-badge-double-announcement--parent-label-prefix--accessible-false-2026-04-26)
 
 - [useRef to Break Circular Hook Dependency (2026-04-18)](#useref-to-break-circular-hook-dependency-2026-04-18)
@@ -57,6 +63,72 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## 2026-04-28 — parseInt on req.userId Returns NaN
+
+**Category:** Bug Post-Mortem
+**Finding:** H2 (2026-04-28 audit)
+
+`req.userId` is always a UUID string set by the JWT middleware. A route in `verification.ts` called `parseInt(req.userId, 10)` — almost certainly copied from an era when user IDs were integers. `parseInt("uuid-string")` returns `NaN`, which Zod's `z.number()` schema rejects, producing a 500 error on every front-label confirm request. The bug produced no TypeScript error because `parseInt` has return type `number`, and `NaN` is a `number`. Fix: change the Zod field to `z.string()` and remove the `parseInt` call.
+
+**Rule:** Never call `parseInt()` on `req.userId` — it is a UUID string. `parseInt(uuidString)` returns `NaN` and silently breaks Zod `z.number()` validation.
+
+---
+
+## 2026-04-28 — onConflictDoNothing on Cache Tables Causes Expired-Entry Skip + `!` Crash
+
+**Category:** Bug Post-Mortem
+**Finding:** H3 (2026-04-28 audit)
+
+`createMealSuggestionCache` used `onConflictDoNothing`. When an expired cache entry already existed with the same key, the insert was silently skipped (conflict on the unique index). The caller then called `getMealSuggestionCache`, which filtered the expired entry out (TTL check), returning `undefined`. The function then did `return existing!` — non-null assertion on an `undefined` value — crashing the request. The root cause is that `onConflictDoNothing` is correct for idempotent inserts where the first write wins (e.g., `addFavourite`), but wrong for cache tables where an expired entry must be refreshed. Fix: use `onConflictDoUpdate` with `set: { suggestions, expiresAt }` to atomically refresh the row.
+
+**Rule:** Cache tables must use `onConflictDoUpdate` (not `onConflictDoNothing`) so that expired entries are refreshed rather than silently skipped, which would leave a stale key that filters out as expired and causes `!` dereference crashes.
+
+---
+
+## 2026-04-28 — OCR Race+Swap Error Guard Must Also Check items.length
+
+**Category:** Gotcha
+**Finding:** H4 (2026-04-28 audit)
+
+`ReceiptReviewScreen` uses the OCR race+swap pattern: local OCR runs first, AI analysis races to replace it, and a `dataSourceRef` tracks which source "won". The screen was showing a hard error UI whenever `scanMutation.isError` was true, even when `items.length > 0` — discarding valid locally-parsed OCR items that were already visible to the user. This is the same race used in `MenuScanResultScreen`, which correctly checks both conditions. Fix: change the error guard to `scanMutation.isError && items.length === 0` so AI failure gracefully degrades to local OCR results.
+
+**Rule:** In OCR race+swap screens, `isError` alone must not trigger the hard error state — always also check `items.length === 0`. AI failure should degrade gracefully to local OCR data, not discard it.
+
+---
+
+## 2026-04-28 — New Recipe Generation Endpoint Skipped Quota Check
+
+**Category:** Security / Bug Post-Mortem
+**Finding:** H1 (2026-04-28 audit)
+
+The cooking session recipe endpoint (`POST /api/cooking/sessions/:id/recipe`) was added alongside the established `POST /api/recipes/generate` but used `cookingPhotoRateLimit` (10/min) instead of `recipeGenerationRateLimit` (3/min) and had no premium quota check at all. The two-phase quota pattern — early `getDailyRecipeGenerationCount` fast path + atomic `logRecipeGenerationWithLimitCheck` post-AI call — was established specifically to prevent free-tier users from burning OpenAI budget. New AI endpoints that follow the "session flow" pattern are at risk of missing this gate because the session setup code appears complete even without the quota check.
+
+**Rule:** Every new recipe generation endpoint must use `recipeGenerationRateLimit` (not any other limiter) AND the full two-phase quota check. Rate-limiting alone is not sufficient — a free-tier user can call at 3/min × N users and still burn significant budget.
+
+---
+
+## 2026-04-28 — Optional Hook Safety Param Silently Dropped at Call Site
+
+**Category:** Gotcha
+**Finding:** C1 (2026-04-28 audit)
+
+`useScanClassification` accepts an optional `isFocused` parameter that guards against processing frames when the screen is not focused (stale navigation guard). In `ScanScreen.tsx`, `isFocused` was declared via `useIsFocused()` and used correctly on `<CameraView isActive={isFocused} />`, but was never passed to `useScanClassification(...)`. The L20 guard inside the hook was permanently disabled. The bug was invisible in code review because the declaration looked correct — nothing in the call site indicated the omission. TypeScript does not warn about missing optional parameters.
+
+**Rule:** When a hook has an optional safety-related parameter (like `isFocused`), grep every call site to confirm it is actually connected. A declared-but-not-passed param silently disables the safety guard with no TypeScript error.
+
+---
+
+## 2026-04-28 — mutate onError Missing cancelled Guard
+
+**Category:** Gotcha
+**Finding:** H5 (2026-04-28 audit)
+
+`ReceiptReviewScreen` used a `cancelled` ref to guard state updates in the `onSuccess` callback of `scanMutation.mutate(...)`. The guard correctly prevented state updates after unmount on the success path. However, no `onError` callback was provided at all, so a mutation error on an already-unmounted component could still trigger state updates. The fix adds `onError: () => { if (cancelled) return; }` so both paths respect the unmount guard.
+
+**Rule:** In `useEffect` callbacks that call `mutation.mutate({ onSuccess, onError })`, BOTH `onSuccess` and `onError` must check the `cancelled` ref. A guard on only one path leaves the other path unprotected against unmounted-component state updates.
+
+---
 
 ## [2026-04-26] Decorative Badge Double-Announcement — Parent Label Prefix + accessible={false}
 

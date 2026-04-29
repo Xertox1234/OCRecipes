@@ -362,7 +362,7 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 - [ ] Cache-first check before expensive operations
 - [ ] Composite key: itemId + userId + profileHash
 - [ ] TTL checked inline in query
-- [ ] Unique index + onConflictDoUpdate for dedup
+- [ ] Unique index + `onConflictDoUpdate` for dedup (never `onConflictDoNothing` on tables with a TTL column — expired rows must be refreshed, not skipped)
 - [ ] cacheId returned to client
 - [ ] Profile hash invalidation
 
@@ -410,6 +410,7 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 21. **Naive `col <= X` on nullable column drops the null population** - When the column is nullable and null means different things per source (community recipe nutrition = "not imported yet", personal recipe nutrition = "user left blank"), use source-aware pass-through: `or(isNull(col), col <= X)` for community, plain `col <= X` for personal. A single naive filter across both silently excludes seed recipes + community pool from macro-filtered search (Ref: `docs/patterns/database.md` "Source-Aware Null Pass-Through", audit 2026-04-18 H10)
 22. **Production code reading `_internals` / `__test__` escape hatches** - Modules that expose test-only state (`SessionStore._internals.store`, `searchIndex.__test__.reset`) are documented as "never import from production". Grep: `grep -rn "_internals\|\.__test__\." server/ --include="*.ts" --exclude-dir="__tests__"` should return zero non-comment hits. Use the public API (`store.get(key)`) instead (Ref: audit 2026-04-18 H9)
 23. **Ownership verification outside the tx on limit-checked inserts** - `createChatMessageWithLimitCheck(userId, conversationId, …)` must verify `conversations.userId = userId` INSIDE the tx (after advisory-lock, before quota queries). Pre-checking ownership in the route is defense-in-depth but not sufficient — if storage is called from a new route that forgot the pre-check, the IDOR footgun fires silently. Return `null` when ownership fails, same as limit-reached (Ref: audit 2026-04-18 H11)
+24. **`onConflictDoNothing` on cache tables causes expired-entry skip + `!` crash** — Cache tables with a TTL must use `onConflictDoUpdate` with `set: { data, expiresAt }` to refresh expired entries. `onConflictDoNothing` silently skips the insert when an expired row exists with the same key; the subsequent `getCache` call filters it out as expired (returning `undefined`); any `!` non-null assertion on the result then crashes. Rule: if a table has a unique key AND a TTL column, always use `onConflictDoUpdate` — not `onConflictDoNothing`. `onConflictDoNothing` is correct only for true idempotent inserts where the first write wins and the row never expires (e.g., `favourites`, `dismissals`) (Ref: audit 2026-04-28 H3)
 
 ---
 
