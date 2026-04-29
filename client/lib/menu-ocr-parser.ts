@@ -4,7 +4,7 @@ export interface LocalMenuItem {
   price?: string;
 }
 
-export interface ParsedMenu {
+interface ParsedMenu {
   items: LocalMenuItem[];
   restaurantName: string | null;
   confidence: number;

@@ -23,6 +23,10 @@ export function shouldReplaceWithAIReceipt(
  * Merges local OCR skeleton with AI-expanded items.
  * Currently returns AI items directly — AI always has superior names
  * (abbreviations expanded, categories assigned).
+ *
+ * TODO: Use `_local` to fall back to locally-parsed items for any AI items
+ * whose confidence is below a threshold, preserving raw OCR data when the
+ * AI result is uncertain.
  */
 export function mergeReceiptItems(
   _local: LocalReceiptItem[],

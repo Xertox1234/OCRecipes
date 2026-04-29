@@ -9,7 +9,6 @@
  * once the schema migration is applied via `npm run db:push`.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { sql } from "drizzle-orm";
 
 // Mock the db module so we can intercept the raw SQL calls
 const mockExecute = vi.fn();

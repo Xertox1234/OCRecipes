@@ -644,6 +644,38 @@ describe("handleCoachChat", () => {
       expect(storage.createChatMessage).not.toHaveBeenCalled();
     });
   });
+
+  // ── History truncation (M16) ──────────────────────────────
+
+  describe("history truncation", () => {
+    it("truncates history to fit within the 8000-token budget before passing to generateCoachProResponse", async () => {
+      // 20 messages, each with 2000 chars of content.
+      // At 4 chars/token that's 500 tokens each → 10,000 tokens total,
+      // which exceeds the 8,000-token budget by 2,000 tokens (5 assistant messages).
+      const longContent = "x".repeat(2000);
+      const messages = Array.from({ length: 20 }, (_, i) =>
+        createMockChatMessage({
+          role: i % 2 === 0 ? "user" : "assistant",
+          content: longContent,
+        }),
+      );
+      vi.mocked(storage.getChatMessages).mockResolvedValue(messages);
+
+      const params = makeParams({ isCoachPro: true });
+      await collectEvents(handleCoachChat(params));
+
+      expect(generateCoachProResponse).toHaveBeenCalled();
+      const passedHistory = vi.mocked(generateCoachProResponse).mock
+        .calls[0][0];
+      // The full 20-message history (10,000 tokens) exceeds 8,000 tokens,
+      // so truncation must have reduced it.
+      expect(passedHistory.length).toBeLessThan(20);
+      // The most-recent user message (index 18) must always be preserved by the
+      // truncation logic — verify at least one "user" message is present.
+      const userMessages = passedHistory.filter((m) => m.role === "user");
+      expect(userMessages.length).toBeGreaterThan(0);
+    });
+  });
 });
 
 // ── Pure helpers extracted from handleCoachChat (L19) ───────
@@ -720,6 +752,34 @@ describe("hashNotebookDedupeKey", () => {
     });
     // Same user + same week = same key regardless of content/turn.
     expect(a).toBe(b);
+  });
+
+  it("coaching_strategy produces different keys for dates in adjacent ISO weeks (M17)", () => {
+    // ISO week 2026-W18 starts Monday 2026-04-27.
+    // ISO week 2026-W19 starts Monday 2026-05-04.
+    // Using vi.setSystemTime to control which week new Date() falls in.
+    const strategyParams = {
+      ...base,
+      entryType: "coaching_strategy",
+      entryContent: "be consistent",
+      lastUserMessage: "turn X",
+      lastAssistantMessage: "reply X",
+    };
+
+    vi.useFakeTimers();
+    try {
+      // Week 18: Monday 2026-04-27
+      vi.setSystemTime(new Date("2026-04-27T12:00:00Z"));
+      const keyWeek18 = hashNotebookDedupeKey(strategyParams);
+
+      // Week 19: Monday 2026-05-04
+      vi.setSystemTime(new Date("2026-05-04T12:00:00Z"));
+      const keyWeek19 = hashNotebookDedupeKey(strategyParams);
+
+      expect(keyWeek18).not.toBe(keyWeek19);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

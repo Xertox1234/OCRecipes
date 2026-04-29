@@ -40,7 +40,6 @@ import {
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
-import type { Allergy } from "@shared/schema";
 
 /** SSE event yielded by the coach chat service. */
 export type CoachChatEvent =
@@ -252,10 +251,9 @@ export async function* handleCoachChat(
     },
     dietaryProfile: {
       dietType: profile?.dietType || null,
-      // Use the shared `Allergy` schema type instead of an inline `{ name }` cast.
       // Sanitize at the context boundary (M40 — 2026-04-18) so both the prompt
       // builder and any future consumers see clean values.
-      allergies: ((profile?.allergies as Allergy[] | null) || [])
+      allergies: (profile?.allergies || [])
         .map((a) => a?.name)
         .filter(Boolean)
         .map((name) => sanitizeContextField(name, 100)),
