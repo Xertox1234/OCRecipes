@@ -76,10 +76,17 @@ export function register(app: Express): void {
           storage.getChatConversation(id, req.userId),
           storage.getChatMessageById(parsed.data.messageId, id),
         ]);
+        if (!conversation)
+          return sendError(
+            res,
+            404,
+            "Conversation not found",
+            ErrorCode.NOT_FOUND,
+          );
         let lineage:
           | { remixedFromId: number; remixedFromTitle: string }
           | undefined;
-        if (conversation?.type === "remix") {
+        if (conversation.type === "remix") {
           const parsedMeta = remixConversationMetadataSchema.safeParse(
             conversation.metadata,
           );

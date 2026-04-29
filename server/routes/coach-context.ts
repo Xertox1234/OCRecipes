@@ -144,7 +144,11 @@ export function register(app: Express): void {
         }
 
         // Pre-fetch conversation history
-        const messages = await storage.getChatMessages(conversationId, 20);
+        const messages = await storage.getChatMessages(
+          conversationId,
+          20,
+          req.userId,
+        );
         const prepared = messages.map((m) => ({
           role: m.role as WarmUpMessageRole,
           content: m.content,

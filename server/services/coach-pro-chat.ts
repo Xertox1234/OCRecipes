@@ -222,7 +222,7 @@ export async function* handleCoachChat(
     storage.getUserProfile(userId),
     storage.getDailySummary(userId, today),
     storage.getWeightLogs(userId, { limit: 14 }),
-    storage.getChatMessages(conversationId, 20),
+    storage.getChatMessages(conversationId, 20, userId),
   ]);
 
   // Weekly rate of change — shared pure helper so this logic is unit-tested

@@ -188,7 +188,7 @@ export function register(app: Express): void {
             ErrorCode.NOT_FOUND,
           );
 
-        const messages = await storage.getChatMessages(id, 100);
+        const messages = await storage.getChatMessages(id, 100, req.userId);
         fireAndForget(
           "coach-notebook-archival",
           tryArchiveNotebook(req.userId),
@@ -335,7 +335,7 @@ export function register(app: Express): void {
 
             const [profile, history, sourceRecipe] = await Promise.all([
               storage.getUserProfile(req.userId),
-              storage.getChatMessages(id, 10),
+              storage.getChatMessages(id, 10, req.userId),
               remixSourceId
                 ? storage.getCommunityRecipe(remixSourceId)
                 : undefined,
