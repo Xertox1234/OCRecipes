@@ -1,9 +1,23 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  AppState,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
-import { useChatConversations, useCreateConversation } from "@/hooks/useChat";
+import {
+  useChatConversations,
+  useCreateConversation,
+  useNotebookEntries,
+} from "@/hooks/useChat";
+import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
@@ -11,6 +25,7 @@ import CoachDashboard from "@/components/coach/CoachDashboard";
 import CoachChat from "@/components/coach/CoachChat";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import type { CoachChatNavigationProp } from "@/types/navigation";
 
 export default function CoachProScreen() {
   const { theme } = useTheme();
@@ -29,16 +44,44 @@ export default function CoachProScreen() {
   const createConversation = useCreateConversation();
   const [conversationId, setConversationId] = useState<number | null>(null);
   const { data: coachConversations = [] } = useChatConversations("coach");
-  const recentConversations = useMemo(
-    () => coachConversations.slice(0, 6),
+  const warmUpHook = useCoachWarmUp(conversationId);
+  const navigation = useNavigation<CoachChatNavigationProp>();
+  const pinnedConversations = useMemo(
+    () => coachConversations.filter((c) => c.isPinned),
     [coachConversations],
   );
-  const warmUpHook = useCoachWarmUp(conversationId);
+  const unpinnedConversations = useMemo(
+    () => coachConversations.filter((c) => !c.isPinned).slice(0, 6),
+    [coachConversations],
+  );
+  const threadBarConversations = useMemo(
+    () => [...pinnedConversations, ...unpinnedConversations],
+    [pinnedConversations, unpinnedConversations],
+  );
 
   useEffect(() => {
-    if (conversationId || recentConversations.length === 0) return;
-    setConversationId(recentConversations[0].id);
-  }, [conversationId, recentConversations]);
+    if (conversationId || threadBarConversations.length === 0) return;
+    setConversationId(threadBarConversations[0].id);
+  }, [conversationId, threadBarConversations]);
+
+  const { cancelStaleReminders } = useNotebookNotifications();
+  const { data: notebookEntries = [], isLoading: isEntriesLoading } =
+    useNotebookEntries({
+      status: "active",
+    });
+
+  useEffect(() => {
+    if (isEntriesLoading) return;
+    const activeIds = notebookEntries
+      .filter((e) => e.type === "commitment")
+      .map((e) => e.id);
+    cancelStaleReminders(activeIds);
+
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") cancelStaleReminders(activeIds);
+    });
+    return () => sub.remove();
+  }, [notebookEntries, isEntriesLoading, cancelStaleReminders]);
 
   const handleCreateConversation = useCallback(async () => {
     const result = await createConversation.mutateAsync({ type: "coach" });
@@ -103,10 +146,29 @@ export default function CoachProScreen() {
         </View>
       )}
       {context && (
-        <CoachDashboard
-          context={context}
-          onSuggestionPress={handleSuggestionPress}
-        />
+        <>
+          <View
+            style={[styles.notebookHeader, { borderBottomColor: theme.border }]}
+          >
+            <Pressable
+              onPress={() => navigation.navigate("NotebookScreen")}
+              style={[styles.notebookBtn, { borderColor: theme.border }]}
+              accessibilityRole="button"
+              accessibilityLabel="Open notebook"
+            >
+              <Feather name="book-open" size={16} color={theme.textSecondary} />
+              <Text
+                style={[styles.notebookBtnText, { color: theme.textSecondary }]}
+              >
+                Notebook
+              </Text>
+            </Pressable>
+          </View>
+          <CoachDashboard
+            context={context}
+            onSuggestionPress={handleSuggestionPress}
+          />
+        </>
       )}
       <View style={[styles.threadBar, { borderBottomColor: theme.border }]}>
         <Pressable
@@ -130,7 +192,7 @@ export default function CoachProScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.threadList}
         >
-          {recentConversations.map((conversation) => {
+          {threadBarConversations.map((conversation) => {
             const isSelected = conversation.id === conversationId;
             return (
               <Pressable
@@ -149,6 +211,14 @@ export default function CoachProScreen() {
                 accessibilityState={{ selected: isSelected }}
                 accessibilityLabel={`Open coach conversation ${conversation.title}`}
               >
+                {conversation.isPinned && (
+                  <Feather
+                    name="bookmark"
+                    size={10}
+                    color={theme.link}
+                    style={styles.pinIcon}
+                  />
+                )}
                 <Text
                   numberOfLines={1}
                   style={[
@@ -161,6 +231,24 @@ export default function CoachProScreen() {
               </Pressable>
             );
           })}
+          <Pressable
+            onPress={() =>
+              navigation.navigate("AllConversations", {
+                onSelect: setConversationId,
+              })
+            }
+            style={[
+              styles.threadChip,
+              styles.seeAllChip,
+              { borderColor: theme.border },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="See all conversations"
+          >
+            <Text style={[styles.threadTitle, { color: theme.textSecondary }]}>
+              See all ›
+            </Text>
+          </Pressable>
         </ScrollView>
       </View>
       <CoachChat
@@ -218,6 +306,7 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.md,
   },
   threadChip: {
+    flexDirection: "row",
     width: 148,
     minHeight: 36,
     borderRadius: BorderRadius.sm,
@@ -230,4 +319,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  pinIcon: { marginRight: 3 },
+  seeAllChip: { width: 72 },
+  notebookHeader: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  notebookBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+  },
+  notebookBtnText: { fontSize: 13 },
 });

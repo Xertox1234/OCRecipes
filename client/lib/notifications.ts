@@ -13,6 +13,11 @@ export async function setupNotificationChannel(): Promise<void> {
     importance: Notifications.AndroidImportance.DEFAULT,
     sound: "default",
   });
+  await Notifications.setNotificationChannelAsync("coach-reminders", {
+    name: "Coach Reminders",
+    importance: Notifications.AndroidImportance.DEFAULT,
+    sound: "default",
+  });
 }
 
 /** Request notification permissions. Returns true if granted. */

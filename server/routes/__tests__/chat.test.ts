@@ -3,6 +3,8 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
+import { sendError } from "../../lib/api-errors";
+import { requireAuth } from "../../middleware/auth";
 import {
   generateCoachResponse,
   generateCoachProResponse,
@@ -32,11 +34,13 @@ vi.mock("../../storage", () => ({
     getWeightLogs: vi.fn(),
     updateChatConversationTitle: vi.fn(),
     deleteChatConversation: vi.fn(),
+    deleteChatMessage: vi.fn(),
     getCoachCachedResponse: vi.fn().mockResolvedValue(null),
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
     getCommunityRecipe: vi.fn(),
     getActiveNotebookEntries: vi.fn().mockResolvedValue([]),
     createNotebookEntries: vi.fn().mockResolvedValue([]),
+    pinChatConversation: vi.fn(),
   },
 }));
 
@@ -582,6 +586,89 @@ describe("Chat Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe("DELETE /api/chat/messages/:id", () => {
+    it("deletes a message and returns 204", async () => {
+      vi.mocked(storage.deleteChatMessage).mockResolvedValue(true);
+      const res = await request(app)
+        .delete("/api/chat/messages/5")
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(204);
+      expect(storage.deleteChatMessage).toHaveBeenCalledWith(5, "1");
+    });
+
+    it("returns 404 when message not found or not owned", async () => {
+      vi.mocked(storage.deleteChatMessage).mockResolvedValue(false);
+      const res = await request(app)
+        .delete("/api/chat/messages/999")
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 for invalid message id", async () => {
+      const res = await request(app)
+        .delete("/api/chat/messages/abc")
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 401 without auth", async () => {
+      vi.mocked(requireAuth).mockImplementationOnce((_req, res, _next) => {
+        sendError(res, 401, "Unauthorized");
+      });
+      const res = await request(app).delete("/api/chat/messages/5");
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe("PATCH /api/chat/conversations/:id/pin", () => {
+    it("pins a conversation and returns the updated row", async () => {
+      const updated = createMockChatConversation({
+        id: 1,
+        isPinned: true,
+        pinnedAt: new Date(),
+      });
+      vi.mocked(storage.pinChatConversation).mockResolvedValue(updated);
+      const res = await request(app)
+        .patch("/api/chat/conversations/1/pin")
+        .send({ isPinned: true })
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(200);
+      expect(res.body.isPinned).toBe(true);
+    });
+
+    it("returns 404 when conversation not owned", async () => {
+      vi.mocked(storage.pinChatConversation).mockResolvedValue(undefined);
+      const res = await request(app)
+        .patch("/api/chat/conversations/999/pin")
+        .send({ isPinned: true })
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 for invalid body", async () => {
+      const res = await request(app)
+        .patch("/api/chat/conversations/1/pin")
+        .send({ isPinned: "yes" })
+        .set("Authorization", "Bearer valid-token");
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("GET /api/chat/conversations with pagination + search", () => {
+    it("passes search and page params to storage", async () => {
+      vi.mocked(storage.getChatConversations).mockResolvedValue([]);
+      await request(app)
+        .get("/api/chat/conversations?type=coach&search=breakfast&page=2")
+        .set("Authorization", "Bearer valid-token");
+      expect(storage.getChatConversations).toHaveBeenCalledWith(
+        "1",
+        expect.any(Number),
+        "coach",
+        expect.objectContaining({ search: "breakfast", page: 2 }),
+      );
     });
   });
 });
