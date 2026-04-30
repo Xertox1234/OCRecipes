@@ -13,7 +13,6 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   AccessibilityInfo,
   Text,
 } from "react-native";
@@ -34,14 +33,13 @@ import {
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useQueryClient } from "@tanstack/react-query";
-import { getApiUrl } from "@/lib/query-client";
-import { tokenStorage } from "@/lib/token-storage";
-import { Spacing, BorderRadius } from "@/constants/theme";
+import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
+import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import {
-  coachBlockSchema,
-  type CoachBlock,
-} from "@shared/schemas/coach-blocks";
-import { parsePlanDays } from "@/components/coach/coach-chat-utils";
+  parsePlanDays,
+  filterValidBlocks,
+} from "@/components/coach/coach-chat-utils";
+import { useCoachStream } from "@/hooks/useCoachStream";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
   CoachChatNavigationProp,
@@ -62,93 +60,6 @@ type ChatListItem =
   | { type: "optimistic"; id: string; content: string }
   | { type: "stream"; id: string };
 
-function filterValidBlocks(raw: unknown[]): CoachBlock[] {
-  const valid: CoachBlock[] = [];
-  for (const b of raw) {
-    const result = coachBlockSchema.safeParse(b);
-    if (result.success) valid.push(result.data);
-  }
-  return valid;
-}
-
-async function sendMessageStreaming(
-  conversationId: number,
-  content: string,
-  onChunk: (accumulated: string) => void,
-  onBlocks: (blocks: CoachBlock[]) => void,
-  onDone: () => void,
-  signal: AbortSignal,
-  warmUpId?: string | null,
-): Promise<void> {
-  const token = await tokenStorage.get();
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const url = `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`;
-    xhr.open("POST", url, true);
-    xhr.setRequestHeader("Content-Type", "application/json");
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-    let accumulated = "";
-    let lastProcessedIndex = 0;
-    let settled = false;
-
-    const resolveOnce = () => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
-
-    const rejectOnce = (error: Error) => {
-      if (settled) return;
-      settled = true;
-      reject(error);
-    };
-
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState >= 3 && xhr.responseText) {
-        const newText = xhr.responseText.slice(lastProcessedIndex);
-        lastProcessedIndex = xhr.responseText.length;
-
-        for (const line of newText.split("\n")) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.error) {
-                rejectOnce(new Error(String(data.error)));
-                return;
-              }
-              if (data.content) {
-                accumulated += data.content;
-                onChunk(accumulated);
-              }
-              if (data.blocks && Array.isArray(data.blocks)) {
-                onBlocks(filterValidBlocks(data.blocks));
-              }
-              if (data.done) {
-                onDone();
-                resolveOnce();
-              }
-            } catch {
-              // Ignore incomplete JSON chunks
-            }
-          }
-        }
-      }
-      if (xhr.readyState === 4) {
-        if (xhr.status >= 200 && xhr.status < 300) resolveOnce();
-        else rejectOnce(new Error(`${xhr.status}: ${xhr.responseText}`));
-      }
-    };
-
-    xhr.onerror = () => rejectOnce(new Error("Network error"));
-    signal.addEventListener("abort", () => {
-      xhr.abort();
-      resolveOnce();
-    });
-    xhr.send(JSON.stringify(warmUpId ? { content, warmUpId } : { content }));
-  });
-}
-
 export default function CoachChat({
   conversationId,
   onCreateConversation,
@@ -164,8 +75,6 @@ export default function CoachChat({
   const queryClient = useQueryClient();
 
   const [inputText, setInputText] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
@@ -173,11 +82,44 @@ export default function CoachChat({
   );
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<TextInput>(null);
   const prevStreamingRef = useRef(false);
-  const pendingStreamingDisplayRef = useRef("");
-  const streamingFlushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const {
+    isListening,
+    transcript,
+    isFinal,
+    volume,
+    startListening,
+    stopListening,
+  } = useSpeechToText();
+
+  const {
+    isSpeaking,
+    speakingMessageId,
+    speak: ttsSpeak,
+    stop: ttsStop,
+  } = useTTS();
+
+  const {
+    startStream,
+    abortStream,
+    streamingContent,
+    statusText,
+    isStreaming,
+  } = useCoachStream({
+    onDone: (_fullText, blocks) => {
+      setOptimisticMessage(null);
+      if (blocks && blocks.length > 0) setStreamBlocks(blocks);
+      queryClient.invalidateQueries({
+        queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+      });
+    },
+    onError: (message) => {
+      setStreamingError(message);
+      setOptimisticMessage(null);
+    },
+  });
 
   // Accessibility announcements for streaming state
   useEffect(() => {
@@ -235,22 +177,6 @@ export default function CoachChat({
     return last.role === "assistant" ? last.id : null;
   }, [messages]);
 
-  const {
-    isListening,
-    transcript,
-    isFinal,
-    volume,
-    startListening,
-    stopListening,
-  } = useSpeechToText();
-
-  const {
-    isSpeaking,
-    speakingMessageId,
-    speak: ttsSpeak,
-    stop: ttsStop,
-  } = useTTS();
-
   // Show interim transcript in input field while listening
   useEffect(() => {
     if (isListening && transcript) {
@@ -276,77 +202,22 @@ export default function CoachChat({
 
       setInputText("");
       setOptimisticMessage(content);
-      setIsStreaming(true);
-      setStreamingContent("");
-      // Stop any active TTS before sending a new message
-      ttsStop();
       setStreamBlocks([]);
       setStreamingError(null);
+      ttsStop();
 
       let convId = conversationId;
       if (!convId) {
         try {
           convId = await onCreateConversation();
         } catch {
-          setIsStreaming(false);
           setOptimisticMessage(null);
           return;
         }
       }
 
-      const abort = new AbortController();
-      abortRef.current = abort;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
-
-      try {
-        await sendMessageStreaming(
-          convId,
-          content,
-          (accumulated) => {
-            // Strip coach_blocks fence from displayed content during streaming
-            // Uses indexOf instead of backtracking regex for O(n) performance
-            const openIdx = accumulated.indexOf("```coach_blocks\n");
-            let display: string;
-            if (openIdx === -1) {
-              display = accumulated.trim();
-            } else {
-              const closeIdx = accumulated.indexOf("```", openIdx + 16);
-              if (closeIdx === -1) {
-                // Fence not yet closed — strip from open to end
-                display = accumulated.slice(0, openIdx).trim();
-              } else {
-                display = (
-                  accumulated.slice(0, openIdx) +
-                  accumulated.slice(closeIdx + 3)
-                ).trim();
-              }
-            }
-            pendingStreamingDisplayRef.current = display;
-            if (!streamingFlushRef.current) {
-              streamingFlushRef.current = setTimeout(() => {
-                setStreamingContent(pendingStreamingDisplayRef.current);
-                listRef.current?.scrollToEnd({ animated: false });
-                streamingFlushRef.current = null;
-              }, 16);
-            }
-          },
-          (blocks) => setStreamBlocks(blocks),
-          () => {
-            setIsStreaming(false);
-            setOptimisticMessage(null);
-          },
-          abort.signal,
-          currentWarmUpId,
-        );
-      } catch {
-        setIsStreaming(false);
-        setOptimisticMessage(null);
-        setInputText(content);
-        setStreamingError(
-          "Message failed. Check your connection and try again.",
-        );
-      }
-
+      startStream(convId, content, { warmUpId: currentWarmUpId });
       warmUpHook.reset();
     },
     [
@@ -357,6 +228,7 @@ export default function CoachChat({
       warmUpHook,
       isCoachPro,
       ttsStop,
+      startStream,
     ],
   );
 
@@ -560,11 +432,19 @@ export default function CoachChat({
               onCommitmentAccept={handleCommitmentAccept}
             />
           ))}
-          {isStreaming && !streamingContent && (
-            <View style={styles.typing}>
-              <ActivityIndicator size="small" color={theme.textSecondary} />
+          {isStreaming && !streamingContent && statusText ? (
+            <View style={styles.statusRow}>
+              <View
+                style={[styles.statusDot, { backgroundColor: theme.link }]}
+              />
+              <Text
+                style={[styles.statusText, { color: theme.textSecondary }]}
+                accessibilityLabel={statusText}
+              >
+                {statusText}
+              </Text>
             </View>
-          )}
+          ) : null}
         </View>
       );
     },
@@ -581,18 +461,17 @@ export default function CoachChat({
       messageBlocks,
       streamBlocks,
       streamingContent,
+      statusText,
       theme.textSecondary,
+      theme.link,
     ],
   );
 
   useEffect(() => {
     return () => {
-      if (streamingFlushRef.current) {
-        clearTimeout(streamingFlushRef.current);
-        streamingFlushRef.current = null;
-      }
+      abortStream();
     };
-  }, []);
+  }, [abortStream]);
 
   const handleMicPress = useCallback(() => {
     if (isListening) {
@@ -683,7 +562,6 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   messageList: { flex: 1 },
   messageContent: { padding: Spacing.md, paddingBottom: Spacing.lg },
-  typing: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md },
   inputBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -717,4 +595,22 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   retryText: { fontSize: 12 },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.xs,
+  },
+  statusDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    flexShrink: 0,
+  },
+  statusText: {
+    fontSize: 14,
+    fontStyle: "italic",
+    fontFamily: FontFamily.regular,
+  },
 });
