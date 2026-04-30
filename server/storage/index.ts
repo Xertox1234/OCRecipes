@@ -32,6 +32,7 @@ import * as profileHub from "./profile-hub";
 import * as coachNotebook from "./coach-notebook";
 import * as recipeFromChat from "./recipe-from-chat";
 import * as health from "./health";
+import * as pushTokensStorage from "./push-tokens";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -315,4 +316,11 @@ export const storage = {
   getNotebookEntries: coachNotebook.getNotebookEntries,
   updateNotebookEntry: coachNotebook.updateNotebookEntry,
   deleteNotebookEntry: coachNotebook.deleteNotebookEntry,
+  getDueCommitmentsAllUsers: coachNotebook.getDueCommitmentsAllUsers,
+
+  // Push tokens (server-driven push notifications)
+  upsertPushToken: pushTokensStorage.upsertPushToken,
+  getPushTokensForUser: pushTokensStorage.getPushTokensForUser,
+  getPushTokensForUsers: pushTokensStorage.getPushTokensForUsers,
+  deletePushToken: pushTokensStorage.deletePushToken,
 };

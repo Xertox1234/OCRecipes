@@ -219,3 +219,27 @@ export async function deleteNotebookEntry(
     .returning({ id: coachNotebook.id });
   return result.length > 0;
 }
+
+/**
+ * Fetch all active commitment entries whose followUpDate is in the past
+ * (across all users). Used by the notification scheduler to send server-driven
+ * push reminders.
+ *
+ * Returns at most `limit` rows per invocation to bound the scheduler's work.
+ */
+export async function getDueCommitmentsAllUsers(
+  limit = 500,
+): Promise<CoachNotebookEntry[]> {
+  return db
+    .select()
+    .from(coachNotebook)
+    .where(
+      and(
+        eq(coachNotebook.type, "commitment"),
+        eq(coachNotebook.status, "active"),
+        lte(coachNotebook.followUpDate, new Date()),
+      ),
+    )
+    .orderBy(coachNotebook.followUpDate)
+    .limit(limit);
+}

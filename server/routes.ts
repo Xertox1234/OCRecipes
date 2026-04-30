@@ -44,7 +44,9 @@ import { register as registerProfileHub } from "./routes/profile-hub";
 import { register as registerPublicApi } from "./routes/public-api";
 import { register as registerAdminApiKeys } from "./routes/admin-api-keys";
 import { register as registerApiDocs } from "./routes/api-docs";
+import { register as registerPushTokens } from "./routes/push-tokens";
 import { initSearchIndex } from "./services/recipe-search";
+import { startNotificationScheduler } from "./services/notification-scheduler";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Public API (separate namespace, registered first to avoid auth conflicts)
@@ -95,11 +97,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerBeverages(app);
   registerCarousel(app);
   registerProfileHub(app);
+  registerPushTokens(app);
 
   // Initialize search index (non-blocking — server starts even if index fails)
   initSearchIndex().catch((err) => {
     logger.error({ err }, "Failed to initialize search index");
   });
+
+  // Start push notification scheduler (daily 09:00 commitment reminders)
+  startNotificationScheduler();
 
   // Multer error handler - returns 400 for file validation errors instead of 500
   app.use(

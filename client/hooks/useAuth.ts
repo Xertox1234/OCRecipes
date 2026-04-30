@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { User } from "@shared/types/auth";
+import { registerPushToken } from "@/lib/push-token-registration";
 
 interface AuthState {
   user: User | null;
@@ -80,6 +81,8 @@ export function useAuth() {
     await tokenStorage.set(token);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     setState({ user, isLoading: false, isAuthenticated: true });
+    // Register push token after login (fire-and-forget, non-fatal)
+    registerPushToken().catch(() => {});
     return user;
   }, []);
 
@@ -92,6 +95,8 @@ export function useAuth() {
     await tokenStorage.set(token);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     setState({ user, isLoading: false, isAuthenticated: true });
+    // Register push token after registration (fire-and-forget, non-fatal)
+    registerPushToken().catch(() => {});
     return user;
   }, []);
 

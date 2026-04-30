@@ -11,7 +11,14 @@ const mockBlock: ActionCardType = {
   title: "Log breakfast",
   subtitle: "500 calories",
   actionLabel: "Log",
-  action: { type: "log_food", description: "oats" },
+  action: {
+    type: "log_food",
+    description: "oats",
+    calories: 300,
+    protein: 10,
+    carbs: 50,
+    fat: 5,
+  },
 };
 
 describe("ActionCard", () => {

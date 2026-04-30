@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Expo Push Ticket-to-Token Index Misalignment (2026-04-29)](#expo-push-ticket-to-token-index-misalignment-2026-04-29)
 - [parseInt on req.userId Returns NaN (2026-04-28)](#parseint-on-requserid-returns-nan-2026-04-28)
 - [onConflictDoNothing on Cache Tables Causes expired-entry Skip + ! Crash (2026-04-28)](#onconflictdonothing-on-cache-tables-causes-expired-entry-skip---crash-2026-04-28)
 - [OCR Race+Swap Error Guard Must Also Check items.length (2026-04-28)](#ocr-raceswap-error-guard-must-also-check-itemslength-2026-04-28)
@@ -63,6 +64,48 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## 2026-04-29 — Expo Push Ticket-to-Token Index Misalignment
+
+**Category:** Gotcha
+
+When using `expo-server-sdk`'s chunked push delivery, `sendPushNotificationsAsync` returns one `ExpoPushTicket` per message in the same order they were submitted. If you filter the raw token list before building messages, the indices of `tickets` correspond to the filtered list — not the original token list. Using the original token list's index to match tickets to tokens will silently look up the wrong token when any tokens were filtered out.
+
+```typescript
+// ❌ WRONG: tickets[i] doesn't correspond to tokens[i] because
+// messages was built from a filtered subset
+const messages = tokens
+  .filter(t => Expo.isExpoPushToken(t.token))
+  .map(t => ({ to: t.token, ... }));
+
+const tickets = await client.sendPushNotificationsAsync(messages);
+
+for (let i = 0; i < tickets.length; i++) {
+  if (tickets[i].status === "error") {
+    const stale = tokens[i]; // BUG: wrong token if any were filtered
+    await storage.deletePushToken(userId, stale.token);
+  }
+}
+
+// ✅ CORRECT: build a separate validTokens array so indices align
+const validTokens = tokens.filter(t => Expo.isExpoPushToken(t.token));
+const messages = validTokens.map(t => ({ to: t.token, ... }));
+
+const tickets = await client.sendPushNotificationsAsync(messages);
+
+for (let i = 0; i < tickets.length; i++) {
+  if (tickets[i].status === "error") {
+    const stale = validTokens[i]; // CORRECT: same filtered list
+    await storage.deletePushToken(userId, stale.token);
+  }
+}
+```
+
+**Rule:** When using Expo push chunking, maintain a `validTokens` array parallel to `messages`. Never use the original unfiltered token array to map back from ticket indices.
+
+**References:** `server/services/push-notifications.ts`
+
+---
 
 ## 2026-04-28 — parseInt on req.userId Returns NaN
 

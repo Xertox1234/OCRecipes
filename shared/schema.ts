@@ -1956,3 +1956,40 @@ export type InsertBarcodeNutrition = typeof barcodeNutrition.$inferInsert;
 
 export type CoachNotebookEntry = typeof coachNotebook.$inferSelect;
 export type InsertCoachNotebookEntry = typeof coachNotebook.$inferInsert;
+
+// ============================================================================
+// PUSH TOKENS
+// ============================================================================
+
+/**
+ * Stores Expo push tokens for server-driven push notification delivery.
+ * One row per (userId, token) pair. Tokens are upserted on login so token
+ * rotation is handled automatically — a new token replaces the old one for
+ * the same (userId, platform) combination.
+ */
+export const pushTokens = pgTable(
+  "push_tokens",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    token: text("token").notNull(),
+    platform: text("platform").notNull(), // "ios" | "android"
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+    updatedAt: timestamp("updated_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userPlatformIdx: uniqueIndex("push_tokens_user_platform_idx").on(
+      table.userId,
+      table.platform,
+    ),
+  }),
+);
+
+export type PushToken = typeof pushTokens.$inferSelect;
+export type InsertPushToken = typeof pushTokens.$inferInsert;

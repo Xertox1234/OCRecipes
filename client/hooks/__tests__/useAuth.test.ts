@@ -51,6 +51,10 @@ vi.mock("@/lib/query-client", () => ({
   getApiUrl: () => mockGetApiUrl(),
 }));
 
+vi.mock("@/lib/push-token-registration", () => ({
+  registerPushToken: vi.fn().mockResolvedValue(null),
+}));
+
 const originalFetch = globalThis.fetch;
 globalThis.fetch = mockFetch;
 
