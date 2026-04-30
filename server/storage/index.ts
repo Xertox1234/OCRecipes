@@ -72,6 +72,7 @@ export const storage = {
   toggleFavouriteScannedItem: nutrition.toggleFavouriteScannedItem,
   getFrequentItems: nutrition.getFrequentItems,
   getDailyLogs: nutrition.getDailyLogs,
+  getDailyLogsInRange: nutrition.getDailyLogsInRange,
   createDailyLog: nutrition.createDailyLog,
   createScannedItemWithLog: nutrition.createScannedItemWithLog,
   getDailySummary: nutrition.getDailySummary,

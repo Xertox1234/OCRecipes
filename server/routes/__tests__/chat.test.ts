@@ -39,7 +39,9 @@ vi.mock("../../storage", () => ({
     setCoachCachedResponse: vi.fn().mockResolvedValue(undefined),
     getCommunityRecipe: vi.fn(),
     getActiveNotebookEntries: vi.fn().mockResolvedValue([]),
+    getDailyLogsInRange: vi.fn().mockResolvedValue([]),
     createNotebookEntries: vi.fn().mockResolvedValue([]),
+    archiveOldEntries: vi.fn().mockResolvedValue(0),
     pinChatConversation: vi.fn(),
   },
 }));
@@ -615,9 +617,11 @@ describe("Chat Routes", () => {
     });
 
     it("returns 401 without auth", async () => {
-      vi.mocked(requireAuth).mockImplementationOnce((_req, res, _next) => {
-        sendError(res, 401, "Unauthorized");
-      });
+      vi.mocked(requireAuth).mockImplementationOnce(
+        async (_req, res, _next) => {
+          sendError(res, 401, "Unauthorized");
+        },
+      );
       const res = await request(app).delete("/api/chat/messages/5");
       expect(res.status).toBe(401);
     });

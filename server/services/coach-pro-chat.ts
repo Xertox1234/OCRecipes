@@ -39,7 +39,91 @@ import {
   truncateHistoryToBudget,
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
+import type { DailyLog } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+
+/**
+ * Derive a short meal-pattern summary from 7 days of daily logs.
+ *
+ * Exported for unit testing — all inputs are pure values, no storage calls.
+ *
+ * Detection logic (based on `loggedAt` hour, local time):
+ *  - Breakfast window: 05:00–10:59
+ *  - Lunch window:     11:00–14:59
+ *  - Dinner window:    15:00–20:59
+ *  - Late-night:       21:00–04:59 (hour >= 21 || hour < 5)
+ *
+ * A meal is considered "skipped" on a given day when there are zero log entries
+ * in its window AND at least one entry exists on that day (i.e. the user was
+ * actively logging, they just didn't eat in that window). Days with zero total
+ * entries are excluded — we can't distinguish "skipped" from "didn't log".
+ *
+ * Returns `null` when the dataset has fewer than 3 active-logging days (not
+ * enough signal). The caller is responsible for pre-filtering logs to the
+ * desired time window (e.g. last 7 days) before passing them in.
+ */
+export function buildMealPatternSummary(
+  logs: Pick<DailyLog, "loggedAt">[],
+): string | null {
+  if (logs.length === 0) return null;
+
+  // Group logs by calendar day (YYYY-MM-DD in local time)
+  const byDay = new Map<string, Date[]>();
+  for (const log of logs) {
+    const date = new Date(log.loggedAt);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const existing = byDay.get(key);
+    if (existing) {
+      existing.push(date);
+    } else {
+      byDay.set(key, [date]);
+    }
+  }
+
+  // Only consider days with at least one log entry
+  const activeDays = Array.from(byDay.values());
+  if (activeDays.length < 3) return null;
+
+  const totalDays = activeDays.length;
+
+  const inBreakfast = (h: number) => h >= 5 && h < 11;
+  const inLunch = (h: number) => h >= 11 && h < 15;
+  const inDinner = (h: number) => h >= 15 && h < 21;
+  const isLateNight = (h: number) => h >= 21 || h < 5;
+
+  let skippedBreakfast = 0;
+  let skippedLunch = 0;
+  let skippedDinner = 0;
+  let lateNightDays = 0;
+
+  for (const dayLogs of activeDays) {
+    const hours = dayLogs.map((d) => d.getHours());
+    if (!hours.some(inBreakfast)) skippedBreakfast++;
+    if (!hours.some(inLunch)) skippedLunch++;
+    if (!hours.some(inDinner)) skippedDinner++;
+    if (hours.some(isLateNight)) lateNightDays++;
+  }
+
+  const patterns: string[] = [];
+
+  // Only surface patterns that are notable (skipped on majority of days)
+  const majorityThreshold = Math.ceil(totalDays / 2);
+  if (skippedBreakfast >= majorityThreshold) {
+    patterns.push(`breakfast skipped ${skippedBreakfast}/${totalDays} days`);
+  }
+  if (skippedLunch >= majorityThreshold) {
+    patterns.push(`lunch skipped ${skippedLunch}/${totalDays} days`);
+  }
+  if (skippedDinner >= majorityThreshold) {
+    patterns.push(`dinner skipped ${skippedDinner}/${totalDays} days`);
+  }
+  if (lateNightDays >= majorityThreshold) {
+    patterns.push(`late-night eating on ${lateNightDays}/${totalDays} days`);
+  }
+
+  if (patterns.length === 0) return null;
+  return patterns.join("; ");
+}
 
 /** SSE event yielded by the coach chat service. */
 export type CoachChatEvent =
@@ -239,12 +323,23 @@ export async function* handleCoachChat(
   } = params;
 
   const today = new Date();
-  const [profile, dailySummary, recentWeights, history] = await Promise.all([
-    storage.getUserProfile(userId),
-    storage.getDailySummary(userId, today),
-    storage.getWeightLogs(userId, { limit: 14 }),
-    storage.getChatMessages(conversationId, 20, userId),
-  ]);
+
+  // For Coach Pro, also fetch 7 days of daily logs to derive meal patterns.
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  const [profile, dailySummary, recentWeights, history, recentLogsForPatterns] =
+    await Promise.all([
+      storage.getUserProfile(userId),
+      storage.getDailySummary(userId, today),
+      storage.getWeightLogs(userId, { limit: 14 }),
+      storage.getChatMessages(conversationId, 20, userId),
+      isCoachPro
+        ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
+        : Promise.resolve(
+            [] as Awaited<ReturnType<typeof storage.getDailyLogsInRange>>,
+          ),
+    ]);
 
   // Weekly rate of change — shared pure helper so this logic is unit-tested
   // in isolation rather than through the full orchestrator.
@@ -285,13 +380,25 @@ export async function* handleCoachChat(
     screenContext,
   };
 
+  // ── Coach Pro: meal pattern summary ────────────────
+  if (isCoachPro && recentLogsForPatterns.length > 0) {
+    const mealPatternSummary = buildMealPatternSummary(recentLogsForPatterns);
+    if (mealPatternSummary) {
+      context.mealPatternSummary = mealPatternSummary;
+    }
+  }
+
   // ── Coach Pro: inject notebook context ──────────────
   if (isCoachPro) {
     const notebookEntries = await storage.getActiveNotebookEntries(userId);
     if (notebookEntries.length > 0) {
+      // Include updatedAt so the budget formatter can attach recency labels
+      // (recent/this week/this month/older), helping the model weight newer
+      // entries more prominently in its reasoning.
       const sanitized = notebookEntries.map((e) => ({
         type: e.type,
         content: sanitizeContextField(e.content, 500),
+        updatedAt: e.updatedAt,
       }));
       const joined = truncateNotebookToBudget(
         sanitized,

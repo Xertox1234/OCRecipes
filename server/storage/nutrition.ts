@@ -282,6 +282,29 @@ export async function getDailyLogs(
     .orderBy(desc(dailyLogs.loggedAt));
 }
 
+/**
+ * Fetch all daily logs for a user within a date range (inclusive start,
+ * exclusive end). Used by the Coach Pro context builder to derive meal patterns
+ * over the past 7 days without issuing one query per day.
+ */
+export async function getDailyLogsInRange(
+  userId: string,
+  from: Date,
+  to: Date,
+): Promise<DailyLog[]> {
+  return db
+    .select()
+    .from(dailyLogs)
+    .where(
+      and(
+        eq(dailyLogs.userId, userId),
+        gte(dailyLogs.loggedAt, from),
+        lt(dailyLogs.loggedAt, to),
+      ),
+    )
+    .orderBy(desc(dailyLogs.loggedAt));
+}
+
 export async function createDailyLog(log: InsertDailyLog): Promise<DailyLog> {
   const [dailyLog] = await db.insert(dailyLogs).values(log).returning();
   return dailyLog;

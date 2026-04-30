@@ -37,6 +37,11 @@ export interface CoachContext {
   };
   screenContext?: string;
   notebookSummary?: string;
+  /**
+   * Summary of meal patterns over the past 7 days (Coach Pro only).
+   * E.g. "Breakfast skipped 5 of 7 days; late-night eating on 3 of 7 days."
+   */
+  mealPatternSummary?: string;
 }
 
 function buildSystemPrompt(
@@ -64,6 +69,9 @@ function buildSystemPrompt(
     "- If allergies or dislikes are listed, NEVER suggest those foods under any circumstances.",
     "- If the user's message is vague or unclear, ask ONE specific clarifying question rather than guessing. For example: 'What kind of help are you looking for — meal ideas, feedback on your day, or something else?'",
     "- Consider the time of day when making meal suggestions (breakfast vs dinner). If it's late and the user has eaten very little, address this gently.",
+    "- If meal patterns show skipped meals or late-night eating, gently acknowledge these as context when relevant — but do not lecture unprompted.",
+    "- Weight trend direction (losing/gaining/stable) is more important than the exact number — use it to frame whether the user is on track.",
+    "- Notebook entries are labelled with recency (recent/this week/this month/older). Weight recent entries more heavily than older ones.",
     "",
     "EXAMPLE EXCHANGE:",
     "User: 'I don't know what to eat for dinner.'",
@@ -104,9 +112,17 @@ function buildSystemPrompt(
   }
 
   if (context.weightTrend.currentWeight) {
-    parts.push(
-      `Current weight: ${context.weightTrend.currentWeight}kg${context.weightTrend.weeklyRate ? `, weekly change: ${context.weightTrend.weeklyRate}kg/week` : ""}`,
-    );
+    let weightLine = `Current weight: ${context.weightTrend.currentWeight}kg`;
+    if (context.weightTrend.weeklyRate !== null) {
+      const rate = context.weightTrend.weeklyRate;
+      const direction =
+        rate < -0.05 ? "losing" : rate > 0.05 ? "gaining" : "stable";
+      weightLine += `, weekly trend: ${direction} (${rate > 0 ? "+" : ""}${rate}kg/week)`;
+    }
+    parts.push(weightLine);
+  }
+  if (context.mealPatternSummary) {
+    parts.push(`Meal patterns (past 7 days): ${context.mealPatternSummary}`);
   }
   if (context.dietaryProfile.dietType) {
     parts.push(

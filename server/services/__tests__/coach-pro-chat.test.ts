@@ -16,6 +16,7 @@ import {
   hashCoachCacheContext,
   hashCoachCacheKey,
   hashNotebookDedupeKey,
+  buildMealPatternSummary,
   _testInternals as coachProInternals,
 } from "../coach-pro-chat";
 import { storage } from "../../storage";
@@ -35,6 +36,7 @@ vi.mock("../../storage", () => ({
     getDailySummary: vi.fn(),
     getWeightLogs: vi.fn(),
     getChatMessages: vi.fn(),
+    getDailyLogsInRange: vi.fn(),
     getActiveNotebookEntries: vi.fn(),
     getCoachCachedResponse: vi.fn(),
     setCoachCachedResponse: vi.fn(),
@@ -168,6 +170,7 @@ function setupDefaultStorage() {
     createMockWeightLog({ weight: "75.0" }),
   ]);
   vi.mocked(storage.getChatMessages).mockResolvedValue([]);
+  vi.mocked(storage.getDailyLogsInRange).mockResolvedValue([]);
   vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([]);
   vi.mocked(storage.getCoachCachedResponse).mockResolvedValue(null);
   vi.mocked(storage.createChatMessage).mockResolvedValue(
@@ -898,6 +901,108 @@ describe("tryArchiveNotebook", () => {
     await tryArchiveNotebook("user-throttled");
 
     expect(storage.archiveOldEntries).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildMealPatternSummary", () => {
+  /**
+   * Helper to create a DailyLog-like object with a specific hour in a given day.
+   * `day` is a full ISO date string (YYYY-MM-DD), `hour` is 0–23 local time.
+   */
+  function makeLog(day: string, hour: number) {
+    const d = new Date(`${day}T${String(hour).padStart(2, "0")}:00:00`);
+    return { loggedAt: d };
+  }
+
+  it("returns null for empty logs", () => {
+    expect(buildMealPatternSummary([])).toBeNull();
+  });
+
+  it("returns null when fewer than 3 active-logging days", () => {
+    const logs = [
+      makeLog("2026-04-27", 8), // day 1
+      makeLog("2026-04-28", 12), // day 2
+    ];
+    expect(buildMealPatternSummary(logs)).toBeNull();
+  });
+
+  it("returns null when no notable patterns detected", () => {
+    // 4 days, all three meals logged each day
+    const logs = [
+      makeLog("2026-04-25", 8),
+      makeLog("2026-04-25", 12),
+      makeLog("2026-04-25", 18),
+      makeLog("2026-04-26", 8),
+      makeLog("2026-04-26", 13),
+      makeLog("2026-04-26", 19),
+      makeLog("2026-04-27", 9),
+      makeLog("2026-04-27", 12),
+      makeLog("2026-04-27", 17),
+      makeLog("2026-04-28", 8),
+      makeLog("2026-04-28", 11),
+      makeLog("2026-04-28", 20),
+    ];
+    expect(buildMealPatternSummary(logs)).toBeNull();
+  });
+
+  it("detects breakfast skipped on majority of days", () => {
+    // 4 days — breakfast (5-10) logged only on day 1
+    const logs = [
+      makeLog("2026-04-25", 8), // breakfast
+      makeLog("2026-04-25", 18),
+      makeLog("2026-04-26", 12), // no breakfast
+      makeLog("2026-04-26", 18),
+      makeLog("2026-04-27", 13), // no breakfast
+      makeLog("2026-04-27", 19),
+      makeLog("2026-04-28", 12), // no breakfast
+      makeLog("2026-04-28", 20),
+    ];
+    const result = buildMealPatternSummary(logs);
+    expect(result).toContain("breakfast skipped 3/4 days");
+  });
+
+  it("detects late-night eating on majority of days", () => {
+    // 3 days, late-night logs on all 3
+    const logs = [
+      makeLog("2026-04-26", 12),
+      makeLog("2026-04-26", 22), // late night
+      makeLog("2026-04-27", 13),
+      makeLog("2026-04-27", 23), // late night
+      makeLog("2026-04-28", 11),
+      makeLog("2026-04-28", 21), // late night
+    ];
+    const result = buildMealPatternSummary(logs);
+    expect(result).toContain("late-night eating on 3/3 days");
+  });
+
+  it("combines multiple detected patterns", () => {
+    // 4 days: breakfast skipped + late-night on majority
+    const logs = [
+      makeLog("2026-04-25", 12),
+      makeLog("2026-04-25", 22),
+      makeLog("2026-04-26", 13),
+      makeLog("2026-04-26", 23),
+      makeLog("2026-04-27", 14),
+      makeLog("2026-04-27", 21),
+      makeLog("2026-04-28", 8), // breakfast only day
+      makeLog("2026-04-28", 18),
+    ];
+    const result = buildMealPatternSummary(logs);
+    expect(result).toContain("breakfast skipped");
+    expect(result).toContain("late-night eating");
+  });
+
+  it("does not count lunch as skipped when it is logged in the window", () => {
+    // 4 days, lunch always logged at 11am
+    const logs = [
+      makeLog("2026-04-25", 11),
+      makeLog("2026-04-26", 11),
+      makeLog("2026-04-27", 11),
+      makeLog("2026-04-28", 11),
+    ];
+    const result = buildMealPatternSummary(logs);
+    // Lunch is NOT skipped — breakfast and dinner might be
+    expect(result).not.toContain("lunch skipped");
   });
 });
 

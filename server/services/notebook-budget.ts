@@ -19,10 +19,33 @@ export const DEFAULT_NOTEBOOK_MAX_CHARS = 3200;
 /**
  * A minimal shape required from a notebook entry for budget truncation.
  * The full DB row carries more columns but we only need these here.
+ *
+ * `updatedAt` is optional — when provided, a human-readable recency label
+ * is injected into the formatted line so the model can surface newer entries
+ * more prominently in its reasoning.
  */
 export interface NotebookBudgetEntry {
   type: string;
   content: string;
+  updatedAt?: Date;
+}
+
+/**
+ * Returns a human-readable recency label for a notebook entry based on how
+ * recently it was updated relative to `now`.
+ *
+ * Exported for unit testing.
+ */
+export function getRecencyLabel(
+  updatedAt: Date,
+  now: Date = new Date(),
+): string {
+  const diffMs = now.getTime() - updatedAt.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  if (diffDays < 2) return "recent";
+  if (diffDays < 8) return "this week";
+  if (diffDays < 31) return "this month";
+  return "older";
 }
 
 /**
@@ -43,9 +66,15 @@ export function escapeNotebookDelimiters(content: string): string {
 /**
  * Format a single notebook entry into the line that appears inside the
  * system prompt. The content must already be sanitized by the caller.
+ *
+ * When `updatedAt` is present, a recency label is appended in parentheses
+ * so the model can weight newer entries more heavily in its reasoning.
  */
 export function formatNotebookLine(entry: NotebookBudgetEntry): string {
-  return `[${entry.type}] ${NOTEBOOK_ENTRY_OPEN}${escapeNotebookDelimiters(entry.content)}${NOTEBOOK_ENTRY_CLOSE}`;
+  const recency = entry.updatedAt
+    ? ` (${getRecencyLabel(entry.updatedAt)})`
+    : "";
+  return `[${entry.type}${recency}] ${NOTEBOOK_ENTRY_OPEN}${escapeNotebookDelimiters(entry.content)}${NOTEBOOK_ENTRY_CLOSE}`;
 }
 
 /**
