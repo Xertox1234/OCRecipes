@@ -158,84 +158,97 @@ export function useCoachStream({
       setStatusText("Thinking…");
       setIsStreaming(true);
 
-      tokenStorage.get().then((token) => {
-        const xhr = new XMLHttpRequest();
-        xhrRef.current = xhr;
-        const url = `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`;
-        xhr.open("POST", url, true);
-        xhr.setRequestHeader("Content-Type", "application/json");
-        if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      tokenStorage
+        .get()
+        .then((token) => {
+          const xhr = new XMLHttpRequest();
+          xhrRef.current = xhr;
+          const url = `${getApiUrl()}/api/chat/conversations/${conversationId}/messages`;
+          xhr.open("POST", url, true);
+          xhr.setRequestHeader("Content-Type", "application/json");
+          if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
-        let lastProcessedIndex = 0;
+          let lastProcessedIndex = 0;
 
-        xhr.onreadystatechange = () => {
-          if (xhr.readyState >= 3 && xhr.responseText) {
-            const newText = xhr.responseText.slice(lastProcessedIndex);
-            lastProcessedIndex = xhr.responseText.length;
+          xhr.onreadystatechange = () => {
+            if (xhr.readyState >= 3 && xhr.responseText) {
+              const newText = xhr.responseText.slice(lastProcessedIndex);
+              lastProcessedIndex = xhr.responseText.length;
 
-            for (const line of newText.split("\n")) {
-              if (!line.startsWith("data: ")) continue;
-              try {
-                const data = JSON.parse(line.slice(6)) as Record<
-                  string,
-                  unknown
-                >;
-                if (data.error) {
-                  stopDrain();
-                  setIsStreaming(false);
-                  setStatusText("");
-                  onErrorRef.current?.(String(data.error));
-                  return;
+              for (const line of newText.split("\n")) {
+                if (!line.startsWith("data: ")) continue;
+                try {
+                  const data = JSON.parse(line.slice(6)) as Record<
+                    string,
+                    unknown
+                  >;
+                  if (data.error) {
+                    stopDrain();
+                    setIsStreaming(false);
+                    setStatusText("");
+                    onErrorRef.current?.(String(data.error));
+                    return;
+                  }
+                  if (
+                    typeof data.status === "string" &&
+                    !firstCharDrainedRef.current
+                  ) {
+                    setStatusText(data.status);
+                  }
+                  if (typeof data.content === "string") {
+                    accumulatedRef.current += data.content;
+                    const stripped = stripCoachBlocksFence(
+                      accumulatedRef.current,
+                    );
+                    const newChars = stripped.slice(displayedLengthRef.current);
+                    displayedLengthRef.current = stripped.length;
+                    bufferRef.current += newChars;
+                  }
+                  if (data.blocks && Array.isArray(data.blocks)) {
+                    blocksRef.current = filterValidBlocks(data.blocks);
+                  }
+                  if (data.done) {
+                    isDoneRef.current = true;
+                    fullTextRef.current = stripCoachBlocksFence(
+                      accumulatedRef.current,
+                    );
+                  }
+                } catch {
+                  // Ignore incomplete JSON chunks
                 }
-                if (typeof data.status === "string") {
-                  setStatusText(data.status);
-                }
-                if (typeof data.content === "string") {
-                  accumulatedRef.current += data.content;
-                  const stripped = stripCoachBlocksFence(
-                    accumulatedRef.current,
-                  );
-                  const newChars = stripped.slice(displayedLengthRef.current);
-                  displayedLengthRef.current = stripped.length;
-                  bufferRef.current += newChars;
-                }
-                if (data.blocks && Array.isArray(data.blocks)) {
-                  blocksRef.current = filterValidBlocks(data.blocks);
-                }
-                if (data.done) {
-                  isDoneRef.current = true;
-                  fullTextRef.current = stripCoachBlocksFence(
-                    accumulatedRef.current,
-                  );
-                }
-              } catch {
-                // Ignore incomplete JSON chunks
               }
             }
-          }
 
-          if (xhr.readyState === 4 && xhr.status >= 400) {
+            if (xhr.readyState === 4 && xhr.status >= 400) {
+              stopDrain();
+              setIsStreaming(false);
+              setStatusText("");
+              onErrorRef.current?.(`${xhr.status}: ${xhr.responseText}`);
+            }
+          };
+
+          xhr.onerror = () => {
             stopDrain();
             setIsStreaming(false);
             setStatusText("");
-            onErrorRef.current?.(`${xhr.status}: ${xhr.responseText}`);
-          }
-        };
+            onErrorRef.current?.("Network error");
+          };
 
-        xhr.onerror = () => {
+          startDrain();
+
+          const body: Record<string, unknown> = { content: userMessage };
+          if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
+          if (extras?.screenContext) body.screenContext = extras.screenContext;
+          xhr.send(JSON.stringify(body));
+        })
+        .catch((err: unknown) => {
           stopDrain();
           setIsStreaming(false);
           setStatusText("");
-          onErrorRef.current?.("Network error");
-        };
-
-        startDrain();
-
-        const body: Record<string, unknown> = { content: userMessage };
-        if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
-        if (extras?.screenContext) body.screenContext = extras.screenContext;
-        xhr.send(JSON.stringify(body));
-      });
+          onErrorRef.current?.(
+            err instanceof Error ? err.message : "Token error",
+          );
+        });
     },
     [startDrain, stopDrain],
   );
