@@ -21,6 +21,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
 import { ChatBubble } from "@/components/ChatBubble";
+import { useTTS } from "@/hooks/useTTS";
 import { InlineError } from "@/components/InlineError";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
@@ -243,6 +244,13 @@ export default function CoachChat({
     stopListening,
   } = useSpeechToText();
 
+  const {
+    isSpeaking,
+    speakingMessageId,
+    speak: ttsSpeak,
+    stop: ttsStop,
+  } = useTTS();
+
   // Show interim transcript in input field while listening
   useEffect(() => {
     if (isListening && transcript) {
@@ -270,6 +278,8 @@ export default function CoachChat({
       setOptimisticMessage(content);
       setIsStreaming(true);
       setStreamingContent("");
+      // Stop any active TTS before sending a new message
+      ttsStop();
       setStreamBlocks([]);
       setStreamingError(null);
 
@@ -346,6 +356,7 @@ export default function CoachChat({
       onCreateConversation,
       warmUpHook,
       isCoachPro,
+      ttsStop,
     ],
   );
 
@@ -486,11 +497,18 @@ export default function CoachChat({
           !isStreaming &&
           msg.role === "assistant" &&
           msg.id === lastAssistantMessageId;
+        const isAssistant = msg.role === "assistant";
         return (
           <View>
             <ChatBubble
               role={msg.role as "user" | "assistant"}
               content={msg.content}
+              onSpeak={
+                isAssistant ? () => ttsSpeak(msg.id, msg.content) : undefined
+              }
+              isSpeaking={
+                isAssistant && speakingMessageId === msg.id && isSpeaking
+              }
             />
             {messageBlocks.get(msg.id)?.map((block, i) => (
               <BlockRenderer
@@ -551,6 +569,9 @@ export default function CoachChat({
       handleQuickReply,
       handleRetry,
       isStreaming,
+      isSpeaking,
+      speakingMessageId,
+      ttsSpeak,
       lastAssistantMessageId,
       messageBlocks,
       streamBlocks,

@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, Pressable } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -21,6 +22,8 @@ interface ChatBubbleProps {
   role: "user" | "assistant" | "system";
   content: string;
   isStreaming?: boolean;
+  onSpeak?: () => void;
+  isSpeaking?: boolean;
 }
 
 function TypingIndicator() {
@@ -103,7 +106,13 @@ function TypingIndicator() {
   );
 }
 
-export function ChatBubble({ role, content, isStreaming }: ChatBubbleProps) {
+export function ChatBubble({
+  role,
+  content,
+  isStreaming,
+  onSpeak,
+  isSpeaking,
+}: ChatBubbleProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const isUser = role === "user";
@@ -170,6 +179,24 @@ export function ChatBubble({ role, content, isStreaming }: ChatBubbleProps) {
             {content}
           </MarkdownText>
         )}
+        {!isUser && onSpeak && (
+          <Pressable
+            onPress={onSpeak}
+            style={styles.speakButton}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isSpeaking ? "Stop reading aloud" : "Read aloud"
+            }
+            accessibilityState={{ selected: isSpeaking }}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={isSpeaking ? "stop-circle" : "volume-high"}
+              size={16}
+              color={theme.textSecondary}
+            />
+          </Pressable>
+        )}
       </View>
     </Animated.View>
   );
@@ -215,5 +242,10 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 3.5,
+  },
+  speakButton: {
+    alignSelf: "flex-end",
+    marginTop: Spacing.xs,
+    padding: 2,
   },
 });
