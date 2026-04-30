@@ -478,7 +478,9 @@ export function register(app: Express): void {
               const eventJson = JSON.stringify(
                 event.type === "content"
                   ? { content: event.content }
-                  : { blocks: event.blocks },
+                  : event.type === "status"
+                    ? { status: event.label }
+                    : { blocks: event.blocks },
               );
               responseBytes += eventJson.length;
               if (responseBytes > SSE_MAX_RESPONSE_BYTES) {

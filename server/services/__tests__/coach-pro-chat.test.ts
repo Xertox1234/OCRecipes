@@ -741,6 +741,63 @@ describe("handleCoachChat", () => {
       expect(userMessages.length).toBeGreaterThan(0);
     });
   });
+
+  // ── Status events ─────────────────────────────────────────
+
+  describe("status events", () => {
+    it("yields status events for Coach Pro tool calls before content resumes", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        async function* (
+          _messages,
+          _context,
+          _userId,
+          _signal,
+          onBeforeToolCalls,
+        ) {
+          yield "First chunk";
+          onBeforeToolCalls?.(["search_recipes"]);
+          yield "After tool";
+        },
+      );
+
+      const params = makeParams({ isCoachPro: true });
+      const events = await collectEvents(handleCoachChat(params));
+
+      const statusEvents = events.filter((e) => e.type === "status");
+      expect(statusEvents).toHaveLength(1);
+      expect(statusEvents[0]).toEqual({
+        type: "status",
+        label: "Searching recipes…",
+      });
+
+      // Status event appears between content chunks
+      const types = events.map((e) => e.type);
+      const firstContentIdx = types.indexOf("content");
+      const statusIdx = types.indexOf("status");
+      expect(statusIdx).toBeGreaterThan(firstContentIdx);
+    });
+
+    it("falls back to 'Working on it…' for unknown tool names", async () => {
+      vi.mocked(generateCoachProResponse).mockImplementation(
+        async function* (
+          _messages,
+          _context,
+          _userId,
+          _signal,
+          onBeforeToolCalls,
+        ) {
+          onBeforeToolCalls?.(["some_future_tool"]);
+          yield "Done";
+        },
+      );
+
+      const events = await collectEvents(
+        handleCoachChat(makeParams({ isCoachPro: true })),
+      );
+      const statusEvent = events.find((e) => e.type === "status");
+      expect(statusEvent).toEqual({ type: "status", label: "Working on it…" });
+    });
+  });
 });
 
 // ── Pure helpers extracted from handleCoachChat (L19) ───────
