@@ -60,12 +60,10 @@ function TypingIndicator() {
     opacity: 0.3 + dot1.value * 0.7,
     transform: [{ translateY: -dot1.value * 3 }],
   }));
-
   const dot2Style = useAnimatedStyle(() => ({
     opacity: 0.3 + dot2.value * 0.7,
     transform: [{ translateY: -dot2.value * 3 }],
   }));
-
   const dot3Style = useAnimatedStyle(() => ({
     opacity: 0.3 + dot3.value * 0.7,
     transform: [{ translateY: -dot3.value * 3 }],
@@ -117,20 +115,16 @@ export function ChatBubble({
   const { reducedMotion } = useAccessibility();
   const isUser = role === "user";
 
-  if (!content && isStreaming) {
+  // Typing indicator (isStreaming prop still supported for backwards compatibility)
+  if (!content && isStreaming && !isUser) {
     return (
       <View
         style={[styles.bubbleRow, styles.bubbleRowAssistant]}
         accessible
         accessibilityRole="text"
       >
-        <View
-          style={[
-            styles.bubble,
-            styles.assistantBubble,
-            { backgroundColor: theme.backgroundSecondary },
-          ]}
-        >
+        <View style={[styles.avatarDot, { backgroundColor: theme.link }]} />
+        <View style={styles.assistantContent}>
           <TypingIndicator />
         </View>
       </View>
@@ -145,41 +139,44 @@ export function ChatBubble({
       ? SlideInRight.springify().damping(18).stiffness(150).duration(200)
       : SlideInLeft.springify().damping(18).stiffness(150).delay(100);
 
-  return (
-    <Animated.View
-      entering={entering}
-      style={[
-        styles.bubbleRow,
-        isUser ? styles.bubbleRowUser : styles.bubbleRowAssistant,
-      ]}
-      accessible
-      accessibilityRole="text"
-      accessibilityLabel={`${isUser ? "You" : "NutriCoach"}: ${content}`}
-    >
-      <View
-        style={[
-          styles.bubble,
-          isUser
-            ? [styles.userBubble, { backgroundColor: theme.link }]
-            : [
-                styles.assistantBubble,
-                { backgroundColor: theme.backgroundSecondary },
-              ],
-        ]}
+  if (isUser) {
+    return (
+      <Animated.View
+        entering={entering}
+        style={[styles.bubbleRow, styles.bubbleRowUser]}
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={`You: ${content}`}
       >
-        {isUser ? (
+        <View style={[styles.userBubble, { backgroundColor: theme.link }]}>
           <ThemedText
             type="body"
-            style={[styles.bubbleText, { color: theme.buttonText }]}
+            style={[styles.userBubbleText, { color: theme.buttonText }]}
           >
             {content}
           </ThemedText>
-        ) : (
-          <MarkdownText style={{ ...styles.bubbleText, color: theme.text }}>
-            {content}
-          </MarkdownText>
-        )}
-        {!isUser && onSpeak && (
+        </View>
+      </Animated.View>
+    );
+  }
+
+  // Assistant — canvas layout: avatar dot + full-width text
+  return (
+    <Animated.View
+      entering={entering}
+      style={[styles.bubbleRow, styles.bubbleRowAssistant]}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`NutriCoach: ${content}`}
+    >
+      <View style={[styles.avatarDot, { backgroundColor: theme.link }]} />
+      <View style={styles.assistantContent}>
+        <MarkdownText
+          style={{ ...styles.assistantBubbleText, color: theme.text }}
+        >
+          {content}
+        </MarkdownText>
+        {onSpeak && (
           <Pressable
             onPress={onSpeak}
             style={styles.speakButton}
@@ -213,30 +210,44 @@ const styles = StyleSheet.create({
   },
   bubbleRowAssistant: {
     justifyContent: "flex-start",
+    alignItems: "flex-start",
+    gap: 9,
   },
-  bubble: {
+  // User bubble
+  userBubble: {
     maxWidth: "80%",
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.md,
-  },
-  userBubble: {
     borderBottomRightRadius: BorderRadius.xs,
   },
-  assistantBubble: {
-    borderBottomLeftRadius: BorderRadius.xs,
-  },
-  bubbleText: {
+  userBubbleText: {
     fontSize: 15,
     lineHeight: 22,
     fontFamily: FontFamily.regular,
   },
+  // Assistant canvas
+  avatarDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    marginTop: 2,
+    flexShrink: 0,
+  },
+  assistantContent: {
+    flex: 1,
+  },
+  assistantBubbleText: {
+    fontSize: 15,
+    lineHeight: 25,
+    fontFamily: FontFamily.regular,
+  },
+  // Shared
   typingContainer: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.xs,
   },
   dot: {
     width: 7,
