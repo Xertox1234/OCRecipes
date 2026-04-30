@@ -10,9 +10,11 @@
  * entries where followUpDate <= now. After sending, the entry status is updated
  * to "completed" so it won't be picked up again on the next run.
  *
- * Graceful degradation: if EXPO_ACCESS_TOKEN is not set, sendPushToUser logs
- * a warning and returns false — no push is delivered, but the entry status is
- * still marked "completed" so the scheduler doesn't retry indefinitely.
+ * Graceful degradation: if EXPO_ACCESS_TOKEN is not set, or the user has no
+ * registered push tokens, sendPushToUser returns false and the entry is NOT
+ * marked "completed" — the in-app indicator and local notification fallback
+ * (useNotebookNotifications) continue to serve the reminder. Entries are only
+ * marked completed after at least one push is confirmed delivered by Expo.
  *
  * Usage: call startNotificationScheduler() once at server startup.
  */

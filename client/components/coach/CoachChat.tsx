@@ -544,7 +544,12 @@ export default function CoachChat({
       return (
         <View>
           {isStreaming && streamingContent && (
-            <ChatBubble role="assistant" content={streamingContent} />
+            <ChatBubble
+              role="assistant"
+              content={streamingContent}
+              onSpeak={() => ttsSpeak(-1, streamingContent)}
+              isSpeaking={speakingMessageId === -1 && isSpeaking}
+            />
           )}
           {streamBlocks.map((block, i) => (
             <BlockRenderer

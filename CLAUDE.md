@@ -248,6 +248,8 @@ If tests fail or linting errors occur, the commit is blocked.
 - `RUNWARE_API_KEY` - Runware API key for image generation (primary provider, falls back to DALL-E)
 - `SPOONACULAR_API_KEY` - Spoonacular recipe catalog API
 - `EXPO_PUBLIC_DOMAIN` - Public API domain for mobile client
+- `EXPO_ACCESS_TOKEN` - Expo push notification service token (server-side); omit to disable server-driven push (local notifications still work)
+- `EXPO_PUBLIC_PROJECT_ID` - Expo project ID for push token registration (client-side); required alongside `EXPO_ACCESS_TOKEN`
 - `APPLE_ISSUER_ID` - Apple App Store Connect issuer ID (for IAP receipt validation)
 - `APPLE_KEY_ID` - Apple App Store Connect API key ID
 - `APPLE_PRIVATE_KEY` - Apple App Store Connect private key (PEM)

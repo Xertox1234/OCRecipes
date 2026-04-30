@@ -291,9 +291,9 @@ export async function getDailyLogsInRange(
   userId: string,
   from: Date,
   to: Date,
-): Promise<DailyLog[]> {
+): Promise<Pick<DailyLog, "loggedAt">[]> {
   return db
-    .select()
+    .select({ loggedAt: dailyLogs.loggedAt })
     .from(dailyLogs)
     .where(
       and(

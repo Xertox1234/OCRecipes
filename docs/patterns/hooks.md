@@ -1075,4 +1075,34 @@ const formToPayload = useCallback(() => {
 - `client/hooks/useRecipeForm.ts:73-97` — `formatIngredientText` + `buildIngredientsFromPrefill`
 - `client/hooks/useRecipeForm.ts:248-268` — `updateIngredient` revert logic
 - `client/hooks/useRecipeForm.ts:358-378` — `formToPayload` prefers snapshot
+
+---
+
+## Negative Sentinel ID for In-Flight / Transient Hook State
+
+When a hook tracks "which item is active" by positive integer ID (e.g. `speakingMessageId: number | null`), use `-1` as a sentinel for transient states that don't yet have a real persisted ID — rather than widening the type to `string | number` or introducing a separate boolean flag.
+
+```typescript
+// ❌ Widens the type — callers now have to handle string IDs everywhere
+speak: (messageId: number | string, text: string) => void;
+
+// ❌ Separate flag — two pieces of state to keep in sync
+const [isSpeakingStream, setIsSpeakingStream] = useState(false);
+const [speakingMessageId, setSpeakingMessageId] = useState<number | null>(null);
+
+// ✅ Sentinel: -1 is unambiguous because real DB IDs are always > 0
+speak: (messageId: number, text: string) => void;
+// caller:
+onSpeak={() => ttsSpeak(-1, streamingContent)}
+isSpeaking={speakingMessageId === -1 && isSpeaking}
+```
+
+**Why `-1` works:** Drizzle/PostgreSQL serial primary keys are always positive integers. A negative ID can never collide with a real row. The sentinel is unambiguous and the hook's type signature stays `number` throughout.
+
+**When to use:** Any hook that identifies "the currently active item" by numeric entity ID, and you need to represent a state where the item doesn't have a persisted ID yet (e.g. an optimistic/streaming/draft item).
+
+**References:**
+
+- `client/hooks/useTTS.ts` — `speakingMessageId: number | null`, `speak(messageId: number, ...)`
+- `client/components/coach/CoachChat.tsx` — streaming bubble uses `ttsSpeak(-1, streamingContent)` / `speakingMessageId === -1`
 - Origin: recipe-wizard code-review M1 (commits `fe87638`, `beb18d0`)
