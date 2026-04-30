@@ -263,6 +263,7 @@ export async function* generateCoachProResponse(
   context: CoachContext,
   userId: string,
   abortSignal?: AbortSignal,
+  onBeforeToolCalls?: (toolNames: string[]) => void,
 ): AsyncGenerator<string> {
   const systemPrompt = buildSystemPrompt(context);
   const tools = getToolDefinitions();
@@ -405,6 +406,7 @@ export async function* generateCoachProResponse(
     });
 
     // Execute tool calls in parallel — preserve order when appending results
+    onBeforeToolCalls?.(toolCallsArray.map((tc) => tc.function.name));
     const toolResults = await Promise.all(
       toolCallsArray.map(async (tc) => {
         try {
