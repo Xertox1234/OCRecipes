@@ -189,6 +189,27 @@ if (event.type === "status") {
 
 Use `theme.primary` with a subtle gradient (`theme.primary` → `withOpacity(theme.primary, 0.7)`). Exact values to be confirmed against the theme during implementation.
 
+### Rich block alignment
+
+All block components (`RecipeCard`, `MealPlanCard`, `ActionCard`, `SuggestionList`, `QuickReplies`, `InlineChart`, `CommitmentCard`) render **full-width** — no avatar-column indentation.
+
+Current behaviour: blocks are already siblings of `ChatBubble` in the message container, not children of it, and already stretch to the full container width. The canvas layout change does not affect this — blocks continue to render at full container width with no code changes required to the block components themselves.
+
+The avatar dot appears **only on text rows** (the `<Row>` wrapping `<AvatarDot>` + `<MarkdownText>`). For messages that contain text followed by blocks, the structure is:
+
+```
+<MessageContainer>
+  <Row gap={9} alignItems="flex-start">   ← avatar dot here
+    <AvatarDot />
+    <MarkdownText flex={1} />
+  </Row>
+  <BlockRenderer />                        ← full width, no indent
+  <BlockRenderer />
+</MessageContainer>
+```
+
+For block-only messages (no text intro), no avatar dot is rendered — the card sits at full width with no orphaned dot above it.
+
 ---
 
 ## 4. Component Wiring
