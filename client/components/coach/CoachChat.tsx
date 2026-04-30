@@ -84,6 +84,7 @@ export default function CoachChat({
   const listRef = useRef<FlatList<ChatListItem>>(null);
   const inputRef = useRef<TextInput>(null);
   const prevStreamingRef = useRef(false);
+  const activeConvIdRef = useRef<number | null>(null);
 
   const {
     isListening,
@@ -111,9 +112,13 @@ export default function CoachChat({
     onDone: (_fullText, blocks) => {
       setOptimisticMessage(null);
       if (blocks && blocks.length > 0) setStreamBlocks(blocks);
-      queryClient.invalidateQueries({
-        queryKey: [`/api/chat/conversations/${conversationId}/messages`],
-      });
+      if (activeConvIdRef.current !== null) {
+        queryClient.invalidateQueries({
+          queryKey: [
+            `/api/chat/conversations/${activeConvIdRef.current}/messages`,
+          ],
+        });
+      }
     },
     onError: (message) => {
       setStreamingError(message);
@@ -216,6 +221,7 @@ export default function CoachChat({
         }
       }
 
+      activeConvIdRef.current = convId;
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
       startStream(convId, content, { warmUpId: currentWarmUpId });
       warmUpHook.reset();
