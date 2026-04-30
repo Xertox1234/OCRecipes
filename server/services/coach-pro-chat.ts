@@ -128,7 +128,24 @@ export function buildMealPatternSummary(
 /** SSE event yielded by the coach chat service. */
 export type CoachChatEvent =
   | { type: "content"; content: string }
-  | { type: "blocks"; blocks: CoachBlock[] };
+  | { type: "blocks"; blocks: CoachBlock[] }
+  | { type: "status"; label: string };
+
+const TOOL_STATUS_LABELS: Record<string, string> = {
+  lookup_nutrition: "Looking up nutrition…",
+  search_recipes: "Searching recipes…",
+  get_daily_log_details: "Checking today's log…",
+  log_food_item: "Logging food…",
+  get_pantry_items: "Checking your pantry…",
+  get_meal_plan: "Checking your meal plan…",
+  add_to_meal_plan: "Planning your meals…",
+  add_to_grocery_list: "Updating grocery list…",
+  get_substitutions: "Finding substitutes…",
+};
+
+function getToolStatusLabel(toolName: string): string {
+  return TOOL_STATUS_LABELS[toolName] ?? "Working on it…";
+}
 
 export interface CoachChatParams {
   conversationId: number;
@@ -495,12 +512,21 @@ export async function* handleCoachChat(
       }
     }
   } else if (isCoachPro) {
+    const pendingStatusLabels: string[] = [];
     for await (const chunk of generateCoachProResponse(
       messageHistory,
       context,
       userId,
       abortSignal,
+      (toolNames) => {
+        for (const name of toolNames) {
+          pendingStatusLabels.push(getToolStatusLabel(name));
+        }
+      },
     )) {
+      for (const label of pendingStatusLabels.splice(0)) {
+        if (!isAborted()) yield { type: "status", label };
+      }
       if (isAborted()) break;
       fullResponse += chunk;
       yield { type: "content", content: chunk };
