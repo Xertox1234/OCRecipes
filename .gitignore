@@ -58,6 +58,9 @@ app-example
 # Attached assets (user uploads during development)
 attached_assets/
 
+# Orphan bundled recipe images (generated at runtime in uploads/recipe-images/)
+assets/images/recipes/
+
 # User-uploaded avatars (keep directory structure via .gitkeep)
 uploads/avatars/*
 !uploads/avatars/.gitkeep
@@ -79,7 +82,7 @@ docs/brainstorms/
 docs/plans/
 todos/
 .claude/worktrees/
-.ui-design/reviews/
+.ui-design/
 
 # Dev workaround: symlink for Metro entry resolution
 /index.js
