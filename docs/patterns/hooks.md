@@ -1106,3 +1106,82 @@ isSpeaking={speakingMessageId === -1 && isSpeaking}
 - `client/hooks/useTTS.ts` — `speakingMessageId: number | null`, `speak(messageId: number, ...)`
 - `client/components/coach/CoachChat.tsx` — streaming bubble uses `ttsSpeak(-1, streamingContent)` / `speakingMessageId === -1`
 - Origin: recipe-wizard code-review M1 (commits `fe87638`, `beb18d0`)
+
+---
+
+### Exported `QUERY_KEY` for Cross-Hook Cache Invalidation
+
+When a mutation hook in one file needs to invalidate a query owned by a different hook, export the query key constant from the query hook and import it in the mutation hook. Never duplicate the key string — two string literals with the same content are two separate cache keys waiting to drift.
+
+```typescript
+// client/hooks/usePendingReminders.ts
+export const QUERY_KEY = ["/api/reminders/pending"] as const;
+
+export function usePendingReminders() {
+  return useQuery({ queryKey: QUERY_KEY, ... });
+}
+```
+
+```typescript
+// client/hooks/useAcknowledgeReminders.ts
+import { QUERY_KEY as PENDING_REMINDERS_KEY } from "./usePendingReminders";
+
+export function useAcknowledgeReminders() {
+  const mutation = useMutation({
+    mutationFn: ...,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
+    },
+  });
+}
+```
+
+**Why not inline the string again:** TanStack Query compares query keys by deep equality. If the string drifts between files (a typo, a path rename), the invalidation silently stops working — no error, just a stale UI.
+
+**When to use:** Any time a mutation hook needs to invalidate a query defined in a separate hook file. Single-file CRUD modules (see TanStack Query CRUD Hook Module pattern) can keep keys private since the query and mutation share the same file.
+
+**References:**
+
+- `client/hooks/usePendingReminders.ts` — exports `QUERY_KEY`
+- `client/hooks/useAcknowledgeReminders.ts` — imports as `PENDING_REMINDERS_KEY`
+
+---
+
+### AppState `"active"` Listener for App-Foreground Refetch
+
+When a query should re-check the server whenever the user returns the app from the background, add an `AppState` listener inside a `useEffect` that invalidates the query on the `"active"` transition. This is the React Native equivalent of a browser `visibilitychange` listener.
+
+```typescript
+import { AppState } from "react-native";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+export function usePendingReminders() {
+  const queryClient = useQueryClient();
+
+  const { data } = useQuery({ queryKey: QUERY_KEY, queryFn: ... });
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      }
+    });
+    return () => sub.remove(); // ← must clean up or listener accumulates across mounts
+  }, [queryClient]);
+
+  return { value: data?.value ?? defaultValue };
+}
+```
+
+**Key elements:**
+
+1. **`"active"` only** — `"background"` and `"inactive"` don't need a refetch; only the transition back to foreground does
+2. **`sub.remove()` cleanup** — failing to remove the listener causes it to accumulate on every hook mount, firing multiple invalidations per foreground event
+3. **`queryClient` in the dependency array** — stable reference from `useQueryClient()`, but required for the linter
+
+**When to use:** Queries where staleness matters on return from background — badge counts, unread indicators, time-sensitive status. Not needed for data that's fine being stale (recipe lists, historical logs).
+
+**References:**
+
+- `client/hooks/usePendingReminders.ts` — foreground refetch for the Coach tab badge dot

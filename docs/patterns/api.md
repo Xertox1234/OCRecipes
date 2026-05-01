@@ -599,6 +599,42 @@ export function handleRouteError(
 
 ---
 
+### Zod `.strict()` for Phase-Gating Future Request Fields
+
+When a PATCH schema shares a namespace with fields that are planned but not yet implemented (Phase 2+), use `.strict()` to reject unknown keys with a 400 instead of silently ignoring them. This turns an accidental future-phase field into an explicit error rather than a silent no-op.
+
+```typescript
+// server/routes/reminders.ts
+const mutesSchema = z
+  .object({
+    "meal-log": z.boolean().optional(),
+    commitment: z.boolean().optional(),
+    "daily-checkin": z.boolean().optional(),
+    // "user-set" intentionally absent — Phase 2 field; must not be accepted yet
+  })
+  .strict(); // ← rejects any key not in the object above with a 400
+
+app.patch("/api/reminders/mutes", requireAuth, async (req, res) => {
+  const parsed = mutesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return sendError(res, 400, "Invalid mute keys", ErrorCode.VALIDATION_ERROR);
+  }
+  ...
+});
+```
+
+**Why not just let unknown keys pass through:** Without `.strict()`, a client sending `{ "user-set": true }` would silently succeed. The server would attempt to store a field that has no column backing it (or persist it to a JSONB column where it has no effect), giving the client false confidence that Phase 2 is already wired up. `.strict()` makes the phase boundary explicit at the API contract level.
+
+**When to use:** PATCH endpoints where the request body schema is a strict subset of a larger shared type (e.g., `ReminderMutes` includes `"user-set"` but the Phase 1 route does not). Also useful for any endpoint that must reject extra keys for security reasons (prevents field-stuffing attacks on profile update endpoints).
+
+**When NOT to use:** Routes that intentionally accept open-ended data (e.g., AI context payloads, user-authored content). `.strict()` is for structured schemas with a known, fixed field set.
+
+**References:**
+
+- `server/routes/reminders.ts` — `mutesSchema.strict()` gates `"user-set"` out of Phase 1 mutes PATCH
+
+---
+
 ### `numericStringField` / `nullableNumericStringField` -- Zod Numeric String Coercion
 
 When a request body field accepts both string and number representations of a numeric value (common with `multipart/form-data` and form submissions), use the shared Zod schema helpers instead of repeating the union transform inline.
