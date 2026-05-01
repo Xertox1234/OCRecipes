@@ -34,7 +34,11 @@ export function DiscoveryCard({
         style={StyleSheet.absoluteFill}
       />
       {/* Watermark emoji — decorative, hidden from screen readers */}
-      <ThemedText style={styles.watermark} accessibilityElementsHidden>
+      <ThemedText
+        style={styles.watermark}
+        accessibilityElementsHidden
+        importantForAccessibility="no"
+      >
         {card.emoji}
       </ThemedText>
       <Pressable
