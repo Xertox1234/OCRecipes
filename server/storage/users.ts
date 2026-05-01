@@ -205,6 +205,11 @@ export async function deleteUser(id: string): Promise<boolean> {
   return deleted;
 }
 
+export async function getAllUserIds(): Promise<string[]> {
+  const rows = await db.select({ id: users.id }).from(users);
+  return rows.map((r) => r.id);
+}
+
 // ============================================================================
 // USER PROFILES
 // ============================================================================
@@ -246,6 +251,7 @@ type UpdatableProfileFields = Pick<
   | "glp1Mode"
   | "glp1Medication"
   | "glp1StartDate"
+  | "reminderMutes"
 >;
 
 export async function updateUserProfile(
