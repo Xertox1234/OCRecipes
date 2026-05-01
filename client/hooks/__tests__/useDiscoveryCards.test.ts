@@ -12,9 +12,9 @@ const { mockInitDiscoveryCache, mockGetDismissedCardIds, mockDismissCard } =
   }));
 
 vi.mock("@/lib/discovery-storage", () => ({
-  initDiscoveryCache: () => mockInitDiscoveryCache(),
-  getDismissedCardIds: () => mockGetDismissedCardIds(),
-  dismissCard: (id: string) => mockDismissCard(id),
+  initDiscoveryCache: mockInitDiscoveryCache,
+  getDismissedCardIds: mockGetDismissedCardIds,
+  dismissCard: mockDismissCard,
 }));
 
 describe("useDiscoveryCards", () => {
@@ -27,6 +27,17 @@ describe("useDiscoveryCards", () => {
 
   it("returns scan-receipt card when usageCounts is empty", async () => {
     const { result } = renderHook(() => useDiscoveryCards({}));
+    await waitFor(() =>
+      expect(result.current.cards.some((c) => c.id === "scan-receipt")).toBe(
+        true,
+      ),
+    );
+  });
+
+  it("shows a card when usageCounts explicitly contains zero for that id", async () => {
+    const { result } = renderHook(() =>
+      useDiscoveryCards({ "scan-receipt": 0 }),
+    );
     await waitFor(() =>
       expect(result.current.cards.some((c) => c.id === "scan-receipt")).toBe(
         true,
@@ -63,6 +74,26 @@ describe("useDiscoveryCards", () => {
     expect(mockDismissCard).toHaveBeenCalledWith("scan-receipt");
   });
 
+  it("returns empty array when all 12 cards have been dismissed", async () => {
+    const allDismissed = new Set([
+      "scan-receipt",
+      "photo-food-log",
+      "scan-menu",
+      "scan-nutrition-label",
+      "batch-scan",
+      "ai-coach",
+      "meal-plan",
+      "grocery-list",
+      "pantry",
+      "voice-log",
+      "generate-recipe",
+      "import-recipe",
+    ]);
+    mockGetDismissedCardIds.mockReturnValue(allDismissed);
+    const { result } = renderHook(() => useDiscoveryCards({}));
+    await waitFor(() => expect(result.current.cards).toHaveLength(0));
+  });
+
   it("returns empty array when all 12 cards have been used", async () => {
     const allUsed = Object.fromEntries(
       [
@@ -82,5 +113,15 @@ describe("useDiscoveryCards", () => {
     );
     const { result } = renderHook(() => useDiscoveryCards(allUsed));
     await waitFor(() => expect(result.current.cards).toHaveLength(0));
+  });
+
+  it("hides cards that were dismissed in a previous session", async () => {
+    mockGetDismissedCardIds.mockReturnValue(new Set(["scan-receipt"]));
+    const { result } = renderHook(() => useDiscoveryCards({}));
+    await waitFor(() =>
+      expect(result.current.cards.some((c) => c.id === "scan-receipt")).toBe(
+        false,
+      ),
+    );
   });
 });

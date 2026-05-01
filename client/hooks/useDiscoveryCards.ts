@@ -13,12 +13,13 @@ export function useDiscoveryCards(usageCounts: Record<string, number>): {
   cards: DiscoveryCard[];
   dismiss: (id: string) => Promise<void>;
 } {
+  // Lazy initialiser: reads the synchronous in-memory snapshot; hydrated from AsyncStorage by the effect below.
   const [dismissedIds, setDismissedIds] =
     useState<Set<string>>(getDismissedCardIds);
 
   useEffect(() => {
     initDiscoveryCache().then(() => {
-      setDismissedIds(new Set(getDismissedCardIds()));
+      setDismissedIds((prev) => new Set([...getDismissedCardIds(), ...prev]));
     });
   }, []);
 
