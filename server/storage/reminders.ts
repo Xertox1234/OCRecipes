@@ -51,19 +51,10 @@ export async function hasPendingReminders(userId: string): Promise<boolean> {
 export async function acknowledgeReminders(
   userId: string,
 ): Promise<CoachContextItem[]> {
-  const pending = await db
-    .select()
-    .from(pendingReminders)
-    .where(
-      and(
-        eq(pendingReminders.userId, userId),
-        isNull(pendingReminders.acknowledgedAt),
-      ),
-    );
-
-  if (pending.length === 0) return [];
-
-  await db
+  // Single atomic UPDATE ... RETURNING to avoid TOCTOU race where two concurrent
+  // calls could both SELECT the same pending rows before either UPDATE runs.
+  // PostgreSQL guarantees each row is updated exactly once across concurrent calls.
+  const acknowledged = await db
     .update(pendingReminders)
     .set({ acknowledgedAt: new Date() })
     .where(
@@ -71,11 +62,12 @@ export async function acknowledgeReminders(
         eq(pendingReminders.userId, userId),
         isNull(pendingReminders.acknowledgedAt),
       ),
-    );
+    )
+    .returning();
 
   // The context shape is guaranteed by createPendingReminder callers
   // (notification-scheduler.ts) which always pass the correct fields for each type.
-  return pending.map((r) => ({
+  return acknowledged.map((r) => ({
     type: r.type,
     ...r.context,
   })) as CoachContextItem[];
