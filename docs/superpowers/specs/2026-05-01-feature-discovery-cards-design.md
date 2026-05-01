@@ -31,13 +31,12 @@ Static array of `DiscoveryCard` definitions. Each card maps 1-to-1 to an existin
 
 ```ts
 interface DiscoveryCard {
-  id: string; // matches HomeAction.id — drives visibility check
+  id: string; // matches HomeAction.id — used for both dismissal tracking and navigation
   eyebrow: string; // e.g. "✨ Try this"
   headline: string; // e.g. "Scan receipts to fill your pantry instantly"
   subtitle: string; // one short supporting line
   emoji: string; // large faded watermark emoji on the card
   ctaLabel: string; // e.g. "Scan Now"
-  actionId: string; // HomeAction.id — used for navigation via navigateAction()
 }
 ```
 
@@ -55,7 +54,7 @@ AsyncStorage wrapper for dismissed card IDs. Mirrors the shape and in-memory cac
 
 Computes the visible card set reactively. A card is visible when:
 
-1. `usageCounts[card.actionId] === 0` (feature never used), AND
+1. `usageCounts[card.id] === 0` (feature never used), AND
 2. `card.id` not present in the dismissed set
 
 Returns `{ cards: DiscoveryCard[]; dismiss: (id: string) => void }`.
@@ -103,7 +102,7 @@ interface DiscoveryCarouselProps {
 }
 ```
 
-Internally calls `useDiscoveryCards()` and maps each card to a `DiscoveryCard` component. Navigation on CTA press reuses `navigateAction()` from `action-config.ts`.
+Internally calls `useDiscoveryCards()` and maps each card to a `DiscoveryCard` component. Navigation on CTA press reuses `navigateAction()` from `action-config.ts`. For premium actions (e.g. `generate-recipe`), this is handled by the existing `handleActionPress` in `HomeScreen` — non-premium users see the `UpgradeModal` rather than the screen.
 
 ---
 
@@ -174,8 +173,8 @@ Three existing screens gain camera-forward CTAs when their lists are empty. All 
 - **Icon:** `calendar` (Feather)
 - **Title:** No meals planned yet
 - **Description:** Plan your week's meals to hit your nutrition goals and auto-generate your grocery list.
-- **CTA:** Start Planning → `navigation.navigate("RecipeBrowser", {})`
-- **Secondary:** browse recipes to get started (same action, text-link style)
+- **CTA:** Browse Recipes → `navigation.navigate("RecipeBrowser", {})`
+- **Secondary:** none (no alternative manual-add flow exists for meal plans)
 
 ### EmptyState component (`client/components/EmptyState.tsx`) — minor edit
 
