@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { register } from "../reminders";
 import { createMockUserProfile } from "../../__tests__/factories";
+import type { CoachContextItem } from "@shared/types/reminders";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -58,21 +59,11 @@ describe("Reminders Routes", () => {
 
   describe("POST /api/reminders/acknowledge", () => {
     it("returns acknowledged count and coachContext for pending items", async () => {
-      const mockContext = [
-        { type: "meal-log", mealType: "breakfast", lastLoggedAt: null },
-        {
-          type: "daily-checkin",
-          calories: 1200,
-          goal: 2000,
-        },
+      const mockContext: CoachContextItem[] = [
+        { type: "meal-log", lastLoggedAt: null },
+        { type: "daily-checkin", calories: 1200 },
       ];
-      vi.mocked(storage.acknowledgeReminders).mockResolvedValue(
-        mockContext as ReturnType<
-          typeof storage.acknowledgeReminders
-        > extends Promise<infer T>
-          ? T
-          : never,
-      );
+      vi.mocked(storage.acknowledgeReminders).mockResolvedValue(mockContext);
 
       const res = await request(app)
         .post("/api/reminders/acknowledge")
