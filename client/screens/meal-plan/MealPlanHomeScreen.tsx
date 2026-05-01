@@ -27,6 +27,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { DraggableList } from "@/components/DraggableList";
 import { CalorieRing } from "@/components/CalorieRing";
+import { EmptyState } from "@/components/EmptyState";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
@@ -1090,6 +1091,17 @@ export default function MealPlanHomeScreen() {
           carbs={dailyTotals.carbs}
           fat={dailyTotals.fat}
         />
+
+        {selectedDayItems.length === 0 && (
+          <EmptyState
+            variant="firstTime"
+            icon="calendar"
+            title="No meals planned yet"
+            description="Plan your week's meals to hit your nutrition goals and auto-generate your grocery list."
+            actionLabel="Browse Recipes"
+            onAction={handleBrowseRecipes}
+          />
+        )}
 
         {/* Meal Slots */}
         {MEAL_TYPES.map((mealType) => {
