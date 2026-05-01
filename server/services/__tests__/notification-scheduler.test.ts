@@ -231,6 +231,13 @@ describe("sendDailyCheckinReminders", () => {
 
     expect(storage.createPendingReminder).not.toHaveBeenCalled();
   });
+
+  it("returns gracefully when getAllUserIds throws", async () => {
+    vi.mocked(storage.getAllUserIds).mockRejectedValue(new Error("db error"));
+
+    await expect(sendDailyCheckinReminders()).resolves.toBeUndefined();
+    expect(storage.createPendingReminder).not.toHaveBeenCalled();
+  });
 });
 
 describe("sendMealLogReminders", () => {
@@ -281,6 +288,13 @@ describe("sendMealLogReminders", () => {
 
     await sendMealLogReminders();
 
+    expect(storage.createPendingReminder).not.toHaveBeenCalled();
+  });
+
+  it("returns gracefully when getAllUserIds throws", async () => {
+    vi.mocked(storage.getAllUserIds).mockRejectedValue(new Error("db error"));
+
+    await expect(sendMealLogReminders()).resolves.toBeUndefined();
     expect(storage.createPendingReminder).not.toHaveBeenCalled();
   });
 });

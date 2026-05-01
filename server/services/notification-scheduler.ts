@@ -28,7 +28,7 @@ function isMuted(
   mutes: ReminderMutes | null | undefined,
   type: keyof ReminderMutes,
 ): boolean {
-  return !!(mutes as Record<string, boolean> | null | undefined)?.[type];
+  return !!mutes?.[type];
 }
 
 /** Fire the reminder batch for all due commitments. Exported for testing. */
@@ -112,8 +112,7 @@ export async function sendDailyCheckinReminders(): Promise<void> {
   for (const userId of userIds) {
     try {
       const profile = await storage.getUserProfile(userId);
-      const mutes = profile?.reminderMutes as ReminderMutes | null;
-      if (isMuted(mutes, "daily-checkin")) continue;
+      if (isMuted(profile?.reminderMutes, "daily-checkin")) continue;
 
       const alreadyPending = await storage.hasPendingReminderToday(
         userId,
@@ -154,8 +153,7 @@ export async function sendMealLogReminders(): Promise<void> {
   for (const userId of userIds) {
     try {
       const profile = await storage.getUserProfile(userId);
-      const mutes = profile?.reminderMutes as ReminderMutes | null;
-      if (isMuted(mutes, "meal-log")) continue;
+      if (isMuted(profile?.reminderMutes, "meal-log")) continue;
 
       const logs = await storage.getDailyLogs(userId, new Date());
       if (logs.length > 0) continue;
