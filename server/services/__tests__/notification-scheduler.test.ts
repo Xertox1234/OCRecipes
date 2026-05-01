@@ -23,6 +23,7 @@ vi.mock("../../storage", () => ({
     getAllUserIds: vi.fn(),
     getUserProfile: vi.fn(),
     getDailyLogs: vi.fn(),
+    getDailySummary: vi.fn(),
     hasPendingReminderToday: vi.fn(),
     createPendingReminder: vi.fn(),
   },
@@ -183,7 +184,13 @@ describe("sendDailyCheckinReminders", () => {
     vi.mocked(storage.getUserProfile).mockResolvedValue(
       createMockUserProfile({ userId: "user-1", reminderMutes: {} }),
     );
-    vi.mocked(storage.getDailyLogs).mockResolvedValue([]);
+    vi.mocked(storage.getDailySummary).mockResolvedValue({
+      totalCalories: 850,
+      totalProtein: 40,
+      totalCarbs: 100,
+      totalFat: 30,
+      itemCount: 3,
+    });
     vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
     vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
@@ -193,6 +200,7 @@ describe("sendDailyCheckinReminders", () => {
       expect.objectContaining({
         userId: "user-1",
         type: "daily-checkin",
+        context: { calories: 850 },
       }),
     );
   });

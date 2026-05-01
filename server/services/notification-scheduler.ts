@@ -121,16 +121,12 @@ export async function sendDailyCheckinReminders(): Promise<void> {
       );
       if (alreadyPending) continue;
 
-      const logs = await storage.getDailyLogs(userId, new Date());
-      // DailyLog rows are join entries; calories must be summed from linked
-      // scanned items. We store the log count as a proxy until a richer
-      // aggregation query is added.
-      const logCount = logs.length;
+      const summary = await storage.getDailySummary(userId, new Date());
 
       await storage.createPendingReminder({
         userId,
         type: "daily-checkin",
-        context: { calories: logCount },
+        context: { calories: Math.round(summary.totalCalories) },
         scheduledFor: new Date(),
       });
     } catch (err) {
