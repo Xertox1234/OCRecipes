@@ -118,5 +118,22 @@ describe("Reminders Routes", () => {
 
       expect(res.status).toBe(400);
     });
+
+    it("returns 200 with incoming mutes when no profile exists yet", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .patch("/api/reminders/mutes")
+        .set("Authorization", "Bearer token")
+        .send({ commitment: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body.reminderMutes).toEqual({ commitment: true });
+      expect(storage.updateUserProfile).toHaveBeenCalledWith(
+        expect.any(String),
+        { reminderMutes: { commitment: true } },
+      );
+    });
   });
 });
