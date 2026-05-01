@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   AccessibilityInfo,
   findNodeHandle,
+  Text,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -20,14 +21,14 @@ import { ChatBubble } from "@/components/ChatBubble";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useCreateConversation, useChatMessages } from "@/hooks/useChat";
-import { getApiUrl } from "@/lib/query-client";
-import { tokenStorage } from "@/lib/token-storage";
+import { useCoachStream } from "@/hooks/useCoachStream";
 import {
   Spacing,
   BorderRadius,
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+
 export interface CoachQuestion {
   readonly text: string;
   readonly question: string;
@@ -37,89 +38,6 @@ interface CoachOverlayContentProps {
   question: CoachQuestion;
   screenContext: string;
   onDismiss: () => void;
-}
-
-/**
- * Send a chat message and stream the SSE response, calling onChunk for each
- * content delta. Returns the full accumulated response on completion.
- *
- * Uses XMLHttpRequest instead of fetch+ReadableStream because RN's
- * ReadableStream does not reliably deliver chunks inside an RN Modal.
- */
-async function sendMessageStreaming(
-  conversationId: number,
-  content: string,
-  screenContext: string | undefined,
-  onChunk: (accumulated: string) => void,
-  onDone: () => void,
-  signal: AbortSignal,
-): Promise<void> {
-  const token = await tokenStorage.get();
-
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const baseUrl = getApiUrl();
-    const url = `${baseUrl}/api/chat/conversations/${conversationId}/messages`;
-
-    xhr.open("POST", url, true);
-    xhr.setRequestHeader("Content-Type", "application/json");
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-
-    let accumulated = "";
-    let lastProcessedIndex = 0;
-
-    xhr.onreadystatechange = () => {
-      // readyState 3 = LOADING (partial data received)
-      if (xhr.readyState >= 3 && xhr.responseText) {
-        const newText = xhr.responseText.slice(lastProcessedIndex);
-        lastProcessedIndex = xhr.responseText.length;
-
-        const lines = newText.split("\n");
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.error) {
-                onDone();
-                return;
-              }
-              if (data.content) {
-                accumulated += data.content;
-                onChunk(accumulated);
-              }
-              if (data.done) {
-                onDone();
-              }
-            } catch {
-              // Ignore JSON parse errors from incomplete chunks
-            }
-          }
-        }
-      }
-
-      if (xhr.readyState === 4) {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve();
-        } else {
-          reject(new Error(`${xhr.status}: ${xhr.responseText}`));
-        }
-      }
-    };
-
-    xhr.onerror = () => reject(new Error("Network error"));
-
-    signal.addEventListener("abort", () => {
-      xhr.abort();
-      resolve();
-    });
-
-    xhr.send(
-      JSON.stringify({
-        content,
-        ...(screenContext && { screenContext }),
-      }),
-    );
-  });
 }
 
 export function CoachOverlayContent({
@@ -135,16 +53,35 @@ export function CoachOverlayContent({
   const [conversationId, setConversationId] = useState<number | null>(null);
   const [inputText, setInputText] = useState("");
   const [createError, setCreateError] = useState(false);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
   const [streamError, setStreamError] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   const titleRef = useRef<View>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
   const createConversation = useCreateConversation();
   const { data: messages } = useChatMessages(conversationId);
+
+  const {
+    startStream,
+    abortStream,
+    streamingContent,
+    statusText,
+    isStreaming,
+  } = useCoachStream({
+    onDone: (_fullText, _blocks) => {
+      if (conversationId !== null) {
+        queryClient.invalidateQueries({
+          queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["/api/chat/conversations"],
+        });
+      }
+    },
+    onError: () => {
+      setStreamError(true);
+    },
+  });
 
   // Create conversation on mount
   const didCreateRef = useRef(false);
@@ -169,49 +106,20 @@ export function CoachOverlayContent({
     if (!conversationId || didSendRef.current) return;
     didSendRef.current = true;
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setIsStreaming(true);
-    setStreamingContent("");
-
-    sendMessageStreaming(
-      conversationId,
-      question.question,
-      screenContext,
-      (accumulated) => setStreamingContent(accumulated),
-      async () => {
-        // On done — refresh messages from server, then clear streaming state
-        await queryClient.invalidateQueries({
-          queryKey: [`/api/chat/conversations/${conversationId}/messages`],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["/api/chat/conversations"],
-        });
-        setIsStreaming(false);
-        setStreamingContent("");
-      },
-      controller.signal,
-    ).catch(() => {
-      if (!controller.signal.aborted) {
-        setStreamError(true);
-        setIsStreaming(false);
-        setStreamingContent("");
-      }
-    });
+    startStream(conversationId, question.question, { screenContext });
 
     return () => {
-      controller.abort();
+      abortStream();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  // Cleanup abort controller on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
+      abortStream();
     };
-  }, []);
+  }, [abortStream]);
 
   // Build display messages — show optimistic user bubble before server messages load
   const serverMessages = (messages ?? []).filter((m) => m.role !== "system");
@@ -277,36 +185,8 @@ export function CoachOverlayContent({
     if (!inputText.trim() || isStreaming || !conversationId) return;
     const text = inputText.trim();
     setInputText("");
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setIsStreaming(true);
-    setStreamingContent("");
-
-    sendMessageStreaming(
-      conversationId,
-      text,
-      undefined, // no screenContext on follow-ups
-      (accumulated) => setStreamingContent(accumulated),
-      async () => {
-        await queryClient.invalidateQueries({
-          queryKey: [`/api/chat/conversations/${conversationId}/messages`],
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["/api/chat/conversations"],
-        });
-        setIsStreaming(false);
-        setStreamingContent("");
-      },
-      controller.signal,
-    ).catch(() => {
-      if (!controller.signal.aborted) {
-        setStreamError(true);
-        setIsStreaming(false);
-        setStreamingContent("");
-      }
-    });
-  }, [inputText, isStreaming, conversationId, queryClient]);
+    startStream(conversationId, text);
+  }, [inputText, isStreaming, conversationId, startStream]);
 
   const handleRetry = useCallback(() => {
     setCreateError(false);
@@ -401,6 +281,19 @@ export function CoachOverlayContent({
               isStreaming={msg.id === -1}
             />
           ))}
+          {isStreaming && !streamingContent && statusText ? (
+            <View style={styles.statusRow}>
+              <View
+                style={[styles.statusDot, { backgroundColor: theme.link }]}
+              />
+              <Text
+                style={[styles.statusText, { color: theme.textSecondary }]}
+                accessibilityLabel={statusText}
+              >
+                {statusText}
+              </Text>
+            </View>
+          ) : null}
           {streamError && (
             <View
               style={styles.errorBanner}
@@ -555,5 +448,22 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingVertical: Spacing.xs,
+  },
+  statusDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    flexShrink: 0,
+  },
+  statusText: {
+    fontSize: 14,
+    fontStyle: "italic",
+    fontFamily: FontFamily.regular,
   },
 });
