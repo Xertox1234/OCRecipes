@@ -33,6 +33,7 @@ import * as coachNotebook from "./coach-notebook";
 import * as recipeFromChat from "./recipe-from-chat";
 import * as health from "./health";
 import * as pushTokensStorage from "./push-tokens";
+import * as remindersStorage from "./reminders";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -323,4 +324,10 @@ export const storage = {
   getPushTokensForUser: pushTokensStorage.getPushTokensForUser,
   getPushTokensForUsers: pushTokensStorage.getPushTokensForUsers,
   deletePushToken: pushTokensStorage.deletePushToken,
+
+  // Pending reminders
+  createPendingReminder: remindersStorage.createPendingReminder,
+  hasPendingReminderToday: remindersStorage.hasPendingReminderToday,
+  hasPendingReminders: remindersStorage.hasPendingReminders,
+  acknowledgeReminders: remindersStorage.acknowledgeReminders,
 };
