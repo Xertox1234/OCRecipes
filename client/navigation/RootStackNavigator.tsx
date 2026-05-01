@@ -69,9 +69,11 @@ export type RootStackParamList = {
     imageUri?: string;
     itemId?: number;
   };
-  PhotoIntent: {
-    imageUri: string;
-  };
+  PhotoIntent:
+    | {
+        imageUri: string;
+      }
+    | undefined;
   PhotoAnalysis: {
     imageUri: string;
     intent: PhotoIntent;
