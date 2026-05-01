@@ -51,9 +51,32 @@ export async function sendDueCommitmentReminders(): Promise<void> {
     "notification-scheduler: sending commitment reminders",
   );
 
+  // Fetch each user's profile once (not once per entry) to avoid redundant DB
+  // round-trips when a user has multiple due commitments.
+  const uniqueUserIds = [...new Set(entries.map((e) => e.userId))];
+  let profileMap: Map<
+    string,
+    Awaited<ReturnType<typeof storage.getUserProfile>>
+  >;
+  try {
+    profileMap = new Map(
+      await Promise.all(
+        uniqueUserIds.map(
+          async (id) => [id, await storage.getUserProfile(id)] as const,
+        ),
+      ),
+    );
+  } catch (err) {
+    logger.error(
+      { err },
+      "notification-scheduler: failed to batch-fetch user profiles",
+    );
+    return;
+  }
+
   for (const entry of entries) {
     try {
-      const profile = await storage.getUserProfile(entry.userId);
+      const profile = profileMap.get(entry.userId);
       if (isMuted(profile?.reminderMutes, "commitment")) continue;
 
       // Write pending reminder (regardless of push success)
