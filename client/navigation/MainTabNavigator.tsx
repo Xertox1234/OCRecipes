@@ -20,6 +20,7 @@ import { ScanFAB } from "@/components/ScanFAB";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { usePendingReminders } from "@/hooks/usePendingReminders";
 import {
   FontFamily,
   TAB_BAR_HEIGHT,
@@ -79,6 +80,7 @@ function AnimatedTabIcon({
 export default function MainTabNavigator() {
   const { theme, isDark } = useTheme();
   const { reducedMotion } = useAccessibility();
+  const { hasPending } = usePendingReminders();
 
   return (
     <View style={styles.container}>
@@ -164,12 +166,22 @@ export default function MainTabNavigator() {
           options={{
             title: "Coach",
             tabBarIcon: ({ color, size, focused }) => (
-              <AnimatedTabIcon
-                name="message-circle"
-                size={size}
-                color={color}
-                focused={focused}
-              />
+              <View style={styles.iconWrapper}>
+                <AnimatedTabIcon
+                  name="message-circle"
+                  size={size}
+                  color={color}
+                  focused={focused}
+                />
+                {hasPending && (
+                  <View
+                    style={[
+                      styles.dot,
+                      { borderColor: theme.backgroundDefault },
+                    ]}
+                  />
+                )}
+              </View>
             ),
           }}
         />
@@ -197,5 +209,18 @@ export default function MainTabNavigator() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  iconWrapper: {
+    position: "relative",
+  },
+  dot: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: "#EF4444", // hardcoded — badge red is always red-500
+    borderWidth: 2,
   },
 });
