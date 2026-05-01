@@ -14,11 +14,11 @@ export async function initDiscoveryCache(): Promise<void> {
 }
 
 export function getDismissedCardIds(): Set<string> {
-  return dismissedCache ?? new Set();
+  return new Set(dismissedCache ?? []);
 }
 
 export async function dismissCard(id: string): Promise<void> {
-  const updated = new Set(getDismissedCardIds());
+  const updated = new Set(dismissedCache ?? []);
   updated.add(id);
   dismissedCache = updated;
   await AsyncStorage.setItem(DISMISSED_KEY, JSON.stringify([...updated]));

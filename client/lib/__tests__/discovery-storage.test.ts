@@ -16,13 +16,14 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 
 describe("discovery-storage", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mockAsyncStorage.getItem.mockResolvedValue(null);
     mockAsyncStorage.setItem.mockResolvedValue(undefined);
+    await initDiscoveryCache();
   });
 
-  it("getDismissedCardIds returns empty set before init", () => {
+  it("getDismissedCardIds returns empty set when no cards have been dismissed", () => {
     expect(getDismissedCardIds().size).toBe(0);
   });
 
@@ -61,7 +62,7 @@ describe("discovery-storage", () => {
 
     await dismissCard("scan-receipt");
     await dismissCard("pantry");
-    await dismissCard("scan-receipt"); // duplicate — should not grow set
+    await dismissCard("scan-receipt");
 
     const ids = getDismissedCardIds();
     expect(ids.size).toBe(2);
