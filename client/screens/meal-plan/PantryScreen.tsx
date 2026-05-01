@@ -349,11 +349,13 @@ export default function PantryScreen() {
         ListEmptyComponent={
           <EmptyState
             variant="firstTime"
-            icon="package"
+            icon="camera"
             title="Your pantry is empty"
-            description="Add items below to track what you have at home."
-            actionLabel="Add Items"
-            onAction={() => addItemInputRef.current?.focus()}
+            description="Scan a grocery receipt and we'll add every item to your pantry automatically."
+            actionLabel="Scan a Receipt"
+            onAction={() => navigation.navigate("ReceiptCapture")}
+            secondaryLabel="or add items manually"
+            onSecondaryAction={() => addItemInputRef.current?.focus()}
           />
         }
         ListFooterComponent={

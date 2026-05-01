@@ -23,7 +23,7 @@ export function navigateAction(
       navigation.navigate("ReceiptCapture");
       break;
     case "scan-menu":
-      navigation.navigate("Scan");
+      navigation.navigate("PhotoIntent");
       break;
     case "photo-food-log":
       navigation.navigate("Scan");

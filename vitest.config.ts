@@ -60,6 +60,10 @@ export default defineConfig({
       ),
       "expo-haptics": path.resolve(__dirname, "./test/mocks/expo-haptics.ts"),
       "expo-blur": path.resolve(__dirname, "./test/mocks/expo-blur.ts"),
+      "expo-linear-gradient": path.resolve(
+        __dirname,
+        "./test/mocks/expo-linear-gradient.ts",
+      ),
     },
   },
 });

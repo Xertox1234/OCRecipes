@@ -12,6 +12,7 @@ import { DailySummaryHeader } from "@/components/home/DailySummaryHeader";
 import { ThemedText } from "@/components/ThemedText";
 import { RecipeCarousel } from "@/components/home/RecipeCarousel";
 import { RecentActionsRow } from "@/components/home/RecentActionsRow";
+import { DiscoveryCarousel } from "@/components/home/DiscoveryCarousel";
 import { CollapsibleSection } from "@/components/home/CollapsibleSection";
 import { ActionRow } from "@/components/home/ActionRow";
 import {
@@ -151,6 +152,11 @@ export default function HomeScreen() {
         <Animated.View style={[styles.expandableHeader, headerAnimatedStyle]}>
           <DailySummaryHeader onCalorieTap={handleCalorieTap} />
         </Animated.View>
+
+        <DiscoveryCarousel
+          onActionPress={handleActionPress}
+          usageCounts={usageCounts}
+        />
 
         <RecentActionsRow
           recentActionIds={recentActions}

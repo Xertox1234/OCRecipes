@@ -72,4 +72,33 @@ describe("EmptyState", () => {
       screen.getByLabelText("No results. Try a different search"),
     ).toBeDefined();
   });
+
+  it("renders secondary link when secondaryLabel and onSecondaryAction are provided", () => {
+    const onSecondaryAction = vi.fn();
+    renderComponent(
+      <EmptyState
+        variant="firstTime"
+        icon="camera"
+        title="Your pantry is empty"
+        description="Scan a receipt"
+        actionLabel="Scan a Receipt"
+        onAction={vi.fn()}
+        secondaryLabel="or add items manually"
+        onSecondaryAction={onSecondaryAction}
+      />,
+    );
+    expect(screen.getByText("or add items manually")).toBeDefined();
+  });
+
+  it("does not render secondary link when secondaryLabel is absent", () => {
+    renderComponent(
+      <EmptyState
+        variant="firstTime"
+        icon="camera"
+        title="Title"
+        description="Desc"
+      />,
+    );
+    expect(screen.queryByText("or add items manually")).toBeNull();
+  });
 });

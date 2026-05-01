@@ -11,7 +11,12 @@ import {
   Share,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
-import { useRoute, type RouteProp } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -180,6 +185,8 @@ function GroceryItemRow({
 }
 
 export default function GroceryListScreen() {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<MealPlanStackParamList>>();
   const route = useRoute<GroceryListScreenRoute>();
   const { listId } = route.params;
   const headerHeight = useHeaderHeight();
@@ -187,6 +194,7 @@ export default function GroceryListScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { features } = usePremiumContext();
+  const addItemRef = useRef<TextInput>(null);
 
   const {
     data: list,
@@ -442,6 +450,7 @@ export default function GroceryListScreen() {
             )}
             <View style={styles.addItemRow}>
               <TextInput
+                ref={addItemRef}
                 style={[
                   styles.addItemInput,
                   {
@@ -478,6 +487,18 @@ export default function GroceryListScreen() {
               </Pressable>
             </View>
           </>
+        }
+        ListEmptyComponent={
+          <EmptyState
+            variant="firstTime"
+            icon="shopping-cart"
+            title="No items yet"
+            description="Generate a shopping list from your meal plan in one tap, or add items yourself."
+            actionLabel="Build from Meal Plan"
+            onAction={() => navigation.navigate("MealPlanHome")}
+            secondaryLabel="or add items manually"
+            onSecondaryAction={() => addItemRef.current?.focus()}
+          />
         }
         stickySectionHeadersEnabled
       />

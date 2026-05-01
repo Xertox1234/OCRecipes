@@ -26,7 +26,7 @@ type PhotoIntentScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 type RouteParams = {
-  imageUri: string;
+  imageUri?: string;
 };
 
 interface IntentOption {
@@ -106,6 +106,11 @@ export default function PhotoIntentScreen() {
 
   const handleSelectIntent = (option: IntentOption) => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    // If no image was provided, user must capture one first via Scan screen
+    if (!imageUri) {
+      navigation.navigate("Scan");
+      return;
+    }
     if (option.intent === "cook") {
       navigation.navigate("CookSessionCapture", { initialPhotoUri: imageUri });
     } else if (option.intent === "label") {
@@ -135,14 +140,16 @@ export default function PhotoIntentScreen() {
         ]}
       >
         {/* Photo Thumbnail */}
-        <View style={styles.thumbnailContainer}>
-          <Image
-            source={{ uri: imageUri }}
-            style={styles.thumbnail}
-            resizeMode="cover"
-            accessibilityLabel="Captured food photo"
-          />
-        </View>
+        {imageUri && (
+          <View style={styles.thumbnailContainer}>
+            <Image
+              source={{ uri: imageUri }}
+              style={styles.thumbnail}
+              resizeMode="cover"
+              accessibilityLabel="Captured food photo"
+            />
+          </View>
+        )}
 
         {/* Intent Options */}
         <View style={styles.optionsContainer}>

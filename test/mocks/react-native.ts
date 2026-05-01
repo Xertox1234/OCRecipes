@@ -13,6 +13,7 @@ export const StyleSheet = {
 };
 export const Appearance = { getColorScheme: () => "light" };
 export const Dimensions = { get: () => ({ width: 375, height: 812 }) };
+export const useWindowDimensions = () => ({ width: 375, height: 812 });
 export const Alert = { alert: () => {} };
 export const Linking = { openURL: async () => {} };
 export const NativeModules = {};

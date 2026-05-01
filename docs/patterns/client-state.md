@@ -46,6 +46,39 @@ export const storage = {
 
 **When NOT to use:** Data that changes frequently or needs real-time accuracy.
 
+### In-Memory Set Cache: Correctness Subtleties
+
+When the cached value is a `Set<string>` (e.g. dismissed IDs, seen notifications), two subtle bugs appear that don't exist with scalar caches:
+
+**1. Copy-on-read** — Always return a _copy_, not the live reference. If callers mutate the returned Set they silently corrupt internal state:
+
+```typescript
+// ❌ BAD — caller can do getDismissedCardIds().add("x") and corrupt the cache
+export function getDismissedCardIds(): Set<string> {
+  return dismissedCache ?? new Set();
+}
+
+// ✅ CORRECT — caller gets an isolated copy
+export function getDismissedCardIds(): Set<string> {
+  return new Set(dismissedCache ?? []);
+}
+```
+
+**2. Merge-not-replace on async hydration** — When `initCache()` finishes after mount, the component may have already applied optimistic updates. A plain `setState(getDismissedCardIds())` would overwrite those. Use a functional update to merge:
+
+```typescript
+useEffect(() => {
+  initDiscoveryCache().then(() => {
+    // Merge fresh storage data with any optimistic adds that arrived before hydration
+    setDismissedIds((prev) => new Set([...getDismissedCardIds(), ...prev]));
+  });
+}, []);
+```
+
+**Reference:** `client/lib/discovery-storage.ts`, `client/hooks/useDiscoveryCards.ts`
+
+---
+
 ### Authorization Header Pattern
 
 Include auth token via Authorization header, not cookies:

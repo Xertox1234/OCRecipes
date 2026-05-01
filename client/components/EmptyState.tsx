@@ -22,6 +22,8 @@ interface EmptyStateProps {
   description: string;
   actionLabel?: string;
   onAction?: () => void;
+  secondaryLabel?: string;
+  onSecondaryAction?: () => void;
 }
 
 export function EmptyState({
@@ -31,6 +33,8 @@ export function EmptyState({
   description,
   actionLabel,
   onAction,
+  secondaryLabel,
+  onSecondaryAction,
 }: EmptyStateProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -87,6 +91,21 @@ export function EmptyState({
           </ThemedText>
         </Pressable>
       )}
+      {secondaryLabel && onSecondaryAction && (
+        <Pressable
+          onPress={onSecondaryAction}
+          accessibilityRole="button"
+          accessibilityLabel={secondaryLabel}
+          style={styles.secondaryAction}
+        >
+          <ThemedText
+            type="small"
+            style={[styles.secondaryText, { color: theme.link }]}
+          >
+            {secondaryLabel}
+          </ThemedText>
+        </Pressable>
+      )}
     </Animated.View>
   );
 }
@@ -124,5 +143,15 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontFamily: FontFamily.semiBold,
+  },
+  secondaryAction: {
+    marginTop: Spacing.md,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+  },
+  secondaryText: {
+    fontFamily: FontFamily.medium,
   },
 });
