@@ -3,14 +3,10 @@ import {
   StyleSheet,
   View,
   ScrollView,
-  TextInput,
   Pressable,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   AccessibilityInfo,
   findNodeHandle,
-  Text,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -22,12 +18,9 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useCreateConversation, useChatMessages } from "@/hooks/useChat";
 import { useCoachStream } from "@/hooks/useCoachStream";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  withOpacity,
-} from "@/constants/theme";
+import { CoachChatBase } from "@/components/coach/CoachChatBase";
+import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
+import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 
 export interface CoachQuestion {
   readonly text: string;
@@ -200,40 +193,58 @@ export function CoachOverlayContent({
   const canSend =
     inputText.trim().length > 0 && !isStreaming && !!conversationId;
 
+  const header = (
+    <View
+      style={[
+        styles.header,
+        {
+          paddingTop: insets.top + Spacing.sm,
+          borderBottomColor: theme.border,
+        },
+      ]}
+    >
+      <Pressable
+        onPress={onDismiss}
+        style={styles.closeButton}
+        accessibilityLabel="Close coach"
+        accessibilityRole="button"
+        hitSlop={12}
+      >
+        <Feather name="x" size={24} color={theme.text} />
+      </Pressable>
+      <View ref={titleRef} accessible accessibilityRole="header">
+        <ThemedText type="h4" style={styles.headerTitle}>
+          Coach
+        </ThemedText>
+      </View>
+      <View style={styles.headerSpacer} />
+    </View>
+  );
+
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    <CoachChatBase
+      containerStyle={{ backgroundColor: theme.backgroundRoot }}
+      header={header}
+      inputText={inputText}
+      onChangeText={setInputText}
+      onSend={handleSend}
+      isStreaming={isStreaming}
+      canSend={canSend}
+      placeholder="Ask a follow-up..."
+      inputAccessibilityLabel="Type a follow-up question"
+      multilineInput
+      inputBarAlign="flex-end"
+      showInputBar={!!conversationId && !createError}
+      inputBarStyle={{
+        padding: 0,
+        paddingHorizontal: Spacing.lg,
+        paddingTop: Spacing.sm,
+        paddingBottom: insets.bottom + Spacing.sm,
+        backgroundColor: theme.backgroundRoot,
+      }}
       keyboardVerticalOffset={0}
       accessibilityViewIsModal
     >
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + Spacing.sm,
-            borderBottomColor: theme.border,
-          },
-        ]}
-      >
-        <Pressable
-          onPress={onDismiss}
-          style={styles.closeButton}
-          accessibilityLabel="Close coach"
-          accessibilityRole="button"
-          hitSlop={12}
-        >
-          <Feather name="x" size={24} color={theme.text} />
-        </Pressable>
-        <View ref={titleRef} accessible accessibilityRole="header">
-          <ThemedText type="h4" style={styles.headerTitle}>
-            Coach
-          </ThemedText>
-        </View>
-        <View style={styles.headerSpacer} />
-      </View>
-
       {/* Messages */}
       {!conversationId && !createError ? (
         <View style={styles.loadingContainer}>
@@ -280,17 +291,7 @@ export function CoachOverlayContent({
             />
           ))}
           {isStreaming && !streamingContent && statusText ? (
-            <View style={styles.statusRow}>
-              <View
-                style={[styles.statusDot, { backgroundColor: theme.link }]}
-              />
-              <Text
-                style={[styles.statusText, { color: theme.textSecondary }]}
-                accessibilityLabel={statusText}
-              >
-                {statusText}
-              </Text>
-            </View>
+            <CoachStatusRow statusText={statusText} />
           ) : null}
           {streamError && (
             <View
@@ -311,66 +312,11 @@ export function CoachOverlayContent({
           )}
         </ScrollView>
       )}
-
-      {/* Input Bar */}
-      {conversationId && !createError && (
-        <View
-          style={[
-            styles.inputBar,
-            {
-              borderTopColor: theme.border,
-              paddingBottom: insets.bottom + Spacing.sm,
-              backgroundColor: theme.backgroundRoot,
-            },
-          ]}
-        >
-          <TextInput
-            style={[
-              styles.input,
-              {
-                backgroundColor: withOpacity(theme.text, 0.06),
-                color: theme.text,
-              },
-            ]}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Ask a follow-up..."
-            placeholderTextColor={theme.textSecondary}
-            multiline
-            maxLength={2000}
-            returnKeyType="send"
-            blurOnSubmit={false}
-            onSubmitEditing={handleSend}
-            accessibilityLabel="Type a follow-up question"
-            accessibilityHint="Press return to send"
-          />
-          <Pressable
-            onPress={handleSend}
-            style={[
-              styles.sendButton,
-              {
-                backgroundColor: canSend
-                  ? theme.link
-                  : withOpacity(theme.link, 0.3),
-              },
-            ]}
-            disabled={!canSend}
-            accessibilityRole="button"
-            accessibilityLabel="Send message"
-            accessibilityState={{ disabled: !canSend }}
-          >
-            <Feather name="send" size={16} color={theme.buttonText} />
-          </Pressable>
-        </View>
-      )}
-    </KeyboardAvoidingView>
+    </CoachChatBase>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -420,49 +366,6 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 13,
-    fontFamily: FontFamily.regular,
-  },
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-  },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 100,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: 15,
-    fontFamily: FontFamily.regular,
-  },
-  sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9, // matches ChatBubble avatar dot column (22px dot + 9px gap)
-    paddingVertical: Spacing.xs,
-    paddingHorizontal: Spacing.lg,
-  },
-  statusDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    flexShrink: 0,
-  },
-  statusText: {
-    fontSize: 14,
-    fontStyle: "italic",
     fontFamily: FontFamily.regular,
   },
 });

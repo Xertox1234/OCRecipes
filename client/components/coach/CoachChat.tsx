@@ -9,21 +9,18 @@ import {
   StyleSheet,
   View,
   FlatList,
-  TextInput,
   Pressable,
-  KeyboardAvoidingView,
-  Platform,
   AccessibilityInfo,
   Text,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 
 import { ChatBubble } from "@/components/ChatBubble";
 import { useTTS } from "@/hooks/useTTS";
-import { InlineError } from "@/components/InlineError";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
+import { CoachChatBase } from "@/components/coach/CoachChatBase";
+import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useChatMessages,
@@ -33,7 +30,7 @@ import {
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useQueryClient } from "@tanstack/react-query";
-import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
+import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import {
   parsePlanDays,
@@ -83,7 +80,6 @@ export default function CoachChat({
   );
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
-  const inputRef = useRef<TextInput>(null);
   const prevStreamingRef = useRef(false);
   const activeConvIdRef = useRef<number | null>(null);
 
@@ -440,17 +436,7 @@ export default function CoachChat({
             />
           ))}
           {isStreaming && !streamingContent && statusText ? (
-            <View style={styles.statusRow}>
-              <View
-                style={[styles.statusDot, { backgroundColor: theme.link }]}
-              />
-              <Text
-                style={[styles.statusText, { color: theme.textSecondary }]}
-                accessibilityLabel={statusText}
-              >
-                {statusText}
-              </Text>
-            </View>
+            <CoachStatusRow statusText={statusText} />
           ) : null}
         </View>
       );
@@ -470,7 +456,6 @@ export default function CoachChat({
       streamingContent,
       statusText,
       theme.textSecondary,
-      theme.link,
     ],
   );
 
@@ -493,13 +478,28 @@ export default function CoachChat({
     listRef.current?.scrollToEnd({ animated: false });
   }, [messages]);
 
-  const showSendButton = inputText.trim().length > 0;
-
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    <CoachChatBase
+      inputText={inputText}
+      onChangeText={(text) => {
+        setInputText(text);
+        if (isCoachPro) warmUpHook.sendTextWarmUp(text);
+      }}
+      onSend={handleSend}
+      isStreaming={isStreaming}
+      placeholder="Ask your coach..."
+      inputAccessibilityLabel="Message your nutrition coach"
+      inputAdornment={
+        hasVoice ? (
+          <CoachMicButton
+            isListening={isListening}
+            volume={volume}
+            onPress={handleMicPress}
+          />
+        ) : null
+      }
       keyboardVerticalOffset={90}
+      streamingError={streamingError}
     >
       <FlatList
         {...FLATLIST_DEFAULTS}
@@ -514,88 +514,13 @@ export default function CoachChat({
           listRef.current?.scrollToEnd({ animated: false })
         }
       />
-
-      {/* Input bar */}
-      <View
-        style={[
-          styles.inputBar,
-          {
-            backgroundColor: theme.backgroundSecondary,
-            borderTopColor: theme.border,
-          },
-        ]}
-      >
-        <TextInput
-          ref={inputRef}
-          style={[
-            styles.input,
-            { backgroundColor: theme.backgroundDefault, color: theme.text },
-          ]}
-          placeholder="Ask your coach..."
-          placeholderTextColor={theme.textSecondary}
-          value={inputText}
-          onChangeText={(text) => {
-            setInputText(text);
-            if (isCoachPro) warmUpHook.sendTextWarmUp(text);
-          }}
-          onSubmitEditing={() => handleSend()}
-          returnKeyType="send"
-          multiline={false}
-          editable={!isStreaming}
-          accessibilityLabel="Message your nutrition coach"
-        />
-        {showSendButton ? (
-          <Pressable
-            style={[styles.sendBtn, { backgroundColor: theme.link }]}
-            onPress={() => handleSend()}
-            accessibilityRole="button"
-            accessibilityLabel="Send message"
-          >
-            <Ionicons name="send" size={16} color={theme.buttonText} />
-          </Pressable>
-        ) : hasVoice ? (
-          <CoachMicButton
-            isListening={isListening}
-            volume={volume}
-            onPress={handleMicPress}
-          />
-        ) : null}
-      </View>
-      <InlineError message={streamingError} style={styles.inlineError} />
-    </KeyboardAvoidingView>
+    </CoachChatBase>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
   messageList: { flex: 1 },
   messageContent: { padding: Spacing.md, paddingBottom: Spacing.lg },
-  inputBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: Spacing.sm,
-    gap: Spacing.sm,
-    borderTopWidth: 1,
-  },
-  input: {
-    flex: 1,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: 14,
-  },
-  sendBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  inlineError: {
-    marginHorizontal: Spacing.sm,
-    marginBottom: Spacing.sm,
-    padding: Spacing.sm,
-  },
   retryButton: {
     alignSelf: "flex-start",
     paddingVertical: 12,
@@ -603,22 +528,4 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   retryText: { fontSize: 12 },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9, // matches ChatBubble avatar dot column (22px dot + 9px gap)
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xs,
-  },
-  statusDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    flexShrink: 0,
-  },
-  statusText: {
-    fontSize: 14,
-    fontStyle: "italic",
-    fontFamily: FontFamily.regular,
-  },
 });
