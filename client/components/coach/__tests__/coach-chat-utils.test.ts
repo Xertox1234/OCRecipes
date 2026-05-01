@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parsePlanDays, planBannerA11yLabel } from "../coach-chat-utils";
+import {
+  parsePlanDays,
+  planBannerA11yLabel,
+  stripCoachBlocksFence,
+  filterValidBlocks,
+} from "../coach-chat-utils";
 
 const validDays = [
   {
@@ -108,6 +113,62 @@ describe("planBannerA11yLabel", () => {
     ];
     expect(planBannerA11yLabel(emptyDay)).toBe(
       "AI meal plan with 1 day and 0 meals",
+    );
+  });
+});
+
+describe("stripCoachBlocksFence", () => {
+  it("returns trimmed text when no fence present", () => {
+    expect(stripCoachBlocksFence("  hello world  ")).toBe("hello world");
+  });
+
+  it("strips fence when only fence present (no preceding text)", () => {
+    const input = '```coach_blocks\n{"type":"action_card"}\n```';
+    expect(stripCoachBlocksFence(input)).toBe("");
+  });
+
+  it("preserves text before the fence and strips fence block", () => {
+    const input =
+      'Here is your plan.\n```coach_blocks\n{"type":"action_card"}\n```';
+    expect(stripCoachBlocksFence(input)).toBe("Here is your plan.");
+  });
+
+  it("strips up to end of string when closing fence not yet arrived", () => {
+    const input = 'Some text.\n```coach_blocks\n{"type":"action';
+    expect(stripCoachBlocksFence(input)).toBe("Some text.");
+  });
+
+  it("handles text after closing fence", () => {
+    const input = "Before.\n```coach_blocks\n{}\n```\nAfter.";
+    expect(stripCoachBlocksFence(input)).toBe("Before.\nAfter.");
+  });
+});
+
+describe("filterValidBlocks", () => {
+  it("returns only items matching coachBlockSchema", () => {
+    const valid = {
+      type: "action_card" as const,
+      title: "Log Lunch",
+      subtitle: "Quick meal entry",
+      actionLabel: "Log it",
+      action: {
+        type: "log_food" as const,
+        description: "Chicken salad",
+        calories: 350,
+        protein: 35,
+        fat: 12,
+        carbs: 25,
+      },
+    };
+    const invalid = { type: "unknown_block", garbage: true };
+    const result = filterValidBlocks([valid, invalid, null, 42]);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ type: "action_card" });
+  });
+
+  it("returns empty array when nothing passes validation", () => {
+    expect(filterValidBlocks([null, undefined, {}, { type: "bad" }])).toEqual(
+      [],
     );
   });
 });
