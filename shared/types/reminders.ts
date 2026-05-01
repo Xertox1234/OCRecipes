@@ -13,7 +13,7 @@ export type ReminderMutes = {
 };
 
 export type CoachContextItem =
-  | { type: "meal-log"; mealType: string; lastLoggedAt: string | null }
+  | { type: "meal-log"; lastLoggedAt: string | null }
   | { type: "commitment"; notebookEntryId: number; content: string }
-  | { type: "daily-checkin"; calories: number; goal: number }
+  | { type: "daily-checkin"; calories: number }
   | { type: "user-set"; message: string };

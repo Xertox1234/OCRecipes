@@ -146,6 +146,30 @@ describe("sendDueCommitmentReminders", () => {
     await expect(sendDueCommitmentReminders()).resolves.toBeUndefined();
     expect(sendPushToUser).not.toHaveBeenCalled();
   });
+
+  it("skips creating pending reminder when commitment is muted", async () => {
+    const entry = createMockCoachNotebookEntry({
+      id: 5,
+      userId: "user-1",
+      content: "Eat more vegetables",
+      type: "commitment",
+    });
+    vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
+    vi.mocked(storage.getUserProfile).mockResolvedValue(
+      createMockUserProfile({
+        userId: "user-1",
+        reminderMutes: { commitment: true },
+      }),
+    );
+    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
+    vi.mocked(sendPushToUser).mockResolvedValue(true);
+    vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
+
+    await sendDueCommitmentReminders();
+
+    expect(storage.createPendingReminder).not.toHaveBeenCalled();
+    expect(sendPushToUser).not.toHaveBeenCalled();
+  });
 });
 
 describe("startNotificationScheduler", () => {

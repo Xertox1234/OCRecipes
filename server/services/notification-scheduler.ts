@@ -53,6 +53,9 @@ export async function sendDueCommitmentReminders(): Promise<void> {
 
   for (const entry of entries) {
     try {
+      const profile = await storage.getUserProfile(entry.userId);
+      if (isMuted(profile?.reminderMutes, "commitment")) continue;
+
       // Write pending reminder (regardless of push success)
       const alreadyPending = await storage.hasPendingReminderToday(
         entry.userId,
