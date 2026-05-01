@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -26,6 +26,7 @@ import {
   useDeleteConversation,
   type ChatConversation,
 } from "@/hooks/useChat";
+import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import {
   Spacing,
   FontFamily,
@@ -80,6 +81,13 @@ export default function ChatListScreen() {
   const { reducedMotion } = useAccessibility();
   const { confirm, ConfirmationModal } = useConfirmationModal();
   const navigation = useNavigation<ChatListNavigationProp>();
+  const { acknowledge } = useAcknowledgeReminders();
+
+  useFocusEffect(
+    useCallback(() => {
+      acknowledge().catch(() => {});
+    }, [acknowledge]),
+  );
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const isRecipeMode = activeSegment === "recipe";

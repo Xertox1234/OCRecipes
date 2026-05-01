@@ -8,7 +8,7 @@ import {
   AppState,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
@@ -25,6 +25,7 @@ import CoachDashboard from "@/components/coach/CoachDashboard";
 import CoachChat from "@/components/coach/CoachChat";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import type { CoachChatNavigationProp } from "@/types/navigation";
 
 export default function CoachProScreen() {
@@ -46,6 +47,14 @@ export default function CoachProScreen() {
   const { data: coachConversations = [] } = useChatConversations("coach");
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
+  const { acknowledge } = useAcknowledgeReminders();
+
+  useFocusEffect(
+    useCallback(() => {
+      acknowledge().catch(() => {});
+    }, [acknowledge]),
+  );
+
   const pinnedConversations = useMemo(
     () => coachConversations.filter((c) => c.isPinned),
     [coachConversations],
