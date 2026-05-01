@@ -21,6 +21,7 @@ import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 import type { MealSuggestion } from "./types/meal-suggestions";
 import type { CarouselRecipeCard } from "./types/carousel";
+import type { ReminderMutes } from "./types/reminders";
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -81,6 +82,10 @@ export const userProfiles = pgTable("user_profiles", {
   glp1Mode: boolean("glp1_mode").default(false),
   glp1Medication: text("glp1_medication"),
   glp1StartDate: timestamp("glp1_start_date"),
+  reminderMutes: jsonb("reminder_mutes")
+    .$type<ReminderMutes>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
   createdAt: timestamp("created_at")
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
@@ -88,6 +93,35 @@ export const userProfiles = pgTable("user_profiles", {
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
 });
+
+export const pendingReminders = pgTable(
+  "pending_reminders",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    type: text("type").notNull(),
+    context: jsonb("context")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    scheduledFor: timestamp("scheduled_for").notNull(),
+    acknowledgedAt: timestamp("acknowledged_at"),
+    createdAt: timestamp("created_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userPendingIdx: index("pending_reminders_user_pending_idx").on(
+      table.userId,
+      table.acknowledgedAt,
+    ),
+  }),
+);
+
+export type PendingReminder = typeof pendingReminders.$inferSelect;
+export type InsertPendingReminder = typeof pendingReminders.$inferInsert;
 
 export const scannedItems = pgTable(
   "scanned_items",

@@ -26,6 +26,7 @@ const mockProfile: UserProfile = {
   glp1Mode: false,
   glp1Medication: null,
   glp1StartDate: null,
+  reminderMutes: {},
   createdAt: new Date(),
   updatedAt: new Date(),
 };
