@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import type { CoachContextItem } from "@shared/types/reminders";
+import { QUERY_KEY as PENDING_REMINDERS_KEY } from "./usePendingReminders";
 
 export function useAcknowledgeReminders() {
   const queryClient = useQueryClient();
@@ -17,7 +18,7 @@ export function useAcknowledgeReminders() {
     },
     onSuccess: (data) => {
       setCoachContext(data.coachContext);
-      queryClient.invalidateQueries({ queryKey: ["/api/reminders/pending"] });
+      queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
     },
   });
 

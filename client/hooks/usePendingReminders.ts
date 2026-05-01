@@ -3,7 +3,7 @@ import { AppState } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 
-const QUERY_KEY = ["/api/reminders/pending"] as const;
+export const QUERY_KEY = ["/api/reminders/pending"] as const;
 
 export function usePendingReminders(): { hasPending: boolean } {
   const queryClient = useQueryClient();
