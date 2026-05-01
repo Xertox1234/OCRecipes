@@ -1092,7 +1092,7 @@ export default function MealPlanHomeScreen() {
           fat={dailyTotals.fat}
         />
 
-        {selectedDayItems.length === 0 && (
+        {selectedDayItems.length === 0 ? (
           <EmptyState
             variant="firstTime"
             icon="calendar"
@@ -1101,31 +1101,30 @@ export default function MealPlanHomeScreen() {
             actionLabel="Browse Recipes"
             onAction={handleBrowseRecipes}
           />
+        ) : (
+          MEAL_TYPES.map((mealType) => {
+            const sectionItems = itemsByMealType[mealType] || [];
+            return (
+              <MealSlotSection
+                key={mealType}
+                mealType={mealType}
+                items={sectionItems}
+                confirmedIds={confirmedIds}
+                onItemPress={handleItemPress}
+                onRemoveItem={handleRemoveItem}
+                onAddItem={handleAddItem}
+                onSuggest={handleSuggest}
+                onConfirmItem={handleConfirmItem}
+                onReorder={handleReorder}
+                canSuggest={features.aiMealSuggestions}
+                canConfirm={features.mealConfirmation}
+                isExpanded={expandedSections.has(mealType)}
+                onToggle={handleToggleSection}
+                sectionSummary={sectionSummaries[mealType]}
+              />
+            );
+          })
         )}
-
-        {/* Meal Slots */}
-        {MEAL_TYPES.map((mealType) => {
-          const sectionItems = itemsByMealType[mealType] || [];
-          return (
-            <MealSlotSection
-              key={mealType}
-              mealType={mealType}
-              items={sectionItems}
-              confirmedIds={confirmedIds}
-              onItemPress={handleItemPress}
-              onRemoveItem={handleRemoveItem}
-              onAddItem={handleAddItem}
-              onSuggest={handleSuggest}
-              onConfirmItem={handleConfirmItem}
-              onReorder={handleReorder}
-              canSuggest={features.aiMealSuggestions}
-              canConfirm={features.mealConfirmation}
-              isExpanded={expandedSections.has(mealType)}
-              onToggle={handleToggleSection}
-              sectionSummary={sectionSummaries[mealType]}
-            />
-          );
-        })}
 
         {/* Spacer for FAB clearance */}
       </ScrollView>
