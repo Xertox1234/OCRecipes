@@ -65,8 +65,14 @@ export function DiscoveryCarousel({
               card={item}
               width={cardWidth}
               reducedMotion={reducedMotion}
-              onPress={() => action && onActionPress(action)}
-              onDismiss={() => dismiss(item.id)}
+              onPress={() => {
+                // integrity test in discovery-cards-config.test.ts ensures action is always defined
+                action && onActionPress(action);
+              }}
+              onDismiss={() => {
+                dismiss(item.id);
+                setActiveIndex((prev) => Math.max(0, prev - 1));
+              }}
             />
           );
         }}
@@ -103,7 +109,7 @@ const styles = StyleSheet.create({
   dotsRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 5,
+    gap: Spacing.xs,
     paddingVertical: Spacing.sm,
   },
   dot: {
