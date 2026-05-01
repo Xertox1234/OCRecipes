@@ -1105,6 +1105,86 @@ Unit tests (Vitest) verify code correctness. **Evals** verify _output quality_ o
 - `evals/` — framework files (types, assertions, judge, runner, dataset)
 - `docs/superpowers/specs/2026-04-13-nutrition-coach-evaluation-design.md` — spec
 
+### Pressable `fireEvent` in JSDOM: Use `click` not `press`
+
+When testing React Native `Pressable` components with `@testing-library/react` in a JSDOM Vitest environment, use `fireEvent.click`, **not** `fireEvent.press`.
+
+The RN test environment maps `onPress` → DOM `onClick`. `fireEvent.press` dispatches a synthetic press event that the mock doesn't handle, silently doing nothing, so assertions on calls to `onPress` pass zero instead of one.
+
+```tsx
+// ❌ WRONG — fireEvent.press is silently ignored in the RN/JSDOM mock
+fireEvent.press(getByLabelText("Dismiss"));
+expect(onDismiss).toHaveBeenCalledTimes(1); // fails: 0
+
+// ✅ CORRECT
+fireEvent.click(getByLabelText("Dismiss"));
+expect(onDismiss).toHaveBeenCalledTimes(1); // passes
+```
+
+**Scope:** Only applies to components tested with `@testing-library/react` under `// @vitest-environment jsdom`. Tests for extracted pure functions (no RN imports) are unaffected.
+
+**Reference:** `client/components/home/__tests__/DiscoveryCard.test.tsx`
+
+---
+
+### Vitest Alias Mocks for Native-Only Libraries
+
+When a React Native library uses native code that can't run in Node.js (e.g. `expo-linear-gradient`, `react-native-vision-camera`), Vitest will throw at import time. Fix: create a minimal pass-through mock and register it as a module alias.
+
+**Step 1** — Create the mock at `test/mocks/<package-name>.ts`:
+
+```typescript
+// test/mocks/expo-linear-gradient.ts
+import React from "react";
+import { View } from "react-native";
+
+export const LinearGradient = ({
+  children,
+  ...props
+}: React.ComponentProps<typeof View>) =>
+  React.createElement(View, props, children);
+```
+
+**Step 2** — Register in `vitest.config.ts` under `resolve.alias`:
+
+```typescript
+resolve: {
+  alias: {
+    "expo-linear-gradient": path.resolve(__dirname, "test/mocks/expo-linear-gradient.ts"),
+  },
+},
+```
+
+**When to use:** Any library that crashes Vitest with "native module could not be found" or similar import errors in the test environment.
+
+**Reference:** `test/mocks/expo-linear-gradient.ts`, `vitest.config.ts`
+
+---
+
+### Module-Level Cache Variable Not Reset Between Tests
+
+When a module uses a module-level `let` variable as an in-memory cache, Vitest re-uses the same module instance across all tests in a file by default. State left by one test leaks into the next.
+
+```typescript
+// discovery-storage.ts
+let dismissedCache: Set<string> | null = null; // ← shared across tests!
+```
+
+**Fix:** Call the module's init/reset function in `beforeEach`. If the init function re-reads from storage (mocked as empty), it resets the internal variable to an empty state:
+
+```typescript
+beforeEach(async () => {
+  (AsyncStorage.getItem as vi.Mock).mockResolvedValue(null);
+  await initDiscoveryCache(); // resets dismissedCache → null → new Set()
+});
+```
+
+**Alternative:** Use `vi.resetModules()` + dynamic `await import(...)` inside each test — but the `beforeEach` init pattern is simpler when the module already exports an init function.
+
+**Reference:** `client/lib/__tests__/discovery-storage.test.ts`
+
+---
+
 ## Adding New Patterns
 
 When you establish a new pattern:
