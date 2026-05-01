@@ -24,9 +24,11 @@ describe("ChatBubble", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("shows typing indicator when streaming with empty content", () => {
-    renderComponent(<ChatBubble role="assistant" content="" isStreaming />);
-    expect(screen.getByLabelText("Coach is typing")).toBeDefined();
+  it("returns null when content is empty even if isStreaming is set", () => {
+    const { container } = renderComponent(
+      <ChatBubble role="assistant" content="" isStreaming />,
+    );
+    expect(container.innerHTML).toBe("");
   });
 
   it("renders content when streaming with text", () => {

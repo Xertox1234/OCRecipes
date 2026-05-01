@@ -1,16 +1,7 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withTiming,
-  withDelay,
-  cancelAnimation,
-  SlideInRight,
-  SlideInLeft,
-} from "react-native-reanimated";
+import Animated, { SlideInRight, SlideInLeft } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { MarkdownText } from "@/components/MarkdownText";
@@ -21,115 +12,21 @@ import { Spacing, FontFamily, BorderRadius } from "@/constants/theme";
 interface ChatBubbleProps {
   role: "user" | "assistant" | "system";
   content: string;
+  /** Kept for call-site backwards compatibility — no longer affects rendering. */
   isStreaming?: boolean;
   onSpeak?: () => void;
   isSpeaking?: boolean;
 }
 
-function TypingIndicator() {
-  const { theme } = useTheme();
-  const { reducedMotion } = useAccessibility();
-  const dot1 = useSharedValue(0);
-  const dot2 = useSharedValue(0);
-  const dot3 = useSharedValue(0);
-
-  useEffect(() => {
-    if (reducedMotion) {
-      cancelAnimation(dot1);
-      cancelAnimation(dot2);
-      cancelAnimation(dot3);
-      dot1.value = 0;
-      dot2.value = 0;
-      dot3.value = 0;
-      return;
-    }
-    dot1.value = withRepeat(withTiming(1, { duration: 600 }), -1, true);
-    dot2.value = withRepeat(
-      withDelay(200, withTiming(1, { duration: 600 })),
-      -1,
-      true,
-    );
-    dot3.value = withRepeat(
-      withDelay(400, withTiming(1, { duration: 600 })),
-      -1,
-      true,
-    );
-  }, [dot1, dot2, dot3, reducedMotion]);
-
-  const dot1Style = useAnimatedStyle(() => ({
-    opacity: 0.3 + dot1.value * 0.7,
-    transform: [{ translateY: -dot1.value * 3 }],
-  }));
-  const dot2Style = useAnimatedStyle(() => ({
-    opacity: 0.3 + dot2.value * 0.7,
-    transform: [{ translateY: -dot2.value * 3 }],
-  }));
-  const dot3Style = useAnimatedStyle(() => ({
-    opacity: 0.3 + dot3.value * 0.7,
-    transform: [{ translateY: -dot3.value * 3 }],
-  }));
-
-  const dotColor = theme.textSecondary;
-
-  if (reducedMotion) {
-    return (
-      <View
-        style={styles.typingContainer}
-        accessibilityLabel="Coach is typing"
-        accessibilityRole="text"
-      >
-        <ThemedText type="body" style={{ color: dotColor }}>
-          ...
-        </ThemedText>
-      </View>
-    );
-  }
-
-  return (
-    <View
-      style={styles.typingContainer}
-      accessibilityLabel="Coach is typing"
-      accessibilityRole="text"
-    >
-      <Animated.View
-        style={[styles.dot, { backgroundColor: dotColor }, dot1Style]}
-      />
-      <Animated.View
-        style={[styles.dot, { backgroundColor: dotColor }, dot2Style]}
-      />
-      <Animated.View
-        style={[styles.dot, { backgroundColor: dotColor }, dot3Style]}
-      />
-    </View>
-  );
-}
-
 export function ChatBubble({
   role,
   content,
-  isStreaming,
   onSpeak,
   isSpeaking,
 }: ChatBubbleProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const isUser = role === "user";
-
-  // Typing indicator (isStreaming prop still supported for backwards compatibility)
-  if (!content && isStreaming && !isUser) {
-    return (
-      <View
-        style={[styles.bubbleRow, styles.bubbleRowAssistant]}
-        accessible
-        accessibilityRole="text"
-      >
-        <View style={[styles.avatarDot, { backgroundColor: theme.link }]} />
-        <View style={styles.assistantContent}>
-          <TypingIndicator />
-        </View>
-      </View>
-    );
-  }
 
   if (!content) return null;
 
@@ -243,17 +140,6 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
   },
   // Shared
-  typingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: Spacing.xs,
-  },
-  dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
   speakButton: {
     alignSelf: "flex-end",
     marginTop: Spacing.xs,
