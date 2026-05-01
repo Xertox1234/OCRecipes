@@ -926,3 +926,56 @@ const micAdornment = useMemo(
 **Rule:** In any component that re-renders on streaming content (i.e. subscribes to a `streamingContent` value from `useCoachStream`), treat all props passed to non-streaming children as performance-critical and wrap them in `useCallback`/`useMemo`.
 
 **References:** `client/components/coach/CoachChat.tsx` (`handleChangeText`, `micAdornment`), `client/hooks/useCoachStream.ts`.
+
+### Cursor-Pagination Helpers Should Deliver Pages, Not Individual Items
+
+When a cursor-pagination helper iterates all rows and invokes a callback for each row individually, callers cannot batch-fetch related data — they are forced into N sequential queries (one per row). Changing the callback to receive a full page array lets callers issue one `Promise.all` per page instead.
+
+**Pattern (page-level callback):**
+
+```typescript
+// Storage: cursor-based page fetch
+export async function getUserIdPage(
+  afterId: string | null,
+  limit = 500,
+): Promise<string[]> { ... }
+
+// Pagination helper: deliver full pages to caller
+async function forEachUserPaged(
+  processPage: (userIds: string[]) => Promise<void>,
+): Promise<void> {
+  const PAGE_SIZE = 500;
+  let cursor: string | null = null;
+  while (true) {
+    const page = await storage.getUserIdPage(cursor, PAGE_SIZE);
+    if (page.length === 0) break;
+    await processPage(page);           // ← full page, not one ID at a time
+    cursor = page[page.length - 1];
+    if (page.length < PAGE_SIZE) break;
+  }
+}
+
+// Caller: batch-fetch profiles for the whole page with Promise.all + Map
+await forEachUserPaged(async (userIds) => {
+  const profileMap = new Map(
+    await Promise.all(
+      userIds.map(async (id) => [id, await storage.getUserProfile(id)] as const),
+    ),
+  );
+  for (const userId of userIds) {
+    const profile = profileMap.get(userId);
+    // per-user logic using cached profile …
+  }
+});
+```
+
+**Why not per-row callbacks:** A `processUser: (userId: string) => Promise<void>` callback cannot batch — each invocation is independent and has no access to the rest of the page. The caller is forced into one query per user per page iteration.
+
+**Per-entry error isolation:** Keep a `try/catch` inside the `for` loop so one failing user doesn't abort the whole page. Failures at the batch-fetch level (profile DB down) should catch at the page level and return early — a systemic failure affects all users equally.
+
+**When to use:** Any server-side fan-out that must iterate all users (or all items) and make a related DB lookup per item. Common in schedulers, batch notification jobs, and data-migration scripts.
+
+**References:**
+
+- `server/services/notification-scheduler.ts` — `forEachUserPaged` + `sendDailyCheckinReminders` / `sendMealLogReminders`
+- `server/storage/users.ts` — `getUserIdPage`

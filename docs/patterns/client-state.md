@@ -560,3 +560,51 @@ export const queryClient = new QueryClient({
 **References:**
 
 - `client/lib/query-client.ts` — global retry configuration
+
+### `setQueryData` for Server-Confirmed PATCH Responses
+
+When a PATCH endpoint returns the updated resource in its response body, use `setQueryData` to populate the cache directly from that response instead of calling `invalidateQueries`. This eliminates the follow-up GET round-trip and gives the UI the server-canonical value immediately.
+
+```typescript
+// Good: PATCH returns the full cached entity — setQueryData is safe
+const mutation = useMutation({
+  mutationFn: async (updates: Partial<UserProfile>) => {
+    const res = await apiRequest("PATCH", "/api/user/profile", updates);
+    return res.json() as Promise<UserProfile>; // full profile returned
+  },
+  onSuccess: (data) => {
+    queryClient.setQueryData(["/api/user/profile"], data); // ← no extra GET
+  },
+});
+```
+
+**How this differs from optimistic updates:** Optimistic updates write a _predicted_ value before the server responds and roll back on error. This pattern writes the _server-confirmed_ value after the response — no prediction, no rollback. Use it when the endpoint is designed to return the canonical post-mutation state (the common case for PATCH endpoints in this codebase).
+
+**Prerequisites — both must hold:**
+
+1. **The server route must return the updated resource.** If it returns `204 No Content`, use `invalidateQueries` instead.
+2. **The response shape must match the full cached entity.** If the cache key holds a broader entity than what the PATCH returns, `setQueryData` will corrupt the cache when `old` is `undefined` (cold cache) — spreading `undefined` produces an object with only the partial fields, silently dropping everything else.
+
+**When the response is a partial shape — use `invalidateQueries`:**
+
+```typescript
+// Cache key holds the full dietary profile (dietType, allergies, reminderMutes, …)
+// but PATCH /api/reminders/mutes only returns { reminderMutes }.
+// setQueryData with a partial response would corrupt the cache on a cold hit.
+onSuccess: () => {
+  queryClient.invalidateQueries({ queryKey: ["/api/user/dietary-profile"] });
+},
+```
+
+The extra round-trip from `invalidateQueries` is the correct trade-off here — it avoids producing a cache entry with only the partial fields, which would break every other consumer of that key.
+
+**Decision rule:**
+
+- Same key, full shape returned → `setQueryData`
+- Different key OR partial shape returned → `invalidateQueries`
+
+**When to use:** PATCH mutations where the server returns the full object that matches the cache key's shape. Not for POST (creates) or DELETE — those typically invalidate a list query rather than updating a single item.
+
+**References:**
+
+- See also: Optimistic Mutation with Snapshot Rollback (above) — the contrast case
