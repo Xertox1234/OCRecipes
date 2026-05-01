@@ -455,6 +455,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 9,
     paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.lg,
   },
   statusDot: {
     width: 22,

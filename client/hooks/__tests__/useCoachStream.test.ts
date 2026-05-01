@@ -7,6 +7,7 @@ import {
   HOLD_GATE_MS,
   CHARS_PER_TICK,
   DRAIN_INTERVAL_MS,
+  type UseCoachStreamReturn,
 } from "../useCoachStream";
 
 // ── Pure helper tests (no timers, no XHR) ────────────────────────
@@ -119,7 +120,7 @@ async function setupHook() {
  * Call startStream and flush the internal tokenStorage.get() promise so the
  * XHR is fully wired before we emit events.
  */
-async function startAndFlush(result: ReturnType<typeof renderHook>["result"]) {
+async function startAndFlush(result: { current: UseCoachStreamReturn }) {
   await act(async () => {
     result.current.startStream(1, "test");
     // Flush the tokenStorage.get() microtask so xhr is set up

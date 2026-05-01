@@ -31,7 +31,7 @@ interface UseCoachStreamOptions {
   onError?: (msg: string) => void;
 }
 
-interface UseCoachStreamReturn {
+export interface UseCoachStreamReturn {
   startStream: (
     conversationId: number,
     userMessage: string,
