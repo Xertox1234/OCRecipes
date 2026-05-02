@@ -26,7 +26,7 @@ LC_BUILD_VERSION = 0x32
 MH_MAGIC_64 = 0xFEEDFACF
 
 
-def patch_macho_in_buffer(data, offset, size):
+def patch_macho_in_buffer(data, offset, size, src_platform, dst_platform):
     """Patch LC_BUILD_VERSION in a Mach-O object at the given offset in data.
     Returns True if patched."""
     if size < 32:
@@ -46,15 +46,15 @@ def patch_macho_in_buffer(data, offset, size):
         cmd, cmdsize = struct.unpack_from("<II", data, lc_offset)
         if cmd == LC_BUILD_VERSION:
             platform = struct.unpack_from("<I", data, lc_offset + 8)[0]
-            if platform == PLATFORM_IOS:
-                struct.pack_into("<I", data, lc_offset + 8, PLATFORM_IOSSIMULATOR)
+            if platform == src_platform:
+                struct.pack_into("<I", data, lc_offset + 8, dst_platform)
                 patched = True
         lc_offset += cmdsize
 
     return patched
 
 
-def patch_archive_in_place(archive_path):
+def patch_archive_in_place(archive_path, src_platform, dst_platform):
     """Patch all Mach-O members in a static archive without extracting.
     Handles BSD long names (#1/N format) and preserves all members."""
     with open(archive_path, "rb") as f:
@@ -88,7 +88,7 @@ def patch_archive_in_place(archive_path):
         obj_size = member_size - name_len
 
         if obj_size > 0 and obj_start + obj_size <= len(data):
-            if patch_macho_in_buffer(data, obj_start, obj_size):
+            if patch_macho_in_buffer(data, obj_start, obj_size, src_platform, dst_platform):
                 patched_any = True
 
         # Members are 2-byte aligned
@@ -104,7 +104,7 @@ def patch_archive_in_place(archive_path):
     return patched_any
 
 
-def patch_framework(fw_path):
+def patch_framework(fw_path, src_platform, dst_platform):
     """Patch a single .framework's fat binary."""
     name = os.path.basename(fw_path).replace(".framework", "")
     binary = os.path.join(fw_path, name)
@@ -131,12 +131,12 @@ def patch_framework(fw_path):
         ).stdout
 
         if "ar archive" in thin_type:
-            if not patch_archive_in_place(arm64_path):
+            if not patch_archive_in_place(arm64_path, src_platform, dst_platform):
                 return False
         elif "Mach-O" in thin_type:
             with open(arm64_path, "rb") as f:
                 fdata = bytearray(f.read())
-            if not patch_macho_in_buffer(fdata, 0, len(fdata)):
+            if not patch_macho_in_buffer(fdata, 0, len(fdata), src_platform, dst_platform):
                 return False
             with open(arm64_path, "wb") as f:
                 f.write(fdata)
@@ -163,22 +163,33 @@ def patch_framework(fw_path):
 
 
 def main():
-    pods_dir = sys.argv[1] if len(sys.argv) > 1 else "ios/Pods"
+    args = sys.argv[1:]
+    reverse = "--reverse" in args
+    args = [a for a in args if a != "--reverse"]
+
+    pods_dir = args[0] if args else "ios/Pods"
     if not os.path.isdir(pods_dir):
         print(f"Pods directory not found: {pods_dir}", file=sys.stderr)
         sys.exit(1)
+
+    if reverse:
+        src_platform, dst_platform = PLATFORM_IOSSIMULATOR, PLATFORM_IOS
+        label = "device (iOS)"
+    else:
+        src_platform, dst_platform = PLATFORM_IOS, PLATFORM_IOSSIMULATOR
+        label = "arm64 simulator"
 
     patched = []
     for root, dirs, files in os.walk(pods_dir):
         for d in dirs:
             if d.endswith(".framework"):
                 fw_path = os.path.join(root, d)
-                if patch_framework(fw_path):
+                if patch_framework(fw_path, src_platform, dst_platform):
                     patched.append(d)
 
     if patched:
         print(
-            f"Patched {len(patched)} frameworks for arm64 simulator: "
+            f"Patched {len(patched)} frameworks for {label}: "
             + ", ".join(patched)
         )
     else:
