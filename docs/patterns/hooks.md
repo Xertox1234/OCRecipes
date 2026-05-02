@@ -1354,3 +1354,52 @@ export function usePendingReminders() {
 **References:**
 
 - `client/hooks/usePendingReminders.ts` — foreground refetch for the Coach tab badge dot
+
+---
+
+### Destructure `mutate` Before Using in `useEffect` Deps
+
+Never include a `useMutation` return object directly in a `useEffect` dependency array. TanStack Query recreates the mutation object on every status transition (`isPending`, `isSuccess`, `isError`, etc.). Including the whole object in deps causes `setState` inside the effect to trigger a re-render, which creates a new object reference, which re-triggers the effect — an infinite loop ending in "Maximum update depth exceeded".
+
+The `mutate` function itself **is** stable — TanStack Query wraps it in `useCallback([observer])` and the observer reference is stable across renders.
+
+```typescript
+// ❌ BAD: whole mutation object in deps — infinite loop when mutate() is called
+const parseFoodText = useParseFoodText();
+
+useEffect(() => {
+  if (isFinal && transcript) {
+    parseFoodText.mutate(transcript, { onSuccess: ... });
+  }
+}, [isFinal, transcript, parseFoodText]); // parseFoodText changes on every mutate() call
+```
+
+```typescript
+// ✅ GOOD: destructure stable mutate, also inline the hook
+const { mutate: parseFoodTextMutate, isPending: isParsing } = useParseFoodText();
+
+useEffect(() => {
+  if (isFinal && transcript && !isParsing) {
+    parseFoodTextMutate(transcript, { onSuccess: ... });
+  }
+}, [isFinal, transcript, isParsing, parseFoodTextMutate]); // all stable
+```
+
+**Key elements:**
+
+1. **Inline the destructure** — `const { mutate: ..., isPending: ... } = useParseFoodText()` removes the intermediate variable that would otherwise tempt future authors to add it to deps
+2. **Add `!isPending` guard** — when an effect fires a mutation, also check `!isPending` in the condition. If an unrelated dep changes (e.g., `haptics`, `toast`) while the mutation is already in-flight, the effect re-runs and would call `mutate()` again without this guard
+3. **The same rule applies to `useCallback` deps** — `parseFoodText` in a `useCallback` dep array causes the callback to be recreated on every mutation state change. Use the destructured `mutate` there too
+
+**Symptoms of this bug:**
+
+- "Maximum update depth exceeded" error in the console
+- Effect that calls `mutate()` triggers immediately after it fires, repeatedly
+- Only manifests at runtime when the mutation actually transitions state (not caught by static analysis)
+
+**When to use:** Any `useEffect` or `useCallback` that calls a TanStack Query mutation.
+
+**References:**
+
+- `client/screens/QuickLogScreen.tsx` — `parseFoodTextMutate` in the `isFinal` effect and `handleTextSubmit`
+- Origin: QuickLog voice input infinite re-render (PR #47, 2026-05-02)
