@@ -55,7 +55,13 @@ export type RootStackParamList = {
   Login: undefined;
   Onboarding: undefined;
   Main: undefined;
-  Scan: { mode?: "label" | "front-label"; verifyBarcode?: string } | undefined;
+  Scan:
+    | {
+        mode?: "label" | "front-label";
+        verifyBarcode?: string;
+        returnAfterLog?: boolean;
+      }
+    | undefined;
   LabelAnalysis: {
     imageUri: string;
     barcode?: string;

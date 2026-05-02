@@ -14,9 +14,15 @@ import {
   Pressable,
   Linking,
   useWindowDimensions,
+  ActivityIndicator,
 } from "react-native";
 import * as Haptics from "expo-haptics";
-import { useNavigation, useIsFocused } from "@react-navigation/native";
+import {
+  useNavigation,
+  useIsFocused,
+  useRoute,
+} from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useTheme } from "@/hooks/useTheme";
@@ -44,7 +50,16 @@ import {
   getPremiumGate,
   getRouteForContentType,
 } from "@/screens/scan-screen-utils";
+import { ThemedText } from "@/components/ThemedText";
+import { useToast } from "@/context/ToastContext";
+import {
+  withOpacity,
+  Spacing,
+  BorderRadius,
+  FontFamily,
+} from "@/constants/theme";
 import type { ScanScreenNavigationProp } from "@/types/navigation";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import type { ContentType } from "@shared/constants/classification";
 
@@ -61,6 +76,10 @@ export default function ScanScreen() {
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
+  const route = useRoute<RouteProp<RootStackParamList, "Scan">>();
+  const returnAfterLog = route.params?.returnAfterLog ?? false;
+  const toast = useToast();
+
   const [scanPhase, dispatch] = useReducer(scanPhaseReducer, { type: "IDLE" });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [flashCount, setFlashCount] = useState(0);
@@ -71,6 +90,14 @@ export default function ScanScreen() {
   }));
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+
+  const [confirmCard, setConfirmCard] = useState<{
+    barcode: string;
+    name: string;
+    calories: number | null;
+    isLoading: boolean;
+    isLogging: boolean;
+  } | null>(null);
 
   const cameraRef = useRef<CameraRef>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -149,6 +176,38 @@ export default function ScanScreen() {
     }
 
     const { barcode, nutritionImageUri, frontImageUri, ocrText } = scanPhase;
+
+    if (returnAfterLog) {
+      setConfirmCard({
+        barcode,
+        name: "Loading...",
+        calories: null,
+        isLoading: true,
+        isLogging: false,
+      });
+      apiRequest("GET", `/api/nutrition/barcode/${barcode}`)
+        .then((res) => res.json())
+        .then((data: { productName?: string; calories?: number }) => {
+          setConfirmCard({
+            barcode,
+            name: data.productName ?? "Food item",
+            calories: data.calories ?? null,
+            isLoading: false,
+            isLogging: false,
+          });
+        })
+        .catch(() => {
+          setConfirmCard({
+            barcode,
+            name: "Food item",
+            calories: null,
+            isLoading: false,
+            isLogging: false,
+          });
+        });
+      return;
+    }
+
     const timer = setTimeout(() => {
       refreshScanCount();
       navigation.navigate("NutritionDetail", {
@@ -159,7 +218,32 @@ export default function ScanScreen() {
       });
     }, 700);
     return () => clearTimeout(timer);
-  }, [scanPhase, navigation, refreshScanCount, reducedMotion]);
+  }, [scanPhase, navigation, refreshScanCount, reducedMotion, returnAfterLog]);
+
+  const handleConfirmLog = useCallback(async () => {
+    if (!confirmCard || confirmCard.isLogging) return;
+    setConfirmCard((prev) => prev && { ...prev, isLogging: true });
+    try {
+      await apiRequest("POST", "/api/scanned-items", {
+        productName: confirmCard.name,
+        sourceType: "scan",
+        calories: confirmCard.calories?.toString(),
+      });
+      refreshScanCount();
+      toast.success(
+        `Logged! ${confirmCard.name}${confirmCard.calories ? ` · ${confirmCard.calories} cal` : ""}`,
+      );
+      navigation.goBack();
+    } catch {
+      setConfirmCard((prev) => prev && { ...prev, isLogging: false });
+      toast.error("Failed to log item. Please try again.");
+    }
+  }, [confirmCard, navigation, toast, refreshScanCount]);
+
+  const handleConfirmDismiss = useCallback(() => {
+    setConfirmCard(null);
+    dispatch({ type: "RESET" });
+  }, []);
 
   const fetchProductInfo = useCallback(async (barcode: string) => {
     try {
@@ -515,6 +599,97 @@ export default function ScanScreen() {
         }}
         onRetry={() => dispatch({ type: "RESET" })}
       />
+
+      {confirmCard && (
+        <View
+          style={[
+            styles.confirmOverlay,
+            { backgroundColor: withOpacity(theme.backgroundRoot, 0.95) },
+          ]}
+          accessibilityViewIsModal
+        >
+          {confirmCard.isLoading ? (
+            <View style={styles.confirmLoadingRow}>
+              <ActivityIndicator color={theme.link} />
+              <ThemedText
+                style={{ color: theme.textSecondary, marginLeft: Spacing.sm }}
+              >
+                Identifying food…
+              </ThemedText>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.confirmCard,
+                {
+                  backgroundColor: theme.backgroundSecondary,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <View style={styles.confirmInfo}>
+                <ThemedText
+                  type="body"
+                  style={{ color: theme.text, fontFamily: FontFamily.semiBold }}
+                  numberOfLines={2}
+                >
+                  {confirmCard.name}
+                </ThemedText>
+                {confirmCard.calories !== null && (
+                  <ThemedText style={{ color: theme.link, fontSize: 14 }}>
+                    {confirmCard.calories} cal
+                  </ThemedText>
+                )}
+              </View>
+              <View style={styles.confirmButtons}>
+                <Pressable
+                  onPress={handleConfirmDismiss}
+                  style={({ pressed }) => [
+                    styles.confirmDismissButton,
+                    { borderColor: theme.border, opacity: pressed ? 0.7 : 1 },
+                  ]}
+                  accessibilityLabel="Dismiss"
+                  accessibilityRole="button"
+                >
+                  <ThemedText
+                    style={{ color: theme.textSecondary, fontSize: 14 }}
+                  >
+                    Dismiss
+                  </ThemedText>
+                </Pressable>
+                <Pressable
+                  onPress={handleConfirmLog}
+                  disabled={confirmCard.isLogging}
+                  style={({ pressed }) => [
+                    styles.confirmLogButton,
+                    {
+                      backgroundColor: theme.link,
+                      opacity: pressed || confirmCard.isLogging ? 0.7 : 1,
+                    },
+                  ]}
+                  accessibilityLabel="Log it"
+                  accessibilityRole="button"
+                  accessibilityState={{ busy: confirmCard.isLogging }}
+                >
+                  {confirmCard.isLogging ? (
+                    <ActivityIndicator size="small" color={theme.buttonText} />
+                  ) : (
+                    <ThemedText
+                      style={{
+                        color: theme.buttonText,
+                        fontSize: 14,
+                        fontFamily: FontFamily.medium,
+                      }}
+                    >
+                      ✓ Log It
+                    </ThemedText>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -605,4 +780,45 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   scanCountText: { color: "rgba(255,255,255,0.7)", fontSize: 12 },
+  confirmOverlay: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    paddingTop: Spacing.lg,
+  },
+  confirmLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing.lg,
+  },
+  confirmCard: {
+    borderRadius: BorderRadius.card,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    gap: Spacing.md,
+  },
+  confirmInfo: {
+    gap: 4,
+  },
+  confirmButtons: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  confirmDismissButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: BorderRadius.xs,
+    paddingVertical: Spacing.sm,
+    alignItems: "center",
+  },
+  confirmLogButton: {
+    flex: 2,
+    borderRadius: BorderRadius.xs,
+    paddingVertical: Spacing.sm,
+    alignItems: "center",
+  },
 });
