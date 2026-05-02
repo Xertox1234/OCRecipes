@@ -24,6 +24,9 @@ const SPRING_TRACK = { damping: 20, stiffness: 200 };
 const SPRING_MORPH = { damping: 16, stiffness: 220 };
 const SPRING_SNAP = { damping: 8, stiffness: 300 };
 
+// Confidence colour stops — semantic design values, cannot use theme in worklet
+const CONFIDENCE_COLORS = ["#FFFFFF", "#f59e0b", "#22c55e"] as const; // hardcoded
+
 type Corner = "tl" | "tr" | "bl" | "br";
 
 interface CornerPathProps {
@@ -50,9 +53,10 @@ function CornerPath({
   const opacity = useSharedValue(0);
 
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       opacity.value = withTiming(1, { duration: 200 });
     }, arrivalDelay);
+    return () => clearTimeout(timer);
   }, [opacity, arrivalDelay]);
 
   const animatedProps = useAnimatedProps(() => {
@@ -80,7 +84,7 @@ function CornerPath({
     const color = interpolateColor(
       confidence.value,
       [0, 0.5, 1.0],
-      ["#FFFFFF", "#f59e0b", "#22c55e"], // hardcoded
+      [...CONFIDENCE_COLORS],
     );
     return { d, stroke: color, opacity: opacity.value };
   });
@@ -129,15 +133,20 @@ export function ScanReticle({ phase, reducedMotion }: Props) {
     const target = getReticleTarget(phase, sw, sh);
     const conf = getConfidenceFromPhase(phase);
 
-    if (phase.type === "BARCODE_TRACKING" && isFirstDetection.current) {
-      cx.value = target.cx;
-      cy.value = target.cy;
-      isFirstDetection.current = false;
-    } else if (phase.type === "BARCODE_TRACKING") {
-      cx.value = withSpring(target.cx, SPRING_TRACK);
-      cy.value = withSpring(target.cy, SPRING_TRACK);
+    if (phase.type === "BARCODE_TRACKING") {
+      if (isFirstDetection.current) {
+        // Teleport on first detection — "snap then settle"
+        cx.value = target.cx;
+        cy.value = target.cy;
+        isFirstDetection.current = false;
+      } else {
+        cx.value = withSpring(target.cx, SPRING_TRACK);
+        cy.value = withSpring(target.cy, SPRING_TRACK);
+      }
     } else {
-      if (phase.type !== "BARCODE_LOCKED") isFirstDetection.current = true;
+      if (phase.type !== "BARCODE_LOCKED") {
+        isFirstDetection.current = true;
+      }
       cx.value = withSpring(target.cx, SPRING_MORPH);
       cy.value = withSpring(target.cy, SPRING_MORPH);
     }
