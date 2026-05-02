@@ -74,7 +74,12 @@ describe("QuickLogDrawer", () => {
   it("renders collapsed by default — drawer body not visible", () => {
     renderComponent(<QuickLogDrawer action={testAction} />);
     expect(screen.getByRole("button", { name: /quick log/i })).toBeTruthy();
-    expect(screen.queryByPlaceholderText(/what did you eat/i)).toBeNull();
+    // Input is always mounted but hidden via aria-hidden when collapsed
+    const input = screen.queryByPlaceholderText(/what did you eat/i);
+    if (input) {
+      // If the element exists, it must be inside an aria-hidden container
+      expect(input.closest('[aria-hidden="true"]')).not.toBeNull();
+    }
   });
 
   it("shows input and chips after tapping header", () => {
@@ -83,6 +88,14 @@ describe("QuickLogDrawer", () => {
     expect(screen.getByPlaceholderText(/what did you eat/i)).toBeTruthy();
     expect(screen.getByText("Coffee")).toBeTruthy();
     expect(screen.getByText("Eggs")).toBeTruthy();
+  });
+
+  it("calls session.reset when collapsing after open", () => {
+    renderComponent(<QuickLogDrawer action={testAction} />);
+    const header = screen.getByRole("button", { name: /quick log/i });
+    fireEvent.click(header); // open
+    fireEvent.click(header); // close
+    expect(mockSession.reset).toHaveBeenCalledTimes(1);
   });
 
   it("shows parsed items and Log All when parsedItems is non-empty", () => {

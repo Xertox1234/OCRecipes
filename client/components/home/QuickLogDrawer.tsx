@@ -138,194 +138,184 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
         </Animated.View>
       </Pressable>
 
-      {/* Animated drawer body — clips height; content only rendered when open */}
+      {/* Animated drawer body — always mounted so collapse animation can play */}
       <Animated.View style={[animatedStyle, styles.clipContainer]}>
-        {isOpen && (
+        <View
+          style={[
+            styles.drawerBody,
+            { backgroundColor: withOpacity(theme.link, 0.04) },
+          ]}
+          onLayout={onContentLayout}
+          importantForAccessibility={isOpen ? "yes" : "no-hide-descendants"}
+          aria-hidden={!isOpen}
+        >
+          {/* Text input row */}
           <View
             style={[
-              styles.drawerBody,
-              { backgroundColor: withOpacity(theme.link, 0.04) },
+              styles.inputRow,
+              {
+                backgroundColor: theme.backgroundSecondary,
+                borderColor: theme.border,
+              },
             ]}
-            onLayout={onContentLayout}
           >
-            {/* Text input row */}
-            <View
-              style={[
-                styles.inputRow,
+            <TextInput
+              style={[styles.textInput, { color: theme.text }]}
+              placeholder="What did you eat?"
+              placeholderTextColor={theme.textSecondary}
+              value={session.inputText}
+              onChangeText={session.setInputText}
+              onSubmitEditing={session.handleTextSubmit}
+              returnKeyType="search"
+              accessibilityLabel="Food description"
+            />
+            <VoiceLogButton
+              isListening={session.isListening}
+              volume={session.volume}
+              onPress={session.handleVoicePress}
+              disabled={session.isParsing}
+            />
+            <Pressable
+              onPress={handleCameraPress}
+              accessibilityLabel="Open camera to scan food"
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.iconButton,
                 {
-                  backgroundColor: theme.backgroundSecondary,
                   borderColor: theme.border,
+                  opacity: pressed ? 0.7 : 1,
                 },
               ]}
             >
-              <TextInput
-                style={[styles.textInput, { color: theme.text }]}
-                placeholder="What did you eat?"
-                placeholderTextColor={theme.textSecondary}
-                value={session.inputText}
-                onChangeText={session.setInputText}
-                onSubmitEditing={session.handleTextSubmit}
-                returnKeyType="search"
-                accessibilityLabel="Food description"
-              />
-              <VoiceLogButton
-                isListening={session.isListening}
-                volume={session.volume}
-                onPress={session.handleVoicePress}
-                disabled={session.isParsing}
-              />
-              <Pressable
-                onPress={handleCameraPress}
-                accessibilityLabel="Open camera to scan food"
-                accessibilityRole="button"
-                style={({ pressed }) => [
-                  styles.iconButton,
-                  {
-                    borderColor: theme.border,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                <Feather name="camera" size={20} color={theme.textSecondary} />
-              </Pressable>
-            </View>
+              <Feather name="camera" size={20} color={theme.textSecondary} />
+            </Pressable>
+          </View>
 
-            {/* Parse error */}
-            {session.parseError && (
-              <ThemedText
-                style={[styles.errorText, { color: theme.error }]}
-                accessibilityLiveRegion="polite"
-              >
-                {session.parseError}
-              </ThemedText>
-            )}
+          {/* Parse error */}
+          {session.parseError && (
+            <ThemedText
+              style={[styles.errorText, { color: theme.error }]}
+              accessibilityLiveRegion="polite"
+            >
+              {session.parseError}
+            </ThemedText>
+          )}
 
-            {/* Frequent chips — only when no parsed items */}
-            {!hasParsedItems &&
-              session.frequentItems &&
-              session.frequentItems.length > 0 && (
-                <View style={styles.chipsRow}>
-                  {session.frequentItems.slice(0, 5).map((item) => (
-                    <Pressable
-                      key={item.productName}
-                      onPress={() => session.handleChipPress(item.productName)}
-                      style={({ pressed }) => [
-                        styles.chip,
-                        {
-                          backgroundColor: theme.backgroundSecondary,
-                          borderColor: theme.border,
-                          opacity: pressed ? 0.7 : 1,
-                        },
-                      ]}
-                      accessibilityLabel={`Use ${item.productName}`}
-                      accessibilityRole="button"
-                    >
-                      <ThemedText
-                        style={[
-                          styles.chipText,
-                          { color: theme.textSecondary },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {item.productName}
-                      </ThemedText>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
-
-            {/* Parsed items */}
-            {hasParsedItems && (
-              <View style={styles.parsedSection}>
-                {session.parsedItems.map((item, index) => (
-                  <View
-                    key={`${item.name}-${index}`}
-                    style={[
-                      styles.parsedItemRow,
-                      { borderBottomColor: theme.border },
-                    ]}
-                  >
-                    <ThemedText
-                      style={[styles.parsedItemName, { color: theme.text }]}
-                      numberOfLines={1}
-                    >
-                      {item.quantity} {item.unit} {item.name}
-                    </ThemedText>
-                    <View style={styles.parsedItemRight}>
-                      {item.calories !== null && (
-                        <ThemedText
-                          style={[
-                            styles.parsedItemCal,
-                            { color: theme.textSecondary },
-                          ]}
-                        >
-                          {item.calories} cal
-                        </ThemedText>
-                      )}
-                      <Pressable
-                        onPress={() => session.removeItem(index)}
-                        accessibilityLabel={`Remove ${item.name}`}
-                        accessibilityRole="button"
-                        style={({ pressed }) => ({
-                          opacity: pressed ? 0.5 : 1,
-                        })}
-                      >
-                        <Feather
-                          name="x"
-                          size={14}
-                          color={theme.textSecondary}
-                        />
-                      </Pressable>
-                    </View>
-                  </View>
-                ))}
-
-                {/* Footer: total + Log All */}
-                <View style={styles.parsedFooter}>
-                  <ThemedText style={[styles.totalText, { color: theme.link }]}>
-                    {totalCalories} cal total
-                  </ThemedText>
+          {/* Frequent chips — only when no parsed items */}
+          {!hasParsedItems &&
+            session.frequentItems &&
+            session.frequentItems.length > 0 && (
+              <View style={styles.chipsRow}>
+                {session.frequentItems.slice(0, 5).map((item) => (
                   <Pressable
-                    onPress={session.submitLog}
-                    disabled={session.isSubmitting}
-                    accessibilityLabel="Log all items"
-                    accessibilityRole="button"
-                    accessibilityState={{ busy: session.isSubmitting }}
+                    key={item.productName}
+                    onPress={() => session.handleChipPress(item.productName)}
                     style={({ pressed }) => [
-                      styles.logAllButton,
+                      styles.chip,
                       {
-                        backgroundColor: theme.link,
-                        opacity: pressed || session.isSubmitting ? 0.7 : 1,
+                        backgroundColor: theme.backgroundSecondary,
+                        borderColor: theme.border,
+                        opacity: pressed ? 0.7 : 1,
                       },
                     ]}
+                    accessibilityLabel={`Use ${item.productName}`}
+                    accessibilityRole="button"
                   >
-                    {session.isSubmitting ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={theme.buttonText}
-                      />
-                    ) : (
-                      <ThemedText
-                        style={[styles.logAllText, { color: theme.buttonText }]}
-                      >
-                        Log All
-                      </ThemedText>
-                    )}
+                    <ThemedText
+                      style={[styles.chipText, { color: theme.textSecondary }]}
+                      numberOfLines={1}
+                    >
+                      {item.productName}
+                    </ThemedText>
                   </Pressable>
-                </View>
-
-                {session.submitError && (
-                  <ThemedText
-                    style={[styles.errorText, { color: theme.error }]}
-                    accessibilityLiveRegion="polite"
-                  >
-                    {session.submitError}
-                  </ThemedText>
-                )}
+                ))}
               </View>
             )}
-          </View>
-        )}
+
+          {/* Parsed items */}
+          {hasParsedItems && (
+            <View style={styles.parsedSection}>
+              {session.parsedItems.map((item, index) => (
+                <View
+                  key={`${item.name}-${index}`}
+                  style={[
+                    styles.parsedItemRow,
+                    { borderBottomColor: theme.border },
+                  ]}
+                >
+                  <ThemedText
+                    style={[styles.parsedItemName, { color: theme.text }]}
+                    numberOfLines={1}
+                  >
+                    {item.quantity} {item.unit} {item.name}
+                  </ThemedText>
+                  <View style={styles.parsedItemRight}>
+                    {item.calories !== null && (
+                      <ThemedText
+                        style={[
+                          styles.parsedItemCal,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        {item.calories} cal
+                      </ThemedText>
+                    )}
+                    <Pressable
+                      onPress={() => session.removeItem(index)}
+                      accessibilityLabel={`Remove ${item.name}`}
+                      accessibilityRole="button"
+                      style={({ pressed }) => ({
+                        opacity: pressed ? 0.5 : 1,
+                      })}
+                    >
+                      <Feather name="x" size={14} color={theme.textSecondary} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+
+              {/* Footer: total + Log All */}
+              <View style={styles.parsedFooter}>
+                <ThemedText style={[styles.totalText, { color: theme.link }]}>
+                  {totalCalories} cal total
+                </ThemedText>
+                <Pressable
+                  onPress={session.submitLog}
+                  disabled={session.isSubmitting}
+                  accessibilityLabel="Log all items"
+                  accessibilityRole="button"
+                  accessibilityState={{ busy: session.isSubmitting }}
+                  style={({ pressed }) => [
+                    styles.logAllButton,
+                    {
+                      backgroundColor: theme.link,
+                      opacity: pressed || session.isSubmitting ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  {session.isSubmitting ? (
+                    <ActivityIndicator size="small" color={theme.buttonText} />
+                  ) : (
+                    <ThemedText
+                      style={[styles.logAllText, { color: theme.buttonText }]}
+                    >
+                      Log All
+                    </ThemedText>
+                  )}
+                </Pressable>
+              </View>
+
+              {session.submitError && (
+                <ThemedText
+                  style={[styles.errorText, { color: theme.error }]}
+                  accessibilityLiveRegion="polite"
+                >
+                  {session.submitError}
+                </ThemedText>
+              )}
+            </View>
+          )}
+        </View>
       </Animated.View>
     </View>
   );
