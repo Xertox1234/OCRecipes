@@ -1,5 +1,11 @@
 import React, { useEffect } from "react";
-import { StyleSheet, View, Text } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Text,
+  AccessibilityInfo,
+  Platform,
+} from "react-native";
 import Animated, {
   useSharedValue,
   withSpring,
@@ -8,6 +14,7 @@ import Animated, {
   withTiming,
   useAnimatedStyle,
   cancelAnimation,
+  interpolateColor,
 } from "react-native-reanimated";
 import type { ScanPhase } from "../types/scan-phase";
 import {
@@ -35,9 +42,12 @@ function StepDot({ label, state }: DotProps) {
         withSpring(1.25, { damping: 10 }),
         withSpring(1, { damping: 10 }),
       );
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(`${label} step complete`);
+      }
     }
     prevState.current = state;
-  }, [state, scale]);
+  }, [state, scale, label]);
 
   useEffect(() => {
     if (state === "active") {
@@ -78,6 +88,8 @@ function StepDot({ label, state }: DotProps) {
           isActive && styles.dotActive,
           dotAnimStyle,
         ]}
+        accessibilityLiveRegion="polite"
+        accessibilityLabel={`${label}: ${state}`}
       >
         {isDone && <Text style={styles.checkmark}>✓</Text>}
       </Animated.View>
@@ -91,6 +103,30 @@ function StepDot({ label, state }: DotProps) {
       </Text>
     </View>
   );
+}
+
+interface ConnectorProps {
+  precedingDotState: StepDotState;
+}
+
+function Connector({ precedingDotState }: ConnectorProps) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withTiming(precedingDotState === "done" ? 1 : 0, {
+      duration: 300,
+    });
+  }, [precedingDotState, progress]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      progress.value,
+      [0, 1],
+      ["rgba(255,255,255,0.2)", "#22c55e"], // hardcoded
+    ),
+  }));
+
+  return <Animated.View style={[styles.connector, animStyle]} />;
 }
 
 interface Props {
@@ -111,7 +147,11 @@ export function StepPill({ phase }: Props) {
     <Animated.View style={[styles.pill, animStyle]} pointerEvents="none">
       {STEP_LABELS.map((label, i) => (
         <React.Fragment key={label}>
-          {i > 0 && <View style={styles.connector} />}
+          {i > 0 && (
+            <Connector
+              precedingDotState={getStepDotState(phase, (i - 1) as 0 | 1 | 2)}
+            />
+          )}
           <StepDot
             label={label}
             state={getStepDotState(phase, i as 0 | 1 | 2)}
@@ -169,7 +209,6 @@ const styles = StyleSheet.create({
   connector: {
     width: 20,
     height: 1,
-    backgroundColor: "rgba(255,255,255,0.2)",
     marginHorizontal: 4,
     marginBottom: 16,
   },
