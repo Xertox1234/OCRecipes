@@ -53,7 +53,6 @@ export const storage = {
   updateUser: users.updateUser,
   incrementTokenVersion: users.incrementTokenVersion,
   deleteUser: users.deleteUser,
-  getAllUserIds: users.getAllUserIds,
   getUserIdPage: users.getUserIdPage,
   getUserProfile: users.getUserProfile,
   createUserProfile: users.createUserProfile,

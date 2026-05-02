@@ -20,7 +20,6 @@ vi.mock("../../storage", () => ({
   storage: {
     getDueCommitmentsAllUsers: vi.fn(),
     updateNotebookEntryStatus: vi.fn(),
-    getAllUserIds: vi.fn(),
     getUserIdPage: vi.fn(),
     getUserProfile: vi.fn(),
     getDailyLogs: vi.fn(),
