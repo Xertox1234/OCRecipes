@@ -94,8 +94,8 @@ export default function QuickLogScreen() {
     startListening,
     stopListening,
   } = useSpeechToText();
-  const parseFoodText = useParseFoodText();
-  const { mutate: parseFoodTextMutate, isPending: isParsing } = parseFoodText;
+  const { mutate: parseFoodTextMutate, isPending: isParsing } =
+    useParseFoodText();
 
   // Fetch frequent items (inline query — no separate hook)
   const { data: frequentItems } = useQuery({
@@ -122,7 +122,7 @@ export default function QuickLogScreen() {
 
   // Auto-trigger parse when recognition produces a final result
   useEffect(() => {
-    if (isFinal && transcript) {
+    if (isFinal && transcript && !isParsing) {
       setTextInput(transcript);
       parseFoodTextMutate(transcript, {
         onSuccess: (data) => {
@@ -135,7 +135,7 @@ export default function QuickLogScreen() {
         },
       });
     }
-  }, [isFinal, transcript, parseFoodTextMutate, haptics, toast]);
+  }, [isFinal, transcript, isParsing, parseFoodTextMutate, haptics, toast]);
 
   // Show speech errors
   useEffect(() => {
