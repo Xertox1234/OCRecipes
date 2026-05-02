@@ -48,7 +48,7 @@ describe("getStepDotState", () => {
     expect(getStepDotState(phase, 2)).toBe("done");
   });
 
-  it("step 1 done in BARCODE_LOCKED, steps 2+3 idle", () => {
+  it("step 1 active in BARCODE_LOCKED, steps 2+3 idle", () => {
     const phase = {
       type: "BARCODE_LOCKED",
       barcode: "123",
