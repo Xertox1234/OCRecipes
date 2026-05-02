@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { scanPhaseReducer } from "../scan-phase-reducer";
 import type { ScanPhase } from "../../types/scan-phase";
+import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 
 const BOUNDS = { x: 0.4, y: 0.45, width: 0.2, height: 0.1 };
 
@@ -229,10 +230,15 @@ describe("scanPhaseReducer", () => {
   });
 
   it("CLASSIFICATION_SUCCEEDED from CLASSIFYING → SMART_CONFIRMED", () => {
-    const classification = {
-      contentType: "prepared_meal",
+    const classification: PhotoAnalysisResponse = {
+      sessionId: null,
+      intent: "auto",
+      foods: [],
       overallConfidence: 0.9,
-    } as any;
+      needsFollowUp: false,
+      followUpQuestions: [],
+      contentType: "prepared_meal",
+    };
     const state: ScanPhase = {
       type: "CLASSIFYING",
       imageUri: "file://meal.jpg",
@@ -284,5 +290,47 @@ describe("scanPhaseReducer", () => {
     expect(scanPhaseReducer(state, { type: "ADD_NUTRITION_PHOTO" })).toEqual(
       state,
     );
+  });
+
+  it("STEP_CONFIRMED is a no-op from STEP3_REVIEWING (use CONFIRM_PRODUCT instead)", () => {
+    // STEP3_REVIEWING advances via CONFIRM_PRODUCT, not STEP_CONFIRMED
+    const state: ScanPhase = {
+      type: "STEP3_REVIEWING",
+      barcode: "123",
+      nutritionImageUri: "file://nutrition.jpg",
+      ocrText: "Calories 200",
+      frontImageUri: "file://front.jpg",
+    };
+    expect(scanPhaseReducer(state, { type: "STEP_CONFIRMED" })).toEqual(state);
+  });
+
+  it("BARCODE_LOST from non-tracking state is a no-op", () => {
+    const state: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "123",
+      bounds: { x: 0.4, y: 0.45, width: 0.2, height: 0.1 },
+    };
+    expect(scanPhaseReducer(state, { type: "BARCODE_LOST" })).toEqual(state);
+  });
+
+  it("FIRST_BARCODE_DETECTED mid-tracking resets frameCount to 1 with new barcode", () => {
+    const state: ScanPhase = {
+      type: "BARCODE_TRACKING",
+      barcode: "111",
+      bounds: BOUNDS,
+      frameCount: 4,
+    };
+    const newBounds = { x: 0.3, y: 0.4, width: 0.2, height: 0.1 };
+    const result = scanPhaseReducer(state, {
+      type: "FIRST_BARCODE_DETECTED",
+      barcode: "999",
+      bounds: newBounds,
+    });
+    expect(result).toEqual({
+      type: "BARCODE_TRACKING",
+      barcode: "999",
+      bounds: newBounds,
+      frameCount: 1,
+    });
   });
 });
