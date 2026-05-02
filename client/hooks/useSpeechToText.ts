@@ -64,9 +64,9 @@ export function useSpeechToText() {
     setIsFinal(false);
     setError(null);
 
-    const { granted } =
+    const permissions =
       await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (!granted) {
+    if (!permissions.granted) {
       setError("Microphone or speech recognition permission not granted.");
       return;
     }

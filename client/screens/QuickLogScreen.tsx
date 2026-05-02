@@ -94,9 +94,8 @@ export default function QuickLogScreen() {
     startListening,
     stopListening,
   } = useSpeechToText();
-  const parseFoodText = useParseFoodText();
-
-  const isParsing = parseFoodText.isPending;
+  const { mutate: parseFoodTextMutate, isPending: isParsing } =
+    useParseFoodText();
 
   // Fetch frequent items (inline query — no separate hook)
   const { data: frequentItems } = useQuery({
@@ -123,9 +122,9 @@ export default function QuickLogScreen() {
 
   // Auto-trigger parse when recognition produces a final result
   useEffect(() => {
-    if (isFinal && transcript) {
+    if (isFinal && transcript && !isParsing) {
       setTextInput(transcript);
-      parseFoodText.mutate(transcript, {
+      parseFoodTextMutate(transcript, {
         onSuccess: (data) => {
           setParsedItems(data.items);
           haptics.notification(Haptics.NotificationFeedbackType.Success);
@@ -136,7 +135,7 @@ export default function QuickLogScreen() {
         },
       });
     }
-  }, [isFinal, transcript, parseFoodText, haptics, toast]);
+  }, [isFinal, transcript, isParsing, parseFoodTextMutate, haptics, toast]);
 
   // Show speech errors
   useEffect(() => {
@@ -149,7 +148,7 @@ export default function QuickLogScreen() {
   const handleTextSubmit = useCallback(() => {
     if (!textInput.trim()) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    parseFoodText.mutate(textInput.trim(), {
+    parseFoodTextMutate(textInput.trim(), {
       onSuccess: (data) => {
         setParsedItems(data.items);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
@@ -159,7 +158,7 @@ export default function QuickLogScreen() {
         toast.error("Failed to parse food text. Please try again.");
       },
     });
-  }, [textInput, haptics, parseFoodText, toast]);
+  }, [textInput, haptics, parseFoodTextMutate, toast]);
 
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
