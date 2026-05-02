@@ -70,6 +70,8 @@ export default function ScanScreen() {
     null,
   );
   const hasLockedRef = useRef(false);
+  const sessionNavigatedRef = useRef(false);
+  const scanPhaseRef = useRef(scanPhase);
 
   const { permission, requestPermission } = useCameraPermissions();
 
@@ -85,6 +87,11 @@ export default function ScanScreen() {
   useEffect(() => {
     if (!isFocused) dispatch({ type: "RESET" });
   }, [isFocused]);
+
+  // Keep scanPhaseRef current so onShutterPress can read it without being in deps
+  useEffect(() => {
+    scanPhaseRef.current = scanPhase;
+  }, [scanPhase]);
 
   // Coach hint escalation timer
   useEffect(() => {
@@ -114,9 +121,15 @@ export default function ScanScreen() {
     };
   }, []);
 
-  // Navigate to NutritionDetail when session is complete
+  // Navigate to NutritionDetail when session is complete — fire exactly once per session
   useEffect(() => {
-    if (scanPhase.type !== "SESSION_COMPLETE") return;
+    if (scanPhase.type !== "SESSION_COMPLETE") {
+      sessionNavigatedRef.current = false;
+      return;
+    }
+    if (sessionNavigatedRef.current) return;
+    sessionNavigatedRef.current = true;
+
     const { barcode, nutritionImageUri, frontImageUri, ocrText } = scanPhase;
     refreshScanCount();
     navigation.navigate("NutritionDetail", {
@@ -125,7 +138,7 @@ export default function ScanScreen() {
       frontLabelImageUri: frontImageUri,
       localOCRText: ocrText,
     });
-  }, [scanPhase.type, navigation, refreshScanCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scanPhase, navigation, refreshScanCount]);
 
   const fetchProductInfo = useCallback(async (barcode: string) => {
     try {
@@ -199,14 +212,15 @@ export default function ScanScreen() {
   );
 
   const onShutterPress = useCallback(async () => {
+    const phase = scanPhaseRef.current;
     if (
-      scanPhase.type !== "STEP2_CAPTURING" &&
-      scanPhase.type !== "STEP3_CAPTURING" &&
-      scanPhase.type !== "HUNTING"
+      phase.type !== "STEP2_CAPTURING" &&
+      phase.type !== "STEP3_CAPTURING" &&
+      phase.type !== "HUNTING"
     )
       return;
 
-    if (scanPhase.type === "HUNTING") {
+    if (phase.type === "HUNTING") {
       // Smart photo path — handled in Task 10
       return;
     }
@@ -214,9 +228,11 @@ export default function ScanScreen() {
     const photo = await cameraRef.current?.takePicture();
     if (!photo) return;
 
+    // Haptic + flash immediately after capture, before async OCR
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setFlashCount((c) => c + 1);
 
-    if (scanPhase.type === "STEP2_CAPTURING") {
+    if (phase.type === "STEP2_CAPTURING") {
       let ocrText = "";
       try {
         const ocrResult = await recognizeTextFromPhoto(photo.uri);
@@ -229,7 +245,7 @@ export default function ScanScreen() {
       // STEP3_CAPTURING — no OCR needed
       dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri });
     }
-  }, [scanPhase]);
+  }, []);
 
   // Permission screens
   if (!permission || permission.status === "undetermined") {
