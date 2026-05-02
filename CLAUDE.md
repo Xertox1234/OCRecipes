@@ -219,6 +219,14 @@ Always use `useSafeAreaInsets()` for screen layouts to handle iOS notch/dynamic 
 
 Debounce barcode scans using ref tracking and `isScanning` state to prevent duplicate triggers. Always provide haptic feedback on successful scan.
 
+#### Deferred Item Todos
+
+When you identify an item as deferred, out of scope, or "future work" during a session, immediately ask: "Would you like me to create a todo in `todos/` for [item]?"
+
+- If yes: create `todos/YYYY-MM-DD-[slug].md` using `todos/TEMPLATE.md` format with `status: backlog` and `labels: [deferred]`. Fill in the **Background** section with why it was deferred.
+- Before asking (or if the session may end before the user responds): append a one-line description to `/tmp/ocrecipes-deferred.txt` via Bash.
+- After the user responds yes or no: clear that entry from `/tmp/ocrecipes-deferred.txt` (or `rm` the file if empty).
+
 ## Testing
 
 Unit tests use **Vitest** (~3400+ tests across 240+ files) with tests co-located in `__tests__/` directories:
