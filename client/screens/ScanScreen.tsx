@@ -58,12 +58,14 @@ export default function ScanScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [flashCount, setFlashCount] = useState(0);
   const [sonarVisible, setSonarVisible] = useState(false);
-  const [sonarPos, setSonarPos] = useState({ cx: 195, cy: 422 });
+  const [sonarPos, setSonarPos] = useState(() => ({
+    cx: screenWidth / 2,
+    cy: screenHeight / 2,
+  }));
   const [torchEnabled, setTorchEnabled] = useState(false);
 
   const cameraRef = useRef<CameraRef>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastBarcodeRef = useRef<string | null>(null);
   const barcodeAbsentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -124,8 +126,9 @@ export default function ScanScreen() {
           imageUri: data.imageUrl ?? undefined,
         },
       });
-    } catch {
-      // Non-critical — ProductChip works with null product
+    } catch (err) {
+      if (__DEV__) console.warn("[fetchProductInfo]", err);
+      // Non-critical — ProductChip renders without product data
     }
   }, []);
 
@@ -147,14 +150,12 @@ export default function ScanScreen() {
       };
 
       if (scanPhase.type === "HUNTING") {
-        lastBarcodeRef.current = barcode;
         dispatch({ type: "FIRST_BARCODE_DETECTED", barcode, bounds });
         return;
       }
 
       if (scanPhase.type === "BARCODE_TRACKING") {
         if (barcode !== scanPhase.barcode) {
-          lastBarcodeRef.current = barcode;
           dispatch({ type: "FIRST_BARCODE_DETECTED", barcode, bounds });
           return;
         }
@@ -174,14 +175,11 @@ export default function ScanScreen() {
           setSonarVisible(true);
           dispatch({ type: "BARCODE_LOCKED" });
           fetchProductInfo(barcode);
-        }
-
-        barcodeAbsentTimerRef.current = setTimeout(() => {
-          if (!hasLockedRef.current) {
+        } else {
+          barcodeAbsentTimerRef.current = setTimeout(() => {
             dispatch({ type: "BARCODE_LOST" });
-            lastBarcodeRef.current = null;
-          }
-        }, 800);
+          }, 800);
+        }
       }
     },
     [isFocused, scanPhase, screenWidth, screenHeight, fetchProductInfo],
