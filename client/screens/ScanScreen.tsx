@@ -225,6 +225,7 @@ export default function ScanScreen() {
     setConfirmCard((prev) => prev && { ...prev, isLogging: true });
     try {
       await apiRequest("POST", "/api/scanned-items", {
+        barcode: confirmCard.barcode,
         productName: confirmCard.name,
         sourceType: "scan",
         calories: confirmCard.calories?.toString(),
