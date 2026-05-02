@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useCoachContext } from "@/hooks/useCoachContext";
@@ -31,6 +32,7 @@ import type { CoachChatNavigationProp } from "@/types/navigation";
 export default function CoachProScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const { isLoading: isPremiumLoading } = usePremiumContext();
   const isCoachPro = usePremiumFeature("coachPro");
   // Enable context fetch when premium is confirmed OR while premium status is still loading
@@ -269,6 +271,7 @@ export default function CoachProScreen() {
         warmUpHook={warmUpHook}
         initialMessage={pendingSuggestion}
         onInitialMessageSent={() => setPendingSuggestion(null)}
+        inputBarStyle={{ paddingBottom: tabBarHeight }}
       />
     </View>
   );
