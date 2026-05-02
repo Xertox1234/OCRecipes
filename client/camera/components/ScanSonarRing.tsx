@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, useWindowDimensions } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import Animated, {
   useSharedValue,
@@ -13,18 +13,11 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 interface Props {
   cx: number;
   cy: number;
-  screenWidth: number;
-  screenHeight: number;
   onComplete: () => void;
 }
 
-export function ScanSonarRing({
-  cx,
-  cy,
-  screenWidth,
-  screenHeight,
-  onComplete,
-}: Props) {
+export function ScanSonarRing({ cx, cy, onComplete }: Props) {
+  const { width, height } = useWindowDimensions();
   const r = useSharedValue(1);
   const opacity = useSharedValue(1);
 
@@ -42,10 +35,7 @@ export function ScanSonarRing({
 
   return (
     <Svg
-      style={[
-        StyleSheet.absoluteFill,
-        { width: screenWidth, height: screenHeight },
-      ]}
+      style={[StyleSheet.absoluteFill, { width, height }]}
       pointerEvents="none"
     >
       <AnimatedCircle
