@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useRef, useMemo } from "react";
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useMemo,
+  useEffect,
+} from "react";
 import {
   View,
   Text,
@@ -97,6 +103,9 @@ export default function RecipeChatScreen() {
   );
   const [inputText, setInputText] = useState("");
   const [hasStarted, setHasStarted] = useState(!!route.params?.conversationId);
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
+    null,
+  );
 
   const createConversation = useCreateConversation();
 
@@ -135,11 +144,22 @@ export default function RecipeChatScreen() {
     return generateRemixChips(sourceRecipe, userProfile);
   }, [isRemixMode, sourceRecipe, userProfile]);
   const { data: messages = [] } = useChatMessages(conversationId);
-  const { sendMessage, streamingContent, streamingRecipe, isStreaming } =
-    useSendMessage(conversationId);
+  const {
+    sendMessage,
+    streamingContent,
+    streamingRecipe,
+    isStreaming,
+    streamError,
+    requestError,
+  } = useSendMessage(conversationId);
   const saveRecipeMutation = useSaveRecipeFromChat();
   const savedMessageIdsRef = useRef(new Set<number>());
   const [, forceRender] = useState(0);
+
+  // Clear optimistic user message once streaming completes
+  useEffect(() => {
+    if (!isStreaming) setPendingUserMessage(null);
+  }, [isStreaming]);
 
   const handleSaveRecipe = useCallback(
     async (messageId: number) => {
@@ -163,6 +183,7 @@ export default function RecipeChatScreen() {
 
       setInputText("");
       setHasStarted(true);
+      setPendingUserMessage(content);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       let convId = conversationId;
@@ -182,6 +203,7 @@ export default function RecipeChatScreen() {
           convId = conv.id;
           setConversationId(convId);
         } catch {
+          setPendingUserMessage(null);
           return;
         }
       }
@@ -208,16 +230,66 @@ export default function RecipeChatScreen() {
 
   // Build display messages from fetched messages + streaming state
   const displayMessages = React.useMemo(() => {
-    const msgs = [...messages];
+    // System messages are internal AI context — never show in the chat UI
+    const msgs = messages.filter((m) => m.role !== "system");
 
-    // Add streaming message if active
-    if (isStreaming && streamingContent) {
+    // Optimistic user message: show the sent text immediately before the server
+    // persists it, so the UI doesn't appear blank while awaiting the first response.
+    // Only shown when streaming and the message isn't yet in the DB query result.
+    if (pendingUserMessage && isStreaming) {
+      const lastUserMsg = msgs.filter((m) => m.role === "user").at(-1);
+      if (lastUserMsg?.content !== pendingUserMessage) {
+        msgs.push({
+          id: -3,
+          conversationId: conversationId ?? 0,
+          role: "user",
+          content: pendingUserMessage,
+          metadata: null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    // Add streaming message if active — always push so typing indicator shows immediately.
+    // Strip JSON fence from streaming display — recipe card shows the structured data.
+    // Intentionally greedy-to-EOF (no closing fence anchor): the stream is mid-flight so
+    // the closing ``` hasn't arrived yet. The server strips the full closed fence before
+    // persisting, so the saved message and the streaming display are consistent.
+    if (isStreaming) {
+      const streamingDisplayContent = streamingContent
+        .replace(/\n*```json[\s\S]*$/, "")
+        .trimEnd();
+
       msgs.push({
         id: -1,
         conversationId: conversationId ?? 0,
         role: "assistant",
-        content: streamingContent,
+        content: streamingDisplayContent,
         metadata: streamingRecipe ? { recipe: streamingRecipe } : null,
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Show request errors (e.g. premium gate) as an inline error message
+    if (requestError) {
+      msgs.push({
+        id: -2,
+        conversationId: conversationId ?? 0,
+        role: "assistant",
+        content: requestError,
+        metadata: { isError: true },
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // Show dropped-connection error as an inline bubble
+    if (streamError) {
+      msgs.push({
+        id: -4,
+        conversationId: conversationId ?? 0,
+        role: "assistant",
+        content: "Connection dropped. Your response may be incomplete.",
+        metadata: { isError: true },
         createdAt: new Date().toISOString(),
       });
     }
@@ -229,6 +301,9 @@ export default function RecipeChatScreen() {
     streamingContent,
     streamingRecipe,
     conversationId,
+    requestError,
+    streamError,
+    pendingUserMessage,
   ]);
 
   const renderMessage = useCallback(
@@ -237,34 +312,60 @@ export default function RecipeChatScreen() {
       const metadata = item.metadata as Record<string, unknown> | null;
       const recipe = metadata?.recipe as StreamingRecipe | undefined;
       const allergenWarning = metadata?.allergenWarning as string | undefined;
+      const isError = !!metadata?.isError;
       const isAlreadySaved = savedMessageIdsRef.current.has(item.id);
       const isStreaming_ = item.id === -1;
 
       return (
         <View>
-          {/* Text bubble */}
+          {/* Text bubble — or typing indicator while waiting for first token */}
           {item.content ? (
             <View
               style={[
                 styles.messageBubble,
                 isUser
                   ? [styles.userBubble, { backgroundColor: theme.link }]
-                  : [
-                      styles.assistantBubble,
-                      {
-                        backgroundColor: withOpacity(theme.text, 0.06),
-                      },
-                    ],
+                  : isError
+                    ? [
+                        styles.assistantBubble,
+                        {
+                          backgroundColor: withOpacity(theme.error, 0.1),
+                          borderWidth: 1,
+                          borderColor: withOpacity(theme.error, 0.3),
+                        },
+                      ]
+                    : [
+                        styles.assistantBubble,
+                        {
+                          backgroundColor: withOpacity(theme.text, 0.06),
+                        },
+                      ],
               ]}
               accessible
               accessibilityRole="text"
-              accessibilityLabel={`${isUser ? "You" : "RecipeChef"}: ${item.content}`}
+              accessibilityLabel={`${isUser ? "You" : isError ? "Error" : "RecipeChef"}: ${item.content}`}
             >
               <ThemedText
-                style={isUser ? { color: theme.buttonText } : undefined}
+                style={[
+                  isUser ? { color: theme.buttonText } : undefined,
+                  isError ? { color: theme.error } : undefined,
+                ]}
               >
                 {item.content}
               </ThemedText>
+            </View>
+          ) : isStreaming_ ? (
+            <View
+              style={[
+                styles.messageBubble,
+                styles.assistantBubble,
+                { backgroundColor: withOpacity(theme.text, 0.06) },
+              ]}
+              accessible
+              accessibilityRole="text"
+              accessibilityLabel="RecipeChef is thinking"
+            >
+              <ActivityIndicator size="small" color={theme.textSecondary} />
             </View>
           ) : null}
 
@@ -437,9 +538,13 @@ export default function RecipeChatScreen() {
           ref={flatListRef}
           data={displayMessages}
           renderItem={renderMessage}
-          keyExtractor={(item) =>
-            item.id === -1 ? "streaming" : item.id.toString()
-          }
+          keyExtractor={(item) => {
+            if (item.id === -1) return "streaming";
+            if (item.id === -2) return "error";
+            if (item.id === -3) return "pending-user";
+            if (item.id === -4) return "stream-error";
+            return item.id.toString();
+          }}
           contentContainerStyle={[
             styles.messageList,
             { paddingBottom: Spacing.md },
@@ -451,19 +556,6 @@ export default function RecipeChatScreen() {
           keyboardDismissMode="interactive"
           {...FLATLIST_DEFAULTS}
         />
-      )}
-
-      {/* Streaming indicator */}
-      {isStreaming && !streamingContent && (
-        <View style={styles.typingRow}>
-          <ActivityIndicator size="small" color={theme.link} />
-          <ThemedText
-            type="caption"
-            style={{ color: theme.textSecondary, marginLeft: Spacing.xs }}
-          >
-            RecipeChef is thinking...
-          </ThemedText>
-        </View>
       )}
 
       {/* Input Bar */}
@@ -607,12 +699,6 @@ const styles = StyleSheet.create({
   assistantBubble: {
     alignSelf: "flex-start",
     borderBottomLeftRadius: BorderRadius.xs,
-  },
-  typingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
   },
   inputBar: {
     flexDirection: "row",

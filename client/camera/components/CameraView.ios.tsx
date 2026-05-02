@@ -12,18 +12,13 @@ import { useTheme } from "@/hooks/useTheme";
 import {
   Camera,
   usePhotoOutput,
+  useObjectOutput,
+  isScannedCode,
   type CameraRef as VisionCameraRef,
+  type ScannedObject,
+  type ScannedObjectType,
 } from "react-native-vision-camera";
-import {
-  useBarcodeScannerOutput,
-  type Barcode,
-} from "react-native-vision-camera-barcode-scanner";
-import {
-  BARCODE_TYPE_MAP,
-  BARCODE_TYPE_REVERSE_MAP,
-  isVisionCameraBarcodeType,
-  type VisionCameraBarcodeType,
-} from "@shared/types/camera";
+import type { ExpoBarcodeType } from "@shared/types/camera";
 import { Spacing } from "@/constants/theme";
 import type {
   CameraViewProps,
@@ -31,7 +26,6 @@ import type {
   PhotoOptions,
   PhotoResult,
   BarcodeResult,
-  ExpoBarcodeType,
 } from "../types";
 
 /**
@@ -46,33 +40,69 @@ function mapQualityPrioritization(
   return "speed";
 }
 
-function mapBarcodeTypes(
-  expoTypes: ExpoBarcodeType[],
-): VisionCameraBarcodeType[] {
-  return expoTypes.map((type) => BARCODE_TYPE_MAP[type]);
+// Maps our ExpoBarcodeType strings to AVFoundation ScannedObjectType strings.
+// upc_a is intentionally mapped to 'ean-13' — AVFoundation reports UPC-A barcodes
+// as EAN-13 with a leading zero prepended.
+const EXPO_TO_OBJECT_TYPE: Partial<Record<ExpoBarcodeType, ScannedObjectType>> =
+  {
+    ean13: "ean-13",
+    ean8: "ean-8",
+    upc_a: "ean-13",
+    upc_e: "upc-e",
+    code128: "code-128",
+    code39: "code-39",
+    code93: "code-93",
+    datamatrix: "data-matrix",
+    qr: "qr",
+  };
+
+// Reverse map: ScannedObjectType → ExpoBarcodeType.
+// No entry for 'ean-13' → 'upc_a' because AVFoundation always reports it as 'ean-13'.
+const OBJECT_TYPE_TO_EXPO: Partial<Record<ScannedObjectType, ExpoBarcodeType>> =
+  {
+    "ean-13": "ean13",
+    "ean-8": "ean8",
+    "upc-e": "upc_e",
+    "code-128": "code128",
+    "code-39": "code39",
+    "code-93": "code93",
+    "data-matrix": "datamatrix",
+    qr: "qr",
+  };
+
+function mapBarcodeTypes(expoTypes: ExpoBarcodeType[]): ScannedObjectType[] {
+  const seen = new Set<ScannedObjectType>();
+  const result: ScannedObjectType[] = [];
+  for (const expoType of expoTypes) {
+    const objectType = EXPO_TO_OBJECT_TYPE[expoType];
+    if (objectType && !seen.has(objectType)) {
+      seen.add(objectType);
+      result.push(objectType);
+    }
+  }
+  return result;
 }
 
-function mapBarcodeToResult(barcode: Barcode): BarcodeResult | null {
-  if (!isVisionCameraBarcodeType(barcode.format)) return null;
-  const expoType = BARCODE_TYPE_REVERSE_MAP[barcode.format];
+function mapObjectToResult(obj: ScannedObject): BarcodeResult | null {
+  if (!isScannedCode(obj)) return null;
+  const expoType = OBJECT_TYPE_TO_EXPO[obj.type];
   if (!expoType) return null;
   return {
-    data: barcode.rawValue ?? "",
+    data: obj.value ?? "",
     type: expoType,
-    bounds: barcode.boundingBox
-      ? {
-          x: barcode.boundingBox.left,
-          y: barcode.boundingBox.top,
-          width: barcode.boundingBox.right - barcode.boundingBox.left,
-          height: barcode.boundingBox.bottom - barcode.boundingBox.top,
-        }
-      : undefined,
+    bounds: {
+      x: obj.boundingBox.x,
+      y: obj.boundingBox.y,
+      width: obj.boundingBox.width,
+      height: obj.boundingBox.height,
+    },
   };
 }
 
 /**
- * Camera component using react-native-vision-camera V5.
- * Provides barcode scanning (via useBarcodeScannerOutput) and photo capture.
+ * iOS-specific CameraView using useObjectOutput (AVFoundation metadata objects).
+ * Avoids the react-native-vision-camera-barcode-scanner pod which crashes
+ * swift-frontend 6.2 (Xcode 26 beta) with an ICE on nitrogen-generated interop.
  */
 export const CameraView = forwardRef<CameraRef, CameraViewProps>(
   (
@@ -94,24 +124,27 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       quality: photoQuality ?? 0.85,
     });
 
-    const handleBarcodeScanned = useCallback(
-      (barcodes: Barcode[]) => {
-        if (!onBarcodeScanned || barcodes.length === 0) return;
-        const result = mapBarcodeToResult(barcodes[0]);
-        if (result) onBarcodeScanned(result);
+    const handleObjectsScanned = useCallback(
+      (objects: ScannedObject[]) => {
+        if (!onBarcodeScanned || objects.length === 0) return;
+        for (const obj of objects) {
+          const result = mapObjectToResult(obj);
+          if (result) {
+            onBarcodeScanned(result);
+            return;
+          }
+        }
       },
       [onBarcodeScanned],
     );
 
-    const barcodeScannerOutput = useBarcodeScannerOutput({
-      barcodeFormats: mapBarcodeTypes(barcodeTypes),
-      onBarcodeScanned: handleBarcodeScanned,
-      onError: (error) => {
-        console.warn("[CameraView] Barcode scanner error:", error.message);
-      },
+    const objectTypes = mapBarcodeTypes(barcodeTypes);
+    const objectOutput = useObjectOutput({
+      types: objectTypes,
+      onObjectsScanned:
+        barcodeTypes.length > 0 ? handleObjectsScanned : undefined,
     });
 
-    // Torch is imperative in V5 — drive it via controller ref
     useEffect(() => {
       cameraRef.current?.controller
         ?.setTorchMode(enableTorch ? "on" : "off")
@@ -137,9 +170,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     }));
 
     const outputs =
-      barcodeTypes.length > 0
-        ? [photoOutput, barcodeScannerOutput]
-        : [photoOutput];
+      barcodeTypes.length > 0 ? [photoOutput, objectOutput] : [photoOutput];
 
     return (
       <Camera
@@ -158,7 +189,6 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
 
 CameraView.displayName = "CameraView";
 
-// Kept for edge cases where the camera hardware is unavailable
 export function CameraUnavailable() {
   const { theme } = useTheme();
   return (

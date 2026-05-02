@@ -102,7 +102,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     photoAnalysis: true,
     macroGoals: true,
     recipeGeneration: true,
-    dailyRecipeGenerations: 5,
+    dailyRecipeGenerations: 20, // raised from 5 — original limit was too low for real-world use
     aiMealSuggestions: true,
     extendedPlanRange: true,
     dailyAiSuggestions: 10,

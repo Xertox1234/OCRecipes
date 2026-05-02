@@ -103,7 +103,7 @@ describe("scan-screen-utils", () => {
       );
       expect(route).toEqual({
         screen: "ReceiptCapture",
-        params: {},
+        params: undefined,
       });
     });
 
@@ -116,7 +116,7 @@ describe("scan-screen-utils", () => {
       );
       expect(route).toEqual({
         screen: "ReceiptCapture",
-        params: {},
+        params: undefined,
       });
     });
 

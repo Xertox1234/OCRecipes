@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Camera } from "react-native-vision-camera";
+import { useCallback, useRef, useState } from "react";
+import { useCameraPermission } from "react-native-vision-camera";
 import type { CameraPermissionResult } from "../types";
 
 export interface UseCameraPermissionsReturn {
@@ -9,76 +9,42 @@ export interface UseCameraPermissionsReturn {
 }
 
 /**
- * Camera permissions hook using react-native-vision-camera.
+ * Camera permissions hook wrapping V5's useCameraPermission.
+ * Synthesizes a richer status shape (including canAskAgain) from V5's
+ * simpler boolean API.
  */
 export function useCameraPermissions(): UseCameraPermissionsReturn {
-  const [permission, setPermission] = useState<CameraPermissionResult | null>(
-    null,
-  );
-  const [isLoading, setIsLoading] = useState(true);
+  const { hasPermission, requestPermission: v5Request } = useCameraPermission();
 
-  const mapPermission = useCallback(
-    (
-      status: "granted" | "denied" | "not-determined" | "restricted",
-    ): CameraPermissionResult => {
-      let mappedStatus: CameraPermissionResult["status"];
-      switch (status) {
-        case "granted":
-          mappedStatus = "granted";
-          break;
-        case "denied":
-          mappedStatus = "denied";
-          break;
-        case "restricted":
-          mappedStatus = "restricted";
-          break;
-        default:
-          mappedStatus = "undetermined";
-      }
+  // Tracks whether we've already made a permission request this session.
+  // Used to distinguish "never asked" (undetermined) from "asked and denied".
+  const hasRequestedRef = useRef(false);
 
-      return {
-        status: mappedStatus,
-        // Vision Camera doesn't expose canAskAgain directly,
-        // but we can request again if not granted
-        canAskAgain:
-          mappedStatus === "undetermined" || mappedStatus === "denied",
-      };
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const checkPermission = async () => {
-      try {
-        const status = await Camera.getCameraPermissionStatus();
-        setPermission(mapPermission(status));
-      } catch {
-        // Permission check failed - default to undetermined to allow retry
-        setPermission({ status: "undetermined", canAskAgain: true });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkPermission();
-  }, [mapPermission]);
+  // Permission derivation: synchronous from V5 hook — no isLoading needed,
+  // but we expose it as false for API compatibility with screen consumers.
+  const permission = useCallback((): CameraPermissionResult => {
+    if (hasPermission) {
+      return { status: "granted", canAskAgain: false };
+    }
+    if (hasRequestedRef.current) {
+      return { status: "denied", canAskAgain: false };
+    }
+    return { status: "undetermined", canAskAgain: true };
+  }, [hasPermission]);
 
   const requestPermission =
     useCallback(async (): Promise<CameraPermissionResult> => {
-      try {
-        const status = await Camera.requestCameraPermission();
-        const result = mapPermission(status);
-        setPermission(result);
-        return result;
-      } catch {
-        // Permission request failed - treat as denied
-        return { status: "denied", canAskAgain: false };
+      hasRequestedRef.current = true;
+      const granted = await v5Request();
+      if (granted) {
+        return { status: "granted", canAskAgain: false };
       }
-    }, [mapPermission]);
+      return { status: "denied", canAskAgain: false };
+    }, [v5Request]);
 
   return {
-    permission,
-    isLoading,
+    permission: permission(),
+    isLoading: false,
     requestPermission,
   };
 }

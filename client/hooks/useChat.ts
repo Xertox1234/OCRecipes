@@ -107,6 +107,7 @@ export function useSendMessage(conversationId: number | null) {
   const [allergenWarning, setAllergenWarning] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   // Refs for stale-closure-safe access inside streaming callbacks
   const isStreamingRef = useRef(false);
@@ -127,6 +128,7 @@ export function useSendMessage(conversationId: number | null) {
       setStreamingRecipe(null);
       setAllergenWarning(null);
       setStreamError(false);
+      setRequestError(null);
 
       let receivedDone = false;
 
@@ -142,105 +144,144 @@ export function useSendMessage(conversationId: number | null) {
         };
         if (token) headers["Authorization"] = `Bearer ${token}`;
 
-        const res = await fetch(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            content,
-            ...(screenContext && { screenContext }),
-          }),
+        const requestBody = JSON.stringify({
+          content,
+          ...(screenContext && { screenContext }),
         });
 
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`${res.status}: ${text}`);
-        }
-
-        const reader = res.body?.getReader();
-        if (!reader) throw new Error("No response body");
-        const decoder = new TextDecoder();
-
-        // Throttle streaming content updates to 16ms (frame-aligned)
+        // XHR is used instead of fetch because React Native's fetch polyfill
+        // returns response.body = null for text/event-stream responses on iOS/Android.
+        // XMLHttpRequest.onprogress fires incrementally and is the established
+        // pattern for SSE in React Native.
         let pendingFlush = false;
+        let sseErrorReceived = false;
+        let sseBuffer = "";
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const text = decoder.decode(value, { stream: true });
-          const lines = text.split("\n");
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(line.slice(6));
+        const processLine = (line: string) => {
+          if (!line.startsWith("data: ")) return;
+          try {
+            const data = JSON.parse(line.slice(6));
 
-                // Recipe card event (additive protocol extension)
-                if (data.recipe) {
-                  setStreamingRecipe(data.recipe);
-                  if (data.allergenWarning) {
-                    setAllergenWarning(data.allergenWarning);
-                  }
-                }
-
-                // Image ready event
-                if (data.imageUrl) {
-                  setStreamingRecipe((prev) =>
-                    prev ? { ...prev, imageUrl: data.imageUrl } : null,
-                  );
-                }
-
-                // Image unavailable — server confirmed no image will arrive
-                if (data.imageUnavailable) {
-                  setStreamingRecipe((prev) =>
-                    prev ? { ...prev, imageUrl: null } : null,
-                  );
-                }
-
-                // Text content chunk
-                if (data.content) {
-                  streamingContentRef.current += data.content;
-                  // Throttle UI updates to 16ms intervals
-                  if (!pendingFlush) {
-                    pendingFlush = true;
-                    setTimeout(() => {
-                      if (isStreamingRef.current) {
-                        setStreamingContent(streamingContentRef.current);
-                      }
-                      pendingFlush = false;
-                    }, 16);
-                  }
-                }
-
-                if (data.done) {
-                  receivedDone = true;
-                  queryClient.invalidateQueries({
-                    queryKey: [
-                      `/api/chat/conversations/${effectiveId}/messages`,
-                    ],
-                  });
-                  queryClient.invalidateQueries({
-                    queryKey: ["/api/chat/conversations"],
-                  });
-                }
-
-                if (data.error) {
-                  throw new Error(data.error);
-                }
-              } catch (e) {
-                if (
-                  e instanceof Error &&
-                  e.message !== "Unexpected end of JSON input"
-                ) {
-                  if (!String(e).includes("JSON")) {
-                    throw e;
-                  }
-                }
+            if (data.recipe) {
+              setStreamingRecipe(data.recipe);
+              if (data.allergenWarning) {
+                setAllergenWarning(data.allergenWarning);
               }
             }
+            if (data.imageUrl) {
+              setStreamingRecipe((prev) =>
+                prev ? { ...prev, imageUrl: data.imageUrl } : null,
+              );
+            }
+            if (data.imageUnavailable) {
+              setStreamingRecipe((prev) =>
+                prev ? { ...prev, imageUrl: null } : null,
+              );
+            }
+            if (data.content) {
+              streamingContentRef.current += data.content;
+              if (!pendingFlush) {
+                pendingFlush = true;
+                setTimeout(() => {
+                  if (isStreamingRef.current) {
+                    setStreamingContent(streamingContentRef.current);
+                  }
+                  pendingFlush = false;
+                }, 16);
+              }
+            }
+            if (data.done) {
+              receivedDone = true;
+              queryClient.invalidateQueries({
+                queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
+              });
+              queryClient.invalidateQueries({
+                queryKey: ["/api/chat/conversations"],
+              });
+            }
+            // Server-sent application error — surface via requestError instead
+            // of throwing, so callers that don't await sendMessage still see it.
+            if (data.error) {
+              setRequestError(
+                typeof data.error === "string"
+                  ? data.error
+                  : "Something went wrong. Please try again.",
+              );
+              sseErrorReceived = true;
+            }
+          } catch {
+            // Incomplete or invalid JSON chunk — skip silently
           }
-        }
+        };
 
-        // Stream ended — check if it completed normally
-        if (!receivedDone && streamingContentRef.current.length > 0) {
+        const processChunk = (chunk: string) => {
+          sseBuffer += chunk;
+          const lines = sseBuffer.split("\n");
+          sseBuffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (sseErrorReceived) break;
+            processLine(line);
+          }
+        };
+
+        let aborted = false;
+
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", url.href, true);
+          xhr.timeout = 120_000;
+          Object.entries(headers).forEach(([k, v]) =>
+            xhr.setRequestHeader(k, v),
+          );
+
+          let processedLength = 0;
+
+          xhr.onprogress = () => {
+            const chunk = xhr.responseText.slice(processedLength);
+            processedLength = xhr.responseText.length;
+            processChunk(chunk);
+          };
+
+          xhr.onload = () => {
+            // Flush any data not yet delivered via onprogress
+            const remaining = xhr.responseText.slice(processedLength);
+            if (remaining) processChunk(remaining);
+
+            if (xhr.status < 200 || xhr.status >= 300) {
+              let errorMsg = "Something went wrong. Please try again.";
+              try {
+                const parsed = JSON.parse(xhr.responseText);
+                if (typeof parsed.error === "string") errorMsg = parsed.error;
+              } catch {
+                // ignore parse errors
+              }
+              setRequestError(errorMsg);
+            }
+            resolve();
+          };
+
+          xhr.onerror = () =>
+            reject(
+              new Error(
+                "Network error. Please check your connection and try again.",
+              ),
+            );
+          xhr.ontimeout = () =>
+            reject(new Error("Request timed out. Please try again."));
+          xhr.onabort = () => {
+            aborted = true;
+            resolve();
+          };
+
+          xhr.send(requestBody);
+        });
+
+        // Stream ended — check if it completed normally (skip for intentional aborts)
+        if (
+          !aborted &&
+          !receivedDone &&
+          streamingContentRef.current.length > 0
+        ) {
           setStreamError(true);
           queryClient.invalidateQueries({
             queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
@@ -249,12 +290,25 @@ export function useSendMessage(conversationId: number | null) {
             queryKey: ["/api/chat/conversations"],
           });
         }
+      } catch (e) {
+        // Catch-all: network errors from xhr.onerror/ontimeout propagate here.
+        setRequestError(
+          e instanceof Error && e.message
+            ? e.message
+            : "Something went wrong. Please try again.",
+        );
       } finally {
         isStreamingRef.current = false;
         setIsStreaming(false);
         setStreamingContent("");
         setStreamingRecipe(null);
         setAllergenWarning(null);
+        // requestError is intentionally NOT cleared here: clearing in the same
+        // synchronous finally frame as setRequestError(errorMsg) batches to null
+        // before the component re-renders (React 19 automatic batching). It is
+        // cleared at the start of the next sendMessage call. RecipeChatScreen is
+        // a fullScreenModal that unmounts on dismiss, so stale requestError state
+        // across navigation isn't a concern.
       }
     },
     [conversationId, queryClient],
@@ -267,6 +321,7 @@ export function useSendMessage(conversationId: number | null) {
     allergenWarning,
     isStreaming,
     streamError,
+    requestError,
   };
 }
 

@@ -137,7 +137,7 @@ OCRecipes/
 | React Navigation | 7.x     | Navigation management    |
 | TanStack Query   | 5.x     | Server state management  |
 | Reanimated       | 4.x     | Animations               |
-| vision-camera    | 4.x     | Barcode scanning + photo |
+| vision-camera    | 5.x     | Barcode scanning + photo |
 
 ### Backend
 

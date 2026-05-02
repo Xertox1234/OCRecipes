@@ -829,3 +829,85 @@ For continuous values, prefer driving animation entirely via
 **Origin:** 2026-04-17 audit H14 — `useScrollLinkedHeader` was firing
 `runOnJS(updateBarVisibility)` on every `onScroll`, causing 60Hz JS-thread
 re-renders of `ProfileScreen` / `RecipeBrowserScreen` during scroll.
+
+---
+
+### Delayed Unmount for Exit Animations
+
+When a component needs an exit animation before being removed from the tree, use a `shouldRender` boolean state that is set to `false` only after the spring completes, via `runOnJS`.
+
+```typescript
+const [shouldRender, setShouldRender] = useState(isVisible);
+
+useEffect(() => {
+  if (isVisible) {
+    setShouldRender(true);
+    translateY.value = withSpring(0, SPRING);
+  } else {
+    translateY.value = withSpring(200, SPRING, () => {
+      runOnJS(setShouldRender)(false);
+    });
+  }
+}, [isVisible]);
+
+if (!shouldRender) return null;
+```
+
+**Why `runOnJS` instead of `onAnimationEnd`:** The spring completion callback runs on the UI thread; `setShouldRender` is JS-thread state. `runOnJS` is the required bridge.
+
+**Why not `Animated.View` with `exiting` prop:** The `exiting` prop fires when the component leaves the React tree — but you need the component _in_ the tree to animate it out. This pattern keeps it mounted until the animation finishes.
+
+**When to use:** Bottom sheets, chips, overlays that slide in conditionally and need a spring-out before disappearing. See `ProductChip.tsx`.
+
+---
+
+### Callback Ref for One-Shot Animation Completion
+
+When an animation's completion callback calls a prop function (e.g., `onComplete`), the callback is captured at the time the animation starts and may go stale if the prop changes between start and completion. Mirror it through a ref:
+
+```typescript
+const onCompleteRef = useRef(onComplete);
+onCompleteRef.current = onComplete; // update every render
+
+useEffect(() => {
+  opacity.value = withTiming(0, { duration: 400 }, (finished) => {
+    if (finished) runOnJS(onCompleteRef.current)();
+  });
+}, [opacity]);
+// onComplete intentionally excluded from deps — latest value via ref
+```
+
+**Why `onCompleteRef.current` instead of `onComplete` directly:** Reanimated captures the callback's closure at effect time. If the parent re-renders with a new `onComplete` reference before the 400ms completes, the ref always provides the newest version. `runOnJS` still required to cross UI → JS thread.
+
+**When to use:** Any one-shot animation (entrance/exit/pulse) that calls a parent callback on completion. See `ScanSonarRing.tsx`.
+
+---
+
+### `else if` Gap in `withRepeat` Cancellation
+
+A common conditional structure for repeating animations has a silent gap:
+
+```typescript
+// BUGGY — reducedMotion flip during HUNTING never hits either branch
+if (phase.type === "HUNTING" && !reducedMotion) {
+  rw.value = withRepeat(...);
+} else if (phase.type !== "HUNTING") {  // ← dead zone when HUNTING + reducedMotion=true
+  cancelAnimation(rw);
+}
+```
+
+When `phase.type` is still `"HUNTING"` and `reducedMotion` flips to `true`, neither condition fires — `withRepeat` continues indefinitely.
+
+**Fix: use `else`, not `else if`:**
+
+```typescript
+if (phase.type === "HUNTING" && !reducedMotion) {
+  rw.value = withRepeat(...);
+} else {
+  cancelAnimation(rw);  // fires for: non-HUNTING state OR reducedMotion=true
+}
+```
+
+**Rule:** The cancel branch of a repeating animation should fire for _any_ condition that is not the start condition. `else if` introduces a gap whenever the start condition has multiple guards. **Always use plain `else` for the cancel branch.**
+
+**Origin:** `ScanReticle` breathing animation survived a runtime `reducedMotion` toggle — caught in code review.

@@ -243,8 +243,13 @@ export default function ChatScreen() {
       : undefined;
 
   const { data: messages, isLoading } = useChatMessages(conversationId);
-  const { sendMessage, streamingContent, isStreaming, streamError } =
-    useSendMessage(conversationId);
+  const {
+    sendMessage,
+    streamingContent,
+    isStreaming,
+    streamError,
+    requestError,
+  } = useSendMessage(conversationId);
   const createConversation = useCreateConversation();
 
   const [inputText, setInputText] = useState("");
@@ -252,6 +257,7 @@ export default function ChatScreen() {
   const inputRef = useRef<TextInput>(null);
   const prevStreamingRef = useRef(false);
   const shownStreamErrorRef = useRef(false);
+  const shownRequestErrorRef = useRef(false);
 
   useEffect(() => {
     if (prevStreamingRef.current && !isStreaming) {
@@ -270,6 +276,22 @@ export default function ChatScreen() {
       shownStreamErrorRef.current = false;
     }
   }, [streamError, toast, haptics]);
+
+  useEffect(() => {
+    if (requestError && !shownRequestErrorRef.current) {
+      shownRequestErrorRef.current = true;
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      // Daily-limit errors include an upgrade prompt; others show the server message directly
+      if (requestError.toLowerCase().includes("limit")) {
+        toast.error(`${requestError} Upgrade to Premium for more messages.`);
+      } else {
+        toast.error(requestError);
+      }
+    }
+    if (!requestError) {
+      shownRequestErrorRef.current = false;
+    }
+  }, [requestError, toast, haptics]);
 
   // Auto-send initial message from cross-tab navigation (e.g. Ask Coach)
   const didSendInitialRef = useRef(false);

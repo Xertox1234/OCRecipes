@@ -50,13 +50,6 @@
       "expo-web-browser",
       "expo-iap",
       [
-        "react-native-vision-camera",
-        {
-          "cameraPermissionText": "OCRecipes needs camera access to scan barcodes and nutrition labels.",
-          "enableCodeScanner": true
-        }
-      ],
-      [
         "expo-speech-recognition",
         {
           "microphonePermission": "OCRecipes uses the microphone for voice food logging.",

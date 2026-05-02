@@ -68,6 +68,9 @@ export type RootStackParamList = {
     barcode?: string;
     imageUri?: string;
     itemId?: number;
+    nutritionImageUri?: string;
+    frontLabelImageUri?: string;
+    localOCRText?: string;
   };
   PhotoIntent:
     | {

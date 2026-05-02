@@ -22,7 +22,12 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useReceiptScanCount } from "@/hooks/useReceiptScan";
 import { Spacing, BorderRadius, CameraColors } from "@/constants/theme";
-import { CameraView, useCameraPermissions, type CameraRef } from "@/camera";
+import {
+  CameraView,
+  useCameraPermissions,
+  recognizeTextFromPhoto,
+  type CameraRef,
+} from "@/camera";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
@@ -63,11 +68,10 @@ export default function ReceiptCaptureScreen() {
         skipProcessing: Platform.OS === "android",
       });
       if (photo?.uri) {
-        // Snapshot OCR immediately before any re-render to avoid stale cache
-        const ocrResult = cameraRef.current?.getLatestOCRResult?.();
+        const ocrResult = await recognizeTextFromPhoto(photo.uri);
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         setPhotos((prev) => [...prev, photo.uri]);
-        setOcrTexts((prev) => [...prev, ocrResult?.resultText]);
+        setOcrTexts((prev) => [...prev, ocrResult.text || undefined]);
       }
     } catch (error) {
       console.error("Capture error:", error);
@@ -202,7 +206,6 @@ export default function ReceiptCaptureScreen() {
           style={StyleSheet.absoluteFill}
           facing="back"
           barcodeTypes={[]}
-          enableOCR={true}
           isActive={isFocused}
         />
       )}

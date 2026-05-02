@@ -216,8 +216,21 @@ async function ensureDemoUser(): Promise<string> {
     .where(eq(users.username, "demo"));
 
   if (existing.length > 0) {
-    console.log("Demo user already exists");
-    return existing[0].id;
+    const demo = existing[0];
+    // Ensure demo account always has premium access for local development
+    if (demo.subscriptionTier !== "premium") {
+      await db
+        .update(users)
+        .set({
+          subscriptionTier: "premium",
+          subscriptionExpiresAt: new Date("2030-01-01"),
+        })
+        .where(eq(users.id, demo.id));
+      console.log("Demo user upgraded to premium");
+    } else {
+      console.log("Demo user already exists");
+    }
+    return demo.id;
   }
 
   const plaintextPassword =
@@ -230,6 +243,8 @@ async function ensureDemoUser(): Promise<string> {
       password: hashedPassword,
       displayName: "Demo Chef",
       onboardingCompleted: true,
+      subscriptionTier: "premium",
+      subscriptionExpiresAt: new Date("2030-01-01"),
     })
     .returning();
 

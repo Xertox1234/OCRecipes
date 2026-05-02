@@ -12,6 +12,8 @@ import {
   Pressable,
   AccessibilityInfo,
   Text,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
@@ -51,6 +53,7 @@ interface CoachChatProps {
   warmUpHook: ReturnType<typeof useCoachWarmUp>;
   initialMessage?: string | null;
   onInitialMessageSent?: () => void;
+  inputBarStyle?: StyleProp<ViewStyle>;
 }
 
 type ChatListItem =
@@ -65,6 +68,7 @@ export default function CoachChat({
   warmUpHook,
   initialMessage,
   onInitialMessageSent,
+  inputBarStyle,
 }: CoachChatProps) {
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
@@ -507,6 +511,7 @@ export default function CoachChat({
       inputAdornment={micAdornment}
       keyboardVerticalOffset={90}
       streamingError={streamingError}
+      inputBarStyle={inputBarStyle}
     >
       <FlatList
         {...FLATLIST_DEFAULTS}

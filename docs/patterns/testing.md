@@ -1185,6 +1185,159 @@ beforeEach(async () => {
 
 ---
 
+### Mocking Constructable Web APIs (XMLHttpRequest) in Vitest
+
+When testing a hook that uses `new XMLHttpRequest()`, stub the global with a **class** (not a `vi.fn()` arrow factory). Arrow functions are not constructable — `new (vi.fn(() => instance))()` throws `TypeError: ... is not a constructor`. A class is always constructable.
+
+Use the constructor to self-register the instance so tests can drive the XHR after `sendMessage` (or equivalent) is called:
+
+```typescript
+// @vitest-environment jsdom
+type XHRHandler = ((ev: ProgressEvent) => unknown) | null;
+
+let xhrInstance: MockXHR;
+let xhrConstructorCalls = 0;
+
+class MockXHR {
+  open = vi.fn();
+  setRequestHeader = vi.fn();
+  timeout = 0;
+  responseText = "";
+  status = 200;
+  onprogress: XHRHandler = null;
+  onload: XHRHandler = null;
+  onerror: XHRHandler = null;
+  ontimeout: XHRHandler = null;
+  onabort: XHRHandler = null;
+  send = vi.fn();
+
+  constructor() {
+    xhrInstance = this; // ← self-registers so the test can drive it
+    xhrConstructorCalls++;
+  }
+
+  // Helper methods for test scenarios
+  simulateChunks(chunks: string[], status = 200) {
+    this.status = status;
+    let accumulated = "";
+    for (const chunk of chunks) {
+      accumulated += chunk;
+      this.responseText = accumulated;
+      this.onprogress?.(new ProgressEvent("progress"));
+    }
+    this.onload?.(new ProgressEvent("load"));
+  }
+
+  simulateErrorResponse(status: number, body: object) {
+    this.status = status;
+    this.responseText = JSON.stringify(body);
+    this.onload?.(new ProgressEvent("load"));
+  }
+
+  simulateNetworkError() {
+    this.onerror?.(new ProgressEvent("error"));
+  }
+  simulateTimeout() {
+    this.ontimeout?.(new ProgressEvent("timeout"));
+  }
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  xhrConstructorCalls = 0;
+  vi.stubGlobal("XMLHttpRequest", MockXHR); // ← stub with the class, not vi.fn(() => instance)
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+```
+
+**Timing:** The hook creates XHR after its first `await` (typically `tokenStorage.get()`). Wait two microtask ticks before driving the mock:
+
+```typescript
+it("streams SSE content", async () => {
+  const { result } = renderHook(() => useSendMessage(42), { wrapper });
+
+  await act(async () => {
+    const p = result.current.sendMessage("test");
+    await Promise.resolve(); // flush tokenStorage.get() microtask + XHR setup
+    await Promise.resolve(); // extra safety margin
+    xhrInstance.simulateChunks([
+      'data: {"content":"hello"}\n',
+      'data: {"done":true}\n',
+    ]);
+    await p;
+  });
+
+  expect(result.current.isStreaming).toBe(false);
+});
+```
+
+**Key rules:**
+
+1. **Class, not factory** — `vi.stubGlobal("XMLHttpRequest", MockXHR)` — the class is constructable; `vi.fn(() => xhrInstance)` is not
+2. **Constructor self-registers** — `xhrInstance = this` runs when `new XMLHttpRequest()` is called inside the implementation
+3. **`xhrConstructorCalls` for "no XHR" assertions** — more precise than checking `xhrInstance.send` (which may be stale from a previous test)
+4. **`ProgressEvent` handlers ignore the event object** — the XHR implementation reads from `xhr` via closure, not `event.target`. Pass `new ProgressEvent("progress")` (or any truthy value) — it won't be used
+5. **`simulateChunks` is cumulative** — it sets `responseText` to the running total and calls `onprogress` per chunk, matching how XHR `onprogress` actually fires
+
+**When to use:** Any Vitest test for a hook that uses `new XMLHttpRequest()` for streaming (SSE, file uploads, etc.).
+
+**When NOT to use:** Tests for hooks that use `fetch` — mock `globalThis.fetch` instead via `vi.fn()`.
+
+**References:**
+
+- `client/hooks/__tests__/useChat.test.ts` — `MockXHR` class with `simulateChunks`, `simulateErrorResponse`, `simulateNetworkError`, `simulateTimeout`
+
+---
+
+---
+
+### Extract Action Selection Into a Tested Util
+
+Pure function utils (`*-utils.ts`) catch logic bugs reliably. But when multiple component variants share a single JSX block, the **prop-to-callback wiring** between variant and action is untested — even if the underlying logic is fully covered.
+
+**The gap:** If `step2_review` and `step2_confirmed` share one block that calls `onStepConfirmed`, the test for `step2_review` passes while `step2_confirmed` silently calls the wrong callback.
+
+**Fix: extract the action mapping into a tested pure function:**
+
+```typescript
+// ProductChip-utils.ts
+export function getChipPrimaryAction(
+  variant: ProductChipVariant,
+): "confirm" | "stepConfirmed" | "smartPhotoConfirm" {
+  switch (variant) {
+    case "barcode_lock":
+    case "step2_confirmed":
+    case "step3_review":
+    case "session_complete":
+      return "confirm";
+    case "step2_review":
+      return "stepConfirmed";
+    case "smart_photo":
+      return "smartPhotoConfirm";
+  }
+}
+```
+
+```typescript
+// ProductChip-utils.test.ts
+it("step2_confirmed primary is confirm, not stepConfirmed", () => {
+  expect(getChipPrimaryAction("step2_confirmed")).toBe("confirm");
+});
+```
+
+Then in the component: `onPress={actionMap[getChipPrimaryAction(variant)]}`.
+
+**When to use:** Any component with multiple variants that call different callbacks. If two variants share a JSX block, extract the callback selection. The block sharing is the smell.
+
+**When NOT to use:** Single-variant components or variants where the action is structurally enforced by having separate JSX blocks.
+
+**Origin:** `ProductChip` `step2_confirmed` primary dispatched `STEP_CONFIRMED` (no-op from that state) instead of `CONFIRM_PRODUCT` — caught in code review because no test covered the wiring, only the reducer logic.
+
+---
+
 ## Adding New Patterns
 
 When you establish a new pattern:

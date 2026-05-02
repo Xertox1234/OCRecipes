@@ -211,75 +211,168 @@ export function useMenuScan() {
 
 **Reference:** `client/hooks/useMenuScan.ts`. See also `Compress-Upload-Cleanup for Image Uploads` pattern for the server-side handling.
 
-### SSE Client-Side Consumption with ReadableStream
+### SSE Client-Side Consumption via XMLHttpRequest
 
-When the server streams responses via Server-Sent Events (see "SSE Streaming for AI Responses" in Route Module Patterns), the client must consume the stream using `ReadableStream`, parse `data:` lines, and accumulate content progressively. Use `useState` for streaming content display and `useCallback` for the send function.
+When the server streams responses via Server-Sent Events, the client **must use `XMLHttpRequest`**, not `fetch`. React Native's `fetch` polyfill (backed by iOS `NSURLSession`) returns `response.body = null` for `text/event-stream` responses — `ReadableStream` is unsupported on the RN platform regardless of screen context.
+
+Use `xhr.onprogress` to receive incremental chunks. Maintain an `sseBuffer` to handle JSON payloads split across `onprogress` deliveries (the server SSE frame boundary doesn't align with TCP packets).
 
 ```typescript
-// client/hooks/useChat.ts — SSE client consumption
+// client/hooks/useChat.ts — SSE via XHR
 export function useSendMessage(conversationId: number | null) {
   const queryClient = useQueryClient();
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  // Refs for stale-closure-safe access inside XHR callbacks
+  const isStreamingRef = useRef(false);
+  const streamingContentRef = useRef("");
 
   const sendMessage = useCallback(
     async (content: string) => {
       if (!conversationId) return;
+      isStreamingRef.current = true;
+      streamingContentRef.current = "";
       setIsStreaming(true);
       setStreamingContent("");
+      setRequestError(null); // ← clear at start of next send, NOT in finally (see React 19 batching)
+
+      let receivedDone = false;
+      let aborted = false; // ← must be OUTSIDE the Promise executor to be in scope after await
 
       try {
         const baseUrl = getApiUrl();
-        const token = await tokenStorage.get();
-        const res = await fetch(
-          new URL(
-            `/api/chat/conversations/${conversationId}/messages`,
-            baseUrl,
-          ),
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token && { Authorization: `Bearer ${token}` }),
-            },
-            body: JSON.stringify({ content }),
-          },
+        const url = new URL(
+          `/api/chat/conversations/${conversationId}/messages`,
+          baseUrl,
         );
+        const token = await tokenStorage.get();
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
 
-        if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+        let pendingFlush = false;
+        let sseErrorReceived = false;
+        let sseBuffer = "";
 
-        const reader = res.body?.getReader();
-        if (!reader) throw new Error("No response body");
-        const decoder = new TextDecoder();
-        let accumulated = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const text = decoder.decode(value, { stream: true });
-          for (const line of text.split("\n")) {
-            if (!line.startsWith("data: ")) continue;
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.content) {
-                accumulated += data.content;
-                setStreamingContent(accumulated);
+        const processLine = (line: string) => {
+          if (!line.startsWith("data: ")) return;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.content) {
+              streamingContentRef.current += data.content;
+              if (!pendingFlush) {
+                pendingFlush = true;
+                setTimeout(() => {
+                  if (isStreamingRef.current)
+                    setStreamingContent(streamingContentRef.current);
+                  pendingFlush = false;
+                }, 16); // batch UI updates at ~60fps
               }
-              if (data.done) {
-                queryClient.invalidateQueries({
-                  queryKey: [
-                    `/api/chat/conversations/${conversationId}/messages`,
-                  ],
-                });
-              }
-              if (data.error) throw new Error(data.error);
-            } catch (e) {
-              // Ignore JSON parse errors from incomplete chunks
-              if (e instanceof Error && !String(e).includes("JSON")) throw e;
             }
+            if (data.done) {
+              receivedDone = true;
+              queryClient.invalidateQueries({
+                queryKey: [
+                  `/api/chat/conversations/${conversationId}/messages`,
+                ],
+              });
+              queryClient.invalidateQueries({
+                queryKey: ["/api/chat/conversations"],
+              });
+            }
+            if (data.error) {
+              setRequestError(
+                typeof data.error === "string"
+                  ? data.error
+                  : "Something went wrong.",
+              );
+              sseErrorReceived = true;
+            }
+          } catch {
+            // Incomplete or split JSON chunk — skip silently (sseBuffer handles reassembly)
           }
+        };
+
+        const processChunk = (chunk: string) => {
+          sseBuffer += chunk;
+          const lines = sseBuffer.split("\n");
+          sseBuffer = lines.pop() ?? ""; // keep partial last line in buffer
+          for (const line of lines) {
+            if (sseErrorReceived) break;
+            processLine(line);
+          }
+        };
+
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", url.href, true);
+          xhr.timeout = 120_000;
+          Object.entries(headers).forEach(([k, v]) =>
+            xhr.setRequestHeader(k, v),
+          );
+
+          let processedLength = 0;
+
+          xhr.onprogress = () => {
+            const chunk = xhr.responseText.slice(processedLength);
+            processedLength = xhr.responseText.length;
+            processChunk(chunk);
+          };
+
+          xhr.onload = () => {
+            // Flush any data not yet delivered via onprogress
+            const remaining = xhr.responseText.slice(processedLength);
+            if (remaining) processChunk(remaining);
+            if (xhr.status < 200 || xhr.status >= 300) {
+              let errorMsg = "Something went wrong. Please try again.";
+              try {
+                const parsed = JSON.parse(xhr.responseText);
+                if (typeof parsed.error === "string") errorMsg = parsed.error;
+              } catch {
+                /* ignore */
+              }
+              setRequestError(errorMsg);
+            }
+            resolve();
+          };
+
+          xhr.onerror = () =>
+            reject(
+              new Error(
+                "Network error. Please check your connection and try again.",
+              ),
+            );
+          xhr.ontimeout = () =>
+            reject(new Error("Request timed out. Please try again."));
+          xhr.onabort = () => {
+            aborted = true;
+            resolve();
+          };
+
+          xhr.send(JSON.stringify({ content }));
+        });
+
+        // Stream ended without done signal — partial response (skip for intentional aborts)
+        if (
+          !aborted &&
+          !receivedDone &&
+          streamingContentRef.current.length > 0
+        ) {
+          setStreamError(true);
+          queryClient.invalidateQueries({
+            queryKey: [`/api/chat/conversations/${conversationId}/messages`],
+          });
         }
+      } catch (e) {
+        setRequestError(
+          e instanceof Error && e.message
+            ? e.message
+            : "Something went wrong. Please try again.",
+        );
       } finally {
+        isStreamingRef.current = false;
         setIsStreaming(false);
         setStreamingContent("");
       }
@@ -287,28 +380,29 @@ export function useSendMessage(conversationId: number | null) {
     [conversationId, queryClient],
   );
 
-  return { sendMessage, streamingContent, isStreaming };
+  return { sendMessage, streamingContent, isStreaming, requestError };
 }
 ```
 
 **Key elements:**
 
-1. **`ReadableStream` reader** — use `res.body?.getReader()` to consume the stream incrementally
-2. **`TextDecoder` with `{ stream: true }`** — handles multi-byte characters split across chunks
-3. **Parse `data: ` prefix** — SSE lines are prefixed with `data: `, strip it before JSON.parse
-4. **Accumulate content** — track `accumulated` string and update state progressively for real-time display
-5. **Handle terminal events** — `{ done: true }` triggers query invalidation; `{ error: "..." }` throws
-6. **Ignore partial JSON** — incomplete chunks from chunked transfer can cause `JSON.parse` failures; swallow those specifically
-7. **`finally` cleanup** — always reset streaming state regardless of success/failure
-8. **Bypass `apiRequest()`** — SSE responses are not standard JSON, so use raw `fetch` with manual auth header
+1. **`XMLHttpRequest`, not `fetch`** — RN's fetch polyfill returns `body = null` for SSE; XHR's `onprogress` is the only reliable incremental delivery mechanism on iOS and Android
+2. **`sseBuffer` for split payloads** — `lines.pop()` keeps the last (potentially incomplete) line in the buffer; the next `onprogress` prepends it before splitting again
+3. **`processedLength` for incremental slicing** — `xhr.responseText` is cumulative; slice from the last known length to get only new bytes
+4. **`aborted` flag outside the Promise executor** — must be declared in the outer scope so the post-await `streamError` check can read it; `let` inside the executor is not visible after `await`
+5. **`onabort → resolve()`** — don't reject on abort (user navigated away); do set `aborted = true` to suppress the false `streamError`
+6. **16ms flush debounce** — `setTimeout(16)` on content state updates batches renders at ~60fps without slowing streaming throughput
+7. **Clear `requestError` at start, not in `finally`** — see React 19 batching gotcha in `docs/LEARNINGS.md`
+8. **`isStreamingRef` + `streamingContentRef`** — refs for stale-closure-safe reads inside the timer callback and XHR handlers
 
-**When to use:** Any client hook that consumes an SSE endpoint (chat, AI generation, real-time updates).
+**When to use:** Any client hook that consumes an SSE endpoint in React Native.
 
-**When NOT to use:** Standard JSON API responses — use `apiRequest()` + `useQuery`/`useMutation`.
+**When NOT to use:** Standard JSON API responses — use `apiRequest()` + `useQuery`/`useMutation`. Web (browser) contexts can use `fetch + ReadableStream` instead.
 
 **References:**
 
-- `client/hooks/useChat.ts` — `useSendMessage()`
+- `client/hooks/useChat.ts` — `useSendMessage()` canonical implementation
+- `docs/LEARNINGS.md` — "fetch ReadableStream Fails in React Native — Use XHR" entry
 - Server-side: see "SSE Streaming for AI Responses" in Route Module Patterns
 
 ### SSE Stream Drop Detection and Recovery
@@ -382,6 +476,81 @@ useEffect(() => {
 
 - `client/hooks/useChat.ts` — `useSendMessage()` stream drop detection
 - `client/screens/ChatScreen.tsx` — toast notification with ref guard
+
+### Pre-SSE HTTP Error Handling (`requestError`)
+
+SSE streaming has two distinct failure modes that require separate state:
+
+1. **`streamError` (boolean)** — the stream started, content was flowing, then it dropped mid-response. Partial content may be visible and persisted.
+2. **`requestError` (string | null)** — the HTTP request returned a non-200 response **before** SSE headers were sent. Nothing was streamed. Common causes: 403 premium gate, 429 daily limit, 503 AI not configured.
+
+The old pattern of `throw new Error()` on `!res.ok` is wrong for SSE hooks: `handleSend` typically calls `sendMessage()` without `await` or `.catch`, turning the throw into a silent unhandled rejection. The user sees the thinking indicator disappear and nothing else.
+
+```typescript
+// ❌ BAD — throws silently if caller doesn't await/catch
+if (!res.ok) {
+  const text = await res.text();
+  throw new Error(`${res.status}: ${text}`);
+}
+
+// ✅ GOOD — set requestError state, return cleanly
+if (!res.ok) {
+  let errorMsg = "Something went wrong. Please try again.";
+  try {
+    const body = await res.json();
+    if (typeof body.error === "string") errorMsg = body.error;
+  } catch {
+    // ignore parse errors, fall back to generic message
+  }
+  setRequestError(errorMsg);
+  return;
+}
+```
+
+**Key rules:**
+
+1. **Clear at start of next send** — `setRequestError(null)` at the top of `sendMessage`, alongside `setStreamError(false)`. Do NOT clear in `finally`: in React 19, `setRequestError(errorMsg); return; finally { setRequestError(null) }` batches both updates in the same frame, netting to `null` before the component re-renders.
+2. **Distinguish in consumers** — Chat screens that inline the error (e.g. RecipeChatScreen) add a synthetic display message with `metadata.isError = true`. Chat screens that use toasts (e.g. ChatScreen) add a `useEffect` mirroring the `streamError` toast pattern.
+3. **Ref-guard toast consumers** — Use a `shownRequestErrorRef = useRef(false)` to prevent the toast from firing twice if the component re-renders while `requestError` is still set.
+4. **Apply to all SSE hooks** — If you fix `requestError` handling in one SSE consumer screen, check all other screens that use `useSendMessage` — they inherited the same silent-failure bug.
+
+```typescript
+// Consumer: inline error bubble (RecipeChatScreen pattern)
+if (requestError) {
+  msgs.push({
+    id: -2,
+    role: "assistant",
+    content: requestError,
+    metadata: { isError: true },
+    createdAt: new Date().toISOString(),
+  });
+}
+// keyExtractor must handle id === -2 explicitly:
+keyExtractor={(item) => {
+  if (item.id === -1) return "streaming";
+  if (item.id === -2) return "error";
+  return item.id.toString();
+}}
+
+// Consumer: toast (ChatScreen pattern)
+const shownRequestErrorRef = useRef(false);
+useEffect(() => {
+  if (requestError && !shownRequestErrorRef.current) {
+    shownRequestErrorRef.current = true;
+    haptics.notification(Haptics.NotificationFeedbackType.Error);
+    toast.error(requestError);
+  }
+  if (!requestError) shownRequestErrorRef.current = false;
+}, [requestError, toast, haptics]);
+```
+
+**When to use:** Any SSE hook where pre-stream HTTP errors (premium gates, rate limits, server config) must be surfaced to the user rather than silently discarded.
+
+**References:**
+
+- `client/hooks/useChat.ts` — `requestError` state in `useSendMessage()`
+- `client/screens/RecipeChatScreen.tsx` — inline error bubble
+- `client/screens/ChatScreen.tsx` — toast error handler
 
 ### refetchInterval for Live-Updating Queries
 

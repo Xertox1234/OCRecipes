@@ -2600,3 +2600,63 @@ function compactMealPlanItems(items: MealPlanItem[]) {
 - `server/utils/date-validation.ts` — `isValidCalendarDate()`
 
 **Origin:** 2026-04-29 audit M1
+
+---
+
+### AI Response Content/Metadata Separation
+
+When an LLM is instructed to produce both **conversational prose** and **structured data** (a JSON code fence), store them in separate columns and strip the fence from the `content` column before persisting. The code fence is display noise — the structured data already lives in `metadata`.
+
+**Storage split:**
+
+- **`content` column** — only conversational text. Strip any `\`\`\`json...\`\`\`` block before inserting.
+- **`metadata` column** — parsed JSON object (recipe, nutrition summary, etc.).
+
+````typescript
+// server/routes/chat.ts — strip fence before persisting (full response available)
+const conversationalText = fullTextResponse
+  .replace(/\n*```json[\s\S]*?```\s*/g, "")
+  .trim();
+await storage.createChatMessage(
+  conversationId,
+  userId,
+  "assistant",
+  conversationalText || "Here's a recipe for you!",
+  metadata, // structured data already extracted from the fence
+);
+````
+
+**Asymmetric regex:** the stripping regex is intentionally different between the client streaming display and the server persist step:
+
+| Context                    | Regex                                                    | Reason                                                         |
+| -------------------------- | -------------------------------------------------------- | -------------------------------------------------------------- |
+| Client (streaming display) | `/\n*\`\`\`json[\s\S]\*$/` (greedy-to-EOF)               | Stream is mid-flight; the closing `\`\`\`` has not yet arrived |
+| Server (before persist)    | `/\n*\`\`\`json[\s\S]_?\`\`\`\s_/g` (lazy, closed fence) | Full response is available; match only the complete block      |
+
+````typescript
+// Client — strip mid-flight during streaming display
+const streamingDisplayContent = streamingContent
+  .replace(/\n*```json[\s\S]*$/, "")
+  .trimEnd();
+````
+
+**Filter system messages at the display layer.** AI context passed as `role: "system"` (e.g., the source recipe JSON for a remix) is setup context, not user-visible output. Filter it in the `displayMessages` memo before rendering:
+
+```typescript
+// Good: never render system messages
+const msgs = messages.filter((m) => m.role !== "system");
+
+// Bad: render all roles, hoping system content is empty or invisible
+```
+
+**When to use:** Any feature where the LLM streams a response that mixes conversational text with a structured `\`\`\`json\`\`\`` block — recipe remix, ingredient extraction, meal plan text summaries.
+
+**When NOT to use:** Fully structured endpoints (no conversational prose) where the entire response body is JSON — those don't need stripping.
+
+**References:**
+
+- `server/routes/chat.ts` — recipe remix SSE route: `conversationalText` strip before persist
+- `client/screens/RecipeChatScreen.tsx` — streaming display strip + `role !== "system"` filter
+- See also: "Always Guard JSON.parse on LLM Output" (above) for parsing the structured block safely
+
+**Origin:** Recipe Remix bug fix (2026-05-01)

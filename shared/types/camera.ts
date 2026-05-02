@@ -15,7 +15,7 @@ export const expoBarcodeTypes = [
 
 export type ExpoBarcodeType = (typeof expoBarcodeTypes)[number];
 
-// react-native-vision-camera barcode types
+// react-native-vision-camera barcode types (V5 format names)
 export const visionCameraBarcodeTypes = [
   "ean-13",
   "ean-8",
@@ -25,7 +25,7 @@ export const visionCameraBarcodeTypes = [
   "code-39",
   "code-93",
   "data-matrix",
-  "qr",
+  "qr-code",
 ] as const;
 
 export type VisionCameraBarcodeType = (typeof visionCameraBarcodeTypes)[number];
@@ -53,7 +53,7 @@ export const BARCODE_TYPE_MAP: Record<
   code39: "code-39",
   code93: "code-93",
   datamatrix: "data-matrix",
-  qr: "qr",
+  qr: "qr-code",
 };
 
 // Reverse mapping
@@ -69,7 +69,7 @@ export const BARCODE_TYPE_REVERSE_MAP: Record<
   "code-39": "code39",
   "code-93": "code93",
   "data-matrix": "datamatrix",
-  qr: "qr",
+  "qr-code": "qr",
 };
 
 // Free tier barcode types (basic barcodes)
@@ -116,8 +116,8 @@ export interface BarcodeResult {
 // Camera-agnostic photo result
 export interface PhotoResult {
   uri: string;
-  width: number;
-  height: number;
+  width?: number;
+  height?: number;
   base64?: string;
 }
 

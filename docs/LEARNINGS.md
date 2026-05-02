@@ -4,6 +4,8 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [React 19 finally-block Batching Collapses setState Calls in Same Synchronous Frame (2026-05-01)](#react-19-finally-block-batching-collapses-setstate-calls-in-same-synchronous-frame-2026-05-01)
+- [react-native-vision-camera v4→v5 + Capture-then-OCR Migration (2026-05-01)](#react-native-vision-camera-v4v5--capture-then-ocr-migration-2026-05-01)
 - [Expo Push Ticket-to-Token Index Misalignment (2026-04-29)](#expo-push-ticket-to-token-index-misalignment-2026-04-29)
 - [parseInt on req.userId Returns NaN (2026-04-28)](#parseint-on-requserid-returns-nan-2026-04-28)
 - [onConflictDoNothing on Cache Tables Causes expired-entry Skip + ! Crash (2026-04-28)](#onconflictdonothing-on-cache-tables-causes-expired-entry-skip---crash-2026-04-28)
@@ -28,7 +30,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [OCR Character Corrections Must Be Context-Sensitive (2026-04-07)](#ocr-character-corrections-must-be-context-sensitive-2026-04-07)
 - [Unsanitized AI Prompt Parameter That Looked Server-Generated (2026-04-02)](#unsanitized-ai-prompt-parameter-that-looked-server-generated-2026-04-02)
 - [RN Modal Cannot Overlay React Navigation transparentModal (2026-04-01)](#rn-modal-cannot-overlay-react-navigation-transparentmodal-2026-04-01)
-- [fetch ReadableStream Fails Inside RN Modal — Use XHR (2026-04-01)](#fetch-readablestream-fails-inside-rn-modal--use-xhr-2026-04-01)
+- [fetch ReadableStream Fails in React Native — Use XHR (2026-05-01, updated)](#fetch-readablestream-fails-in-react-native--use-xhr)
 - [Mass-Assignment via Partial&lt;User&gt; in Storage Update Functions (2026-04-01)](#mass-assignment-via-partialuser-in-storage-update-functions-2026-04-01)
 - [Polymorphic FK with Discriminator Column — No DB-Level Constraint (2026-04-01)](#polymorphic-fk-with-discriminator-column--no-db-level-constraint-2026-04-01)
 - [CHECK Constraint vs ON DELETE SET NULL Conflict (2026-03-29)](#check-constraint-vs-on-delete-set-null-conflict-2026-03-29)
@@ -64,6 +66,93 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## 2026-05-01 — React 19 finally-block Batching Collapses setState Calls in Same Synchronous Frame
+
+**Category:** Gotcha
+
+In a React 19 hook, this sequence produces a **silent no-op** — the error state is never shown:
+
+```typescript
+// ❌ BUG: all three calls batch into a single render, netting to null
+if (!res.ok) {
+  setRequestError(errorMsg); // ← sets error
+  return;                    // ← exits try block
+}
+// ...
+} finally {
+  setRequestError(null);     // ← "clears" — but batches with the set above → null wins
+}
+```
+
+React 19's automatic batching flushes all state updates from a single synchronous frame together. `setRequestError(errorMsg)` and `setRequestError(null)` are both enqueued before the component re-renders, so the component sees only the last value: `null`. The error message is invisible.
+
+**Fix:** Do not clear `requestError` in `finally`. Instead, clear it at the start of the next user action:
+
+```typescript
+// ✅ CORRECT: clear only at the start of the next send, not in finally
+const sendMessage = useCallback(async (content: string) => {
+  setRequestError(null); // clear stale error from previous send
+  setIsStreaming(true);
+  // ...
+  if (!res.ok) {
+    setRequestError(errorMsg);
+    return;
+  }
+  // ...
+  } finally {
+    setIsStreaming(false);
+    // requestError intentionally NOT cleared here — React 19 automatic batching
+    // would collapse setRequestError(msg) + return + finally { setRequestError(null) }
+    // into null before the component re-renders.
+  }
+}, [...]);
+```
+
+**Rule:** In React 19, `setState(x); return; finally { setState(null) }` in the same synchronous frame batches to `null` before re-render. Never rely on `finally` to "show-then-hide" state — set the new value and let the **next user action** clear it.
+
+**Stale-state concern:** If a fullScreenModal unmounts on dismiss, the stale `requestError` state never persists across navigation — each mount starts fresh.
+
+**References:** `client/hooks/useChat.ts` → `useSendMessage`, `requestError` state handling
+
+---
+
+## 2026-05-01 — react-native-vision-camera v4→v5 + Capture-then-OCR Migration
+
+**Decision:** Migrated from `react-native-vision-camera` v4.7.3 to v5.0.8 (Nitro Modules rewrite). Simultaneously dropped `react-native-vision-camera-ocr-plus` (live frame-processor OCR) in favour of **capture-then-OCR**: take a still with V5's `capturePhotoToFile`, then run `@react-native-ml-kit/text-recognition` on the full-resolution image.
+
+**Why the OCR pivot:** The OCR-plus plugin has no V5 peer-dep compatibility and no migration path. Full-resolution still OCR is more accurate than motion-blurred 10th-frame OCR anyway, and eliminates the frame-processor overhead (better battery, lower thermals).
+
+**Key V5 API changes to remember:**
+
+- Photo capture moves to `usePhotoOutput()` → `photoOutput.capturePhotoToFile()`; the camera ref no longer has a `takePhoto` method.
+- Barcode scanning uses `react-native-vision-camera-barcode-scanner`'s `useBarcodeScannerOutput()` — it returns a `CameraOutput` you pass into `<Camera outputs={[...]} />`.
+- `<Camera outputs={[photoOutput, barcodeScannerOutput]}>` replaces `photo={true}` and `useCodeScanner`.
+- `device` prop now accepts `"back"` | `"front"` directly — no `useCameraDevice()` needed.
+- Torch is imperative: `cameraRef.current?.controller?.setTorchMode("on" | "off")`.
+- `Rect` bounding boxes use `left/right/top/bottom`, not `x/y/width/height` — convert with `width = right - left`.
+- `useBarcodeScannerOutput` requires `onError` (not optional).
+- `useCameraPermission()` returns `{ hasPermission: boolean, requestPermission }` — synthesise `canAskAgain` with a `hasRequestedRef`.
+- QR format renamed: `"qr"` → `"qr-code"` in `BarcodeFormat`.
+
+**MLKit simulator patch:** The Podfile post-install hook (`scripts/patch-mlkit-simulator.py`) still required — both `react-native-vision-camera-barcode-scanner` and `@react-native-ml-kit/text-recognition` pull in MLKit fat binaries that need re-tagging for arm64 simulators. Never run `expo prebuild --clean` or it will wipe the Podfile patch.
+
+**Swift 6.2 ICE on Xcode 26 + nitrogen-generated interop:** `react-native-vision-camera-barcode-scanner` uses nitrogen's C++/Swift interop generator, which produces a `typealias bridge = margelo.nitro.camera.barcodescanner.bridge.swift` that crashes `swift-frontend` 6.2 with an ICE (Internal Compiler Error). Neither `SWIFT_VERSION = '5'` nor `SWIFT_COMPILATION_MODE = 'singlefile'` avoids the crash.
+
+**Fix — platform split via Metro file extensions:**
+
+- `CameraView.tsx` = Android (uses `useBarcodeScannerOutput` from the barcode scanner pod)
+- `CameraView.ios.tsx` = iOS (uses `useObjectOutput` from VisionCamera core — AVFoundation metadata, no external pod needed)
+- `react-native.config.js` at project root excludes `react-native-vision-camera-barcode-scanner` from iOS autolinking (`platforms: { ios: null }`), so CocoaPods never installs the crashing pod on iOS.
+- The pod is still autolinking normally on Android.
+
+**`useObjectOutput` type differences vs barcode scanner:**
+
+- Uses `ScannedObjectType` strings: `'qr'` (not `'qr-code'`), `'code-128'`, `'ean-13'`, `'ean-8'`, `'code-39'`, `'code-93'`, `'upc-e'`, `'data-matrix'`
+- `ScannedObject.boundingBox` uses `{ x, y, width, height }` (already in correct format — no conversion needed)
+- Narrow `ScannedObject` to `ScannedCode` using `isScannedCode(obj)` to access `obj.value`
+- `upc_a` maps to `'ean-13'` — AVFoundation always reports UPC-A barcodes as EAN-13 with a leading zero
+- `useObjectOutput` is iOS-only and will throw on Android — only ever import it in `.ios.tsx` files
 
 ## 2026-04-29 — Expo Push Ticket-to-Token Index Misalignment
 
@@ -715,25 +804,29 @@ useEffect(() => {
 
 ---
 
-## [2026-04-01] fetch ReadableStream Fails Inside RN Modal — Use XHR
+## [2026-05-01, updated] fetch ReadableStream Fails in React Native — Use XHR
 
-**Problem:** SSE streaming via `fetch` + `res.body.getReader()` works in regular React Native screens but silently fails inside an RN `Modal`. The `ReadableStream` reader never delivers chunks — `isStreaming` stays true but `streamingContent` stays empty.
+**Problem:** SSE streaming via `fetch` + `res.body.getReader()` silently fails in React Native. `response.body` is `null` for `text/event-stream` responses — `isStreaming` stays true but `streamingContent` stays empty. This affects all React Native contexts (screens, modals, etc.), not just specific ones.
 
-**Root cause:** React Native's `ReadableStream` implementation does not reliably deliver chunks in all native view contexts. The Modal creates a separate native view hierarchy that disrupts the streaming.
+**Root cause:** React Native's `fetch` polyfill is backed by iOS `NSURLSession`. NSURLSession does not expose a `ReadableStream`-compatible body for streaming responses — `response.body` returns `null` regardless of the response type. This is a platform limitation, not a view-hierarchy issue.
 
-**Fix:** Use `XMLHttpRequest` with `onreadystatechange` and `readyState >= 3` (LOADING) for SSE parsing. XHR's progressive response text works reliably everywhere in RN, including inside Modals.
+**Fix:** Use `XMLHttpRequest` with `onprogress` for SSE parsing. XHR's `responseText` accumulates incrementally and `onprogress` fires on each new chunk. Use a `processedLength` variable to slice only new bytes:
 
 ```typescript
-xhr.onreadystatechange = () => {
-  if (xhr.readyState >= 3 && xhr.responseText) {
-    const newText = xhr.responseText.slice(lastProcessedIndex);
-    lastProcessedIndex = xhr.responseText.length;
-    // Parse SSE lines from newText
-  }
+let processedLength = 0;
+
+xhr.onprogress = () => {
+  const chunk = xhr.responseText.slice(processedLength);
+  processedLength = xhr.responseText.length;
+  // parse SSE lines from `chunk` using an sseBuffer for split payloads
 };
 ```
 
-**Rule:** For SSE streaming in React Native, prefer XHR over fetch+ReadableStream. XHR is universally reliable; ReadableStream is context-dependent.
+Prefer `onprogress` over `onreadystatechange + readyState >= 3` — `onprogress` fires exactly once per delivery batch and is semantically cleaner.
+
+**Rule:** For SSE streaming in React Native, always use XHR. `fetch + ReadableStream` is web-only.
+
+**See also:** "SSE Client-Side Consumption via XMLHttpRequest" in `docs/patterns/hooks.md`
 
 ---
 

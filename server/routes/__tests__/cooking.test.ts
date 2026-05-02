@@ -889,7 +889,7 @@ describe("Cooking Routes", () => {
 
     it("returns 429 when daily recipe generation limit is reached (early check)", async () => {
       setupPremiumMock();
-      vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(5);
+      vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(20);
 
       const sessionId = "recipe-limit-session";
       cookingSessionStore._internals.store.set(sessionId, {

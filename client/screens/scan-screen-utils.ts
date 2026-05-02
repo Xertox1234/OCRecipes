@@ -1,11 +1,21 @@
 import type { ContentType } from "@shared/constants/classification";
 import type { PhotoIntent } from "@shared/constants/preparation";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 /** Screen routing target for auto-classification results */
-export interface ClassificationRoute {
-  screen: string;
-  params: Record<string, unknown>;
-}
+export type ClassificationRoute =
+  | { screen: "PhotoAnalysis"; params: RootStackParamList["PhotoAnalysis"] }
+  | { screen: "LabelAnalysis"; params: RootStackParamList["LabelAnalysis"] }
+  | { screen: "MenuScanResult"; params: RootStackParamList["MenuScanResult"] }
+  | {
+      screen: "CookSessionCapture";
+      params: RootStackParamList["CookSessionCapture"];
+    }
+  | { screen: "ReceiptCapture"; params: undefined }
+  | {
+      screen: "NutritionDetail";
+      params: RootStackParamList["NutritionDetail"];
+    };
 
 /** User-friendly labels for each content type */
 const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
@@ -64,7 +74,7 @@ export function getRouteForContentType(
     case "restaurant_receipt":
       return {
         screen: "ReceiptCapture",
-        params: {},
+        params: undefined,
       };
     case "has_barcode":
       return barcode

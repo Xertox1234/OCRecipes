@@ -34,7 +34,7 @@ describe("Camera Types", () => {
       expect(visionCameraBarcodeTypes).toContain("code-39");
       expect(visionCameraBarcodeTypes).toContain("code-93");
       expect(visionCameraBarcodeTypes).toContain("data-matrix");
-      expect(visionCameraBarcodeTypes).toContain("qr");
+      expect(visionCameraBarcodeTypes).toContain("qr-code");
     });
   });
 
@@ -49,7 +49,7 @@ describe("Camera Types", () => {
       expect(BARCODE_TYPE_MAP.ean13).toBe("ean-13");
       expect(BARCODE_TYPE_MAP.upc_a).toBe("upc-a");
       expect(BARCODE_TYPE_MAP.datamatrix).toBe("data-matrix");
-      expect(BARCODE_TYPE_MAP.qr).toBe("qr");
+      expect(BARCODE_TYPE_MAP.qr).toBe("qr-code");
     });
   });
 

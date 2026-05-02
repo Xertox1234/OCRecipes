@@ -435,11 +435,16 @@ export function register(app: Express): void {
                   }
                 : null;
 
+              // Strip the JSON code block — recipe is in metadata; only save conversational text
+              const conversationalText = fullTextResponse
+                .replace(/\n*```json[\s\S]*?```\s*/g, "")
+                .trim();
+
               await storage.createChatMessage(
                 id,
                 req.userId,
                 "assistant",
-                fullTextResponse || "Here's a recipe for you!",
+                conversationalText || "Here's a recipe for you!",
                 metadata,
               );
             }
