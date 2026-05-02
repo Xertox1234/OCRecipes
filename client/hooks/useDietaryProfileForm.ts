@@ -136,7 +136,7 @@ export function useDietaryProfileForm() {
 
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
-    } catch (error) {
+    } catch {
       // Error is displayed to user via setSaveError below
       setSaveError("Failed to save profile. Please try again.");
       haptics.notification(Haptics.NotificationFeedbackType.Error);
