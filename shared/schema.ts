@@ -117,6 +117,14 @@ export const pendingReminders = pgTable(
       table.userId,
       table.acknowledgedAt,
     ),
+    // Prevents duplicate pending reminders for the same user+type on the same
+    // calendar day. Backed by the uniqueIndex so that createPendingReminder()
+    // can use onConflictDoNothing() for an idempotent, race-safe insert.
+    userTypeDay: uniqueIndex("pending_reminders_user_type_day_idx").on(
+      table.userId,
+      table.type,
+      sql`DATE(${table.scheduledFor})`,
+    ),
   }),
 );
 

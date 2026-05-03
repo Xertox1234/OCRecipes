@@ -12,7 +12,12 @@ export async function createPendingReminder(data: {
   context: Record<string, unknown>;
   scheduledFor: Date;
 }): Promise<void> {
-  await db.insert(pendingReminders).values(data);
+  // onConflictDoNothing makes the insert idempotent: if a pending reminder for
+  // the same user+type on the same calendar day already exists (enforced by
+  // pending_reminders_user_type_day_idx), the insert is silently skipped.
+  // This prevents duplicates under concurrent scheduler runs without needing a
+  // separate hasPendingReminderToday() check-before-insert.
+  await db.insert(pendingReminders).values(data).onConflictDoNothing();
 }
 
 export async function hasPendingReminderToday(
