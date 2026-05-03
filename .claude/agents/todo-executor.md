@@ -233,7 +233,11 @@ Then push:
 git push -u origin todo/<todo-slug>
 ```
 
-If the push is rejected because `todo/<todo-slug>` already exists on the remote (a prior failed run may have pushed it), force-push only if you are certain the remote branch contains prior work from this same todo — otherwise proceed to item 3 and skip the push.
+If the push is rejected because `todo/<todo-slug>` already exists on the remote, force-push — the branch name is deterministically derived from this todo's slug, so the remote branch is from a prior failed run of this same todo:
+
+```bash
+git push --force-with-lease -u origin todo/<todo-slug>
+```
 
 3. **Create the PR** using the GitHub MCP tool — call `mcp__github__create_pull_request` with:
    - `owner`: `xertox1234`
@@ -279,7 +283,7 @@ COMMIT: <commit hash>
 PR_URL: <GitHub PR URL, or "null" if PR creation failed>
 CODIFICATION_COMMIT: <commit hash> | none
 FILES_CHANGED: <list of modified files>
-REVIEW_ROUNDS: <0, 1, or 2>
+REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
 ```
 
 **On failure:**

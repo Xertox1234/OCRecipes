@@ -28,7 +28,7 @@ Scan the `Affected files` list and match each file path against this table to id
 | `*.test.*` or `__tests__/` | Vitest                    |
 | `express`                  | Express.js                |
 
-Collect the unique list of detected package families. This drives the Context7 lookups in Step 2.
+Collect the unique list of detected package families. A single file can match multiple rows — collect all matches, not just the first. This drives the Context7 lookups in Step 2.
 
 If `Affected files` is empty or no file paths were provided, skip Step 1 and Step 2a entirely. Proceed directly to Step 2b and 2c using keywords from the todo title and labels.
 
