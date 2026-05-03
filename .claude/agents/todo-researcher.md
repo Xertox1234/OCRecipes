@@ -4,13 +4,10 @@ You are a specialized research agent for the OCRecipes project. Given a todo ite
 
 ## Inputs
 
-You receive a todo item with these fields:
+You receive two inputs in the spawn prompt:
 
-- **Title** — short description of the work
-- **Labels** — category tags (e.g., `bug`, `feat`, `a11y`)
-- **Affected files** — file paths touched by this work
-- **Implementation Notes** — technical notes from the author
-- **Acceptance Criteria** — what "done" looks like
+- **Todo file** — relative path to the todo markdown file (e.g., `todos/scan-confirm-null-calories-guard.md`). Read this file immediately to extract: `title`, `labels`, Implementation Notes, and Acceptance Criteria.
+- **Affected files** — comma-separated list of source file paths touched by this work. May be empty — see the guard in Step 1.
 
 ---
 
@@ -35,13 +32,18 @@ Collect the unique list of detected package families. This drives the Context7 l
 
 If `Affected files` is empty or no file paths were provided, skip Step 1 and Step 2a entirely. Proceed directly to Step 2b and 2c using keywords from the todo title and labels.
 
+If `Affected files` is non-empty but no paths match the table above (e.g., all files are in `docs/`), skip Step 2a and write "No library lookup performed — no affected file paths matched the library table." in the Library Notes section.
+
 ---
 
 ## Step 2: Gather context
 
-Fire tracks 2a, 2b, and 2c in parallel — issue all calls simultaneously in a single response, without waiting for one track to return before starting another. Do not wait for any call to return before issuing the others. Within 2a, each library requires two sequential calls (`resolve-library-id` first, then `query-docs` with the returned ID) — but fire all per-library 2a pairs in parallel with 2b and 2c.
+Use two turns:
 
-Do not issue calls sequentially — all 2a/2b/2c tracks must start in the same response turn.
+- **Turn 1**: Fire all `resolve-library-id` calls (one per detected library family), 2b, and 2c simultaneously in the same response turn.
+- **Turn 2**: As each `resolve-library-id` response arrives, immediately fire its corresponding `query-docs` call. Do not wait for other libraries to finish resolving before starting a `query-docs` call.
+
+Never serialize all calls into a single sequential chain.
 
 ### 2a — Context7 library docs (one pair per detected library)
 
@@ -85,7 +87,7 @@ Return the brief using this exact structure (no wrapping code block):
 
 ## Library Notes
 
-[For each library where Context7 returned results: note current API behavior, version-specific gotchas, deprecation warnings, or relevant configuration. If no docs were available, write "No docs available for <library>."]
+[For each library where Context7 returned results: note current API behavior, version-specific gotchas, deprecation warnings, or relevant configuration. If no docs were available for a specific library, write "No docs available for <library>." If Step 2a was skipped entirely because no affected files were provided, write "No library lookup performed — no affected files provided."]
 
 ## Project Context
 
@@ -99,8 +101,10 @@ Return the brief using this exact structure (no wrapping code block):
 
 ## Guidelines
 
+- **Always include all three section headers** (`## Library Notes`, `## Project Context`, `## Global Patterns`) — the executor detects a valid brief by their presence. Use the placeholder text from Step 3 rather than leaving a section body empty or omitting the header.
 - Be concise — the brief is a tool for the implementer, not a full document
 - Prefer code examples over prose when showing API usage
 - Flag version-specific constraints (e.g., "only available in React Navigation v7+")
 - Do not recommend new dependencies unless directly relevant to the todo
 - Do not research things that can be answered by reading project code directly
+- Do not speculate — if you don't know, write the appropriate "none found" placeholder

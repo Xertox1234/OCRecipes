@@ -104,15 +104,17 @@ After all commands pass, re-read every modified file and confirm the changes mat
 
 ## Step 6 — Code Review
 
-Spawn the `code-reviewer` subagent (`.claude/agents/code-reviewer.md`) to review the uncommitted diff.
+Spawn the `code-reviewer` subagent to review the uncommitted changes in this worktree:
 
-Pass it the current diff context:
-
-```bash
-git diff
+```
+Agent({
+  description: "Code review: <todo title>",
+  subagent_type: "superpowers:code-reviewer",
+  prompt: "You are reviewing uncommitted changes in a git worktree for the OCRecipes project. Follow .claude/agents/code-reviewer.md exactly.\n\nRun `git diff` to see the changes. Return a structured report with Critical, High, Medium, and Low findings."
+})
 ```
 
-The reviewer will return a structured report with Critical, High, Medium, and Low findings.
+The reviewer will run `git diff` itself to inspect the changes. It will return a structured report with Critical, High, Medium, and Low findings.
 
 ---
 
@@ -216,10 +218,22 @@ Rename the worktree branch to a meaningful slug, push it, and open a GitHub PR t
 
 ```bash
 git branch -m todo/<todo-slug>
+```
+
+If the rename fails because a local branch named `todo/<todo-slug>` already exists, delete the stale branch first, then retry:
+
+```bash
+git branch -D todo/<todo-slug>
+git branch -m todo/<todo-slug>
+```
+
+Then push:
+
+```bash
 git push -u origin todo/<todo-slug>
 ```
 
-If the push is rejected because `todo/<todo-slug>` already exists on the remote (a prior failed run may have pushed it), proceed to item 3 — the PR creation may already exist or can be re-created from the existing branch.
+If the push is rejected because `todo/<todo-slug>` already exists on the remote (a prior failed run may have pushed it), force-push only if you are certain the remote branch contains prior work from this same todo — otherwise proceed to item 3 and skip the push.
 
 3. **Create the PR** using the GitHub MCP tool — call `mcp__github__create_pull_request` with:
    - `owner`: `xertox1234`
@@ -249,7 +263,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
 🤖 Implemented by Claude Code /todo skill
 ```
 
-4. **If `mcp__github__create_pull_request` fails** for any reason (network error, auth error, branch push failed, PR already exists, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
+4. **If `mcp__github__create_pull_request` fails** because a PR already exists for `todo/<todo-slug>`, look up the existing PR URL before giving up: call `mcp__github__list_pull_requests` with `owner: xertox1234`, `repo: OCRecipes`, `head: xertox1234:todo/<todo-slug>`, `state: open`. If a PR is found, use its URL as `PR_URL`. If no open PR is found or the call fails for any other reason (network error, auth error, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
 
 ---
 
@@ -289,7 +303,7 @@ REASON: <status not eligible | list of blocking dependency filenames>
 
 If implementation fails at any point after Step 4 (verify fails, review has unresolvable issues, acceptance criteria cannot be met):
 
-> **Note:** The orchestrator must ensure a clean working tree before dispatching to this agent.
+> **Note:** This agent always runs in an isolated git worktree — the working tree starts clean. Revert operations (`git checkout -- <files>`) only affect this worktree and cannot touch the base branch.
 
 ### First failure
 
