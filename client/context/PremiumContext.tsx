@@ -2,6 +2,7 @@ import React, {
   createContext,
   useContext,
   useCallback,
+  useMemo,
   type ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -148,30 +149,54 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   const isError = isSubscriptionError || isScanCountError;
   const error = subscriptionError ?? scanCountError ?? null;
 
+  const contextValue = useMemo(
+    () => ({
+      tier,
+      features,
+      isPremium,
+      isLoading:
+        isSubscriptionLoading || isScanCountLoading || isRecipeGenLoading,
+      isError,
+      error,
+      dailyScanCount,
+      canScanToday,
+      recipeGenerationsToday,
+      canGenerateRecipe,
+      monthlyReceiptScans,
+      receiptScanLimit,
+      canScanReceipt,
+      refreshSubscription,
+      refreshScanCount,
+      refreshRecipeGenerationStatus,
+      refreshReceiptScanCount,
+      refetch,
+    }),
+    [
+      tier,
+      features,
+      isPremium,
+      isSubscriptionLoading,
+      isScanCountLoading,
+      isRecipeGenLoading,
+      isError,
+      error,
+      dailyScanCount,
+      canScanToday,
+      recipeGenerationsToday,
+      canGenerateRecipe,
+      monthlyReceiptScans,
+      receiptScanLimit,
+      canScanReceipt,
+      refreshSubscription,
+      refreshScanCount,
+      refreshRecipeGenerationStatus,
+      refreshReceiptScanCount,
+      refetch,
+    ],
+  );
+
   return (
-    <PremiumContext.Provider
-      value={{
-        tier,
-        features,
-        isPremium,
-        isLoading:
-          isSubscriptionLoading || isScanCountLoading || isRecipeGenLoading,
-        isError,
-        error,
-        dailyScanCount,
-        canScanToday,
-        recipeGenerationsToday,
-        canGenerateRecipe,
-        monthlyReceiptScans,
-        receiptScanLimit,
-        canScanReceipt,
-        refreshSubscription,
-        refreshScanCount,
-        refreshRecipeGenerationStatus,
-        refreshReceiptScanCount,
-        refetch,
-      }}
-    >
+    <PremiumContext.Provider value={contextValue}>
       {children}
     </PremiumContext.Provider>
   );
