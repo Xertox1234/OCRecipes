@@ -46,9 +46,6 @@ export function navigateAction(
     case "log-weight":
       navigation.navigate("WeightTracking");
       break;
-    case "ai-coach":
-      navigation.navigate("CoachTab", { screen: "ChatList" });
-      break;
 
     // Recipes
     case "search-recipes":
@@ -143,18 +140,14 @@ export const HOME_ACTIONS: HomeAction[] = [
     group: "nutrition",
     icon: "clock",
     label: "Fasting Timer",
+    renderInline: true,
   },
   {
     id: "log-weight",
     group: "nutrition",
     icon: "trending-down",
     label: "Log Weight",
-  },
-  {
-    id: "ai-coach",
-    group: "nutrition",
-    icon: "message-circle",
-    label: "AI Coach",
+    renderInline: true,
   },
 
   // Recipes

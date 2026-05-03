@@ -49,14 +49,6 @@ export const DISCOVERY_CARDS: DiscoveryCard[] = [
     ctaLabel: "Try Batch Scan",
   },
   {
-    id: "ai-coach",
-    eyebrow: "✨ Try this",
-    headline: "Ask your AI nutrition coach anything",
-    subtitle: "Get personalised advice about your diet.",
-    emoji: "🤖",
-    ctaLabel: "Open Coach",
-  },
-  {
     id: "meal-plan",
     eyebrow: "✨ Try this",
     headline: "Plan your week's meals and hit your goals",

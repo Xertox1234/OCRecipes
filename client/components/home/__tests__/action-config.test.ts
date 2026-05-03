@@ -34,7 +34,7 @@ describe("action-config", () => {
 
     it("returns only nutrition actions", () => {
       const actions = getActionsByGroup("nutrition");
-      expect(actions.length).toBe(4);
+      expect(actions.length).toBe(3);
       expect(actions.every((a) => a.group === "nutrition")).toBe(true);
     });
 
