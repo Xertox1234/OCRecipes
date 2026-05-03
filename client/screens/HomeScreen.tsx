@@ -15,6 +15,7 @@ import { RecentActionsRow } from "@/components/home/RecentActionsRow";
 import { DiscoveryCarousel } from "@/components/home/DiscoveryCarousel";
 import { CollapsibleSection } from "@/components/home/CollapsibleSection";
 import { ActionRow } from "@/components/home/ActionRow";
+import { QuickLogDrawer } from "@/components/home/QuickLogDrawer";
 import {
   HOME_ACTIONS,
   getActionsByGroup,
@@ -185,16 +186,20 @@ export default function HomeScreen() {
               isExpanded={sections[key]}
               onToggle={() => toggleSection(key)}
             >
-              {getActionsByGroup(key).map((action) => (
-                <ActionRow
-                  key={action.id}
-                  icon={action.icon}
-                  label={action.label}
-                  subtitle={action.subtitle}
-                  onPress={() => handleActionPress(action)}
-                  isLocked={action.premium && !isPremium}
-                />
-              ))}
+              {getActionsByGroup(key).map((action) =>
+                action.renderInline ? (
+                  <QuickLogDrawer key={action.id} action={action} />
+                ) : (
+                  <ActionRow
+                    key={action.id}
+                    icon={action.icon}
+                    label={action.label}
+                    subtitle={action.subtitle}
+                    onPress={() => handleActionPress(action)}
+                    isLocked={action.premium && !isPremium}
+                  />
+                ),
+              )}
             </CollapsibleSection>
           </Animated.View>
         ))}
