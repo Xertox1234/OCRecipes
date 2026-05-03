@@ -11,16 +11,17 @@ This workflow enforces finding tracking, per-fix verification, and a persistent 
 
 Each audit domain maps to specialist agents in `.claude/agents/` that have deep knowledge of the project's patterns, conventions, and common pitfalls for that domain. Launch them as subagents during Phase 2 discovery.
 
-| Audit Domain     | Primary Agent(s)                                  | What They Check                                                       |
-| ---------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
-| `security`       | `security-auditor` + `ai-llm-specialist`          | IDOR, rate limiting, JWT, SSRF, prompt injection, AI safety           |
-| `performance`    | `database-specialist` + `rn-ui-ux-specialist`     | N+1 queries, missing indexes, FlatList optimization, animation jank   |
-| `data-integrity` | `database-specialist` + `nutrition-domain-expert` | Soft deletes, polymorphic FK orphans, cache dedup, nutrition accuracy |
-| `architecture`   | `database-specialist` + `ai-llm-specialist`       | Service/storage layering, route helper usage, db import violations    |
-| `code-quality`   | `testing-specialist` + `code-reviewer`            | Test coverage gaps, mock quality, pattern compliance, code smells     |
-| `camera`         | `camera-specialist` + `rn-ui-ux-specialist`       | Permissions, scan debouncing, frame processors, lifecycle management  |
+| Audit Domain     | Primary Agent(s)                                                      | What They Check                                                                                      |
+| ---------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `security`       | `security-auditor` + `ai-llm-specialist`                              | IDOR, rate limiting, JWT, SSRF, prompt injection, AI safety                                          |
+| `performance`    | `performance-specialist` + `database-specialist`                      | FlatList memoization, useCallback stability, streaming UI, Promise.all, N+1 queries, missing indexes |
+| `data-integrity` | `database-specialist` + `nutrition-domain-expert`                     | Soft deletes, polymorphic FK orphans, cache dedup, nutrition accuracy                                |
+| `architecture`   | `architecture-specialist` + `api-specialist`                          | Service/storage layering, dependency direction, route module structure, SSE patterns, singleton init |
+| `code-quality`   | `quality-specialist` + `typescript-specialist` + `testing-specialist` | Error handling, naming, type guards, Zod schemas, nav typing, test coverage gaps                     |
+| `camera`         | `camera-specialist` + `rn-ui-ux-specialist`                           | Permissions, scan debouncing, frame processors, lifecycle management                                 |
+| `accessibility`  | `accessibility-specialist` + `rn-ui-ux-specialist`                    | Modal focus trapping, VoiceOver/TalkBack announcements, touch targets, WCAG contrast, aria-invalid   |
 
-**For `full` or `pre-launch` scopes:** Launch agents for all domains (batch in groups of 4-5, not all at once).
+**For `full` or `pre-launch` scopes:** Launch agents for all domains (batch in groups of 4 — e.g., four batches: 4, 4, 4, 3 — not all at once).
 
 **For named scopes:** Launch only the primary agent(s) for that domain.
 
@@ -54,7 +55,7 @@ Focus on genuinely new issues, not style preferences.
 ## Phase 2: Discovery
 
 1. **Launch specialist agents in parallel** using the mapping table above:
-   - `full` or `pre-launch`: launch agents for all domains (batch in groups of 4-5 to avoid overwhelming context)
+   - `full` or `pre-launch`: launch agents for all domains (batch in groups of 4 — e.g., four batches: 4, 4, 4, 3 — to avoid overwhelming context)
    - Named scope (e.g., `security`): launch only the primary agent(s) for that domain
    - Use the agent prompt template from the mapping section, specifying the domain and scope
    - Each agent runs as a subagent via the Agent tool with the corresponding `.claude/agents/*.md` agent type
@@ -143,14 +144,15 @@ After fixes are committed, extract reusable knowledge using the pattern-codifier
    - Domain-specific check → **Specialist agent update** → add to the relevant `.claude/agents/*.md` checklist
 3. **Specialist agent update routing:** When a finding reveals a new domain-specific check, add it to the appropriate specialist agent's review checklist:
 
-   | Finding Domain | Update Agent(s)                                        |
-   | -------------- | ------------------------------------------------------ |
-   | Security       | `security-auditor.md`, `ai-llm-specialist.md`          |
-   | Performance    | `database-specialist.md`, `rn-ui-ux-specialist.md`     |
-   | Data integrity | `database-specialist.md`, `nutrition-domain-expert.md` |
-   | Architecture   | `database-specialist.md`, `ai-llm-specialist.md`       |
-   | Code quality   | `testing-specialist.md`, `code-reviewer.md`            |
-   | Camera/vision  | `camera-specialist.md`, `rn-ui-ux-specialist.md`       |
+   | Finding Domain | Update Agent(s)                                                              |
+   | -------------- | ---------------------------------------------------------------------------- |
+   | Security       | `security-auditor.md`, `ai-llm-specialist.md`                                |
+   | Performance    | `performance-specialist.md`, `database-specialist.md`                        |
+   | Data integrity | `database-specialist.md`, `nutrition-domain-expert.md`                       |
+   | Architecture   | `architecture-specialist.md`, `api-specialist.md`                            |
+   | Code quality   | `quality-specialist.md`, `typescript-specialist.md`, `testing-specialist.md` |
+   | Camera/vision  | `camera-specialist.md`, `rn-ui-ux-specialist.md`                             |
+   | Accessibility  | `accessibility-specialist.md`, `rn-ui-ux-specialist.md`                      |
 
 4. Run the pattern-codifier as a subagent with this prompt structure:
 
