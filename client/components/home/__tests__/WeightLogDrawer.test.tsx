@@ -25,7 +25,7 @@ describe("formatWeightSubtitle", () => {
     const logs = [log("78.4")];
     const result = formatWeightSubtitle(
       logs,
-      { weeklyRateOfChange: -1.2 } as any,
+      { weeklyRateOfChange: -1.2 },
       false,
       undefined,
     );
