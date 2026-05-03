@@ -50,6 +50,13 @@ import {
   getPremiumGate,
   getRouteForContentType,
 } from "@/screens/scan-screen-utils";
+import {
+  buildLoadingConfirmCard,
+  buildLoadedConfirmCard,
+  buildFetchErrorConfirmCard,
+  buildScannedItemPayload,
+  buildSuccessToastMessage,
+} from "@/screens/ScanScreenConfirmOverlay-utils";
 import { ThemedText } from "@/components/ThemedText";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -178,32 +185,14 @@ export default function ScanScreen() {
     const { barcode, nutritionImageUri, frontImageUri, ocrText } = scanPhase;
 
     if (returnAfterLog) {
-      setConfirmCard({
-        barcode,
-        name: "Loading...",
-        calories: null,
-        isLoading: true,
-        isLogging: false,
-      });
+      setConfirmCard(buildLoadingConfirmCard(barcode));
       apiRequest("GET", `/api/nutrition/barcode/${barcode}`)
         .then((res) => res.json())
         .then((data: { productName?: string; calories?: number }) => {
-          setConfirmCard({
-            barcode,
-            name: data.productName ?? "Food item",
-            calories: data.calories ?? null,
-            isLoading: false,
-            isLogging: false,
-          });
+          setConfirmCard(buildLoadedConfirmCard(barcode, data));
         })
         .catch(() => {
-          setConfirmCard({
-            barcode,
-            name: "Food item",
-            calories: null,
-            isLoading: false,
-            isLogging: false,
-          });
+          setConfirmCard(buildFetchErrorConfirmCard(barcode));
         });
       return;
     }
@@ -224,16 +213,13 @@ export default function ScanScreen() {
     if (!confirmCard || confirmCard.isLogging) return;
     setConfirmCard((prev) => prev && { ...prev, isLogging: true });
     try {
-      await apiRequest("POST", "/api/scanned-items", {
-        barcode: confirmCard.barcode,
-        productName: confirmCard.name,
-        sourceType: "scan",
-        calories: confirmCard.calories?.toString(),
-      });
-      refreshScanCount();
-      toast.success(
-        `Logged! ${confirmCard.name}${confirmCard.calories ? ` · ${confirmCard.calories} cal` : ""}`,
+      await apiRequest(
+        "POST",
+        "/api/scanned-items",
+        buildScannedItemPayload(confirmCard),
       );
+      refreshScanCount();
+      toast.success(buildSuccessToastMessage(confirmCard));
       navigation.goBack();
     } catch {
       setConfirmCard((prev) => prev && { ...prev, isLogging: false });
