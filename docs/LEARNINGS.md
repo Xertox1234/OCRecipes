@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [VisionCamera V5 Frame Processor Plugin + runOnJS Bridge (2026-05-03)](#visioncamera-v5-frame-processor-plugin--runonjs-bridge-2026-05-03)
 - [`isFocused` Effect Dead Zone — In-Screen Overlays Don't Trigger Focus Re-Entry (2026-05-02)](#isfocused-effect-dead-zone--in-screen-overlays-dont-trigger-focus-re-entry-2026-05-02)
 - [React 19 finally-block Batching Collapses setState Calls in Same Synchronous Frame (2026-05-01)](#react-19-finally-block-batching-collapses-setstate-calls-in-same-synchronous-frame-2026-05-01)
 - [react-native-vision-camera v4→v5 + Capture-then-OCR Migration (2026-05-01)](#react-native-vision-camera-v4v5--capture-then-ocr-migration-2026-05-01)
@@ -67,6 +68,50 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## VisionCamera V5 Frame Processor Plugin + runOnJS Bridge (2026-05-03)
+
+**Category:** Gotcha — Camera / VisionCamera V5 / Worklets
+
+VisionCamera V5 replaces `useFrameProcessor()` (V4) with `useFrameOutput()`. Third-party plugins like `react-native-vision-camera-ocr-plus` still expose worklet functions via `VisionCameraProxy.initFrameProcessorPlugin` — these work fine in V5, but the library's `Camera` component (which uses `useFrameProcessor` internally) does not.
+
+**Pattern for V5 + third-party frame processor plugin:**
+
+```typescript
+import { useFrameOutput } from "react-native-vision-camera";
+import { useTextRecognition } from "react-native-vision-camera-ocr-plus";
+import { runOnJS } from "react-native-worklets";
+
+const { scanText } = useTextRecognition({
+  language: "latin",
+  frameSkipThreshold: 10,
+});
+
+// Wrap the JS callback in a stable runOnJS bridge (via useMemo to avoid recreation)
+const handleResultJS = useMemo(() => runOnJS(handleResult), [handleResult]);
+
+const frameOutput = useFrameOutput({
+  onFrame: useCallback(
+    (frame) => {
+      "worklet";
+      const result = scanText(frame as any); // same object at runtime
+      frame.dispose(); // must dispose explicitly in V5
+      handleResultJS(result);
+    },
+    [scanText, handleResultJS],
+  ),
+});
+// Add frameOutput to Camera's outputs array alongside photoOutput
+```
+
+**Key differences from V4:**
+
+- `frame.dispose()` is mandatory — undisposed frames stall the pipeline
+- `runOnJS` from `react-native-worklets` (not `react-native-worklets-core`) bridges to JS thread
+- `useMemo(() => runOnJS(fn), [fn])` stabilizes the bridge across renders
+- `useFrameOutput` returns a `CameraFrameOutput` added to `outputs={[photoOutput, frameOutput]}`
+
+**Why `frame as any`:** The OCR library types `Frame` against V4's spec; V5 exports a Nitro-based Frame. The underlying native object is the same; the cast is type-only.
 
 ## `isFocused` Effect Dead Zone — In-Screen Overlays Don't Trigger Focus Re-Entry (2026-05-02)
 
