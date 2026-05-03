@@ -63,6 +63,10 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
     },
   });
 
+  React.useEffect(() => {
+    if (session.speechError) toast.error(session.speechError);
+  }, [session.speechError, toast]);
+
   const handleToggle = useCallback(() => {
     const next = !isOpen;
     if (!next) session.reset();
