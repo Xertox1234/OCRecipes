@@ -84,6 +84,7 @@ export default function ScanScreen() {
   const route = useRoute<RouteProp<RootStackParamList, "Scan">>();
   const returnAfterLog = route.params?.returnAfterLog ?? false;
   const isLabelMode = route.params?.mode === "label";
+  // front-label uses FrontLabelConfirm AI flow — OCR frame processor not needed there
   const isFrontLabelMode = route.params?.mode === "front-label";
   const toast = useToast();
 

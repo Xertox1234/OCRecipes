@@ -73,7 +73,6 @@ export function useOCRDetection(
 
   const { scanText } = useTextRecognition({
     language: "latin",
-    frameSkipThreshold: 10,
   });
 
   // JS-thread handler — called from worklet via runOnJS bridge.

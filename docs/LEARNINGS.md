@@ -82,19 +82,26 @@ import { useFrameOutput } from "react-native-vision-camera";
 import { useTextRecognition } from "react-native-vision-camera-ocr-plus";
 import { runOnJS } from "react-native-worklets";
 
-const { scanText } = useTextRecognition({
-  language: "latin",
-  frameSkipThreshold: 10,
-});
+const { scanText } = useTextRecognition({ language: "latin" });
+// Note: do NOT set frameSkipThreshold here — the manual frame counter in onFrame
+// already skips every 10th frame. Setting both multiplies them (100× skip, ~0.3fps).
 
 // Wrap the JS callback in a stable runOnJS bridge (via useMemo to avoid recreation)
 const handleResultJS = useMemo(() => runOnJS(handleResult), [handleResult]);
+
+const frameCountRef = useRef({ value: 0 }); // object so worklet can mutate .value
 
 const frameOutput = useFrameOutput({
   onFrame: useCallback(
     (frame) => {
       "worklet";
-      const result = scanText(frame as any); // same object at runtime
+      frameCountRef.current.value = (frameCountRef.current.value + 1) % 10;
+      if (frameCountRef.current.value !== 0) {
+        frame.dispose();
+        return;
+      }
+      // Cast: OCR library types Frame against V4; underlying Nitro object is identical
+      const result = scanText(frame as Parameters<typeof scanText>[0]);
       frame.dispose(); // must dispose explicitly in V5
       handleResultJS(result);
     },
@@ -110,8 +117,9 @@ const frameOutput = useFrameOutput({
 - `runOnJS` from `react-native-worklets` (not `react-native-worklets-core`) bridges to JS thread
 - `useMemo(() => runOnJS(fn), [fn])` stabilizes the bridge across renders
 - `useFrameOutput` returns a `CameraFrameOutput` added to `outputs={[photoOutput, frameOutput]}`
+- **Do not combine `frameSkipThreshold` with a manual frame counter** — the skips multiply
 
-**Why `frame as any`:** The OCR library types `Frame` against V4's spec; V5 exports a Nitro-based Frame. The underlying native object is the same; the cast is type-only.
+**Why the cast:** The OCR library types `Frame` against V4's spec; V5 exports a Nitro-based Frame. Use `frame as Parameters<typeof scanText>[0]` (not `as any`) to keep type checking on surrounding code while satisfying the library's parameter type.
 
 ## `isFocused` Effect Dead Zone — In-Screen Overlays Don't Trigger Focus Re-Entry (2026-05-02)
 

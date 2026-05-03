@@ -149,12 +149,11 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     }));
 
     // Frame output for OCR (label mode) — mutually exclusive with barcode scanner
-    const outputs =
-      enableOCR && barcodeTypes.length === 0 && frameOutput
-        ? [photoOutput, frameOutput]
-        : barcodeTypes.length > 0
-          ? [photoOutput, barcodeScannerOutput]
-          : [photoOutput];
+    const outputs = frameOutput
+      ? [photoOutput, frameOutput]
+      : barcodeTypes.length > 0
+        ? [photoOutput, barcodeScannerOutput]
+        : [photoOutput];
 
     return (
       <Camera
