@@ -10,6 +10,7 @@ export interface ParsedFoodItem {
   carbs: number | null;
   fat: number | null;
   servingSize: string | null;
+  sourceType?: "voice" | "text" | "chip";
 }
 
 export function useParseFoodText() {

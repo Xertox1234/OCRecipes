@@ -35,6 +35,9 @@ export function useQuickLogSession({
   const [parseError, setParseError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Tracks the intended source for the next parse trigger
+  const pendingSourceRef = useRef<"voice" | "text" | "chip">("text");
+
   const {
     isListening,
     transcript,
@@ -62,7 +65,12 @@ export function useQuickLogSession({
       setParseError(null);
       parseFoodTextMutate(transcript, {
         onSuccess: (data) => {
-          setParsedItems(data.items);
+          setParsedItems(
+            data.items.map((item) => ({
+              ...item,
+              sourceType: "voice" as const,
+            })),
+          );
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
         onError: () => {
@@ -77,9 +85,13 @@ export function useQuickLogSession({
     if (!inputText.trim()) return;
     setParseError(null);
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
+    const source = pendingSourceRef.current;
+    pendingSourceRef.current = "text";
     parseFoodTextMutate(inputText.trim(), {
       onSuccess: (data) => {
-        setParsedItems(data.items);
+        setParsedItems(
+          data.items.map((item) => ({ ...item, sourceType: source })),
+        );
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
       onError: () => {
@@ -104,6 +116,7 @@ export function useQuickLogSession({
 
   const handleChipPress = useCallback(
     (text: string) => {
+      pendingSourceRef.current = "chip";
       setInputText(text);
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     },
@@ -116,7 +129,7 @@ export function useQuickLogSession({
         items.map(async (item) => {
           const res = await apiRequest("POST", "/api/scanned-items", {
             productName: `${item.quantity} ${item.unit} ${item.name}`,
-            sourceType: "voice",
+            sourceType: item.sourceType ?? "voice",
             calories: item.calories?.toString(),
             protein: item.protein?.toString(),
             carbs: item.carbs?.toString(),
