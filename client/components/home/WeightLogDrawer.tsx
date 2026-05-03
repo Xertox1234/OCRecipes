@@ -379,7 +379,7 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
             style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
           >
             <ThemedText style={[styles.tapThrough, { color: theme.link }]}>
-              Full chart &amp; history →
+              Full chart & history →
             </ThemedText>
           </Pressable>
         </View>
