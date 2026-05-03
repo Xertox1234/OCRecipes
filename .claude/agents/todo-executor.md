@@ -27,7 +27,21 @@ Check whether this todo is eligible for execution:
 
 ## Step 3 — Research
 
-Gather context before implementing. Read pattern docs based on the todo's `labels` array using this mapping:
+Before implementing, extract the list of affected source files from the todo's Implementation Notes and Acceptance Criteria (any file references — including fully-qualified paths (`server/routes/cooking.ts`), bare filenames (`` `cooking.ts` ``), and paths with line ranges (`path/to/file.ts:123-145`). Extract paths exactly as they appear in the todo text). Then spawn the `todo-researcher` subagent:
+
+```
+Agent({
+  description: "Research: <todo title>",
+  subagent_type: "general-purpose",
+  prompt: "You are a todo researcher. Follow .claude/agents/todo-researcher.md exactly.\n\nTodo file: todos/<filename>.md\nAffected files: <comma-separated list of source files from Implementation Notes and Acceptance Criteria>\n\nReturn a research brief."
+})
+```
+
+Replace `<filename>` with the filename portion of the todo path passed to you (e.g., if your todo is `todos/scan-confirm-null-calories-guard.md`, use `scan-confirm-null-calories-guard`).
+
+Read the research brief the agent returns. Keep it in context for Step 4 — it contains library API notes, project context, and global patterns relevant to this todo.
+
+**If the Agent() call throws an error, the subagent is unreachable, or the returned text contains none of the section headers (`## Library Notes`, `## Project Context`, `## Global Patterns`)**, log "researcher unavailable" and fall back to reading local pattern docs directly using this label mapping:
 
 | Label                         | Pattern docs to read                                                                            |
 | ----------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -43,13 +57,13 @@ Gather context before implementing. Read pattern docs based on the todo's `label
 | `client-state`                | `docs/patterns/client-state.md`                                                                 |
 | `remix`                       | `docs/patterns/react-native.md`, `docs/patterns/design-system.md`                               |
 
-If no labels match any row above, fall back to reading `CLAUDE.md` for general project guidance.
+If the researcher failed and no label matches the table above, read `CLAUDE.md` for general project guidance.
 
-Additionally:
+**Regardless of whether the researcher succeeded or fell back**, also do:
 
-- **Grep `docs/LEARNINGS.md`** for mentions of affected files or the domain area (e.g., if the todo modifies `server/routes/cooking.ts`, grep for "cooking").
-- **Grep `todos/archive/`** for prior art — previous todos that touched the same files or domain. Read any relevant archived todos to avoid repeating mistakes or duplicating solved work.
-- **Read the full source files** listed in the todo's Implementation Notes or Acceptance Criteria. Understand the current state before modifying anything.
+- **Grep `docs/LEARNINGS.md`** for mentions of the affected files or domain area.
+- **Grep `todos/archive/`** for prior todos that touched the same files.
+- **Read the full source files** listed in Implementation Notes or Acceptance Criteria to understand the current state before modifying anything.
 
 ---
 
@@ -90,15 +104,17 @@ After all commands pass, re-read every modified file and confirm the changes mat
 
 ## Step 6 — Code Review
 
-Spawn the `code-reviewer` subagent (`.claude/agents/code-reviewer.md`) to review the uncommitted diff.
+Spawn the `code-reviewer` subagent to review the uncommitted changes in this worktree:
 
-Pass it the current diff context:
-
-```bash
-git diff
+```
+Agent({
+  description: "Code review: <todo title>",
+  subagent_type: "superpowers:code-reviewer",
+  prompt: "You are reviewing uncommitted changes in a git worktree for the OCRecipes project. Follow .claude/agents/code-reviewer.md exactly.\n\nRun `git diff` to see the changes. Return a structured report with Critical, High, Medium, and Low findings."
+})
 ```
 
-The reviewer will return a structured report with Critical, High, Medium, and Low findings.
+The reviewer will run `git diff` itself to inspect the changes. It will return a structured report with Critical, High, Medium, and Low findings.
 
 ---
 
@@ -190,7 +206,72 @@ EOF
 
 ---
 
-## Step 10 — Report
+## Step 10 — Create PR
+
+This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both complete — the branch must contain the committed implementation before the PR is opened.
+
+Rename the worktree branch to a meaningful slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
+
+1. **Determine the todo slug**: strip the `.md` extension from the todo filename. Example: `scan-confirm-null-calories-guard.md` → `scan-confirm-null-calories-guard`.
+
+2. **Rename the branch and push**:
+
+```bash
+git branch -m todo/<todo-slug>
+```
+
+If the rename fails because a local branch named `todo/<todo-slug>` already exists, delete the stale branch first, then retry:
+
+```bash
+git branch -D todo/<todo-slug>
+git branch -m todo/<todo-slug>
+```
+
+Then push:
+
+```bash
+git push -u origin todo/<todo-slug>
+```
+
+If the push is rejected because `todo/<todo-slug>` already exists on the remote, force-push — the branch name is deterministically derived from this todo's slug, so the remote branch is from a prior failed run of this same todo:
+
+```bash
+git push --force-with-lease -u origin todo/<todo-slug>
+```
+
+3. **Create the PR** using the GitHub MCP tool — call `mcp__github__create_pull_request` with:
+   - `owner`: `xertox1234`
+   - `repo`: `OCRecipes`
+   - `title`: `<todo title from frontmatter>`
+   - `head`: `todo/<todo-slug>`
+   - `base`: `<base branch from your spawn prompt>`
+   - `body`: use the template below
+
+**PR body template** — fill each placeholder from the todo file and the files you changed:
+
+```
+## Summary
+<todo title>
+
+<Content of the todo's Summary section. If no Summary section exists, use the first 2 sentences of the Background section. If neither section exists, omit the paragraph entirely and use only the title line above.>
+
+## Changes
+<Bullet list of every source file modified during implementation — from the list you tracked in Step 4.>
+
+## Resolves
+Todo: `todos/<filename>.md` (archived in this commit)
+
+## Test plan
+<Copy the todo's Acceptance Criteria items here as a markdown checklist.>
+
+🤖 Implemented by Claude Code /todo skill
+```
+
+4. **If `mcp__github__create_pull_request` fails** because a PR already exists for `todo/<todo-slug>`, look up the existing PR URL before giving up: call `mcp__github__list_pull_requests` with `owner: xertox1234`, `repo: OCRecipes`, `head: xertox1234:todo/<todo-slug>`, `state: open`. If a PR is found, use its URL as `PR_URL`. If no open PR is found or the call fails for any other reason (network error, auth error, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
+
+---
+
+## Step 11 — Report
 
 Return a structured result to the orchestrator.
 
@@ -199,9 +280,10 @@ Return a structured result to the orchestrator.
 ```
 STATUS: success
 COMMIT: <commit hash>
+PR_URL: <GitHub PR URL, or "null" if PR creation failed>
 CODIFICATION_COMMIT: <commit hash> | none
 FILES_CHANGED: <list of modified files>
-REVIEW_ROUNDS: <1 or 2>
+REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
 ```
 
 **On failure:**
@@ -225,7 +307,7 @@ REASON: <status not eligible | list of blocking dependency filenames>
 
 If implementation fails at any point after Step 4 (verify fails, review has unresolvable issues, acceptance criteria cannot be met):
 
-> **Note:** The orchestrator must ensure a clean working tree before dispatching to this agent.
+> **Note:** This agent always runs in an isolated git worktree — the working tree starts clean. Revert operations (`git checkout -- <files>`) only affect this worktree and cannot touch the base branch.
 
 ### First failure
 
@@ -262,7 +344,7 @@ EOF
 )"
 ```
 
-4. **Report** as failed (see Step 10).
+4. **Report** as failed (see Step 11).
 
 ---
 
@@ -274,6 +356,7 @@ EOF
 - `docs/LEARNINGS.md` — Bug post-mortems and gotchas (grep during research)
 - `.claude/agents/code-reviewer.md` — Code review subagent (invoked in Step 6)
 - `.claude/agents/pattern-codifier.md` — Pattern codification subagent (invoked in Step 9)
+- `.claude/agents/todo-researcher.md` — Research subagent (invoked in Step 3)
 - `CLAUDE.md` — Project overview, commands, architecture reference
 
 ---

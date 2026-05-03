@@ -18,6 +18,7 @@ Patterns are organized into domain-specific files under `docs/patterns/`:
 | Architecture  | [architecture.md](patterns/architecture.md)   | Storage module decomposition, route registration, service patterns, storage layer purity, structured logging conventions                           |
 | Hooks         | [hooks.md](patterns/hooks.md)                 | TanStack Query CRUD modules, FormData uploads, SSE streaming, action-driven callbacks outside setState, round-trip snapshots for lossy strings     |
 | AI Prompting  | [ai-prompting.md](patterns/ai-prompting.md)   | Pre-compute context, few-shot examples, safety refusals, completion budget, markdown restrictions                                                  |
+| Agents        | [agents.md](patterns/agents.md)               | Two-turn parallel MCP strategy, section-header detection for agent-to-agent protocol                                                               |
 | Testing       | [testing.md](patterns/testing.md)             | Pure function extraction, vi.resetModules, pre-commit hooks, ESLint rules, LLM evals, exhaustive-partition locks on shared-type enums              |
 | Documentation | [documentation.md](patterns/documentation.md) | Todo structure, design decisions, form state hooks, bottom-sheet lifecycle                                                                         |
 

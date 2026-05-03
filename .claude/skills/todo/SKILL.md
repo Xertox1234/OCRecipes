@@ -16,7 +16,23 @@ Establish a green baseline before touching any code.
    npm run lint
    ```
 2. Record the **test count** (e.g., "1327 tests passed"), the **type-check result** (e.g., "0 errors"), and the **lint result** (e.g., "0 warnings, 0 errors").
-3. **If ANY command fails, stop immediately.** Report the failure to the user and exit — do not proceed to Phase 2. The codebase must be green before batch processing begins.
+3. **Capture the base branch** before creating any worktrees:
+
+   ```bash
+   git branch --show-current
+   ```
+
+   If the output is empty (detached HEAD state), fall back to:
+
+   ```bash
+   git rev-parse --abbrev-ref HEAD
+   ```
+
+   If that also returns `HEAD`, stop immediately and report "cannot determine base branch — HEAD is detached. Please check out a named branch before running /todo." Do not proceed to Phase 2.
+
+   Store the branch name as `BASE_BRANCH` (e.g., `feat/nutrition-inline-drawers` or `main`). Pass it to every executor spawn in Phase 4 via the `Base branch:` line in the prompt.
+
+4. **If ANY command fails, stop immediately.** Report the failure to the user and exit — do not proceed to Phase 2. The codebase must be green before batch processing begins.
 
 ## Phase 2 — Triage
 
@@ -74,6 +90,8 @@ Work through the execution plan batch by batch.
 
 For each batch marked parallel, spawn one `todo-executor` agent per todo, each in an **isolated worktree**.
 
+Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` in the prompt string. Never pass the literal text `<BASE_BRANCH>`.
+
 Use the Agent tool with these parameters:
 
 ```
@@ -81,7 +99,7 @@ Agent({
   description: "Execute todo: <todo title>",
   subagent_type: "general-purpose",
   isolation: "worktree",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\n\nExecute all 10 steps and report the result."
+  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\n\nExecute all 11 steps and report the result."
 })
 ```
 
@@ -89,7 +107,11 @@ Launch all agents in the batch simultaneously (up to 4). Wait for all to complet
 
 ### Sequential Batches
 
-For each batch marked sequential, spawn a **single** `todo-executor` agent (no worktree isolation needed).
+For each batch marked sequential, spawn a **single** `todo-executor` agent.
+
+Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` in the prompt string. Never pass the literal text `<BASE_BRANCH>`.
+
+Run one at a time. Wait for each to complete before starting the next.
 
 Use the Agent tool with these parameters:
 
@@ -97,27 +119,22 @@ Use the Agent tool with these parameters:
 Agent({
   description: "Execute todo: <todo title>",
   subagent_type: "general-purpose",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\n\nExecute all 10 steps and report the result."
+  isolation: "worktree",
+  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\n\nExecute all 11 steps and report the result."
 })
 ```
-
-Run one at a time. Wait for each to complete before starting the next.
 
 ### After Each Batch
 
 1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`.
-2. **Record commit hashes** from successful executions.
-3. **Merge worktree branches.** For each completed worktree agent, the worktree's branch is automatically returned by the Agent tool. Merge each branch into the current branch:
+2. **Record PR URLs and commit hashes** from successful executions. Each successful executor reports `PR_URL` (may be `null` if PR creation failed) and `COMMIT`.
+3. **Run a post-batch type check** on the base branch to confirm it was not corrupted by the worktree setup:
    ```bash
-   git merge <worktree-branch> --no-edit
-   ```
-   If a merge conflict occurs, mark the conflicting todo as `failed` with reason "merge conflict with concurrent todo", revert the merge with `git merge --abort`, and proceed to the next branch.
-4. **Run a post-merge sanity check** after all merges complete:
-   ```bash
-   npm run test:run
    npm run check:types
    ```
-   If either fails, investigate and fix before continuing to the next batch.
+   Run this on the BASE branch (not inside any worktree). If it fails, halt the session immediately and report to the user. Do not start the next batch.
+
+If the type check passes, proceed to the next batch in the execution plan.
 
 ## Phase 5 — Session Summary
 
@@ -135,17 +152,18 @@ After all batches have been executed (or after early termination):
 
 3. **Print the summary table:**
 
-   | #   | Todo                                  | Status  | Commit    | Review Rounds | Notes                           |
-   | --- | ------------------------------------- | ------- | --------- | ------------- | ------------------------------- |
-   | 1   | Extract suggestion generation service | success | `a1b2c3d` | 1             | —                               |
-   | 2   | Storage facade re-exports             | success | `d4e5f6a` | 2             | Medium review finding deferred  |
-   | 3   | Remix screen reader announcements     | blocked | —         | 0             | Depends on remix-carousel-badge |
-   | 4   | Fix useCollapsible height test        | failed  | —         | 1             | Type error in mock setup        |
+   | #   | Todo                                  | Status  | PR                      | Review Rounds | Notes                               |
+   | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |
+   | 1   | Extract suggestion generation service | success | github.com/…/pull/42    | 1             | —                                   |
+   | 2   | Storage facade re-exports             | success | github.com/…/pull/43    | 2             | Medium review finding deferred      |
+   | 3   | Remix screen reader announcements     | blocked | —                       | 0             | Depends on remix-carousel-badge     |
+   | 4   | Fix useCollapsible height test        | failed  | —                       | 1             | Type error in mock setup            |
+   | 5   | Fix calorie rounding utility          | success | pending manual creation | 1             | PR creation failed — push succeeded |
 
 4. **Print tallies:**
 
    ```
-   Completed: N
+   Completed: N (list PR URLs; note "PR pending manual creation" for any where PR_URL is null)
    Blocked:   M
    Skipped:   S
    Failed:    F
@@ -166,7 +184,7 @@ After all batches have been executed (or after early termination):
 - **Baseline must be green.** Never start batch processing on a broken codebase.
 - **Max 4 parallel agents.** Respect the limit to avoid overwhelming system resources and context.
 - **Sequential when scope is unknown.** If a todo mentions no files, it runs alone — never assume it is safe to parallelize.
-- **Verify after merging parallel work.** Tests and types must pass before starting the next batch.
+- **Verify after each batch.** Run `npm run check:types` on the base branch before starting the next batch. The full test suite runs only in Phase 5 — never run `npm run test:run` between batches. This is an accepted tradeoff: type-check only between batches trades speed for test-failure latency; if a batch introduces a test regression it won't surface until Phase 5.
 - **The executor agent does the work.** This orchestrator only triages, dispatches, and summarizes. Never implement todo changes directly.
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
