@@ -129,6 +129,7 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
         accessibilityRole="button"
         accessibilityLabel={`${action.label}, ${subtitle}`}
         accessibilityState={{ expanded: isOpen }}
+        accessibilityHint={`Double tap to ${isOpen ? "collapse" : "expand"} fasting timer`}
       >
         <View
           style={[
@@ -372,7 +373,7 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
             style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
           >
             <ThemedText style={[styles.tapThrough, { color: theme.link }]}>
-              📊 History, stats &amp; settings
+              📊 History, stats & settings
             </ThemedText>
           </Pressable>
         </View>
