@@ -74,14 +74,13 @@ describe("useDiscoveryCards", () => {
     expect(mockDismissCard).toHaveBeenCalledWith("scan-receipt");
   });
 
-  it("returns empty array when all 11 cards have been dismissed", async () => {
+  it("returns empty array when all 10 cards have been dismissed", async () => {
     const allDismissed = new Set([
       "scan-receipt",
       "photo-food-log",
       "scan-menu",
       "scan-nutrition-label",
       "batch-scan",
-      "ai-coach",
       "meal-plan",
       "grocery-list",
       "pantry",
@@ -93,7 +92,7 @@ describe("useDiscoveryCards", () => {
     await waitFor(() => expect(result.current.cards).toHaveLength(0));
   });
 
-  it("returns empty array when all 11 cards have been used", async () => {
+  it("returns empty array when all 10 cards have been used", async () => {
     const allUsed = Object.fromEntries(
       [
         "scan-receipt",
@@ -101,7 +100,6 @@ describe("useDiscoveryCards", () => {
         "scan-menu",
         "scan-nutrition-label",
         "batch-scan",
-        "ai-coach",
         "meal-plan",
         "grocery-list",
         "pantry",
