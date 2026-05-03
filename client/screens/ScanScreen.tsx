@@ -502,7 +502,10 @@ export default function ScanScreen() {
       />
 
       {isLabelMode ? (
-        <Animated.View style={[styles.reticleGlowWrapper, glowStyle]}>
+        <Animated.View
+          style={[styles.reticleGlowWrapper, glowStyle]}
+          pointerEvents="none"
+        >
           <ScanReticle phase={scanPhase} reducedMotion={reducedMotion} />
         </Animated.View>
       ) : (

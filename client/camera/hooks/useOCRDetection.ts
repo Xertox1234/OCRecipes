@@ -5,6 +5,13 @@ import { useFrameOutput } from "react-native-vision-camera";
 import type { Frame } from "react-native-vision-camera";
 import { runOnJS } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
+import {
+  processOCRFrame,
+  onOCRDebounceExpired,
+  onOCRDisabled,
+  INITIAL_OCR_STATE,
+  type OCRDetectionState,
+} from "./useOCRDetection-utils";
 
 export interface UseOCRDetectionOptions {
   /** Whether OCR detection is active */
@@ -37,8 +44,7 @@ export function useOCRDetection(
   const { enabled, onTextDetected, onOCRResult, debounceMs = 500 } = options;
 
   const latestOCRResult = useRef<OCRText | null>(null);
-  const isTextDetectedRef = useRef(false);
-  const hasHapticsRef = useRef(false);
+  const detectionStateRef = useRef<OCRDetectionState>(INITIAL_OCR_STATE);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Stable refs so worklet closures stay fresh without re-creating frame output
@@ -51,18 +57,47 @@ export function useOCRDetection(
     onOCRResultRef.current = onOCRResult;
   }, [onOCRResult]);
 
-  // Reset session state when disabled (new capture session begins)
+  // Apply effects produced by the pure state machine
+  const applyEffects = useCallback(
+    (effects: ReturnType<typeof processOCRFrame>["effects"]) => {
+      for (const effect of effects) {
+        switch (effect.type) {
+          case "notify_detected":
+            onTextDetectedRef.current?.(effect.value);
+            break;
+          case "fire_haptic":
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            break;
+          case "start_debounce":
+            debounceTimerRef.current = setTimeout(() => {
+              debounceTimerRef.current = null;
+              const { state: next, effects: expiredEffects } =
+                onOCRDebounceExpired(detectionStateRef.current);
+              detectionStateRef.current = next;
+              applyEffects(expiredEffects);
+            }, debounceMs);
+            break;
+          case "cancel_debounce":
+            if (debounceTimerRef.current) {
+              clearTimeout(debounceTimerRef.current);
+              debounceTimerRef.current = null;
+            }
+            break;
+        }
+      }
+    },
+    [debounceMs],
+  );
+
+  // Reset session state when disabled (Bug #2: notify UI if glow was active)
   useEffect(() => {
     if (!enabled) {
-      hasHapticsRef.current = false;
-      isTextDetectedRef.current = false;
       latestOCRResult.current = null;
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-      }
+      const { state: next, effects } = onOCRDisabled(detectionStateRef.current);
+      detectionStateRef.current = next;
+      applyEffects(effects); // cancel_debounce and notify_detected(false) are included as needed
     }
-  }, [enabled]);
+  }, [enabled, applyEffects]);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -80,42 +115,20 @@ export function useOCRDetection(
   const handleOCRResult = useCallback(
     (result: OCRText) => {
       const hasText = (result.resultText?.trim().length ?? 0) > 0;
-
       latestOCRResult.current = hasText ? result : null;
 
       if (hasText) {
         onOCRResultRef.current?.(result);
       }
 
-      if (hasText && !isTextDetectedRef.current) {
-        isTextDetectedRef.current = true;
-
-        // Cancel any pending "no text" debounce
-        if (debounceTimerRef.current) {
-          clearTimeout(debounceTimerRef.current);
-          debounceTimerRef.current = null;
-        }
-
-        onTextDetectedRef.current?.(true);
-
-        // Fire haptic once per session on first text detection
-        if (!hasHapticsRef.current) {
-          hasHapticsRef.current = true;
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-      } else if (!hasText && isTextDetectedRef.current) {
-        // Debounce the "no text" transition to avoid flicker
-        if (!debounceTimerRef.current) {
-          const delay = debounceMs;
-          debounceTimerRef.current = setTimeout(() => {
-            isTextDetectedRef.current = false;
-            debounceTimerRef.current = null;
-            onTextDetectedRef.current?.(false);
-          }, delay);
-        }
-      }
+      const { state: next, effects } = processOCRFrame(
+        detectionStateRef.current,
+        hasText,
+      );
+      detectionStateRef.current = next;
+      applyEffects(effects);
     },
-    [debounceMs],
+    [applyEffects],
   );
 
   // Memoized JS bridge — recreated only when the JS handler changes.
