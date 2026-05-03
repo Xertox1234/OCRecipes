@@ -16,6 +16,8 @@ import { DiscoveryCarousel } from "@/components/home/DiscoveryCarousel";
 import { CollapsibleSection } from "@/components/home/CollapsibleSection";
 import { ActionRow } from "@/components/home/ActionRow";
 import { QuickLogDrawer } from "@/components/home/QuickLogDrawer";
+import { FastingDrawer } from "@/components/home/FastingDrawer";
+import { WeightLogDrawer } from "@/components/home/WeightLogDrawer";
 import {
   HOME_ACTIONS,
   getActionsByGroup,
@@ -43,6 +45,19 @@ const SECTIONS: { key: SectionKey; title: string; delay: number }[] = [
   { key: "recipes", title: "Recipes", delay: 200 },
   { key: "planning", title: "Planning", delay: 250 },
 ];
+
+function renderInlineAction(action: HomeAction) {
+  switch (action.id) {
+    case "quick-log":
+      return <QuickLogDrawer key={action.id} action={action} />;
+    case "fasting-timer":
+      return <FastingDrawer key={action.id} action={action} />;
+    case "log-weight":
+      return <WeightLogDrawer key={action.id} action={action} />;
+    default:
+      return null;
+  }
+}
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
@@ -188,7 +203,7 @@ export default function HomeScreen() {
             >
               {getActionsByGroup(key).map((action) =>
                 action.renderInline ? (
-                  <QuickLogDrawer key={action.id} action={action} />
+                  renderInlineAction(action)
                 ) : (
                   <ActionRow
                     key={action.id}
