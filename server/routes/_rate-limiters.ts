@@ -182,3 +182,21 @@ export const allergenCheckRateLimit = createRateLimiter({
   max: 20,
   message: "Too many allergen check requests. Please wait.",
 });
+
+export const remindersPendingRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: "Too many reminder requests. Please wait.",
+});
+
+export const remindersAcknowledgeRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 20,
+  message: "Too many acknowledge requests. Please wait.",
+});
+
+export const remindersMutesRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Too many mute requests. Please wait.",
+});

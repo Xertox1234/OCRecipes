@@ -5,26 +5,12 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { handleRouteError } from "./_helpers";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { createRateLimiter } from "./_rate-limiters";
+import {
+  remindersPendingRateLimit,
+  remindersAcknowledgeRateLimit,
+  remindersMutesRateLimit,
+} from "./_rate-limiters";
 import type { ReminderMutes } from "@shared/types/reminders";
-
-const remindersPendingRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 60,
-  message: "Too many reminder requests. Please wait.",
-});
-
-const remindersAcknowledgeRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 20,
-  message: "Too many acknowledge requests. Please wait.",
-});
-
-const remindersMutesRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 30,
-  message: "Too many mute requests. Please wait.",
-});
 
 const mutesSchema = z
   .object({
