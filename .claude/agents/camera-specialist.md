@@ -135,6 +135,7 @@ When reviewing or writing camera code, verify:
 - [ ] Camera permissions requested before rendering CameraView
 - [ ] Permission denied state has fallback UI with re-request button
 - [ ] `isActive={isFocused}` stops camera when navigating away
+- [ ] When an in-screen overlay logically pauses scanning (confirm card, result sheet, permission prompt), `isActive` is extended: `isActive={isFocused && !overlayState}` — `isFocused` alone won't stop the hardware pipeline when the screen stays focused (Ref: audit 2026-05-02 H4)
 - [ ] Camera ref uses `CameraRef` type, not `any`
 
 ### Scanning
@@ -144,6 +145,7 @@ When reviewing or writing camera code, verify:
 - [ ] Haptic feedback on successful scan
 - [ ] Scan result validated before navigation
 - [ ] `isFocused` (from `useIsFocused()`) is passed to `useScanClassification` at ALL call sites — a declared-but-not-passed `isFocused` silently disables the stale-navigation guard with no TypeScript warning (Ref: audit 2026-04-28 C1)
+- [ ] Any "reset scanner / re-initialize camera" logic that must fire while the screen stays focused (e.g. overlay dismiss) is done imperatively in the event handler — never relies on a `isFocused` effect re-firing, because that effect only fires on navigation transitions (Ref: audit 2026-05-02 C1)
 
 ### Image Handling
 

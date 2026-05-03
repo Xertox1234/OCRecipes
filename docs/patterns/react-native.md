@@ -703,6 +703,24 @@ Use `presentation: "fullScreenModal"` instead of `transparentModal` for camera/s
 
 **Why:** `transparentModal` is the default recommendation for full-screen overlays, but it has rendering issues that cause visual artifacts on some iOS versions. Camera screens don't benefit from transparency anyway since the camera feed is opaque, so `fullScreenModal` is the better choice.
 
+### Camera `isActive`: Include In-Screen Overlay State
+
+`isActive={isFocused}` stops the camera when _navigating away_, but not when an overlay appears _within_ the same screen. If a confirm card, bottom sheet, or any in-screen UI element logically "pauses" the camera, extend `isActive` to include that state:
+
+```typescript
+// ❌ Camera runs behind the confirm overlay — wastes battery, can still fire scan callbacks
+<CameraView isActive={isFocused} />
+
+// ✅ Hardware pipeline halts while overlay is visible
+<CameraView isActive={isFocused && !confirmCard} />
+```
+
+**Why `isActive` and not just a ref guard:** A ref guard (e.g. `hasLockedRef`) only prevents _processing_ barcode frames — the camera sensor, ISP, and frame transfer pipeline all continue running on the hardware thread. `isActive={false}` halts the pipeline at the VisionCamera level: real battery and thermal savings, not just a JS-side skip.
+
+**When to use:** Any state that represents the user logically leaving the scanning interaction without navigating away — confirm dialogs, permission prompts, loading overlays, inline result cards.
+
+**Ref:** `ScanScreen.tsx` confirm overlay (audit 2026-05-02 H4).
+
 ### Dismiss-then-Navigate: Modal to Another Screen
 
 When a button inside a modal needs to open a different screen (not a child of the modal), dismiss the modal first with `goBack()`, then use `InteractionManager.runAfterInteractions()` before navigating. Without this, `navigate()` fires against a stale navigator state mid-animation, causing unpredictable behavior.

@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [`isFocused` Effect Dead Zone — In-Screen Overlays Don't Trigger Focus Re-Entry (2026-05-02)](#isfocused-effect-dead-zone--in-screen-overlays-dont-trigger-focus-re-entry-2026-05-02)
 - [React 19 finally-block Batching Collapses setState Calls in Same Synchronous Frame (2026-05-01)](#react-19-finally-block-batching-collapses-setstate-calls-in-same-synchronous-frame-2026-05-01)
 - [react-native-vision-camera v4→v5 + Capture-then-OCR Migration (2026-05-01)](#react-native-vision-camera-v4v5--capture-then-ocr-migration-2026-05-01)
 - [Expo Push Ticket-to-Token Index Misalignment (2026-04-29)](#expo-push-ticket-to-token-index-misalignment-2026-04-29)
@@ -66,6 +67,43 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## `isFocused` Effect Dead Zone — In-Screen Overlays Don't Trigger Focus Re-Entry (2026-05-02)
+
+**Category:** Gotcha — React Navigation / Camera
+
+A `useEffect` that depends on `isFocused` only fires when focus _transitions_ (gained or lost). It does **not** re-fire when the user dismisses an overlay while the screen remains focused.
+
+**The bug:** `ScanScreen` dispatched `RESET` and relied on the `isFocused` effect to re-initialize `hasLockedRef` and dispatch `CAMERA_READY`. When the user dismissed the confirm overlay (still on the same focused screen), `isFocused` stayed `true` — the effect never re-ran — and the scanner was permanently blocked.
+
+```typescript
+// This effect fires on focus TRANSITIONS only — not on overlay dismiss
+useEffect(() => {
+  if (isFocused) {
+    hasLockedRef.current = false; // ← never re-runs if screen stays focused
+    dispatch({ type: "CAMERA_READY" });
+  }
+}, [isFocused]);
+
+// ❌ Relies on isFocused effect re-running — doesn't work for in-session resets
+const handleConfirmDismiss = useCallback(() => {
+  setConfirmCard(null);
+  dispatch({ type: "RESET" }); // ← hasLockedRef.current stays true
+}, []);
+
+// ✅ Re-initialize imperatively in the dismiss handler
+const handleConfirmDismiss = useCallback(() => {
+  setConfirmCard(null);
+  hasLockedRef.current = false;
+  dispatch({ type: "CAMERA_READY" });
+}, []);
+```
+
+**Rule:** Any "reset and re-initialize" that must happen while the screen stays focused (e.g. dismissing an overlay, completing a sub-flow) must be done **imperatively in the event handler**. Never rely on a `isFocused` effect to do it — that effect is for navigation transitions, not in-session state resets.
+
+**Ref:** `ScanScreen.tsx:handleConfirmDismiss` (audit 2026-05-02 C1).
+
+---
 
 ## 2026-05-01 — React 19 finally-block Batching Collapses setState Calls in Same Synchronous Frame
 
