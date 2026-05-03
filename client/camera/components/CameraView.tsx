@@ -33,6 +33,7 @@ import type {
   BarcodeResult,
   ExpoBarcodeType,
 } from "../types";
+import { useOCRDetection } from "../hooks/useOCRDetection";
 
 /**
  * Maps a 0-1 quality value to V5's qualityPrioritization option.
@@ -84,6 +85,9 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       isActive = true,
       photoQuality,
       style,
+      enableOCR = false,
+      onTextDetected,
+      onOCRResult,
     },
     ref,
   ) => {
@@ -111,6 +115,13 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       },
     });
 
+    // OCR frame processor (label mode only — mutually exclusive with barcode scanning)
+    const { frameOutput, latestOCRResult } = useOCRDetection({
+      enabled: enableOCR && barcodeTypes.length === 0,
+      onTextDetected,
+      onOCRResult,
+    });
+
     // Torch is imperative in V5 — drive it via controller ref
     useEffect(() => {
       cameraRef.current?.controller
@@ -134,12 +145,16 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
           return null;
         }
       },
+      getLatestOCRResult: () => latestOCRResult.current,
     }));
 
+    // Frame output for OCR (label mode) — mutually exclusive with barcode scanner
     const outputs =
-      barcodeTypes.length > 0
-        ? [photoOutput, barcodeScannerOutput]
-        : [photoOutput];
+      enableOCR && barcodeTypes.length === 0 && frameOutput
+        ? [photoOutput, frameOutput]
+        : barcodeTypes.length > 0
+          ? [photoOutput, barcodeScannerOutput]
+          : [photoOutput];
 
     return (
       <Camera

@@ -2,6 +2,9 @@
 export * from "./types";
 export * from "./types/scan-phase";
 
+// OCR types (LocalNutritionData for consumers; OCRText already re-exported via "./types")
+export type { LocalNutritionData } from "@/lib/nutrition-ocr-parser";
+
 // Hooks
 export { useCameraPermissions } from "./hooks/useCameraPermissions";
 export { useCamera } from "./hooks/useCamera";
