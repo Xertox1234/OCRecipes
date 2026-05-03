@@ -206,6 +206,8 @@ EOF
 
 ## Step 10 — Create PR
 
+This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both complete — the branch must contain the committed implementation before the PR is opened.
+
 Rename the worktree branch to a meaningful slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
 
 1. **Determine the todo slug**: strip the `.md` extension from the todo filename. Example: `scan-confirm-null-calories-guard.md` → `scan-confirm-null-calories-guard`.
@@ -216,6 +218,8 @@ Rename the worktree branch to a meaningful slug, push it, and open a GitHub PR t
 git branch -m todo/<todo-slug>
 git push -u origin todo/<todo-slug>
 ```
+
+If the push is rejected because `todo/<todo-slug>` already exists on the remote (a prior failed run may have pushed it), proceed to item 3 — the PR creation may already exist or can be re-created from the existing branch.
 
 3. **Create the PR** using the GitHub MCP tool — call `mcp__github__create_pull_request` with:
    - `owner`: `xertox1234`
@@ -231,7 +235,7 @@ git push -u origin todo/<todo-slug>
 ## Summary
 <todo title>
 
-<Content of the todo's Summary section. If no Summary section exists, use the first 2 sentences of the Background section.>
+<Content of the todo's Summary section. If no Summary section exists, use the first 2 sentences of the Background section. If neither section exists, omit the paragraph entirely and use only the title line above.>
 
 ## Changes
 <Bullet list of every source file modified during implementation — from the list you tracked in Step 4.>
