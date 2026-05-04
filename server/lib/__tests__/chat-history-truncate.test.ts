@@ -26,6 +26,22 @@ describe("estimateTokens", () => {
     expect(estimateTokens({ role: "user", content: "abcde" })).toBe(2);
     expect(estimateTokens({ role: "user", content: "" })).toBe(0);
   });
+
+  it("estimates CJK text at approximately 1 char per token", () => {
+    // 한글 텍스트 = Korean chars, each ≈ 1 token
+    const msg = { role: "user" as const, content: "한글텍스트" }; // 5 Korean chars
+    const tokens = estimateTokens(msg);
+    expect(tokens).toBeGreaterThanOrEqual(4);
+    expect(tokens).toBeLessThanOrEqual(6);
+  });
+
+  it("estimates emoji-heavy text more aggressively than 4 chars per token", () => {
+    // Each emoji (🍎🍊🍋🍇) is typically 2 JS chars but 1-4 tokens
+    // Pure 4-char estimate: 8 chars / 4 = 2 tokens
+    // Emoji-aware should be higher
+    const msg = { role: "user" as const, content: "🍎🍊🍋🍇" };
+    expect(estimateTokens(msg)).toBeGreaterThan(2);
+  });
 });
 
 describe("truncateHistoryToBudget", () => {
