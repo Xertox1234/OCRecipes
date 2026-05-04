@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from "react";
 import {
   AccessibilityInfo,
   Platform,
@@ -207,11 +213,15 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
     transform: [{ rotate: `${chevronRotation.value}deg` }],
   }));
 
-  const totalCalories = session.parsedItems.reduce(
-    (sum, item) => sum + (item.calories ?? 0),
-    0,
+  const totalCalories = useMemo(
+    () =>
+      session.parsedItems.reduce((sum, item) => sum + (item.calories ?? 0), 0),
+    [session.parsedItems],
   );
-  const hasParsedItems = session.parsedItems.length > 0;
+  const hasParsedItems = useMemo(
+    () => session.parsedItems.length > 0,
+    [session.parsedItems],
+  );
 
   return (
     <View>
