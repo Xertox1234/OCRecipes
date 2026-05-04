@@ -1,9 +1,3 @@
-/**
- * Pure utility functions for the returnAfterLog/confirmCard overlay flow in ScanScreen.
- * Extracted to enable Vitest unit testing without React Native imports.
- */
-
-/** Shape of the confirm card state held in ScanScreen */
 export type ConfirmCardState = {
   barcode: string;
   name: string;
@@ -13,13 +7,11 @@ export type ConfirmCardState = {
   isError: boolean;
 };
 
-/** Shape of the product API response from /api/nutrition/barcode/:barcode */
 export type ProductInfoResponse = {
   productName?: string;
   calories?: number;
 };
 
-/** Payload sent to POST /api/scanned-items */
 export type ScannedItemPayload = {
   barcode: string;
   productName: string;
@@ -27,10 +19,6 @@ export type ScannedItemPayload = {
   calories: string | undefined;
 };
 
-/**
- * Build the initial loading state for the confirm overlay when SESSION_COMPLETE
- * fires with returnAfterLog=true.
- */
 export function buildLoadingConfirmCard(barcode: string): ConfirmCardState {
   return {
     barcode,
@@ -42,9 +30,6 @@ export function buildLoadingConfirmCard(barcode: string): ConfirmCardState {
   };
 }
 
-/**
- * Build the loaded confirm card state after a successful product info fetch.
- */
 export function buildLoadedConfirmCard(
   barcode: string,
   data: ProductInfoResponse,
@@ -59,10 +44,6 @@ export function buildLoadedConfirmCard(
   };
 }
 
-/**
- * Build the error confirm card state when the product info fetch fails.
- * isError=true disables Log It and shows "Nutrition data unavailable".
- */
 export function buildFetchErrorConfirmCard(barcode: string): ConfirmCardState {
   return {
     barcode,
@@ -74,9 +55,6 @@ export function buildFetchErrorConfirmCard(barcode: string): ConfirmCardState {
   };
 }
 
-/**
- * Build the POST payload for logging a scanned item via the confirm overlay.
- */
 export function buildScannedItemPayload(
   card: ConfirmCardState,
 ): ScannedItemPayload {
@@ -88,17 +66,10 @@ export function buildScannedItemPayload(
   };
 }
 
-/**
- * Build the success toast message shown after a successful Log It action.
- */
 export function buildSuccessToastMessage(card: ConfirmCardState): string {
-  return `Logged! ${card.name}${card.calories ? ` · ${card.calories} cal` : ""}`;
+  return `Logged! ${card.name}${card.calories != null ? ` · ${card.calories} cal` : ""}`;
 }
 
-/**
- * Returns true when Log It should be enabled: not loading, not currently
- * logging, and no fetch error.
- */
 export function canLog(card: ConfirmCardState): boolean {
   return !card.isLoading && !card.isLogging && !card.isError;
 }

@@ -177,46 +177,13 @@ describe("ScanScreenConfirmOverlay-utils", () => {
       expect(msg).toBe("Logged! Food item");
     });
 
-    it("omits calorie suffix when calories is zero", () => {
+    it("includes calorie suffix when calories is zero", () => {
       const card: ConfirmCardState = {
         ...buildLoadedConfirmCard("x", { productName: "Water" }),
         calories: 0,
       };
       const msg = buildSuccessToastMessage(card);
-      // calories=0 is falsy → no calorie suffix
-      expect(msg).toBe("Logged! Water");
-    });
-  });
-
-  describe("Dismiss resets confirmCard to null (state contract)", () => {
-    it("tapping 'Dismiss' should result in a null confirmCard (handled by setConfirmCard(null) in ScanScreen)", () => {
-      const confirmCardAfterDismiss: null = null;
-      expect(confirmCardAfterDismiss).toBeNull();
-    });
-  });
-
-  describe("POST failure re-enables button (state contract)", () => {
-    it("POST failure state sets isLogging back to false", () => {
-      const prev = buildLoadedConfirmCard("0123456789012", {
-        productName: "Organic Oat Milk",
-        calories: 90,
-      });
-      const prevLogging = { ...prev, isLogging: true };
-      const afterFailure = prevLogging
-        ? { ...prevLogging, isLogging: false }
-        : null;
-      expect(afterFailure?.isLogging).toBe(false);
-      expect(afterFailure?.name).toBe("Organic Oat Milk");
-      expect(afterFailure?.calories).toBe(90);
-    });
-
-    it("POST failure state update is null-safe (no-op when prev is null)", () => {
-      function applyLoggingReset(
-        prev: ConfirmCardState | null,
-      ): ConfirmCardState | null {
-        return prev ? { ...prev, isLogging: false } : null;
-      }
-      expect(applyLoggingReset(null)).toBeNull();
+      expect(msg).toBe("Logged! Water · 0 cal");
     });
   });
 

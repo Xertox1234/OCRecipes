@@ -63,6 +63,7 @@ import {
   buildFetchErrorConfirmCard,
   buildScannedItemPayload,
   buildSuccessToastMessage,
+  canLog,
   type ConfirmCardState,
 } from "@/screens/ScanScreenConfirmOverlay-utils";
 import { ThemedText } from "@/components/ThemedText";
@@ -245,7 +246,7 @@ export default function ScanScreen() {
   }, [scanPhase, navigation, refreshScanCount, reducedMotion, returnAfterLog]);
 
   const handleConfirmLog = useCallback(async () => {
-    if (!confirmCard || confirmCard.isLogging || confirmCard.isError) return;
+    if (!confirmCard || !canLog(confirmCard)) return;
     setConfirmCard((prev) => prev && { ...prev, isLogging: true });
     try {
       await apiRequest(
@@ -741,7 +742,7 @@ export default function ScanScreen() {
                 </Pressable>
                 <Pressable
                   onPress={handleConfirmLog}
-                  disabled={confirmCard.isLogging || confirmCard.isError}
+                  disabled={!canLog(confirmCard)}
                   style={({ pressed }) => [
                     styles.confirmLogButton,
                     {
