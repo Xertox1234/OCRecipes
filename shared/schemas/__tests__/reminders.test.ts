@@ -5,14 +5,14 @@ describe("coachContextItemSchema", () => {
   describe("meal-log variant", () => {
     it("accepts a valid meal-log item with a date string", () => {
       const input = {
-        type: "meal-log" as const,
+        type: "meal-log",
         lastLoggedAt: "2026-05-02T10:00:00.000Z",
       };
       expect(coachContextItemSchema.parse(input)).toEqual(input);
     });
 
     it("accepts a valid meal-log item with null lastLoggedAt", () => {
-      const input = { type: "meal-log" as const, lastLoggedAt: null };
+      const input = { type: "meal-log", lastLoggedAt: null };
       expect(coachContextItemSchema.parse(input)).toEqual(input);
     });
 
@@ -22,12 +22,20 @@ describe("coachContextItemSchema", () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it("rejects meal-log when lastLoggedAt is a number", () => {
+      const result = coachContextItemSchema.safeParse({
+        type: "meal-log",
+        lastLoggedAt: 1746172800000,
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   describe("commitment variant", () => {
     it("accepts a valid commitment item", () => {
       const input = {
-        type: "commitment" as const,
+        type: "commitment",
         notebookEntryId: 42,
         content: "Meal prep on Sunday",
       };
@@ -49,11 +57,20 @@ describe("coachContextItemSchema", () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it("rejects commitment when notebookEntryId is a string", () => {
+      const result = coachContextItemSchema.safeParse({
+        type: "commitment",
+        notebookEntryId: "42",
+        content: "Meal prep on Sunday",
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   describe("daily-checkin variant", () => {
     it("accepts a valid daily-checkin item", () => {
-      const input = { type: "daily-checkin" as const, calories: 1850 };
+      const input = { type: "daily-checkin", calories: 1850 };
       expect(coachContextItemSchema.parse(input)).toEqual(input);
     });
 
@@ -63,12 +80,20 @@ describe("coachContextItemSchema", () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it("rejects daily-checkin when calories is a string", () => {
+      const result = coachContextItemSchema.safeParse({
+        type: "daily-checkin",
+        calories: "1850",
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   describe("user-set variant", () => {
     it("accepts a valid user-set item", () => {
       const input = {
-        type: "user-set" as const,
+        type: "user-set",
         message: "Remind me to drink water",
       };
       expect(coachContextItemSchema.parse(input)).toEqual(input);
