@@ -6,6 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 OCRecipes is a mobile nutrition tracking app built with Expo/React Native (frontend) and Express.js (backend). Users scan food barcodes/labels with their camera, track nutritional intake, plan meals with recipes, and receive AI-powered nutrition advice via chat.
 
+## Workflow Standards
+
+- After completing todo/audit work, ALWAYS dispatch the code-reviewer subagent before committing — do not skip this step
+- After code review, ALWAYS check for emergent patterns and codify them in the patterns docs
+- Run full test suite + typecheck + lint to establish a green baseline BEFORE starting any todo execution
+- Push commits to origin after a clean review cycle unless user says otherwise
+
 ## Development Commands
 
 ```bash

@@ -130,7 +130,7 @@ Respond with JSON: { "suggestions": [...] }`;
           { role: "user", content: userPrompt },
         ],
         response_format: { type: "json_object" },
-        temperature: 0.8,
+        temperature: 0.5,
         max_completion_tokens: 3000,
       },
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },

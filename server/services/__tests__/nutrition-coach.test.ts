@@ -655,6 +655,40 @@ describe("generateCoachResponse", () => {
     expect(result).not.toContain("Here is advice.");
   });
 
+  it("includes a vague-message clarification example in the system prompt", async () => {
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const systemMsg = (
+      callArgs as { messages: { role: string; content: string }[] }
+    ).messages[0];
+    expect(systemMsg.content).toContain("What would be most helpful");
+  });
+
+  it("includes an over-goal graceful-acknowledgment example in the system prompt", async () => {
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const systemMsg = (
+      callArgs as { messages: { role: string; content: string }[] }
+    ).messages[0];
+    expect(systemMsg.content).toContain("One heavier day");
+  });
+
   it("includes SYSTEM_PROMPT_BOUNDARY at end of system prompt", async () => {
     const stream = createMockStream([
       { content: "Ok" },
