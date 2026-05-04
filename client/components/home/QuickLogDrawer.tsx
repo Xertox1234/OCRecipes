@@ -162,7 +162,7 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
 
   const session = useQuickLogSession({ onLogSuccess: handleLogSuccess, isOpen });
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (session.speechError) toast.error(session.speechError);
   }, [session.speechError, toast]);
 
