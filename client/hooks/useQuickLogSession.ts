@@ -66,10 +66,7 @@ export function useQuickLogSession({
       parseFoodTextMutate(transcript, {
         onSuccess: (data) => {
           setParsedItems(
-            data.items.map((item) => ({
-              ...item,
-              sourceType: "voice" as const,
-            })),
+            data.items.map((item) => ({ ...item, sourceType: "voice" })),
           );
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
