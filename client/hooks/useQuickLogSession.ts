@@ -202,8 +202,9 @@ export function useQuickLogSession({
           queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
         }
       }
+      const cappedCount = Math.min(items.length, MAX_LOG_ITEMS);
       const allFailed =
-        failedIndices.length === 0 || failedIndices.length === items.length;
+        failedIndices.length === 0 || failedIndices.length === cappedCount;
       setSubmitError(
         allFailed
           ? "Failed to log items. Please try again."
