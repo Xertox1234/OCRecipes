@@ -6,6 +6,7 @@ import {
   buildScannedItemPayload,
   buildSuccessToastMessage,
   canLog,
+  applyDismiss,
   type ConfirmCardState,
 } from "../ScanScreenConfirmOverlay-utils";
 
@@ -205,12 +206,20 @@ describe("ScanScreenConfirmOverlay-utils", () => {
   });
 
   describe("Dismiss resets confirmCard to null (state contract)", () => {
-    it("tapping 'Dismiss' should result in a null confirmCard (handled by setConfirmCard(null) in ScanScreen)", () => {
-      // The dismiss handler calls setConfirmCard(null) and dispatches CAMERA_READY.
-      // The pure-function contract: after dismiss, the card state should be null.
-      // This test documents the expected state transition rather than the handler directly.
-      const confirmCardAfterDismiss: null = null;
-      expect(confirmCardAfterDismiss).toBeNull();
+    it("applyDismiss returns null when called with a loaded card", () => {
+      const loaded = buildLoadedConfirmCard("0123456789012", {
+        productName: "Oat Milk",
+        calories: 90,
+      });
+      expect(applyDismiss(loaded)).toBeNull();
+    });
+
+    it("applyDismiss returns null when called with a loading card", () => {
+      expect(applyDismiss(buildLoadingConfirmCard("0123456789012"))).toBeNull();
+    });
+
+    it("applyDismiss returns null when called with null (already dismissed)", () => {
+      expect(applyDismiss(null)).toBeNull();
     });
   });
 

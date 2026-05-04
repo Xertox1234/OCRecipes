@@ -73,3 +73,7 @@ export function buildSuccessToastMessage(card: ConfirmCardState): string {
 export function canLog(card: ConfirmCardState): boolean {
   return !card.isLoading && !card.isLogging && !card.isError;
 }
+
+export function applyDismiss(_prev: ConfirmCardState | null): null {
+  return null;
+}
