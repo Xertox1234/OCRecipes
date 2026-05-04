@@ -60,7 +60,7 @@ export default function ActionCard({ block, onAction, onPressAsync }: Props) {
 
   const buttonBg =
     state === "success"
-      ? "#008A38" // hardcoded
+      ? theme.success
       : state === "error"
         ? theme.error
         : theme.link;
