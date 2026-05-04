@@ -3,7 +3,6 @@ import { View } from "react-native";
 import { ChatBubble } from "@/components/ChatBubble";
 import BlockRenderer from "@/components/coach/blocks";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
-import { useTTS } from "@/hooks/useTTS";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
 
 interface StreamingBubbleProps {
@@ -18,6 +17,9 @@ interface StreamingBubbleProps {
     title: string,
     followUpDate: string,
   ) => void;
+  ttsSpeak: (messageId: number, text: string) => void;
+  isSpeaking: boolean;
+  speakingMessageId: number | null;
 }
 
 const StreamingBubble = memo(function StreamingBubble({
@@ -28,9 +30,10 @@ const StreamingBubble = memo(function StreamingBubble({
   onBlockAction,
   onQuickReply,
   onCommitmentAccept,
+  ttsSpeak,
+  isSpeaking,
+  speakingMessageId,
 }: StreamingBubbleProps) {
-  const { speak: ttsSpeak, speakingMessageId, isSpeaking } = useTTS();
-
   return (
     <View>
       {isStreaming && streamingContent ? (

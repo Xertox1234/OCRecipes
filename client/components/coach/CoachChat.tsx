@@ -505,6 +505,9 @@ export default function CoachChat({
           onBlockAction={handleBlockAction}
           onQuickReply={handleQuickReply}
           onCommitmentAccept={handleCommitmentAccept}
+          ttsSpeak={ttsSpeak}
+          isSpeaking={isSpeaking}
+          speakingMessageId={speakingMessageId}
         />
       );
     },
@@ -565,18 +568,12 @@ export default function CoachChat({
   const limitBanner = isAtDailyLimit ? (
     <View style={styles.limitBanner}>
       <Text style={[styles.limitText, { color: theme.textSecondary }]}>
-        {"You've reached today’s coaching limit."}
+        {"You’ve reached today’s coaching limit."}
       </Text>
-      <Pressable
-        // TODO: wire up when subscription screen added
-        onPress={undefined}
-        accessibilityRole="button"
-        accessibilityLabel="Upgrade to Coach Pro"
-      >
-        <Text style={[styles.limitCta, { color: theme.link }]}>
-          Upgrade to Coach Pro
-        </Text>
-      </Pressable>
+      {/* TODO: wire up when subscription screen added */}
+      <Text style={[styles.limitCta, { color: theme.link }]}>
+        Upgrade to Coach Pro
+      </Text>
     </View>
   ) : null;
 
