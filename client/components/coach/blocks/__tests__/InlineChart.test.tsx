@@ -22,6 +22,10 @@ describe("InlineChart", () => {
   it("stat_row has an accessibilityLabel on the container", () => {
     renderComponent(<InlineChart block={statRowBlock} />);
     // accessibilityLabel maps to aria-label in jsdom; should include "2300"
-    expect(screen.getByLabelText(/2300/)).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "Nutrition Summary. Calories: 2300, Protein: 165, Fat: 45, Carbs: 72",
+      ),
+    ).toBeTruthy();
   });
 });
