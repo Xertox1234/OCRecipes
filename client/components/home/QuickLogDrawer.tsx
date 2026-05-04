@@ -26,6 +26,7 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import { useToast } from "@/context/ToastContext";
 import { useCollapsibleHeight } from "@/hooks/useCollapsibleHeight";
 import { useQuickLogSession } from "@/hooks/useQuickLogSession";
+import type { ParsedFoodItem, LogSummary } from "@/hooks/useQuickLogSession";
 import {
   Spacing,
   BorderRadius,
@@ -38,6 +39,88 @@ import {
 } from "@/constants/animations";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 import type { HomeAction } from "./action-config";
+
+interface FrequentChipProps {
+  productName: string;
+  onPress: (productName: string) => void;
+}
+
+const FrequentChip = React.memo(function FrequentChip({
+  productName,
+  onPress,
+}: FrequentChipProps) {
+  const { theme } = useTheme();
+  const handlePress = useCallback(
+    () => onPress(productName),
+    [onPress, productName],
+  );
+  return (
+    <Pressable
+      onPress={handlePress}
+      style={({ pressed }) => [
+        styles.chip,
+        {
+          backgroundColor: theme.backgroundSecondary,
+          borderColor: theme.border,
+          opacity: pressed ? 0.7 : 1,
+        },
+      ]}
+      accessibilityLabel={`Use ${productName}`}
+      accessibilityRole="button"
+    >
+      <ThemedText
+        style={[styles.chipText, { color: theme.textSecondary }]}
+        numberOfLines={1}
+      >
+        {productName}
+      </ThemedText>
+    </Pressable>
+  );
+});
+
+interface ParsedItemRowProps {
+  item: ParsedFoodItem;
+  index: number;
+  onRemove: (index: number) => void;
+}
+
+const ParsedItemRow = React.memo(function ParsedItemRow({
+  item,
+  index,
+  onRemove,
+}: ParsedItemRowProps) {
+  const { theme } = useTheme();
+  const handleRemove = useCallback(() => onRemove(index), [onRemove, index]);
+  return (
+    <View style={[styles.parsedItemRow, { borderBottomColor: theme.border }]}>
+      <ThemedText
+        style={[styles.parsedItemName, { color: theme.text }]}
+        numberOfLines={1}
+      >
+        {item.quantity} {item.unit} {item.name}
+      </ThemedText>
+      <View style={styles.parsedItemRight}>
+        {item.calories !== null && (
+          <ThemedText
+            style={[styles.parsedItemCal, { color: theme.textSecondary }]}
+          >
+            {item.calories} cal
+          </ThemedText>
+        )}
+        <Pressable
+          onPress={handleRemove}
+          accessibilityLabel={`Remove ${item.name}`}
+          accessibilityRole="button"
+          style={({ pressed }) => ({
+            opacity: pressed ? 0.5 : 1,
+          })}
+        >
+          <Feather name="x" size={14} color={theme.textSecondary} />
+        </Pressable>
+      </View>
+    </View>
+  );
+});
 
 interface QuickLogDrawerProps {
   action: HomeAction;
@@ -61,14 +144,17 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
     reducedMotion,
   );
 
-  const session = useQuickLogSession({
-    onLogSuccess: ({ firstName, totalCalories }) => {
+  const handleLogSuccess = useCallback(
+    ({ firstName, totalCalories }: LogSummary) => {
       setIsOpen(false);
       const label =
         totalCalories > 0 ? `${firstName} · ${totalCalories} cal` : firstName;
       toast.success(`Logged! ${label}`);
     },
-  });
+    [toast],
+  );
+
+  const session = useQuickLogSession({ onLogSuccess: handleLogSuccess });
 
   React.useEffect(() => {
     if (session.speechError) toast.error(session.speechError);
@@ -233,27 +319,11 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
             session.frequentItems.length > 0 && (
               <View style={styles.chipsRow}>
                 {session.frequentItems.slice(0, 5).map((item) => (
-                  <Pressable
+                  <FrequentChip
                     key={item.productName}
-                    onPress={() => session.handleChipPress(item.productName)}
-                    style={({ pressed }) => [
-                      styles.chip,
-                      {
-                        backgroundColor: theme.backgroundSecondary,
-                        borderColor: theme.border,
-                        opacity: pressed ? 0.7 : 1,
-                      },
-                    ]}
-                    accessibilityLabel={`Use ${item.productName}`}
-                    accessibilityRole="button"
-                  >
-                    <ThemedText
-                      style={[styles.chipText, { color: theme.textSecondary }]}
-                      numberOfLines={1}
-                    >
-                      {item.productName}
-                    </ThemedText>
-                  </Pressable>
+                    productName={item.productName}
+                    onPress={session.handleChipPress}
+                  />
                 ))}
               </View>
             )}
@@ -262,42 +332,12 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
           {hasParsedItems && (
             <View style={styles.parsedSection}>
               {session.parsedItems.map((item, index) => (
-                <View
+                <ParsedItemRow
                   key={`${item.name}-${index}`}
-                  style={[
-                    styles.parsedItemRow,
-                    { borderBottomColor: theme.border },
-                  ]}
-                >
-                  <ThemedText
-                    style={[styles.parsedItemName, { color: theme.text }]}
-                    numberOfLines={1}
-                  >
-                    {item.quantity} {item.unit} {item.name}
-                  </ThemedText>
-                  <View style={styles.parsedItemRight}>
-                    {item.calories !== null && (
-                      <ThemedText
-                        style={[
-                          styles.parsedItemCal,
-                          { color: theme.textSecondary },
-                        ]}
-                      >
-                        {item.calories} cal
-                      </ThemedText>
-                    )}
-                    <Pressable
-                      onPress={() => session.removeItem(index)}
-                      accessibilityLabel={`Remove ${item.name}`}
-                      accessibilityRole="button"
-                      style={({ pressed }) => ({
-                        opacity: pressed ? 0.5 : 1,
-                      })}
-                    >
-                      <Feather name="x" size={14} color={theme.textSecondary} />
-                    </Pressable>
-                  </View>
-                </View>
+                  item={item}
+                  index={index}
+                  onRemove={session.removeItem}
+                />
               ))}
 
               {/* Footer: total + Log All */}

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { RefreshControl, StyleSheet, View, Pressable } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -88,6 +88,21 @@ export default function HomeScreen() {
   const isPremium = user?.subscriptionTier === "premium";
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  const scrollContentContainerStyle = useMemo(
+    () => ({
+      paddingTop: insets.top + Spacing.lg,
+      paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+    }),
+    [insets.top, tabBarHeight],
+  );
+
+  const handleRefresh = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: ["/api/carousel"],
+    });
+    refetch().then(() => haptics.impact());
+  }, [queryClient, refetch, haptics]);
+
   const handleActionPress = useCallback(
     (action: HomeAction) => {
       if (action.premium && !isPremium) {
@@ -146,23 +161,12 @@ export default function HomeScreen() {
 
       <Animated.ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingTop: insets.top + Spacing.lg,
-          paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
-        }}
+        contentContainerStyle={scrollContentContainerStyle}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         scrollEventThrottle={16}
         onScroll={scrollHandler}
         refreshControl={
-          <RefreshControl
-            refreshing={isRefetching}
-            onRefresh={() => {
-              queryClient.invalidateQueries({
-                queryKey: ["/api/carousel"],
-              });
-              refetch().then(() => haptics.impact());
-            }}
-          />
+          <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} />
         }
       >
         <Animated.View style={[styles.expandableHeader, headerAnimatedStyle]}>
