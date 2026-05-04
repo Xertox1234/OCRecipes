@@ -9,6 +9,7 @@ import {
   StyleSheet,
   View,
   FlatList,
+  Platform,
   Pressable,
   AccessibilityInfo,
   Text,
@@ -88,6 +89,7 @@ export default function CoachChat({
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
   const prevStreamingRef = useRef(false);
+  const lastAnnouncedIndexRef = useRef(0);
   const activeConvIdRef = useRef<number | null>(null);
   const usedQuickRepliesRef = useRef<Set<string>>(new Set());
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
@@ -145,12 +147,35 @@ export default function CoachChat({
 
     if (isStreaming && !wasStreaming) {
       // Streaming just started
+      lastAnnouncedIndexRef.current = 0;
       AccessibilityInfo.announceForAccessibility("Coach is thinking...");
     } else if (!isStreaming && wasStreaming) {
       // Streaming just finished
       AccessibilityInfo.announceForAccessibility("Coach responded");
     }
   }, [isStreaming]);
+
+  // Announce streaming sentences progressively as they arrive (iOS VoiceOver only)
+  useEffect(() => {
+    if (!isStreaming || !streamingContent) return;
+
+    const text = streamingContent;
+    const startIdx = lastAnnouncedIndexRef.current;
+    const remaining = text.slice(startIdx);
+
+    const boundaryMatch = remaining.match(/[.?!]\s/);
+    if (!boundaryMatch || boundaryMatch.index === undefined) return;
+
+    const endIdx = startIdx + boundaryMatch.index + 1;
+    const sentence = text.slice(lastAnnouncedIndexRef.current, endIdx).trim();
+
+    if (sentence.length > 0) {
+      lastAnnouncedIndexRef.current = endIdx;
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(sentence);
+      }
+    }
+  }, [streamingContent, isStreaming]);
 
   const { data: messages } = useChatMessages(conversationId);
 
