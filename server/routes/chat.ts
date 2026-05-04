@@ -26,6 +26,7 @@ import {
   handleCoachChat,
   tryArchiveNotebook,
 } from "../services/coach-pro-chat";
+import { sanitizeUserInput, sanitizeContextField } from "../lib/ai-safety";
 
 const SSE_TIMEOUT_MS = 120_000; // 2 minutes max per SSE connection
 const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
@@ -284,10 +285,11 @@ export function register(app: Express): void {
             : features.coachPro
               ? features.coachProDailyMessages
               : features.dailyCoachMessages;
+        const sanitizedContent = sanitizeUserInput(parsed.data.content);
         const message = await storage.createChatMessageWithLimitCheck(
           id,
           req.userId,
-          parsed.data.content,
+          sanitizedContent,
           dailyLimit,
           conversation.type as "coach" | "recipe" | "remix",
         );
@@ -381,10 +383,14 @@ export function register(app: Express): void {
             let allergenWarning: string | null = null;
             let recipeImageUrl: string | null = null;
 
+            const sanitizedScreenContext = parsed.data.screenContext
+              ? sanitizeContextField(parsed.data.screenContext, 200)
+              : undefined;
+
             for await (const event of generateRecipeChatResponse(
               contextMessages,
               profile,
-              parsed.data.screenContext,
+              sanitizedScreenContext,
               remixPromptOverride
                 ? { systemPromptOverride: remixPromptOverride }
                 : undefined,
@@ -466,7 +472,7 @@ export function register(app: Express): void {
             for await (const event of handleCoachChat({
               conversationId: id,
               userId: req.userId,
-              content: parsed.data.content,
+              content: sanitizedContent,
               screenContext: parsed.data.screenContext,
               warmUpId: parsed.data.warmUpId,
               isCoachPro: !!features.coachPro,
