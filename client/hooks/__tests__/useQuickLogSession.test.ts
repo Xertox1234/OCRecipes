@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useQuickLogSession } from "../useQuickLogSession";
+import { useQuickLogSession, MAX_LOG_ITEMS } from "../useQuickLogSession";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest, mockTokenStorage } = vi.hoisted(() => ({
@@ -455,5 +455,134 @@ describe("useQuickLogSession", () => {
 
     expect(mockSpeechToText.stopListening).toHaveBeenCalledOnce();
     expect(mockSpeechToText.startListening).not.toHaveBeenCalled();
+  });
+
+  it("caps items at MAX_LOG_ITEMS and sets capWarning when items exceed the limit", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    // Parse returns MAX_LOG_ITEMS + 2 items
+    const extraItems = Array.from({ length: MAX_LOG_ITEMS + 2 }, (_, i) => ({
+      name: `item${i}`,
+      quantity: 1,
+      unit: "piece",
+      calories: 10,
+      protein: null,
+      carbs: null,
+      fat: null,
+      servingSize: null,
+    }));
+
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items: extraItems }),
+    });
+    // Mock log responses for only the capped items
+    for (let i = 0; i < MAX_LOG_ITEMS; i++) {
+      mockApiRequest.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: i + 1 }),
+      });
+    }
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("lots of food"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() =>
+      expect(result.current.parsedItems).toHaveLength(MAX_LOG_ITEMS + 2),
+    );
+
+    // Track POST calls
+    const callsBefore = mockApiRequest.mock.calls.length;
+    act(() => result.current.submitLog());
+
+    await waitFor(() => expect(result.current.capWarning).not.toBeNull());
+    expect(result.current.capWarning).toContain(`${MAX_LOG_ITEMS}`);
+
+    // Only MAX_LOG_ITEMS POST requests were made (not MAX_LOG_ITEMS + 2)
+    const logCalls = mockApiRequest.mock.calls.slice(callsBefore);
+    expect(logCalls).toHaveLength(MAX_LOG_ITEMS);
+  });
+
+  it("does not set capWarning when items are within the limit", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    const items = Array.from({ length: MAX_LOG_ITEMS }, (_, i) => ({
+      name: `item${i}`,
+      quantity: 1,
+      unit: "piece",
+      calories: 10,
+      protein: null,
+      carbs: null,
+      fat: null,
+      servingSize: null,
+    }));
+
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items }),
+    });
+    for (let i = 0; i < MAX_LOG_ITEMS; i++) {
+      mockApiRequest.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: i + 1 }),
+      });
+    }
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("lots of food"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() =>
+      expect(result.current.parsedItems).toHaveLength(MAX_LOG_ITEMS),
+    );
+
+    act(() => result.current.submitLog());
+
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(0));
+    expect(result.current.capWarning).toBeNull();
+  });
+
+  it("reset clears capWarning", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    const items = Array.from({ length: MAX_LOG_ITEMS + 1 }, (_, i) => ({
+      name: `item${i}`,
+      quantity: 1,
+      unit: "piece",
+      calories: 10,
+      protein: null,
+      carbs: null,
+      fat: null,
+      servingSize: null,
+    }));
+
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ items }),
+    });
+    for (let i = 0; i < MAX_LOG_ITEMS; i++) {
+      mockApiRequest.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ id: i + 1 }),
+      });
+    }
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("lots of food"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() =>
+      expect(result.current.parsedItems).toHaveLength(MAX_LOG_ITEMS + 1),
+    );
+
+    act(() => result.current.submitLog());
+    await waitFor(() => expect(result.current.capWarning).not.toBeNull());
+
+    act(() => result.current.reset());
+    expect(result.current.capWarning).toBeNull();
   });
 });

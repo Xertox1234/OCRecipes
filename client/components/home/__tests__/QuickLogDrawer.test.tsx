@@ -5,8 +5,9 @@ import { renderComponent } from "../../../../test/utils/render-component";
 import { QuickLogDrawer } from "../QuickLogDrawer";
 import * as useQuickLogSessionModule from "@/hooks/useQuickLogSession";
 
-const { mockToastError, mockNavigate } = vi.hoisted(() => ({
+const { mockToastError, mockToastInfo, mockNavigate } = vi.hoisted(() => ({
   mockToastError: vi.fn(),
+  mockToastInfo: vi.fn(),
   mockNavigate: vi.fn(),
 }));
 
@@ -59,7 +60,11 @@ vi.mock("@/hooks/useHaptics", () => ({
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: mockToastError, info: vi.fn() }),
+  useToast: () => ({
+    success: vi.fn(),
+    error: mockToastError,
+    info: mockToastInfo,
+  }),
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -179,6 +184,20 @@ describe("QuickLogDrawer", () => {
     );
 
     expect(mockNavigate).toHaveBeenCalledWith("Scan", { returnAfterLog: true });
+  });
+
+  it("calls toast.info when capWarning is set", () => {
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue({
+      ...mockSession,
+      capWarning:
+        "Only the first 10 items were logged. Please log the rest separately.",
+    });
+
+    renderComponent(<QuickLogDrawer action={testAction} />);
+
+    expect(mockToastInfo).toHaveBeenCalledWith(
+      "Only the first 10 items were logged. Please log the rest separately.",
+    );
   });
 
   it("renders ActivityIndicator instead of Log All text when isSubmitting", () => {

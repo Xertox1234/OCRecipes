@@ -6,8 +6,13 @@ import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useParseFoodText, type ParsedFoodItem } from "@/hooks/useFoodParse";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import type { ScannedItem } from "@shared/schema";
+
+type ScannedItemResponse = ScannedItem;
 
 export type { ParsedFoodItem };
+
+export const MAX_LOG_ITEMS = 10;
 
 export interface LogSummary {
   itemCount: number;
@@ -40,6 +45,7 @@ export function useQuickLogSession({
   const [parsedItems, setParsedItems] = useState<ParsedFoodItem[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [capWarning, setCapWarning] = useState<string | null>(null);
 
   // Tracks the intended source for the next parse trigger
   const pendingSourceRef = useRef<"voice" | "text" | "chip">("text");
@@ -128,8 +134,15 @@ export function useQuickLogSession({
 
   const logAllMutation = useMutation({
     mutationFn: async (items: ParsedFoodItem[]) => {
+      setCapWarning(null);
+      const capped = items.slice(0, MAX_LOG_ITEMS);
+      if (items.length > MAX_LOG_ITEMS) {
+        setCapWarning(
+          `Only the first ${MAX_LOG_ITEMS} items were logged. Please log the rest separately.`,
+        );
+      }
       const results = await Promise.allSettled(
-        items.map(async (item) => {
+        capped.map(async (item) => {
           const res = await apiRequest("POST", "/api/scanned-items", {
             productName: `${item.quantity} ${item.unit} ${item.name}`,
             sourceType: item.sourceType ?? "voice",
@@ -139,7 +152,7 @@ export function useQuickLogSession({
             fat: item.fat?.toString(),
             servingSize: item.servingSize,
           });
-          return res.json();
+          return res.json() as Promise<ScannedItemResponse>;
         }),
       );
       const failedIndices = results
@@ -151,16 +164,19 @@ export function useQuickLogSession({
         err.failedIndices = failedIndices;
         throw err;
       }
-      return results.map((r) => (r as PromiseFulfilledResult<unknown>).value);
+      return results.map(
+        (r) => (r as PromiseFulfilledResult<ScannedItemResponse>).value,
+      );
     },
-    onSuccess: (_data, items) => {
+    onSuccess: (_data: ScannedItemResponse[], items) => {
+      const loggedItems = items.slice(0, MAX_LOG_ITEMS);
       const summary: LogSummary = {
-        itemCount: items.length,
-        totalCalories: items.reduce(
+        itemCount: loggedItems.length,
+        totalCalories: loggedItems.reduce(
           (sum, item) => sum + (item.calories ?? 0),
           0,
         ),
-        firstName: items[0]?.name ?? "Food",
+        firstName: loggedItems[0]?.name ?? "Food",
       };
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
@@ -186,8 +202,9 @@ export function useQuickLogSession({
           queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
         }
       }
+      const cappedCount = Math.min(items.length, MAX_LOG_ITEMS);
       const allFailed =
-        failedIndices.length === 0 || failedIndices.length === items.length;
+        failedIndices.length === 0 || failedIndices.length === cappedCount;
       setSubmitError(
         allFailed
           ? "Failed to log items. Please try again."
@@ -224,6 +241,7 @@ export function useQuickLogSession({
     setParsedItems([]);
     setParseError(null);
     setSubmitError(null);
+    setCapWarning(null);
   }, []);
 
   return {
@@ -235,6 +253,7 @@ export function useQuickLogSession({
     parsedItems,
     parseError,
     submitError,
+    capWarning,
     isSubmitting: logAllMutation.isPending,
     speechError,
     handleTextSubmit,

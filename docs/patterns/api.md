@@ -837,7 +837,7 @@ export function createRateLimiter(options: {
 **When to use:**
 
 - Every new rate limiter in the project (all 19 existing rate limiters use this factory)
-- All rate limiters should be defined in `server/routes/_helpers.ts` so they are centralized and reusable across route modules
+- All rate limiters should be defined in `server/routes/_rate-limiters.ts` so they are centralized and reusable across route modules
 
 **When NOT to use:**
 
@@ -848,7 +848,7 @@ export function createRateLimiter(options: {
 
 **References:**
 
-- `server/routes/_helpers.ts` -- factory implementation and all 19 limiter instances
+- `server/routes/_rate-limiters.ts` -- factory implementation and all 19 limiter instances
 - See also: [Rate Limiting on Auth Endpoints](#rate-limiting-on-auth-endpoints) and [Rate Limiting on External API Endpoints](#rate-limiting-on-external-api-endpoints) for the policy rationale (the factory implements those patterns)
 
 ### Atomic Server Endpoints Over Multi-Request Flows

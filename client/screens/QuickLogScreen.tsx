@@ -90,6 +90,10 @@ export default function QuickLogScreen() {
     if (session.submitError) toast.error(session.submitError);
   }, [session.submitError, toast]);
 
+  React.useEffect(() => {
+    if (session.capWarning) toast.info(session.capWarning);
+  }, [session.capWarning, toast]);
+
   const handleCameraPress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.goBack();

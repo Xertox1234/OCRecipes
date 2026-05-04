@@ -170,6 +170,10 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
   }, [session.speechError, toast]);
 
   useEffect(() => {
+    if (session.capWarning) toast.info(session.capWarning);
+  }, [session.capWarning, toast]);
+
+  useEffect(() => {
     if (Platform.OS === "ios" && session.parseError) {
       AccessibilityInfo.announceForAccessibility(session.parseError);
     }
