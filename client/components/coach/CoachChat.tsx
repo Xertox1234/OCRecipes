@@ -40,6 +40,7 @@ import {
 } from "@/components/coach/coach-chat-utils";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
+import StreamingBubble from "@/components/coach/StreamingBubble";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
   CoachChatNavigationProp,
@@ -427,28 +428,15 @@ export default function CoachChat({
       }
 
       return (
-        <View>
-          {isStreaming && streamingContent && (
-            <ChatBubble
-              role="assistant"
-              content={streamingContent}
-              onSpeak={() => ttsSpeak(-1, streamingContent)}
-              isSpeaking={speakingMessageId === -1 && isSpeaking}
-            />
-          )}
-          {streamBlocks.map((block, i) => (
-            <BlockRenderer
-              key={`stream-block-${i}`}
-              block={block}
-              onAction={handleBlockAction}
-              onQuickReply={handleQuickReply}
-              onCommitmentAccept={handleCommitmentAccept}
-            />
-          ))}
-          {isStreaming && !streamingContent && statusText ? (
-            <CoachStatusRow statusText={statusText} />
-          ) : null}
-        </View>
+        <StreamingBubble
+          streamingContent={streamingContent}
+          statusText={statusText}
+          isStreaming={isStreaming}
+          streamBlocks={streamBlocks}
+          onBlockAction={handleBlockAction}
+          onQuickReply={handleQuickReply}
+          onCommitmentAccept={handleCommitmentAccept}
+        />
       );
     },
     [
@@ -463,8 +451,6 @@ export default function CoachChat({
       lastAssistantMessageId,
       messageBlocks,
       streamBlocks,
-      streamingContent,
-      statusText,
       theme.textSecondary,
     ],
   );
@@ -544,6 +530,7 @@ export default function CoachChat({
         data={chatItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        extraData={streamingContent}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"
