@@ -1,10 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as Haptics from "expo-haptics";
 import {
   processOCRFrame,
   onOCRDebounceExpired,
   onOCRDisabled,
   INITIAL_OCR_STATE,
   type OCRDetectionState,
+  type OCREffect,
 } from "../useOCRDetection-utils";
 
 const detected: OCRDetectionState = {
@@ -114,5 +116,195 @@ describe("onOCRDisabled", () => {
     expect(state).toEqual(INITIAL_OCR_STATE);
     expect(effects).toContainEqual({ type: "cancel_debounce" });
     expect(effects).toContainEqual({ type: "notify_detected", value: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration harness — mirrors the handleOCRResult + applyEffects logic
+// from useOCRDetection.ts without requiring React hooks or native modules.
+// Pattern: replicate the side-effect dispatcher inline (same as useCamera.test.ts).
+// ---------------------------------------------------------------------------
+
+function createOCRHandlerHarness(options?: { debounceMs?: number }) {
+  const debounceMs = options?.debounceMs ?? 500;
+  const onTextDetected = vi.fn();
+  const latestOCRResult: { current: object | null } = { current: null };
+  const detectionState: { current: OCRDetectionState } = {
+    current: INITIAL_OCR_STATE,
+  };
+  const debounceTimer: { current: ReturnType<typeof setTimeout> | null } = {
+    current: null,
+  };
+
+  function applyEffects(effects: OCREffect[]) {
+    for (const effect of effects) {
+      switch (effect.type) {
+        case "notify_detected":
+          onTextDetected(effect.value);
+          break;
+        case "fire_haptic":
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          break;
+        case "start_debounce":
+          debounceTimer.current = setTimeout(() => {
+            debounceTimer.current = null;
+            const { state: next, effects: expiredEffects } =
+              onOCRDebounceExpired(detectionState.current);
+            detectionState.current = next;
+            applyEffects(expiredEffects);
+          }, debounceMs);
+          break;
+        case "cancel_debounce":
+          if (debounceTimer.current) {
+            clearTimeout(debounceTimer.current);
+            debounceTimer.current = null;
+          }
+          break;
+      }
+    }
+  }
+
+  function handleOCRResult(resultText: string) {
+    const hasText = resultText.trim().length > 0;
+    const fakeResult = { resultText };
+    latestOCRResult.current = hasText ? fakeResult : null;
+
+    const { state: next, effects } = processOCRFrame(
+      detectionState.current,
+      hasText,
+    );
+    detectionState.current = next;
+    applyEffects(effects);
+  }
+
+  function disable() {
+    latestOCRResult.current = null;
+    const { state: next, effects } = onOCRDisabled(detectionState.current);
+    detectionState.current = next;
+    applyEffects(effects);
+  }
+
+  return {
+    handleOCRResult,
+    disable,
+    onTextDetected,
+    latestOCRResult,
+    detectionState,
+    debounceTimer,
+  };
+}
+
+describe("handleOCRResult integration", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("first text detection calls onTextDetected(true) and fires haptic exactly once", () => {
+    const impactSpy = vi.spyOn(Haptics, "impactAsync");
+    const { handleOCRResult, onTextDetected } = createOCRHandlerHarness();
+
+    handleOCRResult("Hello World");
+
+    expect(onTextDetected).toHaveBeenCalledTimes(1);
+    expect(onTextDetected).toHaveBeenCalledWith(true);
+    expect(impactSpy).toHaveBeenCalledTimes(1);
+    expect(impactSpy).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+  });
+
+  it("subsequent text frames do NOT re-fire onTextDetected(true) or haptic", () => {
+    const impactSpy = vi.spyOn(Haptics, "impactAsync");
+    const { handleOCRResult, onTextDetected } = createOCRHandlerHarness();
+
+    handleOCRResult("Hello World"); // first detection
+    handleOCRResult("Hello World"); // second frame — same text
+    handleOCRResult("Different text"); // third frame — different text, still detected
+
+    expect(onTextDetected).toHaveBeenCalledTimes(1); // only the first call
+    expect(impactSpy).toHaveBeenCalledTimes(1); // haptic only once per session
+  });
+
+  it("text disappearing debounces onTextDetected(false) by debounceMs", () => {
+    const { handleOCRResult, onTextDetected } = createOCRHandlerHarness({
+      debounceMs: 500,
+    });
+
+    handleOCRResult("Hello World"); // detect text
+    expect(onTextDetected).toHaveBeenCalledWith(true);
+    vi.clearAllMocks();
+
+    handleOCRResult(""); // text disappears — should start debounce
+
+    // Not yet called — debounce hasn't fired
+    expect(onTextDetected).not.toHaveBeenCalled();
+
+    // Advance past the debounce window
+    vi.advanceTimersByTime(500);
+
+    expect(onTextDetected).toHaveBeenCalledTimes(1);
+    expect(onTextDetected).toHaveBeenCalledWith(false);
+  });
+
+  it("text reappearing during the debounce window cancels the pending false callback", () => {
+    const { handleOCRResult, onTextDetected } = createOCRHandlerHarness({
+      debounceMs: 500,
+    });
+
+    handleOCRResult("Hello World"); // detect text
+    handleOCRResult(""); // text disappears — debounce starts
+    vi.clearAllMocks();
+
+    // Text reappears before debounce fires
+    vi.advanceTimersByTime(200);
+    handleOCRResult("Hello World");
+
+    // Advance past original debounce window — timer was cancelled, so no false notification
+    vi.advanceTimersByTime(400);
+
+    expect(onTextDetected).not.toHaveBeenCalled();
+  });
+
+  it("enabled=false resets haptic flag, isTextDetectedRef, and latestOCRResult", () => {
+    const {
+      handleOCRResult,
+      disable,
+      onTextDetected,
+      detectionState,
+      latestOCRResult,
+    } = createOCRHandlerHarness();
+
+    handleOCRResult("Hello World"); // detect text
+    expect(detectionState.current.isTextDetected).toBe(true);
+    expect(detectionState.current.hasHapticFired).toBe(true);
+    expect(latestOCRResult.current).not.toBeNull();
+
+    vi.clearAllMocks();
+    disable(); // simulate enabled=false
+
+    // latestOCRResult cleared
+    expect(latestOCRResult.current).toBeNull();
+    // state reset to initial
+    expect(detectionState.current).toEqual(INITIAL_OCR_STATE);
+    // UI notified of false (glow dismissed)
+    expect(onTextDetected).toHaveBeenCalledWith(false);
+  });
+
+  it("enabled=false with pending debounce cancels timer and notifies false", () => {
+    const { handleOCRResult, disable, onTextDetected, debounceTimer } =
+      createOCRHandlerHarness({ debounceMs: 500 });
+
+    handleOCRResult("Hello World"); // detect text
+    handleOCRResult(""); // text disappears — debounce pending
+    expect(debounceTimer.current).not.toBeNull();
+
+    vi.clearAllMocks();
+    disable(); // disable while debounce is pending
+
+    expect(debounceTimer.current).toBeNull(); // timer cancelled
+    expect(onTextDetected).toHaveBeenCalledWith(false); // UI notified immediately
   });
 });
