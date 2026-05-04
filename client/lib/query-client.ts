@@ -53,10 +53,10 @@ export async function apiRequest(
   }
 
   const res = await fetch(url, {
-    method,
-    headers,
-    body: data ? JSON.stringify(data) : undefined,
     ...init,
+    method,
+    headers: { ...(init?.headers as Record<string, string>), ...headers },
+    body: data ? JSON.stringify(data) : undefined,
   });
 
   await throwIfResNotOk(res);

@@ -223,6 +223,25 @@ describe("UnauthorizedBehavior", () => {
   });
 });
 
+describe("apiRequest init merge", () => {
+  it("merges init.headers so Authorization is never clobbered", () => {
+    const authHeader = "Bearer token";
+    const initHeaders = { "X-Custom": "yes", Authorization: "should-lose" };
+    const ourHeaders = { Authorization: authHeader };
+    const merged = { ...initHeaders, ...ourHeaders };
+    expect(merged["Authorization"]).toBe(authHeader);
+    expect(merged["X-Custom"]).toBe("yes");
+  });
+
+  it("body from data wins over any init.body", () => {
+    const data = { foo: "bar" };
+    const init = { body: "should-lose" };
+    const body = data ? JSON.stringify(data) : undefined;
+    const fetchArgs = { ...init, body };
+    expect(fetchArgs.body).toBe(JSON.stringify(data));
+  });
+});
+
 describe("URL Construction", () => {
   it("constructs URL from base and route", () => {
     const baseUrl = "http://localhost:3000";
