@@ -46,6 +46,7 @@ import { register as registerAdminApiKeys } from "./routes/admin-api-keys";
 import { register as registerApiDocs } from "./routes/api-docs";
 import { register as registerPushTokens } from "./routes/push-tokens";
 import { register as registerReminders } from "./routes/reminders";
+import { registerCoachCommitmentsRoutes } from "./routes/coach-commitments";
 import { initSearchIndex } from "./services/recipe-search";
 import { startNotificationScheduler } from "./services/notification-scheduler";
 
@@ -100,6 +101,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerProfileHub(app);
   registerPushTokens(app);
   registerReminders(app);
+  registerCoachCommitmentsRoutes(app);
 
   // Initialize search index (non-blocking — server starts even if index fails)
   initSearchIndex().catch((err) => {

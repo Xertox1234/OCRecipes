@@ -229,6 +229,32 @@ describe("containsDangerousDietaryAdvice", () => {
     expect(containsDangerousDietaryAdvice("try a zero-fat diet")).toBe(true);
     expect(containsDangerousDietaryAdvice("zero protein diet")).toBe(true);
   });
+
+  it("catches 'aim for 1100 calories'", () => {
+    expect(containsDangerousDietaryAdvice("aim for 1100 calories")).toBe(true);
+  });
+
+  it("catches 'target 1100 cal per day'", () => {
+    expect(containsDangerousDietaryAdvice("target 1100 cal per day")).toBe(
+      true,
+    );
+  });
+
+  it("catches '1100 calories per day'", () => {
+    expect(containsDangerousDietaryAdvice("1100 calories per day")).toBe(true);
+  });
+
+  it("catches 'stay under 1000 calories'", () => {
+    expect(containsDangerousDietaryAdvice("stay under 1000 calories")).toBe(
+      true,
+    );
+  });
+
+  it("does not flag '1500 calories per day'", () => {
+    expect(
+      containsDangerousDietaryAdvice("aim for 1500 calories per day"),
+    ).toBe(false);
+  });
 });
 
 describe("containsUnsafeMedicalAdvice", () => {

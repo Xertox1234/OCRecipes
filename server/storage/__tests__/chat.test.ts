@@ -222,7 +222,7 @@ describe("chat storage", () => {
       await createChatMessage(conv.id, testUser.id, "user", "First");
       await createChatMessage(conv.id, testUser.id, "assistant", "Second");
 
-      const messages = await getChatMessages(conv.id);
+      const messages = await getChatMessages(conv.id, 100, testUser.id);
       expect(messages).toHaveLength(2);
       expect(messages[0].content).toBe("First");
       expect(messages[1].content).toBe("Second");
@@ -233,7 +233,7 @@ describe("chat storage", () => {
       for (let i = 0; i < 5; i++) {
         await createChatMessage(conv.id, testUser.id, "user", `Message ${i}`);
       }
-      const messages = await getChatMessages(conv.id, 3);
+      const messages = await getChatMessages(conv.id, 3, testUser.id);
       expect(messages).toHaveLength(3);
     });
   });

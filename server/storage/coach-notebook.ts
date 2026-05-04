@@ -86,6 +86,18 @@ export async function createNotebookEntries(
     .returning();
 }
 
+export async function getNotebookEntryById(
+  id: number,
+  userId: string,
+): Promise<CoachNotebookEntry | undefined> {
+  const [entry] = await db
+    .select()
+    .from(coachNotebook)
+    .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
+    .limit(1);
+  return entry;
+}
+
 export async function updateNotebookEntryStatus(
   id: number,
   userId: string,

@@ -1403,3 +1403,166 @@ useEffect(() => {
 
 - `client/screens/QuickLogScreen.tsx` — `parseFoodTextMutate` in the `isFinal` effect and `handleTextSubmit`
 - Origin: QuickLog voice input infinite re-render (PR #47, 2026-05-02)
+
+---
+
+### SSE Safety Override: Mid-Stream Content Replacement
+
+When an AI generator streams tokens to a client before safety checks can run on the full response, use a null-byte sentinel to signal that already-drained content must be replaced.
+
+**Problem:** Safety checks (`containsUnsafeCoachAdvice`) need the full text to evaluate, but the client has already displayed partial tokens. A post-hoc "yield safe message" at the end would appear _after_ the unsafe content, not instead of it.
+
+**Server — yield sentinel from generator:**
+
+```typescript
+export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
+
+export async function* generateCoachResponse(...): AsyncGenerator<string> {
+  for await (const chunk of openaiStream) {
+    fullResponse += chunk;
+    yield chunk; // stream tokens as they arrive
+  }
+  if (containsUnsafeCoachAdvice(fullResponse)) {
+    yield SAFETY_OVERRIDE_SENTINEL; // signal caller to replace
+    return;
+  }
+  // no final yield — individual deltas already sent
+}
+```
+
+The null-byte wrapper (`\x00...\x00`) makes the sentinel impossible to appear in any real LLM output.
+
+**Server — caller converts sentinel to SSE event:**
+
+```typescript
+for await (const chunk of generateCoachResponse(...)) {
+  if (chunk === SAFETY_OVERRIDE_SENTINEL) {
+    yield { type: "safety_override", message: SAFE_MESSAGE };
+    break;
+  }
+  yield { type: "content", content: chunk };
+}
+```
+
+**Client — clear visible content and queue safe message:**
+
+```typescript
+if (typeof data.safety_override === "string") {
+  accumulatedRef.current = ""; // discard raw buffer
+  displayedLengthRef.current = 0;
+  firstCharDrainedRef.current = false;
+  fullTextRef.current = data.safety_override;
+  setStreamingContent(""); // clear already-displayed text
+  bufferRef.current = data.safety_override; // queue safe message for drain
+}
+```
+
+**Client — protect `data.done` from overwriting the safety message:**
+
+```typescript
+if (data.done) {
+  isDoneRef.current = true;
+  if (accumulatedRef.current) {
+    // empty after safety_override — skip
+    fullTextRef.current = stripCoachBlocksFence(accumulatedRef.current);
+  }
+}
+```
+
+**When to use:** Any streaming AI endpoint where the full response must pass a content filter but partial tokens are shown in real time.
+
+**References:** `server/services/nutrition-coach.ts` (`SAFETY_OVERRIDE_SENTINEL`), `server/services/coach-pro-chat.ts` (`handleCoachChat`), `client/hooks/useCoachStream.ts`.
+
+---
+
+### SSE Drain Buffer with Hold Gate
+
+Separating "receive" from "display" in a streaming hook prevents jank caused by variable LLM chunk sizes. Buffer server tokens, then drain at a fixed rate.
+
+**Why:** LLMs send bursts (many tokens at once, then silence). Displaying each burst as it arrives produces a "typewriter" that lurches rather than flows smoothly. A drain loop at a fixed rate creates a consistent visual rhythm regardless of server cadence.
+
+**Architecture:**
+
+```
+XHR onreadystatechange → bufferRef.current += newChars
+                               ↓  (setInterval drain loop)
+bufferRef → streamingContent (state) → React re-render
+```
+
+**Key constants:**
+
+```typescript
+const HOLD_GATE_MS = 700; // don't drain until 700ms after startStream
+const DRAIN_INTERVAL_MS = 50; // tick rate
+const CHARS_PER_TICK = 20; // chars released per tick → 400 chars/sec
+```
+
+The hold gate buffers an initial chunk so the first visible characters appear at a smooth rate rather than flickering in one-by-one.
+
+**Drain loop:**
+
+```typescript
+drainIntervalRef.current = setInterval(() => {
+  const elapsed = Date.now() - startedAtRef.current;
+  const chunk = elapsed >= HOLD_GATE_MS
+    ? bufferRef.current.slice(0, CHARS_PER_TICK)
+    : "";
+  if (!chunk) {
+    if (isDoneRef.current && bufferRef.current.length === 0) {
+      stopDrain();
+      setIsStreaming(false);
+      onDoneRef.current?.(fullTextRef.current, ...);
+    }
+    return;
+  }
+  bufferRef.current = bufferRef.current.slice(chunk.length);
+  setStreamingContent(prev => prev + chunk);
+}, DRAIN_INTERVAL_MS);
+```
+
+**When to use:** Any SSE hook displaying LLM token streams where consistent visual cadence matters more than minimum latency.
+
+**References:** `client/hooks/useCoachStream.ts`, `client/hooks/__tests__/useCoachStream.test.ts` (drain rate tests).
+
+---
+
+### Device-Global API Hook Singleton
+
+When a hook wraps a device-level global API (`expo-speech`, geolocation, camera), only **one instance** should be active per feature. Multiple hook instances each track independent React state while sharing the same global channel — state gets out of sync.
+
+**The problem:**
+
+```typescript
+// ❌ BAD — two separate useTTS() instances in the same feature
+function CoachChat() {
+  const { speak, isSpeaking } = useTTS(); // instance A
+  return <StreamingBubble />;
+}
+
+function StreamingBubble() {
+  const { speak, isSpeaking } = useTTS(); // instance B
+  // Speech.stop() from A won't update isSpeaking in B
+}
+```
+
+`expo-speech` is device audio — stopping it from instance A won't update instance B's `isSpeaking: false`. The "speaking" indicator gets stuck.
+
+**The fix:** Instantiate once at the feature root. Pass values down as props:
+
+```typescript
+// ✅ GOOD — one instance, props passed down
+function CoachChat() {
+  const { speak: ttsSpeak, isSpeaking, speakingMessageId } = useTTS();
+  return (
+    <StreamingBubble
+      ttsSpeak={ttsSpeak}
+      isSpeaking={isSpeaking}
+      speakingMessageId={speakingMessageId}
+    />
+  );
+}
+```
+
+**Rule:** If a hook calls `Speech.*`, `Geolocation.*`, `Camera.*`, or any other device-singleton API — it must not be called in both a parent and a child component in the same render tree.
+
+**References:** `client/hooks/useTTS.ts`, `client/components/coach/CoachChat.tsx`, `client/components/coach/StreamingBubble.tsx` (fix: removed `useTTS()` call).

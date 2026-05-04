@@ -51,6 +51,7 @@ vi.mock("../nutrition-coach", () => ({
   generateCoachProResponse: vi.fn(),
   generateCoachResponse: vi.fn(),
   getSystemPromptTemplateVersion: vi.fn().mockReturnValue("test-version-hash"),
+  SAFETY_OVERRIDE_SENTINEL: "\x00SAFETY_OVERRIDE\x00",
 }));
 
 vi.mock("../coach-blocks", () => ({
@@ -372,6 +373,26 @@ describe("handleCoachChat", () => {
       expect(generateCoachResponse).toHaveBeenCalled();
       expect(generateCoachProResponse).not.toHaveBeenCalled();
     });
+
+    it("yields safety_override event when generateCoachResponse emits the sentinel", async () => {
+      const SENTINEL = "\x00SAFETY_OVERRIDE\x00";
+      vi.mocked(generateCoachResponse).mockReturnValue(
+        (async function* () {
+          yield "Some unsafe content";
+          yield SENTINEL;
+        })(),
+      );
+
+      const params = makeParams({ isCoachPro: false });
+      const events = await collectEvents(handleCoachChat(params));
+
+      const overrideEvents = events.filter((e) => e.type === "safety_override");
+      expect(overrideEvents).toHaveLength(1);
+      expect(
+        (overrideEvents[0] as { type: "safety_override"; message: string })
+          .message,
+      ).toContain("careful");
+    });
   });
 
   // ── Notebook injection into context ───────────────────────
@@ -399,7 +420,8 @@ describe("handleCoachChat", () => {
         .calls[0][1];
       expect(passedContext.notebookSummary).toContain("User likes salads");
       expect(passedContext.notebookSummary).toContain("Lose 5kg by summer");
-      expect(passedContext.notebookSummary).toContain("[BLOCKS_SYSTEM_PROMPT]");
+      // BLOCKS_SYSTEM_PROMPT is now in blocksPrompt, not notebookSummary
+      expect(passedContext.blocksPrompt).toContain("[BLOCKS_SYSTEM_PROMPT]");
     });
 
     it("sets only BLOCKS_SYSTEM_PROMPT when notebook entries are empty (CoachPro)", async () => {
@@ -411,7 +433,9 @@ describe("handleCoachChat", () => {
 
       const passedContext = vi.mocked(generateCoachProResponse).mock
         .calls[0][1];
-      expect(passedContext.notebookSummary).toBe("[BLOCKS_SYSTEM_PROMPT]");
+      // When no entries exist, notebookSummary is undefined and BLOCKS_SYSTEM_PROMPT is in blocksPrompt
+      expect(passedContext.notebookSummary).toBeUndefined();
+      expect(passedContext.blocksPrompt).toContain("[BLOCKS_SYSTEM_PROMPT]");
     });
 
     it("does not inject notebook context when isCoachPro is false", async () => {

@@ -99,9 +99,11 @@ const getMealPlanSchema = z.object({
   endDate: isoDateSchema.optional(),
 });
 
+// NOTE: plannedDate and mealType are marked required in the OpenAI JSON tool definition.
+// Keep this Zod schema aligned — if you change required/optional here, update getToolDefinitions() too.
 const addToMealPlanSchema = z.object({
-  plannedDate: z.string().optional(),
-  mealType: z.string().optional(),
+  plannedDate: z.string().default(() => new Date().toISOString().split("T")[0]),
+  mealType: z.string().default("lunch"),
   notes: z.string().optional(),
 });
 
@@ -275,7 +277,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "log_food_item",
         description:
-          "Add a food item to the user's daily nutrition log. Use this when the user says they just ate something and wants it tracked.",
+          "Propose adding a food item to the daily nutrition log. Returns a proposal — the user must confirm before the item is saved. Use when the user says they ate something and wants it tracked.",
         parameters: {
           type: "object",
           properties: {
@@ -357,7 +359,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "add_to_meal_plan",
         description:
-          "Schedule a food item or recipe on the user's meal plan for a specific date and meal type.",
+          "Propose scheduling a food item or recipe on the user's meal plan. Returns a proposal — the user must confirm before it is saved.",
         parameters: {
           type: "object",
           properties: {
@@ -385,7 +387,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "add_to_grocery_list",
         description:
-          "Create a new grocery list with one or more items. Use this when the user wants to add ingredients to their shopping list.",
+          "Propose creating a grocery list with one or more items. Returns a proposal — the user must confirm before items are saved.",
         parameters: {
           type: "object",
           properties: {
@@ -494,7 +496,10 @@ export async function executeToolCall(
       if (!result) {
         return notFound(`No nutrition data found for "${parsed.data.query}"`);
       }
-      return result;
+      // Trim to fields the model needs — full result has micronutrients and source
+      // metadata that inflate the token budget unnecessarily.
+      const { name, calories, protein, carbs, fat, servingSize } = result;
+      return { name, calories, protein, carbs, fat, servingSize };
     }
 
     case "search_recipes": {

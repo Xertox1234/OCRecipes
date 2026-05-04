@@ -9,6 +9,7 @@ import {
   StyleSheet,
   View,
   FlatList,
+  Platform,
   Pressable,
   AccessibilityInfo,
   Text,
@@ -40,6 +41,8 @@ import {
 } from "@/components/coach/coach-chat-utils";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
+import StreamingBubble from "@/components/coach/StreamingBubble";
+import { apiRequest } from "@/lib/query-client";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
   CoachChatNavigationProp,
@@ -79,13 +82,19 @@ export default function CoachChat({
   const [inputText, setInputText] = useState("");
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
   const [streamingError, setStreamingError] = useState<string | null>(null);
+  const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
     null,
   );
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
   const prevStreamingRef = useRef(false);
+  const lastAnnouncedIndexRef = useRef(0);
   const activeConvIdRef = useRef<number | null>(null);
+  const usedQuickRepliesRef = useRef<Set<string>>(new Set());
+  const [quickReplyVersion, setQuickReplyVersion] = useState(0);
+  const acceptedCommitmentsRef = useRef<Set<number | string>>(new Set());
+  const [commitmentVersion, setCommitmentVersion] = useState(0);
 
   const {
     isListening,
@@ -122,7 +131,11 @@ export default function CoachChat({
       }
     },
     onError: (message) => {
-      setStreamingError(message);
+      if (message.startsWith("429")) {
+        setIsAtDailyLimit(true);
+      } else {
+        setStreamingError(message);
+      }
       setOptimisticMessage(null);
     },
   });
@@ -134,12 +147,35 @@ export default function CoachChat({
 
     if (isStreaming && !wasStreaming) {
       // Streaming just started
+      lastAnnouncedIndexRef.current = 0;
       AccessibilityInfo.announceForAccessibility("Coach is thinking...");
     } else if (!isStreaming && wasStreaming) {
       // Streaming just finished
       AccessibilityInfo.announceForAccessibility("Coach responded");
     }
   }, [isStreaming]);
+
+  // Announce streaming sentences progressively as they arrive (iOS VoiceOver only)
+  useEffect(() => {
+    if (!isStreaming || !streamingContent) return;
+
+    const text = streamingContent;
+    const startIdx = lastAnnouncedIndexRef.current;
+    const remaining = text.slice(startIdx);
+
+    const boundaryMatch = remaining.match(/[.?!]\s/);
+    if (!boundaryMatch || boundaryMatch.index === undefined) return;
+
+    const endIdx = startIdx + boundaryMatch.index + 1;
+    const sentence = text.slice(lastAnnouncedIndexRef.current, endIdx).trim();
+
+    if (sentence.length > 0) {
+      lastAnnouncedIndexRef.current = endIdx;
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(sentence);
+      }
+    }
+  }, [streamingContent, isStreaming]);
 
   const { data: messages } = useChatMessages(conversationId);
 
@@ -210,6 +246,7 @@ export default function CoachChat({
       setOptimisticMessage(content);
       setStreamBlocks([]);
       setStreamingError(null);
+      setIsAtDailyLimit(false);
       ttsStop();
 
       let convId = conversationId;
@@ -354,15 +391,41 @@ export default function CoachChat({
   );
 
   const handleCommitmentAccept = useCallback(
-    (_title: string, _followUpDate: string) => {
-      // Commitment is tracked via notebook extraction from the conversation
-      // The accept UI state is already managed by CommitmentCard component
+    async (
+      notebookEntryId: number | undefined,
+      title: string,
+      followUpDate: string,
+    ) => {
+      // Use notebookEntryId if available, otherwise a string key for local tracking
+      const key: number | string =
+        notebookEntryId ?? `${title}::${followUpDate}`;
+      acceptedCommitmentsRef.current = new Set([
+        ...acceptedCommitmentsRef.current,
+        key,
+      ]);
+      setCommitmentVersion((v) => v + 1);
+      if (!notebookEntryId) return;
+      try {
+        await apiRequest(
+          "POST",
+          `/api/chat/commitments/${notebookEntryId}/accept`,
+        );
+      } catch {
+        // Non-fatal — local state already updated
+      }
     },
     [],
   );
 
   const handleQuickReply = useCallback(
-    (message: string) => {
+    (message: string, blockKey?: string) => {
+      if (blockKey) {
+        usedQuickRepliesRef.current = new Set([
+          ...usedQuickRepliesRef.current,
+          blockKey,
+        ]);
+        setQuickReplyVersion((v) => v + 1);
+      }
       handleSend(message);
     },
     [handleSend],
@@ -394,8 +457,21 @@ export default function CoachChat({
                 key={`${msg.id}-block-${i}`}
                 block={block}
                 onAction={handleBlockAction}
-                onQuickReply={handleQuickReply}
-                onCommitmentAccept={handleCommitmentAccept}
+                onQuickReply={(message) =>
+                  handleQuickReply(message, `${msg.id}-${i}`)
+                }
+                onCommitmentAccept={(notebookEntryId, title, followUpDate) =>
+                  handleCommitmentAccept(notebookEntryId, title, followUpDate)
+                }
+                isUsed={usedQuickRepliesRef.current.has(`${msg.id}-${i}`)}
+                isCommitmentAccepted={
+                  block.type === "commitment_card"
+                    ? acceptedCommitmentsRef.current.has(
+                        block.notebookEntryId ??
+                          `${block.title}::${block.followUpDate}`,
+                      )
+                    : undefined
+                }
               />
             ))}
             {isRetryTarget && (
@@ -421,28 +497,18 @@ export default function CoachChat({
       }
 
       return (
-        <View>
-          {isStreaming && streamingContent && (
-            <ChatBubble
-              role="assistant"
-              content={streamingContent}
-              onSpeak={() => ttsSpeak(-1, streamingContent)}
-              isSpeaking={speakingMessageId === -1 && isSpeaking}
-            />
-          )}
-          {streamBlocks.map((block, i) => (
-            <BlockRenderer
-              key={`stream-block-${i}`}
-              block={block}
-              onAction={handleBlockAction}
-              onQuickReply={handleQuickReply}
-              onCommitmentAccept={handleCommitmentAccept}
-            />
-          ))}
-          {isStreaming && !streamingContent && statusText ? (
-            <CoachStatusRow statusText={statusText} />
-          ) : null}
-        </View>
+        <StreamingBubble
+          streamingContent={streamingContent}
+          statusText={statusText}
+          isStreaming={isStreaming}
+          streamBlocks={streamBlocks}
+          onBlockAction={handleBlockAction}
+          onQuickReply={handleQuickReply}
+          onCommitmentAccept={handleCommitmentAccept}
+          ttsSpeak={ttsSpeak}
+          isSpeaking={isSpeaking}
+          speakingMessageId={speakingMessageId}
+        />
       );
     },
     [
@@ -460,6 +526,8 @@ export default function CoachChat({
       streamingContent,
       statusText,
       theme.textSecondary,
+      quickReplyVersion,
+      commitmentVersion,
     ],
   );
 
@@ -497,10 +565,17 @@ export default function CoachChat({
     [hasVoice, isListening, volume, handleMicPress],
   );
 
-  // Auto-scroll when new messages arrive (streaming scroll handled in onChunk callback)
-  useEffect(() => {
-    listRef.current?.scrollToEnd({ animated: false });
-  }, [messages]);
+  const limitBanner = isAtDailyLimit ? (
+    <View style={styles.limitBanner}>
+      <Text style={[styles.limitText, { color: theme.textSecondary }]}>
+        {"You’ve reached today’s coaching limit."}
+      </Text>
+      {/* TODO: wire up when subscription screen added */}
+      <Text style={[styles.limitCta, { color: theme.link }]}>
+        Upgrade to Coach Pro
+      </Text>
+    </View>
+  ) : null;
 
   return (
     <CoachChatBase
@@ -511,6 +586,7 @@ export default function CoachChat({
       inputAdornment={micAdornment}
       keyboardVerticalOffset={90}
       streamingError={streamingError}
+      inlineBanner={limitBanner}
       inputBarStyle={inputBarStyle}
     >
       <FlatList
@@ -519,6 +595,7 @@ export default function CoachChat({
         data={chatItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        extraData={streamingContent}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"
@@ -540,4 +617,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   retryText: { fontSize: 12 },
+  limitBanner: {
+    padding: Spacing.md,
+    alignItems: "center" as const,
+    gap: 4,
+  },
+  limitText: { fontSize: 14, textAlign: "center" as const },
+  limitCta: { fontSize: 14, fontWeight: "600" as const },
 });

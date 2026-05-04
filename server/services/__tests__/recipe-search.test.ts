@@ -86,6 +86,7 @@ const baseCommunityRecipe: CommunityRecipe = {
   isPublic: true,
   remixedFromId: null,
   remixedFromTitle: null,
+  sourceMessageId: null,
   createdAt: new Date("2024-05-01"),
   updatedAt: new Date("2024-05-01"),
 };

@@ -28,6 +28,7 @@ vi.mock("../../storage", () => ({
     createChatMessage: vi.fn(),
     createChatMessageWithLimitCheck: vi.fn(),
     getDailyChatMessageCount: vi.fn(),
+    getChatMessageCount: vi.fn(),
     getUser: vi.fn(),
     getUserProfile: vi.fn(),
     getDailySummary: vi.fn(),
@@ -103,6 +104,46 @@ describe("Chat Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual(convos);
+    });
+  });
+
+  describe("GET /api/chat/conversations/:id", () => {
+    it("returns conversation with messageCount and nearLimit: false when under 500", async () => {
+      const convo = createMockChatConversation({ id: 1 });
+      vi.mocked(storage.getChatConversation).mockResolvedValue(convo);
+      vi.mocked(storage.getChatMessageCount).mockResolvedValue(42);
+
+      const res = await request(app)
+        .get("/api/chat/conversations/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.messageCount).toBe(42);
+      expect(res.body.nearLimit).toBe(false);
+    });
+
+    it("returns nearLimit: true when messageCount > 500", async () => {
+      const convo = createMockChatConversation({ id: 1 });
+      vi.mocked(storage.getChatConversation).mockResolvedValue(convo);
+      vi.mocked(storage.getChatMessageCount).mockResolvedValue(501);
+
+      const res = await request(app)
+        .get("/api/chat/conversations/1")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.messageCount).toBe(501);
+      expect(res.body.nearLimit).toBe(true);
+    });
+
+    it("returns 404 when conversation is not found", async () => {
+      vi.mocked(storage.getChatConversation).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .get("/api/chat/conversations/999")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(404);
     });
   });
 

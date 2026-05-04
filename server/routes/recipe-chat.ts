@@ -72,10 +72,7 @@ export function register(app: Express): void {
           );
 
         // Check if this is a remix conversation — pass lineage if so
-        const [conversation, chatMessage] = await Promise.all([
-          storage.getChatConversation(id, req.userId),
-          storage.getChatMessageById(parsed.data.messageId, id),
-        ]);
+        const conversation = await storage.getChatConversation(id, req.userId);
         if (!conversation)
           return sendError(
             res,
@@ -83,6 +80,11 @@ export function register(app: Express): void {
             "Conversation not found",
             ErrorCode.NOT_FOUND,
           );
+
+        const chatMessage = await storage.getChatMessageById(
+          parsed.data.messageId,
+          id,
+        );
         let lineage:
           | { remixedFromId: number; remixedFromTitle: string }
           | undefined;

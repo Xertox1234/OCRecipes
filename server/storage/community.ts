@@ -255,7 +255,10 @@ export const FEATURED_COLUMNS = {
   updatedAt: communityRecipes.updatedAt,
 } as const;
 
-export type FeaturedRecipe = Omit<CommunityRecipe, "instructions">;
+export type FeaturedRecipe = Omit<
+  CommunityRecipe,
+  "instructions" | "sourceMessageId"
+>;
 
 export async function getFeaturedRecipes(
   limit = 12,

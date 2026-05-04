@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   generateCoachProResponse,
   generateCoachResponse,
+  SAFETY_OVERRIDE_SENTINEL,
 } from "../nutrition-coach";
 import type { CoachContext } from "../nutrition-coach";
 import { openai } from "../../lib/openai";
@@ -562,7 +563,7 @@ describe("generateCoachResponse", () => {
     expect(sanitizeUserInput).toHaveBeenCalledWith("Tell me about pizza");
   });
 
-  it("returns only a safe fallback when containsUnsafeCoachAdvice returns true", async () => {
+  it("yields SAFETY_OVERRIDE_SENTINEL as last chunk when response is unsafe", async () => {
     const longContent = "A".repeat(250);
     const stream = createMockStream([
       { content: longContent },
@@ -572,14 +573,20 @@ describe("generateCoachResponse", () => {
     vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
 
     const messages = [{ role: "user" as const, content: "Extreme diet plan" }];
-    const result = await collectStream(
-      generateCoachResponse(messages, DEFAULT_CONTEXT),
-    );
+    const chunks: string[] = [];
+    for await (const chunk of generateCoachResponse(
+      messages,
+      DEFAULT_CONTEXT,
+    )) {
+      chunks.push(chunk);
+    }
 
-    expect(result).toBe(
-      "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.",
-    );
-    expect(result).not.toContain(longContent);
+    // First chunk is the delta content (already streamed)
+    expect(chunks[0]).toBe(longContent);
+    // Last chunk is the sentinel signal
+    expect(chunks[chunks.length - 1]).toBe(SAFETY_OVERRIDE_SENTINEL);
+    // Safe message is NOT directly returned by generateCoachResponse
+    expect(chunks.join("")).not.toContain("I need to be careful");
   });
 
   it("injects screenContext into the system prompt", async () => {
@@ -645,14 +652,41 @@ describe("generateCoachResponse", () => {
     vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(true);
 
     const messages = [{ role: "user" as const, content: "Fasting plan" }];
-    const result = await collectStream(
-      generateCoachResponse(messages, DEFAULT_CONTEXT),
-    );
+    const chunks: string[] = [];
+    for await (const chunk of generateCoachResponse(
+      messages,
+      DEFAULT_CONTEXT,
+    )) {
+      chunks.push(chunk);
+    }
 
-    expect(result).toBe(
-      "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.",
+    // The sentinel is yielded as the last chunk — safe message not returned directly
+    expect(chunks[chunks.length - 1]).toBe(SAFETY_OVERRIDE_SENTINEL);
+    // The unsafe content was streamed (already in deltas) but safe msg is NOT in generateCoachResponse output
+    expect(chunks.join("")).not.toContain(
+      "I need to be careful here. I can't provide unsafe diet instructions",
     );
-    expect(result).not.toContain("Here is advice.");
+  });
+
+  it("yields each delta individually rather than the full response at once", async () => {
+    const stream = createMockStream([
+      { content: "Hello " },
+      { content: "there!" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+
+    const chunks: string[] = [];
+    for await (const chunk of generateCoachResponse(
+      [{ role: "user", content: "Hi" }],
+      DEFAULT_CONTEXT,
+    )) {
+      chunks.push(chunk);
+    }
+
+    // Must yield two separate chunks, not one concatenated string
+    expect(chunks).toEqual(["Hello ", "there!"]);
   });
 
   it("includes a vague-message clarification example in the system prompt", async () => {

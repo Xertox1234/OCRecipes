@@ -49,6 +49,7 @@ const baseRecipe = {
   isPublic: true,
   remixedFromId: null,
   remixedFromTitle: null,
+  sourceMessageId: null,
 };
 
 describe("HomeRecipeCard", () => {

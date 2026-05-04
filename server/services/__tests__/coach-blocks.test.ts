@@ -47,4 +47,13 @@ describe("Coach Blocks Service", () => {
     expect(text).toBe("Just plain text response");
     expect(blocks).toEqual([]);
   });
+
+  it("parses both fences when content contains two coach_blocks fences", () => {
+    const content = `Here is chart one.\n\`\`\`coach_blocks\n[{"type":"quick_replies","options":[{"label":"Yes","message":"yes"}]}]\n\`\`\`\nAnd here is another.\n\`\`\`coach_blocks\n[{"type":"quick_replies","options":[{"label":"No","message":"no"}]}]\n\`\`\``;
+    const result = parseBlocksFromContent(content);
+    // Both fences stripped from text
+    expect(result.text).not.toContain("```coach_blocks");
+    // At least two blocks parsed
+    expect(result.blocks.length).toBe(2);
+  });
 });

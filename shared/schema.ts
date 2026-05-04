@@ -561,6 +561,7 @@ export const communityRecipes = pgTable(
     updatedAt: timestamp("updated_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
+    sourceMessageId: integer("source_message_id"),
   },
   (table) => ({
     barcodeIdx: index("community_recipes_barcode_idx").on(table.barcode),
@@ -597,6 +598,9 @@ export const communityRecipes = pgTable(
     ),
     carbsNonNeg: check("cr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
     fatNonNeg: check("cr_fat_gte0", sql`${table.fatPerServing} >= 0`),
+    sourceMessageIdUniqueIdx: uniqueIndex("community_recipes_source_msg_idx")
+      .on(table.sourceMessageId)
+      .where(sql`${table.sourceMessageId} IS NOT NULL`),
   }),
 );
 
@@ -946,6 +950,10 @@ export const chatConversations = pgTable(
       table.userId,
       table.updatedAt,
     ),
+    titleTrgmIdx: index("chat_conversations_title_trgm_idx").using(
+      "gin",
+      table.title.op("gin_trgm_ops"),
+    ),
   }),
 );
 
@@ -959,6 +967,7 @@ export const chatMessages = pgTable(
     role: text("role").notNull(), // "user" | "assistant" | "system"
     content: text("content").notNull(),
     metadata: jsonb("metadata"),
+    turnKey: text("turn_key"),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -972,6 +981,9 @@ export const chatMessages = pgTable(
       table.role,
       table.createdAt,
     ),
+    turnKeyUniqueIdx: uniqueIndex("chat_messages_turn_key_idx")
+      .on(table.turnKey)
+      .where(sql`${table.turnKey} IS NOT NULL`),
   }),
 );
 
@@ -1552,6 +1564,13 @@ export const coachNotebook = pgTable(
     dedupeKeyUniqueIdx: uniqueIndex("coach_notebook_turn_fingerprint_idx")
       .on(table.dedupeKey)
       .where(sql`${table.dedupeKey} IS NOT NULL`),
+    dueCommitmentsIdx: index("coach_notebook_due_commitments_idx")
+      .on(table.followUpDate)
+      .where(sql`${table.type} = 'commitment' AND ${table.status} = 'active'`),
+    userStatusIdx: index("coach_notebook_user_status_idx").on(
+      table.userId,
+      table.status,
+    ),
     typeCheck: check(
       "coach_notebook_type_check",
       sql`${table.type} IN ('insight', 'commitment', 'preference', 'goal', 'motivation', 'emotional_context', 'conversation_summary', 'coaching_strategy')`,

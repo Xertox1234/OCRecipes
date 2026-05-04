@@ -16,6 +16,13 @@ import {
 
 const log = createServiceLogger("nutrition-coach");
 
+/**
+ * Sentinel yielded by generateCoachResponse when the safety check fires after
+ * streaming has already begun. The caller (handleCoachChat) converts this to a
+ * safety_override SSE event so the client can reset and display the safe message.
+ */
+export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
+
 export interface CoachContext {
   goals: {
     calories: number;
@@ -42,6 +49,7 @@ export interface CoachContext {
    * E.g. "Breakfast skipped 5 of 7 days; late-night eating on 3 of 7 days."
    */
   mealPatternSummary?: string;
+  blocksPrompt?: string;
 }
 
 function buildSystemPrompt(
@@ -52,6 +60,7 @@ function buildSystemPrompt(
     "You are NutriCoach, a friendly and knowledgeable nutrition coach AI built into the OCRecipes app.",
     "Be conversational, supportive, and evidence-based. Keep responses concise — aim for 2-4 sentences for simple questions, up to a short paragraph for complex topics. Use bullet points when listing foods or suggestions. Never write more than 150 words unless the user asks for detail.",
     "Use **bold** and *italic* for emphasis and bullet points for lists. Do not use headers, tables, or code blocks — they render poorly in chat.",
+    "When a tool call proposes an action (log food, add to meal plan, add to grocery list), tell the user what you are suggesting and that they can confirm or cancel. Do not say the action has been completed.",
     "Never diagnose medical conditions or replace professional medical advice.",
     "Never recommend extreme calorie restriction (below 1200 cal/day), extreme fasting protocols, or any advice that could promote disordered eating.",
     "If the user mentions symptoms, emotional distress about food, or asks for medical advice, acknowledge their concern and recommend they see a healthcare professional or registered dietitian.",
@@ -173,6 +182,10 @@ function buildSystemPrompt(
     );
   }
 
+  if (context.blocksPrompt) {
+    parts.push("", context.blocksPrompt);
+  }
+
   // Safety boundary is always LAST — after all context sections
   parts.push("", SYSTEM_PROMPT_BOUNDARY);
 
@@ -245,6 +258,7 @@ export async function* generateCoachResponse(
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
         fullResponse += delta;
+        yield delta; // stream each token to the caller as it arrives
       }
     }
   } catch (error) {
@@ -254,11 +268,11 @@ export async function* generateCoachResponse(
   }
 
   if (containsUnsafeCoachAdvice(fullResponse)) {
-    yield "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
+    // Deltas already sent — signal caller to replace content client-side
+    yield SAFETY_OVERRIDE_SENTINEL;
     return;
   }
-
-  yield fullResponse;
+  // No final yield — individual deltas are already in the caller's buffer
 }
 
 /**

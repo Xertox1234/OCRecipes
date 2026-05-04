@@ -26,6 +26,7 @@ npm run expo:dev      # Expo frontend with tunneling (camera won't work in Expo 
 
 # Database
 npm run db:push       # Push Drizzle schema to PostgreSQL
+                      # (first time only) psql $DATABASE_URL -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
 # Seed data (dev/test only — refuses NODE_ENV=production without --allow-prod-seed)
 npm run seed:recipes              # ~1.5 min (3 recipes in parallel, 25 targets)

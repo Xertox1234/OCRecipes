@@ -26,6 +26,7 @@ import {
   handleCoachChat,
   tryArchiveNotebook,
 } from "../services/coach-pro-chat";
+import { sanitizeUserInput, sanitizeContextField } from "../lib/ai-safety";
 
 const SSE_TIMEOUT_MS = 120_000; // 2 minutes max per SSE connection
 const SSE_MAX_RESPONSE_BYTES = 50 * 1024; // 50KB max response size
@@ -64,6 +65,43 @@ export function register(app: Express): void {
         res.json(conversations);
       } catch (error) {
         handleRouteError(res, error, "list conversations");
+      }
+    },
+  );
+
+  // GET /api/chat/conversations/:id - Get single conversation with message count
+  app.get(
+    "/api/chat/conversations/:id",
+    requireAuth,
+    chatRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid conversation ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
+
+        const conversation = await storage.getChatConversation(id, req.userId);
+        if (!conversation)
+          return sendError(
+            res,
+            404,
+            "Conversation not found",
+            ErrorCode.NOT_FOUND,
+          );
+
+        const messageCount = await storage.getChatMessageCount(id, req.userId);
+        res.json({
+          ...conversation,
+          messageCount,
+          nearLimit: messageCount > 500,
+        });
+      } catch (error) {
+        handleRouteError(res, error, "fetch conversation");
       }
     },
   );
@@ -240,6 +278,7 @@ export function register(app: Express): void {
           content: z.string().min(1).max(2000),
           screenContext: z.string().max(1500).optional(),
           warmUpId: z.string().max(100).optional(),
+          turnKey: z.string().uuid().optional(),
         });
         const parsed = schema.safeParse(req.body);
         if (!parsed.success)
@@ -284,10 +323,11 @@ export function register(app: Express): void {
             : features.coachPro
               ? features.coachProDailyMessages
               : features.dailyCoachMessages;
+        const sanitizedContent = sanitizeUserInput(parsed.data.content);
         const message = await storage.createChatMessageWithLimitCheck(
           id,
           req.userId,
-          parsed.data.content,
+          sanitizedContent,
           dailyLimit,
           conversation.type as "coach" | "recipe" | "remix",
         );
@@ -381,10 +421,14 @@ export function register(app: Express): void {
             let allergenWarning: string | null = null;
             let recipeImageUrl: string | null = null;
 
+            const sanitizedScreenContext = parsed.data.screenContext
+              ? sanitizeContextField(parsed.data.screenContext, 200)
+              : undefined;
+
             for await (const event of generateRecipeChatResponse(
               contextMessages,
               profile,
-              parsed.data.screenContext,
+              sanitizedScreenContext,
               remixPromptOverride
                 ? { systemPromptOverride: remixPromptOverride }
                 : undefined,
@@ -466,9 +510,10 @@ export function register(app: Express): void {
             for await (const event of handleCoachChat({
               conversationId: id,
               userId: req.userId,
-              content: parsed.data.content,
+              content: sanitizedContent,
               screenContext: parsed.data.screenContext,
               warmUpId: parsed.data.warmUpId,
+              turnKey: parsed.data.turnKey,
               isCoachPro: !!features.coachPro,
               user: {
                 dailyCalorieGoal: user.dailyCalorieGoal,
@@ -485,7 +530,9 @@ export function register(app: Express): void {
                   ? { content: event.content }
                   : event.type === "status"
                     ? { status: event.label }
-                    : { blocks: event.blocks },
+                    : event.type === "safety_override"
+                      ? { safety_override: event.message }
+                      : { blocks: event.blocks },
               );
               responseBytes += eventJson.length;
               if (responseBytes > SSE_MAX_RESPONSE_BYTES) {

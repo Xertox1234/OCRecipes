@@ -20,6 +20,7 @@ import {
   generateCoachResponse,
   generateCoachProResponse,
   getSystemPromptTemplateVersion,
+  SAFETY_OVERRIDE_SENTINEL,
   type CoachContext,
 } from "./nutrition-coach";
 import { parseBlocksFromContent, BLOCKS_SYSTEM_PROMPT } from "./coach-blocks";
@@ -29,6 +30,7 @@ import {
   containsDangerousDietaryAdvice,
 } from "../lib/ai-safety";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { logger } from "../lib/logger";
 import { consumeWarmUp } from "./coach-warm-up";
 import { calculateWeeklyRate } from "./weight-trend";
 import {
@@ -129,7 +131,11 @@ export function buildMealPatternSummary(
 export type CoachChatEvent =
   | { type: "content"; content: string }
   | { type: "blocks"; blocks: CoachBlock[] }
-  | { type: "status"; label: string };
+  | { type: "status"; label: string }
+  | { type: "safety_override"; message: string };
+
+const STANDARD_SAFETY_MESSAGE =
+  "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
 
 const TOOL_STATUS_LABELS: Record<string, string> = {
   lookup_nutrition: "Looking up nutrition…",
@@ -154,6 +160,7 @@ export interface CoachChatParams {
   screenContext?: string;
   warmUpId?: string;
   isCoachPro: boolean;
+  turnKey?: string;
   user: {
     dailyCalorieGoal: number | null;
     dailyProteinGoal: number | null;
@@ -333,6 +340,7 @@ export async function* handleCoachChat(
     content,
     screenContext,
     warmUpId,
+    turnKey,
     isCoachPro,
     user,
     isAborted,
@@ -407,6 +415,9 @@ export async function* handleCoachChat(
 
   // ── Coach Pro: inject notebook context ──────────────
   if (isCoachPro) {
+    // Always provide blocks formatting instructions for Pro responses
+    context.blocksPrompt = BLOCKS_SYSTEM_PROMPT;
+
     const notebookEntries = await storage.getActiveNotebookEntries(userId);
     if (notebookEntries.length > 0) {
       // Include updatedAt so the budget formatter can attach recency labels
@@ -421,15 +432,12 @@ export async function* handleCoachChat(
         sanitized,
         DEFAULT_NOTEBOOK_MAX_CHARS,
       );
-      // Delimiter block frames the (untrusted) notebook content inside the
-      // system prompt so the model treats it as data, not instructions.
-      context.notebookSummary =
-        joined.length > 0
-          ? `${joined}\n\n${BLOCKS_SYSTEM_PROMPT}`
-          : BLOCKS_SYSTEM_PROMPT;
-    } else {
-      context.notebookSummary = BLOCKS_SYSTEM_PROMPT;
+      if (joined.length > 0) {
+        context.notebookSummary = joined;
+      }
+      // If truncation produces empty string, omit notebook section entirely
     }
+    // When no entries exist, notebookSummary stays unset — no confusing preamble
   }
 
   let messageHistory: {
@@ -538,20 +546,13 @@ export async function* handleCoachChat(
       abortSignal,
     )) {
       if (isAborted()) break;
+      if (chunk === SAFETY_OVERRIDE_SENTINEL) {
+        fullResponse = STANDARD_SAFETY_MESSAGE;
+        yield { type: "safety_override", message: STANDARD_SAFETY_MESSAGE };
+        break;
+      }
       fullResponse += chunk;
       yield { type: "content", content: chunk };
-    }
-
-    if (questionHash && fullResponse && !isAborted()) {
-      fireAndForget(
-        "coach-cache-response",
-        storage.setCoachCachedResponse(
-          userId,
-          questionHash,
-          content,
-          fullResponse,
-        ),
-      );
     }
   }
 
@@ -565,12 +566,47 @@ export async function* handleCoachChat(
   }
 
   if (fullResponse && !isAborted()) {
-    await storage.createChatMessage(
-      conversationId,
-      userId,
-      "assistant",
-      textContent,
-      blocks.length > 0 ? { blocks } : null,
+    if (turnKey) {
+      const existing = await storage.getChatMessageByTurnKey(
+        conversationId,
+        turnKey,
+      );
+      if (existing) {
+        logger.info(
+          { turnKey },
+          "assistant message already persisted, skipping duplicate write",
+        );
+      } else {
+        await storage.createChatMessage(
+          conversationId,
+          userId,
+          "assistant",
+          textContent,
+          blocks.length > 0 ? { blocks } : null,
+          turnKey,
+        );
+      }
+    } else {
+      await storage.createChatMessage(
+        conversationId,
+        userId,
+        "assistant",
+        textContent,
+        blocks.length > 0 ? { blocks } : null,
+      );
+    }
+  }
+
+  // Cache write after DB write (ordering fix: cache should only exist for persisted messages)
+  if (questionHash && fullResponse && !isAborted()) {
+    fireAndForget(
+      "coach-cache-response",
+      storage.setCoachCachedResponse(
+        userId,
+        questionHash,
+        content,
+        fullResponse,
+      ),
     );
   }
 
