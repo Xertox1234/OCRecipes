@@ -35,6 +35,24 @@ export async function getChatConversation(
   return conversation || undefined;
 }
 
+export async function getChatMessageCount(
+  conversationId: number,
+  userId: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(chatMessages)
+    .innerJoin(
+      chatConversations,
+      and(
+        eq(chatMessages.conversationId, chatConversations.id),
+        eq(chatConversations.userId, userId),
+      ),
+    )
+    .where(eq(chatMessages.conversationId, conversationId));
+  return row?.count ?? 0;
+}
+
 export async function getChatConversations(
   userId: string,
   limit = 50,
@@ -174,7 +192,7 @@ export async function createChatMessage(
   });
 }
 
-export async function getChatMessageByTurnKey(
+export async function getChatMessageByTurnKey( // idor-safe: callers must pre-verify conversation ownership via getChatConversation(id, userId)
   conversationId: number,
   turnKey: string,
 ): Promise<ChatMessage | undefined> {

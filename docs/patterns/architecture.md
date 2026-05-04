@@ -1343,6 +1343,16 @@ export function addToIndex(doc: SearchableRecipe): void {
 
 **Reference:** `server/services/recipe-search.ts`, `shared/types/recipe-search.ts`
 
+## Per-Conversation Message Depth
+
+Chat conversations grow indefinitely — the daily message limit controls volume but not depth. Long-lived conversations stress history truncation and increase DB row counts over time.
+
+**Soft cap:** 500 messages per conversation is the intended threshold. Above this, clients should surface a "Start a new conversation" prompt rather than continuing indefinitely.
+
+**How to detect:** Add a `getChatMessageCount(conversationId, userId)` call when fetching a conversation. If count > 500, include a `nearLimit: true` flag in the GET /api/chat/conversations/:id response. The client shows a banner: "This conversation is getting long. Starting a new one gives the Coach fresher context."
+
+**Hard archival:** Out of scope for this plan. Triggered by a future scaling incident or user complaint, not pre-emptively.
+
 ### Dynamic Import for Deferred Environment-Dependent Module Evaluation
 
 When a module reads `process.env` at the top level (module load time) and is only used in scripts or late-loading code paths, use dynamic `import()` to defer evaluation until the environment is ready. This is essential in build scripts where `loadEnv()` must run before any env-dependent modules are imported.

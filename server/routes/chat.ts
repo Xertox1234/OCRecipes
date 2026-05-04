@@ -69,6 +69,43 @@ export function register(app: Express): void {
     },
   );
 
+  // GET /api/chat/conversations/:id - Get single conversation with message count
+  app.get(
+    "/api/chat/conversations/:id",
+    requireAuth,
+    chatRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const id = parsePositiveIntParam(req.params.id);
+        if (!id)
+          return sendError(
+            res,
+            400,
+            "Invalid conversation ID",
+            ErrorCode.VALIDATION_ERROR,
+          );
+
+        const conversation = await storage.getChatConversation(id, req.userId);
+        if (!conversation)
+          return sendError(
+            res,
+            404,
+            "Conversation not found",
+            ErrorCode.NOT_FOUND,
+          );
+
+        const messageCount = await storage.getChatMessageCount(id, req.userId);
+        res.json({
+          ...conversation,
+          messageCount,
+          nearLimit: messageCount > 500,
+        });
+      } catch (error) {
+        handleRouteError(res, error, "fetch conversation");
+      }
+    },
+  );
+
   // POST /api/chat/conversations - Create conversation
   app.post(
     "/api/chat/conversations",

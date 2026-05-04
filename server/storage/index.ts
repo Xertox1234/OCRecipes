@@ -158,6 +158,7 @@ export const storage = {
   updateChatConversationTitle: chat.updateChatConversationTitle,
   pinChatConversation: chat.pinChatConversation,
   getDailyChatMessageCount: chat.getDailyChatMessageCount,
+  getChatMessageCount: chat.getChatMessageCount,
   createChatMessageWithLimitCheck: chat.createChatMessageWithLimitCheck,
   saveRecipeFromChat: recipeFromChat.saveRecipeFromChat,
   getCoachCachedResponse: chat.getCoachCachedResponse,
