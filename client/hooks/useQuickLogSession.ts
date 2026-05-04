@@ -17,6 +17,7 @@ export interface LogSummary {
 
 interface UseQuickLogSessionOptions {
   onLogSuccess?: (summary: LogSummary) => void;
+  isOpen?: boolean;
 }
 
 interface PartialLogError extends Error {
@@ -25,6 +26,7 @@ interface PartialLogError extends Error {
 
 export function useQuickLogSession({
   onLogSuccess,
+  isOpen = false,
 }: UseQuickLogSessionOptions = {}) {
   const queryClient = useQueryClient();
   const haptics = useHaptics();
@@ -206,6 +208,7 @@ export function useQuickLogSession({
       return data.items ?? [];
     },
     staleTime: 5 * 60 * 1000,
+    enabled: isOpen,
   });
 
   const { mutate: logAllMutate } = logAllMutation;

@@ -46,12 +46,7 @@ beforeEach(async () => {
     mockSpeechToText,
   );
   mockTokenStorage.get.mockResolvedValue("test-token");
-  // Consume the frequent-items useQuery that fires on mount so it does not
-  // interfere with the mock responses queued by individual tests.
-  mockApiRequest.mockResolvedValueOnce({
-    ok: true,
-    json: () => Promise.resolve({ items: [] }),
-  });
+  // frequentItems query is deferred (enabled: isOpen). No pre-queued mock needed.
 });
 
 describe("useQuickLogSession", () => {
@@ -360,7 +355,7 @@ describe("useQuickLogSession", () => {
     });
 
     const { wrapper } = createQueryWrapper();
-    // frequentItems pre-queued in beforeEach; parse mock next
+    // frequentItems is deferred (enabled: isOpen=false by default); parse mock is first
     mockApiRequest.mockResolvedValueOnce({
       ok: true,
       json: () =>
