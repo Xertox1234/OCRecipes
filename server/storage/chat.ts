@@ -129,6 +129,7 @@ export async function createChatMessage(
   role: ChatMessageRole,
   content: string,
   metadata?: Record<string, unknown> | null,
+  turnKey?: string,
 ): Promise<ChatMessage> {
   assertChatMessageRole(role);
   return db.transaction(async (tx) => {
@@ -154,6 +155,7 @@ export async function createChatMessage(
         role,
         content,
         metadata: metadata ?? null,
+        ...(turnKey ? { turnKey } : {}),
       })
       .returning();
 
@@ -170,6 +172,23 @@ export async function createChatMessage(
 
     return message;
   });
+}
+
+export async function getChatMessageByTurnKey(
+  conversationId: number,
+  turnKey: string,
+): Promise<ChatMessage | undefined> {
+  const [message] = await db
+    .select()
+    .from(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.conversationId, conversationId),
+        eq(chatMessages.turnKey, turnKey),
+      ),
+    )
+    .limit(1);
+  return message;
 }
 
 export async function deleteChatConversation(

@@ -152,6 +152,7 @@ export const storage = {
   getChatMessages: chat.getChatMessages,
   getChatMessageById: chat.getChatMessageById,
   createChatMessage: chat.createChatMessage,
+  getChatMessageByTurnKey: chat.getChatMessageByTurnKey,
   deleteChatConversation: chat.deleteChatConversation,
   deleteChatMessage: chat.deleteChatMessage,
   updateChatConversationTitle: chat.updateChatConversationTitle,
