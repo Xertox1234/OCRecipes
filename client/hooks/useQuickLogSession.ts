@@ -19,6 +19,10 @@ interface UseQuickLogSessionOptions {
   onLogSuccess?: (summary: LogSummary) => void;
 }
 
+interface PartialLogError extends Error {
+  failedIndices?: number[];
+}
+
 export function useQuickLogSession({
   onLogSuccess,
 }: UseQuickLogSessionOptions = {}) {
@@ -110,10 +114,6 @@ export function useQuickLogSession({
     [haptics],
   );
 
-  interface PartialLogError extends Error {
-    failedIndices?: number[];
-  }
-
   const logAllMutation = useMutation({
     mutationFn: async (items: ParsedFoodItem[]) => {
       const results = await Promise.allSettled(
@@ -159,9 +159,10 @@ export function useQuickLogSession({
       setSubmitError(null);
       onLogSuccessRef.current?.(summary);
     },
-    onError: (error) => {
+    onError: (error, items) => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      // Remove items that were successfully logged so a retry won't re-submit them
+      // Keep only the items that failed so a retry won't re-submit already-persisted ones.
+      // Index stability holds because parsedItems is frozen while the mutation is in-flight.
       const failedIndices =
         error instanceof Error
           ? ((error as PartialLogError).failedIndices ?? [])
@@ -174,7 +175,13 @@ export function useQuickLogSession({
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
         queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
       }
-      setSubmitError("Failed to log some items. Please try again.");
+      const allFailed =
+        failedIndices.length === 0 || failedIndices.length === items.length;
+      setSubmitError(
+        allFailed
+          ? "Failed to log items. Please try again."
+          : "Some items failed to log. Please try again.",
+      );
     },
   });
 

@@ -282,6 +282,59 @@ describe("useQuickLogSession", () => {
     expect(result.current.submitError).not.toBeNull();
   });
 
+  it("total failure: preserves all parsedItems and shows generic error message", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "eggs",
+                quantity: 2,
+                unit: "large",
+                calories: 143,
+                protein: 12,
+                carbs: 1,
+                fat: 10,
+                servingSize: null,
+              },
+              {
+                name: "coffee",
+                quantity: 1,
+                unit: "cup",
+                calories: 5,
+                protein: 0,
+                carbs: 1,
+                fat: 0,
+                servingSize: null,
+              },
+            ],
+          }),
+      })
+      // Both POSTs fail
+      .mockRejectedValueOnce(new Error("server error"))
+      .mockRejectedValueOnce(new Error("server error"));
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("2 eggs and coffee"));
+    act(() => result.current.handleTextSubmit());
+
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(2));
+
+    act(() => result.current.submitLog());
+
+    await waitFor(() => expect(result.current.submitError).not.toBeNull());
+    // All items remain — nothing was successfully logged
+    expect(result.current.parsedItems).toHaveLength(2);
+    expect(result.current.submitError).toBe(
+      "Failed to log items. Please try again.",
+    );
+  });
+
   it("reset clears inputText, parsedItems, and errors", async () => {
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(() => useQuickLogSession(), { wrapper });
