@@ -19,6 +19,10 @@ interface UseQuickLogSessionOptions {
   onLogSuccess?: (summary: LogSummary) => void;
 }
 
+interface PartialLogError extends Error {
+  failedIndices?: number[];
+}
+
 export function useQuickLogSession({
   onLogSuccess,
 }: UseQuickLogSessionOptions = {}) {
@@ -122,7 +126,7 @@ export function useQuickLogSession({
 
   const logAllMutation = useMutation({
     mutationFn: async (items: ParsedFoodItem[]) => {
-      return Promise.all(
+      const results = await Promise.allSettled(
         items.map(async (item) => {
           const res = await apiRequest("POST", "/api/scanned-items", {
             productName: `${item.quantity} ${item.unit} ${item.name}`,
@@ -136,6 +140,16 @@ export function useQuickLogSession({
           return res.json();
         }),
       );
+      const failedIndices = results
+        .map((r, i) => (r.status === "rejected" ? i : -1))
+        .filter((i) => i !== -1);
+      if (failedIndices.length > 0) {
+        // Surface the failed indices so onError can remove successfully-logged items
+        const err: PartialLogError = new Error("Some items failed to log");
+        err.failedIndices = failedIndices;
+        throw err;
+      }
+      return results.map((r) => (r as PromiseFulfilledResult<unknown>).value);
     },
     onSuccess: (_data, items) => {
       const summary: LogSummary = {
@@ -155,9 +169,28 @@ export function useQuickLogSession({
       setSubmitError(null);
       onLogSuccessRef.current?.(summary);
     },
-    onError: () => {
+    onError: (error, items) => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      setSubmitError("Failed to log some items. Please try again.");
+      // Keep only the items that failed so a retry won't re-submit already-persisted ones.
+      // Index stability holds because parsedItems is frozen while the mutation is in-flight.
+      const failedIndices = (error as PartialLogError).failedIndices ?? [];
+      if (failedIndices.length > 0) {
+        const failedSet = new Set(failedIndices);
+        setParsedItems((prev) => prev.filter((_, i) => failedSet.has(i)));
+        if (failedIndices.length < items.length) {
+          // Some items persisted — refresh stale queries
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
+        }
+      }
+      const allFailed =
+        failedIndices.length === 0 || failedIndices.length === items.length;
+      setSubmitError(
+        allFailed
+          ? "Failed to log items. Please try again."
+          : "Some items failed to log. Please try again.",
+      );
     },
   });
 
