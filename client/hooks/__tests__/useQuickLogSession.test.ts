@@ -394,4 +394,55 @@ describe("useQuickLogSession", () => {
 
     expect(mockSpeechToText.startListening).toHaveBeenCalledOnce();
   });
+
+  it("handleTextSubmit does not fire a second parse when isParsing is true", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    // First parse call: hangs so isParsing stays true
+    let resolveFirst!: (v: unknown) => void;
+    mockApiRequest.mockReturnValueOnce(
+      new Promise((res) => {
+        resolveFirst = res;
+      }),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("2 eggs"));
+
+    // Kick off first parse — isParsing becomes true
+    act(() => result.current.handleTextSubmit());
+
+    // Immediately attempt a second parse while first is in-flight
+    act(() => result.current.handleTextSubmit());
+
+    // Settle the first request
+    await act(async () => {
+      resolveFirst({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "eggs",
+                quantity: 2,
+                unit: "large",
+                calories: 143,
+                protein: 12,
+                carbs: 1,
+                fat: 10,
+                servingSize: null,
+              },
+            ],
+          }),
+      });
+    });
+
+    // mockApiRequest should only have been called once for the parse endpoint
+    // (the other call was the frequentItems query from beforeEach)
+    const parseCalls = mockApiRequest.mock.calls.filter((args) =>
+      String(args[1]).includes("/api/food/parse"),
+    );
+    expect(parseCalls).toHaveLength(1);
+  });
 });

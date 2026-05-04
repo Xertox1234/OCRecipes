@@ -83,7 +83,7 @@ export function useQuickLogSession({
   }, [isFinal, transcript, isParsing, parseFoodTextMutate, haptics]);
 
   const handleTextSubmit = useCallback(() => {
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || isParsing) return;
     setParseError(null);
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     const source = pendingSourceRef.current;
@@ -100,7 +100,7 @@ export function useQuickLogSession({
         setParseError("Failed to parse food text. Please try again.");
       },
     });
-  }, [inputText, haptics, parseFoodTextMutate]);
+  }, [inputText, isParsing, haptics, parseFoodTextMutate]);
 
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
