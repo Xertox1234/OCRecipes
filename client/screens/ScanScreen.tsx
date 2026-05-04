@@ -5,6 +5,11 @@ import React, {
   useRef,
   useState,
 } from "react";
+import Animated, {
+  useSharedValue,
+  withTiming,
+  useAnimatedStyle,
+} from "react-native-reanimated";
 import ConfettiCannon from "react-native-confetti-cannon";
 import {
   StyleSheet,
@@ -78,6 +83,9 @@ export default function ScanScreen() {
 
   const route = useRoute<RouteProp<RootStackParamList, "Scan">>();
   const returnAfterLog = route.params?.returnAfterLog ?? false;
+  const isLabelMode = route.params?.mode === "label";
+  // front-label uses FrontLabelConfirm AI flow — OCR frame processor not needed there
+  const isFrontLabelMode = route.params?.mode === "front-label";
   const toast = useToast();
 
   const [scanPhase, dispatch] = useReducer(scanPhaseReducer, { type: "IDLE" });
@@ -90,6 +98,31 @@ export default function ScanScreen() {
   }));
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+
+  // Corner glow for OCR text detection feedback (label mode only)
+  const cornerGlow = useSharedValue(0);
+
+  const handleTextDetected = useCallback(
+    (detected: boolean) => {
+      if (reducedMotion) {
+        cornerGlow.value = detected ? 1 : 0;
+      } else {
+        cornerGlow.value = detected
+          ? withTiming(1, { duration: 300 })
+          : withTiming(0, { duration: 500 });
+      }
+    },
+    [cornerGlow, reducedMotion],
+  );
+
+  const successColor = theme.success;
+  const glowStyle = useAnimatedStyle(() => ({
+    shadowColor: successColor,
+    shadowRadius: cornerGlow.value * 8,
+    shadowOpacity: cornerGlow.value * 0.6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: cornerGlow.value * 4,
+  }));
 
   const [confirmCard, setConfirmCard] = useState<{
     barcode: string;
@@ -333,6 +366,17 @@ export default function ScanScreen() {
       const photo = await cameraRef.current?.takePicture();
       if (!photo) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // Label mode: skip smart classification, go directly to LabelAnalysis
+      if (isLabelMode) {
+        const ocrResult = cameraRef.current?.getLatestOCRResult?.();
+        navigation.navigate("LabelAnalysis", {
+          imageUri: photo.uri,
+          localOCRText: ocrResult?.resultText ?? undefined,
+        });
+        return;
+      }
+
       dispatch({ type: "SMART_PHOTO_INITIATED", imageUri: photo.uri });
       try {
         const result = await uploadPhotoForAnalysis(photo.uri, "auto");
@@ -367,7 +411,7 @@ export default function ScanScreen() {
       // STEP3_CAPTURING — no OCR needed
       dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri });
     }
-  }, []);
+  }, [isLabelMode, navigation]);
 
   // Permission screens
   if (!permission || permission.status === "undetermined") {
@@ -443,13 +487,30 @@ export default function ScanScreen() {
     <View style={styles.root}>
       <CameraView
         ref={cameraRef}
-        barcodeTypes={["ean13", "ean8", "upc_e", "code128", "code39", "qr"]}
-        onBarcodeScanned={onBarcodeScanned}
+        barcodeTypes={
+          isLabelMode || isFrontLabelMode
+            ? []
+            : ["ean13", "ean8", "upc_e", "code128", "code39", "qr"]
+        }
+        onBarcodeScanned={
+          isLabelMode || isFrontLabelMode ? undefined : onBarcodeScanned
+        }
         enableTorch={torchEnabled}
         isActive={isFocused && !confirmCard}
+        enableOCR={isLabelMode}
+        onTextDetected={isLabelMode ? handleTextDetected : undefined}
       />
 
-      <ScanReticle phase={scanPhase} reducedMotion={reducedMotion} />
+      {isLabelMode ? (
+        <Animated.View
+          style={[styles.reticleGlowWrapper, glowStyle]}
+          pointerEvents="none"
+        >
+          <ScanReticle phase={scanPhase} reducedMotion={reducedMotion} />
+        </Animated.View>
+      ) : (
+        <ScanReticle phase={scanPhase} reducedMotion={reducedMotion} />
+      )}
 
       {sonarVisible && (
         <ScanSonarRing
@@ -705,6 +766,9 @@ export default function ScanScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" }, // hardcoded — camera background must always be black
+  reticleGlowWrapper: {
+    ...StyleSheet.absoluteFillObject,
+  },
   topOverlay: {
     position: "absolute",
     top: 0,

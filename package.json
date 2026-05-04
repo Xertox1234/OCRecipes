@@ -103,6 +103,7 @@
     "react-native-svg": "^15.15.1",
     "react-native-vision-camera": "^5.0.8",
     "react-native-vision-camera-barcode-scanner": "^5.0.8",
+    "react-native-vision-camera-ocr-plus": "^1.2.4",
     "tsx": "^4.20.6",
     "zod": "^3.25.76",
     "zod-validation-error": "^3.5.4"
