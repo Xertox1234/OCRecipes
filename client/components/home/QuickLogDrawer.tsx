@@ -160,7 +160,10 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
     [toast],
   );
 
-  const session = useQuickLogSession({ onLogSuccess: handleLogSuccess, isOpen });
+  const session = useQuickLogSession({
+    onLogSuccess: handleLogSuccess,
+    isOpen,
+  });
 
   useEffect(() => {
     if (session.speechError) toast.error(session.speechError);
