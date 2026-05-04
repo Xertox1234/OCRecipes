@@ -84,6 +84,7 @@ export async function saveRecipeFromChat(
 
     // 5. Create communityRecipe (private by default). mealTypes must be
     //    pre-computed by the caller (storage-layer purity — M5).
+    //    Idempotent via sourceMessageId conflict guard (P3-T21).
     const [created] = await tx
       .insert(communityRecipes)
       .values({
@@ -100,12 +101,23 @@ export async function saveRecipeFromChat(
         ingredients: recipe.ingredients,
         imageUrl: parsed.data.imageUrl ?? null,
         isPublic: false,
+        sourceMessageId: messageId,
         ...(lineage && {
           remixedFromId: lineage.remixedFromId,
           remixedFromTitle: lineage.remixedFromTitle,
         }),
       })
+      .onConflictDoNothing({ target: communityRecipes.sourceMessageId })
       .returning();
+
+    if (!created) {
+      // Conflict — recipe already exists for this message (retry path). Fetch existing.
+      const [existing] = await tx
+        .select()
+        .from(communityRecipes)
+        .where(eq(communityRecipes.sourceMessageId, messageId));
+      return existing ?? null;
+    }
 
     // 6. Update message metadata with back-reference
     await tx
