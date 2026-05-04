@@ -4,6 +4,8 @@ import {
   StyleSheet,
   AccessibilityInfo,
   Platform,
+  View,
+  Text,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -53,24 +55,39 @@ export default function CoachMicButton({
   }));
 
   return (
-    <Animated.View style={animatedStyle}>
-      <Pressable
-        style={[
-          styles.button,
-          { backgroundColor: isListening ? theme.error : theme.link },
-        ]}
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={isListening ? "Stop listening" : "Voice input"}
-        accessibilityState={{ selected: isListening }}
+    <View accessibilityLiveRegion="polite" importantForAccessibility="yes">
+      {/* Hidden text for Android TalkBack — announces when isListening changes */}
+      <Text
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+        }}
+        importantForAccessibility="yes"
+        accessibilityElementsHidden={false}
       >
-        <Ionicons
-          name={isListening ? "stop" : "mic"}
-          size={18}
-          color={theme.buttonText}
-        />
-      </Pressable>
-    </Animated.View>
+        {isListening ? "Listening" : ""}
+      </Text>
+      <Animated.View style={animatedStyle}>
+        <Pressable
+          style={[
+            styles.button,
+            { backgroundColor: isListening ? theme.error : theme.link },
+          ]}
+          onPress={onPress}
+          accessibilityRole="togglebutton"
+          accessibilityLabel={isListening ? "Stop listening" : "Voice input"}
+          accessibilityState={{ checked: isListening }}
+        >
+          <Ionicons
+            name={isListening ? "stop" : "mic"}
+            size={18}
+            color={theme.buttonText}
+          />
+        </Pressable>
+      </Animated.View>
+    </View>
   );
 }
 
