@@ -14,21 +14,25 @@ import {
 
 describe("charsToRelease", () => {
   it("returns empty string when elapsed < holdGateMs", () => {
-    expect(charsToRelease("hello world", 300, 700, 2)).toBe("");
-    expect(charsToRelease("hello world", 699, 700, 2)).toBe("");
+    expect(charsToRelease("hello world", 300, 700, CHARS_PER_TICK)).toBe("");
+    expect(charsToRelease("hello world", 699, 700, CHARS_PER_TICK)).toBe("");
   });
 
   it("returns up to charsPerTick when elapsed >= holdGateMs", () => {
-    expect(charsToRelease("hello world", 700, 700, 2)).toBe("he");
-    expect(charsToRelease("hello world", 1500, 700, 2)).toBe("he");
+    expect(charsToRelease("hello world", 700, 700, CHARS_PER_TICK)).toBe(
+      "hello world".slice(0, CHARS_PER_TICK),
+    );
+    expect(charsToRelease("hello world", 1500, 700, CHARS_PER_TICK)).toBe(
+      "hello world".slice(0, CHARS_PER_TICK),
+    );
   });
 
   it("returns entire buffer when buffer shorter than charsPerTick", () => {
-    expect(charsToRelease("x", 700, 700, 2)).toBe("x");
+    expect(charsToRelease("x", 700, 700, CHARS_PER_TICK)).toBe("x");
   });
 
   it("returns empty string for empty buffer regardless of elapsed", () => {
-    expect(charsToRelease("", 5000, 700, 2)).toBe("");
+    expect(charsToRelease("", 5000, 700, CHARS_PER_TICK)).toBe("");
   });
 });
 
@@ -160,7 +164,7 @@ describe("useCoachStream throttle rate", () => {
 
     await startAndFlush(result);
     act(() => {
-      mockXhr.emit({ content: "A".repeat(100) });
+      mockXhr.emit({ content: "A".repeat(400) });
     });
 
     // Advance past hold gate — the tick firing exactly at HOLD_GATE_MS also

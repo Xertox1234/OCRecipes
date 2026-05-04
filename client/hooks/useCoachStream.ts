@@ -10,7 +10,7 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 // Exported so tests can import and verify against them
 export const HOLD_GATE_MS = 700;
 export const DRAIN_INTERVAL_MS = 50;
-export const CHARS_PER_TICK = 2;
+export const CHARS_PER_TICK = 20;
 
 /**
  * Pure helper — returns the slice of buffer to release this drain tick.
