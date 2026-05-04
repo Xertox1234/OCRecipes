@@ -88,6 +88,8 @@ export default function CoachChat({
   const listRef = useRef<FlatList<ChatListItem>>(null);
   const prevStreamingRef = useRef(false);
   const activeConvIdRef = useRef<number | null>(null);
+  const usedQuickRepliesRef = useRef<Set<string>>(new Set());
+  const [quickReplyVersion, setQuickReplyVersion] = useState(0);
 
   const {
     isListening,
@@ -369,7 +371,14 @@ export default function CoachChat({
   );
 
   const handleQuickReply = useCallback(
-    (message: string) => {
+    (message: string, blockKey?: string) => {
+      if (blockKey) {
+        usedQuickRepliesRef.current = new Set([
+          ...usedQuickRepliesRef.current,
+          blockKey,
+        ]);
+        setQuickReplyVersion((v) => v + 1);
+      }
       handleSend(message);
     },
     [handleSend],
@@ -401,8 +410,11 @@ export default function CoachChat({
                 key={`${msg.id}-block-${i}`}
                 block={block}
                 onAction={handleBlockAction}
-                onQuickReply={handleQuickReply}
+                onQuickReply={(message) =>
+                  handleQuickReply(message, `${msg.id}-${i}`)
+                }
                 onCommitmentAccept={handleCommitmentAccept}
+                isUsed={usedQuickRepliesRef.current.has(`${msg.id}-${i}`)}
               />
             ))}
             {isRetryTarget && (
@@ -452,6 +464,7 @@ export default function CoachChat({
       messageBlocks,
       streamBlocks,
       theme.textSecondary,
+      quickReplyVersion,
     ],
   );
 

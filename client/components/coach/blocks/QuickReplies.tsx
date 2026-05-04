@@ -7,10 +7,12 @@ import type { QuickReplies as QuickRepliesType } from "@shared/schemas/coach-blo
 interface Props {
   block: QuickRepliesType;
   onSelect?: (message: string) => void;
+  used?: boolean;
 }
 
-export default function QuickReplies({ block, onSelect }: Props) {
+export default function QuickReplies({ block, onSelect, used }: Props) {
   const { theme } = useTheme();
+  if (used) return null;
   return (
     <ScrollView
       horizontal

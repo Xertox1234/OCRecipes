@@ -13,6 +13,7 @@ interface BlockRendererProps {
   onAction?: (action: Record<string, unknown>) => void;
   onQuickReply?: (message: string) => void;
   onCommitmentAccept?: (title: string, followUpDate: string) => void;
+  isUsed?: boolean;
 }
 
 export default function BlockRenderer({
@@ -20,6 +21,7 @@ export default function BlockRenderer({
   onAction,
   onQuickReply,
   onCommitmentAccept,
+  isUsed,
 }: BlockRendererProps) {
   switch (block.type) {
     case "action_card":
@@ -31,7 +33,9 @@ export default function BlockRenderer({
     case "commitment_card":
       return <CommitmentCard block={block} onAccept={onCommitmentAccept} />;
     case "quick_replies":
-      return <QuickReplies block={block} onSelect={onQuickReply} />;
+      return (
+        <QuickReplies block={block} onSelect={onQuickReply} used={isUsed} />
+      );
     case "recipe_card":
       return <RecipeCard block={block} onAction={onAction} />;
     case "meal_plan_card":
