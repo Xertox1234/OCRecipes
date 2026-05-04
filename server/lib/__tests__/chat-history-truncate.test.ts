@@ -159,4 +159,39 @@ describe("truncateHistoryToBudget", () => {
   it("DEFAULT_HISTORY_TOKEN_BUDGET is 8000", () => {
     expect(DEFAULT_HISTORY_TOKEN_BUDGET).toBe(8_000);
   });
+
+  it("prunes system messages when tool and assistant pruning is insufficient", () => {
+    // Budget: 10 tokens. Two system messages + user; need to drop 11 tokens.
+    const messages: HistoryMessage[] = [
+      { role: "system", content: "a".repeat(40) }, // 40 chars ≈ 10 tokens — old system message
+      { role: "system", content: "b".repeat(40) }, // 40 chars ≈ 10 tokens — recent system message
+      { role: "user", content: "hi" }, // 2 chars ≈ 1 token
+    ];
+    // total = 21 tokens, budget = 10 → need to drop 11 tokens
+    const result = truncateHistoryToBudget(messages, 10);
+    // Old system message pruned; most-recent system message and user preserved
+    const systemMsgs = result.filter((m) => m.role === "system");
+    expect(systemMsgs.length).toBe(1);
+    expect(systemMsgs[0].content).toBe("b".repeat(40));
+    expect(result.find((m) => m.role === "user")).toBeDefined();
+  });
+
+  it("prunes old user messages when system pruning is still insufficient", () => {
+    const messages: HistoryMessage[] = [
+      { role: "user", content: "a".repeat(80) }, // old large user message, ~20 tokens
+      { role: "user", content: "hi" }, // most-recent user message, ~1 token
+    ];
+    const result = truncateHistoryToBudget(messages, 3);
+    // Old user message pruned; most-recent preserved
+    const userMsgs = result.filter((m) => m.role === "user");
+    expect(userMsgs.length).toBe(1);
+    expect(userMsgs[0].content).toBe("hi");
+  });
+
+  it("always preserves the most-recent user message even when over budget after all phases", () => {
+    const hugeUser = { role: "user" as const, content: "a".repeat(10000) }; // way over budget
+    const result = truncateHistoryToBudget([hugeUser], 5);
+    // Cannot prune the only user message
+    expect(result).toContain(hugeUser);
+  });
 });

@@ -7,6 +7,8 @@
  * Pruning order (oldest-first within each tier):
  *   1. Tool result messages  (`role: "tool"`)
  *   2. Assistant messages    (`role: "assistant"`)
+ *   3. System messages       (`role: "system"`, most-recent preserved)
+ *   4. User messages         (`role: "user"`, most-recent always preserved)
  *
  * The most-recent user message is always preserved.
  */
@@ -120,6 +122,39 @@ export function truncateHistoryToBudget<T extends HistoryMessage>(
       remaining -= estimateTokens(msg);
       slots[i] = null;
     }
+  }
+
+  // Phase 3 — prune system messages oldest-first (keep the most-recent system message).
+  let lastSystemIdx = -1;
+  for (let i = slots.length - 1; i >= 0; i--) {
+    if (slots[i]?.role === "system") {
+      lastSystemIdx = i;
+      break;
+    }
+  }
+  for (let i = 0; i < slots.length && remaining > tokenBudget; i++) {
+    const msg = slots[i];
+    if (msg !== null && msg.role === "system" && i !== lastSystemIdx) {
+      remaining -= estimateTokens(msg);
+      slots[i] = null;
+    }
+  }
+
+  // Phase 4 — prune user messages oldest-first (always preserve the most-recent user message).
+  for (let i = 0; i < slots.length && remaining > tokenBudget; i++) {
+    const msg = slots[i];
+    if (msg !== null && msg.role === "user" && i !== lastUserIdx) {
+      remaining -= estimateTokens(msg);
+      slots[i] = null;
+    }
+  }
+
+  if (process.env.NODE_ENV !== "production" && remaining > tokenBudget) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[chat-history-truncate] History still over budget (${remaining} > ${tokenBudget}) ` +
+        "after all pruning phases — most-recent user message exceeds budget alone.",
+    );
   }
 
   // Filter out nulled slots and return.
