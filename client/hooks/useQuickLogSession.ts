@@ -163,17 +163,16 @@ export function useQuickLogSession({
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       // Keep only the items that failed so a retry won't re-submit already-persisted ones.
       // Index stability holds because parsedItems is frozen while the mutation is in-flight.
-      const failedIndices =
-        error instanceof Error
-          ? ((error as PartialLogError).failedIndices ?? [])
-          : [];
+      const failedIndices = (error as PartialLogError).failedIndices ?? [];
       if (failedIndices.length > 0) {
         const failedSet = new Set(failedIndices);
         setParsedItems((prev) => prev.filter((_, i) => failedSet.has(i)));
-        // Invalidate queries for the items that did succeed
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
+        if (failedIndices.length < items.length) {
+          // Some items persisted — refresh stale queries
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
+        }
       }
       const allFailed =
         failedIndices.length === 0 || failedIndices.length === items.length;

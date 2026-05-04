@@ -279,7 +279,9 @@ describe("useQuickLogSession", () => {
     // After partial failure only the failed item (coffee, index 1) remains
     await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
     expect(result.current.parsedItems[0].name).toBe("coffee");
-    expect(result.current.submitError).not.toBeNull();
+    expect(result.current.submitError).toBe(
+      "Some items failed to log. Please try again.",
+    );
   });
 
   it("total failure: preserves all parsedItems and shows generic error message", async () => {
