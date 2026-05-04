@@ -561,6 +561,7 @@ export const communityRecipes = pgTable(
     updatedAt: timestamp("updated_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
+    sourceMessageId: integer("source_message_id"),
   },
   (table) => ({
     barcodeIdx: index("community_recipes_barcode_idx").on(table.barcode),
@@ -597,6 +598,9 @@ export const communityRecipes = pgTable(
     ),
     carbsNonNeg: check("cr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
     fatNonNeg: check("cr_fat_gte0", sql`${table.fatPerServing} >= 0`),
+    sourceMessageIdUniqueIdx: uniqueIndex("community_recipes_source_msg_idx")
+      .on(table.sourceMessageId)
+      .where(sql`${table.sourceMessageId} IS NOT NULL`),
   }),
 );
 
@@ -959,6 +963,7 @@ export const chatMessages = pgTable(
     role: text("role").notNull(), // "user" | "assistant" | "system"
     content: text("content").notNull(),
     metadata: jsonb("metadata"),
+    turnKey: text("turn_key"),
     createdAt: timestamp("created_at")
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -972,6 +977,9 @@ export const chatMessages = pgTable(
       table.role,
       table.createdAt,
     ),
+    turnKeyUniqueIdx: uniqueIndex("chat_messages_turn_key_idx")
+      .on(table.turnKey)
+      .where(sql`${table.turnKey} IS NOT NULL`),
   }),
 );
 
