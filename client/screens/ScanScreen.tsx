@@ -57,6 +57,14 @@ import {
   getPremiumGate,
   getRouteForContentType,
 } from "@/screens/scan-screen-utils";
+import {
+  buildLoadingConfirmCard,
+  buildLoadedConfirmCard,
+  buildFetchErrorConfirmCard,
+  buildScannedItemPayload,
+  buildSuccessToastMessage,
+  type ConfirmCardState,
+} from "@/screens/ScanScreenConfirmOverlay-utils";
 import { ThemedText } from "@/components/ThemedText";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -127,14 +135,7 @@ export default function ScanScreen() {
     elevation: cornerGlow.value * 4,
   }));
 
-  const [confirmCard, setConfirmCard] = useState<{
-    barcode: string;
-    name: string;
-    calories: number | null;
-    isLoading: boolean;
-    isLogging: boolean;
-    isError: boolean;
-  } | null>(null);
+  const [confirmCard, setConfirmCard] = useState<ConfirmCardState | null>(null);
 
   const cameraRef = useRef<CameraRef>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -215,39 +216,18 @@ export default function ScanScreen() {
     const { barcode, nutritionImageUri, frontImageUri, ocrText } = scanPhase;
 
     if (returnAfterLog) {
-      setConfirmCard({
-        barcode,
-        name: "Loading...",
-        calories: null,
-        isLoading: true,
-        isLogging: false,
-        isError: false,
-      });
+      setConfirmCard(buildLoadingConfirmCard(barcode));
       const controller = new AbortController();
       apiRequest("GET", `/api/nutrition/barcode/${barcode}`, undefined, {
         signal: controller.signal,
       })
         .then((res) => res.json())
         .then((data: { productName?: string; calories?: number }) => {
-          setConfirmCard({
-            barcode,
-            name: data.productName ?? "Food item",
-            calories: data.calories ?? null,
-            isLoading: false,
-            isLogging: false,
-            isError: false,
-          });
+          setConfirmCard(buildLoadedConfirmCard(barcode, data));
         })
         .catch((err: unknown) => {
           if (err instanceof Error && err.name === "AbortError") return;
-          setConfirmCard({
-            barcode,
-            name: "Food item",
-            calories: null,
-            isLoading: false,
-            isLogging: false,
-            isError: true,
-          });
+          setConfirmCard(buildFetchErrorConfirmCard(barcode));
         });
       return () => controller.abort();
     }
@@ -268,18 +248,15 @@ export default function ScanScreen() {
     if (!confirmCard || confirmCard.isLogging || confirmCard.isError) return;
     setConfirmCard((prev) => prev && { ...prev, isLogging: true });
     try {
-      await apiRequest("POST", "/api/scanned-items", {
-        barcode: confirmCard.barcode,
-        productName: confirmCard.name,
-        sourceType: "scan",
-        calories: confirmCard.calories?.toString(),
-      });
+      await apiRequest(
+        "POST",
+        "/api/scanned-items",
+        buildScannedItemPayload(confirmCard),
+      );
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
       refreshScanCount();
-      toast.success(
-        `Logged! ${confirmCard.name}${confirmCard.calories ? ` · ${confirmCard.calories} cal` : ""}`,
-      );
+      toast.success(buildSuccessToastMessage(confirmCard));
       navigation.goBack();
     } catch {
       setConfirmCard((prev) => prev && { ...prev, isLogging: false });
