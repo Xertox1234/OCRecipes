@@ -440,4 +440,20 @@ describe("useQuickLogSession", () => {
     );
     expect(parseCalls).toHaveLength(1);
   });
+
+  it("handleVoicePress calls stopListening when already listening", async () => {
+    const { useSpeechToText } = await import("@/hooks/useSpeechToText");
+    (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({
+      ...mockSpeechToText,
+      isListening: true,
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.handleVoicePress());
+
+    expect(mockSpeechToText.stopListening).toHaveBeenCalledOnce();
+    expect(mockSpeechToText.startListening).not.toHaveBeenCalled();
+  });
 });

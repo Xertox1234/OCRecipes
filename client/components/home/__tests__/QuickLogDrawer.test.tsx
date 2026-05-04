@@ -5,6 +5,11 @@ import { renderComponent } from "../../../../test/utils/render-component";
 import { QuickLogDrawer } from "../QuickLogDrawer";
 import * as useQuickLogSessionModule from "@/hooks/useQuickLogSession";
 
+const { mockToastError, mockNavigate } = vi.hoisted(() => ({
+  mockToastError: vi.fn(),
+  mockNavigate: vi.fn(),
+}));
+
 const mockSession = {
   inputText: "",
   setInputText: vi.fn(),
@@ -15,6 +20,7 @@ const mockSession = {
   frequentItems: [{ productName: "Coffee" }, { productName: "Eggs" }],
   parseError: null,
   submitError: null,
+  capWarning: null,
   isSubmitting: false,
   speechError: null,
   handleTextSubmit: vi.fn(),
@@ -53,11 +59,11 @@ vi.mock("@/hooks/useHaptics", () => ({
 }));
 
 vi.mock("@/context/ToastContext", () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: vi.fn(), error: mockToastError, info: vi.fn() }),
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
 const testAction = {
@@ -69,7 +75,12 @@ const testAction = {
 };
 
 describe("QuickLogDrawer", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue(
+      mockSession,
+    );
+  });
 
   it("renders collapsed by default — drawer body not visible", () => {
     renderComponent(<QuickLogDrawer action={testAction} />);
@@ -121,5 +132,80 @@ describe("QuickLogDrawer", () => {
     expect(screen.getByText(/chicken/i)).toBeTruthy();
     expect(screen.getByText("320 cal")).toBeTruthy();
     expect(screen.getByRole("button", { name: /log all/i })).toBeTruthy();
+  });
+
+  it("calls toast.error when speechError is set", () => {
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue({
+      ...mockSession,
+      speechError: "Microphone permission denied",
+    });
+
+    renderComponent(<QuickLogDrawer action={testAction} />);
+
+    expect(mockToastError).toHaveBeenCalledWith("Microphone permission denied");
+  });
+
+  it("renders submitError text when submitError is set", () => {
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue({
+      ...mockSession,
+      parsedItems: [
+        {
+          name: "egg",
+          quantity: 1,
+          unit: "large",
+          calories: 72,
+          protein: 6,
+          carbs: 0,
+          fat: 5,
+          servingSize: null,
+        },
+      ],
+      submitError: "Failed to log some items. Please try again.",
+    });
+
+    renderComponent(<QuickLogDrawer action={testAction} />);
+    fireEvent.click(screen.getByRole("button", { name: /quick log/i }));
+
+    expect(
+      screen.getByText("Failed to log some items. Please try again."),
+    ).toBeTruthy();
+  });
+
+  it("camera button press navigates to Scan with returnAfterLog: true", () => {
+    renderComponent(<QuickLogDrawer action={testAction} />);
+    fireEvent.click(screen.getByRole("button", { name: /quick log/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /open camera to scan food/i }),
+    );
+
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", { returnAfterLog: true });
+  });
+
+  it("renders ActivityIndicator instead of Log All text when isSubmitting", () => {
+    vi.mocked(useQuickLogSessionModule.useQuickLogSession).mockReturnValue({
+      ...mockSession,
+      parsedItems: [
+        {
+          name: "banana",
+          quantity: 1,
+          unit: "medium",
+          calories: 105,
+          protein: 1,
+          carbs: 27,
+          fat: 0,
+          servingSize: null,
+        },
+      ],
+      isSubmitting: true,
+    });
+
+    renderComponent(<QuickLogDrawer action={testAction} />);
+    fireEvent.click(screen.getByRole("button", { name: /quick log/i }));
+
+    // "Log All" text should not be visible
+    expect(screen.queryByText("Log All")).toBeNull();
+    // ActivityIndicator renders as a View in the test environment — verify
+    // the button itself is still present (busy state) and Log All text is gone
+    expect(screen.getByRole("button", { name: /log all items/i })).toBeTruthy();
   });
 });
