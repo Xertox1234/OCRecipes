@@ -1,6 +1,28 @@
 import { describe, it, expect } from "vitest";
-import { bootstrapMeanCI, mulberry32 } from "../lib/runner-core";
+import {
+  bootstrapMeanCI,
+  mulberry32,
+  aggregateResults,
+  printSummary,
+} from "../lib/runner-core";
 import type { SuiteConfig } from "../lib/runner-core";
+import type { EvalCaseResult, RubricScore } from "../types";
+
+function mockCase(id: string, scores: RubricScore[]): EvalCaseResult {
+  return {
+    testCaseId: id,
+    category: "helpfulness",
+    description: "",
+    inputSummary: "",
+    output: "",
+    assertions: { passed: true, failures: [] },
+    rubricScores: scores,
+    judgeModel: "claude-sonnet-4-6",
+    timestamp: new Date().toISOString(),
+    latencyMs: 0,
+    wordCount: 0,
+  };
+}
 
 describe("mulberry32", () => {
   it("returns values in [0, 1)", () => {
@@ -93,5 +115,64 @@ describe("SuiteConfig wordLimitWarning", () => {
       formatInput: () => "",
     };
     expect(config.wordLimitWarning).toBe(300);
+  });
+
+  it("uses 150 as the default word limit in printSummary output when wordLimitWarning is not set", () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const config: SuiteConfig = {
+        suiteName: "test",
+        rubricText: "",
+        dimensions: ["tone"],
+        dimensionWeights: { tone: 1 },
+        generateResponse: async () => ({
+          text: "",
+          latencyMs: 0,
+          wordCount: 0,
+        }),
+        formatInput: () => "",
+        // wordLimitWarning intentionally omitted — should default to 150
+      };
+      const result = aggregateResults(
+        [mockCase("c1", [{ dimension: "tone", score: 7, reasoning: "" }])],
+        config,
+        1,
+      );
+      printSummary(result, config);
+      const output = consoleSpy.mock.calls.flat().join("\n");
+      expect(output).toContain("150-word limit");
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it("uses the custom wordLimitWarning value in printSummary output", () => {
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const config: SuiteConfig = {
+        suiteName: "recipe",
+        rubricText: "",
+        dimensions: ["tone"],
+        dimensionWeights: { tone: 1 },
+        wordLimitWarning: 300,
+        generateResponse: async () => ({
+          text: "",
+          latencyMs: 0,
+          wordCount: 0,
+        }),
+        formatInput: () => "",
+      };
+      const result = aggregateResults(
+        [mockCase("c1", [{ dimension: "tone", score: 7, reasoning: "" }])],
+        config,
+        1,
+      );
+      printSummary(result, config);
+      const output = consoleSpy.mock.calls.flat().join("\n");
+      expect(output).toContain("300-word limit");
+      expect(output).not.toContain("150-word limit");
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 });
