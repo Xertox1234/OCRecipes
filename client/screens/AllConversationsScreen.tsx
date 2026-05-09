@@ -102,6 +102,7 @@ export default function AllConversationsScreen() {
         style={[styles.row, { borderBottomColor: theme.border }]}
         onPress={() => {
           navigation.navigate("CoachPro", { selectedConversationId: conv.id });
+          navigation.goBack();
         }}
         accessibilityRole="button"
         accessibilityLabel={`Open conversation: ${conv.title}`}
