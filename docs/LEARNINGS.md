@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [onConflictDoNothing({ target }) Silently No-Ops on Partial Unique Indexes (2026-05-09)](#onconflictdonothing-target-silently-no-ops-on-partial-unique-indexes-2026-05-09)
 - [VisionCamera V5 Frame Processor Plugin + runOnJS Bridge (2026-05-03)](#visioncamera-v5-frame-processor-plugin--runonjs-bridge-2026-05-03)
 - [`isFocused` Effect Dead Zone — In-Screen Overlays Don't Trigger Focus Re-Entry (2026-05-02)](#isfocused-effect-dead-zone--in-screen-overlays-dont-trigger-focus-re-entry-2026-05-02)
 - [React 19 finally-block Batching Collapses setState Calls in Same Synchronous Frame (2026-05-01)](#react-19-finally-block-batching-collapses-setstate-calls-in-same-synchronous-frame-2026-05-01)
@@ -68,6 +69,39 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## onConflictDoNothing({ target }) Silently No-Ops on Partial Unique Indexes (2026-05-09)
+
+**Category:** Gotcha — Drizzle ORM / PostgreSQL
+
+PostgreSQL can only use a partial unique index (one with a `WHERE` predicate) as an `ON CONFLICT` target if the SQL references the index by name — not by column list. Drizzle's `onConflictDoNothing({ target: [table.col] })` generates `ON CONFLICT (col) DO NOTHING`, which cannot match a partial index and causes the statement to **insert a duplicate row** (or throw a constraint-violation error at the DB level) instead of silently skipping.
+
+**Root cause:** Drizzle resolves a `target` array to a bare column-list form. PostgreSQL only accepts column-list `ON CONFLICT` targets for full unique indexes. A partial index (`WHERE col IS NOT NULL`) is treated as a separate named constraint that Drizzle cannot reference via column list alone.
+
+**The fix:** Omit `target` entirely:
+
+```typescript
+// ❌ BAD — target form cannot match a partial WHERE-predicate index
+await db
+  .insert(coachNotebook)
+  .values(data)
+  .onConflictDoNothing({ target: coachNotebook.dedupeKey });
+
+// ✅ GOOD — no-arg form lets PostgreSQL choose the best matching constraint
+await db.insert(coachNotebook).values(data).onConflictDoNothing();
+```
+
+**How to detect this at schema time:** Search `shared/schema.ts` for indexes constructed with `.where(sql\`...\`)`— any unique index using that form is a partial index, and every storage function that inserts into that table must use`onConflictDoNothing()` (no args).
+
+**Affected tables in this codebase (as of 2026-05-09):**
+
+- `coachNotebook` — `dedupeKeyUniqueIdx` (WHERE `dedupeKey IS NOT NULL`)
+- `communityRecipes` — `sourceMessageIdUniqueIdx` (WHERE `sourceMessageId IS NOT NULL`)
+- `chatMessages` — `turnKeyUniqueIdx` (WHERE `turnKey IS NOT NULL`)
+
+Ref: audit 2026-05-09 C1 — `server/storage/recipe-from-chat.ts:110`, `server/storage/coach-notebook.ts:85`
+
+---
 
 ## VisionCamera V5 Frame Processor Plugin + runOnJS Bridge (2026-05-03)
 

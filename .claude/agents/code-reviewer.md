@@ -303,7 +303,7 @@ if (cacheId) {
 
 ### 14. Accessibility
 
-- [ ] `accessibilityViewIsModal={true}` on the inner container of every modal, bottom sheet, overlay, and confirmation dialog — without this, VoiceOver/TalkBack users can navigate to elements behind the modal
+- [ ] `accessibilityViewIsModal={true}` on the inner container of every modal, bottom sheet, overlay, and confirmation dialog — without this, VoiceOver/TalkBack users can navigate to elements behind the modal. Also applies to **React Navigation screens using `presentation: "fullScreenModal"` or `"modal"`** — these are not wrapped in a native `Modal` component, so the prop must be set explicitly on the screen's root `View`
 - [ ] `accessibilityLiveRegion` (Android) always paired with `AccessibilityInfo.announceForAccessibility` in a `useEffect` (iOS) — neither works cross-platform alone. Pattern: `if (message && Platform.OS === "ios") { AccessibilityInfo.announceForAccessibility(message); }`
 - [ ] `accessibilityLiveRegion="assertive"` only for errors/failures; `"polite"` for loading/progress states — assertive interrupts current speech immediately and is disruptive if used for loading spinners
 - [ ] Every `TextInput` with a validation error has `aria-invalid={true}` AND is paired with `<InlineError message={error} />` below it — NOT `accessibilityState={{ invalid: true }}` (TypeScript error: `invalid` not in `AccessibilityState`) and NOT raw `<Text style={styles.error}>` (invisible to screen readers)
