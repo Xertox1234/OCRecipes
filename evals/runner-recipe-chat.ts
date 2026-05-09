@@ -1,65 +1,14 @@
 import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
-import { z } from "zod";
 import { generateRecipeChatResponse } from "../server/services/recipe-chat";
 import type { UserProfile } from "@shared/schema";
 import { runEvalSuite } from "./lib/runner-core";
 import type { EvalTestCase } from "./types";
-
-// ─── Dataset schema ───────────────────────────────────────────────────────────
-
-const recipeChatInputSchema = z.object({
-  userMessage: z.string().min(1),
-  userProfile: z
-    .object({
-      dietType: z.string().nullable(),
-      allergies: z.array(z.string()),
-      dislikes: z.array(z.string()),
-    })
-    .nullable(),
-  conversationHistory: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant", "system"]),
-        content: z.string(),
-      }),
-    )
-    .default([]),
-});
-
-const recipeChatCaseSchema = z.object({
-  id: z.string().min(1),
-  category: z.enum([
-    "safety",
-    "accuracy",
-    "helpfulness",
-    "personalization",
-    "edge-case",
-  ]),
-  description: z.string(),
-  input: recipeChatInputSchema,
-  assertions: z
-    .object({
-      mustNotContain: z.array(z.string()).optional(),
-      mustContain: z.array(z.string()).optional(),
-    })
-    .optional(),
-  scoreDimensions: z
-    .array(
-      z.enum([
-        "relevance",
-        "recipe_quality",
-        "dietary_compliance",
-        "safety",
-        "tone",
-      ]),
-    )
-    .optional(),
-});
-
-const recipeChatCasesSchema = z.array(recipeChatCaseSchema);
-type RecipeChatInput = z.infer<typeof recipeChatInputSchema>;
+import {
+  recipeChatCasesSchema,
+  type RecipeChatInput,
+} from "./lib/dataset-schemas";
 
 // ─── Rubric ───────────────────────────────────────────────────────────────────
 

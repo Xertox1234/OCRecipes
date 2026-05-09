@@ -1,7 +1,6 @@
 import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
-import { z } from "zod";
 import {
   generateRecipeContent,
   type RecipeGenerationInput,
@@ -9,59 +8,14 @@ import {
 import type { UserProfile } from "@shared/schema";
 import { runEvalSuite } from "./lib/runner-core";
 import type { EvalTestCase } from "./types";
+import {
+  recipeGenCasesSchema,
+  type RecipeGenInput,
+} from "./lib/dataset-schemas";
 
 // generateRecipeContent does not call image generation (that lives in
 // generateFullRecipe), so running it directly already skips image costs.
 // EVAL_SKIP_IMAGE_GENERATION is documented for clarity in the npm script.
-
-// ─── Dataset schema ───────────────────────────────────────────────────────────
-
-const recipeGenCaseSchema = z.object({
-  id: z.string().min(1),
-  category: z.enum([
-    "safety",
-    "accuracy",
-    "helpfulness",
-    "personalization",
-    "creativity",
-    "edge-case",
-  ]),
-  description: z.string(),
-  input: z.object({
-    productName: z.string().min(1),
-    servings: z.number().optional(),
-    timeConstraint: z.string().optional(),
-    dietPreferences: z.array(z.string()).optional(),
-    userProfile: z
-      .object({
-        dietType: z.string().nullable(),
-        allergies: z.array(z.string()),
-        dislikes: z.array(z.string()),
-      })
-      .nullable(),
-  }),
-  assertions: z
-    .object({
-      mustNotContain: z.array(z.string()).optional(),
-      mustContain: z.array(z.string()).optional(),
-      mustHaveMinIngredients: z.number().optional(),
-      mustHaveMinInstructions: z.number().optional(),
-    })
-    .optional(),
-  scoreDimensions: z
-    .array(
-      z.enum([
-        "ingredient_coherence",
-        "instruction_clarity",
-        "dietary_compliance",
-        "creativity",
-      ]),
-    )
-    .optional(),
-});
-
-const recipeGenCasesSchema = z.array(recipeGenCaseSchema);
-type RecipeGenInput = z.infer<typeof recipeGenCaseSchema>["input"];
 
 // ─── Rubric ───────────────────────────────────────────────────────────────────
 
