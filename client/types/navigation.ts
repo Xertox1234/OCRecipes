@@ -274,12 +274,17 @@ export type MenuScanResultScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
- * Navigation prop for AllConversationsScreen
- * Can use goBack or navigate within RootStack
+ * Navigation prop for AllConversationsScreen.
+ * 3-level composite: RootStack → MainTab → ChatStack.
+ * Allows AllConversationsScreen to navigate back to CoachPro (in ChatStack)
+ * with a selectedConversationId param, rather than passing a callback in route params.
  */
-export type AllConversationsNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  "AllConversations"
+export type AllConversationsNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<RootStackParamList, "AllConversations">,
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList, "CoachTab">,
+    NativeStackNavigationProp<ChatStackParamList>
+  >
 >;
 
 /**

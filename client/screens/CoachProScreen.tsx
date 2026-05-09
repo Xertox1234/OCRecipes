@@ -8,7 +8,12 @@ import {
   AppState,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+  type RouteProp,
+} from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
@@ -28,6 +33,7 @@ import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import type { CoachChatNavigationProp } from "@/types/navigation";
+import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 
 export default function CoachProScreen() {
   const { theme } = useTheme();
@@ -49,6 +55,7 @@ export default function CoachProScreen() {
   const { data: coachConversations = [] } = useChatConversations("coach");
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
+  const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
   const { acknowledge } = useAcknowledgeReminders();
 
   useFocusEffect(
@@ -76,6 +83,16 @@ export default function CoachProScreen() {
     if (conversationId || threadBarConversations.length === 0) return;
     setConversationId(threadBarConversations[0].id);
   }, [conversationId, threadBarConversations]);
+
+  // Apply a conversation selected from AllConversationsScreen (navigation param pattern
+  // replaces the non-serializable onSelect callback that was previously passed as a route param).
+  useEffect(() => {
+    const selectedId = route.params?.selectedConversationId;
+    if (selectedId !== undefined) {
+      setConversationId(selectedId);
+      navigation.setParams({ selectedConversationId: undefined });
+    }
+  }, [route.params?.selectedConversationId, navigation]);
 
   const { cancelStaleReminders } = useNotebookNotifications();
   const { data: notebookEntries = [], isLoading: isEntriesLoading } =
@@ -245,11 +262,7 @@ export default function CoachProScreen() {
             );
           })}
           <Pressable
-            onPress={() =>
-              navigation.navigate("AllConversations", {
-                onSelect: setConversationId,
-              })
-            }
+            onPress={() => navigation.navigate("AllConversations")}
             style={[
               styles.threadChip,
               styles.seeAllChip,
