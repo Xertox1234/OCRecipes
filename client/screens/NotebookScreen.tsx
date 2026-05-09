@@ -20,6 +20,7 @@ import {
   type NotebookEntry,
 } from "@/hooks/useChat";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { NotebookScreenNavigationProp } from "@/types/navigation";
 
 const TYPE_COLORS: Record<string, string> = {
@@ -62,8 +63,8 @@ export default function NotebookScreen() {
         : { type: filter };
 
   const { data: entries = [], isLoading } = useNotebookEntries(queryOpts);
-  const updateEntry = useUpdateNotebookEntry();
-  const deleteEntry = useDeleteNotebookEntry();
+  const { mutate: updateEntryMutate } = useUpdateNotebookEntry();
+  const { mutate: deleteEntryMutate } = useDeleteNotebookEntry();
 
   const handleArchive = useCallback(
     (entry: NotebookEntry) => {
@@ -72,11 +73,11 @@ export default function NotebookScreen() {
         {
           text: "Archive",
           onPress: () =>
-            updateEntry.mutate({ id: entry.id, status: "archived" }),
+            updateEntryMutate({ id: entry.id, status: "archived" }),
         },
       ]);
     },
-    [updateEntry],
+    [updateEntryMutate],
   );
 
   const handleDelete = useCallback(
@@ -86,11 +87,11 @@ export default function NotebookScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteEntry.mutate(entry.id),
+          onPress: () => deleteEntryMutate(entry.id),
         },
       ]);
     },
-    [deleteEntry],
+    [deleteEntryMutate],
   );
 
   const renderEntry = useCallback(
@@ -250,7 +251,11 @@ export default function NotebookScreen() {
           data={entries}
           keyExtractor={(e) => String(e.id)}
           renderItem={renderEntry}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[
+            styles.list,
+            { paddingBottom: insets.bottom + Spacing.md },
+          ]}
+          {...FLATLIST_DEFAULTS}
           ListEmptyComponent={
             <Text style={[styles.empty, { color: theme.textSecondary }]}>
               No entries yet

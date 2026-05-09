@@ -29,7 +29,7 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
   const { theme } = useTheme();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { data, isLoading } = useCarouselRecipes();
-  const dismissRecipe = useDismissCarouselRecipe();
+  const { mutate: dismissRecipe } = useDismissCarouselRecipe();
   const { data: favouriteData } = useFavouriteRecipeIds();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
@@ -55,7 +55,7 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
 
   const handleDismiss = useCallback(
     (card: CarouselCardType) => {
-      dismissRecipe.mutate({ recipeId: card.id });
+      dismissRecipe({ recipeId: card.id });
     },
     [dismissRecipe],
   );
