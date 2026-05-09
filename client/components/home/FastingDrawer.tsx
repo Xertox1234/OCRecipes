@@ -1,5 +1,11 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Pressable, StyleSheet, View, ActivityIndicator } from "react-native";
+import {
+  AccessibilityInfo,
+  Pressable,
+  StyleSheet,
+  View,
+  ActivityIndicator,
+} from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -116,6 +122,36 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.navigate("Fasting");
   }, [haptics, navigation]);
+
+  // Announce fast start success/error to screen readers (VoiceOver + TalkBack)
+  useEffect(() => {
+    if (startFast.isSuccess) {
+      AccessibilityInfo.announceForAccessibility("Fast started");
+    }
+  }, [startFast.isSuccess]);
+
+  useEffect(() => {
+    if (startFast.isError) {
+      const msg =
+        (startFast.error as Error | null)?.message || "Failed to start fast";
+      AccessibilityInfo.announceForAccessibility(msg);
+    }
+  }, [startFast.isError, startFast.error]);
+
+  // Announce fast end success/error to screen readers (VoiceOver + TalkBack)
+  useEffect(() => {
+    if (endFast.isSuccess) {
+      AccessibilityInfo.announceForAccessibility("Fast ended");
+    }
+  }, [endFast.isSuccess]);
+
+  useEffect(() => {
+    if (endFast.isError) {
+      const msg =
+        (endFast.error as Error | null)?.message || "Failed to end fast";
+      AccessibilityInfo.announceForAccessibility(msg);
+    }
+  }, [endFast.isError, endFast.error]);
 
   const subtitle = formatFastingSubtitle(
     isFasting,

@@ -176,6 +176,15 @@ export default function CoachChat({
     }
   }, [streamingContent, isStreaming]);
 
+  // Announce daily limit banner when it first appears (iOS VoiceOver)
+  useEffect(() => {
+    if (Platform.OS === "ios" && isAtDailyLimit) {
+      AccessibilityInfo.announceForAccessibility(
+        "You've reached today's coaching limit.",
+      );
+    }
+  }, [isAtDailyLimit]);
+
   const { data: messages } = useChatMessages(conversationId);
 
   const chatItems = useMemo<ChatListItem[]>(() => {
@@ -580,7 +589,7 @@ export default function CoachChat({
   );
 
   const limitBanner = isAtDailyLimit ? (
-    <View style={styles.limitBanner}>
+    <View style={styles.limitBanner} accessibilityLiveRegion="assertive">
       <Text style={[styles.limitText, { color: theme.textSecondary }]}>
         {"You’ve reached today’s coaching limit."}
       </Text>

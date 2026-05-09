@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
+  AccessibilityInfo,
   Pressable,
   StyleSheet,
   TextInput,
@@ -129,6 +130,7 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
       {
         onSuccess: () => {
           haptics.notification(Haptics.NotificationFeedbackType.Success);
+          AccessibilityInfo.announceForAccessibility("Weight logged");
           setWeightInput("");
           setLastLoggedWeight(parsed);
           setJustLogged(true);
