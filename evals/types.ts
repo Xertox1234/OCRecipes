@@ -1,19 +1,63 @@
 import { z } from "zod";
 import type { CoachContext } from "../server/services/nutrition-coach";
 
-export type RubricDimension =
+// Widened to string for generic runner; per-service aliases below for type docs.
+export type RubricDimension = string;
+
+// Coach-specific dimensions (backward compat)
+export type CoachDimension =
   | "safety"
   | "accuracy"
   | "helpfulness"
   | "personalization"
   | "tone";
-
-export const ALL_DIMENSIONS: RubricDimension[] = [
+export const ALL_COACH_DIMENSIONS: CoachDimension[] = [
   "safety",
   "accuracy",
   "helpfulness",
   "personalization",
   "tone",
+];
+// Keep ALL_DIMENSIONS pointing at coach set so existing runner.ts compiles unchanged
+export const ALL_DIMENSIONS = ALL_COACH_DIMENSIONS;
+
+// Per-service dimension types
+export type RecipeChatDimension =
+  | "relevance"
+  | "recipe_quality"
+  | "dietary_compliance"
+  | "safety"
+  | "tone";
+export const ALL_RECIPE_CHAT_DIMENSIONS: RecipeChatDimension[] = [
+  "relevance",
+  "recipe_quality",
+  "dietary_compliance",
+  "safety",
+  "tone",
+];
+
+export type MealSuggestionDimension =
+  | "macro_accuracy"
+  | "dietary_compliance"
+  | "variety"
+  | "helpfulness";
+export const ALL_MEAL_SUGGESTION_DIMENSIONS: MealSuggestionDimension[] = [
+  "macro_accuracy",
+  "dietary_compliance",
+  "variety",
+  "helpfulness",
+];
+
+export type RecipeGenerationDimension =
+  | "ingredient_coherence"
+  | "instruction_clarity"
+  | "dietary_compliance"
+  | "creativity";
+export const ALL_RECIPE_GENERATION_DIMENSIONS: RecipeGenerationDimension[] = [
+  "ingredient_coherence",
+  "instruction_clarity",
+  "dietary_compliance",
+  "creativity",
 ];
 
 export interface EvalTestCase {
@@ -25,12 +69,19 @@ export interface EvalTestCase {
     | "personalization"
     | "edge-case";
   description: string;
-  userMessage: string;
-  context: CoachContext;
+  // Coach cases use userMessage + context at top level; other suites use input.
+  userMessage?: string;
+  context?: CoachContext;
+  // Generic input for non-coach suites
+  input?: unknown;
   assertions?: {
     mustNotContain?: string[];
     mustContain?: string[];
-    mustNotRecommendBelow?: number;
+    mustNotRecommendBelow?: number; // coach only — evaluated by LLM judge
+    macrosBudgetRespected?: boolean; // meal suggestions — checks suggestions vs remainingCalories
+    suggestionCount?: number; // meal suggestions — checks array length
+    mustHaveMinIngredients?: number; // recipe generation — checks ingredients array length
+    mustHaveMinInstructions?: number; // recipe generation — checks instructions array length
   };
   scoreDimensions?: RubricDimension[];
 }
@@ -81,13 +132,13 @@ export const evalTestCaseSchema = z.object({
       mustNotContain: z.array(z.string()).optional(),
       mustContain: z.array(z.string()).optional(),
       mustNotRecommendBelow: z.number().optional(),
+      macrosBudgetRespected: z.boolean().optional(),
+      suggestionCount: z.number().optional(),
+      mustHaveMinIngredients: z.number().optional(),
+      mustHaveMinInstructions: z.number().optional(),
     })
     .optional(),
-  scoreDimensions: z
-    .array(
-      z.enum(["safety", "accuracy", "helpfulness", "personalization", "tone"]),
-    )
-    .optional(),
+  scoreDimensions: z.array(z.string()).optional(),
 });
 
 export const evalTestCasesSchema = z.array(evalTestCaseSchema);

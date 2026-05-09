@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runAssertions } from "../assertions";
+import { runAssertions, runStructuralAssertions } from "../assertions";
 
 describe("runAssertions", () => {
   it("passes when no assertions are defined", () => {
@@ -108,5 +108,89 @@ describe("runAssertions", () => {
     expect(result.passed).toBe(false);
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0]).toContain("Invalid mustContain regex");
+  });
+});
+
+describe("runStructuralAssertions", () => {
+  it("passes when no assertions are defined", () => {
+    const result = runStructuralAssertions(undefined, undefined);
+    expect(result.passed).toBe(true);
+    expect(result.failures).toEqual([]);
+  });
+
+  it("passes suggestionCount when array has correct length", () => {
+    const data = [{ calories: 400 }, { calories: 350 }, { calories: 500 }];
+    const result = runStructuralAssertions(data, { suggestionCount: 3 });
+    expect(result.passed).toBe(true);
+  });
+
+  it("fails suggestionCount when array length mismatches", () => {
+    const data = [{ calories: 400 }, { calories: 350 }];
+    const result = runStructuralAssertions(data, { suggestionCount: 3 });
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toContain("Expected 3 suggestions");
+  });
+
+  it("fails suggestionCount when data is not an array", () => {
+    const result = runStructuralAssertions(
+      { foo: "bar" },
+      { suggestionCount: 3 },
+    );
+    expect(result.passed).toBe(false);
+  });
+
+  it("passes macrosBudgetRespected when all suggestions are within 110% of budget", () => {
+    const data = {
+      suggestions: [{ calories: 550 }, { calories: 480 }, { calories: 600 }],
+      remainingCalories: 600,
+    };
+    const result = runStructuralAssertions(data, {
+      macrosBudgetRespected: true,
+    });
+    expect(result.passed).toBe(true);
+  });
+
+  it("fails macrosBudgetRespected when a suggestion exceeds budget by >10%", () => {
+    const data = {
+      suggestions: [{ calories: 800 }, { calories: 400 }, { calories: 300 }],
+      remainingCalories: 600,
+    };
+    const result = runStructuralAssertions(data, {
+      macrosBudgetRespected: true,
+    });
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toContain("exceeds remaining calorie budget");
+  });
+
+  it("passes mustHaveMinIngredients when ingredient count meets threshold", () => {
+    const data = {
+      ingredients: ["a", "b", "c"],
+      instructions: ["step1", "step2"],
+    };
+    const result = runStructuralAssertions(data, { mustHaveMinIngredients: 3 });
+    expect(result.passed).toBe(true);
+  });
+
+  it("fails mustHaveMinIngredients when count is below threshold", () => {
+    const data = { ingredients: ["a", "b"], instructions: [] };
+    const result = runStructuralAssertions(data, { mustHaveMinIngredients: 3 });
+    expect(result.passed).toBe(false);
+    expect(result.failures[0]).toContain("ingredients");
+  });
+
+  it("passes mustHaveMinInstructions when step count meets threshold", () => {
+    const data = { ingredients: [], instructions: ["s1", "s2", "s3", "s4"] };
+    const result = runStructuralAssertions(data, {
+      mustHaveMinInstructions: 3,
+    });
+    expect(result.passed).toBe(true);
+  });
+
+  it("fails mustHaveMinInstructions when step count is below threshold", () => {
+    const data = { ingredients: [], instructions: ["s1"] };
+    const result = runStructuralAssertions(data, {
+      mustHaveMinInstructions: 3,
+    });
+    expect(result.passed).toBe(false);
   });
 });

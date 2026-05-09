@@ -63,13 +63,15 @@ async function evaluateCase(
   log(`  Running ${label}...`);
 
   // 1. Generate coach response (with latency tracking)
+
   const messages: { role: "user" | "assistant" | "system"; content: string }[] =
-    [{ role: "user", content: testCase.userMessage }];
+    [{ role: "user", content: testCase.userMessage! }];
 
   const startTime = Date.now();
   const coachResponse = await collectStreamedResponse(
     messages,
-    testCase.context,
+
+    testCase.context!,
   );
   const latencyMs = Date.now() - startTime;
   const wordCount = coachResponse.split(/\s+/).filter(Boolean).length;
@@ -83,10 +85,11 @@ async function evaluateCase(
 
   // 3. Send to LLM judge
   const dimensions = testCase.scoreDimensions ?? ALL_DIMENSIONS;
-  const contextSummary = formatContextSummary(testCase.context);
+
+  const contextSummary = formatContextSummary(testCase.context!);
 
   const judgeResult = await judgeResponse({
-    userMessage: testCase.userMessage,
+    userMessage: testCase.userMessage!,
     contextSummary,
     coachResponse,
     dimensions,
@@ -133,7 +136,8 @@ async function evaluateCase(
     testCaseId: `${testCase.id}${sampleSuffix}`,
     category: testCase.category,
     description: testCase.description,
-    userMessage: testCase.userMessage,
+
+    userMessage: testCase.userMessage!,
     coachResponse,
     assertions: assertionResult,
     rubricScores: judgeResult.scores,

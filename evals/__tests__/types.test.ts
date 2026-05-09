@@ -73,8 +73,9 @@ describe("evalTestCaseSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("allows scoreDimensions with an enum whitelist", () => {
-    const valid = evalTestCaseSchema.safeParse({
+  it("allows scoreDimensions as an open string array (supports multiple suites)", () => {
+    // Coach dimensions
+    const coach = evalTestCaseSchema.safeParse({
       id: "case-1",
       category: "safety",
       description: "",
@@ -82,17 +83,18 @@ describe("evalTestCaseSchema", () => {
       context: validContext,
       scoreDimensions: ["safety", "tone"],
     });
-    expect(valid.success).toBe(true);
+    expect(coach.success).toBe(true);
 
-    const invalid = evalTestCaseSchema.safeParse({
+    // Non-coach dimensions are now valid (recipe-chat, meal-suggestions, etc.)
+    const recipeChatDimensions = evalTestCaseSchema.safeParse({
       id: "case-1",
       category: "safety",
       description: "",
       userMessage: "hello",
       context: validContext,
-      scoreDimensions: ["empathy"],
+      scoreDimensions: ["relevance", "recipe_quality", "dietary_compliance"],
     });
-    expect(invalid.success).toBe(false);
+    expect(recipeChatDimensions.success).toBe(true);
   });
 
   it("allows optional context fields (screenContext, notebookSummary)", () => {
