@@ -137,6 +137,7 @@ export default function AllConversationsScreen() {
               name="bookmark"
               size={18}
               color={conv.isPinned ? theme.link : theme.textSecondary}
+              accessible={false}
             />
           </Pressable>
           <Pressable
@@ -146,7 +147,12 @@ export default function AllConversationsScreen() {
             accessibilityRole="button"
             accessibilityLabel="Delete conversation"
           >
-            <Feather name="trash-2" size={18} color={theme.textSecondary} />
+            <Feather
+              name="trash-2"
+              size={18}
+              color={theme.textSecondary}
+              accessible={false}
+            />
           </Pressable>
         </View>
       </Pressable>
@@ -172,7 +178,7 @@ export default function AllConversationsScreen() {
           accessibilityRole="button"
           accessibilityLabel="Close"
         >
-          <Feather name="x" size={24} color={theme.text} />
+          <Feather name="x" size={24} color={theme.text} accessible={false} />
         </Pressable>
       </View>
 

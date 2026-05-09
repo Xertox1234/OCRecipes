@@ -5,6 +5,7 @@ import {
   TextInput,
   View,
   ActivityIndicator,
+  AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -129,6 +130,9 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
       {
         onSuccess: () => {
           haptics.notification(Haptics.NotificationFeedbackType.Success);
+          AccessibilityInfo.announceForAccessibility(
+            "Weight logged successfully",
+          );
           setWeightInput("");
           setLastLoggedWeight(parsed);
           setJustLogged(true);

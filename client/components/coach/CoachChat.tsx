@@ -456,9 +456,7 @@ export default function CoachChat({
                 onQuickReply={(message) =>
                   handleQuickReply(message, `${msg.id}-${i}`)
                 }
-                onCommitmentAccept={(notebookEntryId, title, followUpDate) =>
-                  handleCommitmentAccept(notebookEntryId, title, followUpDate)
-                }
+                onCommitmentAccept={handleCommitmentAccept}
                 isUsed={usedQuickRepliesRef.current.has(`${msg.id}-${i}`)}
                 isCommitmentAccepted={
                   block.type === "commitment_card"
@@ -579,17 +577,31 @@ export default function CoachChat({
     [hasVoice, isListening, volume, handleMicPress],
   );
 
-  const limitBanner = isAtDailyLimit ? (
-    <View style={styles.limitBanner}>
-      <Text style={[styles.limitText, { color: theme.textSecondary }]}>
-        {"You’ve reached today’s coaching limit."}
-      </Text>
-      {/* TODO: wire up when subscription screen added */}
-      <Text style={[styles.limitCta, { color: theme.link }]}>
-        Upgrade to Coach Pro
-      </Text>
-    </View>
-  ) : null;
+  const prevIsAtDailyLimitRef = useRef(false);
+  useEffect(() => {
+    if (isAtDailyLimit && !prevIsAtDailyLimitRef.current) {
+      AccessibilityInfo.announceForAccessibility(
+        "Daily coaching limit reached",
+      );
+    }
+    prevIsAtDailyLimitRef.current = isAtDailyLimit;
+  }, [isAtDailyLimit]);
+
+  const limitBanner = useMemo(
+    () =>
+      isAtDailyLimit ? (
+        <View style={styles.limitBanner} accessibilityLiveRegion="assertive">
+          <Text style={[styles.limitText, { color: theme.textSecondary }]}>
+            {"You’ve reached today’s coaching limit."}
+          </Text>
+          {/* TODO: wire up when subscription screen added */}
+          <Text style={[styles.limitCta, { color: theme.link }]}>
+            Upgrade to Coach Pro
+          </Text>
+        </View>
+      ) : null,
+    [isAtDailyLimit, theme.textSecondary, theme.link],
+  );
 
   return (
     <CoachChatBase
