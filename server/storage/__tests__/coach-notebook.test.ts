@@ -38,6 +38,7 @@ const {
   getCommitmentsWithDueFollowUp,
   archiveOldEntries,
   getNotebookEntryCount,
+  getNotebookEntryById,
 } = await import("../coach-notebook");
 const { logger } = await import("../../lib/logger");
 
@@ -495,6 +496,48 @@ describe("Coach Notebook Storage", () => {
       const active = await getActiveNotebookEntries(testUser.id);
       expect(active).toHaveLength(1);
       expect(active[0].content).toBe("Try breakfast prep this week");
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // getNotebookEntryById (M5 — IDOR at DB level)
+  // --------------------------------------------------------------------------
+  describe("getNotebookEntryById", () => {
+    it("returns the entry when the requesting user owns it", async () => {
+      const entry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "My personal insight",
+        status: "active",
+      });
+
+      const result = await getNotebookEntryById(entry.id, testUser.id);
+
+      expect(result).toBeDefined();
+      expect(result!.id).toBe(entry.id);
+      expect(result!.userId).toBe(testUser.id);
+      expect(result!.content).toBe("My personal insight");
+      expect(result!.type).toBe("insight");
+      expect(result!.status).toBe("active");
+    });
+
+    it("returns undefined when the entry belongs to a different user (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const entry = await createNotebookEntry({
+        userId: otherUser.id,
+        type: "goal",
+        content: "Other user goal",
+        status: "active",
+      });
+
+      // testUser attempts to read otherUser's entry — must be blocked at the DB level
+      const result = await getNotebookEntryById(entry.id, testUser.id);
+      expect(result).toBeUndefined();
+    });
+
+    it("returns undefined for a non-existent id", async () => {
+      const result = await getNotebookEntryById(999999, testUser.id);
+      expect(result).toBeUndefined();
     });
   });
 

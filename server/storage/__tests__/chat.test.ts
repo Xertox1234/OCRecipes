@@ -17,6 +17,7 @@ import {
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 import { communityRecipes } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -422,6 +423,229 @@ describe("chat storage", () => {
       expect(recipe!.remixedFromId).toBe(sourceRecipe.id);
       expect(recipe!.remixedFromTitle).toBe("Original Pasta");
       expect(recipe!.authorId).toBe(testUser.id);
+    });
+  });
+
+  // ---- saveRecipeFromChat — additional exit paths (H9) ----
+
+  describe("saveRecipeFromChat — exit paths", () => {
+    // Shared valid recipe metadata fixture — mirrors lineage test above.
+    const validMetadata = {
+      metadataVersion: 1,
+      recipe: {
+        title: "test-Chicken Salad",
+        description: "A light salad",
+        difficulty: "Easy",
+        timeEstimate: "15 min",
+        servings: 2,
+        ingredients: [{ name: "Chicken", quantity: "200", unit: "g" }],
+        instructions: ["Grill chicken", "Toss salad"],
+        dietTags: ["gluten-free"],
+      },
+      allergenWarning: null,
+      imageUrl: null,
+    } as const;
+
+    it("returns null when conversationId is owned by a different user", async () => {
+      const otherUser = await createTestUser(tx);
+      // Conversation owned by otherUser
+      const conv = await createChatConversation(
+        otherUser.id,
+        "Other Chat",
+        "recipe",
+      );
+      const msg = await createChatMessage(
+        conv.id,
+        otherUser.id,
+        "assistant",
+        "Recipe!",
+        validMetadata,
+      );
+
+      // testUser attempts to save from otherUser's conversation
+      const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
+      expect(result).toBeNull();
+      // Side-effect assertion: no recipe row must be written for the attempted message
+      const leaked = await tx
+        .select()
+        .from(communityRecipes)
+        .where(eq(communityRecipes.sourceMessageId, msg.id));
+      expect(leaked).toHaveLength(0);
+    });
+
+    it("returns null when message metadata is null", async () => {
+      const conv = await createChatConversation(
+        testUser.id,
+        "test-Chat",
+        "recipe",
+      );
+      // createChatMessage with no metadata stores null in the DB
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "No metadata here",
+      );
+
+      const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
+      expect(result).toBeNull();
+    });
+
+    it("returns null when metadata fails Zod validation (invalid schema)", async () => {
+      const conv = await createChatConversation(
+        testUser.id,
+        "test-Chat",
+        "recipe",
+      );
+      // Metadata that looks like JSON but is not a valid recipeChatMetadataSchema
+      // (missing 'recipe' field entirely; no savedRecipeId so we don't hit legacy path)
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Bad metadata",
+        { metadataVersion: 1, unexpectedField: true },
+      );
+
+      const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
+      expect(result).toBeNull();
+    });
+
+    it("returns existing recipe via onConflictDoNothing when sourceMessageId already exists", async () => {
+      const conv = await createChatConversation(
+        testUser.id,
+        "test-Chat",
+        "recipe",
+      );
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Recipe!",
+        validMetadata,
+      );
+
+      // Pre-insert a communityRecipe with the same sourceMessageId to simulate
+      // a prior save (e.g. from a concurrent request). This exercises the
+      // onConflictDoNothing → fetch-existing branch (lines 113-120).
+      // The unique constraint that fires is on sourceMessageId (confirmed by the
+      // fallback SELECT in recipe-from-chat.ts). normalizedProductName is
+      // recipe.title.toLowerCase() = "test-chicken salad" — matches here.
+      const [preInserted] = await tx
+        .insert(communityRecipes)
+        .values({
+          authorId: testUser.id,
+          normalizedProductName: "test-chicken salad",
+          title: "test-Chicken Salad",
+          instructions: ["Grill chicken", "Toss salad"],
+          sourceMessageId: msg.id,
+        })
+        .returning();
+
+      const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe(preInserted.id);
+      // Ownership assertion: conflict-fallback must return the requesting user's recipe
+      expect(result!.authorId).toBe(testUser.id);
+    });
+
+    it("returns existing recipe when metadata already has savedRecipeId (legacy path)", async () => {
+      // First, create the recipe we'll reference
+      const [existingRecipe] = await tx
+        .insert(communityRecipes)
+        .values({
+          authorId: testUser.id,
+          normalizedProductName: "test-saved recipe",
+          title: "test-Saved Recipe",
+          instructions: ["Step 1"],
+        })
+        .returning();
+
+      const conv = await createChatConversation(
+        testUser.id,
+        "test-Chat",
+        "recipe",
+      );
+      // Message already has savedRecipeId in metadata — legacy back-reference
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Already saved!",
+        { savedRecipeId: existingRecipe.id },
+      );
+
+      const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
+      expect(result).not.toBeNull();
+      expect(result!.id).toBe(existingRecipe.id);
+    });
+
+    it("returns null when legacy savedRecipeId references another user's private recipe (IDOR guard)", async () => {
+      const otherUser = await createTestUser(tx);
+      // Other user owns the recipe
+      const [otherRecipe] = await tx
+        .insert(communityRecipes)
+        .values({
+          authorId: otherUser.id,
+          normalizedProductName: "test-other recipe",
+          title: "test-Other Recipe",
+          instructions: ["Step 1"],
+        })
+        .returning();
+
+      const conv = await createChatConversation(
+        testUser.id,
+        "test-Chat",
+        "recipe",
+      );
+      // testUser's message contains a savedRecipeId pointing to otherUser's recipe
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Forged savedRecipeId!",
+        { savedRecipeId: otherRecipe.id },
+      );
+
+      // Must return null — authorId filter in legacy path blocks cross-user access.
+      // The legacy path is read-only (SELECT only), so no new row is written.
+      const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
+      expect(result).toBeNull();
+
+      // Confirm otherRecipe was not mutated or reassigned by the failed attempt.
+      const [afterAttempt] = await tx
+        .select()
+        .from(communityRecipes)
+        .where(eq(communityRecipes.id, otherRecipe.id));
+      expect(afterAttempt).toBeDefined();
+      expect(afterAttempt!.authorId).toBe(otherUser.id);
+    });
+
+    it("persists mealTypes on the created recipe", async () => {
+      const conv = await createChatConversation(
+        testUser.id,
+        "test-Chat",
+        "recipe",
+      );
+      const msg = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Recipe with meal types!",
+        validMetadata,
+      );
+
+      const mealTypes = ["breakfast", "lunch"];
+      const result = await saveRecipeFromChat(
+        msg.id,
+        conv.id,
+        testUser.id,
+        undefined,
+        mealTypes,
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.mealTypes).toEqual(mealTypes);
     });
   });
 });
