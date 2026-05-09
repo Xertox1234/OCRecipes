@@ -1100,10 +1100,100 @@ Unit tests (Vitest) verify code correctness. **Evals** verify _output quality_ o
 
 **Key lesson:** Run-to-run variance of ±0.5 points is normal. Look at trends across 3+ runs, not individual scores.
 
+**Multi-suite extension — `SuiteConfig` pattern:**
+
+When extending the eval framework to cover additional AI services, don't duplicate the runner. Add a new `runner-<service>.ts` entrypoint that passes a `SuiteConfig` to `runEvalSuite()` from `evals/lib/runner-core.ts`. The config specifies the rubric text, dimension list, weights, and two callbacks:
+
+```typescript
+runEvalSuite(testCases, {
+  suiteName: "recipe-generation",
+  rubricText: RUBRIC_TEXT,
+  dimensions: ["ingredient_coherence", "instruction_clarity", "dietary_compliance", "creativity"],
+  dimensionWeights: { dietary_compliance: 2, /* others: 1 */ },
+  inputTag: "recipe_request",
+  outputTag: "generated_recipe",
+
+  generateResponse: async (testCase) => {
+    const i = testCase.input as RecipeGenInput;
+    const recipe = await generateRecipeContent({ productName: i.productName, ... });
+    return {
+      text: serialiseRecipe(recipe),
+      structuredData: { ingredients: recipe.ingredients, instructions: recipe.instructions },
+      latencyMs: ...,
+      wordCount: ...,
+    };
+  },
+
+  formatInput: (testCase) => {
+    const i = testCase.input as RecipeGenInput;
+    return `Recipe request: ${i.productName}`;
+  },
+});
+```
+
+The `generateResponse` callback receives the full `EvalTestCase` (not just `testCase.input`) so coach cases (top-level `userMessage`/`context`) and non-coach cases (nested `input`) can coexist in the same runner infrastructure.
+
+**`structuredData` shape contract (critical gotcha):**
+
+`runStructuralAssertions(structuredData, assertions)` and the `generateResponse` callback share an implicit data contract — they must agree on the `structuredData` shape. TypeScript types `structuredData` as `unknown` in both, so a mismatch compiles silently and only fails at runtime.
+
+The meal-suggestion runner passes `{ suggestions: [{calories}], remainingCalories }`, so `runStructuralAssertions` checks `d.suggestions.length` for `suggestionCount`. A fixture using a raw array instead of this wrapper object would pass the unit test but fail in production:
+
+```typescript
+// ❌ WRONG fixture — test passes but production fails
+const data = [{ calories: 400 }, { calories: 350 }, { calories: 500 }];
+runStructuralAssertions(data, { suggestionCount: 3 }); // passes (incorrectly)
+
+// ✅ CORRECT fixture — matches what the runner actually passes
+const data = {
+  suggestions: [{ calories: 400 }, { calories: 350 }, { calories: 500 }],
+  remainingCalories: 600,
+};
+runStructuralAssertions(data, { suggestionCount: 3 }); // correct
+```
+
+**Rule:** Always write fixture shapes that are exact copies of the object the production runner's `generateResponse` callback returns, not simplified stand-ins. When adding a new structural assertion, check both the runner's `structuredData` construction and the assertion's duck-typing check to confirm they use the same property path.
+
+**Eval assertion: always handle singular and plural allergens:**
+
+In `mustNotContain` patterns for allergen safety assertions, use `\bword s?\b` (not `\bword\b`) to catch both singular and plural. `\begg\b` does NOT match "eggs" — a model returning "2 eggs" in a recipe for an egg-allergy user passes the assertion silently.
+
+```json
+// ❌ WRONG — "eggs" slips through
+"mustNotContain": ["\\begg\\b|egg yolk|egg white|meringue"]
+
+// ✅ CORRECT — catches "egg" and "eggs"
+"mustNotContain": ["\\beggs?\\b|egg yolk|egg white|meringue"]
+```
+
+**`Promise.allSettled` for resilient batch LLM eval runs:**
+
+Use `Promise.allSettled` (not `Promise.all`) when running multiple concurrent eval cases. A single API timeout or rate-limit error with `Promise.all` aborts the entire run and discards all completed scores. With `Promise.allSettled`, rejected cases produce a score-0 error-result placeholder and the run continues:
+
+```typescript
+const rawResults = await Promise.allSettled(tasks.map((task) => limit(() => evaluateCase(...))));
+
+for (let i = 0; i < rawResults.length; i++) {
+  const raw = rawResults[i];
+  if (raw.status === "fulfilled") {
+    settled.push(raw.value);
+  } else {
+    const errorMsg = raw.reason instanceof Error ? raw.reason.message : String(raw.reason);
+    console.error(`  ✗ CASE ERRORED: ${tc.id} — ${errorMsg}`);
+    settled.push({ /* score-0 placeholder with assertions.passed: false */ });
+  }
+}
+```
+
+This applies to any batch operation against an external API (Anthropic, OpenAI) where individual failures should degrade gracefully rather than aborting the batch.
+
 **References:**
 
 - `evals/` — framework files (types, assertions, judge, runner, dataset)
-- `docs/superpowers/specs/2026-04-13-nutrition-coach-evaluation-design.md` — spec
+- `evals/lib/runner-core.ts` — `SuiteConfig`, `runEvalSuite`, `Promise.allSettled` pattern
+- `evals/lib/judge-generic.ts` — per-suite dynamic Zod schema for dimension validation
+- `evals/runner-meal-suggestions.ts`, `evals/runner-recipe-chat.ts`, `evals/runner-recipe-generation.ts` — multi-suite entrypoints
+- `docs/superpowers/specs/2026-04-13-nutrition-coach-evaluation-design.md` — original spec
 
 ### Pressable `fireEvent` in JSDOM: Use `click` not `press`
 
