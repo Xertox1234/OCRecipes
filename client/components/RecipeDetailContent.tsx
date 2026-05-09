@@ -216,7 +216,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
                 source={{ uri: resolveImageUrl(url) ?? undefined }}
                 style={{ width: screenWidth, height: HERO_IMAGE_HEIGHT }}
                 resizeMode="cover"
-                accessibilityLabel={`Photo of ${props.title}`}
+                accessibilityLabel={`Photo ${i + 1} of ${props.canonicalImages!.length} of ${props.title}`}
               />
             ))}
           </ScrollView>
@@ -369,6 +369,9 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
               return (
                 <Pressable
                   key={i}
+                  onPress={
+                    isExpandable ? () => handleStepLongPress(i) : undefined
+                  }
                   onLongPress={
                     isExpandable ? () => handleStepLongPress(i) : undefined
                   }
@@ -378,7 +381,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
                     { backgroundColor: withOpacity(theme.text, 0.04) },
                   ]}
                   accessible
-                  accessibilityLabel={`Step ${i + 1} of ${(props.instructions ?? []).length}: ${step}${isExpandable ? ". Long press for more detail." : ""}`}
+                  accessibilityLabel={`Step ${i + 1} of ${(props.instructions ?? []).length}: ${step}${isExpandable ? ". Tap for more detail." : ""}`}
                 >
                   <View
                     style={[styles.stepCircle, { backgroundColor: theme.link }]}

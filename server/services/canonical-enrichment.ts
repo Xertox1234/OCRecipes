@@ -254,15 +254,18 @@ export async function generateEditorialContent(
     `Respond with valid JSON only, no markdown fences.`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: MODEL_HEAVY,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.3,
-      max_tokens: 1500,
-    });
+    const completion = await openai.chat.completions.create(
+      {
+        model: MODEL_HEAVY,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 1500,
+      },
+      { timeout: OPENAI_TIMEOUT_IMAGE_MS },
+    );
 
     const raw = completion.choices[0]?.message?.content;
     if (!raw) {
@@ -358,7 +361,9 @@ export async function enrichRecipe(recipeId: number): Promise<void> {
   // 3. Normalize ingredients and instructions
   const rawIngredients = recipe.ingredients ?? [];
   const normalizedIngredients = normalizeIngredients(rawIngredients);
-  const normalizedInstructions = normalizeInstructions(recipe.instructions);
+  const normalizedInstructions = normalizeInstructions(
+    recipe.instructions ?? [],
+  );
 
   // 4. Generate editorial content via GPT-4o
   const editorial = await generateEditorialContent({

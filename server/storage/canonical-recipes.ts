@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, and, or, gte, desc, sql } from "drizzle-orm";
+import { eq, and, or, gte, desc, sql, isNull } from "drizzle-orm";
 import { communityRecipes, type CommunityRecipe } from "@shared/schema";
 
 const PROMOTION_THRESHOLD = {
@@ -74,27 +74,36 @@ export async function markEnriched(
 export async function getEligibleForPromotion(
   limit = 10,
 ): Promise<CommunityRecipe[]> {
+  // Two cases:
+  // 1. Not yet canonical and popularity threshold met → promote + enrich
+  // 2. Already canonical but enrichment failed (canonicalEnrichedAt IS NULL) → re-enrich
   return db
     .select()
     .from(communityRecipes)
     .where(
-      and(
-        eq(communityRecipes.isCanonical, false),
-        or(
-          gte(
-            communityRecipes.popularityFavorites,
-            PROMOTION_THRESHOLD.favorites,
-          ),
-          gte(
-            communityRecipes.popularityMealPlans,
-            PROMOTION_THRESHOLD.mealPlans,
-          ),
-          gte(
-            communityRecipes.popularityCookSessions,
-            PROMOTION_THRESHOLD.cookSessions,
-          ),
-        )!,
-      ),
+      or(
+        and(
+          eq(communityRecipes.isCanonical, false),
+          or(
+            gte(
+              communityRecipes.popularityFavorites,
+              PROMOTION_THRESHOLD.favorites,
+            ),
+            gte(
+              communityRecipes.popularityMealPlans,
+              PROMOTION_THRESHOLD.mealPlans,
+            ),
+            gte(
+              communityRecipes.popularityCookSessions,
+              PROMOTION_THRESHOLD.cookSessions,
+            ),
+          )!,
+        ),
+        and(
+          eq(communityRecipes.isCanonical, true),
+          isNull(communityRecipes.canonicalEnrichedAt),
+        ),
+      )!,
     )
     .orderBy(desc(communityRecipes.popularityScore))
     .limit(limit);

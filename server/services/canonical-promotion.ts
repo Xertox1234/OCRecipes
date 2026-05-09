@@ -48,10 +48,15 @@ export async function runPromotionJob(): Promise<void> {
       "canonical-promotion: promoting recipes",
     );
 
-    // Step 1: mark all canonical (cheap DB writes, no throttle needed)
-    await Promise.all(eligible.map((r) => storage.markCanonical(r.id)));
+    // Step 1: mark canonical (skip recipes that are already canonical — re-enrich path)
+    const toPromote = eligible.filter((r) => !r.isCanonical);
+    if (toPromote.length > 0) {
+      await Promise.all(toPromote.map((r) => storage.markCanonical(r.id)));
+    }
 
     // Step 2: fire enrichments rate-limited (max 2 concurrent)
+    // Includes both newly-promoted recipes and previously-promoted ones
+    // where enrichment failed (canonicalEnrichedAt still null).
     for (const recipe of eligible) {
       enrichLimit(() => enrichRecipe(recipe.id)).catch((err) =>
         log.error(
