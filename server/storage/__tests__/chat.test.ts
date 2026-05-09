@@ -528,6 +528,9 @@ describe("chat storage", () => {
       // Pre-insert a communityRecipe with the same sourceMessageId to simulate
       // a prior save (e.g. from a concurrent request). This exercises the
       // onConflictDoNothing → fetch-existing branch (lines 113-120).
+      // The unique constraint that fires is on sourceMessageId (confirmed by the
+      // fallback SELECT in recipe-from-chat.ts). normalizedProductName is
+      // recipe.title.toLowerCase() = "test-chicken salad" — matches here.
       const [preInserted] = await tx
         .insert(communityRecipes)
         .values({
@@ -604,9 +607,18 @@ describe("chat storage", () => {
         { savedRecipeId: otherRecipe.id },
       );
 
-      // Must return null — authorId filter in legacy path blocks cross-user access
+      // Must return null — authorId filter in legacy path blocks cross-user access.
+      // The legacy path is read-only (SELECT only), so no new row is written.
       const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
       expect(result).toBeNull();
+
+      // Confirm otherRecipe was not mutated or reassigned by the failed attempt.
+      const [afterAttempt] = await tx
+        .select()
+        .from(communityRecipes)
+        .where(eq(communityRecipes.id, otherRecipe.id));
+      expect(afterAttempt).toBeDefined();
+      expect(afterAttempt!.authorId).toBe(otherUser.id);
     });
 
     it("persists mealTypes on the created recipe", async () => {
