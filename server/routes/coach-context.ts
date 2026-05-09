@@ -12,6 +12,12 @@ import {
   type WarmUpMessageRole,
 } from "../services/coach-warm-up";
 import { sanitizeUserInput } from "../lib/ai-safety";
+import { logger } from "../lib/logger";
+
+/** Runtime guard — validates a DB `text` role before using it as a union member. */
+function isWarmUpRole(r: string): r is WarmUpMessageRole {
+  return r === "user" || r === "assistant" || r === "system";
+}
 
 export function register(app: Express): void {
   // GET /api/coach/context
@@ -68,10 +74,8 @@ export function register(app: Express): void {
           dietaryProfile: profile
             ? {
                 dietType: profile.dietType,
-                allergies: (
-                  (profile.allergies as { name: string }[] | null) || []
-                )
-                  .map((a) => a?.name)
+                allergies: (profile.allergies || [])
+                  .map((a) => a.name)
                   .filter(Boolean),
                 dislikes: profile.foodDislikes,
               }
@@ -157,10 +161,16 @@ export function register(app: Express): void {
           20,
           req.userId,
         );
-        const prepared = messages.map((m) => ({
-          role: m.role as WarmUpMessageRole,
-          content: m.content,
-        }));
+        const prepared = messages.flatMap((m) => {
+          if (!isWarmUpRole(m.role)) {
+            logger.warn(
+              { messageId: m.id, role: m.role },
+              "warm-up: dropping message with unexpected role",
+            );
+            return [];
+          }
+          return [{ role: m.role, content: m.content }];
+        });
         prepared.push({
           role: "user",
           content: sanitizeUserInput(interimTranscript),
