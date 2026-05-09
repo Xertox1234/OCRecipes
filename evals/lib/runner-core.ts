@@ -296,9 +296,10 @@ export function aggregateResults(
       });
     }
   }
+  // Sort ascending by score/weight: low ratio = high-weight miss, surfaces first in lowestScoringCases
   allScores.sort((a, b) => {
-    const weightA = config.dimensionWeights[a.dimension] ?? 1;
-    const weightB = config.dimensionWeights[b.dimension] ?? 1;
+    const weightA = (config.dimensionWeights[a.dimension] ?? 1) || 1;
+    const weightB = (config.dimensionWeights[b.dimension] ?? 1) || 1;
     return a.score / weightA - b.score / weightB;
   });
 

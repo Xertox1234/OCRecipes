@@ -215,7 +215,7 @@ describe("aggregateResults — lowestScoringCases weighted sort", () => {
       formatInput: () => "",
     };
     const result = aggregateResults(cases, config, 1);
-    // safety:4 (ratio 4/2=2.0) ranks before unknown_dim:3 (ratio 3/1=3.0)
+    // safety:4 (ratio 4/2=2.0) surfaces first — worse impact-adjusted rank than unknown_dim:3 (ratio 3/1=3.0)
     expect(result.lowestScoringCases[0].dimension).toBe("safety");
     expect(result.lowestScoringCases[1].dimension).toBe("unknown_dim");
   });
