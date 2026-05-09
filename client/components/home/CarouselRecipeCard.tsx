@@ -16,6 +16,7 @@ import Animated, {
 
 import { ThemedText } from "@/components/ThemedText";
 import { FallbackImage } from "@/components/FallbackImage";
+import { CuratedBadge } from "@/components/CuratedBadge";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -170,6 +171,13 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
               />
             </View>
           ) : null}
+
+          {/* Curated badge */}
+          {card.isCanonical ? (
+            <View style={styles.curatedBadge}>
+              <CuratedBadge compact />
+            </View>
+          ) : null}
         </View>
 
         {/* Content */}
@@ -276,6 +284,11 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
+  },
+  curatedBadge: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
   },
   prepBadge: {
     position: "absolute",

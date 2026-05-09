@@ -9,6 +9,7 @@ import {
 } from "@shared/schema";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { incrementRecipePopularity } from "./canonical-recipes";
 
 export async function toggleFavouriteRecipe(
   userId: string,
@@ -43,7 +44,7 @@ export async function toggleFavouriteRecipe(
     if (!recipe) return false;
   }
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     // Serialize concurrent toggles for the same user to prevent limit bypass.
     // hashtextextended returns a 64-bit bigint, eliminating the ~65k-user
     // birthday-collision risk of the 32-bit hashtext() form (L31).
@@ -114,6 +115,14 @@ export async function toggleFavouriteRecipe(
       throw err;
     }
   });
+
+  if (result === true && recipeType === "community") {
+    fireAndForget(
+      "favourite recipe popularity increment",
+      incrementRecipePopularity(recipeId, "favorite"),
+    );
+  }
+  return result;
 }
 
 export async function getUserFavouriteRecipeIds(

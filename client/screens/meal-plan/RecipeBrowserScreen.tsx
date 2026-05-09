@@ -271,6 +271,7 @@ export default function RecipeBrowserScreen() {
   const [searchText, setSearchText] = useState(searchQuery || "");
   const [activeCuisine, setActiveCuisine] = useState<string | undefined>();
   const [activeDiet, setActiveDiet] = useState<string | undefined>();
+  const [curatedOnly, setCuratedOnly] = useState(false);
   // TODO: Re-add "Safe for me" allergen filter once search service supports it
   const [addingId, setAddingId] = useState<string | null>(null);
   const [advancedFilters, setAdvancedFilters] = useState<SearchFilters>({
@@ -311,6 +312,7 @@ export default function RecipeBrowserScreen() {
       q: debouncedQuery || undefined,
       cuisine: activeCuisine,
       diet: activeDiet,
+      curatedOnly: curatedOnly || undefined,
       mealType: mealType || undefined,
       difficulty: activeDifficulty,
       pantry: pantryMode || undefined,
@@ -324,6 +326,7 @@ export default function RecipeBrowserScreen() {
       debouncedQuery,
       activeCuisine,
       activeDiet,
+      curatedOnly,
       mealType,
       activeDifficulty,
       pantryMode,
@@ -364,8 +367,9 @@ export default function RecipeBrowserScreen() {
     if (advancedFilters.maxCalories !== undefined) count++;
     if (advancedFilters.minProtein !== undefined) count++;
     if (advancedFilters.source !== "all") count++;
+    if (curatedOnly) count++;
     return count;
-  }, [advancedFilters]);
+  }, [advancedFilters, curatedOnly]);
 
   const handleRecipePress = useCallback(
     async (item: SearchableRecipe) => {
@@ -444,6 +448,7 @@ export default function RecipeBrowserScreen() {
     setActiveCuisine(undefined);
     setActiveDiet(undefined);
     setActiveDifficulty(undefined);
+    setCuratedOnly(false);
     setPantryMode(false);
     setAdvancedFilters({
       sort: "relevance",
@@ -567,6 +572,22 @@ export default function RecipeBrowserScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.filterRow}
         >
+          <Chip
+            label="Curated"
+            variant="filter"
+            selected={curatedOnly}
+            onPress={() => {
+              haptics.selection();
+              setCuratedOnly((prev) => !prev);
+            }}
+            accessibilityLabel="Filter curated recipes only"
+          />
+          <View
+            style={[
+              styles.filterDivider,
+              { backgroundColor: withOpacity(theme.text, 0.15) },
+            ]}
+          />
           {CUISINE_PRESETS.map((c) => (
             <Chip
               key={c}
@@ -726,6 +747,7 @@ export default function RecipeBrowserScreen() {
           activeCuisine ||
           activeDiet ||
           activeDifficulty ||
+          curatedOnly ||
           pantryMode ||
           activeFilterCount > 0 ? (
             <EmptyState

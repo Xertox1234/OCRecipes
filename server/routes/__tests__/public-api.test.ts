@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import { storage } from "../../storage";
 import { register } from "../public-api";
+import { createMockCommunityRecipe } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -11,6 +12,8 @@ vi.mock("../../storage", () => ({
     incrementApiKeyUsage: vi.fn(),
     getVerificationByBarcodes: vi.fn(),
     getBarcodeNutrition: vi.fn(),
+    getCuratedRecipes: vi.fn(),
+    getCuratedRecipeById: vi.fn(),
   },
 }));
 
@@ -303,6 +306,58 @@ describe("Public API Routes", () => {
         expect(res.body.data.frontLabel).toBeNull();
         expect(res.body.data.calories).toBeNull();
       });
+    });
+  });
+
+  describe("GET /api/v1/recipes", () => {
+    it("returns empty list when no curated recipes exist", async () => {
+      vi.mocked(storage.getCuratedRecipes).mockResolvedValue([]);
+      const res = await request(app).get("/api/v1/recipes");
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+    });
+
+    it("returns serialized curated recipes", async () => {
+      const mockRecipe = createMockCommunityRecipe({
+        id: 42,
+        title: "Chicken Tikka",
+        isCanonical: true,
+        canonicalImages: ["https://cdn.example.com/hero.jpg"],
+      });
+      vi.mocked(storage.getCuratedRecipes).mockResolvedValue([mockRecipe]);
+      const res = await request(app).get("/api/v1/recipes");
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toBe(42);
+      expect(res.body.data[0].title).toBe("Chicken Tikka");
+    });
+  });
+
+  describe("GET /api/v1/recipes/:id", () => {
+    it("returns 400 for non-integer id", async () => {
+      const res = await request(app).get("/api/v1/recipes/abc");
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe("VALIDATION_ERROR");
+    });
+
+    it("returns 404 when recipe not found", async () => {
+      vi.mocked(storage.getCuratedRecipeById).mockResolvedValue(null);
+      const res = await request(app).get("/api/v1/recipes/99");
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe("NOT_FOUND");
+    });
+
+    it("returns serialized recipe when found", async () => {
+      const mockRecipe = createMockCommunityRecipe({
+        id: 99,
+        title: "Pasta Primavera",
+        isCanonical: true,
+      });
+      vi.mocked(storage.getCuratedRecipeById).mockResolvedValue(mockRecipe);
+      const res = await request(app).get("/api/v1/recipes/99");
+      expect(res.status).toBe(200);
+      expect(res.body.data.id).toBe(99);
+      expect(res.body.data.title).toBe("Pasta Primavera");
     });
   });
 });

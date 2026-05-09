@@ -20,6 +20,7 @@ export interface SearchableRecipe {
   imageUrl: string | null;
   sourceUrl: string | null;
   createdAt: string | null;
+  isCanonical: boolean;
 }
 
 export interface RecipeSearchParams {
@@ -33,6 +34,7 @@ export interface RecipeSearchParams {
   maxPrepTime?: number;
   maxCalories?: number;
   minProtein?: number;
+  curatedOnly?: boolean;
   sort?: "relevance" | "newest" | "quickest" | "calories_asc" | "popular";
   source?: "all" | "personal" | "community" | "spoonacular";
   limit?: number;

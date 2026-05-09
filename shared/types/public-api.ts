@@ -41,3 +41,28 @@ export const paidProductResponseSchema = z.object({
     .nullable(),
 });
 export type PaidProductResponse = z.infer<typeof paidProductResponseSchema>;
+
+/** Public API response shape for a single curated (canonical) recipe. */
+export interface CuratedRecipeResponse {
+  id: number;
+  title: string;
+  description: string | null;
+  cuisineOrigin: string | null;
+  difficulty: string | null;
+  timeEstimate: string | null;
+  servings: number | null;
+  dietTags: string[];
+  mealTypes: string[];
+  caloriesPerServing: number | null;
+  protein: number | null;
+  carbs: number | null;
+  fat: number | null;
+  ingredients: { name: string; quantity: string; unit: string }[];
+  instructions: string[];
+  instructionDetails: (string | null)[];
+  toolsRequired: { name: string; affiliateUrl?: string }[];
+  chefTips: string[];
+  canonicalImages: string[];
+  videoUrl: string | null;
+  canonicalizedAt: string | null;
+}

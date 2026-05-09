@@ -120,6 +120,7 @@ export async function searchRecipes(
     q,
     ingredients: ingredientParam,
     pantry,
+    curatedOnly,
     source,
     cuisine,
     diet,
@@ -273,6 +274,11 @@ export async function searchRecipes(
     predicates.push(
       (r) => r.proteinPerServing !== null && r.proteinPerServing >= minProtein,
     );
+  }
+
+  if (curatedOnly) {
+    filters.curatedOnly = true;
+    predicates.push((r) => r.isCanonical === true);
   }
 
   // Single O(N) traversal — short-circuits on first failing predicate per doc.

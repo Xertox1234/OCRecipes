@@ -7,6 +7,7 @@ import { registerRoutes } from "./routes";
 import * as path from "path";
 import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
+import { startPromotionJob } from "./services/canonical-promotion";
 import { validateEnv } from "./lib/env";
 import { logger, rootLogger, toError } from "./lib/logger";
 import { requestContextMiddleware } from "./lib/request-context";
@@ -221,11 +222,15 @@ function setupErrorHandler(app: express.Application) {
   // Start periodic cache cleanup (every 6 hours)
   const cacheCleanupInterval = startCacheCleanupJob();
 
+  // Start canonical recipe promotion job (every 6 hours)
+  const promotionInterval = startPromotionJob();
+
   // Graceful shutdown
   function shutdown(signal: string) {
     logger.info({ signal }, "graceful shutdown initiated");
     rootLogger.flush();
     clearInterval(cacheCleanupInterval);
+    clearInterval(promotionInterval);
     server.close(() => {
       pool.end().then(() => {
         process.exit(0);

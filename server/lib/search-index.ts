@@ -54,6 +54,7 @@ export type SearchIndexableCommunityRecipe = Pick<
   | "carbsPerServing"
   | "fatPerServing"
   | "imageUrl"
+  | "isCanonical"
   | "createdAt"
 >;
 
@@ -104,6 +105,7 @@ export function mealPlanToSearchable(
     imageUrl: recipe.imageUrl ?? null,
     sourceUrl: recipe.sourceUrl ?? null,
     createdAt: recipe.createdAt ? recipe.createdAt.toISOString() : null,
+    isCanonical: false,
   };
 }
 
@@ -133,6 +135,7 @@ export function communityToSearchable(
     imageUrl: recipe.imageUrl ?? null,
     sourceUrl: null,
     createdAt: recipe.createdAt ? recipe.createdAt.toISOString() : null,
+    isCanonical: recipe.isCanonical ?? false,
   };
 }
 

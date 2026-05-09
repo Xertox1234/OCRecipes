@@ -54,6 +54,10 @@ vi.mock("../../services/pantry-meal-plan", () => ({
   generateMealPlanFromPantry: vi.fn(),
 }));
 
+vi.mock("../../storage/canonical-recipes", () => ({
+  incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
+}));
+
 function createApp() {
   const app = express();
   app.use(express.json());
@@ -232,6 +236,44 @@ describe("Meal Plan Routes", () => {
         .send({});
 
       expect(res.status).toBe(400);
+    });
+
+    it("increments popularity when sourceCommunityRecipeId is provided", async () => {
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
+      const { incrementRecipePopularity } = await import(
+        "../../storage/canonical-recipes"
+      );
+
+      await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Chicken Salad",
+          sourceCommunityRecipeId: 99,
+          ingredients: [{ name: "Chicken", quantity: "200", unit: "g" }],
+        });
+
+      expect(vi.mocked(incrementRecipePopularity)).toHaveBeenCalledWith(
+        99,
+        "mealPlan",
+      );
+    });
+
+    it("does not increment popularity when sourceCommunityRecipeId is absent", async () => {
+      vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
+      const { incrementRecipePopularity } = await import(
+        "../../storage/canonical-recipes"
+      );
+
+      await request(app)
+        .post("/api/meal-plan/recipes")
+        .set("Authorization", "Bearer token")
+        .send({
+          title: "Chicken Salad",
+          ingredients: [{ name: "Chicken", quantity: "200", unit: "g" }],
+        });
+
+      expect(vi.mocked(incrementRecipePopularity)).not.toHaveBeenCalled();
     });
   });
 

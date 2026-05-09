@@ -4,7 +4,13 @@ import { storage } from "../storage";
 
 type CarouselRecipe = Pick<
   CommunityRecipe,
-  "id" | "title" | "imageUrl" | "timeEstimate" | "remixedFromId" | "dietTags"
+  | "id"
+  | "title"
+  | "imageUrl"
+  | "timeEstimate"
+  | "remixedFromId"
+  | "dietTags"
+  | "isCanonical"
 >;
 
 // ── Normalization ────────────────────────────────────────────────────
@@ -20,6 +26,7 @@ function normalizeCommunity(
     prepTimeMinutes: parseTimeEstimate(recipe.timeEstimate),
     recommendationReason: generateCommunityReason(recipe, profile),
     isRemix: !!recipe.remixedFromId,
+    isCanonical: recipe.isCanonical,
   };
 }
 

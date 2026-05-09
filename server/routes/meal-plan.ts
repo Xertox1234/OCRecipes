@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { generateRecipeImage } from "../services/recipe-generation";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { incrementRecipePopularity } from "../storage/canonical-recipes";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -72,6 +73,7 @@ const createMealPlanRecipeSchema = z.object({
       }),
     )
     .optional(),
+  sourceCommunityRecipeId: z.number().int().positive().optional().nullable(),
 });
 
 const addMealPlanItemSchema = z.object({
@@ -152,7 +154,12 @@ export function register(app: Express): void {
           return;
         }
 
-        const { ingredients, sourceType, ...recipeData } = parsed.data;
+        const {
+          ingredients,
+          sourceType,
+          sourceCommunityRecipeId,
+          ...recipeData
+        } = parsed.data;
 
         // Quality gate
         const quality = validateRecipeQuality({
@@ -206,6 +213,14 @@ export function register(app: Express): void {
             recipeId: 0,
           })),
         );
+
+        // Increment popularity counter for community recipe source (fire-and-forget)
+        if (sourceCommunityRecipeId) {
+          fireAndForget(
+            "meal plan recipe popularity increment",
+            incrementRecipePopularity(sourceCommunityRecipeId, "mealPlan"),
+          );
+        }
 
         // Auto-generate image if none provided (async, non-blocking)
         if (!recipe.imageUrl) {

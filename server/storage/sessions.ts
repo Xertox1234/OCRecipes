@@ -391,6 +391,7 @@ export interface CookingSession {
   ingredients: CookingSessionIngredient[];
   photos: CookingSessionPhoto[];
   createdAt: number;
+  sourceCommunityRecipeId?: number;
 }
 
 export const COOKING_MAX_PER_USER = 2;

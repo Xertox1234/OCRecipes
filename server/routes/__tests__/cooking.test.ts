@@ -4,6 +4,7 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register, MAX_PHOTOS_PER_SESSION } from "../cooking";
+import { incrementRecipePopularity } from "../../storage/canonical-recipes";
 import {
   cookingSessionStore,
   COOKING_MAX_PER_USER,
@@ -86,6 +87,10 @@ vi.mock("../../services/recipe-generation", () => ({
 
 vi.mock("../../services/ingredient-substitution", () => ({
   getSubstitutions: vi.fn(),
+}));
+
+vi.mock("../../storage/canonical-recipes", () => ({
+  incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
 }));
 
 const { mockFileBuffer } = vi.hoisted(() => ({
@@ -1067,6 +1072,88 @@ describe("Cooking Routes", () => {
         .send({});
 
       expect(res.status).toBe(500);
+    });
+  });
+
+  describe("POST /api/cooking/sessions — sourceCommunityRecipeId", () => {
+    beforeEach(() => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "premium" as const,
+        expiresAt: null,
+      });
+    });
+
+    it("stores sourceCommunityRecipeId on the session when provided", async () => {
+      const res = await request(app)
+        .post("/api/cooking/sessions")
+        .set("Authorization", "Bearer token")
+        .send({ sourceCommunityRecipeId: 42 });
+
+      expect(res.status).toBe(201);
+
+      const sessionId = res.body.id;
+      const session = cookingSessionStore.get(sessionId);
+      expect(session?.sourceCommunityRecipeId).toBe(42);
+    });
+
+    it("creates session successfully with no body (backwards compatible)", async () => {
+      const res = await request(app)
+        .post("/api/cooking/sessions")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(201);
+      const sessionId = res.body.id;
+      const session = cookingSessionStore.get(sessionId);
+      expect(session?.sourceCommunityRecipeId).toBeUndefined();
+    });
+  });
+
+  describe("POST /api/cooking/sessions/:id/log — popularity", () => {
+    it("increments recipe popularity when sourceCommunityRecipeId is set", async () => {
+      const result = cookingSessionStore.createIfAllowed({
+        id: "",
+        userId: "1",
+        ingredients: [mockIngredient],
+        photos: [],
+        createdAt: Date.now(),
+        sourceCommunityRecipeId: 55,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem(),
+      );
+
+      await request(app)
+        .post(`/api/cooking/sessions/${result.id}/log`)
+        .set("Authorization", "Bearer token")
+        .send({ mealType: "dinner" });
+
+      expect(incrementRecipePopularity).toHaveBeenCalledWith(55, "cookSession");
+    });
+
+    it("does not increment popularity when no source recipe", async () => {
+      const result = cookingSessionStore.createIfAllowed({
+        id: "",
+        userId: "1",
+        ingredients: [mockIngredient],
+        photos: [],
+        createdAt: Date.now(),
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(
+        createMockScannedItem(),
+      );
+
+      await request(app)
+        .post(`/api/cooking/sessions/${result.id}/log`)
+        .set("Authorization", "Bearer token")
+        .send({ mealType: "dinner" });
+
+      expect(incrementRecipePopularity).not.toHaveBeenCalled();
     });
   });
 

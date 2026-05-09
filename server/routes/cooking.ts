@@ -1,7 +1,10 @@
 import type { Express, Response } from "express";
+import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
+import { incrementRecipePopularity } from "../storage/canonical-recipes";
+import { fireAndForget } from "../lib/fire-and-forget";
 import {
   crudRateLimit,
   createRateLimiter,
@@ -112,6 +115,10 @@ function getSessionForUser(
 // ROUTE REGISTRATION
 // ============================================================================
 
+const createSessionSchema = z.object({
+  sourceCommunityRecipeId: z.number().int().positive().optional(),
+});
+
 export function register(app: Express): void {
   // --- Create session ---
   app.post(
@@ -128,12 +135,18 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
+        const parsed = createSessionSchema.safeParse(req.body);
+        const sourceCommunityRecipeId = parsed.success
+          ? parsed.data.sourceCommunityRecipeId
+          : undefined;
+
         const result = cookStore.createIfAllowed({
           id: "", // auto-set by factory to match store key
           userId: req.userId,
           ingredients: [],
           photos: [],
           createdAt: Date.now(),
+          sourceCommunityRecipeId,
         });
         if (!result.ok) {
           return sendError(res, 429, result.reason, result.code);
@@ -470,8 +483,18 @@ export function register(app: Express): void {
           { mealType: parsed.data.mealType || null },
         );
 
+        // Capture before clearing — session reference becomes stale after clear
+        const sourceCommunityRecipeId = session.sourceCommunityRecipeId;
+
         // Clean up session after successful log
         clearCookSession(session.id);
+
+        if (sourceCommunityRecipeId) {
+          fireAndForget(
+            "cook session recipe popularity increment",
+            incrementRecipePopularity(sourceCommunityRecipeId, "cookSession"),
+          );
+        }
 
         res.status(201).json(scannedItem);
       } catch (error) {

@@ -84,6 +84,14 @@ const ALLOWLIST = new Set([
   // Meal plan recipe reads - route verifies ownership; TODO: add userId param for defense-in-depth
   "getMealPlanRecipe",
   "getMealPlanRecipeWithIngredients",
+  // Canonical recipe operations - admin-only or public read; no user-private data exposed
+  "incrementRecipePopularity", // server-side only; recipeId is not user-scoped
+  "markCanonical", // admin-only; used by promotion pipeline server-side
+  "markEnriched", // admin-only; used by enrichment pipeline server-side
+  "getEligibleForPromotion", // admin-only promotion pipeline; no user-private data
+  "getCuratedRecipes", // public read; filtered to isCanonical+isPublic
+  "getCuratedRecipeById", // public read; scoped to isCanonical=true
+  "getRecipeById", // server-side seed/admin utility; not user-facing
 ]);
 
 // Matches the START of an exported function: export [async] function name(

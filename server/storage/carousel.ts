@@ -17,6 +17,7 @@ const CAROUSEL_COLUMNS = {
   timeEstimate: communityRecipes.timeEstimate,
   remixedFromId: communityRecipes.remixedFromId,
   dietTags: communityRecipes.dietTags,
+  isCanonical: communityRecipes.isCanonical,
 } as const;
 
 // ============================================================================

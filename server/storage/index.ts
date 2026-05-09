@@ -34,6 +34,7 @@ import * as recipeFromChat from "./recipe-from-chat";
 import * as health from "./health";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
+import * as canonicalRecipesStorage from "./canonical-recipes";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -334,4 +335,13 @@ export const storage = {
   hasPendingReminderToday: remindersStorage.hasPendingReminderToday,
   hasPendingReminders: remindersStorage.hasPendingReminders,
   acknowledgeReminders: remindersStorage.acknowledgeReminders,
+
+  // Canonical recipes
+  incrementRecipePopularity: canonicalRecipesStorage.incrementRecipePopularity,
+  markCanonical: canonicalRecipesStorage.markCanonical,
+  markEnriched: canonicalRecipesStorage.markEnriched,
+  getEligibleForPromotion: canonicalRecipesStorage.getEligibleForPromotion,
+  getCuratedRecipes: canonicalRecipesStorage.getCuratedRecipes,
+  getCuratedRecipeById: canonicalRecipesStorage.getCuratedRecipeById,
+  getRecipeById: canonicalRecipesStorage.getRecipeById,
 };

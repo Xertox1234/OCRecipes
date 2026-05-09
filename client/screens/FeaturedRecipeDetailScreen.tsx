@@ -49,6 +49,13 @@ interface NormalizedRecipe {
   nutrition?: ReturnType<typeof parseNutritionData>;
   remixedFromId?: number | null;
   remixedFromTitle?: string | null;
+  // Curated recipe fields
+  isCanonical?: boolean;
+  canonicalImages?: string[] | null;
+  instructionDetails?: (string | null)[] | null;
+  toolsRequired?: { name: string; affiliateUrl?: string }[] | null;
+  chefTips?: string[] | null;
+  cuisineOrigin?: string | null;
 }
 
 export default function FeaturedRecipeDetailScreen() {
@@ -101,6 +108,12 @@ export default function FeaturedRecipeDetailScreen() {
         ingredients: mealPlanRecipe.ingredients as IngredientItem[],
         imageUrl: mealPlanRecipe.imageUrl,
         nutrition: parseNutritionData(mealPlanRecipe),
+        isCanonical: false,
+        canonicalImages: [],
+        instructionDetails: [],
+        toolsRequired: [],
+        chefTips: [],
+        cuisineOrigin: null,
       };
     }
 
@@ -117,6 +130,17 @@ export default function FeaturedRecipeDetailScreen() {
         imageUrl: communityRecipe.imageUrl,
         remixedFromId: communityRecipe.remixedFromId,
         remixedFromTitle: communityRecipe.remixedFromTitle,
+        isCanonical: communityRecipe.isCanonical,
+        canonicalImages: (communityRecipe.canonicalImages as string[]) ?? [],
+        instructionDetails:
+          (communityRecipe.instructionDetails as (string | null)[]) ?? [],
+        toolsRequired:
+          (communityRecipe.toolsRequired as {
+            name: string;
+            affiliateUrl?: string;
+          }[]) ?? [],
+        chefTips: (communityRecipe.chefTips as string[]) ?? [],
+        cuisineOrigin: communityRecipe.cuisineOrigin ?? null,
       };
     }
 
@@ -198,6 +222,12 @@ export default function FeaturedRecipeDetailScreen() {
           contentPaddingBottom={insets.bottom + Spacing.xl}
           remixedFromId={normalized.remixedFromId}
           remixedFromTitle={normalized.remixedFromTitle}
+          isCanonical={normalized.isCanonical}
+          canonicalImages={normalized.canonicalImages}
+          instructionDetails={normalized.instructionDetails}
+          toolsRequired={normalized.toolsRequired}
+          chefTips={normalized.chefTips}
+          cuisineOrigin={normalized.cuisineOrigin}
         />
       )}
     </View>

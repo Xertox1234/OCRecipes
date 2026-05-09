@@ -253,13 +253,16 @@ export const FEATURED_COLUMNS = {
   remixedFromTitle: communityRecipes.remixedFromTitle,
   createdAt: communityRecipes.createdAt,
   updatedAt: communityRecipes.updatedAt,
+  // Popularity tracking
   popularityFavorites: communityRecipes.popularityFavorites,
   popularityMealPlans: communityRecipes.popularityMealPlans,
   popularityCookSessions: communityRecipes.popularityCookSessions,
   popularityScore: communityRecipes.popularityScore,
+  // Promotion state
   isCanonical: communityRecipes.isCanonical,
   canonicalizedAt: communityRecipes.canonicalizedAt,
   canonicalEnrichedAt: communityRecipes.canonicalEnrichedAt,
+  // Canonical content
   canonicalImages: communityRecipes.canonicalImages,
   instructionDetails: communityRecipes.instructionDetails,
   toolsRequired: communityRecipes.toolsRequired,
@@ -314,6 +317,7 @@ export async function getAllPublicCommunityRecipes(): Promise<
       carbsPerServing: communityRecipes.carbsPerServing,
       fatPerServing: communityRecipes.fatPerServing,
       imageUrl: communityRecipes.imageUrl,
+      isCanonical: communityRecipes.isCanonical,
       createdAt: communityRecipes.createdAt,
     })
     .from(communityRecipes)

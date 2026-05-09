@@ -148,6 +148,7 @@ describe("Recipes Routes", () => {
             imageUrl: null,
             sourceUrl: null,
             createdAt: null,
+            isCanonical: false,
           },
         ],
         total: 1,

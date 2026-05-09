@@ -244,6 +244,18 @@ describe("communityToSearchable", () => {
     const doc = communityToSearchable(recipe);
     expect(doc.ingredients).toEqual([]);
   });
+
+  it("propagates isCanonical from community recipe", () => {
+    const canonicalRecipe: CommunityRecipe = {
+      ...baseCommunityRecipe,
+      isCanonical: true,
+    };
+    const docCanonical = communityToSearchable(canonicalRecipe);
+    expect(docCanonical.isCanonical).toBe(true);
+
+    const docNonCanonical = communityToSearchable(baseCommunityRecipe);
+    expect(docNonCanonical.isCanonical).toBe(false);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -556,6 +568,29 @@ describe("searchRecipes — filtering", () => {
     expect(ids).toContain("personal:5");
     // baseMealPlanRecipe has mealTypes: ["dinner"], should NOT be included
     expect(ids).not.toContain("personal:1");
+  });
+
+  it("filters by curatedOnly — only returns recipes with isCanonical=true", async () => {
+    resetSearchIndex();
+    const canonicalRecipe: CommunityRecipe = {
+      ...baseCommunityRecipe,
+      id: 20,
+      title: "Curated Salad",
+      isCanonical: true,
+    };
+    mockedStorage.getAllMealPlanRecipes.mockResolvedValue([]);
+    mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
+      baseCommunityRecipe, // isCanonical: false
+      canonicalRecipe,
+    ]);
+    mockedStorage.getAllRecipeIngredients.mockResolvedValue(new Map());
+    await initSearchIndex();
+
+    const result = await searchRecipes({ curatedOnly: true }, "user1");
+    const ids = result.results.map((r) => r.id);
+    expect(ids).toContain("community:20");
+    expect(ids).not.toContain("community:10");
+    expect(result.query.filters.curatedOnly).toBe(true);
   });
 
   it("applies combined filters", async () => {

@@ -107,6 +107,7 @@ export function useCreateMealPlanRecipe() {
         unit?: string | null;
         category?: string;
       }[];
+      sourceCommunityRecipeId?: number;
     }) => {
       const res = await apiRequest("POST", "/api/meal-plan/recipes", recipe);
       if (!res.ok) {
