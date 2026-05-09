@@ -8,7 +8,12 @@ import {
   AppState,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  useFocusEffect,
+  type RouteProp,
+} from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
@@ -28,6 +33,7 @@ import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import type { CoachChatNavigationProp } from "@/types/navigation";
+import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 
 export default function CoachProScreen() {
   const { theme } = useTheme();
@@ -49,6 +55,7 @@ export default function CoachProScreen() {
   const { data: coachConversations = [] } = useChatConversations("coach");
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
+  const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
   const { acknowledge } = useAcknowledgeReminders();
 
   useFocusEffect(
@@ -58,6 +65,16 @@ export default function CoachProScreen() {
       });
     }, [acknowledge]),
   );
+
+  // Apply selectedConversationId from navigation param (set by AllConversationsScreen).
+  // Runs before the default-selection effect so the explicit selection always wins.
+  // The param is cleared after reading to avoid re-applying on subsequent back-navigations.
+  useEffect(() => {
+    const selected = route.params?.selectedConversationId;
+    if (selected == null) return;
+    setConversationId(selected);
+    navigation.setParams({ selectedConversationId: undefined });
+  }, [route.params?.selectedConversationId, navigation]);
 
   const pinnedConversations = useMemo(
     () => coachConversations.filter((c) => c.isPinned),
@@ -245,11 +262,7 @@ export default function CoachProScreen() {
             );
           })}
           <Pressable
-            onPress={() =>
-              navigation.navigate("AllConversations", {
-                onSelect: setConversationId,
-              })
-            }
+            onPress={() => navigation.navigate("AllConversations")}
             style={[
               styles.threadChip,
               styles.seeAllChip,

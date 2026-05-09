@@ -274,12 +274,14 @@ export type MenuScanResultScreenNavigationProp = NativeStackNavigationProp<
 >;
 
 /**
- * Navigation prop for AllConversationsScreen
- * Can use goBack or navigate within RootStack
+ * Navigation prop for AllConversationsScreen.
+ * Extends the RootStack prop with ChatStack access so the screen can call
+ * navigate("CoachPro", { selectedConversationId }) — React Navigation resolves
+ * screen names in the full navigator tree at runtime.
  */
-export type AllConversationsNavigationProp = NativeStackNavigationProp<
-  RootStackParamList,
-  "AllConversations"
+export type AllConversationsNavigationProp = CompositeNavigationProp<
+  NativeStackNavigationProp<RootStackParamList, "AllConversations">,
+  NativeStackNavigationProp<ChatStackParamList>
 >;
 
 /**
