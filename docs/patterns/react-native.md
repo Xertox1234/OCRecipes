@@ -2017,6 +2017,29 @@ useEffect(() => {
 
 **Why:** `accessibilityLiveRegion` has no effect on iOS. The explicit announcement ensures VoiceOver users get the same feedback as TalkBack users.
 
+**Announce ALL outcomes — success AND error:** A common omission is announcing only one branch. Screen reader users who submit a form or trigger an async action have no visual feedback; they must hear the result through an announcement. Both the success path and the error path need an announcement:
+
+```typescript
+// ❌ BAD — screen reader users never hear if saving succeeded
+useEffect(() => {
+  if (error)
+    AccessibilityInfo.announceForAccessibility("Save failed: " + error);
+}, [error]);
+
+// ✅ GOOD — both outcomes are announced
+useEffect(() => {
+  if (error) {
+    AccessibilityInfo.announceForAccessibility("Save failed: " + error);
+  } else if (saveSucceeded) {
+    AccessibilityInfo.announceForAccessibility("Recipe saved");
+  }
+}, [error, saveSucceeded]);
+```
+
+**Avoid re-firing on unrelated re-renders:** Use a prev-value ref (see "Ref Guard for One-Shot Effects") to fire announcements only when the relevant state transitions, not every time the component re-renders with the same value.
+
+Ref: audit 2026-05-09 H12.
+
 ### Input Error States with `aria-invalid`
 
 Use `aria-invalid` (not `accessibilityState={{ invalid: true }}`) to mark inputs in an error state:

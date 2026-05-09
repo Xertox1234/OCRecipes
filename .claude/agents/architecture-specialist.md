@@ -189,6 +189,7 @@ export { escapeLike, getDayBounds } from "./helpers";
 - `import { storage } from "../storage"` works unchanged for all 40+ consumers
 - Domain modules export plain named functions — not classes or singletons
 - Utilities used by 2+ domain modules live in `helpers.ts` and are re-exported from the facade
+- **Sub-modules must NEVER import from the barrel/facade** — importing `meal-plan-analytics.ts` from `"./meal-plans"` (the barrel) creates a cycle: barrel → analytics → barrel. Sub-modules that need sibling functionality must import directly from the sibling (e.g., `import { getConfirmedMealPlanItemIds } from "./meal-plan-items"`). Grep for barrel self-imports after any split: `grep -n "from \"./meal-plans\"" server/storage/meal-plan-*.ts` should return zero hits. (Ref: `docs/patterns/architecture.md` "Barrel Circular-Import Hazard", audit 2026-05-09 H3)
 
 ---
 
@@ -285,12 +286,13 @@ export function register(app: Express): void {
 
 **Mandatory route module checklist:**
 
-1. `keyGenerator: (req) => req.userId || ipKeyGenerator(req)` on every rate limiter
-2. `export function register(app: Express): void` — registered in `server/routes.ts`
-3. `requireAuth` middleware on every authenticated endpoint (never manual `if (!req.userId)`)
-4. `checkPremiumFeature()` early-return before any AI or paid service call
-5. `handleRouteError(res, err, "context")` in every catch block — not manual `logger.error` + `sendError`
-6. Single-resource endpoints include ownership check: `if (item.userId !== req.userId) return 404`
+1. Rate limiter must come from `server/routes/_rate-limiters.ts` — reuse `crudRateLimit` (60 req/min, user-keyed) when no domain-specific limit is needed. Only define a custom limiter when the route has a tighter or different window (AI calls, uploads, auth). New routes that define an inline `rateLimit({...})` directly instead of using the centralized file are a violation.
+2. `keyGenerator: (req) => req.userId || ipKeyGenerator(req)` on every custom rate limiter
+3. `export function register(app: Express): void` — registered in `server/routes.ts`
+4. `requireAuth` middleware on every authenticated endpoint (never manual `if (!req.userId)`)
+5. `checkPremiumFeature()` early-return before any AI or paid service call
+6. `handleRouteError(res, err, "context")` in every catch block — not manual `logger.error` + `sendError`
+7. Single-resource endpoints include ownership check: `if (item.userId !== req.userId) return 404`
 
 ---
 
