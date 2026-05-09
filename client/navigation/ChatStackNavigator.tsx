@@ -13,7 +13,7 @@ import { useTheme } from "@/hooks/useTheme";
 export type ChatStackParamList = {
   ChatList: undefined;
   Chat: { conversationId: number } | { initialMessage: string } | undefined;
-  CoachPro: undefined;
+  CoachPro: { selectedConversationId?: number } | undefined;
 };
 
 const Stack = createNativeStackNavigator<ChatStackParamList>();

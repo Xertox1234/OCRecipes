@@ -150,7 +150,7 @@ export type RootStackParamList = {
       }
     | undefined;
   FastingModal: undefined;
-  AllConversations: { onSelect: (id: number) => void };
+  AllConversations: undefined;
   NotebookScreen: undefined;
   NotebookEntry: { entryId?: number };
 };

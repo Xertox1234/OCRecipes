@@ -10,11 +10,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  useNavigation,
-  useRoute,
-  type RouteProp,
-} from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -25,7 +21,6 @@ import {
 } from "@/hooks/useChat";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { AllConversationsNavigationProp } from "@/types/navigation";
-import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 const MAX_PINNED = 3;
 
@@ -42,7 +37,6 @@ export default function AllConversationsScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AllConversationsNavigationProp>();
-  const route = useRoute<RouteProp<RootStackParamList, "AllConversations">>();
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -107,7 +101,7 @@ export default function AllConversationsScreen() {
         key={conv.id}
         style={[styles.row, { borderBottomColor: theme.border }]}
         onPress={() => {
-          route.params.onSelect(conv.id);
+          navigation.navigate("CoachPro", { selectedConversationId: conv.id });
           navigation.goBack();
         }}
         accessibilityRole="button"
@@ -151,7 +145,7 @@ export default function AllConversationsScreen() {
         </View>
       </Pressable>
     ),
-    [handleDelete, handleTogglePin, navigation, route, theme],
+    [handleDelete, handleTogglePin, navigation, theme],
   );
 
   return (
