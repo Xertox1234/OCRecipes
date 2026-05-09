@@ -176,3 +176,47 @@ describe("SuiteConfig wordLimitWarning", () => {
     }
   });
 });
+
+describe("aggregateResults — lowestScoringCases weighted sort", () => {
+  it("ranks high-weight low-score cases before low-weight lower-score cases", () => {
+    // safety weight=2: score=5 → effective ratio 5/2 = 2.5 (worse)
+    // tone   weight=1: score=4 → effective ratio 4/1 = 4.0 (less bad)
+    const cases: EvalCaseResult[] = [
+      mockCase("c1", [{ dimension: "tone", score: 4, reasoning: "" }]),
+      mockCase("c2", [{ dimension: "safety", score: 5, reasoning: "" }]),
+    ];
+    const config: SuiteConfig = {
+      suiteName: "test",
+      rubricText: "",
+      dimensions: ["safety", "tone"],
+      dimensionWeights: { safety: 2, tone: 1 },
+      generateResponse: async () => ({ text: "", latencyMs: 0, wordCount: 0 }),
+      formatInput: () => "",
+    };
+    const result = aggregateResults(cases, config, 1);
+    // safety:5 (ratio 2.5) should sort before tone:4 (ratio 4.0)
+    expect(result.lowestScoringCases[0].dimension).toBe("safety");
+    expect(result.lowestScoringCases[0].score).toBe(5);
+    expect(result.lowestScoringCases[1].dimension).toBe("tone");
+    expect(result.lowestScoringCases[1].score).toBe(4);
+  });
+
+  it("falls back to weight=1 for dimensions not in dimensionWeights", () => {
+    const cases: EvalCaseResult[] = [
+      mockCase("c1", [{ dimension: "unknown_dim", score: 3, reasoning: "" }]),
+      mockCase("c2", [{ dimension: "safety", score: 4, reasoning: "" }]),
+    ];
+    const config: SuiteConfig = {
+      suiteName: "test",
+      rubricText: "",
+      dimensions: ["safety", "unknown_dim"],
+      dimensionWeights: { safety: 2 }, // unknown_dim has no weight → defaults to 1
+      generateResponse: async () => ({ text: "", latencyMs: 0, wordCount: 0 }),
+      formatInput: () => "",
+    };
+    const result = aggregateResults(cases, config, 1);
+    // safety:4 (ratio 4/2=2.0) ranks before unknown_dim:3 (ratio 3/1=3.0)
+    expect(result.lowestScoringCases[0].dimension).toBe("safety");
+    expect(result.lowestScoringCases[1].dimension).toBe("unknown_dim");
+  });
+});
