@@ -126,6 +126,17 @@ describe("evalTestCaseSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts 'creativity' as a valid category", () => {
+    const result = evalTestCaseSchema.safeParse({
+      id: "rg-creative-1",
+      category: "creativity",
+      description: "creative recipe",
+      userMessage: "give me something unusual",
+      context: validContext,
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("allows null goals (new user with no goals)", () => {
     const result = evalTestCaseSchema.safeParse({
       id: "case-1",

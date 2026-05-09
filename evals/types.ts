@@ -67,7 +67,8 @@ export interface EvalTestCase {
     | "accuracy"
     | "helpfulness"
     | "personalization"
-    | "edge-case";
+    | "edge-case"
+    | "creativity";
   description: string;
   // Coach cases use userMessage + context at top level; other suites use input.
   userMessage?: string;
@@ -123,6 +124,7 @@ export const evalTestCaseSchema = z.object({
     "helpfulness",
     "personalization",
     "edge-case",
+    "creativity",
   ]),
   description: z.string(),
   userMessage: z.string().min(1),
