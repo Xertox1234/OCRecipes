@@ -295,8 +295,13 @@ export function register(app: Express): void {
         // Dispatch based on conversation type
         const isRecipeChat = conversation.type === "recipe";
         const isRemixChat = conversation.type === "remix";
+        const conversationType: "coach" | "recipe" | "remix" = isRemixChat
+          ? "remix"
+          : isRecipeChat
+            ? "recipe"
+            : "coach";
 
-        const featureKey =
+        const featureKey: "recipeGeneration" | "aiCoach" =
           isRecipeChat || isRemixChat ? "recipeGeneration" : "aiCoach";
         const featureLabel = isRemixChat
           ? "Recipe Remix"
@@ -306,7 +311,7 @@ export function register(app: Express): void {
         const features = await checkPremiumFeature(
           req,
           res,
-          featureKey as "recipeGeneration" | "aiCoach",
+          featureKey,
           featureLabel,
         );
         if (!features) return;
@@ -329,7 +334,7 @@ export function register(app: Express): void {
           req.userId,
           sanitizedContent,
           dailyLimit,
-          conversation.type as "coach" | "recipe" | "remix",
+          conversationType,
         );
 
         if (!message) {

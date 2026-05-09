@@ -30,6 +30,10 @@
     "e2e": "maestro test e2e/flows/",
     "e2e:smoke": "maestro test --tags smoke e2e/flows/",
     "eval:coach": "npx tsx evals/runner.ts",
+    "eval:recipe-chat": "npx tsx evals/runner-recipe-chat.ts",
+    "eval:meal-suggestions": "npx tsx evals/runner-meal-suggestions.ts",
+    "eval:recipe-generation": "EVAL_SKIP_IMAGE_GENERATION=true npx tsx evals/runner-recipe-generation.ts",
+    "eval:all": "npm run eval:coach && npm run eval:recipe-chat && npm run eval:meal-suggestions && npm run eval:recipe-generation",
     "generate:icons": "npx tsx scripts/generate-ingredient-icons.ts"
   },
   "dependencies": {

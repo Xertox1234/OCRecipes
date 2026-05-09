@@ -15,6 +15,16 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-09 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit — ~20 commits since 2026-05-02: saveRecipeFromChat lineage/storage, coach-notebook IDOR-safe lookup, AllConversations screen, NotebookScreen/NotebookEntryScreen, CoachMicButton, CommitmentCard coaching blocks
+- **Manifest:** [docs/audits/2026-05-09-full.md](2026-05-09-full.md)
+- **Findings:** 1 critical, 12 high, 16 medium, 14 low (43 total, from 8 agents)
+- **Resolved:** 8 verified (C1, H1, H2, H4, H5, H7, H8, H10, H11), 33 deferred (10 todos), 0 false-positive
+- **Commit(s):** _(pending)_
+
+---
+
 ## 2026-05-02 — Full Codebase Audit
 
 - **Trigger:** Periodic full audit — ~20 commits since 2026-04-28: QuickLog inline drawer (useQuickLogSession hook, QuickLogDrawer, ScanScreen confirm overlay / returnAfterLog flow), ChatStackNavigator deferred mount fix

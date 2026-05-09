@@ -36,7 +36,7 @@ Every modal, bottom sheet, and overlay root container must have `accessibilityVi
 </View>
 ```
 
-**When to apply:** `Modal`, `BottomSheet`, confirmation dialogs, scanning overlays, action sheets, floating menus.
+**When to apply:** `Modal`, `BottomSheet`, confirmation dialogs, scanning overlays, action sheets, floating menus — and **React Navigation screens using `presentation: "fullScreenModal"`**. Navigation-presented modals are not wrapped in a React Native `Modal` component, so `accessibilityViewIsModal` is not set automatically. Any screen registered with `presentation: "fullScreenModal"` (or `"modal"`) in the stack navigator must add the prop explicitly to its root `View` container.
 
 ---
 

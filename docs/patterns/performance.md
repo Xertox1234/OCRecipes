@@ -979,3 +979,48 @@ await forEachUserPaged(async (userIds) => {
 
 - `server/services/notification-scheduler.ts` — `forEachUserPaged` + `sendDailyCheckinReminders` / `sendMealLogReminders`
 - `server/storage/users.ts` — `getUserIdPage`
+
+---
+
+### Streaming FlatList: Hoist Streaming Target to ListFooterComponent
+
+When a `FlatList` renders a conversation and a streaming-in-progress bubble needs to appear below the last persisted message, placing the `StreamingBubble` inside `renderItem` causes every token delivery (~20 re-renders/sec) to propagate through the `renderItem` pathway and force a render check on every visible list item — even items that haven't changed. With 20+ messages in the list, this produces measurable jank during active streaming.
+
+**Fix:** Move the streaming target out of `renderItem` into a memoized `ListFooterComponent`. The footer updates independently of the item list; `React.memo` on the items is no longer bypassed.
+
+```typescript
+// ❌ BAD — streamingContent inside renderItem; every token triggers a re-render check
+//         on ALL visible items via FlatList's item diffing path
+const renderItem = useCallback(
+  ({ item }: { item: ChatMessage }) => {
+    if (item.isStreaming) return <StreamingBubble content={streamingContent} />;
+    return <MessageBubble message={item} />;
+  },
+  [streamingContent],  // changes every token → new renderItem ref → all items re-render
+);
+
+// ✅ GOOD — streaming target is in ListFooterComponent; item list is frozen during streaming
+const streamingFooter = useMemo(
+  () =>
+    isStreaming ? (
+      <StreamingBubble content={streamingContent} />
+    ) : null,
+  [isStreaming, streamingContent],
+);
+
+<FlatList
+  data={messages}        // only persisted messages (no streaming sentinel)
+  renderItem={renderItem}
+  ListFooterComponent={streamingFooter}
+/>
+```
+
+**Additional constraints for correctness:**
+
+- The `data` array must contain only persisted messages. Do NOT append a sentinel streaming item to `data` — this pattern only works if `renderItem` never sees the streaming item.
+- `streamingFooter` must be `useMemo`-ed, not an inline function — `ListFooterComponent` with an inline function re-creates the component tree on every render.
+- Scroll-to-bottom behavior: use `onContentSizeChange` to scroll when footer height changes, not when `streamingContent` changes, to avoid over-triggering.
+
+**Why renderItem propagation happens:** `FlatList` uses the `renderItem` reference as part of its item key cache. A new `renderItem` reference (caused by a `useCallback` dep changing on every token) invalidates the cache and queues a render check for every rendered item.
+
+**Reference:** `client/components/coach/CoachChat.tsx` — `StreamingBubble` moved from `renderItem` to `ListFooterComponent` (audit 2026-05-09 H2)

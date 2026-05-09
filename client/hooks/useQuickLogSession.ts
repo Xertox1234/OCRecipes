@@ -237,12 +237,13 @@ export function useQuickLogSession({
   }, [parsedItems, haptics, logAllMutate]);
 
   const reset = useCallback(() => {
+    if (isListening) stopListening();
     setInputText("");
     setParsedItems([]);
     setParseError(null);
     setSubmitError(null);
     setCapWarning(null);
-  }, []);
+  }, [isListening, stopListening]);
 
   return {
     inputText,

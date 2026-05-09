@@ -322,6 +322,45 @@ Audit 2026-04-17 M22 — `searchRecipes` chained 9 sequential `.filter()` calls,
 
 ---
 
+## Streaming FlatList: Hoist Streaming Target to ListFooterComponent
+
+When a chat `FlatList` must show a streaming bubble below the last persisted message, putting the `StreamingBubble` inside `renderItem` means every token delivery (~20 re-renders/sec) issues a new `renderItem` reference — which invalidates the FlatList item-key cache and forces a render check on **every visible item**, defeating all `React.memo` on list items.
+
+**Rule:** Keep `data` restricted to persisted messages only. Render the streaming target exclusively in a memoized `ListFooterComponent`.
+
+```typescript
+// ❌ BAD — streamingContent in renderItem dep array; every token re-renders all items
+const renderItem = useCallback(
+  ({ item }) => {
+    if (item.isStreaming) return <StreamingBubble content={streamingContent} />;
+    return <MessageBubble message={item} />;
+  },
+  [streamingContent],   // changes every token → new ref → all items checked
+);
+
+// ✅ GOOD — footer updates in isolation; item list stable during streaming
+const streamingFooter = useMemo(
+  () => (isStreaming ? <StreamingBubble content={streamingContent} /> : null),
+  [isStreaming, streamingContent],
+);
+
+<FlatList
+  data={persistedMessages}   // no streaming sentinel in data
+  renderItem={renderItem}
+  ListFooterComponent={streamingFooter}
+/>
+```
+
+**Invariants:**
+
+- `data` must never contain a streaming sentinel — this pattern only works when `renderItem` is token-stable.
+- `ListFooterComponent` must be `useMemo`-ed (not inline) or a `React.memo` component.
+- Scroll-to-bottom: trigger on `onContentSizeChange`, not on each `streamingContent` update.
+
+Reference: `client/components/coach/CoachChat.tsx` (audit 2026-05-09 H2), `docs/patterns/performance.md` "Streaming FlatList Footer".
+
+---
+
 ## Streaming UI: Memoize All Non-Streaming Child Props
 
 Components that re-render on every streamed token (subscribed to `streamingContent` from `useCoachStream`) must memoize ALL props passed to non-streaming children. Dozens of re-renders per second amplify normally-tolerable inline props into measurable jank.

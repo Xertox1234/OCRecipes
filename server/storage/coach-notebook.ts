@@ -82,7 +82,7 @@ export async function createNotebookEntries(
   return db
     .insert(coachNotebook)
     .values(clamped)
-    .onConflictDoNothing({ target: coachNotebook.dedupeKey })
+    .onConflictDoNothing()
     .returning();
 }
 
