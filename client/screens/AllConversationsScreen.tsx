@@ -198,7 +198,10 @@ export default function AllConversationsScreen() {
         <ActivityIndicator style={styles.loading} color={theme.link} />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: insets.bottom + Spacing.xl },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           {pinned.length > 0 && (
@@ -270,7 +273,7 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 14, fontWeight: "500" },
   rowMeta: { fontSize: 12, marginTop: 2 },
   rowActions: { flexDirection: "row", alignItems: "center" },
-  listContent: { paddingBottom: Spacing.xl },
+  listContent: {},
   loading: { marginTop: Spacing.xl },
   empty: { textAlign: "center", marginTop: Spacing.xl, fontSize: 14 },
 });
