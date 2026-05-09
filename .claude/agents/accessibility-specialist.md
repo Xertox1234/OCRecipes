@@ -38,6 +38,8 @@ Every modal, bottom sheet, and overlay root container must have `accessibilityVi
 
 **When to apply:** `Modal`, `BottomSheet`, confirmation dialogs, scanning overlays, action sheets, floating menus — and **React Navigation screens using `presentation: "fullScreenModal"`**. Navigation-presented modals are not wrapped in a React Native `Modal` component, so `accessibilityViewIsModal` is not set automatically. Any screen registered with `presentation: "fullScreenModal"` (or `"modal"`) in the stack navigator must add the prop explicitly to its root `View` container.
 
+**Prop must follow the outermost element.** If a `KeyboardAvoidingView` (or any wrapper) is added around a `ScrollView` or `View` that already carries `accessibilityViewIsModal`, the prop must move to the new outermost element. VoiceOver walks from the root inward — a prop buried on an inner container is silently ineffective. Common mistake: adding KAV during a keyboard-avoidance fix and leaving `accessibilityViewIsModal` on the `ScrollView` it now wraps.
+
 ---
 
 ## Dynamic Announcements (iOS + Android Pairing)
