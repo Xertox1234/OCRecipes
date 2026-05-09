@@ -91,9 +91,9 @@ export function validateAiResponse<T>(
 const DANGEROUS_DIETARY_PATTERNS: RegExp[] = [
   // Extreme calorie restriction
   /eat\s+(less\s+than|under|only)\s+[1-7]\d{2}\s*cal/i, // under 800 cal
-  /\b[1-7]\d{2}\s*calories?\s*(per\s+)?day\b/i, // 100-799 cal per day
+  /\b(?:1[01]\d{2}|[1-7]\d{2})\s*calories?\s*(per\s+)?day\b/i, // 100-799 or 1000-1199 cal per day
   /(?:total|daily)\s+intake\s+(?:of\s+)?[1-7]\d{2}\s*cal/i,
-  /(?:aim|target|stay|stick)\s+(?:for|under|around)\s+[1-9]\d{2}\s*cal/i, // "aim for 900 cal"
+  /(?:aim|target|stay|stick|keep)\s+(?:(?:at|to|for|under|around|below)\s+)?(?:1[01]\d{2}|[1-9]\d{2})\s*cal/i, // aim/target 100-1199 cal (with optional preposition)
   /(?:only|just)\s+(?:eat|consume|have)\s+(?:[1-9]\d{2}|1[01]\d{2})\s*cal/i, // "only eat 900 cal" or "just consume 1100 cal" (100-1199 range)
 
   // Extreme fasting (beyond normal IF — catches 24+ hour fasts)

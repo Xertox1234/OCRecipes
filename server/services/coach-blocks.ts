@@ -37,25 +37,29 @@ export function parseBlocksFromContent(content: string): {
     content.length > MAX_BLOCKS_CONTENT_LENGTH
       ? content.slice(0, MAX_BLOCKS_CONTENT_LENGTH)
       : content;
-  const blockPattern = /```coach_blocks\n([\s\S]*?)```/;
-  const match = safeContent.match(blockPattern);
+  // Use global flag so multiple fences in one response are all found and stripped.
+  const blockPattern = /```coach_blocks\n([\s\S]*?)```/g;
+  const matches = [...safeContent.matchAll(blockPattern)];
 
-  if (!match) {
+  if (matches.length === 0) {
     return { text: safeContent.trim(), blocks: [] };
   }
 
   const text = safeContent.replace(blockPattern, "").trim();
+  const allBlocks: CoachBlock[] = [];
 
-  try {
-    const rawBlocks = JSON.parse(match[1]);
-    if (!Array.isArray(rawBlocks)) {
-      return { text, blocks: [] };
+  for (const match of matches) {
+    try {
+      const rawBlocks = JSON.parse(match[1]);
+      if (Array.isArray(rawBlocks)) {
+        allBlocks.push(...validateBlocks(rawBlocks));
+      }
+    } catch {
+      logger.debug("Failed to parse coach blocks JSON");
     }
-    return { text, blocks: validateBlocks(rawBlocks) };
-  } catch {
-    logger.debug("Failed to parse coach blocks JSON");
-    return { text, blocks: [] };
   }
+
+  return { text, blocks: allBlocks };
 }
 
 export const BLOCKS_SYSTEM_PROMPT = `

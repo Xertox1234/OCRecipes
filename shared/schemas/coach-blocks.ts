@@ -157,6 +157,7 @@ export const commitmentCardSchema = z.object({
   followUpDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}/, "Must be ISO date format (YYYY-MM-DD)"),
+  notebookEntryId: z.number().optional(),
 });
 
 export const quickRepliesSchema = z.object({

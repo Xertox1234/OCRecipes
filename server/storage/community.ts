@@ -271,7 +271,10 @@ export const FEATURED_COLUMNS = {
   videoUrl: communityRecipes.videoUrl,
 } as const;
 
-export type FeaturedRecipe = Omit<CommunityRecipe, "instructions">;
+export type FeaturedRecipe = Omit<
+  CommunityRecipe,
+  "instructions" | "sourceMessageId"
+>;
 
 export async function getFeaturedRecipes(
   limit = 12,

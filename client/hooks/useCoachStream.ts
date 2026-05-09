@@ -10,7 +10,7 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 // Exported so tests can import and verify against them
 export const HOLD_GATE_MS = 700;
 export const DRAIN_INTERVAL_MS = 50;
-export const CHARS_PER_TICK = 2;
+export const CHARS_PER_TICK = 20;
 
 /**
  * Pure helper — returns the slice of buffer to release this drain tick.
@@ -208,14 +208,25 @@ export function useCoachStream({
                     displayedLengthRef.current = stripped.length;
                     bufferRef.current += newChars;
                   }
+                  // Handle safety override: clear buffered content and replace with safe message
+                  if (typeof data.safety_override === "string") {
+                    accumulatedRef.current = "";
+                    displayedLengthRef.current = 0;
+                    firstCharDrainedRef.current = false;
+                    fullTextRef.current = data.safety_override;
+                    setStreamingContent("");
+                    bufferRef.current = data.safety_override;
+                  }
                   if (data.blocks && Array.isArray(data.blocks)) {
                     blocksRef.current = filterValidBlocks(data.blocks);
                   }
                   if (data.done) {
                     isDoneRef.current = true;
-                    fullTextRef.current = stripCoachBlocksFence(
-                      accumulatedRef.current,
-                    );
+                    if (accumulatedRef.current) {
+                      fullTextRef.current = stripCoachBlocksFence(
+                        accumulatedRef.current,
+                      );
+                    }
                   }
                 } catch {
                   // Ignore incomplete JSON chunks
@@ -240,7 +251,11 @@ export function useCoachStream({
 
           startDrain();
 
-          const body: Record<string, unknown> = { content: userMessage };
+          const turnKey = crypto.randomUUID();
+          const body: Record<string, unknown> = {
+            content: userMessage,
+            turnKey,
+          };
           if (extras?.warmUpId) body.warmUpId = extras.warmUpId;
           if (extras?.screenContext) body.screenContext = extras.screenContext;
           xhr.send(JSON.stringify(body));

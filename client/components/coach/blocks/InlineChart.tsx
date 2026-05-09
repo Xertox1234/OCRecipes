@@ -18,7 +18,8 @@ export default function InlineChart({ block }: Props) {
           styles.container,
           { backgroundColor: theme.backgroundSecondary },
         ]}
-        accessibilityLabel={`${block.title}. ${block.summary ?? ""}`}
+        accessibilityLabel={`${block.title}. ${block.summary ?? ""}`.trimEnd()}
+        accessible={true}
       >
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
         <View style={styles.barRow}>
@@ -51,12 +52,18 @@ export default function InlineChart({ block }: Props) {
   }
 
   if (block.chartType === "stat_row") {
+    const statSummary = block.data
+      .map((d) => `${d.label}: ${d.value}`)
+      .join(", ");
+
     return (
       <View
         style={[
           styles.container,
           { backgroundColor: theme.backgroundSecondary },
         ]}
+        accessibilityLabel={`${block.title}. ${statSummary}`}
+        accessible={true}
       >
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
         <View style={styles.statRow}>
@@ -80,9 +87,14 @@ export default function InlineChart({ block }: Props) {
   const pct = datum?.target
     ? Math.min((datum.value / datum.target) * 100, 100)
     : 0;
+  const progressLabel = datum
+    ? `${block.title}. ${datum.value} of ${datum.target ?? "?"}`
+    : block.title;
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
+      accessibilityLabel={`${progressLabel}${block.summary ? `. ${block.summary}` : ""}`}
+      accessible={true}
     >
       <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
       <View style={[styles.progressTrack, { backgroundColor: theme.border }]}>

@@ -172,7 +172,7 @@ export async function generateRecipeContent(
     response = await openai.chat.completions.create(
       {
         model: MODEL_HEAVY,
-        temperature: 0.7,
+        temperature: 0.85,
         max_completion_tokens: 2000,
         messages: [
           {
@@ -180,7 +180,8 @@ export async function generateRecipeContent(
             content: `You are a professional chef creating recipes for a nutrition tracking app. Recipes must be practical, nutritionally balanced, and easy to follow at home.
 
 Guidelines:
-- Use common, easy-to-find grocery-store ingredients.
+- Choose ingredients that are widely available at grocery stores, but within those constraints aim for a less obvious, more interesting recipe — avoid the most predictable dish for the given diet type or theme (e.g. not always pasta primavera for gluten-free, not always teriyaki salmon for pescatarian).
+- If the request describes a dish style or cuisine rather than a specific ingredient (e.g. "Mediterranean salad", "chicken stir-fry"), treat it as the desired flavor direction — do not list the dish name as a single ingredient. Build the recipe from its individual components.
 - List each ingredient with a measured quantity and unit (e.g. "1 tbsp", "200 g"). Use "" for unit when the item is counted (e.g. "2" eggs).
 - Write 5–12 concise instruction steps. Each step should describe one clear action.
 - Adapt complexity to the user's cooking skill level when provided.
@@ -189,6 +190,7 @@ Guidelines:
 - Tag with all applicable diet tags: "vegetarian", "vegan", "gluten-free", "dairy-free", "low-carb", "high-protein", "quick", "kid-friendly", etc.
 
 ALLERGY SAFETY: If the user has listed allergens, NEVER include ingredients containing those allergens. Double-check every ingredient against the allergen list. Allergies are safety-critical — treat them as absolute exclusions.
+Hidden allergen sources to watch for: soy sauce and most teriyaki sauces contain wheat/gluten (use tamari for gluten-free dishes); Parmesan and some aged cheeses may contain trace gluten; store-bought broths often contain allergens — specify allergen-free versions or use fresh alternatives when relevant.
 
 Respond with a single JSON object matching this exact schema:
 {

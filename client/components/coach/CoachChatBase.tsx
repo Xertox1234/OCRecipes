@@ -51,6 +51,8 @@ interface CoachChatBaseProps {
   inputBarStyle?: StyleProp<ViewStyle>;
   /** Inline error message shown below the input bar. */
   streamingError?: string | null;
+  /** Inline banner shown below the input bar in place of (or alongside) the error. */
+  inlineBanner?: ReactNode;
   /** Additional style for the outer KAV container. */
   containerStyle?: StyleProp<ViewStyle>;
   /** When false the entire input bar is hidden. Defaults to true. */
@@ -87,6 +89,7 @@ export function CoachChatBase({
   inputBarAlign = "center",
   inputBarStyle,
   streamingError,
+  inlineBanner,
   containerStyle,
   showInputBar = true,
   accessibilityViewIsModal,
@@ -170,6 +173,7 @@ export function CoachChatBase({
       {streamingError ? (
         <InlineError message={streamingError} style={styles.inlineError} />
       ) : null}
+      {inlineBanner ?? null}
     </KeyboardAvoidingView>
   );
 }

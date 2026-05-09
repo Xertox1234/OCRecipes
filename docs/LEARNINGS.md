@@ -4,6 +4,9 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Drizzle `.default([])` Does Not Make TypeScript Type Non-Nullable (2026-05-09)](#drizzle-default-does-not-make-typescript-type-non-nullable-2026-05-09)
+- [fullScreenModal Dismissal Requires `navigation.goBack()` After `navigate()` (2026-05-09)](#fullscreenmodal-dismissal-requires-navigationgoback-after-navigate-2026-05-09)
+- [onConflictDoNothing({ target }) Silently No-Ops on Partial Unique Indexes (2026-05-09)](#onconflictdonothing-target-silently-no-ops-on-partial-unique-indexes-2026-05-09)
 - [VisionCamera V5 Frame Processor Plugin + runOnJS Bridge (2026-05-03)](#visioncamera-v5-frame-processor-plugin--runonjs-bridge-2026-05-03)
 - [`isFocused` Effect Dead Zone — In-Screen Overlays Don't Trigger Focus Re-Entry (2026-05-02)](#isfocused-effect-dead-zone--in-screen-overlays-dont-trigger-focus-re-entry-2026-05-02)
 - [React 19 finally-block Batching Collapses setState Calls in Same Synchronous Frame (2026-05-01)](#react-19-finally-block-batching-collapses-setstate-calls-in-same-synchronous-frame-2026-05-01)
@@ -68,6 +71,111 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## Mark-Then-Enrich Creates an Orphan State Window (2026-05-09)
+
+**Category:** Gotcha — Background jobs / Multi-phase async pipelines
+
+When a background promotion job runs in two sequential phases — (1) mark a record as canonical, (2) fire enrichment — any enrichment failure leaves the record permanently stuck with `isCanonical=true` and `enrichedAt=null`. Since the eligibility query filters `isCanonical=false`, the stuck record is never re-queued. In production this surfaces as curated badges on unenriched recipes with no images, no chef tips, and no instruction details.
+
+**The fix:** Extend the eligibility query to cover both cases:
+
+```typescript
+// ✅ GOOD — re-queue catches both new promotions AND failed enrichments
+.where(
+  or(
+    and(eq(table.isCanonical, false), /* threshold met */),
+    and(eq(table.isCanonical, true), isNull(table.enrichedAt)),
+  )!
+)
+
+// Then in the job: skip markCanonical for already-canonical entries
+const toPromote = eligible.filter((r) => !r.isCanonical);
+await Promise.all(toPromote.map((r) => storage.markCanonical(r.id)));
+// Fire enrichment for all (newly promoted + re-queued failures)
+```
+
+**Rule:** Any multi-phase pipeline where phase 1 changes permanent state should design the eligibility query to detect phase-1-complete + phase-2-incomplete as a retriable state, rather than relying on a separate retry table. Self-healing via the existing scheduled job is simpler and has no additional infrastructure cost.
+
+**Reference:** `server/storage/canonical-recipes.ts` — `getEligibleForPromotion`, PR #82 code review 2026-05-09.
+
+---
+
+## Drizzle `.default([])` Does Not Make TypeScript Type Non-Nullable (2026-05-09)
+
+**Category:** Gotcha — Drizzle ORM / TypeScript
+
+Drizzle's `.default([])` on an array column only sets the PostgreSQL-level DEFAULT value for INSERT statements. It has **no effect on the TypeScript type**: the inferred type remains `string[] | null`, and accessing array methods on it without a null check will error at runtime if the column is NULL in the database (e.g., rows inserted before the default was added).
+
+**The fix:** Add `.notNull()` alongside `.default([])` in the schema:
+
+```typescript
+// ❌ BAD — TypeScript type is string[] | null; .filter/.map crash on legacy NULLs
+allergens: text("allergens").array().default([]);
+
+// ✅ GOOD — TypeScript type is string[]; DB prevents new NULLs
+allergens: text("allergens").array().default([]).notNull();
+```
+
+For tables that already have NULL rows in production, either backfill (`UPDATE ... SET allergens = '{}' WHERE allergens IS NULL`) before adding `.notNull()`, or guard all read paths with `?? []` until backfill is complete.
+
+Ref: audit 2026-05-09 M9 — `shared/schema.ts` allergens column.
+
+---
+
+## fullScreenModal Dismissal Requires `navigation.goBack()` After `navigate()` (2026-05-09)
+
+**Category:** Gotcha — React Navigation / Modal UX
+
+When a `fullScreenModal` screen programmatically navigates the user to another screen (e.g., from a "success" screen to a destination screen), calling `navigation.navigate()` alone leaves the modal on the navigation stack. The user sees the destination but pressing Back returns them to the modal instead of its origin. The fix is to call `navigation.goBack()` immediately after `navigation.navigate()` to pop the modal off the stack:
+
+```typescript
+// ❌ BAD — modal stays on stack; Back goes to modal, not its origin
+navigation.navigate("RecipeDetail", { recipeId });
+
+// ✅ GOOD — navigate to destination, then dismiss the modal
+navigation.navigate("RecipeDetail", { recipeId });
+navigation.goBack();
+```
+
+This applies to any screen registered with `presentation: "fullScreenModal"` or `presentation: "modal"` in the stack navigator. React Native `Modal` components handle their own dismissal, but navigation-presented modals do not.
+
+Ref: audit 2026-05-09 H6 — `client/screens/RecipeGenerationModal.tsx`.
+
+---
+
+## onConflictDoNothing({ target }) Silently No-Ops on Partial Unique Indexes (2026-05-09)
+
+**Category:** Gotcha — Drizzle ORM / PostgreSQL
+
+PostgreSQL can only use a partial unique index (one with a `WHERE` predicate) as an `ON CONFLICT` target if the SQL references the index by name — not by column list. Drizzle's `onConflictDoNothing({ target: [table.col] })` generates `ON CONFLICT (col) DO NOTHING`, which cannot match a partial index and causes the statement to **insert a duplicate row** (or throw a constraint-violation error at the DB level) instead of silently skipping.
+
+**Root cause:** Drizzle resolves a `target` array to a bare column-list form. PostgreSQL only accepts column-list `ON CONFLICT` targets for full unique indexes. A partial index (`WHERE col IS NOT NULL`) is treated as a separate named constraint that Drizzle cannot reference via column list alone.
+
+**The fix:** Omit `target` entirely:
+
+```typescript
+// ❌ BAD — target form cannot match a partial WHERE-predicate index
+await db
+  .insert(coachNotebook)
+  .values(data)
+  .onConflictDoNothing({ target: coachNotebook.dedupeKey });
+
+// ✅ GOOD — no-arg form lets PostgreSQL choose the best matching constraint
+await db.insert(coachNotebook).values(data).onConflictDoNothing();
+```
+
+**How to detect this at schema time:** Search `shared/schema.ts` for indexes constructed with `.where(sql\`...\`)`— any unique index using that form is a partial index, and every storage function that inserts into that table must use`onConflictDoNothing()` (no args).
+
+**Affected tables in this codebase (as of 2026-05-09):**
+
+- `coachNotebook` — `dedupeKeyUniqueIdx` (WHERE `dedupeKey IS NOT NULL`)
+- `communityRecipes` — `sourceMessageIdUniqueIdx` (WHERE `sourceMessageId IS NOT NULL`)
+- `chatMessages` — `turnKeyUniqueIdx` (WHERE `turnKey IS NOT NULL`)
+
+Ref: audit 2026-05-09 C1 — `server/storage/recipe-from-chat.ts:110`, `server/storage/coach-notebook.ts:85`
+
+---
 
 ## VisionCamera V5 Frame Processor Plugin + runOnJS Bridge (2026-05-03)
 

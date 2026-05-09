@@ -156,6 +156,7 @@ export default function AllConversationsScreen() {
 
   return (
     <View
+      accessibilityViewIsModal
       style={[
         styles.container,
         { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },

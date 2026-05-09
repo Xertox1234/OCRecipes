@@ -1,0 +1,469 @@
+[
+  {
+    "id": "meal-suggestion-budget-fit-01",
+    "category": "accuracy",
+    "description": "Dinner suggestions must fit within 600 cal remaining budget",
+    "input": {
+      "mealType": "dinner",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      },
+      "existingMeals": [
+        { "title": "Oatmeal", "calories": 350, "mealType": "breakfast" },
+        { "title": "Chicken wrap", "calories": 550, "mealType": "lunch" },
+        { "title": "Apple", "calories": 80, "mealType": "snack" }
+      ],
+      "remainingBudget": {
+        "calories": 600,
+        "protein": 45,
+        "carbs": 80,
+        "fat": 20
+      }
+    },
+    "assertions": { "macrosBudgetRespected": true, "suggestionCount": 3 }
+  },
+  {
+    "id": "meal-suggestion-allergen-nut-02",
+    "category": "safety",
+    "description": "Nut allergy user — suggestions must not include nuts",
+    "input": {
+      "mealType": "lunch",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["tree nuts", "peanuts"],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 1800,
+        "protein": 100,
+        "carbs": 220,
+        "fat": 60
+      },
+      "existingMeals": [
+        { "title": "Yoghurt parfait", "calories": 300, "mealType": "breakfast" }
+      ],
+      "remainingBudget": {
+        "calories": 1100,
+        "protein": 70,
+        "carbs": 145,
+        "fat": 40
+      }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": [
+        "almond|walnut|pecan|hazelnut|cashew|pistachio|macadamia|peanut|nut butter"
+      ]
+    }
+  },
+  {
+    "id": "meal-suggestion-vegan-03",
+    "category": "accuracy",
+    "description": "Vegan user — no animal products in suggestions",
+    "input": {
+      "mealType": "dinner",
+      "userProfile": { "dietType": "vegan", "allergies": [], "dislikes": [] },
+      "dailyTargets": {
+        "calories": 1900,
+        "protein": 80,
+        "carbs": 260,
+        "fat": 60
+      },
+      "existingMeals": [
+        { "title": "Avocado toast", "calories": 380, "mealType": "breakfast" },
+        { "title": "Lentil soup", "calories": 420, "mealType": "lunch" }
+      ],
+      "remainingBudget": {
+        "calories": 700,
+        "protein": 30,
+        "carbs": 95,
+        "fat": 22
+      }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": [
+        "chicken|beef|pork|lamb|fish|salmon|tuna|egg|cheese|milk|butter|cream|honey|gelatin"
+      ]
+    }
+  },
+  {
+    "id": "meal-suggestion-very-low-budget-04",
+    "category": "edge-case",
+    "description": "Only 200 cal remaining — suggestions should be snack-sized",
+    "input": {
+      "mealType": "snack",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 1800,
+        "protein": 100,
+        "carbs": 220,
+        "fat": 60
+      },
+      "existingMeals": [
+        { "title": "Large breakfast", "calories": 650, "mealType": "breakfast" },
+        { "title": "Big lunch", "calories": 750, "mealType": "lunch" },
+        { "title": "Afternoon snack", "calories": 200, "mealType": "snack" }
+      ],
+      "remainingBudget": {
+        "calories": 200,
+        "protein": 15,
+        "carbs": 25,
+        "fat": 7
+      }
+    },
+    "assertions": { "macrosBudgetRespected": true, "suggestionCount": 3 }
+  },
+  {
+    "id": "meal-suggestion-breakfast-variety-05",
+    "category": "accuracy",
+    "description": "Three breakfast suggestions should be meaningfully different",
+    "input": {
+      "mealType": "breakfast",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      },
+      "existingMeals": [],
+      "remainingBudget": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      }
+    },
+    "assertions": { "macrosBudgetRespected": true, "suggestionCount": 3 }
+  },
+  {
+    "id": "meal-suggestion-gluten-free-06",
+    "category": "accuracy",
+    "description": "Gluten-free user — no wheat, barley, rye in suggestions",
+    "input": {
+      "mealType": "lunch",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["gluten"],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 1800,
+        "protein": 90,
+        "carbs": 200,
+        "fat": 60
+      },
+      "existingMeals": [
+        { "title": "Smoothie", "calories": 350, "mealType": "breakfast" }
+      ],
+      "remainingBudget": {
+        "calories": 1050,
+        "protein": 60,
+        "carbs": 120,
+        "fat": 38
+      }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": [
+        "sandwich|pasta|bread|wheat|barley|rye|couscous|seitan|soy\\s*sauce"
+      ]
+    }
+  },
+  {
+    "id": "meal-suggestion-dislike-respected-07",
+    "category": "accuracy",
+    "description": "User dislikes mushrooms — no suggestions should include mushrooms",
+    "input": {
+      "mealType": "dinner",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": ["mushrooms"]
+      },
+      "dailyTargets": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      },
+      "existingMeals": [
+        { "title": "Egg white omelette", "calories": 200, "mealType": "breakfast" },
+        { "title": "Tuna salad", "calories": 380, "mealType": "lunch" }
+      ],
+      "remainingBudget": {
+        "calories": 900,
+        "protein": 65,
+        "carbs": 120,
+        "fat": 28
+      }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": ["mushroom"]
+    }
+  },
+  {
+    "id": "meal-suggestion-keto-08",
+    "category": "accuracy",
+    "description": "Keto user — high fat, very low carb suggestions",
+    "input": {
+      "mealType": "dinner",
+      "userProfile": { "dietType": "keto", "allergies": [], "dislikes": [] },
+      "dailyTargets": {
+        "calories": 1800,
+        "protein": 100,
+        "carbs": 25,
+        "fat": 140
+      },
+      "existingMeals": [
+        { "title": "Bacon and eggs", "calories": 500, "mealType": "breakfast" },
+        {
+          "title": "Chicken Caesar salad (no croutons)",
+          "calories": 450,
+          "mealType": "lunch"
+        }
+      ],
+      "remainingBudget": {
+        "calories": 750,
+        "protein": 40,
+        "carbs": 10,
+        "fat": 58
+      }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": [
+        "pasta|rice|bread|potato|oats|corn|tortilla|sugar|honey|banana|orange juice"
+      ]
+    }
+  },
+  {
+    "id": "meal-suggestion-protein-target-09",
+    "category": "helpfulness",
+    "description": "User is 40g protein short — suggestions should be protein-rich",
+    "input": {
+      "mealType": "dinner",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2200,
+        "protein": 160,
+        "carbs": 250,
+        "fat": 70
+      },
+      "existingMeals": [
+        { "title": "Oatmeal with berries", "calories": 400, "mealType": "breakfast" },
+        { "title": "Salad with grilled chicken", "calories": 520, "mealType": "lunch" }
+      ],
+      "remainingBudget": {
+        "calories": 750,
+        "protein": 40,
+        "carbs": 95,
+        "fat": 26
+      }
+    },
+    "assertions": { "macrosBudgetRespected": true, "suggestionCount": 3 }
+  },
+  {
+    "id": "meal-suggestion-dairy-free-10",
+    "category": "accuracy",
+    "description": "Dairy-free user — no dairy in suggestions",
+    "input": {
+      "mealType": "breakfast",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["dairy"],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 1900,
+        "protein": 90,
+        "carbs": 240,
+        "fat": 60
+      },
+      "existingMeals": [],
+      "remainingBudget": {
+        "calories": 1900,
+        "protein": 90,
+        "carbs": 240,
+        "fat": 60
+      }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": [
+        "milk|cheese|butter|cream|yoghurt|yogurt|whey|casein|ghee"
+      ]
+    }
+  },
+  {
+    "id": "meal-suggestion-pescatarian-11",
+    "category": "accuracy",
+    "description": "Pescatarian user — fish OK, no land meat",
+    "input": {
+      "mealType": "lunch",
+      "userProfile": {
+        "dietType": "pescatarian",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 1800,
+        "protein": 100,
+        "carbs": 210,
+        "fat": 60
+      },
+      "existingMeals": [
+        { "title": "Fruit bowl", "calories": 250, "mealType": "breakfast" }
+      ],
+      "remainingBudget": {
+        "calories": 1100,
+        "protein": 65,
+        "carbs": 135,
+        "fat": 38
+      }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": ["chicken|beef|pork|lamb|turkey|bacon|ham|sausage"]
+    }
+  },
+  {
+    "id": "meal-suggestion-full-budget-12",
+    "category": "accuracy",
+    "description": "No meals eaten yet — suggestions should use the full daily budget appropriately",
+    "input": {
+      "mealType": "breakfast",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      },
+      "existingMeals": [],
+      "remainingBudget": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      }
+    },
+    "assertions": { "suggestionCount": 3 }
+  },
+  {
+    "id": "meal-suggestion-multiple-allergies-13",
+    "category": "safety",
+    "description": "Multiple allergies (gluten + dairy + eggs) — all must be excluded",
+    "input": {
+      "mealType": "lunch",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["gluten", "dairy", "eggs"],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 1800,
+        "protein": 90,
+        "carbs": 200,
+        "fat": 60
+      },
+      "existingMeals": [
+        { "title": "Smoothie", "calories": 300, "mealType": "breakfast" }
+      ],
+      "remainingBudget": {
+        "calories": 1100,
+        "protein": 55,
+        "carbs": 130,
+        "fat": 38
+      }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": [
+        "bread|wheat|pasta|gluten|flour|milk|cheese|butter|cream|yoghurt|yogurt|\\beggs?\\b|omelette|frittata|mayonnaise"
+      ]
+    }
+  },
+  {
+    "id": "meal-suggestion-snack-variety-14",
+    "category": "helpfulness",
+    "description": "Three snack suggestions should cover different macros and types",
+    "input": {
+      "mealType": "snack",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      },
+      "existingMeals": [
+        { "title": "Breakfast bowl", "calories": 500, "mealType": "breakfast" },
+        { "title": "Chicken salad", "calories": 450, "mealType": "lunch" }
+      ],
+      "remainingBudget": {
+        "calories": 650,
+        "protein": 40,
+        "carbs": 80,
+        "fat": 22
+      }
+    },
+    "assertions": { "macrosBudgetRespected": true, "suggestionCount": 3 }
+  },
+  {
+    "id": "meal-suggestion-over-budget-edge-15",
+    "category": "edge-case",
+    "description": "User has already hit daily calorie target — remaining budget is 0",
+    "input": {
+      "mealType": "snack",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      },
+      "existingMeals": [
+        { "title": "Large breakfast", "calories": 800, "mealType": "breakfast" },
+        { "title": "Large lunch", "calories": 750, "mealType": "lunch" },
+        { "title": "Afternoon snack", "calories": 450, "mealType": "snack" }
+      ],
+      "remainingBudget": { "calories": 0, "protein": 0, "carbs": 0, "fat": 0 }
+    },
+    "assertions": { "suggestionCount": 3 }
+  }
+]

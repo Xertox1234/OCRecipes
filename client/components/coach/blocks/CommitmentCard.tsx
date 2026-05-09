@@ -6,13 +6,21 @@ import type { CommitmentCard as CommitmentCardType } from "@shared/schemas/coach
 
 interface Props {
   block: CommitmentCardType;
-  onAccept?: (title: string, followUpDate: string) => void;
+  onAccept?: (
+    notebookEntryId: number | undefined,
+    title: string,
+    followUpDate: string,
+  ) => void;
+  isAccepted?: boolean;
 }
 
-export default function CommitmentCard({ block, onAccept }: Props) {
+export default function CommitmentCard({ block, onAccept, isAccepted }: Props) {
   const { theme } = useTheme();
-  const [accepted, setAccepted] = useState(false);
+  const [localAccepted, setLocalAccepted] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+
+  // Use controlled prop if provided; fall back to local state
+  const accepted = isAccepted ?? localAccepted;
 
   if (dismissed) {
     return (
@@ -47,7 +55,7 @@ export default function CommitmentCard({ block, onAccept }: Props) {
               : { borderColor: theme.link, borderWidth: 2 },
           ]}
         >
-          {accepted && <Text style={styles.checkmark}>{"\u2713"}</Text>}
+          {accepted && <Text style={styles.checkmark}>{"✓"}</Text>}
         </View>
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
       </View>
@@ -62,8 +70,12 @@ export default function CommitmentCard({ block, onAccept }: Props) {
               { backgroundColor: withOpacity(theme.link, 0.2) },
             ]}
             onPress={() => {
-              setAccepted(true);
-              onAccept?.(block.title, block.followUpDate);
+              setLocalAccepted(true);
+              onAccept?.(
+                block.notebookEntryId,
+                block.title,
+                block.followUpDate,
+              );
             }}
             accessibilityRole="button"
             accessibilityLabel="Accept commitment"

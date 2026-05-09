@@ -254,6 +254,41 @@ vi.mock("../../lib/dietary-context", () => ({
   buildDietaryContext: vi.fn().mockReturnValue(""),
 }));
 
+describe("generateRecipeChatResponse — API call parameters", () => {
+  it("calls OpenAI with temperature 0.5 for reliable JSON output", async () => {
+    const recipeJson = JSON.stringify({
+      title: "Test",
+      description: "A test.",
+      difficulty: "Easy" as const,
+      timeEstimate: "10 min",
+      servings: 2,
+      ingredients: [{ name: "egg", quantity: "1", unit: "pcs" }],
+      instructions: ["Cook"],
+      dietTags: [],
+    });
+    vi.mocked(openai.chat.completions.create).mockResolvedValueOnce(
+      (async function* () {
+        yield {
+          choices: [{ delta: { content: recipeJson }, finish_reason: "stop" }],
+        };
+      })() as any,
+    );
+    vi.mocked(generateRecipeImage).mockResolvedValue(null);
+
+    const gen = generateRecipeChatResponse(
+      [{ role: "user", content: "make a recipe" }],
+      null,
+    );
+    for await (const _ of gen) {
+      /* drain */
+    }
+
+    const callArgs = vi.mocked(openai.chat.completions.create).mock
+      .calls[0][0] as any;
+    expect(callArgs.temperature).toBe(0.5);
+  });
+});
+
 describe("generateRecipeChatResponse — imageUnavailable on timeout", () => {
   it("yields imageUnavailable when image generation times out", async () => {
     // Build a minimal valid recipe JSON

@@ -1855,7 +1855,15 @@ export async function createChatMessageWithLimitCheck(
 }
 ```
 
-The lock is **transaction-scoped** (`pg_advisory_xact_lock`, not `pg_advisory_lock`) — it releases automatically when the transaction commits or rolls back. The `hashtext()` function converts the userId string to an integer lock key.
+The lock is **transaction-scoped** (`pg_advisory_xact_lock`, not `pg_advisory_lock`) — it releases automatically when the transaction commits or rolls back.
+
+**Use `hashtextextended`, not `hashtext`:** `hashtext()` returns a 32-bit integer — at ~65 000 users the birthday paradox gives a ~1% collision probability (two different users map to the same lock key, silently serializing their requests). `hashtextextended(userId, 0)` returns a 64-bit bigint, reducing the birthday risk to negligible at any realistic user count:
+
+```typescript
+await tx.execute(
+  sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`,
+);
+```
 
 **When to use:** Any count-then-insert pattern where the count must be accurate under concurrent requests (daily limits, rate limiting, inventory checks).
 
@@ -2573,3 +2581,61 @@ context: jsonb("context")
 
 - `shared/schema.ts` — `userProfiles.reminderMutes`, `pendingReminders.context`
 - `shared/types/reminders.ts` — `ReminderMutes` type used by `.$type<>()`
+
+---
+
+### Client-Side turnKey Idempotency for AI Writes
+
+When an AI response write can be retried (network drop, duplicate XHR, user resubmit), protect against duplicate `INSERT` using a client-generated `turnKey`.
+
+**Schema:** Add a nullable `text` column with a partial unique index:
+
+```typescript
+turnKey: text("turn_key"),
+// ...
+turnKeyUniqueIdx: uniqueIndex("chat_messages_turn_key_idx")
+  .on(table.turnKey)
+  .where(sql`${table.turnKey} IS NOT NULL`),
+```
+
+The partial index (`WHERE NOT NULL`) means rows written without a turnKey (legacy, background jobs) don't occupy index slots.
+
+**Client:** Generate at send time with `crypto.randomUUID()`, include in the request body:
+
+```typescript
+const turnKey = crypto.randomUUID();
+xhr.send(JSON.stringify({ content: userMessage, turnKey }));
+```
+
+**Server:** Before inserting the assistant message, check for an existing row:
+
+```typescript
+if (turnKey) {
+  const existing = await storage.getChatMessageByTurnKey(
+    conversationId,
+    turnKey,
+  );
+  if (existing) return; // already persisted — skip
+}
+await storage.createChatMessage(
+  conversationId,
+  userId,
+  "assistant",
+  text,
+  metadata,
+  turnKey,
+);
+```
+
+**IDOR note:** `getChatMessageByTurnKey` only checks `(conversationId, turnKey)` — it relies on the caller having already verified conversation ownership. Document this contract with a comment:
+
+```typescript
+export async function getChatMessageByTurnKey( // idor-safe: callers must pre-verify conversation ownership
+  conversationId: number,
+  turnKey: string,
+): Promise<ChatMessage | undefined>;
+```
+
+**When to use:** Any AI-generated write that can be retried — assistant messages, recipe saves, any `onConflictDoNothing` pattern where the source is a client-triggered operation.
+
+**References:** `shared/schema.ts` (`chatMessages.turnKey`), `server/storage/chat.ts` (`getChatMessageByTurnKey`), `server/services/coach-pro-chat.ts` (usage in `handleCoachChat`).

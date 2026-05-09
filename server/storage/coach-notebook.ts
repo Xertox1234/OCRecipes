@@ -82,8 +82,20 @@ export async function createNotebookEntries(
   return db
     .insert(coachNotebook)
     .values(clamped)
-    .onConflictDoNothing({ target: coachNotebook.dedupeKey })
+    .onConflictDoNothing()
     .returning();
+}
+
+export async function getNotebookEntryById(
+  id: number,
+  userId: string,
+): Promise<CoachNotebookEntry | undefined> {
+  const [entry] = await db
+    .select()
+    .from(coachNotebook)
+    .where(and(eq(coachNotebook.id, id), eq(coachNotebook.userId, userId)))
+    .limit(1);
+  return entry;
 }
 
 export async function updateNotebookEntryStatus(

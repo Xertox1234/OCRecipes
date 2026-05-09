@@ -49,6 +49,7 @@ const baseRecipe = {
   isPublic: true,
   remixedFromId: null,
   remixedFromTitle: null,
+  sourceMessageId: null,
   popularityFavorites: 0,
   popularityMealPlans: 0,
   popularityCookSessions: 0,

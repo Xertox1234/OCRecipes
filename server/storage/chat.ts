@@ -35,6 +35,24 @@ export async function getChatConversation(
   return conversation || undefined;
 }
 
+export async function getChatMessageCount(
+  conversationId: number,
+  userId: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(chatMessages)
+    .innerJoin(
+      chatConversations,
+      and(
+        eq(chatMessages.conversationId, chatConversations.id),
+        eq(chatConversations.userId, userId),
+      ),
+    )
+    .where(eq(chatMessages.conversationId, conversationId));
+  return row?.count ?? 0;
+}
+
 export async function getChatConversations(
   userId: string,
   limit = 50,
@@ -79,32 +97,24 @@ export async function createChatConversation(
 export async function getChatMessages(
   conversationId: number,
   limit = 100,
-  userId?: string,
+  userId: string,
 ): Promise<ChatMessage[]> {
-  if (userId) {
-    const rows = await db
-      .select({ message: chatMessages })
-      .from(chatMessages)
-      .innerJoin(
-        chatConversations,
-        eq(chatMessages.conversationId, chatConversations.id),
-      )
-      .where(
-        and(
-          eq(chatMessages.conversationId, conversationId),
-          eq(chatConversations.userId, userId),
-        ),
-      )
-      .orderBy(chatMessages.createdAt)
-      .limit(limit);
-    return rows.map((r) => r.message);
-  }
-  return db
-    .select()
+  const rows = await db
+    .select({ message: chatMessages })
     .from(chatMessages)
-    .where(eq(chatMessages.conversationId, conversationId))
+    .innerJoin(
+      chatConversations,
+      eq(chatMessages.conversationId, chatConversations.id),
+    )
+    .where(
+      and(
+        eq(chatMessages.conversationId, conversationId),
+        eq(chatConversations.userId, userId),
+      ),
+    )
     .orderBy(chatMessages.createdAt)
     .limit(limit);
+  return rows.map((r) => r.message);
 }
 
 /**
@@ -137,6 +147,7 @@ export async function createChatMessage(
   role: ChatMessageRole,
   content: string,
   metadata?: Record<string, unknown> | null,
+  turnKey?: string,
 ): Promise<ChatMessage> {
   assertChatMessageRole(role);
   return db.transaction(async (tx) => {
@@ -162,6 +173,7 @@ export async function createChatMessage(
         role,
         content,
         metadata: metadata ?? null,
+        ...(turnKey ? { turnKey } : {}),
       })
       .returning();
 
@@ -178,6 +190,23 @@ export async function createChatMessage(
 
     return message;
   });
+}
+
+export async function getChatMessageByTurnKey( // idor-safe: callers must pre-verify conversation ownership via getChatConversation(id, userId)
+  conversationId: number,
+  turnKey: string,
+): Promise<ChatMessage | undefined> {
+  const [message] = await db
+    .select()
+    .from(chatMessages)
+    .where(
+      and(
+        eq(chatMessages.conversationId, conversationId),
+        eq(chatMessages.turnKey, turnKey),
+      ),
+    )
+    .limit(1);
+  return message;
 }
 
 export async function deleteChatConversation(

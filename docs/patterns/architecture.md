@@ -98,6 +98,24 @@ export function getDayBounds(date: Date): { startOfDay: Date; endOfDay: Date } {
 - `server/storage/helpers.ts` -- `getDayBounds`, `escapeLike`
 - 19 domain modules (see directory listing above)
 
+#### Barrel Circular-Import Hazard in Sub-Modules
+
+Sub-modules **must never import from the barrel facade (`index.ts`)** — doing so creates a circular dependency (`index → sub-module → index`) that causes the module graph to be partially unresolved at startup, resulting in `undefined` references and silent runtime failures.
+
+```typescript
+// ❌ BAD — cookbooks.ts imports the barrel which imports cookbooks.ts
+import { storage } from "./index";
+const recipes = await storage.getMealPlanRecipe(id); // undefined at runtime
+
+// ✅ GOOD — import the sibling directly
+import { getMealPlanRecipe } from "./meal-plans";
+const recipe = await getMealPlanRecipe(id);
+```
+
+**Rule:** Within `server/storage/`, any sibling dependency must be a direct relative import (e.g., `import { getDayBounds } from "./helpers"`), never `import { storage } from "./index"`. The barrel is for external consumers only.
+
+Ref: audit 2026-05-09 H3 — `server/storage/cookbooks.ts`.
+
 ## Route Module Patterns
 
 ### Route Module Registration Structure
@@ -171,13 +189,13 @@ export function register(app: Express): void {
 
 **Checklist for every new route module:**
 
-1. Import from `_helpers` (shared rate limiters, `formatZodError`, `checkPremiumFeature`)
-2. Define a domain-specific rate limiter at module scope with `keyGenerator: (req) => req.userId || ipKeyGenerator(req)`
+1. Import helpers from `_helpers` (`handleRouteError`, `formatZodError`, `checkPremiumFeature`, `parseQueryInt`, etc.)
+2. Import rate limiters from `_rate-limiters` — **reuse `crudRateLimit` (60/min, user-keyed) when no domain-specific limit is needed**; define a named limiter only when the route has a tighter or different window (AI calls, uploads, auth)
 3. Export a `register(app: Express): void` function
 4. Use `requireAuth` middleware on every authenticated endpoint — never do manual `if (!req.userId)` checks
 5. Use `checkPremiumFeature()` early-return pattern for premium features
 6. Define Zod schemas inline in each handler (unless reused across handlers)
-7. Wrap handler body in `try/catch` with `console.error` + generic 500 response
+7. Wrap handler body in `try/catch` with `handleRouteError(res, err, "context")` — not manual `logger.error` + `sendError`
 8. For single-resource endpoints (`:id`), include ownership verification: `if (item.userId !== req.userId) return 404`
 
 **When to use:** Every new route module.
@@ -1342,6 +1360,16 @@ export function addToIndex(doc: SearchableRecipe): void {
 **When NOT to use:** Full-text search over 100K+ documents, geospatial queries, or when PostgreSQL `pg_trgm` trigram indexes already meet your needs.
 
 **Reference:** `server/services/recipe-search.ts`, `shared/types/recipe-search.ts`
+
+## Per-Conversation Message Depth
+
+Chat conversations grow indefinitely — the daily message limit controls volume but not depth. Long-lived conversations stress history truncation and increase DB row counts over time.
+
+**Soft cap:** 500 messages per conversation is the intended threshold. Above this, clients should surface a "Start a new conversation" prompt rather than continuing indefinitely.
+
+**How to detect:** Add a `getChatMessageCount(conversationId, userId)` call when fetching a conversation. If count > 500, include a `nearLimit: true` flag in the GET /api/chat/conversations/:id response. The client shows a banner: "This conversation is getting long. Starting a new one gives the Coach fresher context."
+
+**Hard archival:** Out of scope for this plan. Triggered by a future scaling incident or user complaint, not pre-emptively.
 
 ### Dynamic Import for Deferred Environment-Dependent Module Evaluation
 

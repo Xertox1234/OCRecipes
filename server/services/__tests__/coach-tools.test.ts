@@ -241,6 +241,21 @@ describe("Coach Tools Service", () => {
     });
   });
 
+  it("preserves category field in add_to_grocery_list items", async () => {
+    const result = (await executeToolCall(
+      "add_to_grocery_list",
+      {
+        items: [{ name: "chicken breast", quantity: "500g", category: "meat" }],
+      },
+      "user-1",
+    )) as { items: { name: string; category: string | null }[] };
+    expect(result.items[0]).toMatchObject({
+      name: "chicken breast",
+      quantity: "500g",
+      category: "meat",
+    });
+  });
+
   it("executes search_recipes tool", async () => {
     const result = (await executeToolCall(
       "search_recipes",

@@ -36,13 +36,17 @@ Every modal, bottom sheet, and overlay root container must have `accessibilityVi
 </View>
 ```
 
-**When to apply:** `Modal`, `BottomSheet`, confirmation dialogs, scanning overlays, action sheets, floating menus.
+**When to apply:** `Modal`, `BottomSheet`, confirmation dialogs, scanning overlays, action sheets, floating menus — and **React Navigation screens using `presentation: "fullScreenModal"`**. Navigation-presented modals are not wrapped in a React Native `Modal` component, so `accessibilityViewIsModal` is not set automatically. Any screen registered with `presentation: "fullScreenModal"` (or `"modal"`) in the stack navigator must add the prop explicitly to its root `View` container.
+
+**Prop must follow the outermost element.** If a `KeyboardAvoidingView` (or any wrapper) is added around a `ScrollView` or `View` that already carries `accessibilityViewIsModal`, the prop must move to the new outermost element. VoiceOver walks from the root inward — a prop buried on an inner container is silently ineffective. Common mistake: adding KAV during a keyboard-avoidance fix and leaving `accessibilityViewIsModal` on the `ScrollView` it now wraps.
 
 ---
 
 ## Dynamic Announcements (iOS + Android Pairing)
 
-`accessibilityLiveRegion` is Android-only — it has no effect on iOS. For iOS, pair it with `AccessibilityInfo.announceForAccessibility` in a `useEffect`. The `InlineError` component demonstrates the canonical pattern:
+`accessibilityLiveRegion` is Android-only — it has no effect on iOS. For iOS, pair it with `AccessibilityInfo.announceForAccessibility` in a `useEffect`. The `InlineError` component demonstrates the canonical pattern.
+
+**Announce ALL outcomes — success AND error.** When auditing async state transitions, check that BOTH success and failure paths have announcements. Check `onSuccess` + `onError` in mutation handlers, and `isSuccess` + `isError` in `useEffect` deps. Use a prev-value ref guard (`const prevRef = useRef(false)`) to fire only on `false → true` transitions. (Ref: audit 2026-05-09 H12)
 
 ```typescript
 // client/components/InlineError.tsx — canonical reference implementation

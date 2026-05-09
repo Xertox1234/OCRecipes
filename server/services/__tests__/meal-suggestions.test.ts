@@ -295,6 +295,17 @@ describe("meal-suggestions", () => {
       mockCreate.mockReset();
     });
 
+    it("calls OpenAI with temperature 0.5 for consistent macro estimates", async () => {
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(validAIResponse)),
+      );
+
+      await generateMealSuggestions(baseInput);
+
+      const callArgs = mockCreate.mock.calls[0][0] as any;
+      expect(callArgs.temperature).toBe(0.5);
+    });
+
     it("returns 3 validated suggestions from AI", async () => {
       mockCreate.mockResolvedValue(
         createMockChatCompletion(JSON.stringify(validAIResponse)),

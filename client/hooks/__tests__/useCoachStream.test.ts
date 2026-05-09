@@ -14,21 +14,25 @@ import {
 
 describe("charsToRelease", () => {
   it("returns empty string when elapsed < holdGateMs", () => {
-    expect(charsToRelease("hello world", 300, 700, 2)).toBe("");
-    expect(charsToRelease("hello world", 699, 700, 2)).toBe("");
+    expect(charsToRelease("hello world", 300, 700, CHARS_PER_TICK)).toBe("");
+    expect(charsToRelease("hello world", 699, 700, CHARS_PER_TICK)).toBe("");
   });
 
   it("returns up to charsPerTick when elapsed >= holdGateMs", () => {
-    expect(charsToRelease("hello world", 700, 700, 2)).toBe("he");
-    expect(charsToRelease("hello world", 1500, 700, 2)).toBe("he");
+    expect(charsToRelease("hello world", 700, 700, CHARS_PER_TICK)).toBe(
+      "hello world".slice(0, CHARS_PER_TICK),
+    );
+    expect(charsToRelease("hello world", 1500, 700, CHARS_PER_TICK)).toBe(
+      "hello world".slice(0, CHARS_PER_TICK),
+    );
   });
 
   it("returns entire buffer when buffer shorter than charsPerTick", () => {
-    expect(charsToRelease("x", 700, 700, 2)).toBe("x");
+    expect(charsToRelease("x", 700, 700, CHARS_PER_TICK)).toBe("x");
   });
 
   it("returns empty string for empty buffer regardless of elapsed", () => {
-    expect(charsToRelease("", 5000, 700, 2)).toBe("");
+    expect(charsToRelease("", 5000, 700, CHARS_PER_TICK)).toBe("");
   });
 });
 
@@ -160,7 +164,7 @@ describe("useCoachStream throttle rate", () => {
 
     await startAndFlush(result);
     act(() => {
-      mockXhr.emit({ content: "A".repeat(100) });
+      mockXhr.emit({ content: "A".repeat(400) });
     });
 
     // Advance past hold gate — the tick firing exactly at HOLD_GATE_MS also
@@ -268,5 +272,86 @@ describe("useCoachStream onDone", () => {
 
     expect(onDone).toHaveBeenCalledWith("Hi", undefined);
     expect(result.current.isStreaming).toBe(false);
+  });
+});
+
+describe("useCoachStream safety_override", () => {
+  it("clears streamingContent when safety_override arrives", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    // Stream some content and drain it
+    act(() => {
+      mockXhr.emit({ content: "unsafe content here" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 2);
+    });
+    expect(result.current.streamingContent.length).toBeGreaterThan(0);
+
+    // Safety override arrives
+    act(() => {
+      mockXhr.emit({ safety_override: "Safe message." });
+    });
+
+    // streamingContent should be cleared immediately
+    expect(result.current.streamingContent).toBe("");
+  });
+
+  it("drains the safe message after safety_override", async () => {
+    const { result } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "unsafe" });
+    });
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 5);
+    });
+
+    act(() => {
+      mockXhr.emit({ safety_override: "Safe." });
+    });
+    act(() => {
+      mockXhr.emit({ done: true });
+      mockXhr.complete();
+    });
+
+    // Drain the safe message
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 10);
+    });
+
+    expect(result.current.streamingContent).toContain("Safe.");
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("calls onDone with the safe message text, not original content", async () => {
+    const { result, onDone } = await setupHook();
+    await startAndFlush(result);
+
+    act(() => {
+      mockXhr.emit({ content: "harmful advice" });
+    });
+    act(() => {
+      mockXhr.emit({ safety_override: "I cannot help with that." });
+    });
+    act(() => {
+      mockXhr.emit({ done: true });
+      mockXhr.complete();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(HOLD_GATE_MS + DRAIN_INTERVAL_MS * 20);
+    });
+
+    expect(onDone).toHaveBeenCalledWith(
+      expect.stringContaining("I cannot help with that."),
+      undefined,
+    );
+    expect(onDone).not.toHaveBeenCalledWith(
+      expect.stringContaining("harmful advice"),
+      undefined,
+    );
   });
 });

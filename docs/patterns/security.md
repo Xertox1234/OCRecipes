@@ -212,10 +212,11 @@ This is not the same as the standard "storage mutation includes userId" pattern.
 
 **Checklist for polymorphic FK consumers:**
 
-1. **Toggle (add/remove):** Before inserting into the junction table, verify the target exists and belongs to the user. For `mealPlan` type: `eq(mealPlanRecipes.userId, userId)`. For `community` type: verify existence (community recipes are public by definition when toggling favourites).
+1. **Toggle (add/remove):** Before inserting into the junction table, verify the target exists and is visible to the user. For `mealPlan` type: `eq(mealPlanRecipes.userId, userId)`. For `community` type: `and(eq(communityRecipes.id, recipeId), or(eq(communityRecipes.isPublic, true), eq(communityRecipes.authorId, userId)))` — community recipes can be private, so the visibility guard is required, not just existence.
 2. **Resolve (batch fetch details):** When fetching target rows by ID, include `eq(target.userId, userId)` in the WHERE clause (for private types) or `or(eq(isPublic, true), eq(authorId, userId))` (for public/private mixed types).
 3. **Share:** When building a share payload, filter by `or(eq(isPublic, true), eq(authorId, userId))` — never expose private community recipes.
 4. **Count:** Use EXISTS subqueries or proactive orphan cleanup to ensure counts exclude deleted targets (see "Orphan-Safe Counts" in database patterns).
+5. **Legacy/fallback lookup paths:** Any secondary code path that resolves a recipe by ID (e.g., a fallback branch when the primary discriminator lookup fails) must apply the same ownership check as the primary path. A fallback that skips the `userId` filter is a full IDOR regardless of how rarely it executes.
 
 ```typescript
 // ❌ Bad: Toggle accepts any recipeId without checking who owns it

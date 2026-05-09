@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, or, inArray, sql } from "drizzle-orm";
 import {
   favouriteRecipes,
   mealPlanRecipes,
@@ -32,7 +32,15 @@ export async function toggleFavouriteRecipe(
     const [recipe] = await db
       .select({ id: communityRecipes.id })
       .from(communityRecipes)
-      .where(eq(communityRecipes.id, recipeId));
+      .where(
+        and(
+          eq(communityRecipes.id, recipeId),
+          or(
+            eq(communityRecipes.isPublic, true),
+            eq(communityRecipes.authorId, userId),
+          ),
+        ),
+      );
     if (!recipe) return false;
   }
 
@@ -205,7 +213,15 @@ export async function getResolvedFavouriteRecipes(
             difficulty: communityRecipes.difficulty,
           })
           .from(communityRecipes)
-          .where(inArray(communityRecipes.id, communityIds))
+          .where(
+            and(
+              inArray(communityRecipes.id, communityIds),
+              or(
+                eq(communityRecipes.isPublic, true),
+                eq(communityRecipes.authorId, userId),
+              ),
+            ),
+          )
       : [],
   ]);
 

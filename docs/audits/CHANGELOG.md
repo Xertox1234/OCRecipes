@@ -15,6 +15,25 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-09 — Full Codebase Audit (Phase 2: deferred item resolution)
+
+- **Trigger:** Continuation of 2026-05-09 full audit — resolving all 12 deferred todos via 7 parallel worktree agents
+- **Manifest:** [docs/audits/2026-05-09-full.md](2026-05-09-full.md)
+- **Findings resolved in this session:** 19 verified (H3, H6, H9, H12, M1–M9, M12, M15, M16, L4) + 1 false-positive (L5 already fixed in H2) + M3 partially addressed (onCommitmentAccept fixed, onQuickReply left inline)
+- **Code review catch:** H6 navigation fix was missing `navigation.goBack()` — caught by Phase 6 review agent and fixed in commit `ddafce6d`
+- **Commit(s):** `8b822aba` (M1 security), `d3878d50` (M7–M9 types), PR 3 branch (H9/M5 tests), `3d7054f9`+`ddafce6d` (H6 navigation), `be3b8cc0` (H12/M15/M16/M3/L4 a11y+perf), `b5e5436c` (M2/M4/M12 layout), `6bbbebb3` (H3/M6 architecture)
+- **Remaining open:** 14 items (M10, M11, M13, M14, L1–L3, L6–L8, L10–L14) — need deferred todos
+
+## 2026-05-09 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit — ~20 commits since 2026-05-02: saveRecipeFromChat lineage/storage, coach-notebook IDOR-safe lookup, AllConversations screen, NotebookScreen/NotebookEntryScreen, CoachMicButton, CommitmentCard coaching blocks
+- **Manifest:** [docs/audits/2026-05-09-full.md](2026-05-09-full.md)
+- **Findings:** 1 critical, 12 high, 16 medium, 14 low (43 total, from 8 agents)
+- **Resolved:** 8 verified (C1, H1, H2, H4, H5, H7, H8, H10, H11), 33 deferred (10 todos), 0 false-positive
+- **Commit(s):** _(see phase 2 entry above)_
+
+---
+
 ## 2026-05-02 — Full Codebase Audit
 
 - **Trigger:** Periodic full audit — ~20 commits since 2026-04-28: QuickLog inline drawer (useQuickLogSession hook, QuickLogDrawer, ScanScreen confirm overlay / returnAfterLog flow), ChatStackNavigator deferred mount fix

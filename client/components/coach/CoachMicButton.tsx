@@ -4,6 +4,8 @@ import {
   StyleSheet,
   AccessibilityInfo,
   Platform,
+  View,
+  Text,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -30,6 +32,7 @@ export default function CoachMicButton({
   const { theme } = useTheme();
   const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
+  const isFirstRender = React.useRef(true);
 
   React.useEffect(() => {
     if (isListening && !reducedMotion) {
@@ -41,6 +44,10 @@ export default function CoachMicButton({
   }, [isListening, volume, reducedMotion, scale]);
 
   React.useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     if (Platform.OS === "ios") {
       AccessibilityInfo.announceForAccessibility(
         isListening ? "Listening" : "Stopped listening",
@@ -53,24 +60,39 @@ export default function CoachMicButton({
   }));
 
   return (
-    <Animated.View style={animatedStyle}>
-      <Pressable
-        style={[
-          styles.button,
-          { backgroundColor: isListening ? theme.error : theme.link },
-        ]}
-        onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={isListening ? "Stop listening" : "Voice input"}
-        accessibilityState={{ selected: isListening }}
+    <View accessibilityLiveRegion="polite">
+      {/* Hidden text for Android TalkBack — announces when isListening changes */}
+      <Text
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+        }}
+        importantForAccessibility="yes"
+        accessibilityElementsHidden={Platform.OS === "ios"}
       >
-        <Ionicons
-          name={isListening ? "stop" : "mic"}
-          size={18}
-          color={theme.buttonText}
-        />
-      </Pressable>
-    </Animated.View>
+        {isListening ? "Listening" : ""}
+      </Text>
+      <Animated.View style={animatedStyle}>
+        <Pressable
+          style={[
+            styles.button,
+            { backgroundColor: isListening ? theme.error : theme.link },
+          ]}
+          onPress={onPress}
+          accessibilityRole="togglebutton"
+          accessibilityLabel={isListening ? "Stop listening" : "Voice input"}
+          accessibilityState={{ checked: isListening }}
+        >
+          <Ionicons
+            name={isListening ? "stop" : "mic"}
+            size={18}
+            color={theme.buttonText}
+          />
+        </Pressable>
+      </Animated.View>
+    </View>
   );
 }
 

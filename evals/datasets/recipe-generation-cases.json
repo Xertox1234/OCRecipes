@@ -1,0 +1,280 @@
+[
+  {
+    "id": "recipe-gen-vegan-protein-01",
+    "category": "accuracy",
+    "description": "Vegan user asking for high-protein dinner — no animal products",
+    "input": {
+      "productName": "High-protein vegan dinner",
+      "userProfile": { "dietType": "vegan", "allergies": [], "dislikes": [] }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 3,
+      "mustHaveMinInstructions": 3,
+      "mustNotContain": [
+        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?(?!-free)\\b|\\bmilk\\b|\\bbutter\\b|\\bcream\\b|\\bcheese\\b|honey|gelatin"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-gluten-free-pasta-02",
+    "category": "accuracy",
+    "description": "Gluten-free user requesting pasta-style dish — gluten-free alternative required",
+    "input": {
+      "productName": "Pasta dish",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["gluten"],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 3,
+      "mustHaveMinInstructions": 3,
+      "mustNotContain": [
+        "wheat pasta|semolina|regular pasta|all-purpose flour|plain flour"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-nut-allergy-03",
+    "category": "safety",
+    "description": "Nut allergy user — no nuts in recipe",
+    "input": {
+      "productName": "Thai-style salad",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["tree nuts", "peanuts"],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 3,
+      "mustHaveMinInstructions": 2,
+      "mustNotContain": [
+        "peanut|almond|cashew|walnut|pecan|hazelnut|pistachio|macadamia|nut butter|satay"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-keto-04",
+    "category": "accuracy",
+    "description": "Keto user — very low carb recipe",
+    "input": {
+      "productName": "Keto dinner",
+      "userProfile": { "dietType": "keto", "allergies": [], "dislikes": [] }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 3,
+      "mustHaveMinInstructions": 3,
+      "mustNotContain": [
+        "pasta|(?<!cauliflower )\\brice\\b|\\bbread\\b|\\bpotato\\b|(?<!almond )(?<!coconut )\\bflour\\b|oats|\\bsugar\\b|honey|\\bcorn\\b|tortilla|couscous"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-quick-weeknight-05",
+    "category": "helpfulness",
+    "description": "Quick weeknight recipe — instructions should be achievable",
+    "input": {
+      "productName": "Quick weeknight chicken dinner",
+      "timeConstraint": "30 minutes",
+      "userProfile": { "dietType": "balanced", "allergies": [], "dislikes": [] }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 3,
+      "mustHaveMinInstructions": 3
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-dairy-free-dessert-06",
+    "category": "accuracy",
+    "description": "Dairy-free user requests a dessert",
+    "input": {
+      "productName": "Chocolate dessert",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["dairy"],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 3,
+      "mustHaveMinInstructions": 3,
+      "mustNotContain": [
+        "\\bbutter\\b|\\bmilk\\b|\\bcream\\b|\\bcheese\\b|yoghurt|yogurt|whey|casein|ghee"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-pescatarian-07",
+    "category": "accuracy",
+    "description": "Pescatarian user — fish OK, no land meat",
+    "input": {
+      "productName": "Asian-style dinner",
+      "userProfile": {
+        "dietType": "pescatarian",
+        "allergies": [],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 4,
+      "mustHaveMinInstructions": 3,
+      "mustNotContain": [
+        "chicken|beef|pork|lamb|turkey|bacon|ham|sausage|duck|venison"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-multiple-allergies-08",
+    "category": "safety",
+    "description": "Multiple allergies (gluten + dairy + eggs) — all excluded",
+    "input": {
+      "productName": "Comfort food dinner",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["gluten", "dairy", "eggs"],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 4,
+      "mustHaveMinInstructions": 3,
+      "mustNotContain": [
+        "\\bbread\\b|\\bwheat\\b|pasta|\\bflour\\b|\\bmilk\\b|\\bcheese\\b|\\bbutter\\b|\\bcream\\b|yoghurt|yogurt|\\beggs?(?!-free)\\b|omelette|mayonnaise"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-high-protein-09",
+    "category": "helpfulness",
+    "description": "User wants a high-protein meal for muscle gain",
+    "input": {
+      "productName": "High-protein muscle gain meal",
+      "userProfile": { "dietType": "balanced", "allergies": [], "dislikes": [] }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 4,
+      "mustHaveMinInstructions": 3
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-Mediterranean-10",
+    "category": "accuracy",
+    "description": "Mediterranean recipe should feature region-appropriate ingredients",
+    "input": {
+      "productName": "Mediterranean salad",
+      "userProfile": { "dietType": "balanced", "allergies": [], "dislikes": [] }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 4,
+      "mustHaveMinInstructions": 2
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-egg-allergy-11",
+    "category": "safety",
+    "description": "Egg allergy user requests baked goods — no eggs or egg products",
+    "input": {
+      "productName": "Banana bread",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": ["eggs"],
+        "dislikes": []
+      }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 4,
+      "mustHaveMinInstructions": 3,
+      "mustNotContain": [
+        "\\beggs?(?!-free)\\b|egg yolk|egg white|meringue|mayonnaise|egg wash"
+      ]
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  },
+  {
+    "id": "recipe-gen-serving-size-12",
+    "category": "accuracy",
+    "description": "Recipe for 4 servings — ingredient quantities should be appropriate",
+    "input": {
+      "productName": "Family chicken stir-fry",
+      "servings": 4,
+      "userProfile": { "dietType": "balanced", "allergies": [], "dislikes": [] }
+    },
+    "assertions": {
+      "mustHaveMinIngredients": 5,
+      "mustHaveMinInstructions": 4
+    },
+    "scoreDimensions": [
+      "ingredient_coherence",
+      "instruction_clarity",
+      "dietary_compliance",
+      "creativity"
+    ]
+  }
+]

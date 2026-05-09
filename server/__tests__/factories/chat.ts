@@ -28,6 +28,7 @@ const chatMessageDefaults: ChatMessage = {
   role: "user",
   content: "Test message",
   metadata: null,
+  turnKey: null,
   createdAt: new Date("2024-01-01"),
 };
 

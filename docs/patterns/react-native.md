@@ -2017,6 +2017,29 @@ useEffect(() => {
 
 **Why:** `accessibilityLiveRegion` has no effect on iOS. The explicit announcement ensures VoiceOver users get the same feedback as TalkBack users.
 
+**Announce ALL outcomes — success AND error:** A common omission is announcing only one branch. Screen reader users who submit a form or trigger an async action have no visual feedback; they must hear the result through an announcement. Both the success path and the error path need an announcement:
+
+```typescript
+// ❌ BAD — screen reader users never hear if saving succeeded
+useEffect(() => {
+  if (error)
+    AccessibilityInfo.announceForAccessibility("Save failed: " + error);
+}, [error]);
+
+// ✅ GOOD — both outcomes are announced
+useEffect(() => {
+  if (error) {
+    AccessibilityInfo.announceForAccessibility("Save failed: " + error);
+  } else if (saveSucceeded) {
+    AccessibilityInfo.announceForAccessibility("Recipe saved");
+  }
+}, [error, saveSucceeded]);
+```
+
+**Avoid re-firing on unrelated re-renders:** Use a prev-value ref (see "Ref Guard for One-Shot Effects") to fire announcements only when the relevant state transitions, not every time the component re-renders with the same value.
+
+Ref: audit 2026-05-09 H12.
+
 ### Input Error States with `aria-invalid`
 
 Use `aria-invalid` (not `accessibilityState={{ invalid: true }}`) to mark inputs in an error state:
@@ -3699,3 +3722,47 @@ export function CoachStatusRow({ statusText }: { statusText: string }) {
 **Rule:** Apply this guard whenever a conditionally-rendered child needs to announce state changes but a parent already announces the transition that causes the child to appear.
 
 **References:** `client/components/coach/CoachStatusRow.tsx`, `client/components/coach/CoachChat.tsx` (parent announces `"Coach is thinking..."` at stream start).
+
+---
+
+### Composite String Key for Optimistic Local State
+
+When a UI action (Accept, Dismiss, Use) must be reflected immediately but the server-assigned ID isn't available yet — because it comes from an async extraction step — use a composite string key instead of waiting.
+
+**The problem:** A commitment block is displayed during streaming. The user taps "Accept." `block.notebookEntryId` is `undefined` — notebook extraction runs asynchronously after the stream ends. Gating the UI update on `if (!notebookEntryId) return` makes the button a no-op.
+
+**The fix:** Derive a synthetic key from stable block fields:
+
+```typescript
+const key: number | string = notebookEntryId ?? `${title}::${followUpDate}`;
+
+acceptedCommitmentsRef.current = new Set([
+  ...acceptedCommitmentsRef.current,
+  key,
+]);
+setCommitmentVersion((v) => v + 1); // trigger re-render
+if (!notebookEntryId) return; // only skip the API call
+try {
+  await apiRequest("POST", `/api/chat/commitments/${notebookEntryId}/accept`);
+} catch {
+  /* non-fatal — local state already updated */
+}
+```
+
+**Reading back:** The lookup must use the same composite formula:
+
+```typescript
+const isAccepted = acceptedCommitmentsRef.current.has(
+  block.notebookEntryId ?? `${block.title}::${block.followUpDate}`,
+);
+```
+
+**Key design:**
+
+- Use `::` as separator (double colon is unlikely to appear in user-generated field values)
+- Include enough fields to make collisions impossible for the feature (title + date is sufficient for commitments)
+- The ref type widens to `Set<number | string>` — both types are valid Set members
+
+**When to use:** Any optimistic UI where the server ID arrives asynchronously (AI extraction, background job) but the user action must register immediately.
+
+**References:** `client/components/coach/CoachChat.tsx` (`handleCommitmentAccept`, `acceptedCommitmentsRef`).

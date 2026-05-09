@@ -101,8 +101,7 @@ const communityRecipeDefaults: CommunityRecipe = {
   isPublic: true,
   remixedFromId: null,
   remixedFromTitle: null,
-  createdAt: new Date("2024-01-01"),
-  updatedAt: new Date("2024-01-01"),
+  sourceMessageId: null,
   popularityFavorites: 0,
   popularityMealPlans: 0,
   popularityCookSessions: 0,
@@ -116,6 +115,8 @@ const communityRecipeDefaults: CommunityRecipe = {
   chefTips: [],
   cuisineOrigin: null,
   videoUrl: null,
+  createdAt: new Date("2024-01-01"),
+  updatedAt: new Date("2024-01-01"),
 };
 
 export function createMockCommunityRecipe(

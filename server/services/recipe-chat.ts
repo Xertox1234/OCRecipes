@@ -378,7 +378,7 @@ export async function* generateRecipeChatResponse(
           ...sanitizedMessages,
         ],
         max_completion_tokens: 2000,
-        temperature: 0.7,
+        temperature: 0.5,
       },
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );

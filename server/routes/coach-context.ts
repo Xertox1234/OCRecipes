@@ -11,6 +11,7 @@ import {
   generateWarmUpId,
   type WarmUpMessageRole,
 } from "../services/coach-warm-up";
+import { sanitizeUserInput } from "../lib/ai-safety";
 
 export function register(app: Express): void {
   // GET /api/coach/context
@@ -75,7 +76,14 @@ export function register(app: Express): void {
                 dislikes: profile.foodDislikes,
               }
             : null,
-          notebook: notebookEntries,
+          notebook: notebookEntries.map((e) => ({
+            id: e.id,
+            type: e.type,
+            content: e.content,
+            status: e.status,
+            followUpDate: e.followUpDate,
+            updatedAt: e.updatedAt,
+          })),
           dueCommitments,
           suggestions: suggestions.slice(0, 5),
         });
@@ -153,7 +161,10 @@ export function register(app: Express): void {
           role: m.role as WarmUpMessageRole,
           content: m.content,
         }));
-        prepared.push({ role: "user", content: interimTranscript });
+        prepared.push({
+          role: "user",
+          content: sanitizeUserInput(interimTranscript),
+        });
 
         // Cryptographically-random warm-up id (defense-in-depth — previously
         // `${userId}-${Date.now()}` was trivially guessable).

@@ -16,6 +16,13 @@ import {
 
 const log = createServiceLogger("nutrition-coach");
 
+/**
+ * Sentinel yielded by generateCoachResponse when the safety check fires after
+ * streaming has already begun. The caller (handleCoachChat) converts this to a
+ * safety_override SSE event so the client can reset and display the safe message.
+ */
+export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
+
 export interface CoachContext {
   goals: {
     calories: number;
@@ -42,6 +49,7 @@ export interface CoachContext {
    * E.g. "Breakfast skipped 5 of 7 days; late-night eating on 3 of 7 days."
    */
   mealPatternSummary?: string;
+  blocksPrompt?: string;
 }
 
 function buildSystemPrompt(
@@ -52,6 +60,7 @@ function buildSystemPrompt(
     "You are NutriCoach, a friendly and knowledgeable nutrition coach AI built into the OCRecipes app.",
     "Be conversational, supportive, and evidence-based. Keep responses concise — aim for 2-4 sentences for simple questions, up to a short paragraph for complex topics. Use bullet points when listing foods or suggestions. Never write more than 150 words unless the user asks for detail.",
     "Use **bold** and *italic* for emphasis and bullet points for lists. Do not use headers, tables, or code blocks — they render poorly in chat.",
+    "When a tool call proposes an action (log food, add to meal plan, add to grocery list), tell the user what you are suggesting and that they can confirm or cancel. Do not say the action has been completed.",
     "Never diagnose medical conditions or replace professional medical advice.",
     "Never recommend extreme calorie restriction (below 1200 cal/day), extreme fasting protocols, or any advice that could promote disordered eating.",
     "If the user mentions symptoms, emotional distress about food, or asks for medical advice, acknowledge their concern and recommend they see a healthcare professional or registered dietitian.",
@@ -60,10 +69,13 @@ function buildSystemPrompt(
     "Even when you must refuse a dangerous request, STILL use the user's context to offer a safe, personalized alternative. Do not give generic refusals.",
     "- Bad: 'I can't help with a 500 calorie plan. Try a moderate deficit instead.'",
     "- Good: 'A 500 cal/day plan would be unsafe. Your goal is 2000 cal — a moderate deficit of ~1600-1700 cal would support steady weight loss at your current 90kg. Want me to build a meal plan around that?'",
-    "- For medical questions: acknowledge what you see in their data (e.g., weight trend) without diagnosing, then refer to a professional.",
+    "- For medical questions: refer to a professional AND acknowledge a specific data point you can see ('Those symptoms are worth getting checked by a doctor. While you wait, I can see you've had 1100 cal today — keeping your routine stable makes sense.').",
+    "- Bad: 'I can't diagnose your symptoms. Please see a doctor.'",
+    "- Good: 'Those symptoms definitely warrant a doctor visit — don't delay. In the meantime, looking at your intake today (X cal, Yg protein), focusing on staying hydrated and eating regularly is a safe approach while you wait for that appointment.'",
     "",
     "HOW TO USE THE CONTEXT BELOW:",
-    "- Calculate remaining macros (goals minus intake) and reference specific numbers: 'You have about 200 calories and 10g protein left today.'",
+    "- ALWAYS reference at least one specific number from the user's context in your response — remaining macros, today's intake, current weight, or a specific goal. A response with no specific numbers is too generic and misses the point of having a personalised coach.",
+    "- Calculate remaining macros (goals minus intake) and cite them: 'You have about 200 calories and 10g protein left today.'",
     "- When suggesting foods, prioritize nutrients the user is SHORT on today.",
     "- If intake already exceeds goals, acknowledge it without shame and suggest lighter options.",
     "- If allergies or dislikes are listed, NEVER suggest those foods under any circumstances.",
@@ -73,12 +85,22 @@ function buildSystemPrompt(
     "- Weight trend direction (losing/gaining/stable) is more important than the exact number — use it to frame whether the user is on track.",
     "- Notebook entries are labelled with recency (recent/this week/this month/older). Weight recent entries more heavily than older ones.",
     "",
-    "EXAMPLE EXCHANGE:",
+    "EXAMPLE EXCHANGES:",
+    "",
     "User: 'I don't know what to eat for dinner.'",
     "NutriCoach: 'You've got about 600 calories and 40g protein left for today — nice work staying on track! Here are a few ideas that would fit well:",
     "• Grilled chicken breast with roasted vegetables (~450 cal, 35g protein)",
     "• A big salad with chickpeas, feta, and olive oil dressing (~400 cal, 20g protein)",
     "Want me to look up a recipe for either of these?'",
+    "",
+    "User: 'I want to eat better'",
+    "NutriCoach: 'What would be most helpful right now — meal ideas for today, a look at how your week has been going, or tips on a specific area like protein or snacking?'",
+    "",
+    "User: 'I really overdid it today, I've eaten way too much'",
+    "NutriCoach: 'One heavier day won't derail your progress — these things happen. For the rest of today, keep it light: water, a small salad, or just skip the next snack if you're not hungry. Back on track tomorrow. Want me to suggest a lighter dinner option?'",
+    "",
+    "User: 'How much protein do I need?'",
+    "NutriCoach: 'A common target is 1.6–2.2g per kg of bodyweight for active people. At your current 80kg that's roughly 128–176g — your goal of 150g sits right in that range. You've hit 95g so far today, so you've got about 55g left to spread across your remaining meals.'",
     "",
     "USER CONTEXT:",
   ];
@@ -166,6 +188,10 @@ function buildSystemPrompt(
     );
   }
 
+  if (context.blocksPrompt) {
+    parts.push("", context.blocksPrompt);
+  }
+
   // Safety boundary is always LAST — after all context sections
   parts.push("", SYSTEM_PROMPT_BOUNDARY);
 
@@ -238,6 +264,7 @@ export async function* generateCoachResponse(
       const delta = chunk.choices[0]?.delta?.content;
       if (delta) {
         fullResponse += delta;
+        yield delta; // stream each token to the caller as it arrives
       }
     }
   } catch (error) {
@@ -247,11 +274,11 @@ export async function* generateCoachResponse(
   }
 
   if (containsUnsafeCoachAdvice(fullResponse)) {
-    yield "I need to be careful here. I can't provide unsafe diet instructions or diagnose medical conditions. Please consult a registered dietitian or healthcare provider who can assess your individual needs.";
+    // Deltas already sent — signal caller to replace content client-side
+    yield SAFETY_OVERRIDE_SENTINEL;
     return;
   }
-
-  yield fullResponse;
+  // No final yield — individual deltas are already in the caller's buffer
 }
 
 /**
