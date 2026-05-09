@@ -1341,6 +1341,42 @@ const sanitizedRecipe = {
 
 **Origin:** Recipe Remix code review (2026-04-08) — caught as Critical finding
 
+### Sanitize All Roles When Replaying Stored Chat History
+
+When replaying stored chat history to an LLM, sanitize **every message role** — not just `"user"`. Stored `"assistant"` and `"system"` messages are also attack surfaces: a prior response could have been manipulated, or the DB row modified directly, leaving an injection payload that rides silently through every subsequent call.
+
+Use role-aware sanitization: `sanitizeUserInput` (full injection filter) for user messages, `sanitizeContextField` (lighter, preserves recipe/nutritional content structure) for assistant and system messages:
+
+```typescript
+// ❌ BAD: only user messages sanitized — assistant/system payloads pass through raw
+const sanitizedMessages = conversationMessages.map((m) => ({
+  role: m.role,
+  content: m.role === "user" ? sanitizeUserInput(m.content) : m.content,
+}));
+
+// ✅ GOOD: all roles sanitized, strength matched to trust level
+const sanitizedMessages = conversationMessages.map((m) => ({
+  role: m.role,
+  content:
+    m.role === "user"
+      ? sanitizeUserInput(m.content)
+      : sanitizeContextField(m.content),
+}));
+```
+
+**Why two different sanitizers:** `sanitizeUserInput` strips aggressively (removes instruction-like phrases, boundary markers). `sanitizeContextField` is lighter — assistant messages legitimately contain recipe instructions and multi-line text that would be false-positived by the aggressive filter.
+
+**When to use:** Any service that maps stored `chatMessages` rows into the `messages` array for an OpenAI call. Check `conversationMessages.map(...)` — if the branch only sanitizes `"user"` role, extend it.
+
+**When NOT to use:** The system prompt you construct at call time (not stored in DB) — that's trusted code, not untrusted storage content.
+
+**References:**
+
+- `server/services/recipe-chat.ts` — `sanitizedMessages` map covers all roles (M1, 2026-05-09)
+- `server/lib/ai-safety.ts` — `sanitizeUserInput`, `sanitizeContextField`
+
+**Origin:** M1 audit finding (2026-05-09)
+
 ### AI Output Field Whitelisting
 
 When AI models generate structured data containing navigation targets, screen names, or other parameterized commands, constrain the values to a Zod enum whitelist — never use `z.string()`.
