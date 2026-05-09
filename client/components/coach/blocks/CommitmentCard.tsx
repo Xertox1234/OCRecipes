@@ -77,6 +77,7 @@ export default function CommitmentCard({ block, onAccept, isAccepted }: Props) {
                 block.followUpDate,
               );
             }}
+            hitSlop={{ top: 8, bottom: 8 }}
             accessibilityRole="button"
             accessibilityLabel="Accept commitment"
           >
@@ -86,6 +87,7 @@ export default function CommitmentCard({ block, onAccept, isAccepted }: Props) {
           </Pressable>
           <Pressable
             onPress={() => setDismissed(true)}
+            hitSlop={{ top: 8, bottom: 8 }}
             accessibilityRole="button"
             accessibilityLabel="Dismiss commitment"
           >

@@ -121,7 +121,12 @@ const ParsedItemRow = React.memo(function ParsedItemRow({
             opacity: pressed ? 0.5 : 1,
           })}
         >
-          <Feather name="x" size={14} color={theme.textSecondary} />
+          <Feather
+            name="x"
+            size={14}
+            color={theme.textSecondary}
+            accessible={false}
+          />
         </Pressable>
       </View>
     </View>
@@ -308,6 +313,7 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
               onPress={handleCameraPress}
               accessibilityLabel="Open camera to scan food"
               accessibilityRole="button"
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               style={({ pressed }) => [
                 styles.iconButton,
                 {
@@ -316,7 +322,12 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
                 },
               ]}
             >
-              <Feather name="camera" size={20} color={theme.textSecondary} />
+              <Feather
+                name="camera"
+                size={20}
+                color={theme.textSecondary}
+                accessible={false}
+              />
             </Pressable>
           </View>
 

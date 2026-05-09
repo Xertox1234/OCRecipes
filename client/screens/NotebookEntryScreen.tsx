@@ -240,6 +240,7 @@ export default function NotebookEntryScreen() {
                         type === t ? TYPE_COLORS[t] : theme.backgroundSecondary,
                     },
                   ]}
+                  hitSlop={{ top: 7, bottom: 7 }}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: type === t }}
                   accessibilityLabel={TYPE_LABELS[t] ?? t}

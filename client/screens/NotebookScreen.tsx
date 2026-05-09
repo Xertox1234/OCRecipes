@@ -139,7 +139,12 @@ export default function NotebookScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Archive entry"
               >
-                <Feather name="archive" size={16} color={theme.textSecondary} />
+                <Feather
+                  name="archive"
+                  size={16}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
               </Pressable>
               <Pressable
                 onPress={() => handleDelete(item)}
@@ -148,7 +153,12 @@ export default function NotebookScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Delete entry"
               >
-                <Feather name="trash-2" size={16} color={theme.textSecondary} />
+                <Feather
+                  name="trash-2"
+                  size={16}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
               </Pressable>
             </View>
           </View>
@@ -174,6 +184,7 @@ export default function NotebookScreen() {
           <Pressable
             onPress={() => navigation.navigate("NotebookEntry", {})}
             style={[styles.newBtn, { backgroundColor: theme.link }]}
+            hitSlop={{ top: 7, bottom: 7 }}
             accessibilityRole="button"
             accessibilityLabel="Create new notebook entry"
           >
@@ -186,7 +197,7 @@ export default function NotebookScreen() {
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
-            <Feather name="x" size={24} color={theme.text} />
+            <Feather name="x" size={24} color={theme.text} accessible={false} />
           </Pressable>
         </View>
       </View>
@@ -207,6 +218,7 @@ export default function NotebookScreen() {
                   filter === f ? theme.link : theme.backgroundSecondary,
               },
             ]}
+            hitSlop={{ top: 7, bottom: 7 }}
             accessibilityRole="button"
             accessibilityState={{ selected: filter === f }}
             accessibilityLabel={`Filter by ${f === "all" ? "all" : f}`}

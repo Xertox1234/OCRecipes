@@ -89,6 +89,7 @@ export default function CoachMicButton({
             name={isListening ? "stop" : "mic"}
             size={18}
             color={theme.buttonText}
+            accessible={false}
           />
         </Pressable>
       </Animated.View>

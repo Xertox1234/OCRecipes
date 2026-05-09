@@ -1,5 +1,11 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Pressable, StyleSheet, View, ActivityIndicator } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  View,
+  ActivityIndicator,
+  AccessibilityInfo,
+} from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -84,6 +90,36 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
   const targetHours =
     currentFast?.targetDurationHours ?? schedule?.fastingHours;
   const progress = computeFastProgress(elapsedMinutes, targetHours ?? 16);
+
+  // Announce start/end fast outcomes to screen readers
+  const prevStartSuccessRef = useRef(false);
+  const prevStartErrorRef = useRef(false);
+  const prevEndSuccessRef = useRef(false);
+  const prevEndErrorRef = useRef(false);
+  useEffect(() => {
+    if (startFast.isSuccess && !prevStartSuccessRef.current) {
+      AccessibilityInfo.announceForAccessibility("Fasting timer started");
+    }
+    prevStartSuccessRef.current = startFast.isSuccess;
+  }, [startFast.isSuccess]);
+  useEffect(() => {
+    if (startFast.isError && !prevStartErrorRef.current) {
+      AccessibilityInfo.announceForAccessibility("Failed to start fast");
+    }
+    prevStartErrorRef.current = startFast.isError;
+  }, [startFast.isError]);
+  useEffect(() => {
+    if (endFast.isSuccess && !prevEndSuccessRef.current) {
+      AccessibilityInfo.announceForAccessibility("Fasting timer stopped");
+    }
+    prevEndSuccessRef.current = endFast.isSuccess;
+  }, [endFast.isSuccess]);
+  useEffect(() => {
+    if (endFast.isError && !prevEndErrorRef.current) {
+      AccessibilityInfo.announceForAccessibility("Failed to end fast");
+    }
+    prevEndErrorRef.current = endFast.isError;
+  }, [endFast.isError]);
 
   const handleToggle = useCallback(() => {
     const next = !isOpen;
