@@ -12,6 +12,8 @@ import type {
   DimensionConfidenceInterval,
 } from "../types";
 
+const DEFAULT_WORD_LIMIT_WARNING = 150;
+
 // ─── Public SuiteConfig interface ────────────────────────────────────────────
 
 export interface SuiteConfig {
@@ -21,7 +23,7 @@ export interface SuiteConfig {
   dimensionWeights: Record<string, number>;
   inputTag?: string;
   outputTag?: string;
-  /** Words-per-response threshold above which a warning is printed. Defaults to 150. Recipe suites should set this to ~300. */
+  /** Words-per-response threshold above which a warning is printed. Defaults to DEFAULT_WORD_LIMIT_WARNING (150). Recipe suites should set this to ~300. */
   wordLimitWarning?: number;
 
   /**
@@ -153,7 +155,7 @@ async function evaluateCase(
     }
   }
 
-  const wordLimit = config.wordLimitWarning ?? 150;
+  const wordLimit = config.wordLimitWarning ?? DEFAULT_WORD_LIMIT_WARNING;
   const overLimit = wordCount > wordLimit;
   log(
     `    ⏱ ${latencyMs}ms | ${wordCount} words${overLimit ? ` ⚠ OVER ${wordLimit}` : ""}`,
@@ -373,7 +375,7 @@ export function printSummary(result: EvalRunResult, config: SuiteConfig): void {
   const avgWords = Math.round(
     wordCounts.reduce((a, b) => a + b, 0) / wordCounts.length,
   );
-  const wordLimit = config.wordLimitWarning ?? 150;
+  const wordLimit = config.wordLimitWarning ?? DEFAULT_WORD_LIMIT_WARNING;
   const overLimit = result.cases.filter((c) => c.wordCount > wordLimit);
 
   console.log(`\n⏱ Latency: avg ${avgLatency}ms, max ${maxLatency}ms`);
