@@ -61,8 +61,7 @@ interface CoachChatProps {
 
 type ChatListItem =
   | { type: "message"; id: string; message: ChatMessage }
-  | { type: "optimistic"; id: string; content: string }
-  | { type: "stream"; id: string };
+  | { type: "optimistic"; id: string; content: string };
 
 export default function CoachChat({
   conversationId,

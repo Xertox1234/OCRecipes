@@ -179,11 +179,11 @@ export default function NotebookEntryScreen() {
 
   return (
     <KeyboardAvoidingView
+      accessibilityViewIsModal
       style={{ flex: 1 }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
-        accessibilityViewIsModal
         style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
         contentContainerStyle={{
           paddingTop: insets.top + Spacing.md,
