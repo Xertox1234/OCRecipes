@@ -115,22 +115,37 @@ For findings the user wants deferred:
    - Deferred: M with linked todos
    - False-positive: P (agent errors or already fixed)
    - Open: should be **0** — if not, explain why
-5. Ask the user if they want to commit the **code fixes** now (before codification)
+5. Report the final summary to the user — do **not** ask about committing yet. Proceed directly to Phase 6.
 
-## Phase 6: Commit Fixes
+## Phase 6: Code Review
 
-If the user says yes:
+Before committing, dispatch the code-reviewer subagent against all changed files to catch anything missed during per-fix verification.
 
-1. Stage all changed files (code fixes + manifest + changelog + any new todos)
+1. Run the code-reviewer subagent (`.claude/agents/code-reviewer.md`) with:
+   - The list of all modified files from Phase 3
+   - A one-line description of each fix (copy from the manifest)
+   - The instruction: "Report CRITICAL / HIGH / MEDIUM / LOW / PASS per file. Focus on correctness, security, and pattern compliance. Do not flag style preferences."
+2. For each CRITICAL or HIGH finding: fix immediately (follow Phase 3 rules — read, fix, verify, update manifest)
+3. For MEDIUM findings: use judgment — fix if quick, defer with todo if non-trivial
+4. For LOW findings: defer unless trivial one-liners
+5. Re-run `npm run test:run` and `npm run check:types` after any review fixes
+
+## Phase 7: Commit Fixes
+
+After code review is clean:
+
+1. Stage all changed files (code fixes + review fixes + manifest + changelog + any new todos)
 2. Commit with message format:
    ```
    fix: resolve [scope] audit findings ([N] verified, [M] deferred)
    ```
 3. Ask if the user wants to push
 
-## Phase 7: Codify (patterns, learnings & agent updates)
+## Phase 8: Codify (patterns, learnings & agent updates)
 
 After fixes are committed, extract reusable knowledge using the pattern-codifier agent (`.claude/agents/pattern-codifier.md`) and update specialist agents with new checks.
+
+**Important:** Codify findings from both Phase 3 (audit fixes) and Phase 6 (code review fixes) — the codifier should see the complete picture.
 
 1. Review the manifest for codification candidates. Look for:
    - **Patterns** — Fixes that established reusable approaches (used/needed in 3+ places, non-obvious, project-specific)
@@ -176,18 +191,19 @@ After fixes are committed, extract reusable knowledge using the pattern-codifier
    docs: codify patterns and learnings from [scope] audit
    ```
 
-**Why codification is a separate phase:**
+**Why the order is review → commit → codify:**
 
-- Code fixes are urgent and should not be delayed by documentation
-- The manifest provides a clean, verified input for the codifier (no guessing what was fixed)
-- Separate commits keep the fix diff reviewable without docs noise
+- Code review happens before the commit so review fixes and audit fixes land in one commit (clean diff)
+- Codification happens after both, so the codifier sees the complete picture — audit fixes AND review fixes
+- Separate commits (fix vs docs) keep the fix diff reviewable without docs noise
 - If codification reveals issues, the fixes are already safely committed
 
 ## Rules
 
 - **The manifest is the source of truth.** Every finding must be in it. Every status change must be recorded.
 - **Zero open findings at close.** Everything is either verified, deferred (with todo), or false-positive.
-- **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns after (Phase 7).
+- **No documentation during the fix phase.** Fix code first (Phases 3-7). Codify patterns after (Phase 8).
+- **Code review is not optional.** Every audit must run Phase 6 before committing. It catches what per-fix verification misses and feeds the codifier complete input.
 - **Deferred is not dropped.** Deferred items must have a todo with priority and rationale. "We'll get to it" is not a rationale.
 - **The changelog is append-only.** Never edit previous entries.
-- **Codification is not optional.** Every audit must run Phase 7 to extract knowledge. But it happens AFTER fixes ship.
+- **Codification is not optional.** Every audit must run Phase 8 to extract knowledge. But it happens AFTER fixes and review are committed.
