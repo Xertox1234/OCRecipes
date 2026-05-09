@@ -160,6 +160,7 @@ export default function NotebookScreen() {
 
   return (
     <View
+      accessibilityViewIsModal
       style={[
         styles.container,
         { backgroundColor: theme.backgroundDefault, paddingTop: insets.top },

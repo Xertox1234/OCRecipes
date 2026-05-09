@@ -7,6 +7,8 @@ import {
   ScrollView,
   Alert,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -176,159 +178,172 @@ export default function NotebookEntryScreen() {
       : "Added by you";
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
-      contentContainerStyle={{
-        paddingTop: insets.top + Spacing.md,
-        paddingBottom: insets.bottom + Spacing.xl,
-        paddingHorizontal: Spacing.md,
-      }}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <View style={styles.headerRow}>
-        <Pressable
-          onPress={() => navigation.goBack()}
-          hitSlop={12}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <Text style={[styles.back, { color: theme.link }]}>← Back</Text>
-        </Pressable>
-        <Pressable
-          onPress={handleSave}
-          disabled={!isDirty || isSaving || !content.trim()}
-          accessibilityRole="button"
-          accessibilityLabel="Save entry"
-        >
-          <Text
-            style={[
-              styles.saveBtn,
-              {
-                color:
-                  isDirty && content.trim() ? theme.link : theme.textSecondary,
-              },
-            ]}
-          >
-            {isSaving ? "Saving…" : "Save"}
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: theme.textSecondary }]}>TYPE</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={styles.typeRow}>
-            {notebookEntryTypes.map((t) => (
-              <Pressable
-                key={t}
-                onPress={() => setType(t)}
-                style={[
-                  styles.typeChip,
-                  {
-                    backgroundColor:
-                      type === t ? TYPE_COLORS[t] : theme.backgroundSecondary,
-                  },
-                ]}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: type === t }}
-                accessibilityLabel={TYPE_LABELS[t] ?? t}
-              >
-                <Text
-                  style={[
-                    styles.typeChipText,
-                    { color: type === t ? "#FFFFFF" : theme.textSecondary }, // hardcoded
-                  ]}
-                >
-                  {TYPE_LABELS[t] ?? t}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </ScrollView>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: theme.textSecondary }]}>
-          CONTENT
-        </Text>
-        <TextInput
-          style={[
-            styles.contentInput,
-            { backgroundColor: theme.backgroundSecondary, color: theme.text },
-          ]}
-          value={content}
-          onChangeText={setContent}
-          multiline
-          maxLength={500}
-          placeholder="Enter content…"
-          placeholderTextColor={theme.textSecondary}
-          accessibilityLabel="Entry content"
-        />
-        <Text style={[styles.charCount, { color: theme.textSecondary }]}>
-          {content.length}/500
-        </Text>
-      </View>
-
-      {type === "commitment" && (
-        <View style={styles.section}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
-            FOLLOW-UP DATE
-          </Text>
-          <TextInput
-            style={[
-              styles.dateInput,
-              { backgroundColor: theme.backgroundSecondary, color: theme.text },
-            ]}
-            value={followUpDate ?? ""}
-            onChangeText={(v) => setFollowUpDate(v || null)}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={theme.textSecondary}
-            keyboardType="numbers-and-punctuation"
-            maxLength={10}
-            accessibilityLabel="Follow-up date in YYYY-MM-DD format"
-          />
-        </View>
-      )}
-
-      <View style={styles.section}>
-        <Text style={[styles.label, { color: theme.textSecondary }]}>
-          SOURCE
-        </Text>
-        <Text style={[styles.sourceText, { color: theme.textSecondary }]}>
-          {sourceLabel}
-        </Text>
-      </View>
-
-      {!isCreate && entry?.status === "active" && (
-        <View style={styles.actionRow}>
-          {(entry.type === "commitment" || entry.type === "goal") && (
-            <Pressable
-              style={[styles.actionBtn, { backgroundColor: "#008A38" }]} // hardcoded
-              onPress={handleMarkComplete}
-              accessibilityRole="button"
-              accessibilityLabel="Mark complete"
-            >
-              <Text style={styles.actionBtnText}>Mark Complete</Text>
-            </Pressable>
-          )}
+      <ScrollView
+        accessibilityViewIsModal
+        style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
+        contentContainerStyle={{
+          paddingTop: insets.top + Spacing.md,
+          paddingBottom: insets.bottom + Spacing.xl,
+          paddingHorizontal: Spacing.md,
+        }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.headerRow}>
           <Pressable
-            style={[
-              styles.actionBtn,
-              { backgroundColor: theme.backgroundSecondary },
-            ]}
-            onPress={handleArchive}
+            onPress={() => navigation.goBack()}
+            hitSlop={12}
             accessibilityRole="button"
-            accessibilityLabel="Archive entry"
+            accessibilityLabel="Go back"
+          >
+            <Text style={[styles.back, { color: theme.link }]}>← Back</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleSave}
+            disabled={!isDirty || isSaving || !content.trim()}
+            accessibilityRole="button"
+            accessibilityLabel="Save entry"
           >
             <Text
-              style={[styles.actionBtnText, { color: theme.textSecondary }]}
+              style={[
+                styles.saveBtn,
+                {
+                  color:
+                    isDirty && content.trim()
+                      ? theme.link
+                      : theme.textSecondary,
+                },
+              ]}
             >
-              Archive
+              {isSaving ? "Saving…" : "Save"}
             </Text>
           </Pressable>
         </View>
-      )}
-    </ScrollView>
+
+        <View style={styles.section}>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>
+            TYPE
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View role="radiogroup" style={styles.typeRow}>
+              {notebookEntryTypes.map((t) => (
+                <Pressable
+                  key={t}
+                  onPress={() => setType(t)}
+                  style={[
+                    styles.typeChip,
+                    {
+                      backgroundColor:
+                        type === t ? TYPE_COLORS[t] : theme.backgroundSecondary,
+                    },
+                  ]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: type === t }}
+                  accessibilityLabel={TYPE_LABELS[t] ?? t}
+                >
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      { color: type === t ? "#FFFFFF" : theme.textSecondary }, // hardcoded
+                    ]}
+                  >
+                    {TYPE_LABELS[t] ?? t}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>
+            CONTENT
+          </Text>
+          <TextInput
+            style={[
+              styles.contentInput,
+              { backgroundColor: theme.backgroundSecondary, color: theme.text },
+            ]}
+            value={content}
+            onChangeText={setContent}
+            multiline
+            maxLength={500}
+            placeholder="Enter content…"
+            placeholderTextColor={theme.textSecondary}
+            accessibilityLabel="Entry content"
+          />
+          <Text style={[styles.charCount, { color: theme.textSecondary }]}>
+            {content.length}/500
+          </Text>
+        </View>
+
+        {type === "commitment" && (
+          <View style={styles.section}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>
+              FOLLOW-UP DATE
+            </Text>
+            <TextInput
+              style={[
+                styles.dateInput,
+                {
+                  backgroundColor: theme.backgroundSecondary,
+                  color: theme.text,
+                },
+              ]}
+              value={followUpDate ?? ""}
+              onChangeText={(v) => setFollowUpDate(v || null)}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={theme.textSecondary}
+              keyboardType="numbers-and-punctuation"
+              maxLength={10}
+              accessibilityLabel="Follow-up date in YYYY-MM-DD format"
+            />
+          </View>
+        )}
+
+        <View style={styles.section}>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>
+            SOURCE
+          </Text>
+          <Text style={[styles.sourceText, { color: theme.textSecondary }]}>
+            {sourceLabel}
+          </Text>
+        </View>
+
+        {!isCreate && entry?.status === "active" && (
+          <View style={styles.actionRow}>
+            {(entry.type === "commitment" || entry.type === "goal") && (
+              <Pressable
+                style={[styles.actionBtn, { backgroundColor: "#008A38" }]} // hardcoded
+                onPress={handleMarkComplete}
+                accessibilityRole="button"
+                accessibilityLabel="Mark complete"
+              >
+                <Text style={styles.actionBtnText}>Mark Complete</Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={[
+                styles.actionBtn,
+                { backgroundColor: theme.backgroundSecondary },
+              ]}
+              onPress={handleArchive}
+              accessibilityRole="button"
+              accessibilityLabel="Archive entry"
+            >
+              <Text
+                style={[styles.actionBtnText, { color: theme.textSecondary }]}
+              >
+                Archive
+              </Text>
+            </Pressable>
+          </View>
+        )}
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -107,7 +107,7 @@ export async function saveRecipeFromChat(
           remixedFromTitle: lineage.remixedFromTitle,
         }),
       })
-      .onConflictDoNothing({ target: communityRecipes.sourceMessageId })
+      .onConflictDoNothing()
       .returning();
 
     if (!created) {

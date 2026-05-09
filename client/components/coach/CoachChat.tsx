@@ -192,11 +192,8 @@ export default function CoachChat({
         content: optimisticMessage,
       });
     }
-    if (isStreaming || streamBlocks.length > 0) {
-      items.push({ type: "stream", id: "stream" });
-    }
     return items;
-  }, [messages, optimisticMessage, isStreaming, streamBlocks.length]);
+  }, [messages, optimisticMessage]);
 
   // Validate blocks once per messages change, not on every render tick
   const messageBlocks = useMemo(() => {
@@ -496,20 +493,7 @@ export default function CoachChat({
         return <ChatBubble role="user" content={item.content} />;
       }
 
-      return (
-        <StreamingBubble
-          streamingContent={streamingContent}
-          statusText={statusText}
-          isStreaming={isStreaming}
-          streamBlocks={streamBlocks}
-          onBlockAction={handleBlockAction}
-          onQuickReply={handleQuickReply}
-          onCommitmentAccept={handleCommitmentAccept}
-          ttsSpeak={ttsSpeak}
-          isSpeaking={isSpeaking}
-          speakingMessageId={speakingMessageId}
-        />
-      );
+      return null;
     },
     [
       handleBlockAction,
@@ -522,14 +506,45 @@ export default function CoachChat({
       ttsSpeak,
       lastAssistantMessageId,
       messageBlocks,
-      streamBlocks,
-      streamingContent,
-      statusText,
       theme.textSecondary,
       quickReplyVersion,
       commitmentVersion,
     ],
   );
+
+  const streamingFooter = useMemo(
+    () =>
+      isStreaming || streamBlocks.length > 0 ? (
+        <StreamingBubble
+          streamingContent={streamingContent}
+          statusText={statusText}
+          isStreaming={isStreaming}
+          streamBlocks={streamBlocks}
+          onBlockAction={handleBlockAction}
+          onQuickReply={handleQuickReply}
+          onCommitmentAccept={handleCommitmentAccept}
+          ttsSpeak={ttsSpeak}
+          isSpeaking={isSpeaking}
+          speakingMessageId={speakingMessageId}
+        />
+      ) : null,
+    [
+      isStreaming,
+      streamingContent,
+      statusText,
+      streamBlocks,
+      handleBlockAction,
+      handleQuickReply,
+      handleCommitmentAccept,
+      ttsSpeak,
+      isSpeaking,
+      speakingMessageId,
+    ],
+  );
+
+  const handleContentSizeChange = useCallback(() => {
+    listRef.current?.scrollToEnd({ animated: false });
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -595,13 +610,11 @@ export default function CoachChat({
         data={chatItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        extraData={streamingContent}
+        ListFooterComponent={streamingFooter}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() =>
-          listRef.current?.scrollToEnd({ animated: false })
-        }
+        onContentSizeChange={handleContentSizeChange}
       />
     </CoachChatBase>
   );

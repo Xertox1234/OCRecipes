@@ -8,7 +8,12 @@ module.exports = defineConfig([
   expoConfig,
   eslintPluginPrettierRecommended,
   {
-    ignores: ["dist/*", "server_dist/*", ".claude/worktrees/**"],
+    ignores: [
+      "dist/*",
+      "server_dist/*",
+      ".claude/worktrees/**",
+      ".worktrees/**",
+    ],
   },
   {
     // Native RN packages resolved at link time (not by Node) produce false-positive
