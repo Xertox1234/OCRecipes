@@ -49,7 +49,15 @@ async function callRecipeChat(input: RecipeChatInput): Promise<string> {
     { role: "user" as const, content: input.userMessage },
   ];
 
-  const userProfile = input.userProfile as UserProfile | null;
+  const userProfile = input.userProfile
+    ? ({
+        ...input.userProfile,
+        allergies: input.userProfile.allergies.map((name) => ({
+          name,
+          severity: "moderate" as const,
+        })),
+      } as unknown as UserProfile)
+    : null;
 
   let text = "";
   let recipe: unknown = null;

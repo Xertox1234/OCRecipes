@@ -125,7 +125,15 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
       servings: i.servings,
       timeConstraint: i.timeConstraint,
       dietPreferences: i.dietPreferences,
-      userProfile: i.userProfile as UserProfile | null | undefined,
+      userProfile: i.userProfile
+        ? ({
+            ...i.userProfile,
+            allergies: i.userProfile.allergies.map((name) => ({
+              name,
+              severity: "moderate" as const,
+            })),
+          } as unknown as UserProfile)
+        : null,
     };
 
     const start = Date.now();

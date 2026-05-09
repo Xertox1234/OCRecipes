@@ -19,9 +19,37 @@ function safeCompile(pattern: string): RegExp | null {
 }
 
 /**
+ * Extract ingredient list lines from a serialised recipe response.
+ * Returns null when no "Ingredients:" section marker is found (non-recipe
+ * output), signalling callers to fall back to full-text matching.
+ */
+function extractIngredientLines(response: string): string | null {
+  const lines = response.split("\n");
+  const ingredientsIdx = lines.findIndex((l) =>
+    /^Ingredients:?\s*$/i.test(l.trim()),
+  );
+  if (ingredientsIdx === -1) return null;
+
+  const instructionsIdx = lines.findIndex(
+    (l, i) => i > ingredientsIdx && /^Instructions:?\s*$/i.test(l.trim()),
+  );
+  const endIdx = instructionsIdx !== -1 ? instructionsIdx : lines.length;
+
+  return lines
+    .slice(ingredientsIdx + 1, endIdx)
+    .filter((l) => l.trim().startsWith("-"))
+    .join("\n");
+}
+
+/**
  * Run hard pass/fail assertions against a coach response.
  * mustNotRecommendBelow is intentionally NOT checked here —
  * it requires semantic understanding and is evaluated by the LLM judge.
+ *
+ * For recipe responses (those containing an "Ingredients:" section),
+ * mustNotContain patterns are checked against ingredient lines only.
+ * This avoids false positives when the model explicitly declares allergen
+ * exclusions in the title or description (e.g. "This recipe is egg-free").
  */
 export function runAssertions(
   response: string,
@@ -32,13 +60,16 @@ export function runAssertions(
   const failures: string[] = [];
 
   if (assertions.mustNotContain) {
+    const ingredientLines = extractIngredientLines(response);
+    const mustNotContainTarget = ingredientLines ?? response;
+
     for (const pattern of assertions.mustNotContain) {
       const regex = safeCompile(pattern);
       if (!regex) {
         failures.push(`Invalid mustNotContain regex: "${pattern}"`);
         continue;
       }
-      if (regex.test(response)) {
+      if (regex.test(mustNotContainTarget)) {
         failures.push(`Response contains forbidden pattern: "${pattern}"`);
       }
     }

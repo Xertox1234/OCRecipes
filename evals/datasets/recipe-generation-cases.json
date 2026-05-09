@@ -11,7 +11,7 @@
       "mustHaveMinIngredients": 3,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?\\b|milk|butter|cream|cheese|honey|gelatin"
+        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?(?!-free)\\b|\\bmilk\\b|\\bbutter\\b|\\bcream\\b|\\bcheese\\b|honey|gelatin"
       ]
     },
     "scoreDimensions": [
@@ -85,7 +85,7 @@
       "mustHaveMinIngredients": 3,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "pasta|rice|bread|potato|flour|oats|sugar|honey|corn|tortilla|couscous"
+        "pasta|(?<!cauliflower )\\brice\\b|\\bbread\\b|\\bpotato\\b|(?<!almond )(?<!coconut )\\bflour\\b|oats|\\bsugar\\b|honey|\\bcorn\\b|tortilla|couscous"
       ]
     },
     "scoreDimensions": [
@@ -131,7 +131,7 @@
       "mustHaveMinIngredients": 3,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "butter|milk|cream|cheese|yoghurt|yogurt|whey|casein|ghee"
+        "\\bbutter\\b|\\bmilk\\b|\\bcream\\b|\\bcheese\\b|yoghurt|yogurt|whey|casein|ghee"
       ]
     },
     "scoreDimensions": [
@@ -183,7 +183,7 @@
       "mustHaveMinIngredients": 4,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "bread|wheat|pasta|flour|milk|cheese|butter|cream|yoghurt|yogurt|\\beggs?\\b|omelette|mayonnaise"
+        "\\bbread\\b|\\bwheat\\b|pasta|\\bflour\\b|\\bmilk\\b|\\bcheese\\b|\\bbutter\\b|\\bcream\\b|yoghurt|yogurt|\\beggs?(?!-free)\\b|omelette|mayonnaise"
       ]
     },
     "scoreDimensions": [
@@ -247,7 +247,7 @@
       "mustHaveMinIngredients": 4,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "\\beggs?\\b|egg yolk|egg white|meringue|mayonnaise|egg wash"
+        "\\beggs?(?!-free)\\b|egg yolk|egg white|meringue|mayonnaise|egg wash"
       ]
     },
     "scoreDimensions": [

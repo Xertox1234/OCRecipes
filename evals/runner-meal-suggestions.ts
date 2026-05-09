@@ -109,7 +109,15 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
       userId: "eval-user",
       date: new Date().toISOString().slice(0, 10),
       mealType: i.mealType,
-      userProfile: i.userProfile as UserProfile | null,
+      userProfile: i.userProfile
+        ? ({
+            ...i.userProfile,
+            allergies: i.userProfile.allergies.map((name) => ({
+              name,
+              severity: "moderate" as const,
+            })),
+          } as unknown as UserProfile)
+        : null,
       dailyTargets: i.dailyTargets,
       existingMeals: i.existingMeals,
       remainingBudget: i.remainingBudget,
