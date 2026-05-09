@@ -29,6 +29,7 @@ export const recipeChatCaseSchema = z.object({
     "helpfulness",
     "personalization",
     "edge-case",
+    "creativity",
   ]),
   description: z.string(),
   input: recipeChatInputSchema,
@@ -71,6 +72,7 @@ export const mealSuggestionCaseSchema = z.object({
     "helpfulness",
     "personalization",
     "edge-case",
+    "creativity",
   ]),
   description: z.string(),
   input: z.object({
