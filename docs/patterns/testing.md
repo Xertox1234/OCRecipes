@@ -1187,10 +1187,95 @@ for (let i = 0; i < rawResults.length; i++) {
 
 This applies to any batch operation against an external API (Anthropic, OpenAI) where individual failures should degrade gracefully rather than aborting the batch.
 
+**Pure schema extraction for testability:**
+
+Runner files call `runEvalSuite()` at module scope — a side effect that triggers the full eval pipeline on import. This makes Zod schemas defined in the same file impossible to import in unit tests without launching an eval run.
+
+**Fix:** Extract Zod schemas to a separate, side-effect-free file (`evals/lib/dataset-schemas.ts`). No top-level logic, only `export const` schema definitions and their inferred types.
+
+```typescript
+// evals/lib/dataset-schemas.ts — no side effects, safe to import in tests
+export const recipeChatCasesSchema = z.array(recipeChatCaseSchema);
+export type RecipeChatInput = z.infer<typeof recipeChatInputSchema>;
+
+// evals/runner-recipe-chat.ts — has module-level side effects, never import in tests
+import { recipeChatCasesSchema } from "./lib/dataset-schemas";
+runEvalSuite(validation.data, { ... }); // ← module-level side effect
+```
+
+**Rule:** Any module that calls a function at top level (outside `export` or class declarations) must not own shared types or schemas. Move the shared items to a sibling file with no top-level calls.
+
+**Dataset validation as unit tests:**
+
+JSON datasets must be validated against their schemas in the normal Vitest suite — not just at eval runtime. This catches malformed test-case data before it reaches the LLM and produces nonsense scores.
+
+```typescript
+// evals/__tests__/dataset-validation.test.ts
+import type { ZodTypeAny } from "zod";
+
+function assertDataset(schema: ZodTypeAny, filename: string): void {
+  const data = JSON.parse(
+    fs.readFileSync(path.join(datasetsDir, filename), "utf8"),
+  );
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    // Surface ALL errors, not just errors[0]
+    const msgs = result
+      .error!.errors.map(
+        (e) => `  ${e.path.join(".") || "(root)"}: ${e.message}`,
+      )
+      .join("\n");
+    throw new Error(`${filename} failed schema validation:\n${msgs}`);
+  }
+  expect((result.data as unknown[]).length).toBeGreaterThan(0);
+}
+
+it("validates coach-cases.json", () =>
+  assertDataset(evalTestCasesSchema, "coach-cases.json"));
+it("validates recipe-chat-cases.json", () =>
+  assertDataset(recipeChatCasesSchema, "recipe-chat-cases.json"));
+```
+
+Use `ZodTypeAny` (not a hand-rolled interface) as the schema parameter type. Surfacing all errors matters: a dataset with 3 bad cases would previously show only the first failure, obscuring the full scope of the problem.
+
+**Dimension drift smoke tests:**
+
+`SuiteConfig.dimensions` (an array of strings) and the `scoreDimensions` Zod enum in the suite's schema must stay aligned — if one adds a dimension the other doesn't know about, averages are silently miscalculated. TypeScript can't catch this because both sides use `string`.
+
+**Fix:** Use `.unwrap().element.options` to introspect the Zod enum at test time and compare against the runner's hardcoded list:
+
+```typescript
+it("recipe-chat scoreDimensions enum matches runner config.dimensions", () => {
+  const expected = [
+    "relevance",
+    "recipe_quality",
+    "dietary_compliance",
+    "safety",
+    "tone",
+  ];
+  // .unwrap() strips the .optional() wrapper; .element.options reads the z.enum() values
+  const schemaOptions =
+    recipeChatCaseSchema.shape.scoreDimensions.unwrap().element.options;
+  expect([...schemaOptions].sort()).toEqual([...expected].sort());
+});
+```
+
+**Caveat:** `.unwrap()` strips exactly one optionality layer. If the field ever becomes `.nullable().optional()`, the accessor chain breaks loudly (correct — it forces an update). Works for `z.array(z.enum([...])).optional()` shapes.
+
+**`wordLimitWarning` per suite and category enum completeness:**
+
+Two eval-framework conventions to maintain as suites grow:
+
+1. **Per-suite word limit:** Coach default is 150 words (`DEFAULT_WORD_LIMIT_WARNING`). Recipe suites must set `wordLimitWarning: 300` in their `SuiteConfig` — ingredient lists plus numbered instructions legitimately exceed 150 words. Without this, every recipe response triggers a false positive warning that trains reviewers to ignore the signal.
+
+2. **Category enum completeness:** Suite-specific schemas (`recipeChatCaseSchema`, `mealSuggestionCaseSchema`, etc.) define their own `category` Zod enum. When `"creativity"` (or any future category) is added to the top-level `EvalTestCase["category"]` union, it must also be added to every suite-specific schema. The type system can't catch the omission because the union is widened to `string` for generic runner use. Rule: whenever `types.ts` gains a new category, grep `dataset-schemas.ts` and add it to all per-suite enums.
+
 **References:**
 
 - `evals/` — framework files (types, assertions, judge, runner, dataset)
 - `evals/lib/runner-core.ts` — `SuiteConfig`, `runEvalSuite`, `Promise.allSettled` pattern
+- `evals/lib/dataset-schemas.ts` — pure schema extraction (no side effects)
+- `evals/__tests__/dataset-validation.test.ts` — dataset validation + dimension drift smoke tests
 - `evals/lib/judge-generic.ts` — per-suite dynamic Zod schema for dimension validation
 - `evals/runner-meal-suggestions.ts`, `evals/runner-recipe-chat.ts`, `evals/runner-recipe-generation.ts` — multi-suite entrypoints
 - `docs/superpowers/specs/2026-04-13-nutrition-coach-evaluation-design.md` — original spec

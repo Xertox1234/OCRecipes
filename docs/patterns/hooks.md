@@ -1566,3 +1566,32 @@ function CoachChat() {
 **Rule:** If a hook calls `Speech.*`, `Geolocation.*`, `Camera.*`, or any other device-singleton API — it must not be called in both a parent and a child component in the same render tree.
 
 **References:** `client/hooks/useTTS.ts`, `client/components/coach/CoachChat.tsx`, `client/components/coach/StreamingBubble.tsx` (fix: removed `useTTS()` call).
+
+---
+
+### Hardware Resource Cleanup in Hook `reset()`
+
+When a hook owns a hardware resource (microphone via `expo-speech-recognition`, camera, barcode scanner), the hook's `reset()` function must explicitly stop the resource **before** clearing React state. Clearing state flags without stopping the hardware leaves the resource running invisibly — the next `start` call may open a duplicate session, or the mic may keep recording after the session appears closed to the user.
+
+```typescript
+// ❌ BAD — state cleared but mic still recording
+const reset = useCallback(() => {
+  setTranscript("");
+  setPhase("idle");
+}, []);
+
+// ✅ GOOD — hardware stopped first, then state cleared
+const reset = useCallback(() => {
+  if (isListening) stopListening(); // stop hardware first
+  setTranscript("");
+  setPhase("idle");
+}, [isListening, stopListening]);
+```
+
+**Why before, not after:** React state updates are async — a `setPhase("idle")` does not immediately prevent a racing `onResult` callback from mutating `transcript` again. Stopping the hardware source first cuts off the event stream before clearing state, avoiding a flash of stale data.
+
+**Dep array:** Both `isListening` and `stopListening` must be in the `useCallback` dep array. Omitting `isListening` means the closure captures a stale value and may skip the stop call after a re-render.
+
+**Pattern generalises to any resource with start/stop semantics:** mic (`stopListening`), camera (`camera.current?.stopRecording()`), barcode scanner (`setScanningEnabled(false)`).
+
+**Reference:** `client/hooks/useQuickLogSession.ts` — audit 2026-05-09 H4.

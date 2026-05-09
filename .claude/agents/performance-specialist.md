@@ -353,7 +353,7 @@ const streamingFooter = useMemo(
 
 **Invariants:**
 
-- `data` must never contain a streaming sentinel — this pattern only works when `renderItem` is token-stable.
+- `data` must never contain a streaming sentinel — this pattern only works when `renderItem` is token-stable. When migrating from a sentinel-in-data approach, remove the sentinel type from the `ChatListItem` (or equivalent) union — it becomes dead code and can mislead future readers into restoring the old render path.
 - `ListFooterComponent` must be `useMemo`-ed (not inline) or a `React.memo` component.
 - Scroll-to-bottom: trigger on `onContentSizeChange`, not on each `streamingContent` update.
 

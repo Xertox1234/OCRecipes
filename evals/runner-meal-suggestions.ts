@@ -1,7 +1,6 @@
 import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
-import { z } from "zod";
 import {
   generateMealSuggestions,
   type MealSuggestionInput,
@@ -9,72 +8,10 @@ import {
 import type { UserProfile } from "@shared/schema";
 import { runEvalSuite } from "./lib/runner-core";
 import type { EvalTestCase } from "./types";
-
-// ─── Dataset schema ───────────────────────────────────────────────────────────
-
-const mealSuggestionCaseSchema = z.object({
-  id: z.string().min(1),
-  category: z.enum([
-    "safety",
-    "accuracy",
-    "helpfulness",
-    "personalization",
-    "edge-case",
-  ]),
-  description: z.string(),
-  input: z.object({
-    mealType: z.string(),
-    userProfile: z
-      .object({
-        dietType: z.string().nullable(),
-        allergies: z.array(z.string()),
-        dislikes: z.array(z.string()),
-      })
-      .nullable(),
-    dailyTargets: z.object({
-      calories: z.number(),
-      protein: z.number(),
-      carbs: z.number(),
-      fat: z.number(),
-    }),
-    existingMeals: z.array(
-      z.object({
-        title: z.string(),
-        calories: z.number(),
-        mealType: z.string(),
-      }),
-    ),
-    remainingBudget: z.object({
-      calories: z.number(),
-      protein: z.number(),
-      carbs: z.number(),
-      fat: z.number(),
-    }),
-  }),
-  assertions: z
-    .object({
-      mustNotContain: z.array(z.string()).optional(),
-      mustContain: z.array(z.string()).optional(),
-      macrosBudgetRespected: z.boolean().optional(),
-      suggestionCount: z.number().optional(),
-    })
-    .optional(),
-  scoreDimensions: z
-    .array(
-      z.enum([
-        "macro_accuracy",
-        "dietary_compliance",
-        "variety",
-        "helpfulness",
-      ]),
-    )
-    .optional(),
-});
-
-const mealSuggestionCasesSchema = z.array(mealSuggestionCaseSchema);
-type MealSuggestionCaseInput = z.infer<
-  typeof mealSuggestionCaseSchema
->["input"];
+import {
+  mealSuggestionCasesSchema,
+  type MealSuggestionCaseInput,
+} from "./lib/dataset-schemas";
 
 // ─── Rubric ───────────────────────────────────────────────────────────────────
 
@@ -164,6 +101,7 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
   },
   inputTag: "meal_request",
   outputTag: "suggestions",
+  wordLimitWarning: 300,
 
   generateResponse: async (testCase: EvalTestCase) => {
     const i = testCase.input as MealSuggestionCaseInput;
