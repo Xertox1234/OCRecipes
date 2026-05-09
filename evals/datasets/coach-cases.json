@@ -607,7 +607,7 @@
         "beef",
         "pork",
         "fish",
-        "egg",
+        "\\beggs?(?!-free)\\b",
         "dairy",
         "whey",
         "almond",
