@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import type { ZodTypeAny } from "zod";
 import {
   recipeChatCasesSchema,
   mealSuggestionCasesSchema,
@@ -15,27 +16,17 @@ function loadDataset(filename: string): unknown {
   return JSON.parse(raw);
 }
 
-function assertDataset(
-  schema: {
-    safeParse: (
-      v: unknown,
-    ) => {
-      success: boolean;
-      error?: { errors: { path: (string | number)[]; message: string }[] };
-      data?: unknown[];
-    };
-  },
-  filename: string,
-): void {
+function assertDataset(schema: ZodTypeAny, filename: string): void {
   const data = loadDataset(filename);
   const result = schema.safeParse(data);
   if (!result.success) {
-    const issue = result.error!.errors[0];
-    throw new Error(
-      `${filename}: ${issue.path.join(".")}: ${issue.message}`,
-    );
+    const msgs = result.error!.errors
+      .map((e) => `  ${e.path.join(".") || "(root)"}: ${e.message}`)
+      .join("\n");
+    throw new Error(`${filename} failed schema validation:\n${msgs}`);
   }
-  expect(result.data!.length).toBeGreaterThan(0);
+  const parsed = result.data as unknown[];
+  expect(parsed.length).toBeGreaterThan(0);
 }
 
 describe("dataset validation — all four suites", () => {
