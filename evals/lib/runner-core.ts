@@ -162,20 +162,12 @@ async function evaluateCase(
     );
   }
 
-  const userMessageForResult =
-    typeof testCase.userMessage === "string"
-      ? testCase.userMessage
-      : typeof (testCase.input as { userMessage?: string })?.userMessage ===
-          "string"
-        ? (testCase.input as { userMessage: string }).userMessage
-        : JSON.stringify(testCase.input ?? testCase.id).slice(0, 120);
-
   return {
     testCaseId: `${testCase.id}${sampleSuffix}`,
     category: testCase.category,
     description: testCase.description,
-    userMessage: userMessageForResult,
-    coachResponse: text,
+    inputSummary,
+    output: text,
     assertions: assertionResult,
     rubricScores: judgeResult.scores,
     judgeModel: judgeResult.judgeModel,
@@ -333,10 +325,10 @@ export function printSummary(result: EvalRunResult, config: SuiteConfig): void {
   console.log(`║  ${result.timestamp.slice(0, 10).padEnd(46)} ║`);
   console.log("╠══════════════════════════════════════════════════╣");
   console.log(
-    `║  Test cases: ${String(result.totalCases).padEnd(3)} │  Assertions passed: ${assertionsPassed}/${result.totalCases}     ║`,
+    `║  Test cases: ${String(result.totalCases).padEnd(9)} │  Assertions passed: ${assertionsPassed}/${result.totalCases}  ║`,
   );
-  console.log("╠──────────────────┬───────────────────────────────╣");
-  console.log("║  Dimension       │  Avg Score (95% CI)           ║");
+  console.log("╠────────────────────────┬─────────────────────────╣");
+  console.log("║  Dimension             │  Avg Score (95% CI)     ║");
 
   for (const dim of config.dimensions) {
     const avg = (
@@ -354,13 +346,13 @@ export function printSummary(result: EvalRunResult, config: SuiteConfig): void {
     const name = dim.charAt(0).toUpperCase() + dim.slice(1).replace(/_/g, " ");
     const valueCol = `${avg} ${ciStr}`;
     console.log(
-      `║  ${name.slice(0, 16).padEnd(16)} │  ${valueCol.padEnd(29)} ║`,
+      `║  ${name.slice(0, 22).padEnd(22)} │  ${valueCol.padEnd(23)} ║`,
     );
   }
 
-  console.log("╠──────────────────┼───────────────────────────────╣");
+  console.log("╠────────────────────────┼─────────────────────────╣");
   console.log(
-    `║  Weighted Overall│  ${result.weightedOverall.toFixed(1).padStart(4)} / 10                     ║`,
+    `║  ${"Weighted Overall".padEnd(22)}│  ${result.weightedOverall.toFixed(1).padStart(4)} / 10               ║`,
   );
   console.log("╚══════════════════════════════════════════════════╝");
 
@@ -479,7 +471,7 @@ export async function runEvalSuite(
     }
   }
 
-  const settled = await Promise.all(
+  const rawResults = await Promise.allSettled(
     tasks.map((task) =>
       limit(() =>
         evaluateCase(
@@ -498,6 +490,37 @@ export async function runEvalSuite(
   for (const task of tasks) {
     if (task.logBuffer) {
       for (const line of task.logBuffer) console.log(line);
+    }
+  }
+
+  const settled: EvalCaseResult[] = [];
+  for (let i = 0; i < rawResults.length; i++) {
+    const raw = rawResults[i];
+    const task = tasks[i];
+    if (raw.status === "fulfilled") {
+      settled.push(raw.value);
+    } else {
+      const tc = testCases[task.caseIndex];
+      const sampleSuffix = samplesPerCase > 1 ? `#${task.sampleIndex + 1}` : "";
+      const errorMsg =
+        raw.reason instanceof Error ? raw.reason.message : String(raw.reason);
+      console.error(`  ✗ CASE ERRORED: ${tc.id}${sampleSuffix} — ${errorMsg}`);
+      settled.push({
+        testCaseId: `${tc.id}${sampleSuffix}`,
+        category: tc.category,
+        description: tc.description,
+        inputSummary: tc.id,
+        output: `[Error: ${errorMsg}]`,
+        assertions: {
+          passed: false,
+          failures: [`Case threw an exception: ${errorMsg}`],
+        },
+        rubricScores: [],
+        judgeModel: DEFAULT_JUDGE_MODEL,
+        timestamp: new Date().toISOString(),
+        latencyMs: 0,
+        wordCount: 0,
+      });
     }
   }
 

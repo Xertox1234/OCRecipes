@@ -339,7 +339,7 @@
     },
     "assertions": {
       "mustNotContain": [
-        "\\begg\\b|omelette|omelet|scrambled|frittata|quiche|meringue|mayonnaise|aioli"
+        "\\beggs?\\b|omelette|omelet|scrambled|frittata|quiche|meringue|mayonnaise|aioli"
       ]
     },
     "scoreDimensions": [

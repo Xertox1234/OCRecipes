@@ -77,13 +77,14 @@ export function runStructuralAssertions(
   const failures: string[] = [];
 
   if (assertions.suggestionCount != null) {
-    if (!Array.isArray(structuredData)) {
+    const d = structuredData as { suggestions?: unknown[] };
+    if (!Array.isArray(d?.suggestions)) {
       failures.push(
-        `suggestionCount assertion requires an array, got ${typeof structuredData}`,
+        `suggestionCount assertion requires { suggestions: unknown[] }, got ${typeof structuredData}`,
       );
-    } else if (structuredData.length !== assertions.suggestionCount) {
+    } else if (d.suggestions.length !== assertions.suggestionCount) {
       failures.push(
-        `Expected ${assertions.suggestionCount} suggestions, got ${structuredData.length}`,
+        `Expected ${assertions.suggestionCount} suggestions, got ${d.suggestions.length}`,
       );
     }
   }

@@ -118,25 +118,32 @@ describe("runStructuralAssertions", () => {
     expect(result.failures).toEqual([]);
   });
 
-  it("passes suggestionCount when array has correct length", () => {
-    const data = [{ calories: 400 }, { calories: 350 }, { calories: 500 }];
+  it("passes suggestionCount when suggestions array has correct length", () => {
+    const data = {
+      suggestions: [{ calories: 400 }, { calories: 350 }, { calories: 500 }],
+      remainingCalories: 600,
+    };
     const result = runStructuralAssertions(data, { suggestionCount: 3 });
     expect(result.passed).toBe(true);
   });
 
-  it("fails suggestionCount when array length mismatches", () => {
-    const data = [{ calories: 400 }, { calories: 350 }];
+  it("fails suggestionCount when suggestions array length mismatches", () => {
+    const data = {
+      suggestions: [{ calories: 400 }, { calories: 350 }],
+      remainingCalories: 600,
+    };
     const result = runStructuralAssertions(data, { suggestionCount: 3 });
     expect(result.passed).toBe(false);
     expect(result.failures[0]).toContain("Expected 3 suggestions");
   });
 
-  it("fails suggestionCount when data is not an array", () => {
+  it("fails suggestionCount when structuredData has no suggestions property", () => {
     const result = runStructuralAssertions(
       { foo: "bar" },
       { suggestionCount: 3 },
     );
     expect(result.passed).toBe(false);
+    expect(result.failures[0]).toContain("requires { suggestions: unknown[] }");
   });
 
   it("passes macrosBudgetRespected when all suggestions are within 110% of budget", () => {

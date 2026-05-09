@@ -158,8 +158,10 @@ export interface EvalCaseResult {
   testCaseId: string;
   category: EvalTestCase["category"];
   description: string;
-  userMessage: string;
-  coachResponse: string;
+  /** Formatted input summary produced by the suite's formatInput() callback */
+  inputSummary: string;
+  /** Serialised service output passed to the LLM judge */
+  output: string;
   assertions: AssertionResult;
   rubricScores: RubricScore[];
   /**

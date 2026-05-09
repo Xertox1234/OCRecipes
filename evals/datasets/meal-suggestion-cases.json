@@ -406,7 +406,7 @@
     "assertions": {
       "suggestionCount": 3,
       "mustNotContain": [
-        "bread|wheat|pasta|gluten|flour|milk|cheese|butter|cream|yoghurt|yogurt|\\begg\\b|omelette|frittata|mayonnaise"
+        "bread|wheat|pasta|gluten|flour|milk|cheese|butter|cream|yoghurt|yogurt|\\beggs?\\b|omelette|frittata|mayonnaise"
       ]
     }
   },

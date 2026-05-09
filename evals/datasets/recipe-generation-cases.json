@@ -11,7 +11,7 @@
       "mustHaveMinIngredients": 3,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "chicken|beef|pork|lamb|salmon|tuna|\\begg\\b|milk|butter|cream|cheese|honey|gelatin"
+        "chicken|beef|pork|lamb|salmon|tuna|\\beggs?\\b|milk|butter|cream|cheese|honey|gelatin"
       ]
     },
     "scoreDimensions": [
@@ -183,7 +183,7 @@
       "mustHaveMinIngredients": 4,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "bread|wheat|pasta|flour|milk|cheese|butter|cream|yoghurt|yogurt|\\begg\\b|omelette|mayonnaise"
+        "bread|wheat|pasta|flour|milk|cheese|butter|cream|yoghurt|yogurt|\\beggs?\\b|omelette|mayonnaise"
       ]
     },
     "scoreDimensions": [
@@ -247,7 +247,7 @@
       "mustHaveMinIngredients": 4,
       "mustHaveMinInstructions": 3,
       "mustNotContain": [
-        "\\begg\\b|egg yolk|egg white|meringue|mayonnaise|egg wash"
+        "\\beggs?\\b|egg yolk|egg white|meringue|mayonnaise|egg wash"
       ]
     },
     "scoreDimensions": [
