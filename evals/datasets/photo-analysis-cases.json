@@ -1,0 +1,221 @@
+[
+  {
+    "id": "photo-analysis-apple-01",
+    "category": "accuracy",
+    "description": "Single red apple on white background — model should identify correctly with high confidence",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/1/15/Red_Apple.jpg",
+      "intent": "log"
+    },
+    "assertions": {
+      "mustContain": ["apple"],
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.6
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-salad-02",
+    "category": "accuracy",
+    "description": "Fresh vegetable salad — should identify multiple vegetables with high confidence",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1607532941433-304659e8198a?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.5
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-pancakes-03",
+    "category": "accuracy",
+    "description": "Stack of pancakes — common breakfast food, should identify and estimate portions",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "mustContain": ["pancake"],
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.6
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-burger-04",
+    "category": "accuracy",
+    "description": "Classic hamburger — should identify bun, patty, and toppings",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "mustContain": ["burger|hamburger|patty|bun"],
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.6
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-sushi-05",
+    "category": "accuracy",
+    "description": "Sushi plate — Japanese food, multiple pieces, tests cuisine classification",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1499028344343-cd173ffc68a9?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.5
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-shrimp-allergen-06",
+    "category": "accuracy",
+    "description": "Shrimp dish — allergen identification; model should correctly identify shrimp (shellfish)",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1528736235302-52922df5c122?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "mustContain": ["shrimp|prawn|seafood|shellfish"],
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.5
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-peanut-butter-allergen-07",
+    "category": "accuracy",
+    "description": "Peanut butter — allergen identification; model should identify peanut butter product",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1565299507177-b0ac66763828?w=400",
+      "intent": "identify"
+    },
+    "assertions": {
+      "mustContain": ["peanut"],
+      "foodsMinLength": 1
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-multi-food-restaurant-08",
+    "category": "accuracy",
+    "description": "Restaurant meal with multiple dishes — tests multi-food scene detection",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "foodsMinLength": 2,
+      "overallConfidenceMin": 0.4
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-steak-09",
+    "category": "accuracy",
+    "description": "Grilled steak — high-protein meal, should estimate portions clearly",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "mustContain": ["steak|beef|meat|protein"],
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.6
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-mango-10",
+    "category": "accuracy",
+    "description": "Whole mango — single fruit, should identify with high confidence and estimate weight",
+    "input": {
+      "imageUrl": "https://upload.wikimedia.org/wikipedia/commons/9/90/Hapus_Mango.jpg",
+      "intent": "log"
+    },
+    "assertions": {
+      "mustContain": ["mango"],
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.6
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-low-confidence-ambiguous-11",
+    "category": "edge-case",
+    "description": "Dark/dimly-lit food scene — ambiguous content should trigger lower confidence and possibly follow-up questions",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1476224203421-9ac39bcb3327?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "overallConfidenceMax": 0.95
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "confidence_calibration"
+    ]
+  },
+  {
+    "id": "photo-analysis-multi-food-colorful-12",
+    "category": "accuracy",
+    "description": "Colorful food spread with multiple items — tests enumeration of distinct food items",
+    "input": {
+      "imageUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400",
+      "intent": "log"
+    },
+    "assertions": {
+      "foodsMinLength": 1,
+      "overallConfidenceMin": 0.4
+    },
+    "scoreDimensions": [
+      "identification_accuracy",
+      "portion_plausibility",
+      "confidence_calibration"
+    ]
+  }
+]

@@ -6,11 +6,13 @@ import {
   recipeChatCasesSchema,
   mealSuggestionCasesSchema,
   recipeGenCasesSchema,
+  photoAnalysisCasesSchema,
   recipeChatCaseSchema,
   mealSuggestionCaseSchema,
   recipeGenCaseSchema,
+  photoAnalysisCaseSchema,
 } from "../lib/dataset-schemas";
-import { evalTestCasesSchema } from "../types";
+import { ALL_PHOTO_ANALYSIS_DIMENSIONS, evalTestCasesSchema } from "../types";
 
 const datasetsDir = path.join(__dirname, "..", "datasets");
 
@@ -34,7 +36,7 @@ function assertDataset(schema: ZodTypeAny, filename: string): void {
   expect(parsed.length).toBeGreaterThan(0);
 }
 
-describe("dataset validation — all four suites", () => {
+describe("dataset validation — all five suites", () => {
   it("validates coach-cases.json against evalTestCasesSchema", () => {
     assertDataset(evalTestCasesSchema, "coach-cases.json");
   });
@@ -49,6 +51,10 @@ describe("dataset validation — all four suites", () => {
 
   it("validates recipe-generation-cases.json against recipeGenCasesSchema", () => {
     assertDataset(recipeGenCasesSchema, "recipe-generation-cases.json");
+  });
+
+  it("validates photo-analysis-cases.json against photoAnalysisCasesSchema", () => {
+    assertDataset(photoAnalysisCasesSchema, "photo-analysis-cases.json");
   });
 });
 
@@ -91,5 +97,15 @@ describe("schema/runner dimension alignment", () => {
     const schemaOptions =
       recipeGenCaseSchema.shape.scoreDimensions.unwrap().element.options;
     expect([...schemaOptions].sort()).toEqual([...expected].sort());
+  });
+
+  it("photo-analysis scoreDimensions enum matches runner config.dimensions", () => {
+    // Uses ALL_PHOTO_ANALYSIS_DIMENSIONS from types.ts as single source of truth
+    // — must also match the dimensions array in runner-photo-analysis.ts SuiteConfig
+    const schemaOptions =
+      photoAnalysisCaseSchema.shape.scoreDimensions.unwrap().element.options;
+    expect([...schemaOptions].sort()).toEqual(
+      [...ALL_PHOTO_ANALYSIS_DIMENSIONS].sort(),
+    );
   });
 });
