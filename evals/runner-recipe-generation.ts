@@ -162,6 +162,7 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
   },
   inputTag: "recipe_request",
   outputTag: "generated_recipe",
+  wordLimitWarning: 300,
 
   generateResponse: async (testCase: EvalTestCase) => {
     const i = testCase.input as RecipeGenInput;

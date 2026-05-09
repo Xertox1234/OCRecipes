@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { bootstrapMeanCI, mulberry32 } from "../lib/runner-core";
+import type { SuiteConfig } from "../lib/runner-core";
 
 describe("mulberry32", () => {
   it("returns values in [0, 1)", () => {
@@ -63,5 +64,34 @@ describe("bootstrapMeanCI", () => {
     const tightWidth = tight.upper - tight.lower;
     const wideWidth = wide.upper - wide.lower;
     expect(wideWidth).toBeGreaterThan(tightWidth);
+  });
+});
+
+describe("SuiteConfig wordLimitWarning", () => {
+  it("defaults to undefined when not specified", () => {
+    const config: SuiteConfig = {
+      suiteName: "test",
+      rubricText: "",
+      dimensions: [],
+      dimensionWeights: {},
+      generateResponse: async () => ({ text: "", latencyMs: 0, wordCount: 0 }),
+      formatInput: () => "",
+    };
+    // wordLimitWarning is optional — absence should compile without error.
+    // The actual default is enforced at runtime inside runner-core.
+    expect(config.wordLimitWarning).toBeUndefined();
+  });
+
+  it("accepts a custom word limit", () => {
+    const config: SuiteConfig = {
+      suiteName: "recipe",
+      rubricText: "",
+      dimensions: [],
+      dimensionWeights: {},
+      wordLimitWarning: 300,
+      generateResponse: async () => ({ text: "", latencyMs: 0, wordCount: 0 }),
+      formatInput: () => "",
+    };
+    expect(config.wordLimitWarning).toBe(300);
   });
 });

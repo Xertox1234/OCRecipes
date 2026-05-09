@@ -164,6 +164,7 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
   },
   inputTag: "meal_request",
   outputTag: "suggestions",
+  wordLimitWarning: 300,
 
   generateResponse: async (testCase: EvalTestCase) => {
     const i = testCase.input as MealSuggestionCaseInput;

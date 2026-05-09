@@ -21,6 +21,8 @@ export interface SuiteConfig {
   dimensionWeights: Record<string, number>;
   inputTag?: string;
   outputTag?: string;
+  /** Words-per-response threshold above which a warning is printed. Defaults to 150. Recipe suites should set this to ~300. */
+  wordLimitWarning?: number;
 
   /**
    * Call the service and return serialised output for the judge + assertions.
@@ -151,9 +153,10 @@ async function evaluateCase(
     }
   }
 
-  const overLimit = wordCount > 150;
+  const wordLimit = config.wordLimitWarning ?? 150;
+  const overLimit = wordCount > wordLimit;
   log(
-    `    ⏱ ${latencyMs}ms | ${wordCount} words${overLimit ? " ⚠ OVER 150" : ""}`,
+    `    ⏱ ${latencyMs}ms | ${wordCount} words${overLimit ? ` ⚠ OVER ${wordLimit}` : ""}`,
   );
   for (const score of judgeResult.scores) {
     const icon = score.score >= 7 ? "✓" : score.score >= 4 ? "~" : "✗";
@@ -365,11 +368,12 @@ export function printSummary(result: EvalRunResult, config: SuiteConfig): void {
   const avgWords = Math.round(
     wordCounts.reduce((a, b) => a + b, 0) / wordCounts.length,
   );
-  const overLimit = result.cases.filter((c) => c.wordCount > 150);
+  const wordLimit = config.wordLimitWarning ?? 150;
+  const overLimit = result.cases.filter((c) => c.wordCount > wordLimit);
 
   console.log(`\n⏱ Latency: avg ${avgLatency}ms, max ${maxLatency}ms`);
   console.log(
-    `📝 Words: avg ${avgWords}, ${overLimit.length}/${result.totalCases} over 150-word limit`,
+    `📝 Words: avg ${avgWords}, ${overLimit.length}/${result.totalCases} over ${wordLimit}-word limit`,
   );
 
   if (result.lowestScoringCases.length > 0) {
