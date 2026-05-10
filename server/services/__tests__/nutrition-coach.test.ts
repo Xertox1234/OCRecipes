@@ -692,13 +692,15 @@ describe("generateCoachResponse", () => {
     expect(chunks).toEqual(["Hello ", "there!"]);
   });
 
-  it("includes a vague-message clarification example in the system prompt", async () => {
+  it("includes a vague-message clarifying-question instruction in the system prompt", async () => {
     const stream = createMockStream([
       { content: "Ok" },
       { finish_reason: "stop" },
     ]);
     vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
 
+    // "Hi" routes to vague_request — prompt should include the number-anchored
+    // clarifying question instruction from that intent bundle.
     const messages = [{ role: "user" as const, content: "Hi" }];
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
 
@@ -706,7 +708,9 @@ describe("generateCoachResponse", () => {
     const systemMsg = (
       callArgs as { messages: { role: string; content: string }[] }
     ).messages[0];
-    expect(systemMsg.content).toContain("What would be most helpful");
+    expect(systemMsg.content).toContain(
+      "HOW TO HANDLE VAGUE OR UNCLEAR MESSAGES",
+    );
   });
 
   it("includes an over-goal graceful-acknowledgment example in the system prompt", async () => {
@@ -716,7 +720,14 @@ describe("generateCoachResponse", () => {
     ]);
     vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
 
-    const messages = [{ role: "user" as const, content: "Hi" }];
+    // Personalized message routes to personalized_advice — prompt should include
+    // the graceful over-goal acknowledgment example from that bundle.
+    const messages = [
+      {
+        role: "user" as const,
+        content: "I really overdid it today, I've eaten way too much",
+      },
+    ];
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
 
     const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
