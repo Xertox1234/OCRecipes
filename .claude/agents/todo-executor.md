@@ -33,7 +33,7 @@ Check whether this todo is eligible for execution:
 
 ## Step 3 — Research
 
-**Lightweight path**: Before spawning the researcher, check whether ALL affected files extracted from the todo are documentation or configuration only — paths under `docs/` or `todos/`, or with extensions `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.*rc`, `.*ignore`. If ALL match, skip the researcher entirely: read those files directly with the Read tool and proceed to Step 4.
+**Lightweight path**: Before spawning the researcher, check whether **at least one file was extracted** AND ALL extracted files are documentation or configuration only — paths under `docs/` or `todos/`, or with extensions `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.*rc`, `.*ignore`. If both conditions hold, skip the researcher entirely: read those files directly with the Read tool and proceed to Step 4.
 
 Before implementing (for non-lightweight todos), extract the list of affected source files from the todo's Implementation Notes and Acceptance Criteria (any file references — including fully-qualified paths (`server/routes/cooking.ts`), bare filenames (`` `cooking.ts` ``), and paths with line ranges (`path/to/file.ts:123-145`). Extract paths exactly as they appear in the todo text). Then spawn the `todo-researcher` subagent:
 
@@ -130,17 +130,27 @@ Run `kimi-review` against the uncommitted working-tree changes in this worktree.
 
 Use the first matching row. If multiple labels match different rows, combine their values (e.g., `--patterns react-native,security`).
 
-Pipe the working-tree diff into kimi-review and capture the output for use in Step 9. The review runs before the commit (Step 8), so the changes are staged or unstaged but not yet on HEAD — stdin is the correct way to pass them:
+Pipe the working-tree diff into kimi-review and capture the output for use in Step 9. The review runs before the commit (Step 8), so the changes are staged or unstaged but not yet on HEAD — stdin is the correct way to pass them.
+
+First capture the diff, then guard for empty output before running the review:
 
 ```bash
-REVIEW_OUTPUT=$(git diff HEAD -- . | kimi-review \
-  --scope "<todo title>" \
-  --patterns <mapped-patterns> \
-  --tiers CRITICAL,WARNING,SUGGESTION)
-echo "$REVIEW_OUTPUT"
+DIFF=$(git diff HEAD -- .)
+if [[ -z "$DIFF" ]]; then
+  echo "No working-tree changes — skipping kimi-review."
+  REVIEW_OUTPUT=""
+else
+  REVIEW_OUTPUT=$(echo "$DIFF" | kimi-review \
+    --scope "<todo title>" \
+    --patterns <mapped-patterns> \
+    --tiers CRITICAL,WARNING,SUGGESTION)
+  echo "$REVIEW_OUTPUT"
+fi
 ```
 
 If no labels matched the table, omit `--patterns`.
+
+**Store the full text of `REVIEW_OUTPUT` in your working context now** — shell variables do not persist between Bash tool invocations, and Step 9 needs this text. Treat it as an in-context note labeled `review_output`.
 
 ---
 
@@ -205,18 +215,18 @@ EOF
 
 ## Step 9 — Codify
 
-Decide inline whether this implementation produced knowledge worth preserving. Use `$REVIEW_OUTPUT` from Step 6 as additional signal.
+Decide inline whether this implementation produced knowledge worth preserving. Use the `review_output` text you stored from Step 6 as additional signal.
 
 **Codify if any one is true:**
 
 - The solution required a workaround or constraint not currently in `docs/patterns/`
 - The implementation revealed a library gotcha or platform-specific behavior
-- `$REVIEW_OUTPUT` contained a CRITICAL or WARNING finding that reveals a reusable rule
+- `review_output` contained a CRITICAL or WARNING finding that reveals a reusable rule
 
 **Skip if:**
 
 - The implementation was straightforward application of existing patterns
-- All `$REVIEW_OUTPUT` findings were SUGGESTION-only or were deferred
+- All `review_output` findings were SUGGESTION-only or were deferred
 
 **If codifying:**
 

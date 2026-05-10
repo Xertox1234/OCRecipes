@@ -109,6 +109,8 @@ If ALL match, skip the researcher entirely. Read the affected files directly wit
    echo "$REVIEW_OUTPUT"
    ```
 
+   > **Implementation note:** The final executor uses `git diff HEAD -- .` piped via stdin rather than `--base`, because Step 6 runs before Step 8 (commit) and `--base` only sees committed history. See `todo-executor.md` Step 6 for the actual invocation.
+
    If no patterns mapped, omit `--patterns`. `REVIEW_OUTPUT` carries forward to Step 9.
 
 ### Step 7 — Update tier handling
