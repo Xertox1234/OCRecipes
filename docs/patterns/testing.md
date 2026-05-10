@@ -1362,6 +1362,61 @@ Two eval-framework conventions to maintain as suites grow:
 
 2. **Category enum completeness:** Suite-specific schemas (`recipeChatCaseSchema`, `mealSuggestionCaseSchema`, etc.) define their own `category` Zod enum. When `"creativity"` (or any future category) is added to the top-level `EvalTestCase["category"]` union, it must also be added to every suite-specific schema. The type system can't catch the omission because the union is widened to `string` for generic runner use. Rule: whenever `types.ts` gains a new category, grep `dataset-schemas.ts` and add it to all per-suite enums.
 
+**Eval image fixtures: use stable public URLs, keep out of `eval:all`:**
+
+When an eval suite requires image inputs (e.g. photo-analysis), use stable public URLs (Unsplash, Wikimedia Commons) fetched at runtime rather than checked-in binary fixtures. The runner fetches → base64 at execution time:
+
+```typescript
+async function fetchImageAsBase64(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
+  const buffer = await response.arrayBuffer();
+  return Buffer.from(buffer).toString("base64");
+}
+```
+
+**Do NOT add image-URL suites to `eval:all`.** The `eval:all` chain is used in CI and local runs where external network uptime can't be guaranteed. Suites that depend on third-party image CDNs belong to a separate `eval:photo` (or similar) script that operators run intentionally.
+
+**Unsplash photo IDs as NANP false positives in `check-eval-dataset-secrets.js`:**
+
+Unsplash photo IDs that happen to be exactly 10 digits long match the secret-check script's NANP phone number pattern and block commits. Two approaches:
+
+1. **Pick images whose IDs don't match NANP** (preferred): Unsplash IDs longer than 10 digits or containing non-digit characters pass cleanly. Check with: `node -e "console.log(/\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/.test('YOUR_ID') ? 'NANP match — pick another' : 'OK')"`.
+2. **Add `"allowSecret": true`** on the same JSON line as the flagged URL (the script skips lines containing this string).
+
+Run `node scripts/check-eval-dataset-secrets.js evals/datasets/your-new-cases.json` before staging to catch this before Husky does.
+
+**`typeof NaN === "number"` — use `Number.isFinite()` for numeric range assertions:**
+
+When checking `overallConfidenceMin` or `overallConfidenceMax` against a numeric field from `structuredData`, a simple `typeof value !== "number"` guard passes for `NaN` because `typeof NaN === "number"` is `true`. Every comparison with `NaN` evaluates to `false`, so `NaN` silently satisfies both min and max bounds:
+
+```typescript
+// ❌ NaN bypasses the assertion — typeof NaN === "number"
+if (typeof d?.overallConfidence !== "number") { ... }
+
+// ✅ Correct — Number.isFinite() rejects NaN and Infinity
+if (typeof d?.overallConfidence !== "number" || !Number.isFinite(d.overallConfidence)) {
+  failures.push("overallConfidenceMin assertion requires { overallConfidence: number }");
+} else if (d.overallConfidence < assertions.overallConfidenceMin) { ... }
+```
+
+Apply this pattern to any numeric range assertion where the checked value originates from an external API response (where NaN is a realistic parsing failure mode).
+
+**Import shared Zod schemas — never re-declare intent enums in dataset-schemas.ts:**
+
+When a dataset schema's `input` field uses an enum that already exists in the codebase (e.g. `PhotoIntent` from `@shared/constants/preparation`), import `photoIntentSchema` directly rather than recreating the union literal:
+
+```typescript
+// ❌ WRONG — duplicates source of truth, drifts when intents change
+intent: z.enum(["log", "calories", "recipe", "identify", "label"]).default("log"),
+
+// ✅ CORRECT — single source of truth, stays in sync automatically
+import { photoIntentSchema } from "@shared/constants/preparation";
+intent: photoIntentSchema.default("log"),
+```
+
+This also ensures the dataset schema accepts newly-added intents (e.g. `"menu"`) without a separate schema update.
+
 **References:**
 
 - `evals/` — framework files (types, assertions, judge, runner, dataset)
@@ -1369,7 +1424,7 @@ Two eval-framework conventions to maintain as suites grow:
 - `evals/lib/dataset-schemas.ts` — pure schema extraction (no side effects)
 - `evals/__tests__/dataset-validation.test.ts` — dataset validation + dimension drift smoke tests
 - `evals/lib/judge-generic.ts` — per-suite dynamic Zod schema for dimension validation
-- `evals/runner-meal-suggestions.ts`, `evals/runner-recipe-chat.ts`, `evals/runner-recipe-generation.ts` — multi-suite entrypoints
+- `evals/runner-meal-suggestions.ts`, `evals/runner-recipe-chat.ts`, `evals/runner-recipe-generation.ts`, `evals/runner-photo-analysis.ts` — multi-suite entrypoints
 - `docs/superpowers/specs/2026-04-13-nutrition-coach-evaluation-design.md` — original spec
 
 ### Pressable `fireEvent` in JSDOM: Use `click` not `press`

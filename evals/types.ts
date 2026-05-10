@@ -60,6 +60,16 @@ export const ALL_RECIPE_GENERATION_DIMENSIONS: RecipeGenerationDimension[] = [
   "creativity",
 ];
 
+export type PhotoAnalysisDimension =
+  | "identification_accuracy"
+  | "portion_plausibility"
+  | "confidence_calibration";
+export const ALL_PHOTO_ANALYSIS_DIMENSIONS: PhotoAnalysisDimension[] = [
+  "identification_accuracy",
+  "portion_plausibility",
+  "confidence_calibration",
+];
+
 export interface EvalTestCase {
   id: string;
   category:
@@ -83,6 +93,9 @@ export interface EvalTestCase {
     suggestionCount?: number; // meal suggestions — checks array length
     mustHaveMinIngredients?: number; // recipe generation — checks ingredients array length
     mustHaveMinInstructions?: number; // recipe generation — checks instructions array length
+    foodsMinLength?: number; // photo analysis — checks foods array is non-empty or has min items
+    overallConfidenceMin?: number; // photo analysis — checks overallConfidence >= value
+    overallConfidenceMax?: number; // photo analysis — checks overallConfidence <= value
   };
   scoreDimensions?: RubricDimension[];
 }
@@ -138,6 +151,9 @@ export const evalTestCaseSchema = z.object({
       suggestionCount: z.number().optional(),
       mustHaveMinIngredients: z.number().optional(),
       mustHaveMinInstructions: z.number().optional(),
+      foodsMinLength: z.number().int().min(0).optional(),
+      overallConfidenceMin: z.number().min(0).max(1).optional(),
+      overallConfidenceMax: z.number().min(0).max(1).optional(),
     })
     .optional(),
   scoreDimensions: z.array(z.string()).optional(),
