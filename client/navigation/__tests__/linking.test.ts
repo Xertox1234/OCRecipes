@@ -35,6 +35,10 @@ describe("linking config", () => {
     expect(linking.config!.screens.Scan).toBe("scan");
   });
 
+  it("configures AllConversations as a path string", () => {
+    expect(linking.config!.screens.AllConversations).toBe("conversation-list");
+  });
+
   it("returns 0 when recipeId parse receives a non-numeric string", () => {
     const recipeDetail = linking.config!.screens
       .FeaturedRecipeDetail as unknown as {

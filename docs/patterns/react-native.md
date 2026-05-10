@@ -536,9 +536,9 @@ navigation.navigate("AllConversations", { onSelect: setConversationId });
 **Sender** (picker screen that passes a result back):
 
 ```typescript
-// Navigate to the destination with the selected value, then go back
+// Navigate to the destination with the selected value
+// React Navigation resolves CoachPro in the stack and updates its params
 navigation.navigate("CoachPro", { selectedConversationId: conv.id });
-navigation.goBack();
 ```
 
 **Receiver** (screen that acts on the selection):
@@ -547,13 +547,14 @@ navigation.goBack();
 const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
 
 useEffect(() => {
-  const selectedId = route.params?.selectedConversationId;
-  if (selectedId !== undefined) {
-    setConversationId(selectedId);
-    navigation.setParams({ selectedConversationId: undefined }); // prevent re-apply on focus
-  }
+  const selected = route.params?.selectedConversationId;
+  if (selected == null) return; // == null catches both null and undefined; allows 0 as valid ID
+  setConversationId(selected);
+  navigation.setParams({ selectedConversationId: undefined }); // prevent re-apply on focus
 }, [route.params?.selectedConversationId, navigation]);
 ```
+
+**Effect ordering:** Declare the param-reading effect BEFORE any default-selection effect so the explicit selection wins. The default-selection guard (`if (conversationId || ...)`) prevents clobbering after state is set.
 
 **When the receiver is in a different stack:** the sender needs a 3-level `CompositeNavigationProp` to reach across the navigator boundary (see [CompositeNavigationProp for Cross-Stack Navigation](#compositenavigationprop-for-cross-stack-navigation)).
 

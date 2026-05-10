@@ -38,6 +38,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
         path: "notebook-entry/:entryId",
         parse: { entryId: parseIntOrZero },
       },
+      AllConversations: "conversation-list",
       NutritionDetail: "nutrition/:barcode",
       Scan: "scan",
     },

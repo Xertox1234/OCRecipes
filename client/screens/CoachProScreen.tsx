@@ -66,6 +66,16 @@ export default function CoachProScreen() {
     }, [acknowledge]),
   );
 
+  // Apply selectedConversationId from navigation param (set by AllConversationsScreen).
+  // Runs before the default-selection effect so the explicit selection always wins.
+  // The param is cleared after reading to avoid re-applying on subsequent back-navigations.
+  useEffect(() => {
+    const selected = route.params?.selectedConversationId;
+    if (selected == null) return;
+    setConversationId(selected);
+    navigation.setParams({ selectedConversationId: undefined });
+  }, [route.params?.selectedConversationId, navigation]);
+
   const pinnedConversations = useMemo(
     () => coachConversations.filter((c) => c.isPinned),
     [coachConversations],
