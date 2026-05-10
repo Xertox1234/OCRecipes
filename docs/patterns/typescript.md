@@ -669,3 +669,25 @@ export const coachContextItemSchema = z.discriminatedUnion("type", [
 **Pairing:** Always use `z.discriminatedUnion()` (not `z.union()`) for discriminated types — it validates the `type` key first and gives cleaner error messages.
 
 **Reference:** `shared/schemas/reminders.ts` — `coachContextItemSchema satisfies z.ZodType<CoachContextItem>`
+
+---
+
+## `??` vs `||` for Optional Numeric Parameters
+
+**Rule:** Use `??` (nullish coalescing), not `||` (logical OR), when falling back from an optional `number` parameter to a default.
+
+```typescript
+// WRONG — hour=0 (midnight) is falsy, so || silently falls back to server time
+const hour = userHour || new Date().getHours();
+
+// CORRECT — ?? only falls back for null/undefined, not for 0
+const hour = userHour ?? new Date().getHours();
+```
+
+**Why it matters:** `0` is a common valid numeric value (midnight for an hour range, page 0 for pagination, index 0 for list positions). Using `||` treats it as "not provided" and falls back silently — no type error, no runtime error, just wrong behavior.
+
+**When to use:** Any time the signature is `param?: number` and the fallback is `someDefault()` or a constant.
+
+**When NOT to use:** If `0` genuinely means "not set" in your domain (rare — prefer `undefined` for that instead).
+
+**Origin:** `server/services/carousel-builder.ts` — `userHour?: number` where `0` = midnight; caught during PR #104 review.
