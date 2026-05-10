@@ -8,7 +8,7 @@ import {
   favouriteRecipes,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, desc, and, gte, lt, sql, or, ilike } from "drizzle-orm";
+import { eq, desc, and, gte, lt, sql, or, ilike, inArray } from "drizzle-orm";
 import { escapeLike, getDayBounds } from "./helpers";
 import {
   addToIndex,
@@ -522,4 +522,26 @@ export async function getRecipeSharePayload(
       imageUrl: recipe.imageUrl ?? null,
     };
   }
+}
+
+/**
+ * Fetch the display titles for a batch of community recipe IDs.
+ * Used to resolve dismissed recipe IDs → titles for prompt injection.
+ * Returns a Map so callers can efficiently look up titles by ID
+ * while preserving the original order of the input id array.
+ */
+export async function getCommunityRecipeTitlesByIds(
+  ids: number[],
+): Promise<Map<number, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: communityRecipes.id, title: communityRecipes.title })
+    .from(communityRecipes)
+    .where(
+      and(
+        inArray(communityRecipes.id, ids),
+        eq(communityRecipes.isPublic, true),
+      ),
+    );
+  return new Map(rows.map((r) => [r.id, r.title]));
 }

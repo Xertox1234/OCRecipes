@@ -5,6 +5,7 @@ import type { MealSuggestion } from "@shared/types/meal-suggestions";
 import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
+import { buildDismissalContext } from "../lib/dismissal-context";
 import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("meal-suggestions");
@@ -64,12 +65,19 @@ export interface MealSuggestionInput {
     carbs: number;
     fat: number;
   };
+  dismissedRecipeTitles?: string[];
 }
 
 export { buildDietaryContext };
 
 /**
  * Build a deterministic cache key for meal suggestion requests.
+ *
+ * dismissedHash is required (not optional with a default) to ensure TypeScript
+ * enforces that every call site computes and passes it explicitly. If it were
+ * optional with `= ""`, a caller that forgot to pass it would silently share a
+ * cache entry with a caller that has no dismissals — allowing dismissed titles
+ * to re-appear from a cached suggestion.
  */
 export function buildSuggestionCacheKey(
   userId: string,
@@ -77,8 +85,9 @@ export function buildSuggestionCacheKey(
   mealType: string,
   profileHash: string,
   planHash: string,
+  dismissedHash: string,
 ): string {
-  const raw = `${userId}:${date}:${mealType}:${profileHash}:${planHash}`;
+  const raw = `${userId}:${date}:${mealType}:${profileHash}:${planHash}:${dismissedHash}`;
   return crypto.createHash("sha256").update(raw).digest("hex");
 }
 
@@ -89,6 +98,9 @@ export async function generateMealSuggestions(
   input: MealSuggestionInput,
 ): Promise<MealSuggestion[]> {
   const dietaryContext = buildDietaryContext(input.userProfile);
+  const dismissalContext = buildDismissalContext(
+    input.dismissedRecipeTitles ?? [],
+  );
 
   const existingMealsSummary =
     input.existingMeals.length > 0
@@ -114,7 +126,7 @@ REMAINING BUDGET: ${input.remainingBudget.calories} cal, ${input.remainingBudget
 ALREADY PLANNED TODAY:
 ${existingMealsSummary}
 
-${dietaryContext ? `DIETARY REQUIREMENTS:\n${dietaryContext}` : ""}
+${dismissalContext ? dismissalContext + "\n\n" : ""}${dietaryContext ? `DIETARY REQUIREMENTS:\n${dietaryContext}` : ""}
 
 Each suggestion needs: title, description, reasoning (why this fits), calories, protein, carbs, fat, prepTimeMinutes, difficulty (Easy/Medium/Hard), ingredients (name, quantity, unit), instructions, dietTags.
 

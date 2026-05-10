@@ -47,6 +47,38 @@ export async function getDismissedRecipeIds(
   return ids;
 }
 
+/**
+ * Return an ordered list of recently dismissed recipe IDs for a user,
+ * newest first, limited to the last 25 dismissals within the past 90 days.
+ *
+ * Unlike getDismissedRecipeIds (unordered Set, up to 500 items — used by the
+ * carousel to filter results), this function returns an ordered number[] limited
+ * to 25 items — the correct shape for injecting into an AI prompt.
+ */
+export async function getRecentDismissedRecipeIds(
+  userId: string,
+  limit = 25,
+): Promise<number[]> {
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({ recipeIdentifier: recipeDismissals.recipeIdentifier })
+    .from(recipeDismissals)
+    .where(
+      and(
+        eq(recipeDismissals.userId, userId),
+        gte(recipeDismissals.dismissedAt, ninetyDaysAgo),
+      ),
+    )
+    .orderBy(desc(recipeDismissals.dismissedAt))
+    .limit(limit);
+  const ids: number[] = [];
+  for (const r of rows) {
+    const num = parseInt(r.recipeIdentifier, 10);
+    if (!Number.isNaN(num)) ids.push(num);
+  }
+  return ids;
+}
+
 export async function dismissRecipe(
   userId: string,
   recipeId: number,

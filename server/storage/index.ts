@@ -196,6 +196,7 @@ export const storage = {
   updateRecipePublicStatus: community.updateRecipePublicStatus,
   updateCommunityRecipeImageUrl: community.updateCommunityRecipeImageUrl,
   getCommunityRecipe: community.getCommunityRecipe,
+  getCommunityRecipeTitlesByIds: community.getCommunityRecipeTitlesByIds,
   getFeaturedRecipes: community.getFeaturedRecipes,
   getAllPublicCommunityRecipes: community.getAllPublicCommunityRecipes,
   getCommunityRecipesWithEmptyMealTypes:
@@ -304,6 +305,7 @@ export const storage = {
 
   // Carousel (recipe discovery)
   getDismissedRecipeIds: carousel.getDismissedRecipeIds,
+  getRecentDismissedRecipeIds: carousel.getRecentDismissedRecipeIds,
   dismissRecipe: carousel.dismissRecipe,
   getRecentCommunityRecipes: carousel.getRecentCommunityRecipes,
 
