@@ -65,16 +65,18 @@ kimi-write --reference server/routes/nutrition.ts --target server/routes/carouse
 **When:** Before committing any significant implementation. Diffs only changed lines and returns findings at CRITICAL/WARNING/SUGGESTION tiers.
 
 ```bash
-kimi-review --scope "carousel timezone header threading" --base main --tiers CRITICAL,WARNING
+kimi-review --scope "carousel timezone header threading" --base main --tiers CRITICAL,WARNING --profile ocrecipes
 ```
 
 **Filter pattern:**
 
 ```bash
-kimi-review --scope "..." --base main --tiers CRITICAL,WARNING
+kimi-review --scope "..." --base main --tiers CRITICAL,WARNING --profile ocrecipes
 ```
 
 The `--tiers CRITICAL,WARNING` option tells Kimi to request and return only actionable findings. The SUGGESTION tier is excluded because suggestion-level findings are style preferences — surfacing them into Claude's context triggers unnecessary rewrites and burns tokens without improving correctness or safety. CRITICAL and WARNING are actionable; SUGGESTION is not.
+
+The `--profile ocrecipes` option adds concise project-specific review priorities: Bearer JWT/IDOR checks, health-data boundaries, Express/Drizzle storage patterns, React Native/Expo constraints, TanStack Query/theme/navigation conventions, and AI/eval safety gates. Use it for this repo; omit it only when reviewing unrelated projects.
 
 **Rule:** If `kimi-review` returns a CRITICAL finding, stop and surface it to the user before committing.
 
