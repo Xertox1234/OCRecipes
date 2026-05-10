@@ -24,10 +24,6 @@ vi.mock("../../db", () => ({
   },
 }));
 
-vi.mock("../../lib/fire-and-forget", () => ({
-  fireAndForget: vi.fn(),
-}));
-
 const { getTastePicks, setTastePicks, getTastePickCandidates } = await import(
   "../taste-picks"
 );
@@ -197,6 +193,28 @@ describe("getTastePickCandidates", () => {
     expect(titles).toContain("Public");
     expect(titles).not.toContain("Private");
     expect(titles).not.toContain("No Image");
+  });
+
+  it("filters by dietType when provided", async () => {
+    await createCommunityRecipe({
+      title: "Vegan Dish",
+      normalizedProductName: "test-vegan",
+      dietTags: ["vegan"],
+    });
+    await createCommunityRecipe({
+      title: "Meat Dish",
+      normalizedProductName: "test-meat",
+      dietTags: [],
+    });
+
+    const result = await getTastePickCandidates({
+      page: 1,
+      limit: 100,
+      dietType: "vegan",
+    });
+    const titles = result.candidates.map((c) => c.title);
+    expect(titles).toContain("Vegan Dish");
+    expect(titles).not.toContain("Meat Dish");
   });
 
   it("returns paginated results", async () => {
