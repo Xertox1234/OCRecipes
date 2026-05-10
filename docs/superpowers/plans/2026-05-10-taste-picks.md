@@ -1912,7 +1912,7 @@
 
   Expected: all tests pass, including new taste-picks tests.
 
-- [ ] **Step 3: Manual smoke test — onboarding flow**
+- [x] **Step 3: Manual smoke test — onboarding flow**
 
   In the iOS simulator using the demo/demo123 account:
   - Create a new account (or clear onboarding state)
@@ -1922,14 +1922,14 @@
   - Select 5th recipe — verify Continue button activates
   - Tap Continue — verify profile saves and app navigates to Home
 
-- [ ] **Step 4: Manual smoke test — settings flow**
+- [x] **Step 4: Manual smoke test — settings flow**
   - Navigate to Profile → Settings
   - Verify "Taste Profile" row appears between "Edit Profile" and "Apple Health"
   - Tap it — verify grid appears pre-populated with onboarding picks
   - Toggle a recipe off — verify "Save Changes" becomes active
   - Tap "Save Changes" — verify navigates back to Settings
 
-- [ ] **Step 5: Verify carousel recommendation labels**
+- [x] **Step 5: Verify carousel recommendation labels**
 
   After completing onboarding with Italian recipe picks, return to Home and check that some carousel cards show "Matches your cuisine preferences" instead of "Recently added recipe".
 
