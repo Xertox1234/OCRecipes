@@ -8,7 +8,7 @@ You are a specialized agent that implements a single todo item from the `todos/`
 
 Read the todo markdown file at the provided path. Extract:
 
-- **YAML frontmatter**: `title`, `status`, `priority`, `created`, `labels` (array)
+- **YAML frontmatter**: `title`, `status`, `priority`, `created`, `labels` (array), `github_issue`
 - **Body sections**: Acceptance Criteria (checklist items), Implementation Notes, Dependencies (list of other todo filenames or descriptions), Risks
 
 Store these in memory for all subsequent steps.
@@ -22,12 +22,20 @@ Check whether this todo is eligible for execution:
 1. **Status gate**: If `status` is not `backlog` or `planned`, report `skipped` with reason `"status is <actual status>, expected backlog or planned"` and stop.
 2. **Dependency check**: If the Dependencies section lists other todo files, check whether each specific dependency filename exists as a file at `todos/<dependency-filename>.md`. If it exists (not moved to `todos/archive/`), the dependency is still pending — report `blocked` with the list of blocking todo filenames and stop.
    - Dependencies that reference external services, APIs, or non-todo items are not blocking.
+3. **Copilot delegation gate**: If the todo has a `github_issue` frontmatter value, treat the GitHub Issue as the active Copilot work queue item and report `skipped` with reason `delegated to Copilot: <url>`. Do not implement locally unless the orchestrator explicitly tells you this is a manual takeover.
+4. **kimi-review availability gate**: Check that the required API key is set:
+   ```bash
+   if [[ -z "${WORKER_API_KEY:-}" && -z "${MOONSHOT_API_KEY:-}" ]]; then echo "missing"; else echo "found"; fi
+   ```
+   If `missing`, report `blocked` with reason "kimi-review requires WORKER_API_KEY or MOONSHOT_API_KEY — set one and retry."
 
 ---
 
 ## Step 3 — Research
 
-Before implementing, extract the list of affected source files from the todo's Implementation Notes and Acceptance Criteria (any file references — including fully-qualified paths (`server/routes/cooking.ts`), bare filenames (`` `cooking.ts` ``), and paths with line ranges (`path/to/file.ts:123-145`). Extract paths exactly as they appear in the todo text). Then spawn the `todo-researcher` subagent:
+**Lightweight path**: Before spawning the researcher, check whether ALL affected files extracted from the todo are documentation or configuration only — paths under `docs/` or `todos/`, or with extensions `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.*rc`, `.*ignore`. If ALL match, skip the researcher entirely: read those files directly with the Read tool and proceed to Step 4.
+
+Before implementing (for non-lightweight todos), extract the list of affected source files from the todo's Implementation Notes and Acceptance Criteria (any file references — including fully-qualified paths (`server/routes/cooking.ts`), bare filenames (`` `cooking.ts` ``), and paths with line ranges (`path/to/file.ts:123-145`). Extract paths exactly as they appear in the todo text). Then spawn the `todo-researcher` subagent:
 
 ```
 Agent({
@@ -71,7 +79,7 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 Execute the todo:
 
-0. **Mark in-progress**: Update the todo's YAML frontmatter `status` to `in-progress` before starting work. This signals that the todo is being worked on.
+0. **Mark in-progress**: Update the todo's YAML frontmatter `status` to `in-progress` before starting work. This signals that the todo is being worked on. Add `todos/<filename>.md` to your tracked-files list now — it must be included in any revert in the Failure Path.
 1. Use the **Acceptance Criteria** as the definition of done. Every checkbox item must be satisfied.
 2. Use the **Implementation Notes** as guidance for approach, but the acceptance criteria take precedence if they conflict.
 3. Apply patterns discovered in Step 3. Follow established conventions — do not introduce new patterns without cause.
@@ -104,17 +112,36 @@ After all commands pass, re-read every modified file and confirm the changes mat
 
 ## Step 6 — Code Review
 
-Spawn the `code-reviewer` subagent to review the uncommitted changes in this worktree:
+Run `kimi-review` against the committed changes in this worktree. Map the todo's labels to `--patterns` using this table:
 
-```
-Agent({
-  description: "Code review: <todo title>",
-  subagent_type: "superpowers:code-reviewer",
-  prompt: "You are reviewing uncommitted changes in a git worktree for the OCRecipes project. Follow .claude/agents/code-reviewer.md exactly.\n\nRun `git diff` to see the changes. Return a structured report with Critical, High, Medium, and Low findings."
-})
+| Todo label(s)                 | `--patterns` value                     |
+| ----------------------------- | -------------------------------------- |
+| `security`                    | `security`                             |
+| `architecture`, `duplication` | `architecture`                         |
+| `ui`, `remix`                 | `react-native,design-system,animation` |
+| `performance`                 | `performance`                          |
+| `testing`, `test`             | `testing`                              |
+| `database`                    | `database`                             |
+| `api`                         | `api`                                  |
+| `hooks`                       | `hooks`                                |
+| `typescript`, `types`         | `typescript`                           |
+| `client-state`                | `client-state`                         |
+| _(no match)_                  | _(omit `--patterns` flag)_             |
+
+Use the first matching row. If multiple labels match different rows, combine their values (e.g., `--patterns react-native,security`).
+
+Capture the output for use in Step 9:
+
+```bash
+REVIEW_OUTPUT=$(kimi-review \
+  --base <BASE_BRANCH> \
+  --scope "<todo title>" \
+  --patterns <mapped-patterns> \
+  --tiers CRITICAL,WARNING,SUGGESTION)
+echo "$REVIEW_OUTPUT"
 ```
 
-The reviewer will run `git diff` itself to inspect the changes. It will return a structured report with Critical, High, Medium, and Low findings.
+`<BASE_BRANCH>` is the base branch value from your spawn prompt. If no labels matched the table, omit `--patterns`.
 
 ---
 
@@ -122,13 +149,13 @@ The reviewer will run `git diff` itself to inspect the changes. It will return a
 
 Process the code review findings:
 
-1. Fix all **Critical** and **High** issues. These are mandatory.
-2. Fix **Medium** issues unless doing so would exceed the scope of the todo.
-3. **Low** issues are optional — fix if trivial, skip if not.
+1. Fix all **CRITICAL** and **WARNING** issues. These are mandatory.
+2. Fix **SUGGESTION** issues unless doing so would exceed the scope of the todo.
+3. There is no tier below SUGGESTION — findings not marked CRITICAL, WARNING, or SUGGESTION can be ignored.
 4. After fixing, re-run Step 5 (verify) to ensure fixes did not break anything.
 5. If fixes were non-trivial, run Step 6 again (second review round).
 
-**Cap at 2 review rounds.** If Critical or High issues remain after 2 rounds of review + fix, treat the todo as failed and enter the Failure Path.
+**Cap at 2 review rounds.** If CRITICAL or WARNING issues remain after 2 rounds of review + fix, treat the todo as failed and enter the Failure Path.
 
 ---
 
@@ -170,7 +197,7 @@ Example:
 git commit -m "$(cat <<'EOF'
 refactor: consolidate duplicated cooking session types and stores
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -179,36 +206,69 @@ EOF
 
 ## Step 9 — Codify
 
-Evaluate whether the implementation produced non-obvious knowledge worth codifying:
+Decide inline whether this implementation produced knowledge worth preserving. Use `$REVIEW_OUTPUT` from Step 6 as additional signal.
 
-**Codify if:**
+**Codify if any one is true:**
 
-- The solution required a pattern not currently documented in `docs/patterns/`
-- The implementation revealed a gotcha or subtle constraint
-- The approach would benefit future developers working in the same area
+- The solution required a workaround or constraint not currently in `docs/patterns/`
+- The implementation revealed a library gotcha or platform-specific behavior
+- `$REVIEW_OUTPUT` contained a CRITICAL or WARNING finding that reveals a reusable rule
 
 **Skip if:**
 
 - The implementation was straightforward application of existing patterns
-- No new insight was gained
+- All `$REVIEW_OUTPUT` findings were SUGGESTION-only or were deferred
 
-If codifying, spawn the `pattern-codifier` agent (`.claude/agents/pattern-codifier.md`) with context about what was learned. After the codifier completes, stage and commit the documentation changes separately:
+**If codifying:**
 
-```bash
-git add <codification files>
-git commit -m "$(cat <<'EOF'
-docs: codify pattern from <todo title>
+1. Determine the target pattern file from the todo's primary label:
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
-EOF
-)"
-```
+   | Label                         | Target file                     |
+   | ----------------------------- | ------------------------------- |
+   | `security`                    | `docs/patterns/security.md`     |
+   | `architecture`, `duplication` | `docs/patterns/architecture.md` |
+   | `ui`, `remix`                 | `docs/patterns/react-native.md` |
+   | `performance`                 | `docs/patterns/performance.md`  |
+   | `testing`, `test`             | `docs/patterns/testing.md`      |
+   | `database`                    | `docs/patterns/database.md`     |
+   | `api`                         | `docs/patterns/api.md`          |
+   | `hooks`                       | `docs/patterns/hooks.md`        |
+   | `typescript`, `types`         | `docs/patterns/typescript.md`   |
+   | `client-state`                | `docs/patterns/client-state.md` |
+   | _(no match)_                  | `docs/LEARNINGS.md`             |
+
+2. Compose a description of what was learned (the non-obvious constraint, workaround, or reusable rule — 3–5 sentences).
+
+3. Run `kimi-write`, passing the existing file as `--context` so it preserves and extends the file:
+
+   ```bash
+   kimi-write \
+     --spec "Add a new section to this patterns file documenting the following pattern discovered during implementation of '<todo title>': <description of what was learned>. Preserve all existing content exactly." \
+     --context <target file> \
+     --target <target file>
+   ```
+
+4. Stage and commit:
+
+   ```bash
+   git add <target file>
+   git commit -m "$(cat <<'EOF'
+   docs: codify pattern from <todo title>
+
+   Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+   EOF
+   )"
+   ```
+
+   If `kimi-write` exits non-zero, log "codification skipped — kimi-write failed" and continue to Step 10. Codification failure is non-blocking.
 
 ---
 
 ## Step 10 — Create PR
 
 This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both complete — the branch must contain the committed implementation before the PR is opened.
+
+If this todo was delegated through a GitHub Issue assigned to `@copilot`, do not create direct commits or a replacement PR from this executor. The Copilot issue must produce a PR that receives human review.
 
 Rename the worktree branch to a meaningful slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
 
@@ -311,13 +371,13 @@ If implementation fails at any point after Step 4 (verify fails, review has unre
 
 ### First failure
 
-1. **Revert only files you modified**: `git checkout -- <files you modified>` (use the list tracked in Step 4). Do not use `git checkout -- .` as it may revert unrelated changes.
+1. **Revert only files you modified**: `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md` since Step 4.0 set it to `in-progress`). Do not use `git checkout -- .` as it may revert unrelated changes.
 2. **Analyze** what went wrong. Re-read the error output, the todo, and the relevant source files.
 3. **Retry** with a different approach — go back to Step 4 with the new understanding. This is attempt 2.
 
 ### Second failure
 
-1. **Revert only files you modified**: `git checkout -- <files you modified>` (use the list tracked in Step 4). Do not use `git checkout -- .` as it may revert unrelated changes.
+1. **Revert only files you modified**: `git checkout -- <files you modified>` (use the list tracked in Step 4, which must include `todos/<filename>.md`). Do not use `git checkout -- .` as it may revert unrelated changes.
 2. **Update the todo** status to `blocked` and add a dated Updates entry explaining the failure:
 
 ```yaml
@@ -339,7 +399,7 @@ git add todos/<filename>.md
 git commit -m "$(cat <<'EOF'
 chore: mark <todo title> as blocked after failed execution
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -354,8 +414,6 @@ EOF
 - `todos/archive/` — Completed todos (move here on success)
 - `docs/patterns/*.md` — Pattern documentation (read during research)
 - `docs/LEARNINGS.md` — Bug post-mortems and gotchas (grep during research)
-- `.claude/agents/code-reviewer.md` — Code review subagent (invoked in Step 6)
-- `.claude/agents/pattern-codifier.md` — Pattern codification subagent (invoked in Step 9)
 - `.claude/agents/todo-researcher.md` — Research subagent (invoked in Step 3)
 - `CLAUDE.md` — Project overview, commands, architecture reference
 
