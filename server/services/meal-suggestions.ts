@@ -6,6 +6,8 @@ import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { buildDismissalContext } from "../lib/dismissal-context";
+import { buildMacroGapEmphasis } from "../lib/macro-gap-context";
+import type { MacroTargets } from "../lib/macro-gap-context";
 import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("meal-suggestions");
@@ -52,19 +54,9 @@ export interface MealSuggestionInput {
   date: string;
   mealType: string;
   userProfile: UserProfile | null;
-  dailyTargets: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fat: number;
-  };
+  dailyTargets: MacroTargets;
   existingMeals: { title: string; calories: number; mealType: string }[];
-  remainingBudget: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fat: number;
-  };
+  remainingBudget: MacroTargets;
   dismissedRecipeTitles?: string[];
 }
 
@@ -102,6 +94,11 @@ export async function generateMealSuggestions(
     input.dismissedRecipeTitles ?? [],
   );
 
+  const gapEmphasis = buildMacroGapEmphasis(
+    input.dailyTargets,
+    input.remainingBudget,
+  );
+
   const existingMealsSummary =
     input.existingMeals.length > 0
       ? input.existingMeals
@@ -123,7 +120,7 @@ DAILY TARGETS: ${input.dailyTargets.calories} cal, ${input.dailyTargets.protein}
 
 REMAINING BUDGET: ${input.remainingBudget.calories} cal, ${input.remainingBudget.protein}g protein, ${input.remainingBudget.carbs}g carbs, ${input.remainingBudget.fat}g fat
 
-ALREADY PLANNED TODAY:
+${gapEmphasis ? gapEmphasis + "\n\n" : ""}ALREADY PLANNED TODAY:
 ${existingMealsSummary}
 
 ${dismissalContext ? dismissalContext + "\n\n" : ""}${dietaryContext ? `DIETARY REQUIREMENTS:\n${dietaryContext}` : ""}
