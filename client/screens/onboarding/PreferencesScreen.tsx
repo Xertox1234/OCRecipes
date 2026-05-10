@@ -21,8 +21,7 @@ export default function PreferencesScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
-  const { data, updateData, prevStep, completeOnboarding, isSubmitting } =
-    useOnboarding();
+  const { data, updateData, prevStep, nextStep } = useOnboarding();
 
   const toggleCuisine = (cuisineId: string) => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -87,7 +86,7 @@ export default function PreferencesScreen() {
               type="small"
               style={{ color: theme.success, fontWeight: "600" }}
             >
-              Step 5 of 6
+              Step 6 of 7
             </ThemedText>
           </View>
           <ThemedText type="h3" style={styles.title}>
@@ -317,14 +316,11 @@ export default function PreferencesScreen() {
             <Feather name="arrow-left" size={24} color={theme.text} />
           </Pressable>
           <Button
-            onPress={completeOnboarding}
-            disabled={isSubmitting}
-            accessibilityLabel={
-              isSubmitting ? "Saving your preferences" : "Complete setup"
-            }
+            onPress={nextStep}
+            accessibilityLabel="Next step"
             style={styles.continueButton}
           >
-            {isSubmitting ? "Saving..." : "Complete Setup"}
+            Next
           </Button>
         </View>
       </View>
