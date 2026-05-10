@@ -12,11 +12,23 @@ For human contributor setup, see [DEV_SETUP.md](DEV_SETUP.md).
 
 `.github/workflows/ci.yml` runs on pushes to `main` and on pull requests. It also cancels superseded in-progress runs for the same ref, which avoids burning Actions minutes on stale commits.
 
+Documentation-only pushes to `main` (`*.md`, `docs/**`, `todos/**`) are ignored so they do not spend full lint/type/test minutes. Pull requests still run CI so required status checks are always reported.
+
 - ESLint (including accessibility, hardcoded-color, and IDOR custom rules)
 - `tsc --noEmit` type check
 - Full Vitest suite (`npm run test:run`)
 
 **Why tests don't need to run locally before commits:** CI is the authoritative quality gate. The pre-commit hook runs only `lint-staged` (ESLint fix + Prettier on staged files). Running the full test suite in the hook added ~20s to every commit and produced no signal that CI didn't already catch. If CI fails, the PR is blocked.
+
+When CI fails, inspect only failed step logs:
+
+```bash
+npm run ci:failed-logs
+# or for a specific run:
+npm run ci:failed-logs -- <run-id>
+```
+
+Do not paste full workflow logs into Claude. Failed-step logs are the useful signal.
 
 ### Pre-commit Hook (Husky / lint-staged)
 
@@ -53,16 +65,16 @@ kimi-write --reference server/routes/nutrition.ts --target server/routes/carouse
 **When:** Before committing any significant implementation. Diffs only changed lines and returns findings at CRITICAL/WARNING/SUGGESTION tiers.
 
 ```bash
-kimi-review --scope "carousel timezone header threading" --base main
+kimi-review --scope "carousel timezone header threading" --base main --tiers CRITICAL,WARNING
 ```
 
 **Filter pattern:**
 
 ```bash
-kimi-review --scope "..." --base main | grep -A2 'CRITICAL\|WARNING' || true
+kimi-review --scope "..." --base main --tiers CRITICAL,WARNING
 ```
 
-The `grep -A2` prints the matched line plus 2 lines of context (the finding body). The SUGGESTION tier is excluded because suggestion-level findings are style preferences — surfacing them into Claude's context triggers unnecessary rewrites and burns tokens without improving correctness or safety. CRITICAL and WARNING are actionable; SUGGESTION is not.
+The `--tiers CRITICAL,WARNING` option tells Kimi to request and return only actionable findings. The SUGGESTION tier is excluded because suggestion-level findings are style preferences — surfacing them into Claude's context triggers unnecessary rewrites and burns tokens without improving correctness or safety. CRITICAL and WARNING are actionable; SUGGESTION is not.
 
 **Rule:** If `kimi-review` returns a CRITICAL finding, stop and surface it to the user before committing.
 
@@ -96,3 +108,14 @@ This keeps historical session context lean before it re-enters Claude's context 
 | `kimi-review` instead of code-reviewer subagent                        | Diffs changed lines only; subagent reads full files                                  |
 | iOS/device setup in `docs/DEV_SETUP.md`                                | Keeps CLAUDE.md short; agents reference the doc, not inline instructions             |
 | Repo architecture memory at `/memories/repo/ocrecipes-architecture.md` | Schema, nav, services, stack facts persist across sessions without re-reading source |
+
+## Repo Memory Maintenance
+
+Update `/memories/repo/ocrecipes-architecture.md` only when durable architecture facts change:
+
+- New or removed major services, route groups, storage modules, or navigation roots
+- New core database tables or renamed domain tables
+- Changes to auth, state management, CI/test strategy, path aliases, or app stack
+- Pattern-index changes that future agents should know before opening source files
+
+Do **not** store transient TODOs, implementation notes, eval output, or details already isolated in a specific plan doc. Repo memory is loaded as compact context; keep it short and factual.

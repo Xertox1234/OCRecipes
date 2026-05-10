@@ -14,6 +14,7 @@
     "lint:fix": "npx expo lint --fix",
     "lint:a11y": "node scripts/check-accessibility.js",
     "check:types": "tsc --noEmit",
+    "ci:failed-logs": "bash scripts/ci-failed-logs.sh",
     "check:format": "prettier --check \"**/*.{js,ts,tsx,css,json}\"",
     "format": "prettier --write \"**/*.{js,ts,tsx,css,json}\"",
     "test": "vitest",
