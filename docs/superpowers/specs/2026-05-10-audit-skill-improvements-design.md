@@ -35,15 +35,15 @@ kimi-review --scope "[one-line fix description]" --patterns [domain]
 
 Domain → patterns mapping:
 
-| Finding Domain | --patterns value                                                                                      |
-| -------------- | ----------------------------------------------------------------------------------------------------- |
-| security       | `security`                                                                                            |
-| performance    | `performance`                                                                                         |
-| data-integrity | `database`                                                                                            |
-| architecture   | `architecture`                                                                                        |
-| code-quality   | `typescript,api`                                                                                      |
-| camera / RN-UX | `react-native`                                                                                        |
-| accessibility  | `react-native,accessibility` (use `docs/patterns/accessibility.md` if it exists, else `react-native`) |
+| Finding Domain | --patterns value                                                                                          |
+| -------------- | --------------------------------------------------------------------------------------------------------- |
+| security       | `security`                                                                                                |
+| performance    | `performance`                                                                                             |
+| data-integrity | `database`                                                                                                |
+| architecture   | `architecture`                                                                                            |
+| code-quality   | `typescript,api`                                                                                          |
+| camera / RN-UX | `react-native`                                                                                            |
+| accessibility  | `react-native` (no `docs/patterns/accessibility.md` exists yet; add it to `--patterns` if one is created) |
 
 Response handling:
 
@@ -51,7 +51,7 @@ Response handling:
 - **WARNING**: Fix inline as part of the same finding. Re-run tests + kimi-review.
 - **SUGGESTION**: Proceed — mark `verified`. Note the suggestion in the manifest Verification column if it's worth tracking for codification.
 
-This replaces Phase 6 entirely. By the time Phase 6 (Commit) runs, every fix has already been kimi-reviewed.
+This replaces the current Phase 6 (Code Review subagent) entirely. By the time the Commit phase runs, every fix has already been kimi-reviewed.
 
 **Why `--patterns [domain]`:** kimi-review's `--patterns` flag loads the matching `docs/patterns/*.md` file as review context, giving Kimi the project's domain-specific rules (e.g., IDOR checks from `security.md`, FlatList defaults from `performance.md`) in addition to the auto-detected OCRecipes profile.
 
