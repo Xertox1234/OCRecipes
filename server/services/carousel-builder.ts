@@ -1,6 +1,7 @@
 import type { UserProfile, CommunityRecipe } from "@shared/schema";
 import type { CarouselRecipeCard } from "@shared/types/carousel";
 import { storage } from "../storage";
+import { inferMealTimeHint } from "../lib/meal-time-hint";
 
 type CarouselRecipe = Pick<
   CommunityRecipe,
@@ -11,6 +12,7 @@ type CarouselRecipe = Pick<
   | "remixedFromId"
   | "dietTags"
   | "isCanonical"
+  | "mealTypes"
 >;
 
 // ── Normalization ────────────────────────────────────────────────────
@@ -90,5 +92,13 @@ export async function buildCarousel(
 
   // getRecentCommunityRecipes already excludes dismissed IDs at the DB level
   // (notInArray clause). No post-DB filter needed here.
-  return recipes.map((r) => normalizeCommunity(r, userProfile)).slice(0, 8);
+
+  // NOTE: When carousel caching is added, the cache key MUST include the hour bucket.
+  const hint = inferMealTimeHint(new Date().getHours());
+  const sorted = [...recipes].sort((a, b) => {
+    const aMatches = (a.mealTypes ?? []).includes(hint) ? 0 : 1;
+    const bMatches = (b.mealTypes ?? []).includes(hint) ? 0 : 1;
+    return aMatches - bMatches;
+  });
+  return sorted.map((r) => normalizeCommunity(r, userProfile)).slice(0, 8);
 }

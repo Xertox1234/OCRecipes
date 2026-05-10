@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { buildCarousel } from "../carousel-builder";
 import { storage } from "../../storage";
 import type { UserProfile } from "@shared/schema";
@@ -166,5 +166,196 @@ describe("carousel-builder", () => {
     const cards = await buildCarousel("1", mockProfile);
 
     expect(cards.length).toBeLessThanOrEqual(8);
+  });
+
+  describe("time-of-day ordering", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("at 7am: breakfast recipe sorts before dinner recipe", async () => {
+      vi.setSystemTime(new Date("2026-05-09T07:00:00"));
+
+      const breakfastRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 10,
+        title: "Oatmeal",
+        mealTypes: ["breakfast"],
+      };
+      const dinnerRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 11,
+        title: "Steak",
+        mealTypes: ["dinner"],
+      };
+      // DB returns dinner first (by recency), breakfast second
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        dinnerRecipe,
+        breakfastRecipe,
+      ]);
+
+      const cards = await buildCarousel("1", mockProfile);
+
+      const titles = cards.map((c) => c.title);
+      expect(titles.indexOf("Oatmeal")).toBeLessThan(titles.indexOf("Steak"));
+    });
+
+    it("at 18:00: dinner recipe sorts before breakfast recipe", async () => {
+      vi.setSystemTime(new Date("2026-05-09T18:00:00"));
+
+      const breakfastRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 10,
+        title: "Oatmeal",
+        mealTypes: ["breakfast"],
+      };
+      const dinnerRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 11,
+        title: "Steak",
+        mealTypes: ["dinner"],
+      };
+      // DB returns breakfast first (by recency), dinner second
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        breakfastRecipe,
+        dinnerRecipe,
+      ]);
+
+      const cards = await buildCarousel("1", mockProfile);
+
+      const titles = cards.map((c) => c.title);
+      expect(titles.indexOf("Steak")).toBeLessThan(titles.indexOf("Oatmeal"));
+    });
+
+    it("multi-tagged recipe [lunch, dinner] sorts to front in the lunch window (11:00)", async () => {
+      vi.setSystemTime(new Date("2026-05-09T11:00:00"));
+
+      const multiTagRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 20,
+        title: "Burrito",
+        mealTypes: ["lunch", "dinner"],
+      };
+      const breakfastRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 21,
+        title: "Pancakes",
+        mealTypes: ["breakfast"],
+      };
+      // DB returns breakfast first (by recency)
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        breakfastRecipe,
+        multiTagRecipe,
+      ]);
+
+      const cards = await buildCarousel("1", mockProfile);
+
+      const titles = cards.map((c) => c.title);
+      expect(titles.indexOf("Burrito")).toBeLessThan(
+        titles.indexOf("Pancakes"),
+      );
+    });
+
+    it("multi-tagged recipe [lunch, dinner] sorts to front in the dinner window (19:00)", async () => {
+      vi.setSystemTime(new Date("2026-05-09T19:00:00"));
+
+      const multiTagRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 20,
+        title: "Burrito",
+        mealTypes: ["lunch", "dinner"],
+      };
+      const breakfastRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 21,
+        title: "Pancakes",
+        mealTypes: ["breakfast"],
+      };
+      // DB returns breakfast first (by recency)
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        breakfastRecipe,
+        multiTagRecipe,
+      ]);
+
+      const cards = await buildCarousel("1", mockProfile);
+
+      const titles = cards.map((c) => c.title);
+      expect(titles.indexOf("Burrito")).toBeLessThan(
+        titles.indexOf("Pancakes"),
+      );
+    });
+
+    it("unclassified recipe (mealTypes: ['unclassified']) stays in its original chronological position relative to other non-matching recipes", async () => {
+      vi.setSystemTime(new Date("2026-05-09T07:00:00")); // breakfast window
+
+      const unclassifiedA = {
+        ...mockCommunityRecipes[0],
+        id: 30,
+        title: "Salad A",
+        mealTypes: ["unclassified"],
+      };
+      const dinnerRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 31,
+        title: "Steak",
+        mealTypes: ["dinner"],
+      };
+      const unclassifiedB = {
+        ...mockCommunityRecipes[0],
+        id: 32,
+        title: "Salad B",
+        mealTypes: ["unclassified"],
+      };
+      // DB order: A (most recent), dinner, B
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        unclassifiedA,
+        dinnerRecipe,
+        unclassifiedB,
+      ]);
+
+      const cards = await buildCarousel("1", mockProfile);
+
+      // Neither A nor B match breakfast ("unclassified" is not a MealTimeHint);
+      // neither does dinner. All three score "1" (no match), so stable sort
+      // preserves original order.
+      const titles = cards.map((c) => c.title);
+      expect(titles.indexOf("Salad A")).toBeLessThan(titles.indexOf("Steak"));
+      expect(titles.indexOf("Steak")).toBeLessThan(titles.indexOf("Salad B"));
+    });
+
+    it("recipe with mealTypes: null is treated as non-matching (null-coalescing guard fires)", async () => {
+      vi.setSystemTime(new Date("2026-05-09T07:00:00")); // breakfast window
+
+      const breakfastRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 40,
+        title: "Oatmeal",
+        mealTypes: ["breakfast"],
+      };
+      const nullMealTypesRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 41,
+        title: "Mystery Food",
+        mealTypes: null as unknown as string[],
+      };
+      // DB returns null-mealTypes first (more recent), breakfast second
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        nullMealTypesRecipe,
+        breakfastRecipe,
+      ]);
+
+      const cards = await buildCarousel("1", mockProfile);
+
+      // The null-mealTypes recipe does NOT get boosted (null ?? [] = [], no match).
+      // The breakfast recipe gets boosted and should sort before it.
+      const titles = cards.map((c) => c.title);
+      expect(titles.indexOf("Oatmeal")).toBeLessThan(
+        titles.indexOf("Mystery Food"),
+      );
+    });
   });
 });
