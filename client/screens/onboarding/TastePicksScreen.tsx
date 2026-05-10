@@ -28,9 +28,11 @@ export default function TastePicksScreen() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const loadCandidates = useCallback(
     async (pageNum: number) => {
+      setLoadError(false);
       const params = new URLSearchParams({
         page: String(pageNum),
         limit: String(PAGE_LIMIT),
@@ -41,7 +43,10 @@ export default function TastePicksScreen() {
         "GET",
         `/api/taste-picks/candidates?${params}`,
       );
-      if (!res.ok) return;
+      if (!res.ok) {
+        setLoadError(true);
+        return;
+      }
       const body = await res.json();
       setCandidates((prev) =>
         pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
@@ -142,12 +147,29 @@ export default function TastePicksScreen() {
       </View>
 
       <View style={styles.grid}>
-        <TastePicksGrid
-          candidates={candidates}
-          selectedIds={selectedIds}
-          onToggle={handleToggle}
-          onEndReached={handleEndReached}
-        />
+        {loadError ? (
+          <View style={styles.errorContainer}>
+            <ThemedText type="body" style={{ color: theme.textSecondary }}>
+              Couldn&apos;t load recipes.
+            </ThemedText>
+            <Pressable
+              onPress={() => loadCandidates(1)}
+              accessibilityLabel="Retry loading recipes"
+              accessibilityRole="button"
+            >
+              <ThemedText type="body" style={{ color: theme.link }}>
+                Try again
+              </ThemedText>
+            </Pressable>
+          </View>
+        ) : (
+          <TastePicksGrid
+            candidates={candidates}
+            selectedIds={selectedIds}
+            onToggle={handleToggle}
+            onEndReached={handleEndReached}
+          />
+        )}
       </View>
 
       <View
@@ -217,6 +239,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   grid: { flex: 1 },
+  errorContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+  },
   footer: {
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.lg,
