@@ -100,6 +100,14 @@ For findings the user wants deferred:
 1. Create a todo in `todos/` following the template convention
 2. Update manifest status to `deferred` with link to the todo file
 3. Record the rationale in the Deferred Items table
+4. For low/deferred items that are scoped docs, tests, code-quality, simple performance, or simple refactor work with clear files and acceptance criteria, run:
+   ```bash
+   npm run copilot:delegate:dry-run -- todos/<filename>.md
+   npm run copilot:delegate -- todos/<filename>.md
+   ```
+   If live delegation succeeds, add the GitHub Issue URL to the todo's `github_issue` field and the manifest Deferred Items table. If `@copilot` assignment fails, leave the todo local and report the failure clearly; do not mark Copilot delegation as complete.
+
+Never delegate JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture changes without a human-approved plan. Copilot work must arrive as a PR for human review; no auto-merge and no direct commits to `main`.
 
 ## Phase 5: Close
 

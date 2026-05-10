@@ -40,9 +40,26 @@ Do not paste full workflow logs into Claude. Failed-step logs are the useful sig
 
 ---
 
-## Cheap-Worker Delegation (kimi-\* Tools)
+## Cheap-Worker Delegation (kimi-\* Tools and Copilot Issues)
 
-The following CLI scripts are available globally and should be used to offload work that doesn't require Claude's full reasoning capacity. Delegating reduces context usage and speeds up the session.
+The following CLI scripts are available globally and should be used to offload work that doesn't require the main agent's full reasoning capacity. Delegating reduces context usage and speeds up the session.
+
+GitHub Copilot can also handle bounded repo-local tasks through GitHub Issues assigned to `@copilot`. Prefer the `kimi-*` tools below for cheap read/write/review/challenge passes; use Copilot Issues for tracked, tightly scoped deferred work where Copilot can open a normal pull request for human review.
+
+### Copilot Issue Delegation
+
+Use Copilot Issues for eligible low/deferred review items only. The local `todos/` file remains the audit/todo traceability record; the GitHub Issue is Copilot's work queue.
+
+```bash
+npm run copilot:delegate:dry-run -- todos/YYYY-MM-DD-slug.md
+npm run copilot:delegate -- todos/YYYY-MM-DD-slug.md
+```
+
+The helper reads the todo, checks eligibility, and creates an issue with `gh issue create --assignee @copilot`. Dry-run mode prints the issue body without contacting GitHub. Live mode must fail loudly if issue creation or `@copilot` assignment fails.
+
+Eligible items are scoped docs, tests, code-quality, simple performance, or simple refactor tasks with clear files and checkbox acceptance criteria. Do not delegate JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture changes without a human-approved plan.
+
+Copilot output must be PR-based and human-reviewed. Never auto-merge Copilot work and never allow direct commits to `main`.
 
 ### `ask-kimi`
 
