@@ -143,6 +143,18 @@ describe("Carousel Routes", () => {
       expect(res.status).toBe(200);
       expect(buildCarousel).toHaveBeenCalledWith("1", null, undefined);
     });
+
+    it("accepts X-User-Hour of 0 (midnight) as a valid hour", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(buildCarousel).mockResolvedValue(mockCards);
+
+      const res = await request(app)
+        .get("/api/carousel")
+        .set("X-User-Hour", "0");
+
+      expect(res.status).toBe(200);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, 0);
+    });
   });
 
   describe("POST /api/carousel/dismiss", () => {
