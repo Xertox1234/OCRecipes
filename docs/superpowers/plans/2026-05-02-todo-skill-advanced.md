@@ -26,7 +26,7 @@
 
 - Create: `.claude/agents/todo-researcher.md`
 
-- [ ] **Step 1: Write the agent file**
+- [x] **Step 1: Write the agent file**
 
 Create `.claude/agents/todo-researcher.md`. The agent receives two inputs via spawn prompt: `Todo file` (path) and `Affected files` (comma-separated list).
 
@@ -38,7 +38,7 @@ Sections required:
 - **Step 3**: Return brief with exact structure (no code fence): `## Library Notes`, `## Project Context`, `## Global Patterns`. Always include all three headers even with placeholder text.
 - **Guidelines**: always include three headers; concise; no speculation; no new dependencies.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add .claude/agents/todo-researcher.md
@@ -53,7 +53,7 @@ git commit -m "feat: add todo-researcher subagent for live library and GitHub re
 
 - Modify: `.claude/agents/todo-executor.md`
 
-- [ ] **Step 1: Replace Step 3 with researcher spawn**
+- [x] **Step 1: Replace Step 3 with researcher spawn**
 
 Replace the existing Step 3 (static label→doc mapping) with a researcher spawn:
 
@@ -67,7 +67,7 @@ Agent({
 
 Fallback trigger: Agent() throws, or returned text contains none of the section headers (`## Library Notes`, `## Project Context`, `## Global Patterns`). On fallback: log "researcher unavailable" and read label-mapped pattern docs. CLAUDE.md only if researcher failed AND no label matches. Always also grep LEARNINGS.md, grep archive/, read source files.
 
-- [ ] **Step 2: Replace Step 6 with Agent() template**
+- [x] **Step 2: Replace Step 6 with Agent() template**
 
 Replace the bare `git diff` block with a full Agent() call:
 
@@ -79,7 +79,7 @@ Agent({
 })
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .claude/agents/todo-executor.md
@@ -94,7 +94,7 @@ git commit -m "feat: update executor Step 3 to spawn todo-researcher; add Step 6
 
 - Modify: `.claude/agents/todo-executor.md`
 
-- [ ] **Step 1: Add Step 10 — Create PR**
+- [x] **Step 1: Add Step 10 — Create PR**
 
 Insert new Step 10 between Codify (Step 9) and Report (Step 11). Step 10:
 
@@ -106,15 +106,15 @@ Insert new Step 10 between Codify (Step 9) and Report (Step 11). Step 10:
 
 PR body template: `## Summary`, `## Changes`, `## Resolves`, `## Test plan`, attribution line.
 
-- [ ] **Step 2: Rename Report to Step 11**
+- [x] **Step 2: Rename Report to Step 11**
 
 Rename `## Step 10 — Report` to `## Step 11 — Report`. Add `PR_URL: <GitHub PR URL, or "null" if PR creation failed>` to the success output block. Update `REVIEW_ROUNDS` to `<0 if LGTM first pass; 1 if one fix cycle; 2 if two fix cycles>`. Update Failure Path "see Step 10" reference to "see Step 11". Add researcher to Key Files list.
 
-- [ ] **Step 3: Update Failure Path note**
+- [x] **Step 3: Update Failure Path note**
 
 Replace "The orchestrator must ensure a clean working tree" with "This agent always runs in an isolated git worktree — the working tree starts clean. Revert operations only affect this worktree and cannot touch the base branch."
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .claude/agents/todo-executor.md
@@ -129,7 +129,7 @@ git commit -m "feat: add PR creation step to executor and shift Report to Step 1
 
 - Modify: `.claude/skills/todo/SKILL.md`
 
-- [ ] **Step 1: Add BASE_BRANCH capture to Phase 1**
+- [x] **Step 1: Add BASE_BRANCH capture to Phase 1**
 
 After step 2 (record baseline), insert step 3:
 
@@ -142,15 +142,15 @@ git rev-parse --abbrev-ref HEAD
 
 Store as `BASE_BRANCH`. Pass to every executor spawn via `Base branch:` line. Renumber existing step 3 to step 4.
 
-- [ ] **Step 2: Update parallel batch spawn prompt**
+- [x] **Step 2: Update parallel batch spawn prompt**
 
 Add `isolation: "worktree"` (already present) substitution warning: "Never pass the literal text `<BASE_BRANCH>`." Update prompt to include `Base branch: <BASE_BRANCH>` and "Execute all 11 steps".
 
-- [ ] **Step 3: Update sequential batch spawn prompt**
+- [x] **Step 3: Update sequential batch spawn prompt**
 
 Add `isolation: "worktree"` to sequential Agent() call. Add substitution warning. Add `Base branch: <BASE_BRANCH>`. Update to "Execute all 11 steps". Move "Run one at a time. Wait for each to complete before starting the next." to BEFORE the Agent() block.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .claude/skills/todo/SKILL.md
@@ -165,24 +165,24 @@ git commit -m "feat: capture BASE_BRANCH in Phase 1 and add worktree isolation t
 
 - Modify: `.claude/skills/todo/SKILL.md`
 
-- [ ] **Step 1: Remove merge-back from After Each Batch**
+- [x] **Step 1: Remove merge-back from After Each Batch**
 
 Replace the merge-back logic (items 3 and 4 of After Each Batch) with:
 
 - Item 2: Record PR URLs and commit hashes (executor reports `PR_URL` and `COMMIT`)
 - Item 3: `npm run check:types` on base branch only. If fails: halt. If passes: proceed to next batch.
 
-- [ ] **Step 2: Update Phase 5 summary table**
+- [x] **Step 2: Update Phase 5 summary table**
 
 Change `Commit` column to `PR` column. Add a 5th example row showing `PR_URL: null` case ("pending manual creation").
 
 Update tallies: `Completed: N (list PR URLs; note "PR pending manual creation" for any where PR_URL is null)`.
 
-- [ ] **Step 3: Update Rules section**
+- [x] **Step 3: Update Rules section**
 
 Replace "Verify after merging parallel work" with "Verify after each batch. Run `npm run check:types` on the base branch before starting the next batch. The full test suite runs only in Phase 5 — never run `npm run test:run` between batches. This is an accepted tradeoff: type-check only between batches trades speed for test-failure latency."
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add .claude/skills/todo/SKILL.md

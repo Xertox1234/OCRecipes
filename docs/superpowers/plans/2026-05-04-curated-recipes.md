@@ -50,7 +50,7 @@
 
 - Modify: `shared/schema.ts`
 
-- [ ] **Step 1: Add the new columns to the `communityRecipes` table definition in `shared/schema.ts`**
+- [x] **Step 1: Add the new columns to the `communityRecipes` table definition in `shared/schema.ts`**
 
 Open `shared/schema.ts` and find the `communityRecipes` table (around line 521). Add these columns inside the table definition, after `updatedAt`:
 
@@ -104,7 +104,7 @@ process.exit(0);
 
 Expected: prints `columns ok: [{ isCanonical: false, popularityScore: 0 }]` (or `[]` if no recipes exist — both are fine).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add shared/schema.ts
@@ -120,7 +120,7 @@ git commit -m "feat: add canonical recipe columns to communityRecipes schema"
 - Create: `server/storage/canonical-recipes.ts`
 - Modify: `server/storage/index.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `server/storage/__tests__/canonical-recipes.test.ts`:
 
@@ -183,7 +183,7 @@ npm run test:run -- server/storage/__tests__/canonical-recipes.test.ts
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Create `server/storage/canonical-recipes.ts`**
+- [x] **Step 3: Create `server/storage/canonical-recipes.ts`**
 
 ```typescript
 import { db } from "../db";
@@ -334,7 +334,7 @@ npm run test:run -- server/storage/__tests__/canonical-recipes.test.ts
 
 Expected: PASS (4 tests).
 
-- [ ] **Step 5: Expose new functions in `server/storage/index.ts`**
+- [x] **Step 5: Expose new functions in `server/storage/index.ts`**
 
 Add at the top of the imports section:
 
@@ -363,7 +363,7 @@ npm run test:run
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server/storage/canonical-recipes.ts server/storage/__tests__/canonical-recipes.test.ts server/storage/index.ts
@@ -382,7 +382,7 @@ git commit -m "feat: add canonical recipe storage functions and popularity count
 
 Note: Cook sessions have no recipe link in the current architecture (sessions are ingredient-only, not recipe-linked). The `cookSession` counter is wired here for the favorite and meal-plan paths; cook session tracking is deferred until a cook-from-recipe feature is added.
 
-- [ ] **Step 1: Add counter increment to `toggleFavouriteRecipe` in `server/storage/favourite-recipes.ts`**
+- [x] **Step 1: Add counter increment to `toggleFavouriteRecipe` in `server/storage/favourite-recipes.ts`**
 
 Add import at the top of the file (around line 1):
 
@@ -404,7 +404,7 @@ return true;
 
 Only community recipes participate — `mealPlan`-type favourites are excluded by the `recipeType` guard.
 
-- [ ] **Step 2: Add `sourceCommunityRecipeId` to the meal plan recipe creation schema and route**
+- [x] **Step 2: Add `sourceCommunityRecipeId` to the meal plan recipe creation schema and route**
 
 In `server/routes/meal-plan.ts`, find `createMealPlanRecipeSchema` (line 37). Add an optional field at the end of the schema object:
 
@@ -437,7 +437,7 @@ if (sourceCommunityRecipeId) {
 }
 ```
 
-- [ ] **Step 3: Pass `sourceCommunityRecipeId` from client when saving a community recipe to meal plan**
+- [x] **Step 3: Pass `sourceCommunityRecipeId` from client when saving a community recipe to meal plan**
 
 In `client/hooks/useMealPlanRecipes.ts`, find the `createMealPlanRecipe` mutation function that POSTs to `/api/meal-plan/recipes`. Add `sourceCommunityRecipeId?: number` to its input type.
 
@@ -451,7 +451,7 @@ npm run test:run
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server/storage/favourite-recipes.ts server/storage/meal-plans.ts server/routes/cooking.ts
@@ -468,7 +468,7 @@ git commit -m "feat: increment recipe popularity counters on favorite, meal plan
 - Create: `server/services/__tests__/canonical-promotion.test.ts`
 - Modify: `server/routes.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `server/services/__tests__/canonical-promotion.test.ts`:
 
@@ -519,7 +519,7 @@ npm run test:run -- server/services/__tests__/canonical-promotion.test.ts
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Create `server/services/canonical-promotion.ts`**
+- [x] **Step 3: Create `server/services/canonical-promotion.ts`**
 
 ```typescript
 import pLimit from "p-limit";
@@ -567,7 +567,7 @@ npm run test:run -- server/services/__tests__/canonical-promotion.test.ts
 
 Expected: PASS (2 tests).
 
-- [ ] **Step 5: Wire into `server/routes.ts`**
+- [x] **Step 5: Wire into `server/routes.ts`**
 
 Add import near the top with other service imports:
 
@@ -589,7 +589,7 @@ npm run test:run
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server/services/canonical-promotion.ts server/services/__tests__/canonical-promotion.test.ts server/routes.ts
@@ -606,7 +606,7 @@ git commit -m "feat: add canonical recipe promotion background job (6h interval)
 - Create: `server/services/canonical-enrichment.ts`
 - Create: `server/services/__tests__/canonical-enrichment.test.ts`
 
-- [ ] **Step 1: Export `saveImageBuffer` from `server/lib/runware.ts` and add high-quality model**
+- [x] **Step 1: Export `saveImageBuffer` from `server/lib/runware.ts` and add high-quality model**
 
 Open `server/lib/runware.ts`. Add near the top constants:
 
@@ -654,7 +654,7 @@ export async function saveImageBuffer(buffer: Buffer): Promise<string> {
 }
 ```
 
-- [ ] **Step 2: Write failing tests**
+- [x] **Step 2: Write failing tests**
 
 Create `server/services/__tests__/canonical-enrichment.test.ts`:
 
@@ -724,7 +724,7 @@ npm run test:run -- server/services/__tests__/canonical-enrichment.test.ts
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 4: Create `server/services/canonical-enrichment.ts`**
+- [x] **Step 4: Create `server/services/canonical-enrichment.ts`**
 
 ```typescript
 import pLimit from "p-limit";
@@ -947,7 +947,7 @@ npm run test:run
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server/lib/runware.ts server/services/canonical-enrichment.ts server/services/__tests__/canonical-enrichment.test.ts
@@ -962,7 +962,7 @@ git commit -m "feat: add canonical enrichment pipeline (HQ images, normalization
 
 - Create: `scripts/canonicalize-recipe.ts`
 
-- [ ] **Step 1: Create the seed script**
+- [x] **Step 1: Create the seed script**
 
 ```typescript
 #!/usr/bin/env npx tsx
@@ -1096,7 +1096,7 @@ npm run test:run
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/canonicalize-recipe.ts
@@ -1112,7 +1112,7 @@ git commit -m "feat: add canonicalize-recipe seed CLI script"
 - Create: `client/components/CuratedBadge.tsx`
 - Create: `client/components/__tests__/CuratedBadge.test.tsx`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 Create `client/components/__tests__/CuratedBadge.test.tsx`:
 
@@ -1146,7 +1146,7 @@ npm run test:run -- client/components/__tests__/CuratedBadge.test.tsx
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Create `client/components/CuratedBadge.tsx`**
+- [x] **Step 3: Create `client/components/CuratedBadge.tsx`**
 
 ```typescript
 import React from "react";
@@ -1209,7 +1209,7 @@ npm run test:run -- client/components/__tests__/CuratedBadge.test.tsx
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/components/CuratedBadge.tsx client/components/__tests__/CuratedBadge.test.tsx
@@ -1227,7 +1227,7 @@ git commit -m "feat: add CuratedBadge component"
 - Modify: `shared/types/public-api.ts`
 - Modify: `server/routes/public-api.ts`
 
-- [ ] **Step 1: Create internal curated recipes route**
+- [x] **Step 1: Create internal curated recipes route**
 
 Create `server/routes/curated-recipes.ts`:
 
@@ -1263,7 +1263,7 @@ export function register(app: Express): void {
 }
 ```
 
-- [ ] **Step 2: Register in `server/routes.ts`**
+- [x] **Step 2: Register in `server/routes.ts`**
 
 Add import:
 
@@ -1277,7 +1277,7 @@ Add after other `register*` calls:
 registerCuratedRecipes(app);
 ```
 
-- [ ] **Step 3: Add recipe types to `shared/types/public-api.ts`**
+- [x] **Step 3: Add recipe types to `shared/types/public-api.ts`**
 
 Append to the file:
 
@@ -1307,7 +1307,7 @@ export interface CuratedRecipeResponse {
 }
 ```
 
-- [ ] **Step 4: Add recipe endpoints to `server/routes/public-api.ts`**
+- [x] **Step 4: Add recipe endpoints to `server/routes/public-api.ts`**
 
 Add a helper serializer after the existing `serializePaidResponse`:
 
@@ -1390,7 +1390,7 @@ npm run test:run
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server/routes/curated-recipes.ts server/routes.ts shared/types/public-api.ts server/routes/public-api.ts
@@ -1407,7 +1407,7 @@ git commit -m "feat: add curated recipes API routes (internal + public /api/v1/r
 - Create: `client/components/home/CuratedRecipeCarousel.tsx`
 - Modify: `client/screens/HomeScreen.tsx`
 
-- [ ] **Step 1: Create `client/hooks/useCuratedRecipes.ts`**
+- [x] **Step 1: Create `client/hooks/useCuratedRecipes.ts`**
 
 ```typescript
 import { useQuery } from "@tanstack/react-query";
@@ -1427,7 +1427,7 @@ export function useCuratedRecipes() {
 }
 ```
 
-- [ ] **Step 2: Create `client/components/home/CuratedRecipeCarousel.tsx`**
+- [x] **Step 2: Create `client/components/home/CuratedRecipeCarousel.tsx`**
 
 Model this on the existing `RecipeCarousel` (`client/components/home/RecipeCarousel.tsx`). The key differences: it queries `/api/curated-recipes`, uses `canonicalImages[0]` as the image (falls back to `imageUrl`), and shows the `CuratedBadge`:
 
@@ -1534,7 +1534,7 @@ const styles = StyleSheet.create({
 });
 ```
 
-- [ ] **Step 3: Add `CuratedRecipeCarousel` to `client/screens/HomeScreen.tsx`**
+- [x] **Step 3: Add `CuratedRecipeCarousel` to `client/screens/HomeScreen.tsx`**
 
 Import it at the top:
 
@@ -1557,7 +1557,7 @@ npm run test:run && npm run check:types
 
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/hooks/useCuratedRecipes.ts client/components/home/CuratedRecipeCarousel.tsx client/screens/HomeScreen.tsx
@@ -1574,7 +1574,7 @@ git commit -m "feat: add Curated Recipes carousel to Home screen"
 - Modify: `server/routes/recipe-search.ts` (or the search service — check where `RecipeSearchParams` is consumed)
 - Modify: `client/screens/meal-plan/RecipeBrowserScreen.tsx`
 
-- [ ] **Step 1: Add `curatedOnly` to `RecipeSearchParams` in `shared/types/recipe-search.ts`**
+- [x] **Step 1: Add `curatedOnly` to `RecipeSearchParams` in `shared/types/recipe-search.ts`**
 
 Find `RecipeSearchParams` interface and add:
 
@@ -1588,7 +1588,7 @@ Also add `isCanonical` to `SearchableRecipe`:
   isCanonical?: boolean;
 ```
 
-- [ ] **Step 2: Update `communityToSearchable` in `server/lib/search-index.ts`**
+- [x] **Step 2: Update `communityToSearchable` in `server/lib/search-index.ts`**
 
 Find the `communityToSearchable` function and add `isCanonical` to the returned object:
 
@@ -1596,7 +1596,7 @@ Find the `communityToSearchable` function and add `isCanonical` to the returned 
   isCanonical: recipe.isCanonical ?? false,
 ```
 
-- [ ] **Step 3: Apply `curatedOnly` filter in the recipe search service**
+- [x] **Step 3: Apply `curatedOnly` filter in the recipe search service**
 
 Open `server/services/recipe-search.ts`. The search service uses a `predicates` array (around line 214) — each predicate is a `(r: SearchableRecipe) => boolean` function that is applied in a single O(N) pass. Add the `curatedOnly` predicate to the destructured params and into the predicates array, following the same pattern as the other filters (around line 279, before the `candidates.filter(...)` call):
 
@@ -1633,7 +1633,7 @@ if (curatedOnly) {
 
 The cast is needed because `isCanonical` is added to `SearchableRecipe` in Step 1 but MiniSearch document types are typed as the base interface.
 
-- [ ] **Step 4: Add Curated toggle chip to `RecipeBrowserScreen.tsx`**
+- [x] **Step 4: Add Curated toggle chip to `RecipeBrowserScreen.tsx`**
 
 Add state:
 
@@ -1679,7 +1679,7 @@ npm run test:run && npm run check:types
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add shared/types/recipe-search.ts server/lib/search-index.ts server/services/recipe-search.ts client/screens/meal-plan/RecipeBrowserScreen.tsx
@@ -1694,7 +1694,7 @@ git commit -m "feat: add Curated filter chip to recipe browser search"
 
 - Modify: `client/screens/FeaturedRecipeDetailScreen.tsx`
 
-- [ ] **Step 1: Extend the normalized recipe type in `FeaturedRecipeDetailScreen.tsx`**
+- [x] **Step 1: Extend the normalized recipe type in `FeaturedRecipeDetailScreen.tsx`**
 
 Find the inline type around line 46 that has `instructions`, `imageUrl`, etc. Extend it with canonical fields:
 
@@ -1718,7 +1718,7 @@ Update the normalization blocks (where `communityRecipe` and `mealPlanRecipe` ar
   cuisineOrigin: communityRecipe.cuisineOrigin ?? null,
 ```
 
-- [ ] **Step 2: Add expandable steps state and logic**
+- [x] **Step 2: Add expandable steps state and logic**
 
 Add imports:
 
@@ -1757,7 +1757,7 @@ const handleStepLongPress = useCallback(
 );
 ```
 
-- [ ] **Step 3: Replace single image with gallery and add Curated sections to JSX**
+- [x] **Step 3: Replace single image with gallery and add Curated sections to JSX**
 
 Find where `imageUrl` is rendered (around line 190, the hero image). Conditionally render a `FlatList` gallery for curated recipes or the original single image for non-curated:
 
@@ -1823,7 +1823,7 @@ stepDetail: { marginTop: 6, opacity: 0.75, fontSize: 13, lineHeight: 18 },
 stepHint: { fontSize: 12, opacity: 0.5, marginTop: 4, fontStyle: "italic" },
 ```
 
-- [ ] **Step 4: Add Tools Required section**
+- [x] **Step 4: Add Tools Required section**
 
 After the ingredients section, add (conditional on `isCanonical`):
 
@@ -1846,7 +1846,7 @@ After the ingredients section, add (conditional on `isCanonical`):
 )}
 ```
 
-- [ ] **Step 5: Add Chef's Notes card**
+- [x] **Step 5: Add Chef's Notes card**
 
 At the bottom of the scroll content (before action buttons), add:
 
@@ -1882,7 +1882,7 @@ npm run test:run && npm run check:types
 
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add client/screens/FeaturedRecipeDetailScreen.tsx
@@ -1898,7 +1898,7 @@ git commit -m "feat: add curated recipe detail sections (image gallery, expandab
 - Modify: `client/components/home/CarouselRecipeCard.tsx` (or wherever recipe cards are rendered with the existing carousel)
 - Modify: `client/screens/FavouriteRecipesScreen.tsx` (if it renders recipe cards)
 
-- [ ] **Step 1: Add `CuratedBadge` to `CarouselRecipeCard`**
+- [x] **Step 1: Add `CuratedBadge` to `CarouselRecipeCard`**
 
 Open `client/components/home/CarouselRecipeCard.tsx`. Find the card body JSX. Import `CuratedBadge` and add it conditionally:
 

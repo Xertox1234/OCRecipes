@@ -27,7 +27,7 @@
 
 The current table maps 6 domains to agents, several incorrectly. Replace the entire table and the batch instruction immediately below it.
 
-- [ ] **Step 1: Confirm the exact text to replace**
+- [x] **Step 1: Confirm the exact text to replace**
 
 Run:
 
@@ -44,7 +44,7 @@ Expected output includes lines like:
 23:**For `full` or `pre-launch` scopes:** Launch agents for all domains (batch in groups of 4-5, not all at once).
 ```
 
-- [ ] **Step 2: Replace the mapping table and batch instruction**
+- [x] **Step 2: Replace the mapping table and batch instruction**
 
 In `.claude/skills/audit/SKILL.md`, replace this block:
 
@@ -77,7 +77,7 @@ With:
 **For `full` or `pre-launch` scopes:** Launch agents for all domains (batch in groups of 4 — e.g., four batches: 4, 4, 4, 3 — not all at once).
 ```
 
-- [ ] **Step 3: Verify the table landed correctly**
+- [x] **Step 3: Verify the table landed correctly**
 
 Run:
 
@@ -103,7 +103,7 @@ grep "rn-ui-ux-specialist.*performance\|database-specialist.*architecture\|ai-ll
 
 Expected: **no output** (zero matches).
 
-- [ ] **Step 4: Also update the named-scope dispatch section to reference accessibility**
+- [x] **Step 4: Also update the named-scope dispatch section to reference accessibility**
 
 In `.claude/skills/audit/SKILL.md`, find the line:
 
@@ -119,7 +119,7 @@ grep "named scopes" /Users/williamtower/projects/OCRecipes/.claude/skills/audit/
 
 Expected: one matching line.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .claude/skills/audit/SKILL.md
@@ -142,7 +142,7 @@ git commit -m "fix: update audit skill domain mapping with 6 new specialist agen
 
 The code-reviewer currently has no accessibility section. Add §14 after the existing §13 Documentation & Todos section, before the `---` separator that starts the Review Process section.
 
-- [ ] **Step 1: Find the insertion point**
+- [x] **Step 1: Find the insertion point**
 
 Run:
 
@@ -164,7 +164,7 @@ Expected: lines like:
 
 The new §14 section goes between the last bullet of §13 and the `---` separator.
 
-- [ ] **Step 2: Insert §14 Accessibility**
+- [x] **Step 2: Insert §14 Accessibility**
 
 In `.claude/agents/code-reviewer.md`, replace this block (immediately after the last §13 bullet, before the `---`):
 
@@ -201,7 +201,7 @@ With:
 ## Review Process
 ```
 
-- [ ] **Step 3: Verify the section was inserted correctly**
+- [x] **Step 3: Verify the section was inserted correctly**
 
 Run:
 
@@ -217,7 +217,7 @@ grep -n "14. Accessibility\|## Review Process" /Users/williamtower/projects/OCRe
 
 Expected: §14 line number is lower than `## Review Process` line number.
 
-- [ ] **Step 4: Confirm section count is now 14**
+- [x] **Step 4: Confirm section count is now 14**
 
 ```bash
 grep -n "^### [0-9]*\." /Users/williamtower/projects/OCRecipes/.claude/agents/code-reviewer.md
@@ -225,7 +225,7 @@ grep -n "^### [0-9]*\." /Users/williamtower/projects/OCRecipes/.claude/agents/co
 
 Expected: 14 lines, numbered 1 through 14.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .claude/agents/code-reviewer.md
@@ -241,7 +241,7 @@ polarity, aria-invalid+InlineError, accessible={false} on decorative icons,
 
 ### Task 3: Smoke-check both files end-to-end
 
-- [ ] **Step 1: Confirm audit skill has exactly 7 domain rows**
+- [x] **Step 1: Confirm audit skill has exactly 7 domain rows**
 
 ```bash
 grep -c '^\| `' /Users/williamtower/projects/OCRecipes/.claude/skills/audit/SKILL.md
@@ -249,7 +249,7 @@ grep -c '^\| `' /Users/williamtower/projects/OCRecipes/.claude/skills/audit/SKIL
 
 Expected: `7`
 
-- [ ] **Step 2: Confirm code-reviewer has 14 numbered sections**
+- [x] **Step 2: Confirm code-reviewer has 14 numbered sections**
 
 ```bash
 grep -c "^### [0-9]*\." /Users/williamtower/projects/OCRecipes/.claude/agents/code-reviewer.md
@@ -257,7 +257,7 @@ grep -c "^### [0-9]*\." /Users/williamtower/projects/OCRecipes/.claude/agents/co
 
 Expected: `14`
 
-- [ ] **Step 3: Confirm no old wrong agent assignments remain in audit skill**
+- [x] **Step 3: Confirm no old wrong agent assignments remain in audit skill**
 
 ```bash
 grep -E "database-specialist.*architecture|ai-llm-specialist.*architecture|rn-ui-ux-specialist.*performance|code-reviewer.*code-quality" /Users/williamtower/projects/OCRecipes/.claude/skills/audit/SKILL.md
@@ -265,7 +265,7 @@ grep -E "database-specialist.*architecture|ai-llm-specialist.*architecture|rn-ui
 
 Expected: **no output**.
 
-- [ ] **Step 4: Final commit if any loose changes remain**
+- [x] **Step 4: Final commit if any loose changes remain**
 
 ```bash
 git status

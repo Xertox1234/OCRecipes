@@ -35,7 +35,7 @@
 
 - Modify: `package.json`
 
-- [ ] **Step 1: Install the package**
+- [x] **Step 1: Install the package**
 
 ```bash
 npm install react-native-vision-camera-ocr-plus
@@ -55,7 +55,7 @@ node -e "require('react-native-vision-camera-ocr-plus'); console.log('OK')"
 
 Expected: `OK` (no errors)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add package.json package-lock.json ios/Podfile.lock
@@ -70,7 +70,7 @@ git commit -m "feat: add react-native-vision-camera-ocr-plus dependency"
 
 - Create: `client/lib/__tests__/nutrition-ocr-parser.test.ts`
 
-- [ ] **Step 1: Write the test file**
+- [x] **Step 1: Write the test file**
 
 ```typescript
 import { describe, it, expect } from "vitest";
@@ -226,7 +226,7 @@ Expected: FAIL — `Cannot find module '../nutrition-ocr-parser'`
 
 - Create: `client/lib/nutrition-ocr-parser.ts`
 
-- [ ] **Step 1: Implement the parser**
+- [x] **Step 1: Implement the parser**
 
 ```typescript
 /**
@@ -337,7 +337,7 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
 Run: `npx vitest run client/lib/__tests__/nutrition-ocr-parser.test.ts`
 Expected: All 9 tests PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add client/lib/nutrition-ocr-parser.ts client/lib/__tests__/nutrition-ocr-parser.test.ts
@@ -356,7 +356,7 @@ Outputs a confidence score based on field extraction ratio."
 
 - Modify: `client/camera/types.ts`
 
-- [ ] **Step 1: Add OCR-related props to CameraViewProps**
+- [x] **Step 1: Add OCR-related props to CameraViewProps**
 
 In `client/camera/types.ts`, add the import for the OCR library's `Text` type and extend `CameraViewProps`:
 
@@ -389,7 +389,7 @@ export type { OCRText };
 Run: `npx tsc --noEmit --pretty 2>&1 | head -20`
 Expected: No errors related to camera types (some unrelated errors may exist)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add client/camera/types.ts
@@ -404,7 +404,7 @@ git commit -m "feat: add OCR props to CameraViewProps type"
 
 - Create: `client/camera/hooks/useOCRDetection.ts`
 
-- [ ] **Step 1: Create the hook**
+- [x] **Step 1: Create the hook**
 
 ```typescript
 import { useRef, useCallback, useEffect } from "react";
@@ -538,7 +538,7 @@ export function useOCRDetection(
 Run: `npx tsc --noEmit --pretty 2>&1 | grep -i "useOCRDetection" | head -5`
 Expected: No type errors for this file (if any, fix them)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add client/camera/hooks/useOCRDetection.ts
@@ -557,7 +557,7 @@ and caches latest result for post-capture use."
 
 - Modify: `client/camera/components/CameraView.tsx`
 
-- [ ] **Step 1: Import the hook and update the component**
+- [x] **Step 1: Import the hook and update the component**
 
 Add import at top of `client/camera/components/CameraView.tsx`:
 
@@ -602,7 +602,7 @@ Update the `<Camera>` JSX to conditionally use frame processor. Replace the exis
     );
 ```
 
-- [ ] **Step 2: Export latestOCRResult via the ref API**
+- [x] **Step 2: Export latestOCRResult via the ref API**
 
 Extend the `useImperativeHandle` to expose the latest OCR result. Add to the returned object:
 
@@ -632,7 +632,7 @@ Expected: No type errors
 Run: `npx vitest run client/camera/hooks/__tests__/`
 Expected: All existing tests pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add client/camera/components/CameraView.tsx client/camera/types.ts
@@ -651,7 +651,7 @@ Exposes getLatestOCRResult() via the imperative ref API."
 
 - Modify: `client/camera/index.ts`
 
-- [ ] **Step 1: Add exports**
+- [x] **Step 1: Add exports**
 
 Add to `client/camera/index.ts`:
 
@@ -661,7 +661,7 @@ export type { LocalNutritionData } from "../lib/nutrition-ocr-parser";
 export type { OCRText } from "./types";
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add client/camera/index.ts
@@ -676,7 +676,7 @@ git commit -m "feat: export OCR types from camera module"
 
 - Modify: `client/screens/ScanScreen.tsx`
 
-- [ ] **Step 1: Add text detection state and glow shared value**
+- [x] **Step 1: Add text detection state and glow shared value**
 
 Add new state and imports. At the top, add to the reanimated imports:
 
@@ -691,7 +691,7 @@ const cornerGlow = useSharedValue(0);
 const [textDetected, setTextDetected] = useState(false);
 ```
 
-- [ ] **Step 2: Add text detection callback**
+- [x] **Step 2: Add text detection callback**
 
 After the `textDetected` state, add:
 
@@ -711,7 +711,7 @@ const handleTextDetected = useCallback(
 );
 ```
 
-- [ ] **Step 3: Wire enableOCR and callbacks to CameraView**
+- [x] **Step 3: Wire enableOCR and callbacks to CameraView**
 
 Update the `<CameraView>` JSX to pass OCR props:
 
@@ -739,7 +739,7 @@ Update the `<CameraView>` JSX to pass OCR props:
       />
 ```
 
-- [ ] **Step 4: Create animated corner glow style**
+- [x] **Step 4: Create animated corner glow style**
 
 Add a new animated style after the existing `cornerStyle`:
 
@@ -764,7 +764,7 @@ Replace `cornerStyle` with `glowCornerStyle` on the reticle `AnimatedView`:
           >
 ```
 
-- [ ] **Step 5: Add connecting lines between corners**
+- [x] **Step 5: Add connecting lines between corners**
 
 Add connecting line elements inside the reticle `AnimatedView`, after the four corner `<View>` elements:
 
@@ -805,7 +805,7 @@ Add the styles in the `StyleSheet.create` block:
   },
 ```
 
-- [ ] **Step 6: Pass cached OCR result to LabelAnalysisScreen on capture**
+- [x] **Step 6: Pass cached OCR result to LabelAnalysisScreen on capture**
 
 In `handleShutterPress`, update the label mode navigation to include OCR data. Find the `isLabelMode` branch inside `handleShutterPress` and update it:
 
@@ -823,7 +823,7 @@ In `handleShutterPress`, update the label mode navigation to include OCR data. F
             if (!verifyBarcode) refreshScanCount();
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add client/screens/ScanScreen.tsx
@@ -842,7 +842,7 @@ to LabelAnalysisScreen on capture for instant preview."
 
 - Modify: `client/navigation/RootStackNavigator.tsx`
 
-- [ ] **Step 1: Add localOCRText to LabelAnalysis params**
+- [x] **Step 1: Add localOCRText to LabelAnalysis params**
 
 In `client/navigation/RootStackNavigator.tsx`, update the `LabelAnalysis` entry in `RootStackParamList`:
 
@@ -862,7 +862,7 @@ In `client/navigation/RootStackNavigator.tsx`, update the `LabelAnalysis` entry 
 Run: `npx tsc --noEmit --pretty 2>&1 | grep -i "LabelAnalysis" | head -10`
 Expected: No type errors
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add client/navigation/RootStackNavigator.tsx
@@ -877,7 +877,7 @@ git commit -m "feat: add localOCRText to LabelAnalysis route params"
 
 - Modify: `client/screens/LabelAnalysisScreen.tsx`
 
-- [ ] **Step 1: Import the parser**
+- [x] **Step 1: Import the parser**
 
 Add at the top of `client/screens/LabelAnalysisScreen.tsx`:
 
@@ -888,7 +888,7 @@ import {
 } from "@/lib/nutrition-ocr-parser";
 ```
 
-- [ ] **Step 2: Update RouteParams type**
+- [x] **Step 2: Update RouteParams type**
 
 ```typescript
 type RouteParams = {
@@ -900,7 +900,7 @@ type RouteParams = {
 };
 ```
 
-- [ ] **Step 3: Add local OCR parsing and data source tracking**
+- [x] **Step 3: Add local OCR parsing and data source tracking**
 
 Inside the component, after the existing state declarations, add:
 
@@ -978,7 +978,7 @@ useEffect(() => {
 }, [imageUri, barcode]);
 ```
 
-- [ ] **Step 4: Add helper functions**
+- [x] **Step 4: Add helper functions**
 
 Add these above the component function, after `buildNutrientRows`:
 
@@ -1036,7 +1036,7 @@ function shouldReplaceWithAI(
 }
 ```
 
-- [ ] **Step 5: Add the "Scanned locally" badge and "Updated" toast**
+- [x] **Step 5: Add the "Scanned locally" badge and "Updated" toast**
 
 In the JSX, add a badge after the "Nutrition Facts" title inside the nutrition card:
 
@@ -1114,7 +1114,7 @@ Add to the `styles` object:
   },
 ```
 
-- [ ] **Step 6: Show inline progress indicator when AI is loading**
+- [x] **Step 6: Show inline progress indicator when AI is loading**
 
 Add a small progress indicator beneath the nutrition card when we have local data but AI hasn't responded yet. After the nutrition `<Card>`:
 
@@ -1149,7 +1149,7 @@ Add style:
 Run: `npx vitest run`
 Expected: All tests pass (no regressions)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add client/screens/LabelAnalysisScreen.tsx
