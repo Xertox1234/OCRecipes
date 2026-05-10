@@ -98,15 +98,17 @@ export function register(app: Express): void {
         inFlightGenerations.add(req.userId);
 
         // Parallelize independent queries
-        const [userProfile, user, existingItems] = await Promise.all([
-          storage.getUserProfile(req.userId),
-          storage.getUser(req.userId),
-          storage.getMealPlanItems(
-            req.userId,
-            parsed.data.date,
-            parsed.data.date,
-          ),
-        ]);
+        const [userProfile, user, existingItems, dismissedIds] =
+          await Promise.all([
+            storage.getUserProfile(req.userId),
+            storage.getUser(req.userId),
+            storage.getMealPlanItems(
+              req.userId,
+              parsed.data.date,
+              parsed.data.date,
+            ),
+            storage.getRecentDismissedRecipeIds(req.userId),
+          ]);
         const profileHash = userProfile
           ? calculateProfileHash(userProfile)
           : "no-profile";
@@ -124,12 +126,16 @@ export function register(app: Express): void {
         const planHash = JSON.stringify(
           existingMeals.map((m) => m.title).sort(),
         );
+        const dismissedHash = JSON.stringify(
+          [...dismissedIds].sort((a, b) => a - b),
+        );
         const cacheKey = buildSuggestionCacheKey(
           req.userId,
           parsed.data.date,
           parsed.data.mealType,
           profileHash,
           planHash,
+          dismissedHash,
         );
 
         // Cache check
@@ -150,6 +156,13 @@ export function register(app: Express): void {
           });
           return;
         }
+
+        // Resolve dismissed IDs → titles AFTER cache miss (no point hitting the DB if cache hit)
+        const titlesMap =
+          await storage.getCommunityRecipeTitlesByIds(dismissedIds);
+        const dismissedRecipeTitles = dismissedIds
+          .map((id) => titlesMap.get(id))
+          .filter((t): t is string => t !== undefined);
 
         // Calculate remaining budget
         const dailyTargets = {
@@ -210,6 +223,7 @@ export function register(app: Express): void {
           dailyTargets,
           existingMeals,
           remainingBudget,
+          dismissedRecipeTitles,
         });
 
         // Cache result with transactional limit check (expires in 6 hours)

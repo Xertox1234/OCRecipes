@@ -41,6 +41,8 @@ vi.mock("../../storage", () => ({
     getUserProfile: vi.fn(),
     getUser: vi.fn(),
     getMealPlanItems: vi.fn(),
+    getRecentDismissedRecipeIds: vi.fn().mockResolvedValue([]),
+    getCommunityRecipeTitlesByIds: vi.fn().mockResolvedValue(new Map()),
     getMealSuggestionCache: vi.fn(),
     incrementMealSuggestionCacheHit: vi.fn(),
     getDailySummary: vi.fn(),
@@ -164,6 +166,7 @@ describe("Meal Suggestions Routes", () => {
       expect(res.body.suggestions[0].title).toBe("Cached Meal");
       expect(res.body.popularPicks).toEqual([]);
       expect(generateMealSuggestions).not.toHaveBeenCalled();
+      expect(storage.getCommunityRecipeTitlesByIds).not.toHaveBeenCalled();
     });
 
     it("returns 403 for free tier", async () => {

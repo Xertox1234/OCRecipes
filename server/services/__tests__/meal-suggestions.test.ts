@@ -36,6 +36,7 @@ describe("meal-suggestions", () => {
         "lunch",
         "profile-hash",
         "plan-hash",
+        "",
       );
       expect(key).toMatch(/^[0-9a-f]{64}$/);
     });
@@ -47,6 +48,7 @@ describe("meal-suggestions", () => {
         "lunch",
         "ph1",
         "plan1",
+        "",
       );
       const key2 = buildSuggestionCacheKey(
         "user1",
@@ -54,6 +56,7 @@ describe("meal-suggestions", () => {
         "dinner",
         "ph1",
         "plan1",
+        "",
       );
       expect(key1).not.toBe(key2);
     });
@@ -65,6 +68,7 @@ describe("meal-suggestions", () => {
         "lunch",
         "ph",
         "plan",
+        "",
       );
       const key2 = buildSuggestionCacheKey(
         "user1",
@@ -72,6 +76,47 @@ describe("meal-suggestions", () => {
         "lunch",
         "ph",
         "plan",
+        "",
+      );
+      expect(key1).toBe(key2);
+    });
+
+    it("should produce different keys for different dismissedHash values", () => {
+      const key1 = buildSuggestionCacheKey(
+        "user1",
+        "2025-01-15",
+        "lunch",
+        "ph",
+        "plan",
+        "[1,2,3]",
+      );
+      const key2 = buildSuggestionCacheKey(
+        "user1",
+        "2025-01-15",
+        "lunch",
+        "ph",
+        "plan",
+        "[4,5,6]",
+      );
+      expect(key1).not.toBe(key2);
+    });
+
+    it("should produce the same key for identical 6-input including dismissedHash", () => {
+      const key1 = buildSuggestionCacheKey(
+        "user1",
+        "2025-01-15",
+        "lunch",
+        "ph",
+        "plan",
+        "[1,2,3]",
+      );
+      const key2 = buildSuggestionCacheKey(
+        "user1",
+        "2025-01-15",
+        "lunch",
+        "ph",
+        "plan",
+        "[1,2,3]",
       );
       expect(key1).toBe(key2);
     });
@@ -406,6 +451,54 @@ describe("meal-suggestions", () => {
       const callArgs = mockCreate.mock.calls[0][0];
       const userMessage = callArgs.messages[1].content as string;
       expect(userMessage).toContain("No meals planned yet today");
+    });
+
+    it("includes dismissed recipe titles in the prompt when provided", async () => {
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(validAIResponse)),
+      );
+
+      const input: MealSuggestionInput = {
+        ...baseInput,
+        dismissedRecipeTitles: ["Chicken Tikka", "Beef Stew"],
+      };
+
+      await generateMealSuggestions(input);
+
+      const callArgs = mockCreate.mock.calls[0][0];
+      const userMessage = callArgs.messages[1].content as string;
+      expect(userMessage).toContain("Chicken Tikka");
+      expect(userMessage).toContain("Beef Stew");
+      expect(userMessage).toContain("AVOID SUGGESTING");
+    });
+
+    it("does not include AVOID SUGGESTING when dismissedRecipeTitles is empty", async () => {
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(validAIResponse)),
+      );
+
+      const input: MealSuggestionInput = {
+        ...baseInput,
+        dismissedRecipeTitles: [],
+      };
+
+      await generateMealSuggestions(input);
+
+      const callArgs = mockCreate.mock.calls[0][0];
+      const userMessage = callArgs.messages[1].content as string;
+      expect(userMessage).not.toContain("AVOID SUGGESTING");
+    });
+
+    it("does not include AVOID SUGGESTING when dismissedRecipeTitles is omitted", async () => {
+      mockCreate.mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(validAIResponse)),
+      );
+
+      await generateMealSuggestions(baseInput);
+
+      const callArgs = mockCreate.mock.calls[0][0];
+      const userMessage = callArgs.messages[1].content as string;
+      expect(userMessage).not.toContain("AVOID SUGGESTING");
     });
   });
 });
