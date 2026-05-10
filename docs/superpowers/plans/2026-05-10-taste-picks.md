@@ -376,7 +376,7 @@
 
       expect(page1.candidates).toHaveLength(3);
       expect(page2.candidates.length).toBeGreaterThanOrEqual(1);
-      expect(Number(page1.total)).toBe(
+      expect(page1.total).toBe(
         page1.candidates.length + page2.candidates.length,
       );
     });
@@ -568,10 +568,11 @@
       );
     }
 
-    const [{ total }] = await db
+    const [totalRow] = await db
       .select({ total: count() })
       .from(communityRecipes)
       .where(and(...baseConditions));
+    const total = Number(totalRow.total);
 
     const rows = await db
       .select({
