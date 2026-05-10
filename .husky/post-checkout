@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# Only run for branch checkouts (arg 3 = 1), not file-level checkouts
+[ "$3" = "1" ] || exit 0
+
+# Detect if we're in a linked worktree by comparing git-dir vs git-common-dir
+GIT_DIR_ABS=$(cd "$(git rev-parse --git-dir)" 2>/dev/null && pwd -P)
+GIT_COMMON_ABS=$(cd "$(git rev-parse --git-common-dir)" 2>/dev/null && pwd -P)
+
+# In the main checkout these are equal; in a linked worktree they differ
+[ "$GIT_DIR_ABS" != "$GIT_COMMON_ABS" ] || exit 0
+
+MAIN_REPO=$(dirname "$GIT_COMMON_ABS")
+
+for env_file in .env .env.local .env.development .env.production .env.test; do
+  if [ -f "$MAIN_REPO/$env_file" ] && [ ! -e "./$env_file" ]; then
+    ln -s "$MAIN_REPO/$env_file" "./$env_file"
+    echo "post-checkout: linked $env_file from main repo"
+  fi
+done
