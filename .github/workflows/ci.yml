@@ -59,5 +59,14 @@ jobs:
       - name: Type check
         run: npm run check:types
 
+      - name: Accessibility patterns
+        run: node scripts/check-accessibility.js
+
+      - name: Hardcoded colors
+        run: node scripts/check-hardcoded-colors.js
+
+      - name: IDOR storage check
+        run: node scripts/check-idor-storage.js
+
       - name: Tests
         run: npm run test:run
