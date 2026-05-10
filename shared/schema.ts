@@ -668,6 +668,44 @@ export const communityRecipesRelations = relations(
   }),
 );
 
+// Preference elicitation picks — recipe-level taste signal
+export const tastePicks = pgTable(
+  "taste_picks",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id", { length: 255 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    recipeId: integer("recipe_id")
+      .notNull()
+      .references(() => communityRecipes.id, { onDelete: "cascade" }),
+    pickedAt: timestamp("picked_at")
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    userRecipeUniq: unique("taste_picks_user_recipe_uniq").on(
+      table.userId,
+      table.recipeId,
+    ),
+    userIdx: index("taste_picks_user_idx").on(table.userId),
+  }),
+);
+
+export type TastePick = typeof tastePicks.$inferSelect;
+export type InsertTastePick = typeof tastePicks.$inferInsert;
+
+export const tastePicksRelations = relations(tastePicks, ({ one }) => ({
+  user: one(users, {
+    fields: [tastePicks.userId],
+    references: [users.id],
+  }),
+  recipe: one(communityRecipes, {
+    fields: [tastePicks.recipeId],
+    references: [communityRecipes.id],
+  }),
+}));
+
 export const recipeGenerationLogRelations = relations(
   recipeGenerationLog,
   ({ one }) => ({
