@@ -448,26 +448,28 @@ export default function CoachChat({
                 isAssistant && speakingMessageId === msg.id && isSpeaking
               }
             />
-            {messageBlocks.get(msg.id)?.map((block, i) => (
-              <BlockRenderer
-                key={`${msg.id}-block-${i}`}
-                block={block}
-                onAction={handleBlockAction}
-                onQuickReply={(message) =>
-                  handleQuickReply(message, `${msg.id}-${i}`)
-                }
-                onCommitmentAccept={handleCommitmentAccept}
-                isUsed={usedQuickRepliesRef.current.has(`${msg.id}-${i}`)}
-                isCommitmentAccepted={
-                  block.type === "commitment_card"
-                    ? acceptedCommitmentsRef.current.has(
-                        block.notebookEntryId ??
-                          `${block.title}::${block.followUpDate}`,
-                      )
-                    : undefined
-                }
-              />
-            ))}
+            {messageBlocks.get(msg.id)?.map((block, i) => {
+              const bKey = `${msg.id}-${i}`;
+              return (
+                <BlockRenderer
+                  key={`${msg.id}-block-${i}`}
+                  block={block}
+                  onAction={handleBlockAction}
+                  onQuickReply={handleQuickReply}
+                  blockKey={bKey}
+                  onCommitmentAccept={handleCommitmentAccept}
+                  isUsed={usedQuickRepliesRef.current.has(bKey)}
+                  isCommitmentAccepted={
+                    block.type === "commitment_card"
+                      ? acceptedCommitmentsRef.current.has(
+                          block.notebookEntryId ??
+                            `${block.title}::${block.followUpDate}`,
+                        )
+                      : undefined
+                  }
+                />
+              );
+            })}
             {isRetryTarget && (
               <Pressable
                 onPress={handleRetry}
