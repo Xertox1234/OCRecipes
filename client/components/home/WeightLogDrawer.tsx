@@ -269,7 +269,15 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
 
           {/* Goal progress bar — only when goal and current weight are set */}
           {showGoalBar && (
-            <View>
+            <View
+              role="progressbar"
+              accessibilityLabel="Goal progress"
+              accessibilityValue={{
+                min: 0,
+                max: 100,
+                now: Math.round(goalProgress * 100),
+              }}
+            >
               <View
                 style={[
                   styles.goalBarTrack,

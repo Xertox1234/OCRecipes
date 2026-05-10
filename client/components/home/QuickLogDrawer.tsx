@@ -25,6 +25,7 @@ import { useNavigation } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { InlineError } from "@/components/InlineError";
 import { VoiceLogButton } from "@/components/VoiceLogButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -332,14 +333,7 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
           </View>
 
           {/* Parse error */}
-          {session.parseError && (
-            <ThemedText
-              style={[styles.errorText, { color: theme.error }]}
-              accessibilityLiveRegion="polite"
-            >
-              {session.parseError}
-            </ThemedText>
-          )}
+          <InlineError message={session.parseError} />
 
           {/* Frequent chips — only when no parsed items */}
           {!hasParsedItems &&
@@ -399,14 +393,7 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
                 </Pressable>
               </View>
 
-              {session.submitError && (
-                <ThemedText
-                  style={[styles.errorText, { color: theme.error }]}
-                  accessibilityLiveRegion="polite"
-                >
-                  {session.submitError}
-                </ThemedText>
-              )}
+              <InlineError message={session.submitError} />
             </View>
           )}
         </View>

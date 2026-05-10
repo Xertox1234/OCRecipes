@@ -23,6 +23,7 @@ import {
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useNotebookNotifications } from "@/hooks/useNotebookNotifications";
 import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
+import { TYPE_COLORS } from "@/constants/notebook-colors";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NotebookEntryNavigationProp } from "@/types/navigation";
 
@@ -37,17 +38,6 @@ const TYPE_LABELS: Record<string, string> = {
   motivation: "Motivation",
   emotional_context: "Emotional",
   conversation_summary: "Summary",
-};
-
-const TYPE_COLORS: Record<string, string> = {
-  commitment: "#f59e0b", // hardcoded
-  insight: "#7c6dff", // hardcoded
-  goal: "#008A38", // hardcoded
-  preference: "#06b6d4", // hardcoded
-  coaching_strategy: "#06b6d4", // hardcoded
-  motivation: "#ec4899", // hardcoded
-  emotional_context: "#ec4899", // hardcoded
-  conversation_summary: "#888888", // hardcoded
 };
 
 export default function NotebookEntryScreen() {
@@ -206,6 +196,9 @@ export default function NotebookEntryScreen() {
             disabled={!isDirty || isSaving || !content.trim()}
             accessibilityRole="button"
             accessibilityLabel="Save entry"
+            accessibilityState={{
+              disabled: !isDirty || isSaving || !content.trim(),
+            }}
           >
             <Text
               style={[

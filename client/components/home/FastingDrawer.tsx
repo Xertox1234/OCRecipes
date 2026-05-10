@@ -1,7 +1,14 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   Pressable,
   StyleSheet,
+  Text,
   View,
   ActivityIndicator,
   AccessibilityInfo,
@@ -60,6 +67,11 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
   const haptics = useHaptics();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { reducedMotion } = useAccessibility();
+  // Memoized chip background — reused across all 6 StatChip instances
+  const chipBg = useMemo(
+    () => withOpacity(theme.textSecondary, 0.08),
+    [theme.textSecondary],
+  );
 
   const [isOpen, setIsOpen] = useState(false);
   const isOpenRef = useRef(false);
@@ -87,9 +99,14 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
     ConfirmationModal,
   } = useFastingTimer();
 
-  const targetHours =
-    currentFast?.targetDurationHours ?? schedule?.fastingHours;
-  const progress = computeFastProgress(elapsedMinutes, targetHours ?? 16);
+  const targetHours = useMemo(
+    () => currentFast?.targetDurationHours ?? schedule?.fastingHours,
+    [currentFast?.targetDurationHours, schedule?.fastingHours],
+  );
+  const progress = useMemo(
+    () => computeFastProgress(elapsedMinutes, targetHours ?? 16),
+    [elapsedMinutes, targetHours],
+  );
 
   // Announce start/end fast outcomes to screen readers
   const prevStartSuccessRef = useRef(false);
@@ -153,11 +170,19 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
     navigation.navigate("Fasting");
   }, [haptics, navigation]);
 
-  const subtitle = formatFastingSubtitle(
-    isFasting,
-    elapsedMinutes,
-    targetHours,
-    schedule?.protocol,
+  const subtitle = useMemo(
+    () =>
+      formatFastingSubtitle(
+        isFasting,
+        elapsedMinutes,
+        targetHours,
+        schedule?.protocol,
+      ),
+    [isFasting, elapsedMinutes, targetHours, schedule?.protocol],
+  );
+  const timeToGoal = useMemo(
+    () => formatTimeToGoal(elapsedMinutes, targetHours ?? 16),
+    [elapsedMinutes, targetHours],
   );
 
   return (
@@ -249,7 +274,10 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
                 )}
               </Svg>
               {!isFasting && (
-                <ThemedText style={[styles.ringEmoji, { opacity: 0.35 }]}>
+                <ThemedText
+                  style={[styles.ringEmoji, { opacity: 0.35 }]}
+                  accessible={false}
+                >
                   🌙
                 </ThemedText>
               )}
@@ -262,8 +290,10 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
                   <ThemedText
                     style={[styles.phaseName, { color: theme.text }]}
                     numberOfLines={1}
+                    accessibilityLabel={currentPhase.name}
                   >
-                    🔥 {currentPhase.name}
+                    <Text accessible={false}>🔥 </Text>
+                    {currentPhase.name}
                   </ThemedText>
                   <ThemedText
                     style={[styles.phaseDesc, { color: theme.textSecondary }]}
@@ -296,18 +326,18 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
             {isFasting ? (
               <>
                 <StatChip
-                  value={formatTimeToGoal(elapsedMinutes, targetHours ?? 16)}
+                  value={timeToGoal}
                   label="to goal"
                   textColor={theme.text}
                   labelColor={theme.textSecondary}
-                  chipBg={withOpacity(theme.textSecondary, 0.08)}
+                  chipBg={chipBg}
                 />
                 <StatChip
                   value={String(stats?.currentStreak ?? 0)}
                   label="day streak"
                   textColor={theme.text}
                   labelColor={theme.textSecondary}
-                  chipBg={withOpacity(theme.textSecondary, 0.08)}
+                  chipBg={chipBg}
                 />
                 <StatChip
                   value={
@@ -316,7 +346,7 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
                   label="started"
                   textColor={theme.text}
                   labelColor={theme.textSecondary}
-                  chipBg={withOpacity(theme.textSecondary, 0.08)}
+                  chipBg={chipBg}
                 />
               </>
             ) : (
@@ -326,21 +356,21 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
                   label="day streak"
                   textColor={theme.text}
                   labelColor={theme.textSecondary}
-                  chipBg={withOpacity(theme.textSecondary, 0.08)}
+                  chipBg={chipBg}
                 />
                 <StatChip
                   value={formatLastFastDuration(logs)}
                   label="last fast"
                   textColor={theme.text}
                   labelColor={theme.textSecondary}
-                  chipBg={withOpacity(theme.textSecondary, 0.08)}
+                  chipBg={chipBg}
                 />
                 <StatChip
                   value={formatCompletionRate(stats)}
                   label="completion"
                   textColor={theme.text}
                   labelColor={theme.textSecondary}
-                  chipBg={withOpacity(theme.textSecondary, 0.08)}
+                  chipBg={chipBg}
                 />
               </>
             )}
@@ -412,8 +442,12 @@ export function FastingDrawer({ action }: FastingDrawerProps) {
             accessibilityLabel="History, stats and settings"
             style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
           >
-            <ThemedText style={[styles.tapThrough, { color: theme.link }]}>
-              📊 History, stats & settings
+            <ThemedText
+              style={[styles.tapThrough, { color: theme.link }]}
+              accessibilityLabel="History, stats & settings"
+            >
+              <Text accessible={false}>📊 </Text>
+              History, stats & settings
             </ThemedText>
           </Pressable>
         </View>
