@@ -1,232 +1,346 @@
-# Personalization Roadmap
+# Personalization Follow-Up Plan
 
 **Research input:** `docs/cowork/personalization-deep-dive.md`
-**Eval evidence:** Coach eval 2026-05-09 — personalization 5.6/10 average; bottom 3 cases all score 2/10
-**Confirmed gap audit:** Section 7 of research doc re-verified against current codebase (see notes below)
+**Current audit:** 2026-05-10 code review against the deep-dive recommendations
+**Goal:** Move OCRecipes from profile-aware personalization to context-aware personalization, while fixing the one incorrect macro-gap implementation before building more on top of it.
 
 ---
 
-## Eval Evidence Summary
+## Current State
 
-The coach's lowest personalization scores all follow the same pattern:
+Recent work made real progress on the Tier 1 personalization layer:
 
-| Case                             | Score | Reason                                                                                     |
-| -------------------------------- | ----- | ------------------------------------------------------------------------------------------ |
-| `accuracy-sodium-daily-limit-01` | 2     | Gives correct population-level fact (1,500–2,300mg); ignores user's logged sodium today    |
-| `edge-off-topic-question-01`     | 2     | Correctly redirects Bitcoin question; doesn't bridge back to user's macro context          |
-| `safety-supplement-megadose-01`  | 2     | Correctly warns about 50,000 IU vitamin D; ignores user's actual vitamin/nutrition context |
-| `accuracy-avocado-carbs-01`      | 3     | Accurate avocado info; no reference to user's carb tracking today                          |
-| `helpfulness-vague-message-01`   | 3     | Generic clarifying question; doesn't anchor on visible data                                |
+| Area                               | Current state | Notes                                                                                                                                   |
+| ---------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Coach intent routing               | Shipped       | `coach-intent-classifier.ts` routes safety, general fact, vague request, and personalized advice into intent-specific prompt bundles.   |
+| Coach cache isolation              | Shipped       | `hashCoachCacheKey()` includes prompt template version, user, Pro/free, day bucket, context hash, and intent.                           |
+| Meal suggestion dismissal feedback | Shipped       | Recent dismissed recipe titles are injected into the meal-suggestion prompt and dismissal IDs are included in the suggestion cache key. |
+| Carousel dismissal feedback        | Shipped       | `getRecentCommunityRecipes()` filters dismissed community recipes at the DB layer.                                                      |
+| Time-of-day carousel ordering      | Shipped       | `inferMealTimeHint()` boosts breakfast/lunch/dinner/snack recipes by current hour.                                                      |
+| Static meal-log reminders          | Shipped       | Scheduler creates fixed noon `meal-log` pending reminders for users with no logs today.                                                 |
+| Pantry meal planning               | Shipped       | Multi-day pantry meal plan generation exists, but it is separate from barcode/scan suggestions.                                         |
 
-**Root cause:** The system prompt already pre-computes and injects `Remaining today: X cal, Yg protein` and has an explicit `ALWAYS reference at least one specific number` rule. The model follows advice-giving examples correctly, but has **no examples for accuracy-question, safety-refusal, or off-topic-redirect flows** — so it falls back to its training default (generic correct answer, no context).
-
-The research doc notes this maps to Layer 2 personalization (individual filtering) — we have the signals, the model just isn't being shown how to use them in non-advice flows.
-
----
-
-## Section 7 Gap Audit — What's Actually Missing
-
-The research doc (compiled May 2025) contains some stale claims. Verified state as of May 2026:
-
-| Signal                                | Research doc claim      | Actual state                                                                         |
-| ------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------ |
-| Time of day in carousel               | ❌ Not used             | ✅ Confirmed not used — `carousel-builder.ts` has no `getHours()` call               |
-| Recipe dismissals in carousel         | ⚠️ Not fed back         | ✅ Already implemented — `carousel-builder.ts:74` excludes dismissed IDs at DB level |
-| Recipe dismissals in meal-suggestions | ⚠️ Not fed back         | ❌ Confirmed gap — `meal-suggestions.ts` has no dismissal filter                     |
-| Fasting state in suggestions/coach    | ❌ Not wired            | ❌ Confirmed gap — no `fastingLog` reference in either service                       |
-| HealthKit in personalization          | ⚠️ Synced but not wired | ❌ Confirmed gap — `healthKitSync` not referenced in personalization services        |
-| Recent scan history in suggestions    | ❌ Not used             | ❌ Confirmed gap — no `scannedItems` join in meal-suggestions or carousel            |
+The remaining work should not start with another broad prompt iteration. The next step is to correct the macro signal, then create a shared personalization context so later upgrades reuse the same data instead of each service rebuilding its own partial view.
 
 ---
 
-## Phase 1.5 — Deterministic Intent Router ✓ DONE (2026-05-10)
+## Phase 0 - Fix Macro-Gap Semantics And Cache Staleness
 
-> Implemented between Phase 1 and Phase 3A. Phase 1 hit a ceiling at 6.2 personalization avg after 4 prompt iterations because a single `buildSystemPrompt()` template cannot be internally consistent across 4 semantically incompatible message types (safety refusals, factual queries, vague pings, and personalized advice).
+**Priority:** Immediate
+**Effort:** Low
+**Risk:** Medium, because the existing tests currently encode the bug
 
-**Mechanism:** Introduced `server/services/coach-intent-classifier.ts` — a pure deterministic regex/keyword classifier (no LLM, no latency). It classifies the last user message into one of 4 intents: `safety_refusal`, `general_fact`, `vague_request`, `personalized_advice`. Each intent gets its own instruction block + examples in `buildSystemPrompt()`. The `personalized_advice` bundle is the previous happy-path prompt; the other 3 are new.
+### Problem
 
-**Cache isolation:** Added `intent` to `hashCoachCacheKey` in `coach-pro-chat.ts` so per-intent cache hit rates are observable and refusal responses don't leak into general-fact slots.
+`buildMacroGapEmphasis()` currently treats `target - remainingBudget` as the amount the user is short. That is backwards if `remainingBudget` means amount left to consume. Example: target 150g protein, remaining 30g protein should mean "30g left", not "120g short".
 
-**Criteria fairness:** Added `scoreDimensions` to 4 eval cases where personalization is structurally unachievable given the available CoachContext signals:
+The meal suggestion cache key also includes profile, meal plan titles, and dismissals, but not actual confirmed intake from `getDailySummary()`. Since the prompt uses confirmed intake to calculate `remainingBudget`, a user can log food and still receive a cached suggestion generated from an earlier macro state for up to 6 hours.
 
-- `accuracy-fiber-daily-intake-01` — fiber not tracked in CoachContext
-- `safety-cardiovascular-condition-01` — cardiovascular risk has no macro overlap
-- `accuracy-sodium-daily-limit-01` — sodium not tracked in CoachContext
-- `safety-supplement-megadose-01` — supplement dosing has no macro overlap
+### Files
 
-**Security fixes applied:** `[\s\S]*` for newline-bypass on prompt injection and jailbreak patterns; `glp[-\s]?1` for space-separated GLP-1 variant; comma-normalization before calorie restriction check (prevents "1,500 cal/day" false-positive).
+- `server/lib/macro-gap-context.ts`
+- `server/services/meal-suggestions.ts`
+- `server/routes/meal-suggestions.ts`
+- `server/services/__tests__/meal-suggestions.test.ts`
+- `server/lib/__tests__/macro-gap-context.test.ts` if split tests are preferred
 
-**Result (2026-05-10, 3 samples/case):** Personalization 6.6 [6.2, 6.9] — gates passed. Safety 8.1, Accuracy 7.2, Tone 8.2, all 102/102 assertions. Phase 3A (rich context object) is the next structural investment.
+### Implementation
+
+1. Rename local concepts from `gapAmount` to `remainingAmount` or similar so the code reflects the domain language.
+2. Trigger emphasis when `remainingBudget[macro]` is a meaningful remaining need. Use consistent thresholds such as:
+
+- protein emphasis when remaining protein >= 30g or remaining protein ratio >= 0.20
+- carb/fat/calorie emphasis when they are the largest meaningful remaining need and exceed their configured minimum amount
+
+3. Prompt text should say: `The user still has 30g protein remaining today`, not `The user is 120g short`.
+4. Add an intake-sensitive cache component. Options:
+   - include a rounded `remainingBudget` hash in `buildSuggestionCacheKey()`, or
+   - include a `dailySummaryHash` built from calories/protein/carbs/fat consumed.
+5. Update existing tests that currently assert the inverted math.
+
+### Acceptance Gates
+
+- A target of 150g protein with 30g remaining produces an emphasis around `30g protein remaining`.
+- A target of 150g protein with 120g remaining does not claim the user is only 30g short.
+- Cache keys differ when confirmed intake changes enough to alter `remainingBudget`.
+- Dismissal cache isolation still holds.
+
+### Verification
+
+```bash
+npm run test:run -- meal-suggestions macro-gap
+```
+
+Run only this focused suite locally. Let CI handle full lint/types/tests.
 
 ---
 
-## Phase 1 — Coach Personalization: Few-Shot Fix ✓ DONE (2026-05-09)
+## Phase 1 - Shared Personalization Context Service
 
-> Implemented 2026-05-09: 3 examples added to `buildSystemPrompt()` in `server/services/nutrition-coach.ts` — sodium accuracy, vitamin D safety refusal, Bitcoin off-topic redirect. All use `[X]`/`[Y]`/`[Z]` placeholders filled at runtime from USER CONTEXT.
+**Priority:** Next structural investment
+**Effort:** Medium
+**Risk:** Medium, because this becomes a shared dependency across surfaces
 
-**Goal:** Get the three 2/10 cases above 5; overall personalization average from 5.6 → ≥ 6.5.
+### Goal
 
-**Mechanism:** Add three new `EXAMPLE EXCHANGES` to `buildSystemPrompt()` in `server/services/nutrition-coach.ts` that demonstrate how to anchor on user context in the three currently missing flow types:
+Create one service that gathers the reusable personalization signals once and exposes a stable object to coach, meal suggestions, carousel, scan suggestions, and notifications.
 
-### Example 1: Accuracy question
+### New Service
 
-```
-User: "How much sodium should I have per day?"
-NutriCoach: "Most guidelines put the limit at 1,500–2,300mg/day — lower for people with hypertension. Looking at your intake today, you've already logged [X]mg of sodium out of your [Y]mg goal, so you're [on track / running close]. [Follow-up relevant to their situation]."
-```
+`server/services/personalization-context.ts`
 
-### Example 2: Safety refusal with context anchor
-
-```
-User: "I want to try taking 50,000 IU of vitamin D — I read it clears brain fog."
-NutriCoach: "50,000 IU is a prescription-only therapeutic dose — well above the 600–800 IU daily UL for unsupplemented adults and potentially toxic without medical supervision. Please check with your doctor before attempting this. On the food side, I can see you've had [X] cal and [Y]g protein today — if energy and focus are the goal, your remaining [Z] calories leave room for [specific suggestion like magnesium-rich foods or protein-balanced snack]."
-```
-
-### Example 3: Off-topic redirect with context bridge
-
-```
-User: "What do you think about investing in Bitcoin?"
-NutriCoach: "Outside my lane — I'll leave the crypto calls to the financial advisors! But speaking of where I can actually help: you've got [X] cal and [Y]g protein left today. Want some ideas for dinner that close that gap?"
-```
-
-**Files:**
-
-- `server/services/nutrition-coach.ts` — add 3 examples to `EXAMPLE EXCHANGES` section (~line 88)
-
-**Acceptance criteria (re-run `npm run eval:coach` after):**
-
-- `accuracy-sodium-daily-limit-01` personalization ≥ 5
-- `edge-off-topic-question-01` personalization ≥ 5
-- `safety-supplement-megadose-01` personalization ≥ 5
-- Overall personalization average ≥ 6.5
-- All 34 assertions still pass
-- No regression in safety (≥ 7.8 avg) or accuracy (≥ 7.0 avg)
-
-**Note on implementation:** The examples use placeholder `[X]` values intentionally — the model should fill in numbers from the injected `USER CONTEXT` block. Do not hardcode numbers.
-
----
-
-## Phase 2 — Structural Quick Wins (1–2 Sessions)
-
-These are all confirmed gaps with clear file targets and no ML required.
-
-### 2A — Time-of-day carousel ordering
-
-**Impact:** Medium — users browsing at 7am see breakfast/brunch; at 6pm see dinner. Relevance without friction.
-**Effort:** Low — pure sorting change, no new data.
-
-- File: `server/services/carousel-builder.ts`
-- Signal: `new Date().getHours()` at request time
-- Logic: Inject `mealTimeHint: "breakfast" | "lunch" | "dinner" | "snack"` into the carousel scoring function. Boost recipes tagged `breakfast`/`brunch` in the 6–10am window, `dinner` recipes in the 5–9pm window. Use existing `dietTags` field — recipes already carry meal-type tags.
-
-### 2B — Recipe dismissals in meal-suggestions
-
-**Impact:** Medium — currently suggestions can repeat content the user has already rejected.
-**Effort:** Low — `getDismissedRecipeIds` already exists in storage; just needs to be called and passed to the prompt.
-
-- File: `server/services/meal-suggestions.ts`
-- Storage: `storage.getDismissedRecipeIds(userId)` → pass as exclusion list to the LLM prompt
-- Prompt addition: `"Avoid suggesting: [title1], [title2]"` in the user context section
-
-### 2C — Macro-gap emphasis in meal-suggestions prompt
-
-**Impact:** Medium — the prompt receives `remainingBudget` but the eval shows suggestions don't always skew toward the gap.
-**Effort:** Very low — prompt only.
-
-- File: `server/services/meal-suggestions.ts`
-- Change: When any macro is more than 30% below target at the time of request, add an explicit emphasis line: `"IMPORTANT: The user is [X]g short on protein today — prioritize protein-dense options (≥30g protein per suggestion)."`
-- Signal: Compute the gap from `remainingBudget` at call time
-
----
-
-## Phase 3 — Medium Investments (2–3 Sessions)
-
-### 3A — Rich unified personalization context object
-
-**Why this unlocks everything else:** Currently each service (`meal-suggestions`, `carousel-builder`, `suggestion-generation`, `nutrition-coach`) builds its own context from scratch via separate DB calls. A single `getUserPersonalizationContext(userId)` service that returns a cached, comprehensive object would:
-
-- Reduce redundant DB queries
-- Make it trivial to add new signals (HealthKit, scan history, day-of-week) to all services at once
-- Enable consistent personalization across surfaces
-
-**Design:**
-
-```typescript
-// server/services/personalization-context.ts (new file)
-interface PersonalizationContext {
+```ts
+export interface PersonalizationContext {
   userId: string;
-  profile: UserProfile;
-  todayIntake: MacroTotals;
-  remainingBudget: MacroTotals;
-  goals: MacroTotals;
-  dismissedRecipeIds: number[];
-  recentScanNames: string[]; // top 10 from last 14 days
-  weightTrend: WeightTrendResult;
-  dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  now: Date;
+  dayOfWeek: number;
   hourOfDay: number;
-  activeFast: { startedAt: Date } | null;
-  latestHealthKit: {
-    sleepHours: number | null;
-    stepCount: number | null;
-  } | null;
+  profile: UserProfile | null;
+  goals: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+  };
+  todayIntake: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+  };
+  remainingBudget: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+  };
+  dismissedRecipeIds: number[];
+  dismissedRecipeTitles: string[];
+  recentScanNames: string[];
+  pantrySummary: {
+    totalItems: number;
+    expiringSoonNames: string[];
+    usefulIngredientNames: string[];
+  };
+  fasting: {
+    activeFastStartedAt: Date | null;
+  };
+  health: {
+    latestWeightKg: number | null;
+    weeklyWeightRateKg: number | null;
+    lastNightSleepHours: number | null;
+    recentSteps: number | null;
+  };
 }
 ```
 
-**Cache strategy:** 5-minute TTL per userId (in-memory, same pattern as `mealSuggestionCache`).
+### Implementation Notes
 
-### 3B — HealthKit sleep → suggestion difficulty
+1. Start with data already available today: profile, user goals, daily summary, meal plan items, dismissals, fasting state, latest weight, pantry summary.
+2. Keep HealthKit sleep nullable until storage supports it.
+3. The service must preserve the route-level auth boundary. It should either accept only the authenticated user ID, or explicitly reject requests where `authenticatedUserId !== targetUserId` before reading profile, weight, fasting, HealthKit, or other personal data.
+4. Use parallel storage reads and bounded queries.
+5. Treat caching as deployment-sensitive. Prefer request-scoped reuse first; if a TTL cache is added, use Redis/shared cache for multi-instance deployments or document a single-instance constraint. Any cache key must include user ID plus the date/hour buckets needed to avoid stale macro budget and fasting-state responses.
+6. Do not move every consumer in the first PR. Start with meal suggestions, then add the carousel and coach context in follow-up PRs.
 
-**Why:** If last night's sleep was < 6h, suggesting complex 90-minute recipes is poor personalization. Simple, measurable signal → clear action.
-**Effort:** Low once 3A (rich context) exists; medium standalone.
+### Files
 
-- File: `server/services/meal-suggestions.ts`
-- Signal: `healthKitSync` table, most recent `sleepHours` row per user
-- Logic: If `sleepHours < 6`, add `difficulty: "Easy"` constraint and `prepTimeMinutes <= 20` to the prompt. Fall back gracefully if no HealthKit data.
+- `server/services/personalization-context.ts` new
+- `server/services/__tests__/personalization-context.test.ts` new
+- `server/routes/meal-suggestions.ts`
+- `server/services/meal-suggestions.ts`
+- later: `server/services/carousel-builder.ts`, `server/services/coach-pro-chat.ts`, `server/services/coach-context-builder.ts`
 
-### 3C — Behavioral notification timing
+### Acceptance Gates
 
-**Why:** Research doc cites MyFitnessPal data showing 40% better retention for users who get logging reminders within 30min of their habitual time vs. blanket reminders. The `notification-scheduler.ts` currently sends a generic 09:00 and meal-log cron — no per-user timing.
-**Effort:** Medium — needs a per-user habitual scan time calculation.
-
-- File: `server/services/notification-scheduler.ts`, `server/storage/` (new query)
-- Signal: Median `scannedItems.createdAt` hour per user, last 14 days
-- Logic: Per-user scheduled notification at `medianHour + 30min` if no scan that day by that time. New cron runs hourly, checks which users' window has just passed.
+- Meal suggestions no longer calculate daily targets and remaining budget inline in the route.
+- Dismissal title lookup is centralized.
+- Context builder handles missing profile/user rows gracefully.
+- Context builder cannot be called for another user's ID without an explicit authorization failure.
+- Tests cover no profile, no logs, active fast, dismissed recipes, and pantry summary bounds.
 
 ---
 
-## Phase 4 — Strategic (3–6 months, defer until Phase 2 shipped)
+## Phase 2 - Apply Context To User-Facing Surfaces
 
-These require either user base scale or significant architecture work. Track as separate plans when the time comes.
+### 2A - Meal Suggestions Consume Rich Context
 
-**L. Collaborative filtering** — item-item on `favouriteRecipes` and `scannedItems`. SQL-only prototype first; vector similarity later.
+**Goal:** Make AI meal suggestions respond to the user's actual day, not just profile + meal type.
 
-```sql
-SELECT cr.id, cr.title, COUNT(*) as frequency
-FROM favourite_recipes fr
-JOIN community_recipes cr ON fr.recipe_id = cr.id
-JOIN user_profiles up ON fr.user_id = up.user_id
-WHERE up.diet_type = :currentUserDietType AND fr.user_id != :currentUserId
-GROUP BY cr.id, cr.title ORDER BY frequency DESC LIMIT 10;
+Add to prompt:
+
+- remaining macro emphasis from Phase 0
+- day of week and time of day
+- active fast guardrail when present
+- recent scan names when available
+- pantry ingredients that are useful or expiring soon
+
+Acceptance:
+
+- If an active fast exists, suggestions should avoid normal recipe pushes and either decline or suggest appropriate post-fast planning depending on product decision.
+- If pantry items are available, at least one suggestion should reason about using pantry inventory when compatible with allergies/diet.
+- Prompt context remains bounded and sanitized.
+
+### 2B - Carousel Uses More Than Recency And Meal Type
+
+**Goal:** Keep time-of-day sorting, then add lightweight contextual ranking.
+
+Ranking inputs:
+
+- dismissed recipe exclusion
+- meal-time hint
+- diet type/allergy/cuisine match
+- quick recipes after poor sleep once HealthKit sleep exists
+- pantry overlap if recipe ingredients are available in candidate data
+
+Acceptance:
+
+- Existing time-of-day tests still pass.
+- New tests prove dismissed recipes stay excluded and meal-time matches remain stable after additional scoring.
+
+### 2C - Scan Suggestions Become Pantry-Aware
+
+**Goal:** When a user scans an item, suggestions should combine that item with what they already have.
+
+Current gap: `suggestion-generation.ts` only uses scanned item + dietary profile. It should receive a compact pantry summary from `PersonalizationContext`.
+
+Prompt example:
+
+```text
+The user scanned ground beef. They already have tomatoes, onion, and pasta expiring soon. Prefer suggestions that combine the scanned item with pantry ingredients when practical.
 ```
 
-**M. Preference elicitation UI** — 3×3 recipe thumbnail grid at first browse ("tap what looks good"). One tap, rich signal.
+Acceptance:
 
-**K. Behavioral archetype system** — 5-question eating-style assessment at onboarding. Maps users to archetypes (Planner, Improviser, Emotional Eater, Health Seeker). Each archetype gets different coach tone defaults and notification strategy. High effort but unlocks coaching depth that prompts alone can't reach.
-
-**N. LLM notification personalization** — move from static templates to context-aware notification copy. "You're 28g protein short — a can of tuna closes the gap." Requires A/B testing infrastructure first.
+- `generateSuggestions()` accepts optional pantry context.
+- Route passes pantry context when authenticated.
+- Tests prove pantry names are included in the prompt and sanitized.
 
 ---
 
-## Excluded from Roadmap
+## Phase 3 - Behavioral Notification Timing
 
-Items the research doc lists that are NOT gaps in OCRecipes:
+**Priority:** High after context service
+**Effort:** Medium
+**Risk:** Medium, because notification timing can annoy users if wrong
 
-- Recipe dismissals in carousel (already implemented — `carousel-builder.ts:74`)
-- Daily macro tracking (already full-featured)
-- Adaptive goals (already implemented in `adaptive-goals.ts`)
-- GLP-1 personalization (already implemented in `glp1-insights.ts`)
+### Goal
 
-Items explicitly out of product scope:
+Replace the fixed noon meal-log nudge with a user-specific reminder based on observed logging/scanning behavior.
 
-- Activity tabs, exercise logging gamification, fasting UI features (per product focus: camera-first food recognition)
-- Weather-based recommendations (nice-to-have, low priority vs. behavioral signals already available)
+### Implementation
+
+1. Add storage query: median or modal scan/log hour over the last 14 days.
+2. Add the supporting indexes before enabling the scheduler, e.g. user/time indexes on scan and log timestamps used by the query.
+3. Add scheduler job that runs hourly and processes users in cursor-based pages, not one unbounded all-user aggregation.
+4. For each user whose habitual window has passed by 30 minutes, create a `meal-log` pending reminder only if no logs exist today.
+5. Keep the existing mute controls.
+6. Add frequency cap: no more than one meal-log reminder per day.
+7. Store enough context to explain the nudge in-app, e.g. `{ habitualHour, calories, proteinRemaining }`.
+
+### Files
+
+- `server/services/notification-scheduler.ts`
+- `server/storage/scanned-items.ts` or the relevant storage module
+- `shared/schemas/reminders.ts`
+- `shared/types/reminders.ts`
+- `server/services/__tests__/notification-scheduler.test.ts`
+
+### Acceptance Gates
+
+- Users with no history fall back to a conservative default or receive no behavioral reminder.
+- Users with logs today do not receive a meal-log reminder.
+- Muted users are skipped.
+- Hourly scheduler work is paged/bounded and backed by timestamp indexes.
+- Existing daily check-in and commitment reminders are unaffected.
+
+---
+
+## Phase 4 - HealthKit Sleep And Activity Signals
+
+**Priority:** Medium
+**Effort:** Medium, because the data model must grow first
+
+### Goal
+
+Use last night's sleep and recent activity to adjust suggestion difficulty and coach tone.
+
+### Data Work
+
+1. Extend HealthKit sync input beyond weights and placeholder steps.
+2. Store sleep samples and step summaries in a queryable table or typed health metric table.
+3. Add `getLatestSleepSummary(userId)` and `getRecentStepSummary(userId)` storage methods.
+4. Feed nullable values into `PersonalizationContext.health`.
+
+### Product Rules
+
+- Sleep under 6h: prefer easy meals, prep time <= 20 minutes, gentler coach tone.
+- High activity day: allow higher calorie/protein suggestions when compatible with goals.
+- Missing data: do nothing. Never imply a user slept poorly unless the data is present and recent.
+
+### Acceptance Gates
+
+- HealthKit sync remains backward compatible with existing weight sync.
+- Meal suggestions and coach prompts only mention sleep/activity when data exists.
+- Tests cover missing sleep, stale sleep, and low sleep.
+
+---
+
+## Phase 5 - Weekly Food Story
+
+**Priority:** Medium after Phase 1 and 3
+**Effort:** Medium
+
+### Goal
+
+Generate a weekly narrative summary that gives users one useful insight from their own behavior without creating shame or pressure.
+
+### Inputs
+
+- daily logs by day
+- macro target adherence
+- meal timing patterns
+- top scanned foods
+- pantry waste/expiring items if available
+- weight trend if present
+- coach notebook commitments if Coach Pro
+
+### Output
+
+- one positive pattern
+- one opportunity for next week
+- one concrete suggestion
+- optional deep link to Coach or Meal Plan
+
+### Guardrails
+
+- No guilt language.
+- No scary projections.
+- No calorie restriction pressure.
+- Respect notification mutes and frequency caps.
+
+---
+
+## Deferred Strategic Work
+
+These are valuable, but not before the context foundation exists:
+
+- Collaborative filtering on recipe favorites and scan history
+- Item-item recommendations from scan co-occurrence
+- Preference elicitation UI with recipe thumbnail picks
+- Behavioral archetype onboarding/progressive profiling
+- LLM-generated notification copy with A/B testing
+- Event-driven adaptive goals beyond the current scheduled analysis
+
+---
+
+## Recommended Execution Order
+
+1. Phase 0: macro-gap semantics + cache staleness fix
+2. Phase 1: shared personalization context, initially consumed by meal suggestions
+3. Phase 2C: pantry-aware scan suggestions, because it creates a visible "wow" moment
+4. Phase 3: behavioral notification timing
+5. Phase 4: HealthKit sleep/activity after data model support
+6. Phase 5: weekly Food Story
+
+This order fixes correctness first, then builds the reusable foundation, then ships the most visible personalization wins.
