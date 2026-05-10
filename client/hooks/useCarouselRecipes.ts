@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { tokenStorage } from "@/lib/token-storage";
 import type { CarouselResponse } from "@shared/types/carousel";
 
 const CAROUSEL_KEY = ["/api/carousel"];
@@ -8,6 +9,26 @@ export function useCarouselRecipes() {
   return useQuery<CarouselResponse>({
     queryKey: CAROUSEL_KEY,
     staleTime: 30 * 60 * 1000, // 30 minutes
+    queryFn: async () => {
+      const baseUrl = getApiUrl();
+      const url = new URL("/api/carousel", baseUrl);
+
+      const headers: Record<string, string> = {
+        "X-User-Hour": String(new Date().getHours()),
+      };
+
+      const token = await tokenStorage.get();
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        const text = (await res.text()) || res.statusText;
+        throw new Error(`${res.status}: ${text}`);
+      }
+      return res.json() as Promise<CarouselResponse>;
+    },
   });
 }
 
