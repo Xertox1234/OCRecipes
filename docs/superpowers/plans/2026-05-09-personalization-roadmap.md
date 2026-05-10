@@ -39,6 +39,27 @@ The research doc (compiled May 2025) contains some stale claims. Verified state 
 
 ---
 
+## Phase 1.5 — Deterministic Intent Router ✓ DONE (2026-05-10)
+
+> Implemented between Phase 1 and Phase 3A. Phase 1 hit a ceiling at 6.2 personalization avg after 4 prompt iterations because a single `buildSystemPrompt()` template cannot be internally consistent across 4 semantically incompatible message types (safety refusals, factual queries, vague pings, and personalized advice).
+
+**Mechanism:** Introduced `server/services/coach-intent-classifier.ts` — a pure deterministic regex/keyword classifier (no LLM, no latency). It classifies the last user message into one of 4 intents: `safety_refusal`, `general_fact`, `vague_request`, `personalized_advice`. Each intent gets its own instruction block + examples in `buildSystemPrompt()`. The `personalized_advice` bundle is the previous happy-path prompt; the other 3 are new.
+
+**Cache isolation:** Added `intent` to `hashCoachCacheKey` in `coach-pro-chat.ts` so per-intent cache hit rates are observable and refusal responses don't leak into general-fact slots.
+
+**Criteria fairness:** Added `scoreDimensions` to 4 eval cases where personalization is structurally unachievable given the available CoachContext signals:
+
+- `accuracy-fiber-daily-intake-01` — fiber not tracked in CoachContext
+- `safety-cardiovascular-condition-01` — cardiovascular risk has no macro overlap
+- `accuracy-sodium-daily-limit-01` — sodium not tracked in CoachContext
+- `safety-supplement-megadose-01` — supplement dosing has no macro overlap
+
+**Security fixes applied:** `[\s\S]*` for newline-bypass on prompt injection and jailbreak patterns; `glp[-\s]?1` for space-separated GLP-1 variant; comma-normalization before calorie restriction check (prevents "1,500 cal/day" false-positive).
+
+**Result (2026-05-10, 3 samples/case):** Personalization 6.6 [6.2, 6.9] — gates passed. Safety 8.1, Accuracy 7.2, Tone 8.2, all 102/102 assertions. Phase 3A (rich context object) is the next structural investment.
+
+---
+
 ## Phase 1 — Coach Personalization: Few-Shot Fix ✓ DONE (2026-05-09)
 
 > Implemented 2026-05-09: 3 examples added to `buildSystemPrompt()` in `server/services/nutrition-coach.ts` — sodium accuracy, vitamin D safety refusal, Bitcoin off-topic redirect. All use `[X]`/`[Y]`/`[Z]` placeholders filled at runtime from USER CONTEXT.

@@ -2,6 +2,122 @@
 
 Patterns for building and maintaining system prompts for AI features (coach, photo analysis, recipe chat, etc.).
 
+### Per-Intent Prompt Bundles — Split When One Template Can't Be Internally Consistent
+
+A single monolithic system prompt hits a quality ceiling when it must govern semantically incompatible message types. Safety refusals, factual queries, vague pings, and personalized advice each have contradictory optimal behaviors: "always cite macros" makes safety refusals feel cold; "lead with the fact first" makes personalized advice feel generic. Adding more instructions creates internal contradiction — the model picks whichever rule is most prominent in its context window.
+
+**The fix:** a deterministic classifier that routes each message to a per-intent instruction block + example bundle. The classifier is a pure function (no LLM call, no latency), the bundles are internally consistent, and the default intent preserves the existing happy path.
+
+```typescript
+// coach-intent-classifier.ts — pure function, no I/O
+export type CoachIntent =
+  | "safety_refusal"
+  | "general_fact"
+  | "vague_request"
+  | "personalized_advice";
+
+export function classifyIntent(message: string): IntentClassification {
+  // Rule precedence: safety > vague > general_fact > personalized (default)
+  // Safety wins all ties — checked first, always.
+  for (const { pattern, name } of SAFETY_PATTERNS) {
+    if (pattern.test(message.trim())) {
+      return { intent: "safety_refusal", matchedRule: name };
+    }
+  }
+  // ... vague, general_fact checks ...
+  return { intent: "personalized_advice", matchedRule: "default" };
+}
+
+// nutrition-coach.ts — one bundle per intent
+function buildIntentBlock(intent: CoachIntent): string[] {
+  if (intent === "vague_request") {
+    return [
+      "HOW TO HANDLE VAGUE MESSAGES:",
+      "- Ask ONE clarifying question anchored to a visible number from USER CONTEXT.",
+      // ...
+    ];
+  }
+  // ... other intents ...
+}
+
+function buildSystemPrompt(context: CoachContext, intent: CoachIntent): string {
+  return [
+    ...universalPersonaRules,
+    ...buildIntentBlock(intent),
+    "USER CONTEXT:",
+    // ...
+  ].join("\n");
+}
+```
+
+**Cache key isolation:** When intents map to different bundles, the cache key must include the classified intent. A refusal response must not be served for a factual query that happens to have the same message text.
+
+**Classify once per request turn, pass downstream.** Do not re-classify inside nested functions — the cache key and the prompt must use the same value. Classifying twice is redundant and creates a divergence risk if message extraction ever differs by call site.
+
+**When to use:** Any AI feature where a single prompt template has reached a quality ceiling and eval analysis shows the floor cases cluster in structurally different message types (safety vs. facts vs. open-ended). Don't add intent routing speculatively — add it when eval evidence shows the single-template ceiling.
+
+**Eval result (coach):** Personalization 6.2 → 6.6 [6.2, 6.9] after splitting into 4 intent bundles. The floor cases (vague pings at 2/10, off-topic redirects at 2/10) were the primary lift.
+
+**References:** `server/services/coach-intent-classifier.ts`, `server/services/nutrition-coach.ts` (`buildIntentBlock`, `buildSystemPrompt`)
+
+### Example-Bundle Alignment — Examples Must Live in the Routing Bucket That Serves the Message
+
+When intent routing is in place, a few-shot example that demonstrates behavior for message type X must live in the bundle that messages of type X actually reach. An example in the wrong bundle compiles cleanly, all tests pass, and the eval coverage map shows it was written — but the model never sees it for the relevant case.
+
+**The placement bug class:**
+
+```typescript
+// ❌ BAD: Off-topic redirect example placed in vague_request bundle,
+// but "What stocks should I invest in?" routes to personalized_advice (default).
+// The model never sees the example when it's needed.
+if (intent === "vague_request") {
+  return [
+    "User: 'What do you think about investing in Bitcoin?'",
+    "NutriCoach: '...you've got 580 cal and 42g protein left today...'",
+  ];
+}
+
+// ✅ GOOD: Off-topic redirect example in the personalized_advice bundle
+// because off-topic questions route there by default.
+return [
+  // personalized_advice default
+  "User: 'What stocks should I invest in right now?'",
+  "NutriCoach: 'Outside my lane — ...you've got about 580 cal and 42g protein left today...'",
+];
+```
+
+**How to detect:** For each example, run the classifier on its `User:` message. The returned intent must match the bundle the example lives in. Add this as a unit test when the classifier is written.
+
+**Impact:** Moving the off-topic example from `vague_request` to `personalized_advice` improved `edge-off-topic-question-01` personalization from 2/10 to 7/10 (3-sample average).
+
+### scoreDimensions — Exclude Dimensions That Are Structurally Unachievable
+
+When an eval case asks a question whose best answer has no semantic connection to the data in the context object, scoring that dimension is structurally unfair — the model is penalized for not personalizing something that cannot be personalized with the available signals.
+
+```json
+// ❌ Penalizes the model for not referencing fiber data that doesn't exist in CoachContext
+{ "id": "accuracy-fiber-daily-intake-01", "userMessage": "How much fiber per day?" }
+
+// ✅ Excludes personalization from scoring — CoachContext has no fiber field
+{
+  "id": "accuracy-fiber-daily-intake-01",
+  "scoreDimensions": ["accuracy", "helpfulness", "tone"]
+}
+```
+
+**Structural unfairness test:** Ask "what data in the context object would the model need to satisfy this dimension?" If the answer is "none exists," exclude it. If the answer is "it exists but the model isn't using it," that's a real failure — don't exclude it.
+
+**Cases in OCRecipes coach eval where personalization was excluded:**
+
+| Case                                 | Reason                                   |
+| ------------------------------------ | ---------------------------------------- |
+| `accuracy-fiber-daily-intake-01`     | Fiber not tracked in `CoachContext`      |
+| `safety-cardiovascular-condition-01` | Cardiovascular risk has no macro overlap |
+| `accuracy-sodium-daily-limit-01`     | Sodium not tracked in `CoachContext`     |
+| `safety-supplement-megadose-01`      | Supplement dosing has no macro overlap   |
+
+**When NOT to use:** Don't exclude a dimension because the model is performing poorly on it and you want the score to look better. Only exclude when the context object literally cannot provide the data required to satisfy the dimension.
+
 ### Pre-Compute Numeric Context — Never Make an LLM Do Arithmetic
 
 LLMs (especially smaller models like `gpt-4o-mini`) are unreliable at basic math. When the system prompt includes numeric data the model needs to reason about, compute the answer server-side and inject it directly.
