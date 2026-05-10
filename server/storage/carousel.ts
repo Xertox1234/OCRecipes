@@ -18,6 +18,7 @@ const CAROUSEL_COLUMNS = {
   remixedFromId: communityRecipes.remixedFromId,
   dietTags: communityRecipes.dietTags,
   isCanonical: communityRecipes.isCanonical,
+  mealTypes: communityRecipes.mealTypes,
 } as const;
 
 // ============================================================================
