@@ -1,6 +1,6 @@
 ---
 name: todo
-description: Autonomously work through the todos/ backlog — triage, implement, review, and archive todos in priority order
+description: Use when you have todos in todos/ with status backlog or planned and want to implement them autonomously in parallel
 ---
 
 You are running the todo orchestrator. This workflow triages the backlog, plans execution order, dispatches executor agents, and reports results. **Never skip phases.**
@@ -32,7 +32,23 @@ Establish a green baseline before touching any code.
 
    Store the branch name as `BASE_BRANCH` (e.g., `feat/nutrition-inline-drawers` or `main`). Pass it to every executor spawn in Phase 4 via the `Base branch:` line in the prompt.
 
-4. **If ANY command fails, stop immediately.** Report the failure to the user and exit — do not proceed to Phase 2. The codebase must be green before batch processing begins.
+4. **Verify executor agent**: Confirm the file `.claude/agents/todo-executor.md` exists by running:
+
+   ```bash
+   test -f .claude/agents/todo-executor.md && echo "found" || echo "missing"
+   ```
+
+   If missing, stop immediately and report "Cannot find .claude/agents/todo-executor.md — the executor agent is required. Please restore it before running /todo."
+
+5. **Verify kimi-review is available**: Check that the required API key is set:
+
+   ```bash
+   if [[ -z "${WORKER_API_KEY:-}" && -z "${MOONSHOT_API_KEY:-}" ]]; then echo "missing"; else echo "found"; fi
+   ```
+
+   If `missing`, stop immediately and report "Cannot run kimi-review — neither WORKER_API_KEY nor MOONSHOT_API_KEY is set. Export one and retry."
+
+6. **If ANY command fails or any check above returns missing, stop immediately.** Report the failure to the user and exit — do not proceed to Phase 2. The codebase must be green before batch processing begins.
 
 ## Phase 2 — Triage
 
@@ -41,6 +57,9 @@ Build the work queue from the `todos/` backlog.
 1. Read all `.md` files in `todos/` — **exclude** `README.md`, `TEMPLATE.md`, and anything inside `todos/archive/`.
 2. Parse each file's YAML frontmatter. Extract: `title`, `status`, `priority`, `created`, `labels`.
 3. Filter to **actionable** todos: status is `backlog` or `planned`. Skip any todo with status `in-progress`, `blocked`, `review`, or `done`.
+
+   > **Stuck todos**: If any file has `status: in-progress`, it was left mid-run by a crashed executor and is being skipped. To re-queue it, manually edit its frontmatter to `status: backlog` and re-run `/todo`.
+
 4. Sort the actionable list:
    - **Priority** descending: `critical` > `high` > `medium` > `low`
    - Within the same priority, **oldest `created` date first** (FIFO)
@@ -99,7 +118,7 @@ Agent({
   description: "Execute todo: <todo title>",
   subagent_type: "general-purpose",
   isolation: "worktree",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\n\nExecute all 11 steps and report the result."
+  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\n\nExecute all steps in order and report the result."
 })
 ```
 
@@ -120,7 +139,7 @@ Agent({
   description: "Execute todo: <todo title>",
   subagent_type: "general-purpose",
   isolation: "worktree",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\n\nExecute all 11 steps and report the result."
+  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\n\nExecute all steps in order and report the result."
 })
 ```
 
@@ -128,13 +147,8 @@ Agent({
 
 1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`.
 2. **Record PR URLs and commit hashes** from successful executions. Each successful executor reports `PR_URL` (may be `null` if PR creation failed) and `COMMIT`.
-3. **Run a post-batch type check** on the base branch to confirm it was not corrupted by the worktree setup:
-   ```bash
-   npm run check:types
-   ```
-   Run this on the BASE branch (not inside any worktree). If it fails, halt the session immediately and report to the user. Do not start the next batch.
 
-If the type check passes, proceed to the next batch in the execution plan.
+Proceed to the next batch in the execution plan.
 
 ## Phase 5 — Session Summary
 
@@ -173,10 +187,17 @@ After all batches have been executed (or after early termination):
    ```
 
 5. **Print verification result:**
+
    ```
    Tests: PASS (T tests) | FAIL
    Types: PASS | FAIL (N errors)
    Lint:  PASS | FAIL (N errors)
+   ```
+
+6. **Clean up stale worktrees** left behind by crashed or cancelled executors:
+
+   ```bash
+   git worktree prune
    ```
 
 ## Rules
@@ -184,7 +205,7 @@ After all batches have been executed (or after early termination):
 - **Baseline must be green.** Never start batch processing on a broken codebase.
 - **Max 4 parallel agents.** Respect the limit to avoid overwhelming system resources and context.
 - **Sequential when scope is unknown.** If a todo mentions no files, it runs alone — never assume it is safe to parallelize.
-- **Verify after each batch.** Run `npm run check:types` on the base branch before starting the next batch. The full test suite runs only in Phase 5 — never run `npm run test:run` between batches. This is an accepted tradeoff: type-check only between batches trades speed for test-failure latency; if a batch introduces a test regression it won't surface until Phase 5.
+- **Full verification in Phase 5 only.** Never run `npm run test:run` between batches — full verification happens at the end. This is an accepted tradeoff: if a batch introduces a regression it won't surface until Phase 5.
 - **The executor agent does the work.** This orchestrator only triages, dispatches, and summarizes. Never implement todo changes directly.
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.

@@ -32,7 +32,7 @@ Collect the unique list of detected package families. A single file can match mu
 
 If `Affected files` is empty or no file paths were provided, skip Step 1 and Step 2a entirely. Proceed directly to Step 2b and 2c using keywords from the todo title and labels.
 
-If `Affected files` is non-empty but no paths match the table above (e.g., all files are in `docs/`), skip Step 2a and write "No library lookup performed — no affected file paths matched the library table." in the Library Notes section.
+If `Affected files` is non-empty but no paths match the table above (e.g., all files are in `docs/`), do NOT skip Step 2a entirely. Instead, read the first 60 lines of each affected file and extract external import statements (lines matching `import ... from '...'` or `require('...')`). Collect package names that do not start with `./`, `../`, `@/`, `~/`, or other internal prefixes. Use the top 3 most-referenced external packages as library families for Step 2a Context7 lookups. If no external packages are found after this scan, skip Step 2a and write "No library lookup performed — no external dependencies detected in affected files." in the Library Notes section.
 
 ---
 
