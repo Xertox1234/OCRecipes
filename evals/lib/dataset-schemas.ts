@@ -94,6 +94,7 @@ export const mealSuggestionCaseSchema = z.object({
       }),
     ),
     remainingBudget: macroSchema,
+    dismissedTitles: z.array(z.string()).optional(),
   }),
   assertions: z
     .object({

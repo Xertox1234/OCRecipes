@@ -121,6 +121,7 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
       dailyTargets: i.dailyTargets,
       existingMeals: i.existingMeals,
       remainingBudget: i.remainingBudget,
+      dismissedRecipeTitles: i.dismissedTitles,
     };
 
     const start = Date.now();
@@ -158,6 +159,9 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
       if (i.userProfile.dislikes.length > 0) {
         lines.push(`Dislikes: ${i.userProfile.dislikes.join(", ")}`);
       }
+    }
+    if (i.dismissedTitles?.length) {
+      lines.push(`Dismissed: ${i.dismissedTitles.join(", ")}`);
     }
     return lines.join("\n");
   },
