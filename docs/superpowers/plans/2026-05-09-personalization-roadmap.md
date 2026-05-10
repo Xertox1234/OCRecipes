@@ -327,7 +327,7 @@ These are valuable, but not before the context foundation exists:
 
 - Collaborative filtering on recipe favorites and scan history
 - Item-item recommendations from scan co-occurrence
-- Preference elicitation UI with recipe thumbnail picks
+- **Preference elicitation UI with recipe thumbnail picks** — ✅ spec approved 2026-05-10, implementation plan in progress. See `docs/superpowers/specs/2026-05-10-taste-picks-design.md`.
 - Behavioral archetype onboarding/progressive profiling
 - LLM-generated notification copy with A/B testing
 - Event-driven adaptive goals beyond the current scheduled analysis
