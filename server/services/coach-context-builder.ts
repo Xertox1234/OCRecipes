@@ -76,8 +76,8 @@ export async function buildCoachContext(
     dietaryProfile: profile
       ? {
           dietType: profile.dietType,
-          allergies: ((profile.allergies as { name: string }[] | null) || [])
-            .map((a) => a?.name)
+          allergies: (profile.allergies || [])
+            .map((a) => a.name)
             .filter(Boolean),
           dislikes: profile.foodDislikes,
         }
