@@ -11,7 +11,6 @@ interface TastePicksGridProps {
   selectedIds: Set<number>;
   onToggle: (recipeId: number) => void;
   onEndReached?: () => void;
-  isLoading?: boolean;
 }
 
 function RecipeCard({

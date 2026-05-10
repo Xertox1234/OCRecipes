@@ -1,6 +1,7 @@
 // client/screens/TasteProfileScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
@@ -16,6 +17,7 @@ const PAGE_LIMIT = 30;
 
 export default function TasteProfileScreen() {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation<TasteProfileScreenNavigationProp>();
 
   const [candidates, setCandidates] = useState<RecipeCandidate[]>([]);
@@ -157,7 +159,9 @@ export default function TasteProfileScreen() {
         )}
       </View>
 
-      <View style={styles.footer}>
+      <View
+        style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
+      >
         <Button
           onPress={handleSave}
           disabled={isSubmitting || !isDirty}
@@ -194,6 +198,5 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: Spacing.xl,
     paddingTop: Spacing.lg,
-    paddingBottom: Spacing.xl,
   },
 });

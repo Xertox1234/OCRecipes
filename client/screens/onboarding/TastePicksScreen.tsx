@@ -79,6 +79,12 @@ export default function TastePicksScreen() {
     loadCandidates(nextPage);
   }, [hasMore, page, loadCandidates]);
 
+  const handleRetry = useCallback(() => {
+    setPage(1);
+    setHasMore(true);
+    loadCandidates(1);
+  }, [loadCandidates]);
+
   const handleContinue = useCallback(async () => {
     setIsSubmitting(true);
     try {
@@ -153,7 +159,7 @@ export default function TastePicksScreen() {
               Couldn&apos;t load recipes.
             </ThemedText>
             <Pressable
-              onPress={() => loadCandidates(1)}
+              onPress={handleRetry}
               accessibilityLabel="Retry loading recipes"
               accessibilityRole="button"
             >

@@ -9,7 +9,7 @@ import { handleRouteError } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
 
 const setPicksSchema = z.object({
-  recipeIds: z.array(z.number().int().positive()),
+  recipeIds: z.array(z.number().int().positive()).max(500),
 });
 
 const candidatesQuerySchema = z.object({
