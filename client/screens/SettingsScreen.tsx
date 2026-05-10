@@ -36,6 +36,7 @@ interface SettingsItemConfig {
 
 const SETTINGS_ITEMS: SettingsItemConfig[] = [
   { id: "editProfile", icon: "edit-2", label: "Edit Profile" },
+  { id: "tasteProfile", icon: "star", label: "Taste Profile" },
   {
     id: "healthkit",
     icon: "heart",
@@ -91,6 +92,9 @@ export default function SettingsScreen() {
       switch (id) {
         case "editProfile":
           navigation.navigate("EditDietaryProfile");
+          break;
+        case "tasteProfile":
+          navigation.navigate("TasteProfile");
           break;
         case "healthkit":
           if (healthKitUnlocked) {

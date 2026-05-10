@@ -304,3 +304,12 @@ export type NotebookEntryNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "NotebookEntry"
 >;
+
+/**
+ * Navigation prop for TasteProfileScreen
+ * Hosted in ProfileStack — can use goBack or navigate within ProfileStack
+ */
+export type TasteProfileScreenNavigationProp = NativeStackNavigationProp<
+  ProfileStackParamList,
+  "TasteProfile"
+>;
