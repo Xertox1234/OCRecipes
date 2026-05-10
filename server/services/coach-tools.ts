@@ -24,6 +24,7 @@ import { lookupNutrition } from "./nutrition-lookup";
 import { searchCatalogRecipes } from "./recipe-catalog";
 import { logger } from "../lib/logger";
 import { isValidCalendarDate } from "../utils/date-validation";
+import type { UserProfile } from "@shared/schema";
 
 // ---------------------------------------------------------------------------
 // Structured error type returned by all tool call paths.
@@ -480,6 +481,7 @@ export async function executeToolCall(
   toolName: string,
   args: ToolArgs,
   userId: string,
+  preloadedProfile?: UserProfile | null,
 ): Promise<ToolErrorResult | object> {
   logger.debug(
     { toolName, userIdHash: hashUserId(userId) },
@@ -509,7 +511,11 @@ export async function executeToolCall(
       }
       // M2: resolve user allergens and pass as intolerances so Spoonacular
       // filters them out — AI exclusion prompts are insufficient alone.
-      const profile = await storage.getUserProfile(userId);
+      // Use pre-fetched profile when available to avoid a redundant DB call.
+      const profile =
+        preloadedProfile !== undefined
+          ? preloadedProfile
+          : await storage.getUserProfile(userId);
       const allergyNames = (
         (profile?.allergies as { name: string }[] | null) ?? []
       )

@@ -16,6 +16,7 @@ import {
   type BeverageSize,
   type BeverageModifier,
 } from "@shared/constants/beverages";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 const logBeverageSchema = z
   .object({
@@ -105,7 +106,7 @@ export function register(app: Express): void {
               res,
               422,
               "Could not find nutrition data for this beverage. Try entering calories manually.",
-              "NUTRITION_LOOKUP_FAILED",
+              ErrorCode.NUTRITION_LOOKUP_FAILED,
             );
           }
           calories = nutrition.calories;

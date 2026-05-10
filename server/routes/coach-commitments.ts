@@ -6,7 +6,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { crudRateLimit } from "./_rate-limiters";
 
-export function registerCoachCommitmentsRoutes(app: Express): void {
+export function register(app: Express): void {
   app.post(
     "/api/chat/commitments/:notebookEntryId/accept",
     requireAuth,

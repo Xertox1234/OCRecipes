@@ -3,7 +3,7 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import { registerCoachCommitmentsRoutes } from "../coach-commitments";
+import { register as registerCoachCommitmentsRoutes } from "../coach-commitments";
 import { createMockCoachNotebookEntry } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({

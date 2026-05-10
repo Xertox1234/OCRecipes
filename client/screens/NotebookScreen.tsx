@@ -21,18 +21,8 @@ import {
 } from "@/hooks/useChat";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
+import { TYPE_COLORS } from "@/constants/notebook-colors";
 import type { NotebookScreenNavigationProp } from "@/types/navigation";
-
-const TYPE_COLORS: Record<string, string> = {
-  commitment: "#f59e0b", // hardcoded
-  insight: "#7c6dff", // hardcoded
-  goal: "#008A38", // hardcoded
-  preference: "#06b6d4", // hardcoded
-  coaching_strategy: "#06b6d4", // hardcoded
-  motivation: "#ec4899", // hardcoded
-  emotional_context: "#ec4899", // hardcoded
-  conversation_summary: "#888888", // hardcoded
-};
 
 const FILTERS = [
   "all",

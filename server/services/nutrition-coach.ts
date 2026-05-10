@@ -13,6 +13,7 @@ import {
   MAX_TOOL_CALLS_PER_RESPONSE,
   serviceUnavailable,
 } from "./coach-tools";
+import type { UserProfile } from "@shared/schema";
 
 const log = createServiceLogger("nutrition-coach");
 
@@ -300,6 +301,7 @@ export async function* generateCoachProResponse(
   userId: string,
   abortSignal?: AbortSignal,
   onBeforeToolCalls?: (toolNames: string[]) => void,
+  preloadedProfile?: UserProfile | null,
 ): AsyncGenerator<string> {
   const systemPrompt = buildSystemPrompt(context);
   const tools = getToolDefinitions();
@@ -447,7 +449,12 @@ export async function* generateCoachProResponse(
       toolCallsArray.map(async (tc) => {
         try {
           const args = JSON.parse(tc.function.arguments);
-          const result = await executeToolCall(tc.function.name, args, userId);
+          const result = await executeToolCall(
+            tc.function.name,
+            args,
+            userId,
+            preloadedProfile,
+          );
           return { tc, result };
         } catch (error) {
           log.warn(

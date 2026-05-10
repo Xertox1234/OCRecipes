@@ -280,7 +280,8 @@ describe("generateRecipeChatResponse — API call parameters", () => {
       [{ role: "user", content: "make a recipe" }],
       null,
     );
-    for await (const _ of gen) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _chunk of gen) {
       /* drain */
     }
 
@@ -450,7 +451,8 @@ describe("generateRecipeChatResponse — prompt injection sanitization (M1)", ()
     );
 
     // Drain the generator
-    for await (const _ of gen) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _chunk of gen) {
       /* drain */
     }
 
