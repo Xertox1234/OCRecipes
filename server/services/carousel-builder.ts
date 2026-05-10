@@ -79,6 +79,7 @@ function generateCommunityReason(
 export async function buildCarousel(
   userId: string,
   userProfile: UserProfile | null,
+  userHour?: number,
 ): Promise<CarouselRecipeCard[]> {
   const dismissedIds = await storage.getDismissedRecipeIds(userId);
 
@@ -94,7 +95,8 @@ export async function buildCarousel(
   // (notInArray clause). No post-DB filter needed here.
 
   // NOTE: When carousel caching is added, the cache key MUST include the hour bucket.
-  const hint = inferMealTimeHint(new Date().getHours());
+  const hour = userHour ?? new Date().getHours();
+  const hint = inferMealTimeHint(hour);
   const sorted = [...recipes].sort((a, b) => {
     const aMatches = (a.mealTypes ?? []).includes(hint) ? 0 : 1;
     const bMatches = (b.mealTypes ?? []).includes(hint) ? 0 : 1;

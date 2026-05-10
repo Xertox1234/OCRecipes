@@ -168,6 +168,93 @@ describe("carousel-builder", () => {
     expect(cards.length).toBeLessThanOrEqual(8);
   });
 
+  describe("userHour parameter", () => {
+    it("UTC user (no userHour): falls back to server time — ordering matches explicit pass of current hour", async () => {
+      const dinnerRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 50,
+        title: "Steak",
+        mealTypes: ["dinner"],
+      };
+      const breakfastRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 51,
+        title: "Oatmeal",
+        mealTypes: ["breakfast"],
+      };
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        breakfastRecipe,
+        dinnerRecipe,
+      ]);
+
+      // Capture the current hour before both calls so they share the same value.
+      const currentHour = new Date().getHours();
+
+      // Both calls must return identical orderings: one via fallback, one explicit.
+      const cardsDefault = await buildCarousel("1", mockProfile);
+      const cardsExplicit = await buildCarousel("1", mockProfile, currentHour);
+
+      expect(cardsDefault.map((c) => c.title)).toEqual(
+        cardsExplicit.map((c) => c.title),
+      );
+    });
+
+    it("EST user at 7pm (header present): dinner boosted instead of snack (server would use 23:00 UTC)", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-05-09T23:00:00Z")); // 23:00 UTC = snack window
+
+      const dinnerRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 60,
+        title: "Steak",
+        mealTypes: ["dinner"],
+      };
+      const snackRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 61,
+        title: "Chips",
+        mealTypes: ["snack"],
+      };
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        snackRecipe,
+        dinnerRecipe,
+      ]);
+
+      // userHour=19 (7pm ET) — dinner window, not snack
+      const cards = await buildCarousel("1", mockProfile, 19);
+
+      const titles = cards.map((c) => c.title);
+      expect(titles.indexOf("Steak")).toBeLessThan(titles.indexOf("Chips"));
+
+      vi.useRealTimers();
+    });
+
+    it("invalid userHour is guarded at route level; buildCarousel with valid 0-23 works correctly", async () => {
+      const breakfastRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 70,
+        title: "Toast",
+        mealTypes: ["breakfast"],
+      };
+      const dinnerRecipe = {
+        ...mockCommunityRecipes[0],
+        id: 71,
+        title: "Pasta",
+        mealTypes: ["dinner"],
+      };
+      vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+        dinnerRecipe,
+        breakfastRecipe,
+      ]);
+
+      // Hour 6 = breakfast window
+      const cards = await buildCarousel("1", mockProfile, 6);
+
+      const titles = cards.map((c) => c.title);
+      expect(titles.indexOf("Toast")).toBeLessThan(titles.indexOf("Pasta"));
+    });
+  });
+
   describe("time-of-day ordering", () => {
     beforeEach(() => {
       vi.useFakeTimers();

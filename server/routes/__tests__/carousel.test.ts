@@ -61,7 +61,7 @@ describe("Carousel Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.cards).toHaveLength(2);
       expect(res.body.cards[0].title).toBe("Pasta Primavera");
-      expect(buildCarousel).toHaveBeenCalledWith("1", null);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, undefined);
     });
 
     it("returns empty cards array when no recipes available", async () => {
@@ -72,6 +72,88 @@ describe("Carousel Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.cards).toEqual([]);
+    });
+
+    it("passes parsed X-User-Hour header to buildCarousel", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(buildCarousel).mockResolvedValue(mockCards);
+
+      const res = await request(app)
+        .get("/api/carousel")
+        .set("X-User-Hour", "19");
+
+      expect(res.status).toBe(200);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, 19);
+    });
+
+    it("falls back to server time when X-User-Hour header is absent (no header)", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(buildCarousel).mockResolvedValue(mockCards);
+
+      const res = await request(app).get("/api/carousel");
+
+      expect(res.status).toBe(200);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, undefined);
+    });
+
+    it("falls back to server time when X-User-Hour is not a valid integer string", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(buildCarousel).mockResolvedValue(mockCards);
+
+      const res = await request(app)
+        .get("/api/carousel")
+        .set("X-User-Hour", "foo");
+
+      expect(res.status).toBe(200);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, undefined);
+    });
+
+    it("falls back to server time when X-User-Hour is out of range (e.g. 24)", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(buildCarousel).mockResolvedValue(mockCards);
+
+      const res = await request(app)
+        .get("/api/carousel")
+        .set("X-User-Hour", "24");
+
+      expect(res.status).toBe(200);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, undefined);
+    });
+
+    it("falls back to server time when X-User-Hour is a float string (e.g. 7.5)", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(buildCarousel).mockResolvedValue(mockCards);
+
+      const res = await request(app)
+        .get("/api/carousel")
+        .set("X-User-Hour", "7.5");
+
+      expect(res.status).toBe(200);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, undefined);
+    });
+
+    it("falls back to server time when X-User-Hour is negative (e.g. -1)", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(buildCarousel).mockResolvedValue(mockCards);
+
+      const res = await request(app)
+        .get("/api/carousel")
+        .set("X-User-Hour", "-1");
+
+      expect(res.status).toBe(200);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, undefined);
+    });
+
+    it("accepts X-User-Hour of 0 (midnight) as a valid hour", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(buildCarousel).mockResolvedValue(mockCards);
+
+      const res = await request(app)
+        .get("/api/carousel")
+        .set("X-User-Hour", "0");
+
+      expect(res.status).toBe(200);
+      expect(buildCarousel).toHaveBeenCalledWith("1", null, 0);
     });
   });
 

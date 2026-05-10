@@ -21,7 +21,16 @@ export function register(app: Express): void {
       try {
         const userProfile = (await storage.getUserProfile(req.userId!)) ?? null;
 
-        const cards = await buildCarousel(req.userId!, userProfile);
+        const rawHour = req.headers["x-user-hour"];
+        let userHour: number | undefined;
+        if (typeof rawHour === "string" && rawHour !== "") {
+          const parsed = Number(rawHour);
+          if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 23) {
+            userHour = parsed;
+          }
+        }
+
+        const cards = await buildCarousel(req.userId!, userProfile, userHour);
 
         res.json({ cards });
       } catch (error) {
