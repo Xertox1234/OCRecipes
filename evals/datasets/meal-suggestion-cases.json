@@ -500,8 +500,7 @@
         "protein": 40,
         "carbs": 150,
         "fat": 42
-      },
-      "macroGapSignal": { "macro": "protein", "shortAmount": 120 }
+      }
     },
     "assertions": {
       "suggestionCount": 3,
@@ -533,8 +532,7 @@
         "protein": 70,
         "carbs": 62,
         "fat": 40
-      },
-      "macroGapSignal": { "macro": "carbs", "shortAmount": 188 }
+      }
     },
     "assertions": {
       "suggestionCount": 3,
@@ -568,12 +566,12 @@
         "carbs": 145,
         "fat": 42
       },
-      "dismissedTitles": ["Tofu Scramble", "Black Bean Bowl"],
-      "macroGapSignal": { "macro": "protein", "shortAmount": 122 }
+      "dismissedTitles": ["Tofu Scramble", "Black Bean Bowl"]
     },
     "assertions": {
       "suggestionCount": 3,
-      "mustNotContain": ["Tofu Scramble", "Black Bean Bowl"]
+      "mustNotContain": ["Tofu Scramble", "Black Bean Bowl"],
+      "mustContain": ["chicken|salmon|beef|tuna|egg|turkey|shrimp"]
     }
   },
   {

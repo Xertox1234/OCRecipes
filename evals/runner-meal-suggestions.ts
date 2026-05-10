@@ -160,6 +160,9 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
         lines.push(`Dislikes: ${i.userProfile.dislikes.join(", ")}`);
       }
     }
+    if (i.dismissedTitles?.length) {
+      lines.push(`Dismissed: ${i.dismissedTitles.join(", ")}`);
+    }
     return lines.join("\n");
   },
 });
