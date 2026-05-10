@@ -179,6 +179,7 @@
     createTestUser,
     getTestTx,
   } from "../../../test/db-test-utils";
+  import { eq } from "drizzle-orm";
   import { communityRecipes, userProfiles } from "@shared/schema";
   import type { NodePgDatabase } from "drizzle-orm/node-postgres";
   import type * as schema from "@shared/schema";
@@ -320,7 +321,7 @@
 
       expect(result.cuisinePreferences).toContain("Italian");
 
-      const [profile] = await db
+      const [profile] = await getTestTx()
         .select({ cuisinePreferences: userProfiles.cuisinePreferences })
         .from(userProfiles)
         .where(eq(userProfiles.userId, testUserId));
@@ -375,7 +376,7 @@
 
       expect(page1.candidates).toHaveLength(3);
       expect(page2.candidates.length).toBeGreaterThanOrEqual(1);
-      expect(page1.total).toBe(
+      expect(Number(page1.total)).toBe(
         page1.candidates.length + page2.candidates.length,
       );
     });
@@ -418,13 +419,18 @@
     cuisineOrigin: communityRecipes.cuisineOrigin,
   } as const;
 
-  const FALLBACK_RECIPE_IMAGE_URL = "https://placehold.co/600x400?text=Recipe";
-
   function resolveImage(
     imageUrl: string | null,
     canonicalImages: string[] | null,
   ): string | null {
     return imageUrl ?? canonicalImages?.[0] ?? null;
+  }
+
+  export class TastePicksValidationError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "TastePicksValidationError";
+    }
   }
 
   export async function getTastePicks(
@@ -439,7 +445,7 @@
     return rows.flatMap((r) => {
       const imageUrl =
         resolveImage(r.imageUrl, r.canonicalImages) ??
-        FALLBACK_RECIPE_IMAGE_URL;
+        "https://placehold.co/600x400?text=Recipe";
       return [
         {
           recipeId: r.recipeId,
@@ -480,7 +486,9 @@
           : [];
 
       if (visibleRecipes.length !== uniqueRecipeIds.length) {
-        throw new Error("Taste picks must reference public recipes");
+        throw new TastePicksValidationError(
+          "Taste picks must reference public recipes",
+        );
       }
 
       // 1. Replace picks
@@ -519,8 +527,9 @@
           : [];
 
       const picks: TastePickEntry[] = pickRows.flatMap((r) => {
-        const imageUrl = resolveImage(r.imageUrl, r.canonicalImages);
-        if (!imageUrl) return [];
+        const imageUrl =
+          resolveImage(r.imageUrl, r.canonicalImages) ??
+          "https://placehold.co/600x400?text=Recipe";
         return [
           {
             recipeId: r.recipeId,
@@ -624,6 +633,7 @@
 
   import { storage } from "../../storage";
   import { register } from "../taste-picks";
+  import { TastePicksValidationError } from "../../storage/taste-picks";
 
   vi.mock("../../middleware/auth");
   vi.mock("express-rate-limit");
@@ -781,7 +791,9 @@
 
       it("returns 400 when selected recipes are not public candidates", async () => {
         vi.mocked(storage.setTastePicks).mockRejectedValue(
-          new Error("Taste picks must reference public recipes"),
+          new TastePicksValidationError(
+            "Taste picks must reference public recipes",
+          ),
         );
 
         const res = await request(app)
@@ -834,6 +846,7 @@
   import { fireAndForget } from "../lib/fire-and-forget";
   import { handleRouteError } from "./_helpers";
   import { crudRateLimit } from "./_rate-limiters";
+  import { TastePicksValidationError } from "../storage/taste-picks";
 
   const setPicksSchema = z.object({
     recipeIds: z.array(z.number().int().positive()).max(50),
@@ -939,10 +952,7 @@
 
           res.json(result);
         } catch (error) {
-          if (
-            error instanceof Error &&
-            error.message === "Taste picks must reference public recipes"
-          ) {
+          if (error instanceof TastePicksValidationError) {
             return sendError(
               res,
               400,

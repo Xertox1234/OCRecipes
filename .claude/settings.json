@@ -16,8 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git commit*)",
-            "command": "REVIEW=$(git diff --cached | kimi-review --scope \"staged for commit\" --profile ocrecipes 2>&1) && jq -n --arg r \"$REVIEW\" '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":(\"kimi-review findings (check for CRITICAL before proceeding):\\n\" + $r)}}' 2>/dev/null || true",
+            "command": "jq -re '.tool_input.command | select(test(\"git( .+)? commit\"))' >/dev/null 2>&1 || exit 0; REVIEW=$(git diff --cached | kimi-review --scope \"staged for commit\" --profile ocrecipes 2>&1) && jq -n --arg r \"$REVIEW\" '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":(\"kimi-review findings (check for CRITICAL before proceeding):\\n\" + $r)}}' 2>/dev/null || true",
             "timeout": 180,
             "statusMessage": "Running kimi-review on staged changes..."
           }
