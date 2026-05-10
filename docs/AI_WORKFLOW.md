@@ -10,7 +10,7 @@ For human contributor setup, see [DEV_SETUP.md](DEV_SETUP.md).
 
 ### CI (GitHub Actions)
 
-`.github/workflows/ci.yml` runs on every push and pull request:
+`.github/workflows/ci.yml` runs on pushes to `main` and on pull requests. It also cancels superseded in-progress runs for the same ref, which avoids burning Actions minutes on stale commits.
 
 - ESLint (including accessibility, hardcoded-color, and IDOR custom rules)
 - `tsc --noEmit` type check
@@ -59,7 +59,7 @@ kimi-review --scope "carousel timezone header threading" --base main
 **Filter pattern:**
 
 ```bash
-kimi-review --scope "..." --base main | grep -A2 'CRITICAL\|WARNING'
+kimi-review --scope "..." --base main | grep -A2 'CRITICAL\|WARNING' || true
 ```
 
 The `grep -A2` prints the matched line plus 2 lines of context (the finding body). The SUGGESTION tier is excluded because suggestion-level findings are style preferences — surfacing them into Claude's context triggers unnecessary rewrites and burns tokens without improving correctness or safety. CRITICAL and WARNING are actionable; SUGGESTION is not.
@@ -78,13 +78,13 @@ Returns a structured for/against analysis. Claude makes the final call; kimi-cha
 
 ### `extract-chat`
 
-**When:** Before passing any kimi-\* output back as context. Strips tool calls and chain-of-thought, leaving only the conversation turns.
+**When:** Before passing a previous Claude Code session transcript back as context. It reads Claude Code JSONL logs and strips tool calls, thinking blocks, signatures, binary data, and framework-injected messages, leaving only conversation text.
 
 ```bash
-ask-kimi --paths ... --question "..." | extract-chat
+extract-chat "$VSCODE_TARGET_SESSION_LOG" -o /tmp/session-chat.txt
 ```
 
-This keeps kimi output lean before it re-enters Claude's context window.
+This keeps historical session context lean before it re-enters Claude's context window. It does not process arbitrary `kimi-*` stdout.
 
 ---
 
