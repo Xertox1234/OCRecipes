@@ -172,5 +172,48 @@ export function runStructuralAssertions(
     }
   }
 
+  if (assertions.foodsMinLength != null) {
+    const d = structuredData as { foods?: unknown[] };
+    if (!Array.isArray(d?.foods)) {
+      failures.push("foodsMinLength assertion requires { foods: unknown[] }");
+    } else if (d.foods.length < assertions.foodsMinLength) {
+      failures.push(
+        `Expected at least ${assertions.foodsMinLength} food item(s), got ${d.foods.length}`,
+      );
+    }
+  }
+
+  if (assertions.overallConfidenceMin != null) {
+    const d = structuredData as { overallConfidence?: unknown };
+    if (
+      typeof d?.overallConfidence !== "number" ||
+      !Number.isFinite(d.overallConfidence)
+    ) {
+      failures.push(
+        "overallConfidenceMin assertion requires { overallConfidence: number }",
+      );
+    } else if (d.overallConfidence < assertions.overallConfidenceMin) {
+      failures.push(
+        `overallConfidence ${d.overallConfidence.toFixed(2)} is below minimum ${assertions.overallConfidenceMin}`,
+      );
+    }
+  }
+
+  if (assertions.overallConfidenceMax != null) {
+    const d = structuredData as { overallConfidence?: unknown };
+    if (
+      typeof d?.overallConfidence !== "number" ||
+      !Number.isFinite(d.overallConfidence)
+    ) {
+      failures.push(
+        "overallConfidenceMax assertion requires { overallConfidence: number }",
+      );
+    } else if (d.overallConfidence > assertions.overallConfidenceMax) {
+      failures.push(
+        `overallConfidence ${d.overallConfidence.toFixed(2)} exceeds maximum ${assertions.overallConfidenceMax}`,
+      );
+    }
+  }
+
   return { passed: failures.length === 0, failures };
 }

@@ -244,6 +244,98 @@ it("cleans up orphans", async () => {
 - `server/storage/__tests__/favourite-recipes.test.ts` — 24 integration tests
 - `test/db-test-utils.ts` — shared transaction setup/teardown utilities
 
+### Dual-Assertion IDOR Test
+
+When writing integration tests for functions that enforce cross-user data ownership, assert **both** the return value and the database state. Return value alone cannot catch a bug where the function returns `null` but still commits a side-effect write — two independent failure modes require two independent checks.
+
+**Write path — assert no new row was written:**
+
+```typescript
+it("returns null when conversationId is owned by a different user", async () => {
+  const otherUser = await createTestUser(tx);
+  const conv = await createChatConversation(
+    otherUser.id,
+    "Other Chat",
+    "recipe",
+  );
+  const msg = await createChatMessage(
+    conv.id,
+    otherUser.id,
+    "assistant",
+    "Recipe!",
+    metadata,
+  );
+
+  const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
+
+  // 1. API contract: caller must be told the operation failed
+  expect(result).toBeNull();
+
+  // 2. Data integrity: nothing must have been written for the forged ID
+  const leaked = await tx
+    .select()
+    .from(communityRecipes)
+    .where(eq(communityRecipes.sourceMessageId, msg.id));
+  expect(leaked).toHaveLength(0);
+});
+```
+
+**Read-only path — assert the target row was not mutated:**
+
+When the guarded code path is read-only (SELECT only), there is no new row to check. Instead, confirm the target row's ownership fields are unchanged — this rules out an unintended mutation:
+
+```typescript
+// Legacy savedRecipeId path — SELECT only, no INSERT
+it("returns null when legacy savedRecipeId references another user's recipe (IDOR)", async () => {
+  // ...setup: otherUser owns otherRecipe, testUser forges the savedRecipeId...
+  const result = await saveRecipeFromChat(msg.id, conv.id, testUser.id);
+  expect(result).toBeNull();
+
+  // Confirm read-only path left the target row untouched
+  const [afterAttempt] = await tx
+    .select()
+    .from(communityRecipes)
+    .where(eq(communityRecipes.id, otherRecipe.id));
+  expect(afterAttempt).toBeDefined();
+  expect(afterAttempt!.authorId).toBe(otherUser.id);
+});
+```
+
+**`onConflictDoNothing` idempotency tests — name the conflict key:**
+
+When pre-inserting a row to trigger `onConflictDoNothing`, add a comment naming the unique constraint that fires. Without it, a reader must trace through the implementation to know whether the conflict key is `sourceMessageId`, `normalizedProductName`, or something else — and if the wrong field was pre-populated, the conflict never triggers and the test silently covers the wrong branch.
+
+```typescript
+// The unique constraint that fires is on sourceMessageId (confirmed by
+// the fallback SELECT in recipe-from-chat.ts:118). normalizedProductName
+// is recipe.title.toLowerCase() = "test-chicken salad" — matches here.
+const [preInserted] = await tx
+  .insert(communityRecipes)
+  .values({
+    normalizedProductName: "test-chicken salad",
+    sourceMessageId: msg.id, // ← conflict key
+    // ...
+  })
+  .returning();
+```
+
+**When to use:**
+
+- Any integration test for a storage function that guards cross-user access
+- Tests for the [IDOR Protection in Storage Layer](security.md#idor-protection-in-storage-layer) pattern — these tests are its verification counterpart
+
+**When NOT to use:**
+
+- Route-level tests with mocked storage — the mock already prevents DB writes, so a DB state assertion would be vacuously true
+- Non-security behaviors where the return value fully characterizes the outcome
+
+**References:**
+
+- `server/storage/__tests__/chat.test.ts` — `saveRecipeFromChat` IDOR tests (H9): write-path and read-path variants
+- `server/storage/__tests__/coach-notebook.test.ts` — `getNotebookEntryById` IDOR test (M5)
+
+---
+
 ### Pure Functions Outside React Component Bodies
 
 When a function inside a React component does not depend on props, state, or hooks, define it **outside** the component body at module scope. This avoids recreating the function on every render and eliminates the need for `useCallback` or `useMemo`.
@@ -1270,6 +1362,61 @@ Two eval-framework conventions to maintain as suites grow:
 
 2. **Category enum completeness:** Suite-specific schemas (`recipeChatCaseSchema`, `mealSuggestionCaseSchema`, etc.) define their own `category` Zod enum. When `"creativity"` (or any future category) is added to the top-level `EvalTestCase["category"]` union, it must also be added to every suite-specific schema. The type system can't catch the omission because the union is widened to `string` for generic runner use. Rule: whenever `types.ts` gains a new category, grep `dataset-schemas.ts` and add it to all per-suite enums.
 
+**Eval image fixtures: use stable public URLs, keep out of `eval:all`:**
+
+When an eval suite requires image inputs (e.g. photo-analysis), use stable public URLs (Unsplash, Wikimedia Commons) fetched at runtime rather than checked-in binary fixtures. The runner fetches → base64 at execution time:
+
+```typescript
+async function fetchImageAsBase64(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
+  const buffer = await response.arrayBuffer();
+  return Buffer.from(buffer).toString("base64");
+}
+```
+
+**Do NOT add image-URL suites to `eval:all`.** The `eval:all` chain is used in CI and local runs where external network uptime can't be guaranteed. Suites that depend on third-party image CDNs belong to a separate `eval:photo` (or similar) script that operators run intentionally.
+
+**Unsplash photo IDs as NANP false positives in `check-eval-dataset-secrets.js`:**
+
+Unsplash photo IDs that happen to be exactly 10 digits long match the secret-check script's NANP phone number pattern and block commits. Two approaches:
+
+1. **Pick images whose IDs don't match NANP** (preferred): Unsplash IDs longer than 10 digits or containing non-digit characters pass cleanly. Check with: `node -e "console.log(/\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/.test('YOUR_ID') ? 'NANP match — pick another' : 'OK')"`.
+2. **Add `"allowSecret": true`** on the same JSON line as the flagged URL (the script skips lines containing this string).
+
+Run `node scripts/check-eval-dataset-secrets.js evals/datasets/your-new-cases.json` before staging to catch this before Husky does.
+
+**`typeof NaN === "number"` — use `Number.isFinite()` for numeric range assertions:**
+
+When checking `overallConfidenceMin` or `overallConfidenceMax` against a numeric field from `structuredData`, a simple `typeof value !== "number"` guard passes for `NaN` because `typeof NaN === "number"` is `true`. Every comparison with `NaN` evaluates to `false`, so `NaN` silently satisfies both min and max bounds:
+
+```typescript
+// ❌ NaN bypasses the assertion — typeof NaN === "number"
+if (typeof d?.overallConfidence !== "number") { ... }
+
+// ✅ Correct — Number.isFinite() rejects NaN and Infinity
+if (typeof d?.overallConfidence !== "number" || !Number.isFinite(d.overallConfidence)) {
+  failures.push("overallConfidenceMin assertion requires { overallConfidence: number }");
+} else if (d.overallConfidence < assertions.overallConfidenceMin) { ... }
+```
+
+Apply this pattern to any numeric range assertion where the checked value originates from an external API response (where NaN is a realistic parsing failure mode).
+
+**Import shared Zod schemas — never re-declare intent enums in dataset-schemas.ts:**
+
+When a dataset schema's `input` field uses an enum that already exists in the codebase (e.g. `PhotoIntent` from `@shared/constants/preparation`), import `photoIntentSchema` directly rather than recreating the union literal:
+
+```typescript
+// ❌ WRONG — duplicates source of truth, drifts when intents change
+intent: z.enum(["log", "calories", "recipe", "identify", "label"]).default("log"),
+
+// ✅ CORRECT — single source of truth, stays in sync automatically
+import { photoIntentSchema } from "@shared/constants/preparation";
+intent: photoIntentSchema.default("log"),
+```
+
+This also ensures the dataset schema accepts newly-added intents (e.g. `"menu"`) without a separate schema update.
+
 **References:**
 
 - `evals/` — framework files (types, assertions, judge, runner, dataset)
@@ -1277,7 +1424,7 @@ Two eval-framework conventions to maintain as suites grow:
 - `evals/lib/dataset-schemas.ts` — pure schema extraction (no side effects)
 - `evals/__tests__/dataset-validation.test.ts` — dataset validation + dimension drift smoke tests
 - `evals/lib/judge-generic.ts` — per-suite dynamic Zod schema for dimension validation
-- `evals/runner-meal-suggestions.ts`, `evals/runner-recipe-chat.ts`, `evals/runner-recipe-generation.ts` — multi-suite entrypoints
+- `evals/runner-meal-suggestions.ts`, `evals/runner-recipe-chat.ts`, `evals/runner-recipe-generation.ts`, `evals/runner-photo-analysis.ts` — multi-suite entrypoints
 - `docs/superpowers/specs/2026-04-13-nutrition-coach-evaluation-design.md` — original spec
 
 ### Pressable `fireEvent` in JSDOM: Use `click` not `press`

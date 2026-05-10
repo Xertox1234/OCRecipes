@@ -405,13 +405,9 @@ export function register(app: Express): void {
               remixPromptOverride = buildRemixSystemPrompt(
                 {
                   title: sourceRecipe.title,
-                  ingredients: sourceRecipe.ingredients as {
-                    name: string;
-                    quantity: string;
-                    unit: string;
-                  }[],
-                  instructions: sourceRecipe.instructions as string[],
-                  dietTags: sourceRecipe.dietTags as string[],
+                  ingredients: sourceRecipe.ingredients ?? [],
+                  instructions: sourceRecipe.instructions,
+                  dietTags: sourceRecipe.dietTags ?? [],
                   description: sourceRecipe.description,
                   difficulty: sourceRecipe.difficulty,
                   timeEstimate: sourceRecipe.timeEstimate,

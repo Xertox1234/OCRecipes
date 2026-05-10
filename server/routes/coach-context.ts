@@ -12,6 +12,13 @@ import {
   type WarmUpMessageRole,
 } from "../services/coach-warm-up";
 import { sanitizeUserInput } from "../lib/ai-safety";
+import { logger } from "../lib/logger";
+import { buildCoachContext } from "../services/coach-context-builder";
+
+/** Runtime guard — validates a DB `text` role before using it as a union member. */
+function isWarmUpRole(r: string): r is WarmUpMessageRole {
+  return r === "user" || r === "assistant" || r === "system";
+}
 
 export function register(app: Express): void {
   // GET /api/coach/context
@@ -29,64 +36,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const [profile, todayIntake, notebookEntries, dueCommitments, user] =
-          await Promise.all([
-            storage.getUserProfile(req.userId),
-            storage.getDailySummary(req.userId, new Date()),
-            storage.getActiveNotebookEntries(req.userId),
-            storage.getCommitmentsWithDueFollowUp(req.userId),
-            storage.getUser(req.userId),
-          ]);
-
-        // Generate contextual suggestion chips
-        const suggestions: string[] = [];
-        if (dueCommitments.length > 0) {
-          suggestions.push(`How did "${dueCommitments[0].content}" go?`);
-        }
-        if (todayIntake) {
-          const proteinGoal = user?.dailyProteinGoal ?? 150;
-          const proteinLeft = proteinGoal - (todayIntake.totalProtein ?? 0);
-          if (proteinLeft > 30) {
-            suggestions.push(
-              `I need ${Math.round(proteinLeft)}g more protein today`,
-            );
-          }
-        }
-        const hour = new Date().getHours();
-        if (hour < 11) {
-          suggestions.push("Quick breakfast ideas");
-        } else if (hour >= 17) {
-          suggestions.push("How was my day?");
-        }
-        if (suggestions.length < 3) {
-          suggestions.push("What should I eat next?");
-        }
-
-        res.json({
-          goals: null, // TODO: integrate with calculateGoals when profile has physical data
-          todayIntake,
-          dietaryProfile: profile
-            ? {
-                dietType: profile.dietType,
-                allergies: (
-                  (profile.allergies as { name: string }[] | null) || []
-                )
-                  .map((a) => a?.name)
-                  .filter(Boolean),
-                dislikes: profile.foodDislikes,
-              }
-            : null,
-          notebook: notebookEntries.map((e) => ({
-            id: e.id,
-            type: e.type,
-            content: e.content,
-            status: e.status,
-            followUpDate: e.followUpDate,
-            updatedAt: e.updatedAt,
-          })),
-          dueCommitments,
-          suggestions: suggestions.slice(0, 5),
-        });
+        const data = await buildCoachContext(req.userId, features);
+        res.json(data);
       } catch (error) {
         handleRouteError(res, error, "get coach context");
       }
@@ -157,10 +108,16 @@ export function register(app: Express): void {
           20,
           req.userId,
         );
-        const prepared = messages.map((m) => ({
-          role: m.role as WarmUpMessageRole,
-          content: m.content,
-        }));
+        const prepared = messages.flatMap((m) => {
+          if (!isWarmUpRole(m.role)) {
+            logger.warn(
+              { messageId: m.id, role: m.role },
+              "warm-up: dropping message with unexpected role",
+            );
+            return [];
+          }
+          return [{ role: m.role, content: m.content }];
+        });
         prepared.push({
           role: "user",
           content: sanitizeUserInput(interimTranscript),

@@ -25,6 +25,7 @@ export const ErrorCode = {
   DATE_RANGE_LIMIT: "DATE_RANGE_LIMIT",
   AI_NOT_CONFIGURED: "AI_NOT_CONFIGURED",
   ALREADY_CONFIRMED: "ALREADY_CONFIRMED",
+  NUTRITION_LOOKUP_FAILED: "NUTRITION_LOOKUP_FAILED",
   // Recipe import error codes — mirror the ImportError union in recipe-import.ts
   FETCH_FAILED: "FETCH_FAILED",
   NO_RECIPE_DATA: "NO_RECIPE_DATA",

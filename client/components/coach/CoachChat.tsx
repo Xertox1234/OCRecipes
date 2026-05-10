@@ -448,28 +448,28 @@ export default function CoachChat({
                 isAssistant && speakingMessageId === msg.id && isSpeaking
               }
             />
-            {messageBlocks.get(msg.id)?.map((block, i) => (
-              <BlockRenderer
-                key={`${msg.id}-block-${i}`}
-                block={block}
-                onAction={handleBlockAction}
-                onQuickReply={(message) =>
-                  handleQuickReply(message, `${msg.id}-${i}`)
-                }
-                onCommitmentAccept={(notebookEntryId, title, followUpDate) =>
-                  handleCommitmentAccept(notebookEntryId, title, followUpDate)
-                }
-                isUsed={usedQuickRepliesRef.current.has(`${msg.id}-${i}`)}
-                isCommitmentAccepted={
-                  block.type === "commitment_card"
-                    ? acceptedCommitmentsRef.current.has(
-                        block.notebookEntryId ??
-                          `${block.title}::${block.followUpDate}`,
-                      )
-                    : undefined
-                }
-              />
-            ))}
+            {messageBlocks.get(msg.id)?.map((block, i) => {
+              const bKey = `${msg.id}-${i}`;
+              return (
+                <BlockRenderer
+                  key={`${msg.id}-block-${i}`}
+                  block={block}
+                  onAction={handleBlockAction}
+                  onQuickReply={handleQuickReply}
+                  blockKey={bKey}
+                  onCommitmentAccept={handleCommitmentAccept}
+                  isUsed={usedQuickRepliesRef.current.has(bKey)}
+                  isCommitmentAccepted={
+                    block.type === "commitment_card"
+                      ? acceptedCommitmentsRef.current.has(
+                          block.notebookEntryId ??
+                            `${block.title}::${block.followUpDate}`,
+                        )
+                      : undefined
+                  }
+                />
+              );
+            })}
             {isRetryTarget && (
               <Pressable
                 onPress={handleRetry}
@@ -579,17 +579,31 @@ export default function CoachChat({
     [hasVoice, isListening, volume, handleMicPress],
   );
 
-  const limitBanner = isAtDailyLimit ? (
-    <View style={styles.limitBanner}>
-      <Text style={[styles.limitText, { color: theme.textSecondary }]}>
-        {"You’ve reached today’s coaching limit."}
-      </Text>
-      {/* TODO: wire up when subscription screen added */}
-      <Text style={[styles.limitCta, { color: theme.link }]}>
-        Upgrade to Coach Pro
-      </Text>
-    </View>
-  ) : null;
+  const prevIsAtDailyLimitRef = useRef(false);
+  useEffect(() => {
+    if (isAtDailyLimit && !prevIsAtDailyLimitRef.current) {
+      AccessibilityInfo.announceForAccessibility(
+        "Daily coaching limit reached",
+      );
+    }
+    prevIsAtDailyLimitRef.current = isAtDailyLimit;
+  }, [isAtDailyLimit]);
+
+  const limitBanner = useMemo(
+    () =>
+      isAtDailyLimit ? (
+        <View style={styles.limitBanner} accessibilityLiveRegion="assertive">
+          <Text style={[styles.limitText, { color: theme.textSecondary }]}>
+            {"You’ve reached today’s coaching limit."}
+          </Text>
+          {/* TODO: wire up when subscription screen added */}
+          <Text style={[styles.limitCta, { color: theme.link }]}>
+            Upgrade to Coach Pro
+          </Text>
+        </View>
+      ) : null,
+    [isAtDailyLimit, theme.textSecondary, theme.link],
+  );
 
   return (
     <CoachChatBase

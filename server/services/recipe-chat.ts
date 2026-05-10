@@ -10,7 +10,11 @@ import {
   OPENAI_TIMEOUT_IMAGE_MS,
   MODEL_HEAVY,
 } from "../lib/openai";
-import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import {
+  sanitizeContextField,
+  sanitizeUserInput,
+  SYSTEM_PROMPT_BOUNDARY,
+} from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { generateRecipeImage } from "./recipe-generation";
 import { createServiceLogger, toError } from "../lib/logger";
@@ -361,10 +365,15 @@ export async function* generateRecipeChatResponse(
     options?.systemPromptOverride ??
     buildSystemPrompt(userProfile, imageAnalysis);
 
-  // Sanitize user messages
+  // Sanitize all message roles — user input with full injection filter,
+  // assistant/system content (may contain recipe data from DB) with context
+  // sanitization to guard against stored prompt injection payloads.
   const sanitizedMessages = conversationMessages.map((m) => ({
     role: m.role,
-    content: m.role === "user" ? sanitizeUserInput(m.content) : m.content,
+    content:
+      m.role === "user"
+        ? sanitizeUserInput(m.content)
+        : sanitizeContextField(m.content),
   }));
 
   let stream;

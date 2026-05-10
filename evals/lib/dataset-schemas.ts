@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { photoIntentSchema } from "@shared/constants/preparation";
 
 // ─── Recipe Chat ──────────────────────────────────────────────────────────────
 
@@ -167,3 +168,56 @@ export const recipeGenCaseSchema = z.object({
 
 export const recipeGenCasesSchema = z.array(recipeGenCaseSchema);
 export type RecipeGenInput = z.infer<typeof recipeGenCaseSchema>["input"];
+
+// ─── Photo Analysis ───────────────────────────────────────────────────────────
+//
+// Fixture strategy: stable public URLs (Unsplash / Wikimedia Commons).
+// The runner fetches each URL at execution time and converts to base64 before
+// calling analyzePhoto(). URLs are preferred over checked-in binaries because:
+//  - no repo bloat from large JPEG files
+//  - images are reproducible (same URL → same image)
+//  - if a URL eventually 404s, the case errors loudly rather than passing silently
+//
+// Intent must be one of the PhotoIntent values from @shared/constants/preparation:
+// "log" | "calories" | "recipe" | "identify" | "label"
+
+export const photoAnalysisInputSchema = z.object({
+  imageUrl: z.string().url(),
+  // Uses the canonical PhotoIntent schema from shared — single source of truth.
+  intent: photoIntentSchema.default("log"),
+});
+
+export const photoAnalysisCaseSchema = z.object({
+  id: z.string().min(1),
+  category: z.enum([
+    "safety",
+    "accuracy",
+    "helpfulness",
+    "personalization",
+    "edge-case",
+    "creativity",
+  ]),
+  description: z.string(),
+  input: photoAnalysisInputSchema,
+  assertions: z
+    .object({
+      mustNotContain: z.array(z.string()).optional(),
+      mustContain: z.array(z.string()).optional(),
+      foodsMinLength: z.number().int().min(0).optional(),
+      overallConfidenceMin: z.number().min(0).max(1).optional(),
+      overallConfidenceMax: z.number().min(0).max(1).optional(),
+    })
+    .optional(),
+  scoreDimensions: z
+    .array(
+      z.enum([
+        "identification_accuracy",
+        "portion_plausibility",
+        "confidence_calibration",
+      ]),
+    )
+    .optional(),
+});
+
+export const photoAnalysisCasesSchema = z.array(photoAnalysisCaseSchema);
+export type PhotoAnalysisInput = z.infer<typeof photoAnalysisInputSchema>;

@@ -15,6 +15,15 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-09 — Full Codebase Audit (Phase 3: audit closure)
+
+- **Trigger:** Closing out remaining 14 open audit findings — all routed to `todos/2026-05-09-low-severity-audit-items.md` or marked false-positive
+- **Manifest:** [docs/audits/2026-05-09-full.md](2026-05-09-full.md)
+- **Status:** CLOSED — 0 open, 26 verified, 15 deferred, 2 false-positive (L5 already fixed in H2; L9 resolved by H7 typed declaration)
+- **Additional codification:** H6 nav-param-instead-of-callback (`react-native.md`), H9 Dual-Assertion IDOR Test (`testing.md`), M1 sanitize-all-roles pattern (`security.md`) — from PRs #85–90
+
+---
+
 ## 2026-05-09 — Full Codebase Audit (Phase 2: deferred item resolution)
 
 - **Trigger:** Continuation of 2026-05-09 full audit — resolving all 12 deferred todos via 7 parallel worktree agents

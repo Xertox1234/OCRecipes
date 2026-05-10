@@ -11,7 +11,7 @@ import MealPlanCard from "./MealPlanCard";
 interface BlockRendererProps {
   block: CoachBlock;
   onAction?: (action: Record<string, unknown>) => void;
-  onQuickReply?: (message: string) => void;
+  onQuickReply?: (message: string, blockKey?: string) => void;
   onCommitmentAccept?: (
     notebookEntryId: number | undefined,
     title: string,
@@ -19,6 +19,7 @@ interface BlockRendererProps {
   ) => void;
   isUsed?: boolean;
   isCommitmentAccepted?: boolean;
+  blockKey?: string;
 }
 
 export default function BlockRenderer({
@@ -28,6 +29,7 @@ export default function BlockRenderer({
   onCommitmentAccept,
   isUsed,
   isCommitmentAccepted,
+  blockKey,
 }: BlockRendererProps) {
   switch (block.type) {
     case "action_card":
@@ -46,7 +48,15 @@ export default function BlockRenderer({
       );
     case "quick_replies":
       return (
-        <QuickReplies block={block} onSelect={onQuickReply} used={isUsed} />
+        <QuickReplies
+          block={block}
+          onSelect={
+            blockKey !== undefined
+              ? (message) => onQuickReply?.(message, blockKey)
+              : onQuickReply
+          }
+          used={isUsed}
+        />
       );
     case "recipe_card":
       return <RecipeCard block={block} onAction={onAction} />;

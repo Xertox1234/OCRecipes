@@ -57,29 +57,35 @@ export async function saveRecipeFromChat(
     // 3. Validate metadata with Zod — no unsafe `as` casts on DB values
     const parsed = recipeChatMetadataSchema.safeParse(msg.metadata);
 
-    // Handle legacy or non-recipe messages: check raw savedRecipeId for idempotency.
-    // Use parseInt (not Number) to avoid NaN/0 coercion; add authorId ownership filter
-    // so a crafted savedRecipeId cannot surface another user's recipe. (M13 — 2026-04-18)
-    const rawMetadata = msg.metadata as Record<string, unknown>;
-    if (rawMetadata.savedRecipeId) {
-      const legacyId = parseInt(String(rawMetadata.savedRecipeId), 10);
-      if (legacyId > 0) {
-        const [existing] = await tx
-          .select()
-          .from(communityRecipes)
-          .where(
-            and(
-              eq(communityRecipes.id, legacyId),
-              eq(communityRecipes.authorId, userId),
-            ),
-          );
-        return existing || null;
+    // 4. Extract validated recipe data from metadata
+    if (!parsed.success) {
+      // Handle legacy or non-recipe messages: check raw savedRecipeId for idempotency.
+      // Use parseInt (not Number) to avoid NaN/0 coercion; add authorId ownership filter
+      // so a crafted savedRecipeId cannot surface another user's recipe. (M13 — 2026-04-18)
+      const rawMetadata: unknown = msg.metadata;
+      const savedRecipeId =
+        rawMetadata !== null &&
+        typeof rawMetadata === "object" &&
+        "savedRecipeId" in rawMetadata
+          ? (rawMetadata as Record<string, unknown>).savedRecipeId
+          : undefined;
+      if (savedRecipeId) {
+        const legacyId = parseInt(String(savedRecipeId), 10);
+        if (legacyId > 0) {
+          const [existing] = await tx
+            .select()
+            .from(communityRecipes)
+            .where(
+              and(
+                eq(communityRecipes.id, legacyId),
+                eq(communityRecipes.authorId, userId),
+              ),
+            );
+          return existing || null;
+        }
       }
       return null;
     }
-
-    // 4. Extract validated recipe data from metadata
-    if (!parsed.success) return null;
     const { recipe } = parsed.data;
 
     // 5. Create communityRecipe (private by default). mealTypes must be

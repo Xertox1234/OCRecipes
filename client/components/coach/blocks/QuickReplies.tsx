@@ -31,6 +31,7 @@ export default function QuickReplies({ block, onSelect, used }: Props) {
             },
           ]}
           onPress={() => onSelect?.(option.message)}
+          hitSlop={{ top: 7, bottom: 7 }}
           accessibilityRole="button"
           accessibilityLabel={option.label}
         >

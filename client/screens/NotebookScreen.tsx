@@ -20,18 +20,9 @@ import {
   type NotebookEntry,
 } from "@/hooks/useChat";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
+import { TYPE_COLORS } from "@/constants/notebook-colors";
 import type { NotebookScreenNavigationProp } from "@/types/navigation";
-
-const TYPE_COLORS: Record<string, string> = {
-  commitment: "#f59e0b", // hardcoded
-  insight: "#7c6dff", // hardcoded
-  goal: "#008A38", // hardcoded
-  preference: "#06b6d4", // hardcoded
-  coaching_strategy: "#06b6d4", // hardcoded
-  motivation: "#ec4899", // hardcoded
-  emotional_context: "#ec4899", // hardcoded
-  conversation_summary: "#888888", // hardcoded
-};
 
 const FILTERS = [
   "all",
@@ -62,8 +53,8 @@ export default function NotebookScreen() {
         : { type: filter };
 
   const { data: entries = [], isLoading } = useNotebookEntries(queryOpts);
-  const updateEntry = useUpdateNotebookEntry();
-  const deleteEntry = useDeleteNotebookEntry();
+  const { mutate: updateEntryMutate } = useUpdateNotebookEntry();
+  const { mutate: deleteEntryMutate } = useDeleteNotebookEntry();
 
   const handleArchive = useCallback(
     (entry: NotebookEntry) => {
@@ -72,11 +63,11 @@ export default function NotebookScreen() {
         {
           text: "Archive",
           onPress: () =>
-            updateEntry.mutate({ id: entry.id, status: "archived" }),
+            updateEntryMutate({ id: entry.id, status: "archived" }),
         },
       ]);
     },
-    [updateEntry],
+    [updateEntryMutate],
   );
 
   const handleDelete = useCallback(
@@ -86,11 +77,11 @@ export default function NotebookScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteEntry.mutate(entry.id),
+          onPress: () => deleteEntryMutate(entry.id),
         },
       ]);
     },
-    [deleteEntry],
+    [deleteEntryMutate],
   );
 
   const renderEntry = useCallback(
@@ -139,7 +130,12 @@ export default function NotebookScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Archive entry"
               >
-                <Feather name="archive" size={16} color={theme.textSecondary} />
+                <Feather
+                  name="archive"
+                  size={16}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
               </Pressable>
               <Pressable
                 onPress={() => handleDelete(item)}
@@ -148,7 +144,12 @@ export default function NotebookScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Delete entry"
               >
-                <Feather name="trash-2" size={16} color={theme.textSecondary} />
+                <Feather
+                  name="trash-2"
+                  size={16}
+                  color={theme.textSecondary}
+                  accessible={false}
+                />
               </Pressable>
             </View>
           </View>
@@ -174,6 +175,7 @@ export default function NotebookScreen() {
           <Pressable
             onPress={() => navigation.navigate("NotebookEntry", {})}
             style={[styles.newBtn, { backgroundColor: theme.link }]}
+            hitSlop={{ top: 7, bottom: 7 }}
             accessibilityRole="button"
             accessibilityLabel="Create new notebook entry"
           >
@@ -186,7 +188,7 @@ export default function NotebookScreen() {
             accessibilityRole="button"
             accessibilityLabel="Close"
           >
-            <Feather name="x" size={24} color={theme.text} />
+            <Feather name="x" size={24} color={theme.text} accessible={false} />
           </Pressable>
         </View>
       </View>
@@ -207,6 +209,7 @@ export default function NotebookScreen() {
                   filter === f ? theme.link : theme.backgroundSecondary,
               },
             ]}
+            hitSlop={{ top: 7, bottom: 7 }}
             accessibilityRole="button"
             accessibilityState={{ selected: filter === f }}
             accessibilityLabel={`Filter by ${f === "all" ? "all" : f}`}
@@ -238,7 +241,11 @@ export default function NotebookScreen() {
           data={entries}
           keyExtractor={(e) => String(e.id)}
           renderItem={renderEntry}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[
+            styles.list,
+            { paddingBottom: insets.bottom + Spacing.md },
+          ]}
+          {...FLATLIST_DEFAULTS}
           ListEmptyComponent={
             <Text style={[styles.empty, { color: theme.textSecondary }]}>
               No entries yet

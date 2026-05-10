@@ -192,6 +192,7 @@ describe("generateCoachProResponse", () => {
       "lookup_nutrition",
       { query: "chicken" },
       "user-1",
+      undefined,
     );
   });
 
@@ -458,11 +459,13 @@ describe("generateCoachProResponse", () => {
       "lookup_nutrition",
       { query: "apple" },
       "user-1",
+      undefined,
     );
     expect(executeToolCall).toHaveBeenCalledWith(
       "lookup_nutrition",
       { query: "banana" },
       "user-1",
+      undefined,
     );
   });
 

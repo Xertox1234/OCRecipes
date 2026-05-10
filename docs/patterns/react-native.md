@@ -517,55 +517,60 @@ export default function HistoryScreen() {
 
 **Why:** Standard `NativeStackNavigationProp` only knows about screens in its own stack. `CompositeNavigationProp` combines the stack navigator's type with the tab navigator's type, enabling type-safe navigation across both.
 
-### Non-Serializable Route Param: Replace with Navigation Event
+### Navigation Param Instead of Callback for Cross-Screen Communication
 
-Never pass functions (callbacks, handlers) as route params. React Navigation warns about this in dev, and state persistence/deep-linking will break or crash on iOS background restore.
+Never pass a function as a route param. React Navigation serializes params for deep linking, DevTools inspection, and state persistence — functions are not serializable and will fail silently or crash in these contexts.
 
-**Pattern: Replace `onSelect` callback with navigate + serializable param:**
-
-1. Change the route param type to `undefined` (no params).
-2. In the caller screen, navigate to the target screen with a serializable param: `navigation.navigate("Target", { selectedId: id })`.
-3. In the target screen, read the param via `useRoute` + `useEffect`, apply it, then clear it with `navigation.setParams({ selectedId: undefined })` to prevent re-application on back-navigation.
+Instead, use a serializable param to carry the selection, consume it with `useEffect` in the target screen, then clear it with `setParams` so it doesn't re-apply on future focus.
 
 ```typescript
-// ❌ Non-serializable — breaks state restoration
-AllConversations: { onSelect: (id: number) => void };
+// ❌ BAD: function in route params — not serializable
+// AllConversations: { onSelect: (id: number) => void }
+navigation.navigate("AllConversations", { onSelect: setConversationId });
 
-// ✅ Serializable
-AllConversations: undefined;
-CoachPro: { selectedConversationId?: number } | undefined;
+// ✅ GOOD: serializable param carries the selection
+// AllConversations: undefined
+// CoachPro: { selectedConversationId?: number } | undefined
 ```
 
-```typescript
-// In AllConversationsScreen — navigate instead of calling callback
-navigation.navigate("CoachPro", { selectedConversationId: id });
+**Sender** (picker screen that passes a result back):
 
-// In CoachProScreen — read, apply, clear
+```typescript
+// Navigate to the destination with the selected value
+// React Navigation resolves CoachPro in the stack and updates its params
+navigation.navigate("CoachPro", { selectedConversationId: conv.id });
+```
+
+**Receiver** (screen that acts on the selection):
+
+```typescript
+const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
+
 useEffect(() => {
   const selected = route.params?.selectedConversationId;
-  if (selected == null) return;
+  if (selected == null) return; // == null catches both null and undefined; allows 0 as valid ID
   setConversationId(selected);
-  navigation.setParams({ selectedConversationId: undefined }); // prevent re-apply
+  navigation.setParams({ selectedConversationId: undefined }); // prevent re-apply on focus
 }, [route.params?.selectedConversationId, navigation]);
 ```
 
-**Note on `setParams`:** `navigation.setParams({ key: undefined })` leaves the key present in params but falsy — use `== null` guard (not `!value`) to allow `0` as a valid ID.
+**Effect ordering:** Declare the param-reading effect BEFORE any default-selection effect so the explicit selection wins. The default-selection guard (`if (conversationId || ...)`) prevents clobbering after state is set.
 
-**Effect ordering:** Declare the param-reading effect BEFORE any default-selection effect to ensure the explicit selection wins. The default-selection guard (`if (conversationId || ...)`) prevents clobbering after state is set.
+**When the receiver is in a different stack:** the sender needs a 3-level `CompositeNavigationProp` to reach across the navigator boundary (see [CompositeNavigationProp for Cross-Stack Navigation](#compositenavigationprop-for-cross-stack-navigation)).
 
-### Navigating from a Parent Stack to a Nested Stack Screen
+**When to use:** Any picker/selector modal that needs to return a selection to the calling screen.
 
-When a screen lives in an outer stack (e.g., RootStack) and needs to navigate to a screen in a nested stack (e.g., ChatStack), use a 2-level `CompositeNavigationProp` combining the outer and inner stacks. React Navigation resolves screen names in the full navigator tree at runtime.
+**When NOT to use:** Passing display data _to_ a screen (not back from it) — that's a normal forward param, no special handling needed.
 
-```typescript
-// AllConversationsScreen (in RootStack) needs to navigate to CoachPro (in ChatStack)
-export type AllConversationsNavigationProp = CompositeNavigationProp<
-  NativeStackNavigationProp<RootStackParamList, "AllConversations">,
-  NativeStackNavigationProp<ChatStackParamList> // grants access to CoachPro
->;
-```
+**References:**
 
-This differs from the standard "inner → outer" composite pattern (e.g., `CoachChatNavigationProp`): here the outer screen needs access to inner screens, not the reverse.
+- `client/screens/AllConversationsScreen.tsx` — sender navigates to `CoachPro` with `selectedConversationId`
+- `client/screens/CoachProScreen.tsx` — receiver consumes and clears via `setParams`
+- `client/types/navigation.ts` — `AllConversationsNavigationProp` 3-level composite type
+
+**Origin:** H6 audit finding (2026-05-09)
+
+---
 
 ### Intersection Type for Dual-Stack Screen Registration
 

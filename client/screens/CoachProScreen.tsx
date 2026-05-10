@@ -94,6 +94,16 @@ export default function CoachProScreen() {
     setConversationId(threadBarConversations[0].id);
   }, [conversationId, threadBarConversations]);
 
+  // Apply a conversation selected from AllConversationsScreen (navigation param pattern
+  // replaces the non-serializable onSelect callback that was previously passed as a route param).
+  useEffect(() => {
+    const selectedId = route.params?.selectedConversationId;
+    if (selectedId !== undefined) {
+      setConversationId(selectedId);
+      navigation.setParams({ selectedConversationId: undefined });
+    }
+  }, [route.params?.selectedConversationId, navigation]);
+
   const { cancelStaleReminders } = useNotebookNotifications();
   const { data: notebookEntries = [], isLoading: isEntriesLoading } =
     useNotebookEntries({

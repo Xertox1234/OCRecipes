@@ -130,6 +130,7 @@ export default function AllConversationsScreen() {
               name="bookmark"
               size={18}
               color={conv.isPinned ? theme.link : theme.textSecondary}
+              accessible={false}
             />
           </Pressable>
           <Pressable
@@ -139,7 +140,12 @@ export default function AllConversationsScreen() {
             accessibilityRole="button"
             accessibilityLabel="Delete conversation"
           >
-            <Feather name="trash-2" size={18} color={theme.textSecondary} />
+            <Feather
+              name="trash-2"
+              size={18}
+              color={theme.textSecondary}
+              accessible={false}
+            />
           </Pressable>
         </View>
       </Pressable>
@@ -165,7 +171,7 @@ export default function AllConversationsScreen() {
           accessibilityRole="button"
           accessibilityLabel="Close"
         >
-          <Feather name="x" size={24} color={theme.text} />
+          <Feather name="x" size={24} color={theme.text} accessible={false} />
         </Pressable>
       </View>
 
@@ -175,7 +181,12 @@ export default function AllConversationsScreen() {
           { backgroundColor: theme.backgroundSecondary },
         ]}
       >
-        <Feather name="search" size={16} color={theme.textSecondary} />
+        <Feather
+          name="search"
+          size={16}
+          color={theme.textSecondary}
+          accessible={false}
+        />
         <TextInput
           style={[styles.searchInput, { color: theme.text }]}
           placeholder="Search conversations…"
@@ -191,7 +202,10 @@ export default function AllConversationsScreen() {
         <ActivityIndicator style={styles.loading} color={theme.link} />
       ) : (
         <ScrollView
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: insets.bottom + Spacing.xl },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           {pinned.length > 0 && (
@@ -263,7 +277,7 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: 14, fontWeight: "500" },
   rowMeta: { fontSize: 12, marginTop: 2 },
   rowActions: { flexDirection: "row", alignItems: "center" },
-  listContent: { paddingBottom: Spacing.xl },
+  listContent: {},
   loading: { marginTop: Spacing.xl },
   empty: { textAlign: "center", marginTop: Spacing.xl, fontSize: 14 },
 });

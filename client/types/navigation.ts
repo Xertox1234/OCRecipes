@@ -275,13 +275,16 @@ export type MenuScanResultScreenNavigationProp = NativeStackNavigationProp<
 
 /**
  * Navigation prop for AllConversationsScreen.
- * Extends the RootStack prop with ChatStack access so the screen can call
- * navigate("CoachPro", { selectedConversationId }) — React Navigation resolves
- * screen names in the full navigator tree at runtime.
+ * 3-level composite: RootStack → MainTab → ChatStack.
+ * Allows AllConversationsScreen to navigate back to CoachPro (in ChatStack)
+ * with a selectedConversationId param, rather than passing a callback in route params.
  */
 export type AllConversationsNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList, "AllConversations">,
-  NativeStackNavigationProp<ChatStackParamList>
+  CompositeNavigationProp<
+    BottomTabNavigationProp<MainTabParamList, "CoachTab">,
+    NativeStackNavigationProp<ChatStackParamList>
+  >
 >;
 
 /**

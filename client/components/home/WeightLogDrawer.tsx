@@ -5,6 +5,7 @@ import {
   TextInput,
   View,
   ActivityIndicator,
+  AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -129,6 +130,9 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
       {
         onSuccess: () => {
           haptics.notification(Haptics.NotificationFeedbackType.Success);
+          AccessibilityInfo.announceForAccessibility(
+            "Weight logged successfully",
+          );
           setWeightInput("");
           setLastLoggedWeight(parsed);
           setJustLogged(true);
@@ -265,7 +269,15 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
 
           {/* Goal progress bar — only when goal and current weight are set */}
           {showGoalBar && (
-            <View>
+            <View
+              role="progressbar"
+              accessibilityLabel="Goal progress"
+              accessibilityValue={{
+                min: 0,
+                max: 100,
+                now: Math.round(goalProgress * 100),
+              }}
+            >
               <View
                 style={[
                   styles.goalBarTrack,

@@ -531,6 +531,7 @@ export async function* handleCoachChat(
           pendingStatusLabels.push(getToolStatusLabel(name));
         }
       },
+      profile,
     )) {
       for (const label of pendingStatusLabels.splice(0)) {
         if (!isAborted()) yield { type: "status", label };

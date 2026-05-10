@@ -10,6 +10,7 @@ import {
   transactions,
   communityRecipes,
   cookbookRecipes,
+  favouriteRecipes,
 } from "@shared/schema";
 import {
   subscriptionTierSchema,
@@ -180,6 +181,14 @@ export async function deleteUser(id: string): Promise<boolean> {
           and(
             inArray(cookbookRecipes.recipeId, recipeIds),
             eq(cookbookRecipes.recipeType, "community"),
+          ),
+        );
+      await tx
+        .delete(favouriteRecipes)
+        .where(
+          and(
+            inArray(favouriteRecipes.recipeId, recipeIds),
+            eq(favouriteRecipes.recipeType, "community"),
           ),
         );
       await tx

@@ -1490,3 +1490,54 @@ try {
 - `scripts/generate-app-assets.ts` — uses dynamic import after `loadEnv()`
 - `scripts/generate-ingredient-icons.ts` — same pattern
 - Audit finding M10 (2026-04-26)
+
+---
+
+### Pre-fetched Data Threading Through Service Chains
+
+When a top-level handler already fetches a resource (e.g. `UserProfile`) in a `Promise.all`, thread it as an optional parameter through service/tool layers rather than re-fetching independently. Use `!== undefined` (not `!value`) as the guard so `null` (no profile found) is preserved and propagated correctly.
+
+```ts
+// Top-level handler — already fetched profile
+const [profile, messages] = await Promise.all([
+  storage.getUserProfile(userId),
+  storage.getMessages(conversationId),
+]);
+
+// Pass to service layer as optional param
+for await (const chunk of generateCoachProResponse(
+  messages, context, userId, abortSignal, onBeforeToolCalls,
+  profile,  // pre-fetched — avoids redundant DB call inside tool executor
+)) { ... }
+
+// Service layer — thread to tool executor
+async function* generateCoachProResponse(
+  ...,
+  preloadedProfile?: UserProfile | null,
+) {
+  const result = await executeToolCall(
+    tc.function.name, args, userId,
+    preloadedProfile,  // pass through
+  );
+}
+
+// Tool function — guard with !== undefined, not !value
+async function executeToolCall(
+  toolName: string, args: ToolArgs, userId: string,
+  preloadedProfile?: UserProfile | null,
+) {
+  const profile =
+    preloadedProfile !== undefined
+      ? preloadedProfile          // use pre-fetched (may be null)
+      : await storage.getUserProfile(userId);  // fetch on demand
+}
+```
+
+**Why `!== undefined` not `!preloadedProfile`:** A `null` profile (no user profile exists) is a valid result that must not trigger an extra DB fetch. `!null` is `true`, which would incorrectly re-fetch. `null !== undefined` is `true`, preserving the `null` correctly.
+
+**References:**
+
+- `server/services/coach-tools.ts` — `executeToolCall` optional `preloadedProfile` param
+- `server/services/nutrition-coach.ts` — `generateCoachProResponse` optional `preloadedProfile` param
+- `server/services/coach-pro-chat.ts` — passes pre-fetched profile from `Promise.all`
+- Audit finding L8 (2026-05-09)
