@@ -86,7 +86,7 @@
 
   The imports `serial`, `integer`, `varchar`, `timestamp`, `unique`, `index`, `sql` are already used elsewhere in this file — no new imports needed.
 
-- [ ] **Step 2: Push schema to DB**
+- [x] **Step 2: Push schema to DB**
 
   ```bash
   npm run db:push
@@ -159,7 +159,7 @@
 
 - Create: `server/storage/__tests__/taste-picks.test.ts`
 
-- [ ] **Step 1: Write the test file**
+- [x] **Step 1: Write the test file**
 
   ```typescript
   // server/storage/__tests__/taste-picks.test.ts
@@ -383,7 +383,7 @@
   });
   ```
 
-- [ ] **Step 2: Run tests — verify they fail with "module not found"**
+- [x] **Step 2: Run tests — verify they fail with "module not found"**
 
   ```bash
   npm run test:run -- taste-picks
@@ -399,7 +399,7 @@
 
 - Create: `server/storage/taste-picks.ts`
 
-- [ ] **Step 1: Create the storage module**
+- [x] **Step 1: Create the storage module**
 
   ```typescript
   // server/storage/taste-picks.ts
@@ -601,7 +601,7 @@
   }
   ```
 
-- [ ] **Step 2: Run tests — verify they pass**
+- [x] **Step 2: Run tests — verify they pass**
 
   ```bash
   npm run test:run -- taste-picks
@@ -609,7 +609,7 @@
 
   Expected: all storage tests PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
   ```bash
   git add server/storage/taste-picks.ts server/storage/__tests__/taste-picks.test.ts
@@ -624,7 +624,7 @@
 
 - Create: `server/routes/__tests__/taste-picks.test.ts`
 
-- [ ] **Step 1: Write the route test file**
+- [x] **Step 1: Write the route test file**
 
   ```typescript
   // server/routes/__tests__/taste-picks.test.ts
@@ -818,7 +818,7 @@
   });
   ```
 
-- [ ] **Step 2: Run tests — verify they fail with "module not found"**
+- [x] **Step 2: Run tests — verify they fail with "module not found"**
 
   ```bash
   npm run test:run -- routes/__tests__/taste-picks
@@ -834,7 +834,7 @@
 
 - Create: `server/routes/taste-picks.ts`
 
-- [ ] **Step 1: Create the route module**
+- [x] **Step 1: Create the route module**
 
   ```typescript
   // server/routes/taste-picks.ts
@@ -968,7 +968,7 @@
   }
   ```
 
-- [ ] **Step 2: Run route tests — verify they pass**
+- [x] **Step 2: Run route tests — verify they pass**
 
   ```bash
   npm run test:run -- routes/__tests__/taste-picks
@@ -976,7 +976,7 @@
 
   Expected: all PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
   ```bash
   git add server/routes/taste-picks.ts server/routes/__tests__/taste-picks.test.ts
@@ -992,7 +992,7 @@
 - Modify: `server/storage/index.ts`
 - Modify: `server/routes.ts`
 
-- [ ] **Step 1: Expose taste-picks functions in `server/storage/index.ts`**
+- [x] **Step 1: Expose taste-picks functions in `server/storage/index.ts`**
 
   Add import near the top of the file (after `canonicalRecipesStorage` import):
 
@@ -1009,7 +1009,7 @@
   getTastePickCandidates: tastePicksStorage.getTastePickCandidates,
   ```
 
-- [ ] **Step 2: Register route in `server/routes.ts`**
+- [x] **Step 2: Register route in `server/routes.ts`**
 
   Add import near the top (after `registerCuratedRecipes` import):
 
@@ -1023,7 +1023,7 @@
   registerTastePicks(app);
   ```
 
-- [ ] **Step 3: Run full test suite to check for regressions**
+- [x] **Step 3: Run full test suite to check for regressions**
 
   ```bash
   npm run test:run
@@ -1031,7 +1031,7 @@
 
   Expected: all existing tests pass, new tests pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
   ```bash
   git add server/storage/index.ts server/routes.ts
@@ -1204,7 +1204,7 @@
   });
   ```
 
-- [ ] **Step 2: Verify TypeScript compiles**
+- [x] **Step 2: Verify TypeScript compiles**
 
   ```bash
   npm run type-check 2>&1 | grep -i "taste"
@@ -1230,7 +1230,7 @@
 - Modify: `client/navigation/OnboardingNavigator.tsx`
 - Modify: `client/screens/onboarding/PreferencesScreen.tsx`
 
-- [ ] **Step 1: Change PreferencesScreen to call `nextStep` instead of `completeOnboarding`**
+- [x] **Step 1: Change PreferencesScreen to call `nextStep` instead of `completeOnboarding`**
 
   In `client/screens/onboarding/PreferencesScreen.tsx`:
 
@@ -1276,7 +1276,7 @@
   </Button>
   ```
 
-- [ ] **Step 2: Bump `totalSteps` in `OnboardingContext.tsx`**
+- [x] **Step 2: Bump `totalSteps` in `OnboardingContext.tsx`**
 
   In `client/context/OnboardingContext.tsx`, line 55:
 
@@ -1288,7 +1288,7 @@
   const totalSteps = 7;
   ```
 
-- [ ] **Step 3: Create `TastePicksScreen.tsx`**
+- [x] **Step 3: Create `TastePicksScreen.tsx`**
 
   ```typescript
   // client/screens/onboarding/TastePicksScreen.tsx
@@ -1569,7 +1569,7 @@
   });
   ```
 
-- [ ] **Step 4: Add `TastePicks` to `OnboardingNavigator.tsx`**
+- [x] **Step 4: Add `TastePicks` to `OnboardingNavigator.tsx`**
 
   In `client/navigation/OnboardingNavigator.tsx`:
 
@@ -1599,7 +1599,7 @@
   { name: "TastePicks" as const, component: TastePicksScreen },
   ```
 
-- [ ] **Step 5: Type-check the onboarding changes**
+- [x] **Step 5: Type-check the onboarding changes**
 
   ```bash
   npm run type-check 2>&1 | grep -iE "onboarding|tastepicks|preference"
@@ -1607,7 +1607,7 @@
 
   Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
   ```bash
   git add client/context/OnboardingContext.tsx \
@@ -1628,7 +1628,7 @@
 - Modify: `client/screens/SettingsScreen.tsx`
 - Modify: `client/types/navigation.ts`
 
-- [ ] **Step 1: Create `TasteProfileScreen.tsx`**
+- [x] **Step 1: Create `TasteProfileScreen.tsx`**
 
   ```typescript
   // client/screens/TasteProfileScreen.tsx
@@ -1805,7 +1805,7 @@
   });
   ```
 
-- [ ] **Step 2: Add `TasteProfileScreenNavigationProp` to `client/types/navigation.ts`**
+- [x] **Step 2: Add `TasteProfileScreenNavigationProp` to `client/types/navigation.ts`**
 
   Add after the `NotebookEntryNavigationProp` export at the end of the file:
 
@@ -1822,7 +1822,7 @@
 
   Note: this type will show an error until Step 3 adds `TasteProfile` to `ProfileStackParamList`.
 
-- [ ] **Step 3: Add `TasteProfile` to `ProfileStackNavigator.tsx`**
+- [x] **Step 3: Add `TasteProfile` to `ProfileStackNavigator.tsx`**
 
   Add import after `CoachRemindersScreen` import:
 
@@ -1850,7 +1850,7 @@
   />
   ```
 
-- [ ] **Step 4: Add "Taste Profile" row to `SettingsScreen.tsx`**
+- [x] **Step 4: Add "Taste Profile" row to `SettingsScreen.tsx`**
 
   Add to `SETTINGS_ITEMS` array, between `editProfile` and `healthkit`:
 
@@ -1866,7 +1866,7 @@
     break;
   ```
 
-- [ ] **Step 5: Type-check settings changes**
+- [x] **Step 5: Type-check settings changes**
 
   ```bash
   npm run type-check 2>&1 | grep -iE "taste|profile"
@@ -1874,7 +1874,7 @@
 
   Expected: no errors.
 
-- [ ] **Step 6: Run full test suite**
+- [x] **Step 6: Run full test suite**
 
   ```bash
   npm run test:run
@@ -1882,7 +1882,7 @@
 
   Expected: all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
   ```bash
   git add client/screens/TasteProfileScreen.tsx \
@@ -1896,7 +1896,7 @@
 
 ## Task 11: Final Verification
 
-- [ ] **Step 1: Run full type-check**
+- [x] **Step 1: Run full type-check**
 
   ```bash
   npm run type-check
@@ -1904,7 +1904,7 @@
 
   Expected: zero errors.
 
-- [ ] **Step 2: Run full test suite**
+- [x] **Step 2: Run full test suite**
 
   ```bash
   npm run test:run
@@ -1933,7 +1933,7 @@
 
   After completing onboarding with Italian recipe picks, return to Home and check that some carousel cards show "Matches your cuisine preferences" instead of "Recently added recipe".
 
-- [ ] **Step 6: Final commit + push**
+- [x] **Step 6: Final commit + push**
 
   ```bash
   git push origin HEAD
