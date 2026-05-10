@@ -112,7 +112,7 @@ After all commands pass, re-read every modified file and confirm the changes mat
 
 ## Step 6 — Code Review
 
-Run `kimi-review` against the committed changes in this worktree. Map the todo's labels to `--patterns` using this table:
+Run `kimi-review` against the uncommitted working-tree changes in this worktree. Map the todo's labels to `--patterns` using this table:
 
 | Todo label(s)                 | `--patterns` value                     |
 | ----------------------------- | -------------------------------------- |
@@ -130,18 +130,17 @@ Run `kimi-review` against the committed changes in this worktree. Map the todo's
 
 Use the first matching row. If multiple labels match different rows, combine their values (e.g., `--patterns react-native,security`).
 
-Capture the output for use in Step 9:
+Pipe the working-tree diff into kimi-review and capture the output for use in Step 9. The review runs before the commit (Step 8), so the changes are staged or unstaged but not yet on HEAD — stdin is the correct way to pass them:
 
 ```bash
-REVIEW_OUTPUT=$(kimi-review \
-  --base <BASE_BRANCH> \
+REVIEW_OUTPUT=$(git diff HEAD -- . | kimi-review \
   --scope "<todo title>" \
   --patterns <mapped-patterns> \
   --tiers CRITICAL,WARNING,SUGGESTION)
 echo "$REVIEW_OUTPUT"
 ```
 
-`<BASE_BRANCH>` is the base branch value from your spawn prompt. If no labels matched the table, omit `--patterns`.
+If no labels matched the table, omit `--patterns`.
 
 ---
 
