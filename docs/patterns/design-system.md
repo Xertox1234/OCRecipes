@@ -224,3 +224,43 @@ const styles = StyleSheet.create({
 - If more than 2–3 colours in the stylesheet need theming — at that point restructure into `const styles = (theme: Theme) => StyleSheet.create({...})` and call it inside the component.
 
 **Why:** Static `StyleSheet.create` blocks cannot reference `useTheme()` since they execute at module load time, before any React context exists. The array composition `[styles.foo, { key: value }]` is React Native's standard override mechanism — later entries win.
+
+---
+
+### Shared Category Color Maps
+
+When the same `Record<string, string>` color dictionary appears in two or more files (e.g. notebook entry type colors), extract it to a dedicated constants file rather than duplicating.
+
+**Pattern:**
+
+```ts
+// client/constants/notebook-colors.ts  (or similar domain-scoped file)
+export const TYPE_COLORS: Record<string, string> = {
+  commitment: "#f59e0b",
+  insight: "#7c6dff",
+  goal: "#008A38",
+  preference: "#06b6d4",
+  coaching_strategy: "#06b6d4",
+  motivation: "#ec4899",
+  emotional_context: "#ec4899",
+  conversation_summary: "#888888",
+};
+```
+
+```ts
+// Any consumer — import once
+import { TYPE_COLORS } from "@/constants/notebook-colors";
+const color = TYPE_COLORS[entry.type] ?? theme.textSecondary;
+```
+
+**Rules:**
+
+- One constants file per feature domain (`notebook-colors.ts`, not a monolithic `colors.ts`)
+- Verify WCAG contrast on cream (`#FAF6F0`) and dark backgrounds when adding new values
+- Use `?? theme.textSecondary` fallback at call sites so unknown types render safely
+
+**References:**
+
+- `client/constants/notebook-colors.ts`
+- `client/screens/NotebookScreen.tsx`, `client/screens/NotebookEntryScreen.tsx`
+- Audit finding M13 (2026-05-09)
