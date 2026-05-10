@@ -10,6 +10,7 @@ import HealthKitSettingsScreen from "@/screens/HealthKitSettingsScreen";
 import GLP1CompanionScreen from "@/screens/GLP1CompanionScreen";
 import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
 import CoachRemindersScreen from "@/screens/CoachRemindersScreen";
+import TasteProfileScreen from "@/screens/TasteProfileScreen";
 import { HeaderTitle } from "@/components/HeaderTitle";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
@@ -23,6 +24,7 @@ export type ProfileStackParamList = {
   GLP1Companion: undefined;
   FavouriteRecipes: undefined;
   CoachReminders: undefined;
+  TasteProfile: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -105,6 +107,15 @@ export default function ProfileStackNavigator() {
         options={{
           headerTitle: () => (
             <HeaderTitle title="Coach Reminders" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="TasteProfile"
+        component={TasteProfileScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="Taste Profile" showIcon={false} />
           ),
         }}
       />

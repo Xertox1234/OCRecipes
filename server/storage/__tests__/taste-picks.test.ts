@@ -1,0 +1,233 @@
+import {
+  describe,
+  it,
+  expect,
+  beforeEach,
+  afterEach,
+  afterAll,
+  vi,
+} from "vitest";
+import {
+  setupTestTransaction,
+  rollbackTestTransaction,
+  closeTestPool,
+  createTestUser,
+  getTestTx,
+} from "../../../test/db-test-utils";
+import { communityRecipes, userProfiles } from "@shared/schema";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import type * as schema from "@shared/schema";
+
+vi.mock("../../db", () => ({
+  get db() {
+    return getTestTx();
+  },
+}));
+
+const { getTastePicks, setTastePicks, getTastePickCandidates } = await import(
+  "../taste-picks"
+);
+
+let tx: NodePgDatabase<typeof schema>;
+let testUserId: string;
+
+async function createCommunityRecipe(overrides: Record<string, unknown> = {}) {
+  const [recipe] = await tx
+    .insert(communityRecipes)
+    .values({
+      authorId: testUserId,
+      title: "Test Recipe",
+      normalizedProductName: "test-product",
+      instructions: ["Step 1"],
+      isPublic: true,
+      imageUrl: "https://example.com/image.jpg",
+      cuisineOrigin: "Italian",
+      ...overrides,
+    })
+    .returning();
+  return recipe;
+}
+
+async function createProfile(cuisinePreferences: string[] = []) {
+  await tx.insert(userProfiles).values({
+    userId: testUserId,
+    cuisinePreferences,
+  });
+}
+
+beforeEach(async () => {
+  tx = await setupTestTransaction();
+  const user = await createTestUser(tx);
+  testUserId = user.id;
+});
+
+afterEach(async () => {
+  await rollbackTestTransaction();
+});
+
+afterAll(async () => {
+  await closeTestPool();
+});
+
+describe("getTastePicks", () => {
+  it("returns empty array when user has no picks", async () => {
+    const picks = await getTastePicks(testUserId);
+    expect(picks).toEqual([]);
+  });
+
+  it("returns picks with recipe info", async () => {
+    await createProfile();
+    const recipe = await createCommunityRecipe({
+      title: "Pasta",
+      cuisineOrigin: "Italian",
+    });
+    await setTastePicks(testUserId, [recipe.id]);
+
+    const picks = await getTastePicks(testUserId);
+    expect(picks).toHaveLength(1);
+    expect(picks[0].recipeId).toBe(recipe.id);
+    expect(picks[0].title).toBe("Pasta");
+    expect(picks[0].cuisineOrigin).toBe("Italian");
+  });
+});
+
+describe("setTastePicks", () => {
+  it("inserts new picks", async () => {
+    await createProfile();
+    const recipe = await createCommunityRecipe();
+    await setTastePicks(testUserId, [recipe.id]);
+
+    const picks = await getTastePicks(testUserId);
+    expect(picks).toHaveLength(1);
+  });
+
+  it("is idempotent — re-setting same IDs yields same rows", async () => {
+    await createProfile();
+    const recipe = await createCommunityRecipe();
+    await setTastePicks(testUserId, [recipe.id]);
+    await setTastePicks(testUserId, [recipe.id]);
+
+    const picks = await getTastePicks(testUserId);
+    expect(picks).toHaveLength(1);
+  });
+
+  it("removes IDs not in the new set", async () => {
+    await createProfile();
+    const r1 = await createCommunityRecipe({
+      title: "A",
+      normalizedProductName: "test-a",
+    });
+    const r2 = await createCommunityRecipe({
+      title: "B",
+      normalizedProductName: "test-b",
+    });
+    await setTastePicks(testUserId, [r1.id, r2.id]);
+    await setTastePicks(testUserId, [r1.id]);
+
+    const picks = await getTastePicks(testUserId);
+    expect(picks).toHaveLength(1);
+    expect(picks[0].recipeId).toBe(r1.id);
+  });
+
+  it("handles empty array — removes all picks", async () => {
+    await createProfile();
+    const recipe = await createCommunityRecipe();
+    await setTastePicks(testUserId, [recipe.id]);
+    await setTastePicks(testUserId, []);
+
+    const picks = await getTastePicks(testUserId);
+    expect(picks).toHaveLength(0);
+  });
+
+  it("write-through: merges cuisineOrigin into profile.cuisinePreferences", async () => {
+    await createProfile(["Mexican"]);
+    const recipe = await createCommunityRecipe({ cuisineOrigin: "Italian" });
+    const result = await setTastePicks(testUserId, [recipe.id]);
+
+    expect(result.cuisinePreferences).toContain("Italian");
+    expect(result.cuisinePreferences).toContain("Mexican");
+  });
+
+  it("write-through: does not remove pre-existing manual cuisines", async () => {
+    await createProfile(["French"]);
+    const recipe = await createCommunityRecipe({ cuisineOrigin: "Italian" });
+    await setTastePicks(testUserId, [recipe.id]);
+    const result = await setTastePicks(testUserId, []);
+
+    // French was set manually before picks existed — it stays
+    expect(result.cuisinePreferences).toContain("French");
+  });
+
+  it("write-through: null cuisineOrigin recipes do not add empty string", async () => {
+    await createProfile([]);
+    const recipe = await createCommunityRecipe({ cuisineOrigin: null });
+    const result = await setTastePicks(testUserId, [recipe.id]);
+
+    expect(result.cuisinePreferences).not.toContain(null);
+    expect(result.cuisinePreferences).not.toContain("");
+  });
+});
+
+describe("getTastePickCandidates", () => {
+  it("returns only public recipes with images", async () => {
+    await createCommunityRecipe({
+      title: "Public",
+      isPublic: true,
+      imageUrl: "https://example.com/1.jpg",
+    });
+    await createCommunityRecipe({
+      title: "Private",
+      isPublic: false,
+      imageUrl: "https://example.com/2.jpg",
+      normalizedProductName: "test-private",
+    });
+    await createCommunityRecipe({
+      title: "No Image",
+      isPublic: true,
+      imageUrl: null,
+      normalizedProductName: "test-no-image",
+    });
+
+    const result = await getTastePickCandidates({ page: 1, limit: 100 });
+    const titles = result.candidates.map((c) => c.title);
+    expect(titles).toContain("Public");
+    expect(titles).not.toContain("Private");
+    expect(titles).not.toContain("No Image");
+  });
+
+  it("filters by dietType when provided", async () => {
+    await createCommunityRecipe({
+      title: "Vegan Dish",
+      normalizedProductName: "test-vegan",
+      dietTags: ["vegan"],
+    });
+    await createCommunityRecipe({
+      title: "Meat Dish",
+      normalizedProductName: "test-meat",
+      dietTags: [],
+    });
+
+    const result = await getTastePickCandidates({
+      page: 1,
+      limit: 100,
+      dietType: "vegan",
+    });
+    const titles = result.candidates.map((c) => c.title);
+    expect(titles).toContain("Vegan Dish");
+    expect(titles).not.toContain("Meat Dish");
+  });
+
+  it("returns paginated results", async () => {
+    for (let i = 0; i < 5; i++) {
+      await createCommunityRecipe({
+        title: `Recipe ${i}`,
+        normalizedProductName: `test-recipe-${i}`,
+        imageUrl: `https://example.com/${i}.jpg`,
+      });
+    }
+    const page1 = await getTastePickCandidates({ page: 1, limit: 3 });
+    expect(page1.candidates).toHaveLength(3);
+    expect(page1.total).toBeGreaterThanOrEqual(5);
+    expect(page1.page).toBe(1);
+  });
+});

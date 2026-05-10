@@ -12,6 +12,7 @@ import HealthConditionsScreen from "@/screens/onboarding/HealthConditionsScreen"
 import DietTypeScreen from "@/screens/onboarding/DietTypeScreen";
 import GoalsScreen from "@/screens/onboarding/GoalsScreen";
 import PreferencesScreen from "@/screens/onboarding/PreferencesScreen";
+import TastePicksScreen from "@/screens/onboarding/TastePicksScreen";
 
 export type OnboardingStackParamList = {
   Welcome: undefined;
@@ -20,6 +21,7 @@ export type OnboardingStackParamList = {
   DietType: undefined;
   Goals: undefined;
   Preferences: undefined;
+  TastePicks: undefined;
 };
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -31,6 +33,7 @@ const SCREENS = [
   { name: "DietType" as const, component: DietTypeScreen },
   { name: "Goals" as const, component: GoalsScreen },
   { name: "Preferences" as const, component: PreferencesScreen },
+  { name: "TastePicks" as const, component: TastePicksScreen },
 ];
 
 function OnboardingStack() {

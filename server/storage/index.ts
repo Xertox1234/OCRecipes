@@ -35,6 +35,7 @@ import * as health from "./health";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
 import * as canonicalRecipesStorage from "./canonical-recipes";
+import * as tastePicksStorage from "./taste-picks";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -346,4 +347,8 @@ export const storage = {
   getCuratedRecipes: canonicalRecipesStorage.getCuratedRecipes,
   getCuratedRecipeById: canonicalRecipesStorage.getCuratedRecipeById,
   getRecipeById: canonicalRecipesStorage.getRecipeById,
+  // Taste Picks
+  getTastePicks: tastePicksStorage.getTastePicks,
+  setTastePicks: tastePicksStorage.setTastePicks,
+  getTastePickCandidates: tastePicksStorage.getTastePickCandidates,
 };
