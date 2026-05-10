@@ -1929,7 +1929,7 @@
   - Toggle a recipe off — verify "Save Changes" becomes active
   - Tap "Save Changes" — verify navigates back to Settings
 
-- [x] **Step 5: Verify carousel recommendation labels**
+- [ ] **Step 5: Verify carousel recommendation labels**
 
   After completing onboarding with Italian recipe picks, return to Home and check that some carousel cards show "Matches your cuisine preferences" instead of "Recently added recipe".
 
