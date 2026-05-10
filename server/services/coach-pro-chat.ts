@@ -23,6 +23,7 @@ import {
   SAFETY_OVERRIDE_SENTINEL,
   type CoachContext,
 } from "./nutrition-coach";
+import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
 import { parseBlocksFromContent, BLOCKS_SYSTEM_PROMPT } from "./coach-blocks";
 import { extractNotebookEntries } from "./notebook-extraction";
 import {
@@ -201,6 +202,7 @@ export function hashCoachCacheKey(
   isCoachPro: boolean,
   dayBucket: string = getUtcDayBucket(),
   contextHash = "no-context",
+  intent: CoachIntent = "personalized_advice",
 ): string {
   return createHash("sha256")
     .update(
@@ -210,6 +212,7 @@ export function hashCoachCacheKey(
         isCoachPro ? "pro" : "free",
         dayBucket,
         contextHash,
+        intent,
         content.trim().toLowerCase(),
       ].join("\u001f"),
     )
@@ -346,6 +349,10 @@ export async function* handleCoachChat(
     isAborted,
     abortSignal,
   } = params;
+
+  // Classify intent once at the top of the turn — fixed for the duration.
+  // Safety wins all ties. No re-classification inside the tool loop.
+  const { intent } = classifyIntent(content);
 
   const today = new Date();
 
@@ -485,6 +492,7 @@ export async function* handleCoachChat(
         isCoachPro,
         getUtcDayBucket(today),
         hashCoachCacheContext(context, today),
+        intent,
       )
     : null;
 
