@@ -182,7 +182,12 @@ export default function AllConversationsScreen() {
           { backgroundColor: theme.backgroundSecondary },
         ]}
       >
-        <Feather name="search" size={16} color={theme.textSecondary} />
+        <Feather
+          name="search"
+          size={16}
+          color={theme.textSecondary}
+          accessible={false}
+        />
         <TextInput
           style={[styles.searchInput, { color: theme.text }]}
           placeholder="Search conversations…"
