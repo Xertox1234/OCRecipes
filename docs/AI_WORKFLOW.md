@@ -8,6 +8,62 @@ For human contributor setup, see [DEV_SETUP.md](DEV_SETUP.md).
 
 ## Quality Gates
 
+## Review Policy
+
+Use a hybrid review model in this repo:
+
+- `kimi-review` is the default for ordinary commits, pre-commit checks, and repetitive implementation loops where diff-based review is sufficient.
+- The code-reviewer and specialist subagents remain active for deep audit-style inspection where cross-file reasoning is worth the token cost.
+- Audit workflows may intentionally use the deeper subagent path even when other workflows use Kimi.
+
+### Review Routing Matrix
+
+Use this decision table before choosing a review path:
+
+| Situation                                                                                                | Default review path                                         | Why                                                                  |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| One local change or one bounded feature slice                                                            | `kimi-review --patterns ...`                                | Diff-based review plus domain patterns is usually enough             |
+| Repetitive per-task or pre-commit review loop                                                            | `kimi-review --patterns ...`                                | Lowest token cost for repeated checks                                |
+| Cross-domain diff touching 2-3 risky areas                                                               | `kimi-multi-review`                                         | Parallel domain passes surface issues better than one generic review |
+| Change modifies plan intent, architecture boundaries, or interactions across 3+ subsystems               | deep subagent review                                        | Needs wider reasoning than a diff and pattern bundle usually provide |
+| Audit finding verification after local fix                                                               | local test/check first, then keep audit Phase 6 deep review | Audits already pay for broader cross-file inspection                 |
+| Security, health-data, auth, receipt validation, or other high-blast-radius changes with ambiguous scope | specialist subagent review, optionally after Kimi           | Human-readable deep reasoning matters more than review throughput    |
+
+Escalate from `kimi-review` to a deep subagent when any of these are true:
+
+- The diff is small but the behavior depends on several untouched files.
+- The change rewrites ownership, caching, transactions, navigation flow, or AI prompt boundaries.
+- Kimi findings are ambiguous because the real risk is architectural rather than local.
+- You need plan-vs-implementation judgment, not just code-quality findings.
+- The touched domain is one where false negatives are expensive: auth, health data, payments, destructive mutations.
+
+### Review Checklist
+
+Use this quick checklist before choosing a reviewer and again when summarizing review coverage:
+
+- What is the narrowest review path that still matches the real risk: `kimi-review`, `kimi-multi-review`, or deep subagent?
+- Which domain patterns actually apply to the touched files?
+- Does the behavior depend on important untouched files or only on the diff?
+- Is the main risk local correctness, or broader architecture / plan alignment?
+- Would a false negative be unusually expensive here because of auth, health data, payments, caching, destructive mutations, or AI safety?
+- If using Kimi: did you pass the right `--patterns`, or should this escalate instead?
+- If using deep subagents: is the extra token cost justified by cross-file reasoning rather than habit?
+- After review: did the chosen path actually cover the domains that changed, or is a second targeted pass still needed?
+
+Copy-paste version:
+
+```md
+Review checklist:
+
+- Chosen path: `kimi-review` / `kimi-multi-review` / deep subagent
+- Relevant patterns: ...
+- Depends on untouched files? yes/no
+- Risk type: local correctness / cross-file architecture / plan alignment
+- High-blast-radius domain? yes/no
+- Escalation needed? yes/no
+- Second targeted pass needed? yes/no
+```
+
 ### CI (GitHub Actions)
 
 `.github/workflows/ci.yml` runs on pushes to `main` and on pull requests. It also cancels superseded in-progress runs for the same ref, which avoids burning Actions minutes on stale commits.
@@ -79,7 +135,7 @@ kimi-write --reference server/routes/nutrition.ts --target server/routes/carouse
 
 ### `kimi-review`
 
-**When:** Before committing any significant implementation. Diffs only changed lines and returns findings at CRITICAL/WARNING/SUGGESTION tiers.
+**When:** Before committing any significant implementation, and as the default reviewer in repetitive implementation loops. Diffs only changed lines and returns findings at CRITICAL/WARNING/SUGGESTION tiers.
 
 ```bash
 kimi-review --scope "carousel timezone header threading" --base main --tiers CRITICAL,WARNING --profile ocrecipes
@@ -100,6 +156,23 @@ Use `--patterns` when a change needs review against specific repo conventions:
 ```bash
 kimi-review --scope "new saved-items route" --base main --tiers CRITICAL,WARNING --profile ocrecipes --patterns security,api,database
 ```
+
+Use the narrowest combination that still covers the changed domain. Default mappings in this repo:
+
+| Change area                                   | Recommended `--patterns`               |
+| --------------------------------------------- | -------------------------------------- |
+| Express routes / middleware                   | `api,security,architecture`            |
+| Storage, schema, migrations                   | `database,security,architecture`       |
+| React Native screens/components/navigation    | `react-native,design-system,animation` |
+| Hooks / TanStack Query / client request state | `hooks,client-state,react-native`      |
+| AI services / prompts / evals                 | `ai-prompting,security,testing`        |
+| Performance-sensitive changes                 | `performance,react-native,database`    |
+| Type-heavy refactors / shared contracts       | `typescript,architecture`              |
+| Tests validating risky contracts              | `testing,typescript`                   |
+
+The staged-commit hook auto-derives this pattern list from changed file paths. For manual reviews, add the matching `--patterns` yourself so Kimi gets domain-specific conventions close to what the deeper subagents would apply.
+
+If you cannot name a clean pattern set because the change spans several unrelated concerns, that is usually a signal to escalate to `kimi-multi-review` or a deep subagent instead of forcing a single overloaded `kimi-review` pass.
 
 `--patterns security,api` expands to `docs/patterns/security.md` and `docs/patterns/api.md`. Keep the list narrow so Kimi gets the relevant conventions without turning every review into a large context dump.
 
@@ -161,7 +234,8 @@ This keeps historical session context lean before it re-enters Claude's context 
 | Convention                                                             | Reason                                                                               |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Pattern lookups via `ask-kimi --paths docs/patterns/X.md`              | Avoids Claude re-reading pattern files each session                                  |
-| `kimi-review` instead of code-reviewer subagent                        | Diffs changed lines only; subagent reads full files                                  |
+| `kimi-review` for repetitive review loops                              | Diffs changed lines only; cheaper than repeated deep-review subagent passes          |
+| code-reviewer + specialist subagents for audits                        | Higher token cost, but better for deep cross-file reasoning and audit-style reviews  |
 | iOS/device setup in `docs/DEV_SETUP.md`                                | Keeps CLAUDE.md short; agents reference the doc, not inline instructions             |
 | Repo architecture memory at `/memories/repo/ocrecipes-architecture.md` | Schema, nav, services, stack facts persist across sessions without re-reading source |
 

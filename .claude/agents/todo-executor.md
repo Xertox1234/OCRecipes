@@ -114,21 +114,24 @@ After all commands pass, re-read every modified file and confirm the changes mat
 
 Run `kimi-review` against the uncommitted working-tree changes in this worktree. Map the todo's labels to `--patterns` using this table:
 
-| Todo label(s)                 | `--patterns` value                     |
-| ----------------------------- | -------------------------------------- |
-| `security`                    | `security`                             |
-| `architecture`, `duplication` | `architecture`                         |
-| `ui`, `remix`                 | `react-native,design-system,animation` |
-| `performance`                 | `performance`                          |
-| `testing`, `test`             | `testing`                              |
-| `database`                    | `database`                             |
-| `api`                         | `api`                                  |
-| `hooks`                       | `hooks`                                |
-| `typescript`, `types`         | `typescript`                           |
-| `client-state`                | `client-state`                         |
-| _(no match)_                  | _(omit `--patterns` flag)_             |
+| Todo label(s)                       | `--patterns` value                     |
+| ----------------------------------- | -------------------------------------- |
+| `security`                          | `security,api,database`                |
+| `architecture`, `duplication`       | `architecture,typescript`              |
+| `ui`, `remix`                       | `react-native,design-system,animation` |
+| `performance`                       | `performance,react-native,database`    |
+| `testing`, `test`                   | `testing,typescript`                   |
+| `database`                          | `database,security,architecture`       |
+| `api`                               | `api,security,architecture`            |
+| `hooks`                             | `hooks,client-state,react-native`      |
+| `typescript`, `types`               | `typescript`                           |
+| `client-state`                      | `client-state,hooks`                   |
+| `ai`, `prompting`, `evals`, `coach` | `ai-prompting,security,testing`        |
+| _(no match)_                        | _(omit `--patterns` flag)_             |
 
 Use the first matching row. If multiple labels match different rows, combine their values (e.g., `--patterns react-native,security`).
+
+Prefer a richer combination over a single narrow pattern when the todo crosses boundaries. The goal is to give Kimi enough repo-specific domain context to approximate the subagent checklist, not just a generic diff review.
 
 Pipe the working-tree diff into kimi-review and capture the output for use in Step 9. The review runs before the commit (Step 8), so the changes are staged or unstaged but not yet on HEAD — stdin is the correct way to pass them.
 

@@ -155,18 +155,31 @@ For findings the user wants deferred:
    - Open: should be **0** — if not, explain why
 5. Report the final summary to the user — do **not** ask about committing yet. Proceed directly to Phase 6.
 
-## Phase 6: Commit Fixes
+## Phase 6: Code Review
 
-After Phase 5 closes out:
+This phase intentionally keeps the deeper subagent-based review path. Audit work is one of the places where the extra token cost is justified because the reviewer may need to reason across multiple files, patterns, and fix interactions. Use `kimi-review` as the cheaper default in repetitive implementation workflows, but keep this audit pass as a deep inspection gate.
 
-1. Stage all changed files (code fixes + manifest + changelog + any new todos)
+1. Run the code-reviewer subagent (`.claude/agents/code-reviewer.md`) with:
+   - The list of all modified files from Phase 3
+   - A one-line description of each fix (copy from the manifest)
+   - The instruction: "Report CRITICAL / HIGH / MEDIUM / LOW / PASS per file. Focus on correctness, security, and pattern compliance. Do not flag style preferences."
+2. For each CRITICAL or HIGH finding: fix immediately (follow Phase 3 rules — read, fix, verify, update manifest)
+3. For MEDIUM findings: use judgment — fix if quick, defer with todo if non-trivial
+4. For LOW findings: defer unless trivial one-liners
+5. Re-run `npm run test:run` and `npm run check:types` after any review fixes
+
+## Phase 7: Commit Fixes
+
+After code review is clean:
+
+1. Stage all changed files (code fixes + review fixes + manifest + changelog + any new todos)
 2. Commit with message format:
    ```
    fix: resolve [scope] audit findings ([N] verified, [M] deferred)
    ```
 3. Ask if the user wants to push
 
-## Phase 7: Codify (patterns, learnings & agent updates)
+## Phase 8: Codify (patterns, learnings & agent updates)
 
 After fixes are committed, extract reusable knowledge using the pattern-codifier agent (`.claude/agents/pattern-codifier.md`) and update specialist agents with new checks.
 
