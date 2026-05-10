@@ -78,7 +78,44 @@ The `--tiers CRITICAL,WARNING` option tells Kimi to request and return only acti
 
 The `--profile ocrecipes` option adds concise project-specific review priorities: Bearer JWT/IDOR checks, health-data boundaries, Express/Drizzle storage patterns, React Native/Expo constraints, TanStack Query/theme/navigation conventions, and AI/eval safety gates. Use it for this repo; omit it only when reviewing unrelated projects.
 
+Use `--patterns` when a change needs review against specific repo conventions:
+
+```bash
+kimi-review --scope "new saved-items route" --base main --tiers CRITICAL,WARNING --profile ocrecipes --patterns security,api,database
+```
+
+`--patterns security,api` expands to `docs/patterns/security.md` and `docs/patterns/api.md`. Keep the list narrow so Kimi gets the relevant conventions without turning every review into a large context dump.
+
+Pattern docs are capped at 12,000 characters each by default and include an explicit `[TRUNCATED]` marker when clipped. If a review truly needs the full file, pass `--pattern-max-chars 0`, but prefer a narrower pattern list first.
+
 **Rule:** If `kimi-review` returns a CRITICAL finding, stop and surface it to the user before committing.
+
+### `kimi-multi-review`
+
+**When:** Escalated review for changes that cross multiple risky domains. It runs several domain-scoped `kimi-review` passes in parallel over one diff, each with targeted `--scope` and `--patterns` context.
+
+```bash
+kimi-multi-review --base main --scope "receipt review storage and UI changes"
+```
+
+By default `--reviewers auto` selects reviewers from changed paths. Available reviewers:
+
+| Reviewer      | Use for                                                            | Pattern context                                 |
+| ------------- | ------------------------------------------------------------------ | ----------------------------------------------- |
+| `security`    | auth, IDOR, secrets, health-data boundaries, prompt injection      | `security,api,database`                         |
+| `database`    | Drizzle, schema/storage contracts, transactions, ownership filters | `database,security,architecture`                |
+| `rn`          | React Native screens/components/hooks/navigation                   | `react-native,client-state,design-system,hooks` |
+| `ai`          | prompts, classifiers, eval datasets, cache-key isolation           | `ai-prompting,security,testing`                 |
+| `testing`     | risky branches, changed contracts, fixture coverage                | `testing,typescript,architecture`               |
+| `performance` | hot paths, cache behavior, renders, N+1 queries                    | `performance,react-native,database`             |
+
+Use an explicit panel when needed:
+
+```bash
+kimi-multi-review --base main --reviewers security,database,testing --scope "new storage route"
+```
+
+Keep this as an escalation path. A single `kimi-review --tiers CRITICAL,WARNING --profile ocrecipes` remains the default for ordinary commits.
 
 ### `kimi-challenge`
 
