@@ -21,7 +21,7 @@ Each audit domain maps to specialist agents in `.claude/agents/` that have deep 
 | `camera`         | `camera-specialist` + `rn-ui-ux-specialist`                           | Permissions, scan debouncing, frame processors, lifecycle management                                 |
 | `accessibility`  | `accessibility-specialist` + `rn-ui-ux-specialist`                    | Modal focus trapping, VoiceOver/TalkBack announcements, touch targets, WCAG contrast, aria-invalid   |
 
-**For `full` or `pre-launch` scopes:** Launch agents for all domains (batch in groups of 4 — e.g., four batches: 4, 4, 4, 3 — not all at once).
+**For `full` or `pre-launch` scopes:** Launch **one agent invocation per domain row** (7 total). Batch in two groups — first 4 domains, then 3 — to avoid overwhelming context. The "Primary Agent(s)" column shows which agent type to use for each invocation; list both agents in the prompt when two are shown.
 
 **For named scopes:** Launch only the primary agent(s) for that domain.
 
@@ -51,11 +51,25 @@ Focus on genuinely new issues, not style preferences.
 2. Check `docs/audits/CHANGELOG.md` for previous audit findings that may still be relevant
 3. Create a new manifest file: `docs/audits/YYYY-MM-DD-[scope].md` using the template from `docs/audits/TEMPLATE.md`
 4. Record the baseline in the manifest header
+5. Capture the current branch:
+   ```bash
+   git branch --show-current
+   # If output is empty (detached HEAD), use: git rev-parse --abbrev-ref HEAD
+   ```
+6. Create and enter an audit worktree — all subsequent phases run from it:
+   ```bash
+   git worktree add .worktrees/audit-$(date +%Y-%m-%d) HEAD
+   ```
+   Or use `EnterWorktree` if available. All Phases 2–6 run from this worktree. After the Phase 6 commit, remove it with:
+   ```bash
+   git worktree remove .worktrees/audit-YYYY-MM-DD
+   ```
+   (replace `YYYY-MM-DD` with the date suffix used when creating it)
 
 ## Phase 2: Discovery
 
 1. **Launch specialist agents in parallel** using the mapping table above:
-   - `full` or `pre-launch`: launch agents for all domains (batch in groups of 4 — e.g., four batches: 4, 4, 4, 3 — to avoid overwhelming context)
+   - `full` or `pre-launch`: launch one agent invocation per domain row (7 total) in two batches — first 4 domains, then 3
    - Named scope (e.g., `security`): launch only the primary agent(s) for that domain
    - Use the agent prompt template from the mapping section, specifying the domain and scope
    - Each agent runs as a subagent via the Agent tool with the corresponding `.claude/agents/*.md` agent type
@@ -81,10 +95,33 @@ For **each** finding the user wants fixed:
 6. **Verify** the fix landed:
    - Grep/read the fixed code to confirm the change is present
    - Run the specific test file(s) to confirm they pass
-7. Update manifest:
+7. **kimi-review** the fix — run from the audit worktree root:
+
+   ```bash
+   kimi-review --scope "[one-line fix description]" --patterns [domain]
+   ```
+
+   Domain → `--patterns` mapping:
+
+   | Finding Domain | `--patterns` value |
+   | -------------- | ------------------ |
+   | security       | `security`         |
+   | performance    | `performance`      |
+   | data-integrity | `database`         |
+   | architecture   | `architecture`     |
+   | code-quality   | `typescript,api`   |
+   | camera / RN-UX | `react-native`     |
+   | accessibility  | `react-native`     |
+
+   Response handling:
+   - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved
+   - **WARNING finding**: return to step 3 for the kimi-review finding, then re-run steps 4–7
+   - **SUGGESTION**: proceed — note in manifest Verification column if worth tracking for codification
+
+8. Update manifest:
    - Status → `verified`
-   - Verification column → what you checked (e.g., "grep confirms userId param; 83/83 tests pass")
-8. Move to the next finding
+   - Verification column → what you checked (e.g., "grep confirms userId param; 83/83 tests pass; kimi-review: no findings")
+9. Move to the next finding
 
 **CRITICAL RULES:**
 
@@ -100,14 +137,7 @@ For findings the user wants deferred:
 1. Create a todo in `todos/` following the template convention
 2. Update manifest status to `deferred` with link to the todo file
 3. Record the rationale in the Deferred Items table
-4. For low/deferred items that are scoped docs, tests, code-quality, simple performance, or simple refactor work with clear files and acceptance criteria, run:
-   ```bash
-   npm run copilot:delegate:dry-run -- todos/<filename>.md
-   npm run copilot:delegate -- todos/<filename>.md
-   ```
-   If live delegation succeeds, add the GitHub Issue URL to the todo's `github_issue` field and the manifest Deferred Items table. If `@copilot` assignment fails, leave the todo local and report the failure clearly; do not mark Copilot delegation as complete.
-
-Never delegate JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture changes without a human-approved plan. Copilot work must arrive as a PR for human review; no auto-merge and no direct commits to `main`.
+4. For low/deferred items that are straightforward boilerplate or test-only work with clear files and acceptance criteria, use `kimi-write` to generate a first pass — review the output before committing. For items requiring human judgment or broad architecture decisions, leave the todo local and note the rationale clearly in the Deferred Items table.
 
 ## Phase 5: Close
 
