@@ -35,10 +35,11 @@ CREATE INDEX taste_picks_user_idx ON taste_picks (user_id);
 
 1. Delete all existing `taste_picks` rows for the user.
 2. Insert new rows from the incoming `recipeIds[]`.
-3. Query the cuisine tags of all newly-picked recipes.
-4. Derive `derivedCuisines` — deduplicated union of all cuisine tags across picks.
+3. Query `cuisineOrigin` of all newly-picked recipes (filtering nulls).
+4. Derive `derivedCuisines` — deduplicated list of non-null `cuisineOrigin` values across picks.
 5. Merge with `profile.cuisinePreferences` (union — manually-set cuisines are preserved and not removed).
 6. Write merged list back to `users_profiles.cuisinePreferences`.
+7. Fire-and-forget `storage.invalidateSuggestionCacheForUser(userId)` — mirrors the invalidation in `profile.ts` for `cuisinePreferences` changes.
 
 > **Note on removing picks:** Derived cuisines are merged into `cuisinePreferences` and become indistinguishable from manually-set ones. If a user removes all taste picks in settings, previously-derived cuisines remain in `cuisinePreferences`. This is intentional — the write-through is additive amplification, not a strict sync. Users who want to clear derived cuisines can do so via `EditDietaryProfileScreen`.
 
@@ -64,7 +65,11 @@ Counter chip below the header text shows live selection count. Chip turns brand-
 
 ### Recipe card source
 
-Community recipes, queried via `GET /api/taste-picks/candidates`. Filtered server-side by the user's `dietType` and `allergies` (already set from earlier onboarding steps) so only compatible recipes appear. Community recipes are already normalised and have generated images — no curation step needed.
+Community recipes, queried via `GET /api/taste-picks/candidates`. Filtered server-side by `dietType` and `allergies` so only compatible recipes appear.
+
+**Image fallback:** `imageUrl` is nullable in the schema. The response uses `imageUrl ?? canonicalImages[0] ?? null`, omitting cards where both are absent.
+
+**Cuisine display:** Each card shows `cuisineOrigin` (a nullable text field, e.g., "Italian") as the secondary label. Cards without a `cuisineOrigin` show no cuisine tag.
 
 Cards are paginated; user scrolls to see more.
 
@@ -82,7 +87,15 @@ Cards are paginated; user scrolls to see more.
 
 **Skip for now:** Always visible below Continue. Navigates forward without saving any picks. Users who skip will have no `taste_picks` rows and unmodified `cuisinePreferences`.
 
-**On Continue:** Calls `PUT /api/taste-picks`, then navigates to the post-onboarding home screen.
+**On Continue (sequenced — order matters):**
+
+1. `POST /api/user/dietary-profile` — persists the draft profile from `OnboardingContext` state (creates the profile row so the write-through in step 2 has a row to update).
+2. `PUT /api/taste-picks` — saves picks and triggers cuisine write-through against the now-persisted profile.
+3. `updateUser({ onboardingCompleted: true })` — marks onboarding done.
+
+This replaces the existing `completeOnboarding()` call in `OnboardingContext` for users who reach step 7. `OnboardingContext.totalSteps` must be incremented from 6 to 7.
+
+**Candidates filtering during onboarding:** Because the profile has not been persisted when `TastePicksScreen` first loads (step 7, before Continue), `GET /api/taste-picks/candidates` must accept optional `?dietType=&allergies[]=` query params. The screen passes these from `OnboardingContext.data` (client state). The endpoint falls back to the stored profile when params are absent (Settings flow).
 
 ### New files
 
@@ -124,9 +137,15 @@ client/components/TastePicksGrid.tsx
 
 ### `GET /api/taste-picks/candidates`
 
-Returns paginated community recipes filtered by the requesting user's `dietType` and `allergies`.
+Returns paginated community recipes filtered by `dietType` and `allergies`.
 
-**Query params:** `page` (default 1), `limit` (default 30)
+**Query params:**
+
+- `page` (default 1), `limit` (default 30)
+- `dietType` (optional string) — overrides stored profile; used by onboarding before profile is persisted
+- `allergies[]` (optional string array) — overrides stored profile; same reason
+
+When override params are absent, the endpoint resolves filters from the user's stored profile.
 
 **Response:**
 
@@ -137,13 +156,15 @@ Returns paginated community recipes filtered by the requesting user's `dietType`
       "id": 42,
       "title": "Greek Salad",
       "imageUrl": "...",
-      "cuisineTags": ["Mediterranean"]
+      "cuisineOrigin": "Mediterranean"
     }
   ],
   "total": 180,
   "page": 1
 }
 ```
+
+`imageUrl` is the resolved image: `imageUrl ?? canonicalImages[0] ?? null`. Cards with no image are excluded from results.
 
 ### `GET /api/taste-picks`
 
@@ -158,7 +179,7 @@ Returns the user's current picks.
       "recipeId": 42,
       "title": "Greek Salad",
       "imageUrl": "...",
-      "cuisineTags": ["Mediterranean"]
+      "cuisineOrigin": "Mediterranean"
     }
   ]
 }
@@ -172,6 +193,8 @@ Replaces the user's full pick set and triggers the write-through to `cuisinePref
 
 **Response:** `{ "picks": [...], "cuisinePreferences": ["Mediterranean", "Italian", "Asian"] }`
 
+**Side effect:** fires-and-forgets `storage.invalidateSuggestionCacheForUser(userId)` if `cuisinePreferences` changed (mirrors `profile.ts` behaviour).
+
 **Idempotent:** Sending the same `recipeIds` twice produces the same state.
 
 ---
@@ -180,12 +203,12 @@ Replaces the user's full pick set and triggers the write-through to `cuisinePref
 
 No new wiring needed at launch. All four consumers already read `cuisinePreferences`:
 
-| Consumer                                | Current behaviour                                                  |
-| --------------------------------------- | ------------------------------------------------------------------ |
-| `carousel-builder.ts`                   | Boosts recipes whose `dietTags` match `profile.cuisinePreferences` |
-| `coach-context-builder.ts`              | Injects `dietaryProfile.cuisines` into coach system prompt         |
-| `meal-suggestions.ts`                   | `buildDietaryContext()` includes cuisine list in AI prompt         |
-| Profile UI (`EditDietaryProfileScreen`) | Renders and edits `cuisinePreferences`                             |
+| Consumer                                | Current behaviour                                                                                                                                                                                         |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `carousel-builder.ts`                   | Uses `cuisinePreferences` to generate recommendation reason labels only ("Matches your cuisine preferences"). **Does not affect ranking or filtering.** Carousel ranking improvement is a follow-up item. |
+| `coach-context-builder.ts`              | Injects `dietaryProfile.cuisines` into coach system prompt                                                                                                                                                |
+| `meal-suggestions.ts`                   | `buildDietaryContext()` includes cuisine list in AI prompt                                                                                                                                                |
+| Profile UI (`EditDietaryProfileScreen`) | Renders and edits `cuisinePreferences`                                                                                                                                                                    |
 
 When Phase 1 (`PersonalizationContext`) ships, add `tastePicks: number[]` to the context interface and populate it from a `getTastePicks(userId)` storage query. No migration needed — the table exists and is populated.
 
@@ -193,15 +216,19 @@ When Phase 1 (`PersonalizationContext`) ships, add `tastePicks: number[]` to the
 
 ## Testing
 
-| Layer                          | Coverage                                                                                                  |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| Storage — `setTastePicks`      | Idempotent: re-PUT same IDs yields same rows. Removes IDs not in new set. Handles empty array.            |
-| Storage — write-through        | `cuisinePreferences` after PUT is union of existing + derived. Pre-existing manual cuisines not removed.  |
-| Storage — `getCandidates`      | Filters out recipes incompatible with user's `dietType` and `allergies`. Returns paginated results.       |
-| Route — `PUT /api/taste-picks` | 400 on missing body. 400 if any `recipeId` doesn't exist. 200 on valid input with correct response shape. |
-| Client — `TastePicksGrid`      | Continue button disabled below 5. Enabled at exactly 5. Toggle adds/removes from selection.               |
-| Client — skip flow             | Skip navigates forward without calling `PUT /api/taste-picks`.                                            |
-| Client — settings save         | Save Changes calls `PUT` with current selection. Back without saving does not call `PUT`.                 |
+| Layer                                      | Coverage                                                                                                                               |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Storage — `setTastePicks`                  | Idempotent: re-PUT same IDs yields same rows. Removes IDs not in new set. Handles empty array.                                         |
+| Storage — write-through                    | `cuisinePreferences` after PUT is union of existing + derived `cuisineOrigin` values. Pre-existing manual cuisines not removed.        |
+| Storage — `getCandidates`                  | Filters by `dietType`/`allergies` query params when present; falls back to stored profile. Excludes recipes with no resolvable image.  |
+| Storage — `getCandidates` image resolution | Returns `imageUrl` when non-null; falls back to `canonicalImages[0]`; excludes card when both are absent.                              |
+| Route — `PUT /api/taste-picks`             | 400 on missing body. 400 if any `recipeId` doesn't exist. 200 on valid input with correct response shape.                              |
+| Route — `PUT /api/taste-picks` cache       | `invalidateSuggestionCacheForUser` is called (fire-and-forget) when `cuisinePreferences` changes.                                      |
+| Onboarding — step 7 candidates             | `GET /api/taste-picks/candidates?dietType=vegan&allergies[]=peanuts` returns only diet-compatible recipes before profile is persisted. |
+| Onboarding — Continue sequence             | Profile POST fires before taste-picks PUT; both complete before `onboardingCompleted` is set.                                          |
+| Client — `TastePicksGrid`                  | Continue button disabled below 5. Enabled at exactly 5. Toggle adds/removes from selection.                                            |
+| Client — skip flow                         | Skip navigates forward without calling `PUT /api/taste-picks`.                                                                         |
+| Client — settings save                     | Save Changes calls `PUT` with current selection. Back without saving does not call `PUT`.                                              |
 
 ---
 
