@@ -441,6 +441,142 @@
     "assertions": { "macrosBudgetRespected": true, "suggestionCount": 3 }
   },
   {
+    "id": "meal-suggestion-dismissed-exclusion-16",
+    "category": "personalization",
+    "description": "Dismissed recipes must not appear in suggestions — two titles dismissed",
+    "input": {
+      "mealType": "dinner",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2000,
+        "protein": 120,
+        "carbs": 250,
+        "fat": 65
+      },
+      "existingMeals": [
+        { "title": "Oatmeal", "calories": 350, "mealType": "breakfast" },
+        { "title": "Turkey sandwich", "calories": 500, "mealType": "lunch" }
+      ],
+      "remainingBudget": {
+        "calories": 650,
+        "protein": 42,
+        "carbs": 85,
+        "fat": 21
+      },
+      "dismissedTitles": ["Grilled Chicken Salad", "Salmon Stir-Fry"]
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": ["Grilled Chicken Salad", "Salmon Stir-Fry"]
+    }
+  },
+  {
+    "id": "meal-suggestion-protein-gap-17",
+    "category": "personalization",
+    "description": "User 75% short on protein — suggestions must prioritize protein-dense options",
+    "input": {
+      "mealType": "dinner",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2200,
+        "protein": 160,
+        "carbs": 250,
+        "fat": 70
+      },
+      "existingMeals": [
+        { "title": "Fruit smoothie", "calories": 300, "mealType": "breakfast" },
+        { "title": "Garden salad", "calories": 250, "mealType": "lunch" }
+      ],
+      "remainingBudget": {
+        "calories": 900,
+        "protein": 40,
+        "carbs": 150,
+        "fat": 42
+      },
+      "macroGapSignal": { "macro": "protein", "shortAmount": 120 }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustContain": ["chicken|salmon|beef|tuna|tofu|egg|turkey|shrimp|lentil|cottage cheese|Greek yogurt"]
+    }
+  },
+  {
+    "id": "meal-suggestion-carbs-gap-18",
+    "category": "personalization",
+    "description": "User 75% short on carbs — suggestions must prioritize carb-dense options",
+    "input": {
+      "mealType": "lunch",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2000,
+        "protein": 100,
+        "carbs": 250,
+        "fat": 65
+      },
+      "existingMeals": [
+        { "title": "Bacon and eggs", "calories": 450, "mealType": "breakfast" }
+      ],
+      "remainingBudget": {
+        "calories": 1200,
+        "protein": 70,
+        "carbs": 62,
+        "fat": 40
+      },
+      "macroGapSignal": { "macro": "carbs", "shortAmount": 188 }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustContain": ["rice|pasta|bread|potato|oats|quinoa|noodle|wrap|grain|beans"]
+    }
+  },
+  {
+    "id": "meal-suggestion-dismissed-plus-protein-gap-19",
+    "category": "personalization",
+    "description": "Combined: dismissed titles + protein macro gap active simultaneously",
+    "input": {
+      "mealType": "dinner",
+      "userProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "dailyTargets": {
+        "calories": 2200,
+        "protein": 160,
+        "carbs": 240,
+        "fat": 70
+      },
+      "existingMeals": [
+        { "title": "Toast with jam", "calories": 280, "mealType": "breakfast" },
+        { "title": "Vegetable soup", "calories": 220, "mealType": "lunch" }
+      ],
+      "remainingBudget": {
+        "calories": 1000,
+        "protein": 38,
+        "carbs": 145,
+        "fat": 42
+      },
+      "dismissedTitles": ["Tofu Scramble", "Black Bean Bowl"],
+      "macroGapSignal": { "macro": "protein", "shortAmount": 122 }
+    },
+    "assertions": {
+      "suggestionCount": 3,
+      "mustNotContain": ["Tofu Scramble", "Black Bean Bowl"]
+    }
+  },
+  {
     "id": "meal-suggestion-over-budget-edge-15",
     "category": "edge-case",
     "description": "User has already hit daily calorie target — remaining budget is 0",

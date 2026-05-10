@@ -121,6 +121,7 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
       dailyTargets: i.dailyTargets,
       existingMeals: i.existingMeals,
       remainingBudget: i.remainingBudget,
+      dismissedRecipeTitles: i.dismissedTitles,
     };
 
     const start = Date.now();

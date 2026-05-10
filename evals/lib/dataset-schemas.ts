@@ -94,6 +94,13 @@ export const mealSuggestionCaseSchema = z.object({
       }),
     ),
     remainingBudget: macroSchema,
+    dismissedTitles: z.array(z.string()).optional(),
+    macroGapSignal: z
+      .object({
+        macro: z.enum(["protein", "carbs", "fat", "calories"]),
+        shortAmount: z.number(),
+      })
+      .optional(),
   }),
   assertions: z
     .object({
