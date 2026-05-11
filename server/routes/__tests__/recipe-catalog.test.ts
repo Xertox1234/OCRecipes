@@ -198,7 +198,7 @@ describe("recipe-catalog routes", () => {
     });
 
     it("returns 400 for invalid id", async () => {
-      const res = await request(app).get("/api/meal-plan/catalog/not-a-number");
+      const res = await request(app).get("/api/meal-plan/catalog/abc");
       expect(res.status).toBe(400);
     });
   });
