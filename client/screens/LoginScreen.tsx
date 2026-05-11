@@ -1,8 +1,16 @@
 import React, { useState } from "react";
-import { StyleSheet, View, Pressable, Image, Dimensions } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  Image,
+  Dimensions,
+  Linking,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
+import { Feather } from "@expo/vector-icons";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { ThemedText } from "@/components/ThemedText";
@@ -14,6 +22,9 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, withOpacity } from "@/constants/theme";
+
+const TERMS_URL = "https://ocrecipes.app/terms";
+const PRIVACY_URL = "https://ocrecipes.app/privacy";
 
 const HERO_HEIGHT = Dimensions.get("window").height * 0.25;
 
@@ -32,6 +43,30 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  // COPPA 13+ age attestation — gated by checkbox; server enforces ageConfirmed:true
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+
+  const toggleAgeConfirmed = () => {
+    haptics.selection();
+    setAgeConfirmed((prev) => !prev);
+  };
+
+  const openExternalUrl = async (url: string) => {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setError("Unable to open that link. Please try again later.");
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+    }
+  };
+
+  const openTerms = () => {
+    openExternalUrl(TERMS_URL);
+  };
+
+  const openPrivacy = () => {
+    openExternalUrl(PRIVACY_URL);
+  };
 
   const handleSubmit = async () => {
     setError("");
@@ -48,12 +83,18 @@ export default function LoginScreen() {
       return;
     }
 
+    if (mode === "register" && !ageConfirmed) {
+      setError("You must confirm you are 13 years of age or older");
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+
     setIsLoading(true);
     try {
       if (mode === "login") {
         await login(username.trim(), password);
       } else {
-        await register(username.trim(), password);
+        await register(username.trim(), password, ageConfirmed);
       }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
     } catch (err: unknown) {
@@ -70,7 +111,10 @@ export default function LoginScreen() {
     setMode(mode === "login" ? "register" : "login");
     setError("");
     setConfirmPassword("");
+    setAgeConfirmed(false);
   };
+
+  const isSubmitDisabled = mode === "register" && !ageConfirmed;
 
   return (
     <ThemedView style={styles.container}>
@@ -160,11 +204,61 @@ export default function LoginScreen() {
             />
           ) : null}
 
+          {mode === "register" ? (
+            <View style={styles.ageGate}>
+              <Pressable
+                onPress={toggleAgeConfirmed}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: ageConfirmed }}
+                accessibilityLabel="I confirm I am 13 years of age or older"
+                hitSlop={{ top: 11, bottom: 11, left: 11, right: 11 }}
+                testID="checkbox-age-confirm"
+                style={styles.ageCheckboxRow}
+              >
+                <Feather
+                  name={ageConfirmed ? "check-square" : "square"}
+                  size={22}
+                  color={ageConfirmed ? theme.success : theme.textSecondary}
+                />
+                <ThemedText type="body" style={styles.ageCheckboxLabel}>
+                  I confirm I am 13 years of age or older
+                </ThemedText>
+              </Pressable>
+              <ThemedText
+                type="caption"
+                style={[styles.tosText, { color: theme.textSecondary }]}
+              >
+                By continuing, you agree to our{" "}
+                <ThemedText
+                  type="caption"
+                  style={[styles.tosLink, { color: theme.link }]}
+                  accessibilityRole="link"
+                  accessibilityLabel="Terms of Service"
+                  onPress={openTerms}
+                >
+                  Terms of Service
+                </ThemedText>{" "}
+                and{" "}
+                <ThemedText
+                  type="caption"
+                  style={[styles.tosLink, { color: theme.link }]}
+                  accessibilityRole="link"
+                  accessibilityLabel="Privacy Policy"
+                  onPress={openPrivacy}
+                >
+                  Privacy Policy
+                </ThemedText>
+                .
+              </ThemedText>
+            </View>
+          ) : null}
+
           <InlineError message={error} />
 
           <Button
             onPress={handleSubmit}
             loading={isLoading}
+            disabled={isSubmitDisabled}
             accessibilityLabel={
               isLoading
                 ? mode === "login"
@@ -249,6 +343,24 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: Spacing.sm,
+  },
+  ageGate: {
+    gap: Spacing.xs,
+  },
+  ageCheckboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  ageCheckboxLabel: {
+    flexShrink: 1,
+  },
+  tosText: {
+    lineHeight: 18,
+  },
+  tosLink: {
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
   footer: {
     flexDirection: "row",

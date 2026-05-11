@@ -86,19 +86,25 @@ export function useAuth() {
     return user;
   }, []);
 
-  const register = useCallback(async (username: string, password: string) => {
-    const response = await apiRequest("POST", "/api/auth/register", {
-      username,
-      password,
-    });
-    const { user, token } = await response.json();
-    await tokenStorage.set(token);
-    await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-    setState({ user, isLoading: false, isAuthenticated: true });
-    // Register push token after registration (fire-and-forget, non-fatal)
-    registerPushToken().catch(() => {});
-    return user;
-  }, []);
+  const register = useCallback(
+    async (username: string, password: string, ageConfirmed: boolean) => {
+      const response = await apiRequest("POST", "/api/auth/register", {
+        username,
+        password,
+        // COPPA 13+ age attestation — caller forwards user's actual checkbox
+        // state; server enforces with `z.literal(true)` (zero trust on client).
+        ageConfirmed,
+      });
+      const { user, token } = await response.json();
+      await tokenStorage.set(token);
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+      setState({ user, isLoading: false, isAuthenticated: true });
+      // Register push token after registration (fire-and-forget, non-fatal)
+      registerPushToken().catch(() => {});
+      return user;
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     try {
