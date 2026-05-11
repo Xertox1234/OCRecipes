@@ -6,8 +6,8 @@ set -uo pipefail
 INPUT=$(cat)
 
 # Extract tool name and file path; exit silently on parse failure
-TOOL_NAME=$(echo "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
-FILE_PATH=$(echo "$INPUT" | jq -re '.tool_input.file_path' 2>/dev/null) || exit 0
+TOOL_NAME=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
+FILE_PATH=$(printf '%s' "$INPUT" | jq -re '.tool_input.file_path' 2>/dev/null) || exit 0
 
 # Only inject for Edit and Write tool calls
 [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]] || exit 0
@@ -108,7 +108,7 @@ for DOMAIN in "${DOMAIN_LIST[@]}"; do
   # Inject first 80 lines of pattern doc
   if [ -f "$PATTERNS_FILE" ]; then
     printf '\n[PATTERNS — %s (excerpt)]\n' "$DOMAIN" >> "$TMPFILE"
-    head -80 "$PATTERNS_FILE" >> "$TMPFILE"
+    head -n 80 "$PATTERNS_FILE" >> "$TMPFILE"
   fi
 done
 
@@ -117,7 +117,7 @@ BASENAME=$(basename "$FILE_PATH")
 BASENAME="${BASENAME%.*}"
 if [ -f "$LEARNINGS_FILE" ] && [ -n "$BASENAME" ]; then
   printf '\n[LEARNINGS — matches for "%s"]\n' "$BASENAME" >> "$TMPFILE"
-  MATCHES=$(grep -i "$BASENAME" "$LEARNINGS_FILE" 2>/dev/null | head -20 || true)
+  MATCHES=$(grep -F -i -- "$BASENAME" "$LEARNINGS_FILE" 2>/dev/null | head -n 20 || true)
   if [ -n "$MATCHES" ]; then
     printf '%s\n' "$MATCHES" >> "$TMPFILE"
   else
