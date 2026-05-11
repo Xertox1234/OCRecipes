@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { TastePicksGrid } from "@/components/TastePicksGrid";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@/hooks/useTheme";
 import { useNavigation } from "@react-navigation/native";
 import { apiRequest } from "@/lib/query-client";
@@ -23,6 +24,7 @@ export default function TasteProfileScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<TasteProfileScreenNavigationProp>();
+  const queryClient = useQueryClient();
 
   const [candidates, setCandidates] = useState<RecipeCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -117,6 +119,10 @@ export default function TasteProfileScreen() {
       await apiRequest("PUT", "/api/taste-picks", {
         recipeIds: [...selectedIds],
       });
+      // Cuisine preferences may have changed — invalidate the carousel cache
+      // so the Home tab shows updated "Matches your cuisine preferences"
+      // labels on return without requiring a manual pull-to-refresh.
+      queryClient.invalidateQueries({ queryKey: ["/api/carousel"] });
       setIsDirty(false);
       navigation.goBack();
     } catch (err) {
@@ -125,7 +131,7 @@ export default function TasteProfileScreen() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [selectedIds, navigation]);
+  }, [selectedIds, navigation, queryClient]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>

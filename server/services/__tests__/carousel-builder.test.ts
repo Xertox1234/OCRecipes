@@ -146,6 +146,46 @@ describe("carousel-builder", () => {
     );
   });
 
+  it("generates 'Matches your cuisine preferences' label when dietTags overlap cuisinePreferences and dietType does not match", async () => {
+    // Profile prefers Italian cuisine and follows a vegan diet (not keto).
+    const cuisineProfile: UserProfile = {
+      ...mockProfile,
+      dietType: "vegan",
+      cuisinePreferences: ["italian"],
+    };
+    // Recipe is Italian (dietTags includes "italian") but not vegan.
+    const italianRecipe = {
+      ...mockCommunityRecipes[0],
+      title: "Margherita Pizza",
+      dietTags: ["italian"],
+      timeEstimate: "45 minutes",
+    };
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      italianRecipe,
+    ]);
+
+    const cards = await buildCarousel("1", cuisineProfile);
+
+    expect(cards[0].recommendationReason).toBe(
+      "Matches your cuisine preferences",
+    );
+  });
+
+  it("passes cuisinePreferences from profile to storage so matching recipes can be boosted", async () => {
+    const cuisineProfile: UserProfile = {
+      ...mockProfile,
+      cuisinePreferences: ["italian", "mexican"],
+    };
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([]);
+
+    await buildCarousel("1", cuisineProfile);
+
+    expect(storage.getRecentCommunityRecipes).toHaveBeenCalledWith(
+      "1",
+      expect.objectContaining({ cuisinePreferences: ["italian", "mexican"] }),
+    );
+  });
+
   it("handles null profile gracefully", async () => {
     vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue(
       mockCommunityRecipes,
