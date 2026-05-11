@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
+import Constants from "expo-constants";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
@@ -21,6 +22,7 @@ import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { Spacing } from "@/constants/theme";
+import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
 import type { ProfileScreenNavigationProp } from "@/types/navigation";
 
 type FeatherIconName = ComponentProps<typeof Feather>["name"];
@@ -160,6 +162,42 @@ export default function SettingsScreen() {
     (item) => !item.iosOnly || Platform.OS === "ios",
   );
 
+  const openLegalUrl = useCallback(
+    async (url: string, fallbackLabel: string) => {
+      try {
+        haptics.selection();
+      } catch {
+        // Haptics may fail in simulators or restricted environments — never
+        // block opening a legal URL on a secondary effect.
+      }
+      try {
+        const supported = await Linking.canOpenURL(url);
+        if (!supported) {
+          throw new Error("URL not supported");
+        }
+        await Linking.openURL(url);
+      } catch (error) {
+        console.warn("Failed to open legal URL", { url, error });
+        Alert.alert(
+          "Unable to open link",
+          `Please visit ${fallbackLabel} in your browser: ${url}`,
+        );
+      }
+    },
+    [haptics],
+  );
+
+  const appVersion = Constants.expoConfig?.version ?? "—";
+  const buildNumber =
+    Platform.OS === "ios"
+      ? (Constants.expoConfig?.ios?.buildNumber ?? null)
+      : Constants.expoConfig?.android?.versionCode != null
+        ? String(Constants.expoConfig.android.versionCode)
+        : null;
+  const versionLabel = buildNumber
+    ? `Version ${appVersion} (${buildNumber})`
+    : `Version ${appVersion}`;
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
@@ -229,11 +267,73 @@ export default function SettingsScreen() {
         })}
       </Card>
 
+      <Card elevation={1} style={styles.card}>
+        <Pressable
+          onPress={() => openLegalUrl(PRIVACY_POLICY_URL, "our Privacy Policy")}
+          accessibilityLabel="Privacy Policy"
+          accessibilityRole="link"
+          accessibilityHint="Opens our Privacy Policy in your browser"
+          style={({ pressed }) => [
+            styles.settingsItem,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <View style={styles.settingsItemLeft}>
+            <Feather
+              name="shield"
+              size={20}
+              color={theme.textSecondary}
+              accessible={false}
+            />
+            <ThemedText style={styles.settingsLabel}>Privacy Policy</ThemedText>
+          </View>
+          <Feather
+            name="external-link"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <Pressable
+          onPress={() => openLegalUrl(TERMS_URL, "our Terms of Service")}
+          accessibilityLabel="Terms of Service"
+          accessibilityRole="link"
+          accessibilityHint="Opens our Terms of Service in your browser"
+          style={({ pressed }) => [
+            styles.settingsItem,
+            pressed && { opacity: 0.7 },
+          ]}
+        >
+          <View style={styles.settingsItemLeft}>
+            <Feather
+              name="file-text"
+              size={20}
+              color={theme.textSecondary}
+              accessible={false}
+            />
+            <ThemedText style={styles.settingsLabel}>
+              Terms of Service
+            </ThemedText>
+          </View>
+          <Feather
+            name="external-link"
+            size={18}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+        </Pressable>
+      </Card>
+
       {user && (
         <ThemedText style={[styles.footer, { color: theme.textSecondary }]}>
           Signed in as {user.displayName || user.username}
         </ThemedText>
       )}
+
+      <ThemedText style={[styles.versionLabel, { color: theme.textSecondary }]}>
+        {versionLabel}
+      </ThemedText>
 
       <UpgradeModal
         visible={showUpgradeModal}
@@ -281,5 +381,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 12,
     marginTop: Spacing.xl,
+  },
+  versionLabel: {
+    textAlign: "center",
+    fontSize: 11,
+    marginTop: Spacing.sm,
   },
 });
