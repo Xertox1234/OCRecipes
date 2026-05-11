@@ -75,6 +75,22 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 ---
 
+**3b — File-path pattern + rules supplement:** After the researcher returns (or fallback completes), apply the domain mapping below to the source file paths extracted above. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
+
+| File path pattern                                                                                                                                              | Additional domains to load                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `server/routes/*`                                                                                                                                              | api, security, architecture                |
+| `server/storage/*`, `shared/schema.ts`, `migrations/*`                                                                                                         | database, security, architecture           |
+| `server/middleware/*`                                                                                                                                          | security, api                              |
+| `server/services/photo-analysis.ts`, `server/services/nutrition-coach.ts`, `server/services/recipe-chat.ts`, `server/services/recipe-generation.ts`, `evals/*` | ai-prompting, security                     |
+| `server/services/*`                                                                                                                                            | architecture                               |
+| `client/screens/*`, `client/components/*`                                                                                                                      | react-native, design-system, accessibility |
+| `client/navigation/*`                                                                                                                                          | react-native, accessibility                |
+| `client/hooks/*`                                                                                                                                               | hooks, client-state, react-native          |
+| `client/context/*`, `client/lib/*`                                                                                                                             | client-state                               |
+| `*.test.ts`, `*.test.tsx`                                                                                                                                      | testing                                    |
+| `*.ts`, `*.tsx`                                                                                                                                                | typescript                                 |
+
 ## Step 4 — Implement
 
 Execute the todo:
