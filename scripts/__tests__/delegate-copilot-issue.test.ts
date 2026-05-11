@@ -510,11 +510,26 @@ Pull production data snapshot from cold storage for the test fixture.
       expect(result.sort()).toEqual(["ai-prompting", "testing"]);
     });
 
-    it("maps __tests__ paths to testing", () => {
+    it("maps __tests__ paths to testing only (not the parent routes pattern)", () => {
       const result = domainsForPath(
         "server/routes/__tests__/recipe-catalog.test.ts",
       );
-      expect(result).toContain("testing");
+      expect(result).toEqual(["testing"]);
+    });
+
+    it("unions domains across multiple matching rules (screen test file)", () => {
+      // client/screens/__tests__/HomeScreen.test.tsx matches both the
+      // client/screens/ rule AND the __tests__/ rule. The result must be the
+      // union of both domain sets, not one or the other.
+      const result = domainsForPath(
+        "client/screens/__tests__/HomeScreen.test.tsx",
+      );
+      expect(result.sort()).toEqual([
+        "accessibility",
+        "design-system",
+        "react-native",
+        "testing",
+      ]);
     });
 
     it("maps .github/workflows to architecture + testing", () => {

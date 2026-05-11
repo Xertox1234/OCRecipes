@@ -139,7 +139,9 @@ export type Domain =
 // Service file basenames (under server/services/) that import an LLM client.
 // Empirically derived 2026-05-11 via:
 //   grep -l "openai\|OpenAI\|gpt-\|completions\|anthropic" server/services/*.ts | grep -v __tests__
-// A unit test re-runs this grep at test time and fails on drift.
+// A companion drift-detection test (see scripts/__tests__/delegate-copilot-issue.test.ts)
+// re-runs the grep and fails if a new LLM-touching service is added without
+// being included here.
 const LLM_TOUCHING_SERVICES: ReadonlySet<string> = new Set([
   "canonical-enrichment.ts",
   "coach-pro-chat.ts",
@@ -224,7 +226,7 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
   {
     pattern: /\/__tests__\/|\.test\.tsx?$|\.spec\.tsx?$/,
     domains: ["testing"],
-    description: "`*test*.ts`, `*.test.tsx`, `__tests__/**`",
+    description: "`__tests__/**`, `*.test.ts(x)`, `*.spec.ts(x)`",
   },
   {
     pattern: /^\.github\/workflows\//,
