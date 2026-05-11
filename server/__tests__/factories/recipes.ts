@@ -6,6 +6,8 @@ import type {
   RecipeGenerationLog,
   Cookbook,
   CookbookRecipe,
+  TastePick,
+  RecipeDismissal,
 } from "@shared/schema";
 
 const mealPlanRecipeDefaults: MealPlanRecipe = {
@@ -166,4 +168,31 @@ export function createMockCookbookRecipe(
   overrides: Partial<CookbookRecipe> = {},
 ): CookbookRecipe {
   return { ...cookbookRecipeDefaults, ...overrides };
+}
+
+const tastePickDefaults: TastePick = {
+  id: 1,
+  userId: "1",
+  recipeId: 1,
+  pickedAt: new Date("2024-01-01"),
+};
+
+export function createMockTastePick(
+  overrides: Partial<TastePick> = {},
+): TastePick {
+  return { ...tastePickDefaults, ...overrides };
+}
+
+const recipeDismissalDefaults: RecipeDismissal = {
+  id: 1,
+  userId: "1",
+  recipeIdentifier: "community:1",
+  source: "carousel",
+  dismissedAt: new Date("2024-01-01"),
+};
+
+export function createMockRecipeDismissal(
+  overrides: Partial<RecipeDismissal> = {},
+): RecipeDismissal {
+  return { ...recipeDismissalDefaults, ...overrides };
 }

@@ -37,11 +37,16 @@ You are a specialized agent for writing, reviewing, and maintaining tests in the
 
 ### Pre-Commit Pipeline
 
-1. `tsc --noEmit --project tsconfig.check.json` (type check, excludes test files)
-2. `npm run test:run` (full Vitest suite)
-3. `lint-staged` (ESLint + Prettier + accessibility + color checks on staged files)
+The pre-commit hook is deliberately fast — **only `lint-staged` runs locally**. Full type-check and the Vitest suite are gated by CI on every push, not by the hook.
 
-All three must pass or the commit is blocked.
+1. `lint-staged` runs on staged files only:
+   - `*.{ts,tsx}` → `eslint --fix` + `prettier --write`
+   - `client/**/*.tsx` → `check-accessibility.js` + `check-hardcoded-colors.js`
+   - `server/storage/*.ts` → `check-idor-storage.js`
+   - `evals/datasets/*.json` → `check-eval-dataset-secrets.js`
+   - `*.{js,md}` → `prettier --write`
+
+CI (`.github/workflows/ci.yml`) enforces the full gate on every push: `lint` → `check:types` → accessibility/colors/IDOR pattern scripts → `test:run`. Per CLAUDE.md, avoid running `test:run` / `check:types` / `lint` locally at session start or as a routine self-verify — trust CI to catch the typical pass/fail. Local runs are appropriate when debugging a specific failure CI reported, or when iterating on a single file's tests.
 
 ---
 

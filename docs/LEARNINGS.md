@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [kimi-review on Cumulative Working-Tree Diff Re-Flags Earlier Audit Fixes (2026-05-11)](#kimi-review-on-cumulative-working-tree-diff-re-flags-earlier-audit-fixes-2026-05-11)
 - [Calorie Restriction Regex Missed 4-Digit Unsafe Targets (1000–1199 kcal) (2026-05-11)](#calorie-restriction-regex-missed-4-digit-unsafe-targets-10001199-kcal-2026-05-11)
 - [`accessibilityLiveRegion` + `announceForAccessibility` Causes Double TalkBack Announcements (2026-05-10)](#accessibilityliveregion--announceforaccessibility-causes-double-talkback-announcements-2026-05-10)
 - [Drizzle `.default([])` Does Not Make TypeScript Type Non-Nullable (2026-05-09)](#drizzle-default-does-not-make-typescript-type-non-nullable-2026-05-09)
@@ -73,6 +74,37 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## kimi-review on Cumulative Working-Tree Diff Re-Flags Earlier Audit Fixes (2026-05-11)
+
+**Category:** Gotcha — Audit workflow / Code review tooling
+
+During a multi-fix audit session (Phase 3 of the `/audit` skill), `kimi-review` is called once per fix to verify each landing. The first fix gets a clean review; subsequent fixes get re-flagged for the _earlier_ fix because the working-tree diff is cumulative. By the third fix you're arguing with kimi about something already empirically verified in fix #1.
+
+**Concrete instance (audit 2026-05-11):**
+
+- Fix L1 removed `environmentMatchGlobs` from `vitest.config.ts`. Kimi WARNING: "verify all matching tests have the per-file pragma." Verified empirically (51/51 .test.tsx files have it). Marked verified.
+- Fix M1 added 5 new factories. Kimi ran on the cumulative diff and re-flagged L1: "removed environmentMatchGlobs may leave other component tests without jsdom." Same WARNING, same response required.
+- Net effect: two cycles of relitigating an already-resolved concern.
+
+**The fix:** Scope `kimi-review` to the specific paths the current fix touches, not the whole working tree:
+
+```bash
+# ❌ Reviews everything in the working tree — re-flags earlier fixes
+kimi-review --scope "fix M1: add factories" --patterns testing,typescript
+
+# ✅ Scopes to just the files this fix touched
+kimi-review --paths server/__tests__/factories shared/schema.ts \
+  --scope "fix M1: add factories" --patterns testing,typescript
+```
+
+**For the Phase 6 final review:** use `--paths <all-modified-files>` rather than `--base main` (which can also pull in unrelated commits that landed on main during the session — e.g., parallel auto-delegate hooks or other agents pushing to main).
+
+**Rule:** In per-fix Phase 3 reviews, always pass `--paths` to constrain scope. The whole-tree review belongs to Phase 6, and even there, pass `--paths` explicitly to avoid pulling in concurrent main-branch changes.
+
+**Reference:** Audit 2026-05-11 transcript, advisor reconcile call surfacing the re-flag pattern.
+
+---
 
 ## Post-Server-Success Local Cleanup Must Not Throw to the Caller (2026-05-10)
 

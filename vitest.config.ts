@@ -9,8 +9,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    // @ts-expect-error — environmentMatchGlobs exists at runtime in vitest but is missing from InlineConfig type
-    environmentMatchGlobs: [["client/components/**/*.test.tsx", "jsdom"]],
     include: ["**/*.test.ts", "**/*.test.tsx"],
     exclude: [
       "node_modules",
