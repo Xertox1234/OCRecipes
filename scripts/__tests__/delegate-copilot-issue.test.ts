@@ -4,6 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import {
   buildIssueBody,
+  buildProjectRulesSection,
   createCopilotIssue,
   detectedDomains,
   domainsForPath,
@@ -13,6 +14,7 @@ import {
   runCli,
   writeGithubIssueToTodo,
   type CommandRunner,
+  type Domain,
 } from "../delegate-copilot-issue";
 
 const eligibleTodo = `---
@@ -672,6 +674,54 @@ Pull production data snapshot from cold storage for the test fixture.
 
     it("returns empty array when no files match and no relevant labels", () => {
       expect(detectedDomains(["README.md"], ["docs"])).toEqual([]);
+    });
+  });
+
+  describe("buildProjectRulesSection", () => {
+    it("inlines docs/rules/<domain>.md content for each domain", () => {
+      const section = buildProjectRulesSection(["typescript"]);
+      expect(section).toContain("## Project Rules");
+      expect(section).toContain("### typescript");
+      // The actual content of docs/rules/typescript.md should appear:
+      expect(section).toContain(
+        "Never use `as` cast on a bare `text` DB column",
+      );
+    });
+
+    it("emits subheadings in the order provided", () => {
+      const section = buildProjectRulesSection(["react-native", "testing"]);
+      const rnIndex = section.indexOf("### react-native");
+      const testingIndex = section.indexOf("### testing");
+      expect(rnIndex).toBeGreaterThan(-1);
+      expect(testingIndex).toBeGreaterThan(rnIndex);
+    });
+
+    it("appends pattern URLs as further-reading pointers", () => {
+      const section = buildProjectRulesSection(["typescript"]);
+      expect(section).toContain(
+        "https://github.com/Xertox1234/OCRecipes/blob/main/docs/patterns/typescript.md",
+      );
+    });
+
+    it("emits the binding-rules preamble", () => {
+      const section = buildProjectRulesSection(["typescript"]);
+      expect(section).toContain("rules below are binding");
+      expect(section).toContain("PR comment");
+    });
+
+    it("emits a minimal block when no domains are detected", () => {
+      const section = buildProjectRulesSection([]);
+      expect(section).toContain("## Project Rules");
+      expect(section).toContain("No domain rules apply");
+      expect(section).not.toContain("### ");
+    });
+
+    it("throws a clear error when a rule file is missing", () => {
+      // 'nonexistent' is not a real domain — simulate the missing-file case
+      // by casting (TS would normally prevent this).
+      expect(() => buildProjectRulesSection(["nonexistent" as Domain])).toThrow(
+        /docs\/rules\/nonexistent\.md/,
+      );
     });
   });
 });

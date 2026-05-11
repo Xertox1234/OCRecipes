@@ -295,6 +295,47 @@ export function detectedDomains(
   return [...matched].sort();
 }
 
+const PATTERNS_URL_BASE =
+  "https://github.com/Xertox1234/OCRecipes/blob/main/docs/patterns";
+
+const PROJECT_RULES_PREAMBLE = `The rules below are binding. If any rule conflicts with the acceptance criteria, raise it in a PR comment rather than silently violating it. Open the linked pattern file for full context if a rule isn't clear.`;
+
+export function buildProjectRulesSection(domains: readonly Domain[]): string {
+  if (domains.length === 0) {
+    return `## Project Rules
+
+No domain rules apply to this scope. Follow the acceptance criteria and conventional best practice. Hard exclusions (see Safety And Review Requirements) still apply.`;
+  }
+
+  const sections: string[] = [];
+  for (const domain of domains) {
+    const rulePath = path.join("docs", "rules", `${domain}.md`);
+    if (!fs.existsSync(rulePath)) {
+      throw new Error(
+        `Missing rule file ${rulePath} for detected domain "${domain}". Either restore the file or remove ${domain} from PATH_TO_DOMAINS / LABEL_TO_FORCED_DOMAIN.`,
+      );
+    }
+    const content = fs.readFileSync(rulePath, "utf8").trim();
+    // Strip the leading `# Domain Rules` heading from the file; we re-add as ###
+    const withoutHeading = content.replace(/^#\s+[^\n]*\n+/, "");
+    sections.push(`### ${domain}\n\n${withoutHeading}`);
+  }
+
+  const patternUrls = domains
+    .map((d) => `- ${PATTERNS_URL_BASE}/${d}.md`)
+    .join("\n");
+
+  return `## Project Rules
+
+${PROJECT_RULES_PREAMBLE}
+
+${sections.join("\n\n")}
+
+**Further context (open the URL if a rule above isn't clear):**
+
+${patternUrls}`;
+}
+
 const FILE_EXTENSIONS = new Set([
   ".ts",
   ".tsx",
