@@ -41,6 +41,13 @@ export const registerSchema = z.object({
       /(?=.*[a-zA-Z])(?=.*\d)/,
       "Password must contain at least one letter and one number",
     ),
+  // COPPA 13+ age attestation — legal attestation at registration time,
+  // not persisted to the DB. z.literal(true) rejects false/undefined/missing.
+  ageConfirmed: z.literal(true, {
+    errorMap: () => ({
+      message: "You must confirm you are 13 years of age or older",
+    }),
+  }),
 });
 
 // Account deletion validation schema

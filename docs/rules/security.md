@@ -9,3 +9,4 @@
 - Never trust parameters that "look server-generated" in AI prompt inputs — always sanitize at the prompt boundary
 - All route request bodies must be Zod-validated before any field access — never `req.body.x` without a schema parse
 - `req.userId` is a string (UUID) — never parse with `parseInt` (returns NaN, bypasses ownership checks silently)
+- Legal attestations / consent fields (COPPA age confirmation, ToS acceptance, marketing opt-in) must be propagated as a parameter from the UI checkbox state through every intermediate hook to the API call — never hardcode `true` in an auth hook or wrapper. The server gate is still enforced (zero-trust client), but a hardcoded client bypass falsifies the legal attestation record.

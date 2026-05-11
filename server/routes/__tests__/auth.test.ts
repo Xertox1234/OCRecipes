@@ -87,6 +87,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
         password: "password123",
+        ageConfirmed: true,
       });
 
       expect(res.status).toBe(201);
@@ -102,6 +103,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "testuser",
         password: "password123",
+        ageConfirmed: true,
       });
 
       expect(res.status).toBe(409);
@@ -112,6 +114,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "ab",
         password: "password123",
+        ageConfirmed: true,
       });
 
       expect(res.status).toBe(400);
@@ -122,6 +125,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "testuser",
         password: "short",
+        ageConfirmed: true,
       });
 
       expect(res.status).toBe(400);
@@ -132,6 +136,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "bad user!",
         password: "password123",
+        ageConfirmed: true,
       });
 
       expect(res.status).toBe(400);
@@ -142,6 +147,27 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({});
 
       expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when ageConfirmed is missing (COPPA age gate)", async () => {
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("ageConfirmed");
+    });
+
+    it("returns 400 when ageConfirmed is false (COPPA age gate)", async () => {
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+        ageConfirmed: false,
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("ageConfirmed");
     });
   });
 
@@ -359,6 +385,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
         password: "password123",
+        ageConfirmed: true,
       });
 
       expect(res.status).toBe(500);

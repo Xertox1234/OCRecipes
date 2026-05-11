@@ -176,6 +176,7 @@ describe("Route Helpers", () => {
       const result = registerSchema.safeParse({
         username: "testuser",
         password: "securepass123",
+        ageConfirmed: true,
       });
       expect(result.success).toBe(true);
     });
@@ -184,6 +185,7 @@ describe("Route Helpers", () => {
       const result = registerSchema.safeParse({
         username: "ab",
         password: "securepass123",
+        ageConfirmed: true,
       });
       expect(result.success).toBe(false);
     });
@@ -192,6 +194,7 @@ describe("Route Helpers", () => {
       const result = registerSchema.safeParse({
         username: "user@name!",
         password: "securepass123",
+        ageConfirmed: true,
       });
       expect(result.success).toBe(false);
     });
@@ -200,8 +203,26 @@ describe("Route Helpers", () => {
       const result = registerSchema.safeParse({
         username: "test_user_1",
         password: "securepass123",
+        ageConfirmed: true,
       });
       expect(result.success).toBe(true);
+    });
+
+    it("rejects when ageConfirmed is missing (COPPA age gate)", () => {
+      const result = registerSchema.safeParse({
+        username: "testuser",
+        password: "securepass123",
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects when ageConfirmed is false (COPPA age gate)", () => {
+      const result = registerSchema.safeParse({
+        username: "testuser",
+        password: "securepass123",
+        ageConfirmed: false,
+      });
+      expect(result.success).toBe(false);
     });
 
     it("rejects password shorter than 8 chars", () => {
