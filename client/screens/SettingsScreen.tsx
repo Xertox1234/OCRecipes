@@ -1,4 +1,4 @@
-import React, { ComponentProps, useCallback } from "react";
+import React, { ComponentProps, useCallback, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -16,6 +16,7 @@ import Constants from "expo-constants";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { DeleteAccountModal } from "@/components/DeleteAccountModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -61,6 +62,12 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
   { id: "coachReminders", icon: "bell", label: "Coach Reminders" },
   { id: "subscription", icon: "credit-card", label: "Subscription" },
   { id: "signout", icon: "log-out", label: "Sign Out", danger: true },
+  {
+    id: "deleteAccount",
+    icon: "trash-2",
+    label: "Delete Account",
+    danger: true,
+  },
 ];
 
 export default function SettingsScreen() {
@@ -68,7 +75,7 @@ export default function SettingsScreen() {
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { logout, user } = useAuthContext();
+  const { logout, deleteAccount, user } = useAuthContext();
   const { isPremium } = usePremiumContext();
 
   const healthKitUnlocked = usePremiumFeature("healthKitSync");
@@ -76,6 +83,19 @@ export default function SettingsScreen() {
   const goalsUnlocked = usePremiumFeature("adaptiveGoals");
 
   const [showUpgradeModal, setShowUpgradeModal] = React.useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+
+  const handleDeleteAccount = useCallback(
+    async (password: string) => {
+      // deleteAccount throws on failure (e.g. wrong password). Let the modal
+      // surface the error and keep itself open — only close on success.
+      await deleteAccount(password);
+      setShowDeleteAccountModal(false);
+      // No explicit navigation needed: the root navigator gate switches to
+      // the auth stack when `isAuthenticated` flips to false.
+    },
+    [deleteAccount],
+  );
 
   const isUnlocked = useCallback(
     (key?: string) => {
@@ -144,6 +164,9 @@ export default function SettingsScreen() {
               onPress: () => logout(),
             },
           ]);
+          break;
+        case "deleteAccount":
+          setShowDeleteAccountModal(true);
           break;
       }
     },
@@ -337,6 +360,13 @@ export default function SettingsScreen() {
       <UpgradeModal
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
+      />
+
+      <DeleteAccountModal
+        visible={showDeleteAccountModal}
+        onClose={() => setShowDeleteAccountModal(false)}
+        onConfirm={handleDeleteAccount}
+        showSubscriptionWarning={isPremium}
       />
     </ScrollView>
   );

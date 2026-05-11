@@ -1,5 +1,30 @@
 # Client State Patterns
 
+### Irreversible Mutations: Wrap Post-Server Local Cleanup
+
+When a client hook awaits an irreversible server call (account deletion, payment confirmation, hard-delete of user data), local cleanup that follows MUST NOT throw to the caller. Once the server has confirmed the destructive action, the UI must see success — surfacing a "please retry" error after the account/record is permanently gone is worse than any storage-clear failure, because retry just hits a 401.
+
+```typescript
+// ✅ GOOD — pre-success errors propagate (user retries); post-success errors swallowed.
+const deleteAccount = useCallback(async (password: string) => {
+  // Pre-line: recoverable errors (wrong password, network) propagate.
+  await apiRequest("DELETE", "/api/auth/account", { password });
+
+  // Post-line: server confirmed deletion. Best-effort local clear.
+  try {
+    await tokenStorage.clear();
+  } catch {}
+  try {
+    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {}
+  setState({ user: null, isLoading: false, isAuthenticated: false });
+}, []);
+```
+
+**Rule:** Draw a mental line at the irreversible server response. Pre-line: errors are recoverable, propagate them. Post-line: errors are non-actionable, swallow them. Always update local state on the success path even if cleanup throws.
+
+**Reference:** `client/hooks/useAuth.ts` — `deleteAccount`.
+
 ### In-Memory Caching for Frequent Reads
 
 When a value is read frequently but changes rarely, cache in memory with lazy initialization:

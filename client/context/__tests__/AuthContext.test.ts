@@ -87,6 +87,7 @@ describe("AuthContext", () => {
         login: async (_u: string, _p: string) => ({}) as unknown as User,
         register: async (_u: string, _p: string) => ({}) as unknown as User,
         logout: async () => {},
+        deleteAccount: async (_p: string) => {},
         updateUser: async (_updates: Record<string, unknown>) => undefined,
         checkAuth: async () => {},
       };
@@ -94,6 +95,7 @@ describe("AuthContext", () => {
       expect(authInterface).toHaveProperty("login");
       expect(authInterface).toHaveProperty("register");
       expect(authInterface).toHaveProperty("logout");
+      expect(authInterface).toHaveProperty("deleteAccount");
       expect(authInterface).toHaveProperty("updateUser");
       expect(authInterface).toHaveProperty("checkAuth");
       expect(authInterface).toHaveProperty("user");
