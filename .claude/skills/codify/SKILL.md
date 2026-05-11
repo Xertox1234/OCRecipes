@@ -114,11 +114,12 @@ Read the target file first. Write each addition directly to the target file — 
 
 ## Step 7 — Commit
 
-Only stage files you actually modified:
+Only stage files you actually modified — list them explicitly, not whole directories:
 
 ```bash
-git add docs/patterns/ docs/LEARNINGS.md .claude/agents/
+# Example — substitute the actual files you changed:
+git add docs/patterns/security.md docs/LEARNINGS.md .claude/agents/security-auditor.md
 git commit -m "docs: codify patterns and learnings from $(git branch --show-current) session"
 ```
 
-If no agent files were updated, omit `.claude/agents/` from the add command.
+Using `git add docs/patterns/` would stage everything in that directory, including files you didn't touch. Name each file.
