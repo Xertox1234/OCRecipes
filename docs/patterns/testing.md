@@ -1483,6 +1483,95 @@ resolve: {
 
 ---
 
+### When Inline `vi.mock` of Globally-Aliased Modules IS Correct
+
+The general guidance ("do NOT inline-mock `react-native` / `react-native-reanimated` / `expo-haptics` — the global aliases handle it") is correct for the _common_ case: a test that renders a component and doesn't care about the mock's return values. But there are legitimate reasons to inline-mock even an already-aliased module — don't blanket-prohibit.
+
+**Inline `vi.mock` IS correct when the test needs:**
+
+1. **Mutable per-test return values** — The global alias exposes `useColorScheme: () => "light"` (a plain function, not `vi.fn()`). To toggle the value per test, you either need to inline-mock with `importOriginal()` + spread + override, or update the global mock to use `vi.fn()` for spy-ability. Until the latter ships, inline mock is the only path.
+
+   ```typescript
+   const mockUseColorScheme = vi.fn();
+   vi.mock("react-native", async (importOriginal) => {
+     const actual = await importOriginal<typeof import("react-native")>();
+     return { ...actual, useColorScheme: () => mockUseColorScheme() };
+   });
+   ```
+
+2. **Stateful behavior the simple alias can't provide** — Tests of hooks like `useScrollLinkedHeader` or `useCollapsibleHeight` need `useSharedValue` to persist across re-renders (backed by `useRef`). The global alias returns a fresh `{value: init}` each call, which mutates fine but doesn't persist. The inline mock provides the ref-backed version.
+
+3. **Missing exports** — The global mock covers commonly-rendered APIs but not every RN export. `AppState`, `Share`, and certain platform APIs may not be in the global alias. Inline mock fills the gap.
+
+**Inline mock is NOT correct when:**
+
+- The test just wants the global behavior (`useColorScheme` returns "light", `Platform.OS` is "ios"). Use the global alias; don't redeclare.
+- The test wants to _assert that a function was called_. Use `vi.spyOn(globalMockNamespace, "fnName")` instead of replacing the whole module — but this requires the global mock to expose the function as a `vi.fn()`, not a plain function.
+
+**Audit triage rule:** Before flagging an inline mock of a globally-aliased module as a violation, ask: does the test need mutable values, statefulness, or missing exports? If yes, the inline mock is legitimate; the real fix (if any) is to make the global mock spy-able, not to delete the inline mock.
+
+**Reference:** Audit 2026-05-11 finding M2 (initially "9 violations" → reclassified after inspection: 0 cargo-cult, 9 legitimate uses of inline mock for behaviors the global aliases can't provide).
+
+---
+
+### `setTimeout` in Test Fixtures vs. Real Async Waits
+
+Not all `setTimeout` in tests is a flake risk. Distinguish two patterns:
+
+**Pattern A — `setTimeout` is part of the test fixture (NOT a flake risk):**
+
+```typescript
+// ✅ The setTimeout simulates async work for the function under test.
+// promise-memo memoizes in-flight promises; the fixture needs the work to
+// take *some* time so concurrent calls land in the same memo window.
+const memo = createPromiseMemo(async () => {
+  await new Promise((r) => setTimeout(r, 10)); // ← fixture, not flake
+  return "session-123";
+});
+
+const p1 = memo.call();
+const p2 = memo.call();
+expect(p1).toBe(p2); // both calls hit the same in-flight promise
+```
+
+The `setTimeout` here is a _behavior_ of the fixture — it's how the test simulates "async work that takes time." 10ms on any modern CI is fine. Don't migrate to `vi.useFakeTimers()` — that adds complexity without reducing flakiness.
+
+**Pattern B — `setTimeout` is waiting on a real async side effect (genuinely flaky):**
+
+```typescript
+// ❌ Wall-clock wait for a fire-and-forget DB write to complete.
+// On a slow CI runner the 50ms may not be enough → flake.
+await setMicronutrientCache("key", data, ttl);
+await getMicronutrientCache("key");  // triggers fire-and-forget hit-count update
+await new Promise((r) => setTimeout(r, 50)); // ← real wait, real flake risk
+
+const [row] = await tx.select(...).where(...);
+expect(row.hitCount).toBe(1); // may fail on slow CI
+```
+
+For Pattern B, the correct fix is deterministic polling, NOT `vi.useFakeTimers()` (which doesn't help with real async DB ops):
+
+```typescript
+async function waitForCondition(
+  check: () => Promise<boolean>,
+  timeoutMs = 1000,
+  pollMs = 20,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  throw new Error(`Condition not met within ${timeoutMs}ms`);
+}
+```
+
+**Audit triage rule:** When auditing test flakiness, look at what the `setTimeout` is waiting for. If it's inside the test's mock/fixture body, it's setting up the test scenario — not a flake. If it's between an action and an assertion, waiting for a real async side effect to land, it IS a flake risk and needs polling.
+
+**Reference:** Audit 2026-05-11 finding H1 (initially "4 files with flaky timers" → reclassified after inspection: 1 genuinely flaky `cache.test.ts` fire-and-forget + 1 trivial microtask wait in `profile.test.ts` + 2 false-positive fixture timers in `promise-memo.test.ts`/`serial-queue.test.ts`).
+
+---
+
 ### Module-Level Cache Variable Not Reset Between Tests
 
 When a module uses a module-level `let` variable as an in-memory cache, Vitest re-uses the same module instance across all tests in a file by default. State left by one test leaks into the next.
