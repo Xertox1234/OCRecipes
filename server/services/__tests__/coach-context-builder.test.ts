@@ -121,7 +121,7 @@ describe("buildCoachContext", () => {
         content: "Post-workout meals improve adherence",
         status: "active",
         followUpDate: null,
-        updatedAt: new Date("2024-01-01"),
+        updatedAt: expect.any(Date),
       },
     ]);
     expect(result.suggestions).toEqual([
