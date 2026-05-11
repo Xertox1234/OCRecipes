@@ -104,6 +104,23 @@ formData.append("photo", {
 } as unknown as Blob);
 ```
 
+**Null-photo handling — both catch AND else:** `takePicture()` can return `null` or a photo without a `uri` without throwing. Always handle both paths:
+
+```typescript
+try {
+  const photo = await cameraRef.current.takePicture(...);
+  if (photo?.uri) {
+    // happy path
+  } else {
+    Alert.alert("Capture failed", "Try again or pick from your gallery.");
+  }
+} catch (error) {
+  Alert.alert("Capture failed", "Try again or pick from your gallery.");
+}
+```
+
+A `catch`-only handler silently drops the null-return case. (Audit 2026-05-10 M7 / code-reviewer LOW)
+
 ### OCR Frame Processor
 
 Frame processors run on the camera thread. Keep them lightweight:

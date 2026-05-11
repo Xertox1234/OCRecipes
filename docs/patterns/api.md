@@ -1704,7 +1704,7 @@ mutationFn: async (input) => {
 2. **Wrong error messages** — `throwIfResNotOk` throws with format `"${status}: ${responseBody}"`, so custom messages like `"Request failed"` are never shown; users see the raw format instead
 3. **Double body consumption** — `throwIfResNotOk` reads the body via `res.text()`; if somehow bypassed, a subsequent `res.json()` would fail because the stream is already consumed
 
-**When to use:** Every `mutationFn` or `queryFn` that calls `apiRequest()`.
+**When to use:** Every `mutationFn`, `queryFn`, or `useCallback` load function that calls `apiRequest()`. This includes standalone `loadItems` / `loadCandidates` callbacks — not just React Query hooks.
 
 **When NOT to use:** When using raw `fetch()` directly (e.g., FormData uploads, graceful 404 handling) — those calls do NOT go through `throwIfResNotOk`.
 

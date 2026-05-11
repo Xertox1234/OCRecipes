@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [`accessibilityLiveRegion` + `announceForAccessibility` Causes Double TalkBack Announcements (2026-05-10)](#accessibilityliveregion--announceforaccessibility-causes-double-talkback-announcements-2026-05-10)
 - [Drizzle `.default([])` Does Not Make TypeScript Type Non-Nullable (2026-05-09)](#drizzle-default-does-not-make-typescript-type-non-nullable-2026-05-09)
 - [fullScreenModal Dismissal Requires `navigation.goBack()` After `navigate()` (2026-05-09)](#fullscreenmodal-dismissal-requires-navigationgoback-after-navigate-2026-05-09)
 - [onConflictDoNothing({ target }) Silently No-Ops on Partial Unique Indexes (2026-05-09)](#onconflictdonothing-target-silently-no-ops-on-partial-unique-indexes-2026-05-09)
@@ -98,6 +99,20 @@ await Promise.all(toPromote.map((r) => storage.markCanonical(r.id)));
 **Rule:** Any multi-phase pipeline where phase 1 changes permanent state should design the eligibility query to detect phase-1-complete + phase-2-incomplete as a retriable state, rather than relying on a separate retry table. Self-healing via the existing scheduled job is simpler and has no additional infrastructure cost.
 
 **Reference:** `server/storage/canonical-recipes.ts` — `getEligibleForPromotion`, PR #82 code review 2026-05-09.
+
+---
+
+## `accessibilityLiveRegion` + `announceForAccessibility` Causes Double TalkBack Announcements (2026-05-10)
+
+**Category:** Gotcha — React Native Accessibility
+
+**Root cause:** `accessibilityLiveRegion="polite"` instructs TalkBack to observe DOM-like content changes in the view tree and announce them automatically. `AccessibilityInfo.announceForAccessibility()` is an explicit imperative announcement. When both are active on the same content change, TalkBack fires both its observer path and the explicit call — the user hears the text spoken twice in rapid succession.
+
+**Discovery:** TastePicksScreen selection-count chip was using `announceForAccessibility` in a `useEffect`. Adding `accessibilityLiveRegion="polite"` to the chip's container (as recommended by the pre-existing pattern docs) caused double announcements in kimi-review. The fix was to remove `accessibilityLiveRegion` entirely.
+
+**Takeaway:** For polite status updates (selection counts, progress indicators), use **only** `announceForAccessibility`. For errors, `accessibilityRole="alert"` handles the announcement without needing `accessibilityLiveRegion`. Only use `accessibilityLiveRegion` when you are NOT also calling `announceForAccessibility` for the same content.
+
+**Note:** The pattern docs at `docs/patterns/react-native.md` previously recommended the pairing — this was incorrect and has been updated.
 
 ---
 

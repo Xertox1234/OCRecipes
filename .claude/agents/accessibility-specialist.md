@@ -42,9 +42,24 @@ Every modal, bottom sheet, and overlay root container must have `accessibilityVi
 
 ---
 
-## Dynamic Announcements (iOS + Android Pairing)
+## Dynamic Announcements (iOS + Android)
 
-`accessibilityLiveRegion` is Android-only — it has no effect on iOS. For iOS, pair it with `AccessibilityInfo.announceForAccessibility` in a `useEffect`. The `InlineError` component demonstrates the canonical pattern.
+For status/progress announcements (selection counts, step progress, loading states): use **only** `AccessibilityInfo.announceForAccessibility` — do NOT pair with `accessibilityLiveRegion`. Combining them causes TalkBack to announce the text **twice** on Android: once via the DOM observer and once via the explicit call. (Audit 2026-05-10 H9)
+
+`accessibilityLiveRegion` is Android-only — it has no effect on iOS. For iOS, pair it with `AccessibilityInfo.announceForAccessibility` in a `useEffect`. The `InlineError` component demonstrates the canonical pattern for **errors** — error context may warrant both, but verify double-announce does not occur.
+
+**Skip mount announce:** Add an `isFirstRender` ref to suppress the announcement on initial render — the visible state on mount is sufficient; re-announcing via audio is disruptive:
+
+```typescript
+const isFirstRender = useRef(true);
+useEffect(() => {
+  if (isFirstRender.current) {
+    isFirstRender.current = false;
+    return;
+  }
+  AccessibilityInfo.announceForAccessibility(msg);
+}, [msg]);
+```
 
 **Announce ALL outcomes — success AND error.** When auditing async state transitions, check that BOTH success and failure paths have announcements. Check `onSuccess` + `onError` in mutation handlers, and `isSuccess` + `isError` in `useEffect` deps. Use a prev-value ref guard (`const prevRef = useRef(false)`) to fire only on `false → true` transitions. (Ref: audit 2026-05-09 H12)
 
