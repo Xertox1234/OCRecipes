@@ -34,25 +34,30 @@ export default function TasteProfileScreen() {
   const [isDirty, setIsDirty] = useState(false);
   const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
-    async function loadPicks() {
-      try {
-        const res = await apiRequest("GET", "/api/taste-picks");
-        const json = await res.json();
-        const parsed = tastePicksResponseSchema.safeParse(json);
-        if (!parsed.success) {
-          console.error("loadPicks: invalid response shape", parsed.error);
-          setLoadError(true);
-          return;
-        }
-        setSelectedIds(new Set(parsed.data.picks.map((p) => p.recipeId)));
-      } catch (err) {
-        console.error("loadPicks failed:", err);
+  const loadPicks = useCallback(async () => {
+    try {
+      const res = await apiRequest("GET", "/api/taste-picks");
+      if (!res.ok) {
         setLoadError(true);
+        return;
       }
+      const json = await res.json();
+      const parsed = tastePicksResponseSchema.safeParse(json);
+      if (!parsed.success) {
+        console.error("loadPicks: invalid response shape", parsed.error);
+        setLoadError(true);
+        return;
+      }
+      setSelectedIds(new Set(parsed.data.picks.map((p) => p.recipeId)));
+    } catch (err) {
+      console.error("loadPicks failed:", err);
+      setLoadError(true);
     }
-    loadPicks();
   }, []);
+
+  useEffect(() => {
+    loadPicks();
+  }, [loadPicks]);
 
   const loadCandidates = useCallback(async (pageNum: number) => {
     setLoadError(false);
@@ -110,8 +115,9 @@ export default function TasteProfileScreen() {
   const handleRetry = useCallback(() => {
     setPage(1);
     setHasMore(true);
+    loadPicks();
     loadCandidates(1);
-  }, [loadCandidates]);
+  }, [loadPicks, loadCandidates]);
 
   const handleSave = useCallback(async () => {
     setIsSubmitting(true);

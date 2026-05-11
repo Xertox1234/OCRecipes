@@ -87,10 +87,9 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     try {
       await apiRequest("POST", "/api/user/dietary-profile", defaultData);
       await updateUser({ onboardingCompleted: true });
-    } catch (error) {
-      // Callers (e.g. WelcomeScreen) invoke this without awaiting, so we must
-      // not re-throw — that would surface as an unhandled promise rejection.
-      console.error("Failed to skip onboarding:", error);
+    } catch (err) {
+      console.error("skipOnboarding failed:", err);
+      throw err;
     } finally {
       setIsSubmitting(false);
     }
@@ -101,10 +100,9 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     try {
       await apiRequest("POST", "/api/user/dietary-profile", data);
       await updateUser({ onboardingCompleted: true });
-    } catch (error) {
-      // Catch + log to keep parity with skipOnboarding; callers may fire-and-
-      // forget so re-throwing would risk unhandled rejections.
-      console.error("Failed to complete onboarding:", error);
+    } catch (err) {
+      console.error("completeOnboarding failed:", err);
+      throw err;
     } finally {
       setIsSubmitting(false);
     }

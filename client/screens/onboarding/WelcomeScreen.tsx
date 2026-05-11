@@ -1,5 +1,5 @@
-import React from "react";
-import { View, StyleSheet } from "react-native";
+import React, { useCallback } from "react";
+import { AccessibilityInfo, Alert, View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
@@ -13,6 +13,18 @@ export default function WelcomeScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const { nextStep, skipOnboarding, isSubmitting } = useOnboarding();
+
+  const handleSkip = useCallback(async () => {
+    try {
+      await skipOnboarding();
+    } catch {
+      // Context already logged the error; surface user-visible feedback here.
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't skip setup. Please try again.",
+      );
+      Alert.alert("Something went wrong", "Please try again.");
+    }
+  }, [skipOnboarding]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
@@ -89,7 +101,7 @@ export default function WelcomeScreen() {
           Get Started
         </Button>
         <Button
-          onPress={skipOnboarding}
+          onPress={handleSkip}
           disabled={isSubmitting}
           accessibilityLabel={
             isSubmitting ? "Skipping setup" : "Skip personalization for now"
