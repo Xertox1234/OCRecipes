@@ -36,6 +36,7 @@ import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
 import * as canonicalRecipesStorage from "./canonical-recipes";
 import * as tastePicksStorage from "./taste-picks";
+import * as exportStorage from "./export";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
@@ -351,4 +352,7 @@ export const storage = {
   getTastePicks: tastePicksStorage.getTastePicks,
   setTastePicks: tastePicksStorage.setTastePicks,
   getTastePickCandidates: tastePicksStorage.getTastePickCandidates,
+
+  // Data export (CCPA/PIPEDA portability)
+  getUserDataExport: exportStorage.getUserDataExport,
 };

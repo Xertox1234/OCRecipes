@@ -49,6 +49,7 @@ import { register as registerReminders } from "./routes/reminders";
 import { register as registerCuratedRecipes } from "./routes/curated-recipes";
 import { register as registerCoachCommitments } from "./routes/coach-commitments";
 import { register as registerTastePicks } from "./routes/taste-picks";
+import { register as registerExport } from "./routes/export";
 import { initSearchIndex } from "./services/recipe-search";
 import { startNotificationScheduler } from "./services/notification-scheduler";
 
@@ -106,6 +107,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerCuratedRecipes(app);
   registerCoachCommitments(app);
   registerTastePicks(app);
+  registerExport(app);
 
   // Initialize search index (non-blocking — server starts even if index fails)
   initSearchIndex().catch((err) => {

@@ -7,6 +7,7 @@ import {
   Platform,
   Alert,
   Linking,
+  Share,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -22,6 +23,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { apiRequest } from "@/lib/query-client";
 import { Spacing } from "@/constants/theme";
 import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
 import type { ProfileScreenNavigationProp } from "@/types/navigation";
@@ -61,6 +63,7 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
   },
   { id: "coachReminders", icon: "bell", label: "Coach Reminders" },
   { id: "subscription", icon: "credit-card", label: "Subscription" },
+  { id: "exportData", icon: "download", label: "Export My Data" },
   { id: "signout", icon: "log-out", label: "Sign Out", danger: true },
   {
     id: "deleteAccount",
@@ -82,8 +85,9 @@ export default function SettingsScreen() {
   const glp1Unlocked = usePremiumFeature("glp1Companion");
   const goalsUnlocked = usePremiumFeature("adaptiveGoals");
 
-  const [showUpgradeModal, setShowUpgradeModal] = React.useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const handleDeleteAccount = useCallback(
     async (password: string) => {
@@ -96,6 +100,45 @@ export default function SettingsScreen() {
     },
     [deleteAccount],
   );
+
+  const performExport = useCallback(async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const res = await apiRequest("GET", "/api/users/me/export");
+      const json = await res.text();
+      await Share.share({
+        title: "OCRecipes Data Export",
+        message: json,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error && /^429:/.test(error.message)
+          ? "You have already exported recently. Please wait before trying again."
+          : "Could not export your data. Please try again.";
+      Alert.alert("Export Failed", message);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [isExporting]);
+
+  const handleExportData = useCallback(() => {
+    // Warn the user before broadcasting their full personal-data payload through
+    // the system share sheet — recipients of the share will see plaintext PII.
+    Alert.alert(
+      "Export My Data",
+      "This will create a JSON copy of all data we hold for you (profile, scan history, meal plans, chats, weight logs, etc.) and open the share sheet. Anyone you share the file with will see this data in plain text. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Export",
+          onPress: () => {
+            void performExport();
+          },
+        },
+      ],
+    );
+  }, [performExport]);
 
   const isUnlocked = useCallback(
     (key?: string) => {
@@ -155,6 +198,9 @@ export default function SettingsScreen() {
             setShowUpgradeModal(true);
           }
           break;
+        case "exportData":
+          handleExportData();
+          break;
         case "signout":
           Alert.alert("Sign Out", "Are you sure you want to sign out?", [
             { text: "Cancel", style: "cancel" },
@@ -178,6 +224,7 @@ export default function SettingsScreen() {
       goalsUnlocked,
       isPremium,
       logout,
+      handleExportData,
     ],
   );
 
