@@ -21,8 +21,49 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8",
-      reporter: ["text", "json", "html"],
-      exclude: ["node_modules", "server_dist", "**/*.test.ts"],
+      reporter: ["text", "text-summary", "json", "json-summary", "html"],
+      exclude: [
+        "node_modules",
+        "server_dist",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/__tests__/**",
+        "**/__mocks__/**",
+        "test/**",
+        "e2e/**",
+        "scripts/**",
+        "evals/runner*.ts",
+        "**/*.d.ts",
+        "**/index.ts",
+        "vitest.config.ts",
+        "drizzle.config.ts",
+      ],
+      // Per-directory floors. Tuned conservatively below current actuals so the
+      // first CI run passes; ratchet upward as gaps are filled. A failure here
+      // means coverage in that area dropped — investigate the diff, don't lower
+      // the floor.
+      thresholds: {
+        // Global safety net for paths not matched below.
+        lines: 40,
+        functions: 40,
+        branches: 50,
+        statements: 40,
+
+        "server/services/**": { lines: 65, functions: 65, branches: 60, statements: 65 },
+        "server/storage/**": { lines: 55, functions: 55, branches: 55, statements: 55 },
+        "server/routes/**": { lines: 60, functions: 60, branches: 55, statements: 60 },
+        "server/middleware/**": { lines: 60, functions: 60, branches: 55, statements: 60 },
+        "server/lib/**": { lines: 60, functions: 60, branches: 55, statements: 60 },
+        "shared/**": { lines: 50, functions: 50, branches: 50, statements: 50 },
+        "client/lib/**": { lines: 65, functions: 65, branches: 60, statements: 65 },
+        "client/hooks/**": { lines: 50, functions: 50, branches: 50, statements: 50 },
+        "client/context/**": { lines: 50, functions: 50, branches: 50, statements: 50 },
+        "client/components/**": { lines: 35, functions: 35, branches: 40, statements: 35 },
+        // Known gap — screen logic is rarely extracted to *-utils. Bar is a
+        // placeholder; raise as logic is extracted and tested.
+        "client/screens/**": { lines: 5, functions: 5, branches: 10, statements: 5 },
+        "client/camera/**": { lines: 40, functions: 40, branches: 40, statements: 40 },
+      },
     },
     pool: "forks",
     testTimeout: 10000,
