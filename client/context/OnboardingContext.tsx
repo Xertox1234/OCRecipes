@@ -68,7 +68,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<OnboardingData>(defaultData);
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { updateUser } = useAuthContext();
+  const { updateUser, checkAuth } = useAuthContext();
 
   const updateData = useCallback((updates: Partial<OnboardingData>) => {
     setData((prev) => ({ ...prev, ...updates }));
@@ -82,31 +82,67 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setCurrentStep((prev) => (prev > 0 ? prev - 1 : prev));
   }, []);
 
+  // Recovery model for skipOnboarding / completeOnboarding:
+  // The server's POST /api/user/dietary-profile uses upsertProfileWithOnboarding
+  // to write the profile and set onboardingCompleted=true atomically, and the
+  // upsert is idempotent. If updateUser fails after a successful POST we try
+  // checkAuth() as a best-effort resync — that path re-fetches the user from
+  // the server so the navigation gate unblocks without forcing the user to
+  // retry the whole flow. If checkAuth also fails, we rethrow so the caller
+  // can surface a retry prompt; the retry is safe (same atomic upsert).
+  const resyncAfterPartialSuccess = useCallback(async () => {
+    try {
+      await checkAuth();
+    } catch (resyncErr) {
+      console.warn("onboarding resync via checkAuth failed:", resyncErr);
+    }
+  }, [checkAuth]);
+
   const skipOnboarding = useCallback(async () => {
     setIsSubmitting(true);
+    let profileSaved = false;
     try {
       await apiRequest("POST", "/api/user/dietary-profile", defaultData);
+      profileSaved = true;
       await updateUser({ onboardingCompleted: true });
     } catch (err) {
-      console.error("skipOnboarding failed:", err);
+      console.error(
+        profileSaved
+          ? "skipOnboarding: server saved but client sync failed (resyncing):"
+          : "skipOnboarding: profile save failed:",
+        err,
+      );
+      if (profileSaved) {
+        await resyncAfterPartialSuccess();
+      }
       throw err;
     } finally {
       setIsSubmitting(false);
     }
-  }, [updateUser]);
+  }, [updateUser, resyncAfterPartialSuccess]);
 
   const completeOnboarding = useCallback(async () => {
     setIsSubmitting(true);
+    let profileSaved = false;
     try {
       await apiRequest("POST", "/api/user/dietary-profile", data);
+      profileSaved = true;
       await updateUser({ onboardingCompleted: true });
     } catch (err) {
-      console.error("completeOnboarding failed:", err);
+      console.error(
+        profileSaved
+          ? "completeOnboarding: server saved but client sync failed (resyncing):"
+          : "completeOnboarding: profile save failed:",
+        err,
+      );
+      if (profileSaved) {
+        await resyncAfterPartialSuccess();
+      }
       throw err;
     } finally {
       setIsSubmitting(false);
     }
-  }, [data, updateUser]);
+  }, [data, updateUser, resyncAfterPartialSuccess]);
 
   const value = useMemo<OnboardingContextType>(
     () => ({
