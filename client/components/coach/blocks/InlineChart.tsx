@@ -7,7 +7,7 @@ interface Props {
   block: InlineChartType;
 }
 
-export default function InlineChart({ block }: Props) {
+const InlineChart = React.memo(function InlineChart({ block }: Props) {
   const { theme } = useTheme();
 
   if (block.chartType === "bar") {
@@ -112,7 +112,9 @@ export default function InlineChart({ block }: Props) {
       )}
     </View>
   );
-}
+});
+
+export default InlineChart;
 
 const styles = StyleSheet.create({
   container: { borderRadius: 12, padding: 12, marginTop: 8 },

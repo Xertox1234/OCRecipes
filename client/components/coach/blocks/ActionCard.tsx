@@ -17,7 +17,11 @@ interface Props {
   onPressAsync?: () => Promise<void>;
 }
 
-export default function ActionCard({ block, onAction, onPressAsync }: Props) {
+const ActionCard = React.memo(function ActionCard({
+  block,
+  onAction,
+  onPressAsync,
+}: Props) {
   const { theme } = useTheme();
   const [state, setState] = useState<FeedbackState>("idle");
   const stateRef = useRef<FeedbackState>("idle");
@@ -91,7 +95,9 @@ export default function ActionCard({ block, onAction, onPressAsync }: Props) {
       </Pressable>
     </View>
   );
-}
+});
+
+export default ActionCard;
 
 const styles = StyleSheet.create({
   container: {

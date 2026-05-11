@@ -6,11 +6,19 @@ import type { QuickReplies as QuickRepliesType } from "@shared/schemas/coach-blo
 
 interface Props {
   block: QuickRepliesType;
-  onSelect?: (message: string) => void;
+  // Accepts blockKey so the parent can pass a stable useCallback ref
+  // instead of an inline closure (preserves React.memo bail-out).
+  onSelect?: (message: string, blockKey?: string) => void;
+  blockKey?: string;
   used?: boolean;
 }
 
-export default function QuickReplies({ block, onSelect, used }: Props) {
+const QuickReplies = React.memo(function QuickReplies({
+  block,
+  onSelect,
+  blockKey,
+  used,
+}: Props) {
   const { theme } = useTheme();
   if (used) return null;
   return (
@@ -30,7 +38,7 @@ export default function QuickReplies({ block, onSelect, used }: Props) {
               borderColor: withOpacity(theme.link, 0.3),
             },
           ]}
-          onPress={() => onSelect?.(option.message)}
+          onPress={() => onSelect?.(option.message, blockKey)}
           hitSlop={{ top: 7, bottom: 7 }}
           accessibilityRole="button"
           accessibilityLabel={option.label}
@@ -42,7 +50,9 @@ export default function QuickReplies({ block, onSelect, used }: Props) {
       ))}
     </ScrollView>
   );
-}
+});
+
+export default QuickReplies;
 
 const styles = StyleSheet.create({
   container: { marginTop: 8 },

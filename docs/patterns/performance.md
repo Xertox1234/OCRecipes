@@ -1024,3 +1024,35 @@ const streamingFooter = useMemo(
 **Why renderItem propagation happens:** `FlatList` uses the `renderItem` reference as part of its item key cache. A new `renderItem` reference (caused by a `useCallback` dep changing on every token) invalidates the cache and queues a render check for every rendered item.
 
 **Reference:** `client/components/coach/CoachChat.tsx` — `StreamingBubble` moved from `renderItem` to `ListFooterComponent` (audit 2026-05-09 H2)
+
+---
+
+### Pass IDs to React.memo Children Instead of Capturing in Wrapper Closures
+
+Even when a parent uses `useCallback`, an intermediate non-memoized wrapper (e.g., a `BlockRenderer` that switches on block type) can defeat `React.memo` on its children by passing an inline closure that captures per-item data:
+
+```typescript
+// BAD: wrapper creates a new closure per item — memoized child re-renders
+<BlockRenderer
+  block={block}
+  onSelect={(message) => onSelect?.(message, blockKey)}
+/>
+```
+
+Fix: forward the stable callback directly and pass the captured value as its own prop so the memoized child can re-invoke with it:
+
+```typescript
+// GOOD: child receives blockKey and calls onSelect(message, blockKey) internally
+<MemoizedChild
+  block={block}
+  blockKey={blockKey}
+  onSelect={onSelect} // stable useCallback reference from parent
+/>
+```
+
+**When to use:** Switch/wrapper components that distribute work to multiple `React.memo` leaf components (coach block renderers, form field registries, dynamic list item types).
+
+**References:**
+
+- `client/components/coach/blocks/index.tsx` — `BlockRenderer` forwarding `blockKey` to memoized block components
+- Related learning: "Inline Arrow Functions in renderItem Defeat React.memo" in LEARNINGS.md
