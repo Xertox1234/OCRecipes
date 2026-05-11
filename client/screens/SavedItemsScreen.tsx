@@ -107,7 +107,7 @@ export default function SavedItemsScreen() {
   const { isPremium, features } = usePremiumContext();
 
   const { confirm, ConfirmationModal } = useConfirmationModal();
-  const deleteMutation = useDeleteSavedItem();
+  const { mutate: deleteItem } = useDeleteSavedItem();
 
   const {
     data: savedItems,
@@ -127,10 +127,10 @@ export default function SavedItemsScreen() {
         message: `Delete "${item.title}"?`,
         confirmLabel: "Delete",
         destructive: true,
-        onConfirm: () => deleteMutation.mutate(item.id),
+        onConfirm: () => deleteItem(item.id),
       });
     },
-    [confirm, deleteMutation],
+    [confirm, deleteItem],
   );
 
   const renderItem = useCallback(
