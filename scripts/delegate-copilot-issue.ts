@@ -121,6 +121,221 @@ const BLOCKED_FILE_PATTERNS: [RegExp, BlockKey][] = [
   [/^server\/routes\/healthkit/, "HEALTH_DATA"],
 ];
 
+export type Domain =
+  | "accessibility"
+  | "ai-prompting"
+  | "api"
+  | "architecture"
+  | "client-state"
+  | "database"
+  | "design-system"
+  | "hooks"
+  | "performance"
+  | "react-native"
+  | "security"
+  | "testing"
+  | "typescript";
+
+// Service file basenames (under server/services/) that import an LLM client.
+// Empirically derived 2026-05-11 via:
+//   grep -l "openai\|OpenAI\|gpt-\|completions\|anthropic" server/services/*.ts | grep -v __tests__
+// A companion drift-detection test (see scripts/__tests__/delegate-copilot-issue.test.ts)
+// re-runs the grep and fails if a new LLM-touching service is added without
+// being included here.
+const LLM_TOUCHING_SERVICES: ReadonlySet<string> = new Set([
+  "canonical-enrichment.ts",
+  "coach-pro-chat.ts",
+  "coach-tools.ts",
+  "cooking-session.ts",
+  "food-nlp.ts",
+  "front-label-analysis.ts",
+  "ingredient-substitution.ts",
+  "meal-suggestions.ts",
+  "menu-analysis.ts",
+  "notebook-extraction.ts",
+  "nutrition-coach.ts",
+  "pantry-meal-plan.ts",
+  "photo-analysis.ts",
+  "receipt-analysis.ts",
+  "recipe-chat.ts",
+  "recipe-generation.ts",
+  "suggestion-generation.ts",
+  "voice-transcription.ts",
+]);
+
+// Path → Domain mapping. Order matters only for the rendered table; the
+// detection function takes a UNION across all matching rules. Patterns are
+// regexes (not globs) to avoid a glob library dependency.
+//
+// `description` is for the markdown table rendered into
+// `.github/copilot-instructions.md` by build-copilot-instructions.ts.
+export interface PathDomainRule {
+  readonly pattern: RegExp;
+  readonly domains: readonly Domain[];
+  readonly description: string;
+}
+
+export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
+  {
+    pattern: /^server\/routes\/[^/]+\.ts$/,
+    domains: ["api", "security", "architecture"],
+    description: "`server/routes/**/*.ts` (non-auth blocked separately)",
+  },
+  {
+    pattern: /^server\/storage\/[^/]+\.ts$/,
+    domains: ["database", "security", "architecture"],
+    description: "`server/storage/**/*.ts` (non-auth blocked separately)",
+  },
+  {
+    pattern: /^server\/services\/[^/]+\.ts$/,
+    domains: ["architecture"],
+    description: "`server/services/**/*.ts` (base — architecture only)",
+  },
+  // LLM-touching services: matched additionally by Set lookup, not regex.
+  // See domainsForPath().
+  {
+    pattern: /^client\/screens\//,
+    domains: ["react-native", "design-system", "accessibility"],
+    description: "`client/screens/**`",
+  },
+  {
+    pattern: /^client\/components\//,
+    domains: ["react-native", "design-system", "accessibility", "performance"],
+    description: "`client/components/**`",
+  },
+  {
+    pattern: /^client\/hooks\//,
+    domains: ["hooks", "client-state"],
+    description: "`client/hooks/**`",
+  },
+  {
+    pattern: /^client\/context\//,
+    domains: ["client-state"],
+    description: "`client/context/**`",
+  },
+  {
+    pattern: /^client\/lib\//,
+    domains: ["typescript", "client-state"],
+    description: "`client/lib/**`",
+  },
+  {
+    pattern: /^evals\//,
+    domains: ["ai-prompting", "testing"],
+    description: "`evals/**`",
+  },
+  {
+    pattern: /\/__tests__\/|\.test\.tsx?$|\.spec\.tsx?$/,
+    domains: ["testing"],
+    description: "`__tests__/**`, `*.test.ts(x)`, `*.spec.ts(x)`",
+  },
+  {
+    pattern: /^\.github\/workflows\//,
+    domains: ["architecture", "testing"],
+    description: "`.github/workflows/**`",
+  },
+  {
+    pattern: /^(vitest\.config\.[^/]+|eslint\.config\.[^/]+)$/,
+    domains: ["testing", "typescript"],
+    description: "`vitest.config.*`, `eslint.config.*`",
+  },
+];
+
+export function domainsForPath(filePath: string): Domain[] {
+  const matched = new Set<Domain>();
+  for (const rule of PATH_TO_DOMAINS) {
+    if (rule.pattern.test(filePath)) {
+      for (const d of rule.domains) matched.add(d);
+    }
+  }
+  // LLM-touching services special case: add ai-prompting if the basename
+  // is in the enumerated set.
+  if (filePath.startsWith("server/services/")) {
+    const basename = filePath.slice("server/services/".length);
+    if (!basename.includes("/") && LLM_TOUCHING_SERVICES.has(basename)) {
+      matched.add("ai-prompting");
+    }
+  }
+  return [...matched];
+}
+
+// Label → forced domain. Only `testing` and `performance` map to rules
+// domains. Other allowed labels (code-quality, docs, refactor) don't have
+// dedicated rules files and are ignored.
+const LABEL_TO_FORCED_DOMAIN: Record<string, Domain> = {
+  test: "testing",
+  testing: "testing",
+  performance: "performance",
+};
+
+export function detectedDomains(
+  referencedFiles: readonly string[],
+  labels: readonly string[],
+): Domain[] {
+  const matched = new Set<Domain>();
+
+  for (const file of referencedFiles) {
+    for (const d of domainsForPath(file)) {
+      matched.add(d);
+    }
+  }
+
+  for (const label of labels) {
+    const forced = LABEL_TO_FORCED_DOMAIN[label.toLowerCase()];
+    if (forced) {
+      matched.add(forced);
+    }
+  }
+
+  // typescript rules apply to any TS/TSX file regardless of domain.
+  const hasTsFile = referencedFiles.some((f) => /\.(ts|tsx)$/.test(f));
+  if (hasTsFile) {
+    matched.add("typescript");
+  }
+
+  return [...matched].sort();
+}
+
+const PATTERNS_URL_BASE =
+  "https://github.com/Xertox1234/OCRecipes/blob/main/docs/patterns";
+
+const PROJECT_RULES_PREAMBLE = `The rules below are binding. If any rule conflicts with the acceptance criteria, raise it in a PR comment rather than silently violating it. Open the linked pattern file for full context if a rule isn't clear.`;
+
+export function buildProjectRulesSection(domains: readonly Domain[]): string {
+  if (domains.length === 0) {
+    return `## Project Rules
+
+No domain rules apply to this scope. Follow the acceptance criteria and conventional best practice. Hard exclusions (see Safety And Review Requirements) still apply.`;
+  }
+
+  const sections: string[] = [];
+  for (const domain of domains) {
+    const rulePath = path.join("docs", "rules", `${domain}.md`);
+    if (!fs.existsSync(rulePath)) {
+      throw new Error(
+        `Missing rule file ${rulePath} for detected domain "${domain}". Either restore the file or remove ${domain} from PATH_TO_DOMAINS / LABEL_TO_FORCED_DOMAIN.`,
+      );
+    }
+    const content = fs.readFileSync(rulePath, "utf8").trim();
+    // Strip the leading `# Domain Rules` heading from the file; we re-add as ###
+    const withoutHeading = content.replace(/^#\s+[^\n]*\n+/, "");
+    sections.push(`### ${domain}\n\n${withoutHeading}`);
+  }
+
+  const patternUrls = domains
+    .map((d) => `- ${PATTERNS_URL_BASE}/${d}.md`)
+    .join("\n");
+
+  return `## Project Rules
+
+${PROJECT_RULES_PREAMBLE}
+
+${sections.join("\n\n")}
+
+**Further context (open the URL if a rule above isn't clear):**
+
+${patternUrls}`;
+}
+
 const FILE_EXTENSIONS = new Set([
   ".ts",
   ".tsx",
@@ -365,8 +580,53 @@ function checkboxList(items: string[]): string {
 
 export function buildIssueBody(todo: TodoTask): string {
   const labels = todo.labels.length > 0 ? todo.labels.join(", ") : "none";
+  const domains = detectedDomains(todo.referencedFiles, todo.labels);
+  const projectRules = buildProjectRulesSection(domains);
 
-  return `## Source\n\nLocal todo: \`${todo.filePath}\`\n\nPriority: ${todo.priority || "unknown"}\nLabels: ${labels}\n\n## Summary\n\n${todo.summary || todo.title}\n\n## Background\n\n${todo.background || "See the local todo for background."}\n\n## Acceptance Criteria\n\n${checkboxList(todo.acceptanceCriteria)}\n\n## Files In Scope\n\n${formatList(todo.referencedFiles)}\n\n## Implementation Notes\n\n${todo.implementationNotes || "Stay within the acceptance criteria and files in scope."}\n\n## Dependencies\n\n${todo.dependencies || "None listed."}\n\n## Risks\n\n${todo.risks || "None listed."}\n\n## Safety And Review Requirements\n\n- Copilot must open a pull request. Do not commit directly to \`main\`.\n- Do not auto-merge. A human must review the PR.\n- Keep changes limited to the files in scope and acceptance criteria above.\n- Do not touch JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture without a human-approved plan.\n`;
+  return `## Source
+
+Local todo: \`${todo.filePath}\`
+
+Priority: ${todo.priority || "unknown"}
+Labels: ${labels}
+
+## Summary
+
+${todo.summary || todo.title}
+
+## Background
+
+${todo.background || "See the local todo for background."}
+
+## Acceptance Criteria
+
+${checkboxList(todo.acceptanceCriteria)}
+
+## Files In Scope
+
+${formatList(todo.referencedFiles)}
+
+${projectRules}
+
+## Implementation Notes
+
+${todo.implementationNotes || "Stay within the acceptance criteria and files in scope."}
+
+## Dependencies
+
+${todo.dependencies || "None listed."}
+
+## Risks
+
+${todo.risks || "None listed."}
+
+## Safety And Review Requirements
+
+- Copilot must open a pull request. Do not commit directly to \`main\`.
+- Do not auto-merge. A human must review the PR.
+- Keep changes limited to the files in scope and acceptance criteria above.
+- Do not touch JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture without a human-approved plan.
+`;
 }
 
 export function defaultRunner(
@@ -454,6 +714,89 @@ export function writeGithubIssueToTodo(
   fs.writeFileSync(filePath, updated.replace(/\n/g, newline));
 }
 
+export function writeProjectRulesSectionToTodo(
+  filePath: string,
+  section: string,
+): void {
+  const original = fs.readFileSync(filePath, "utf8");
+  const newline = original.includes("\r\n") ? "\r\n" : "\n";
+  const normalized = original.replace(/\r\n/g, "\n");
+
+  // Find the byte offset of a `## Heading` line that's on its own line
+  // (i.e., a real heading, not a mid-sentence mention in body text).
+  // Returns -1 if not found.
+  const findHeadingOffset = (heading: string): number => {
+    if (normalized.startsWith(`${heading}\n`)) return 0;
+    const needle = `\n${heading}\n`;
+    const newlineIdx = normalized.indexOf(needle);
+    return newlineIdx === -1 ? -1 : newlineIdx + 1;
+  };
+
+  // Idempotency: if a ## Project Rules section already exists (as a real
+  // heading, not a mid-sentence mention), replace it in place rather than
+  // inserting a duplicate.
+  const existingStart = findHeadingOffset("## Project Rules");
+  if (existingStart !== -1) {
+    const restAfter = normalized.slice(
+      existingStart + "## Project Rules".length,
+    );
+    const nextHeadingOffset = restAfter.search(/\n## /);
+    const end =
+      nextHeadingOffset === -1
+        ? normalized.length
+        : existingStart + "## Project Rules".length + nextHeadingOffset + 1;
+    const before = normalized.slice(0, existingStart);
+    const after = normalized.slice(end);
+    const updated = `${before}${section.trim()}\n\n${after}`.replace(
+      /\n{3,}/g,
+      "\n\n",
+    );
+    fs.writeFileSync(
+      filePath,
+      newline === "\r\n" ? updated.replace(/\n/g, "\r\n") : updated,
+    );
+    return;
+  }
+
+  // Anchor priority: before ## Updates → after ## Risks → after ## Dependencies
+  // → after ## Implementation Notes body → EOF append.
+  const insertBefore = (anchor: string): string | null => {
+    const idx = findHeadingOffset(anchor);
+    if (idx === -1) return null;
+    return `${normalized.slice(0, idx)}${section.trim()}\n\n${normalized.slice(idx)}`;
+  };
+
+  const insertAfterSection = (anchor: string): string | null => {
+    const idx = findHeadingOffset(anchor);
+    if (idx === -1) return null;
+    const after = normalized.slice(idx + anchor.length);
+    const nextHeadingOffset = after.search(/\n## /);
+    const endOfSection =
+      nextHeadingOffset === -1
+        ? normalized.length
+        : idx + anchor.length + nextHeadingOffset + 1;
+    return `${normalized.slice(0, endOfSection)}\n${section.trim()}\n\n${normalized.slice(endOfSection)}`;
+  };
+
+  let result =
+    insertBefore("## Updates") ??
+    insertAfterSection("## Risks") ??
+    insertAfterSection("## Dependencies") ??
+    insertAfterSection("## Implementation Notes");
+
+  if (result === null) {
+    // No recognized anchor — append at EOF with a leading blank line.
+    result = `${normalized.replace(/\s+$/, "")}\n\n${section.trim()}\n`;
+  }
+
+  result = result.replace(/\n{3,}/g, "\n\n");
+
+  fs.writeFileSync(
+    filePath,
+    newline === "\r\n" ? result.replace(/\n/g, "\r\n") : result,
+  );
+}
+
 export function resolveTodoPath(
   filePath: string,
   rootDir = process.cwd(),
@@ -527,6 +870,11 @@ export function runCli(
 
     const issueUrl = createCopilotIssue(todoForIssue, runner);
     writeGithubIssueToTodo(resolvedPath, issueUrl);
+
+    const domains = detectedDomains(todo.referencedFiles, todo.labels);
+    const projectRules = buildProjectRulesSection(domains);
+    writeProjectRulesSectionToTodo(resolvedPath, projectRules);
+
     console.log(`Created Copilot issue: ${issueUrl}`);
     return 0;
   } catch (error) {

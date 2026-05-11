@@ -17,6 +17,8 @@
     "ci:failed-logs": "bash scripts/ci-failed-logs.sh",
     "copilot:delegate:dry-run": "tsx scripts/delegate-copilot-issue.ts --dry-run",
     "copilot:delegate": "tsx scripts/delegate-copilot-issue.ts --live",
+    "build:copilot-instructions": "tsx scripts/build-copilot-instructions.ts .github/copilot-instructions.md",
+    "build:copilot-instructions:check": "tsx scripts/build-copilot-instructions.ts --check .github/copilot-instructions.md",
     "check:format": "prettier --check \"**/*.{js,ts,tsx,css,json}\"",
     "format": "prettier --write \"**/*.{js,ts,tsx,css,json}\"",
     "test": "vitest",
