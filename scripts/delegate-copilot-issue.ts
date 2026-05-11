@@ -714,6 +714,78 @@ export function writeGithubIssueToTodo(
   fs.writeFileSync(filePath, updated.replace(/\n/g, newline));
 }
 
+export function writeProjectRulesSectionToTodo(
+  filePath: string,
+  section: string,
+): void {
+  const original = fs.readFileSync(filePath, "utf8");
+  const newline = original.includes("\r\n") ? "\r\n" : "\n";
+  const normalized = original.replace(/\r\n/g, "\n");
+
+  // Idempotency: if a ## Project Rules section already exists, replace
+  // (overwrite) it in place rather than inserting a second one.
+  const existingMatch = normalized.match(/^## Project Rules$/m);
+  if (existingMatch) {
+    const start = normalized.indexOf("## Project Rules");
+    // Find the next top-level heading after Project Rules (or EOF).
+    const restAfter = normalized.slice(start + "## Project Rules".length);
+    const nextHeadingOffset = restAfter.search(/\n## /);
+    const end =
+      nextHeadingOffset === -1
+        ? normalized.length
+        : start + "## Project Rules".length + nextHeadingOffset + 1;
+    const before = normalized.slice(0, start);
+    const after = normalized.slice(end);
+    const updated = `${before}${section.trim()}\n\n${after}`.replace(
+      /\n{3,}/g,
+      "\n\n",
+    );
+    fs.writeFileSync(
+      filePath,
+      newline === "\r\n" ? updated.replace(/\n/g, "\r\n") : updated,
+    );
+    return;
+  }
+
+  // Anchor priority: before ## Updates → after ## Risks → after ## Dependencies
+  // → after ## Implementation Notes body → EOF append.
+  const insertBefore = (anchor: string): string | null => {
+    const idx = normalized.indexOf(anchor);
+    if (idx === -1) return null;
+    return `${normalized.slice(0, idx)}${section.trim()}\n\n${normalized.slice(idx)}`;
+  };
+
+  const insertAfterSection = (anchor: string): string | null => {
+    const idx = normalized.indexOf(anchor);
+    if (idx === -1) return null;
+    const after = normalized.slice(idx + anchor.length);
+    const nextHeadingOffset = after.search(/\n## /);
+    const endOfSection =
+      nextHeadingOffset === -1
+        ? normalized.length
+        : idx + anchor.length + nextHeadingOffset + 1;
+    return `${normalized.slice(0, endOfSection)}\n${section.trim()}\n\n${normalized.slice(endOfSection)}`;
+  };
+
+  let result =
+    insertBefore("## Updates") ??
+    insertAfterSection("## Risks") ??
+    insertAfterSection("## Dependencies") ??
+    insertAfterSection("## Implementation Notes");
+
+  if (result === null) {
+    // No recognized anchor — append at EOF with a leading blank line.
+    result = `${normalized.replace(/\s+$/, "")}\n\n${section.trim()}\n`;
+  }
+
+  result = result.replace(/\n{3,}/g, "\n\n");
+
+  fs.writeFileSync(
+    filePath,
+    newline === "\r\n" ? result.replace(/\n/g, "\r\n") : result,
+  );
+}
+
 export function resolveTodoPath(
   filePath: string,
   rootDir = process.cwd(),

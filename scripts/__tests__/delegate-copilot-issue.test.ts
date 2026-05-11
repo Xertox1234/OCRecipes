@@ -13,6 +13,7 @@ import {
   resolveTodoPath,
   runCli,
   writeGithubIssueToTodo,
+  writeProjectRulesSectionToTodo,
   type CommandRunner,
   type Domain,
 } from "../delegate-copilot-issue";
@@ -797,6 +798,147 @@ Only edit docs/README.md.
       const body = buildIssueBody(todo);
       expect(body).toContain("## Project Rules");
       expect(body).toContain("No domain rules apply");
+    });
+  });
+
+  describe("writeProjectRulesSectionToTodo anchor cases", () => {
+    const baseFrontmatter = `---
+title: "Anchor test"
+status: backlog
+priority: low
+labels: [testing, deferred]
+github_issue:
+---
+
+# Anchor test
+
+## Summary
+
+Body.
+
+## Acceptance Criteria
+
+- [ ] do thing
+`;
+
+    const rulesBlock = "## Project Rules\n\nInjected rules block.\n";
+
+    it("inserts BEFORE ## Updates when present (highest priority)", () => {
+      const path = writeWorkspaceTodo(
+        `${baseFrontmatter}
+## Implementation Notes
+
+Notes.
+
+## Updates
+
+### 2026-05-11
+- created
+`,
+      );
+      writeProjectRulesSectionToTodo(path, rulesBlock);
+      const updated = fs.readFileSync(path, "utf8");
+      const rulesIdx = updated.indexOf("## Project Rules");
+      const updatesIdx = updated.indexOf("## Updates");
+      expect(rulesIdx).toBeGreaterThan(-1);
+      expect(rulesIdx).toBeLessThan(updatesIdx);
+    });
+
+    it("inserts AFTER ## Risks when no ## Updates (second priority)", () => {
+      const path = writeWorkspaceTodo(
+        `${baseFrontmatter}
+## Implementation Notes
+
+Notes.
+
+## Risks
+
+- low
+`,
+      );
+      writeProjectRulesSectionToTodo(path, rulesBlock);
+      const updated = fs.readFileSync(path, "utf8");
+      const risksIdx = updated.indexOf("## Risks");
+      const rulesIdx = updated.indexOf("## Project Rules");
+      expect(rulesIdx).toBeGreaterThan(risksIdx);
+    });
+
+    it("inserts AFTER ## Dependencies when no Updates/Risks (third priority)", () => {
+      const path = writeWorkspaceTodo(
+        `${baseFrontmatter}
+## Implementation Notes
+
+Notes.
+
+## Dependencies
+
+- None.
+`,
+      );
+      writeProjectRulesSectionToTodo(path, rulesBlock);
+      const updated = fs.readFileSync(path, "utf8");
+      const depsIdx = updated.indexOf("## Dependencies");
+      const rulesIdx = updated.indexOf("## Project Rules");
+      expect(rulesIdx).toBeGreaterThan(depsIdx);
+    });
+
+    it("inserts AFTER ## Implementation Notes body (fourth priority)", () => {
+      const path = writeWorkspaceTodo(
+        `${baseFrontmatter}
+## Implementation Notes
+
+Notes body.
+`,
+      );
+      writeProjectRulesSectionToTodo(path, rulesBlock);
+      const updated = fs.readFileSync(path, "utf8");
+      const implIdx = updated.indexOf("## Implementation Notes");
+      const rulesIdx = updated.indexOf("## Project Rules");
+      expect(rulesIdx).toBeGreaterThan(implIdx);
+      // The Notes body content must come BEFORE Project Rules
+      expect(updated.indexOf("Notes body.")).toBeLessThan(rulesIdx);
+    });
+
+    it("appends at EOF when no recognized sections exist", () => {
+      const malformed = `---
+title: "Malformed"
+status: backlog
+priority: low
+labels: [testing, deferred]
+github_issue:
+---
+
+# Malformed
+
+Just some prose, no sections.
+`;
+      const path = writeWorkspaceTodo(malformed);
+      writeProjectRulesSectionToTodo(path, rulesBlock);
+      const updated = fs.readFileSync(path, "utf8");
+      const rulesIdx = updated.indexOf("## Project Rules");
+      expect(rulesIdx).toBeGreaterThan(-1);
+      // Should be at end of file (after the prose)
+      expect(updated.indexOf("Just some prose")).toBeLessThan(rulesIdx);
+    });
+
+    it("does not duplicate an existing ## Project Rules section on re-write", () => {
+      const path = writeWorkspaceTodo(
+        `${baseFrontmatter}
+## Implementation Notes
+
+Notes.
+
+## Updates
+
+- created
+`,
+      );
+      writeProjectRulesSectionToTodo(path, rulesBlock);
+      writeProjectRulesSectionToTodo(path, rulesBlock); // call again
+      const updated = fs.readFileSync(path, "utf8");
+      // Should only contain ONE occurrence of "## Project Rules"
+      const matches = updated.match(/^## Project Rules$/gm);
+      expect(matches?.length).toBe(1);
     });
   });
 });
