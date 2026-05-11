@@ -105,9 +105,9 @@ Copilot agent invocation in this repo. Contents:
 - **PR-only, no auto-merge** — reaffirm the safety boilerplate already in
   Issue bodies.
 
-Size budget: ~2–4 KB. GitHub Copilot's instructions file has documented soft
-limits (need to verify exact figure before merging, but our target is well
-under any plausible cap).
+Size budget: ~2–4 KB. GitHub's documented soft limit for repo-level Copilot
+custom instructions is 8,000 tokens (~32 KB), so our target has comfortable
+headroom (see Resolved Decision 3).
 
 ### 2. Auto-injected `## Project Rules` section in Issue body
 
