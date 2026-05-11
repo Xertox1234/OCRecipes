@@ -4,7 +4,7 @@
 - Decorative icons inside labeled Pressables must have `accessible={false}` — VoiceOver double-focuses on icon + container otherwise
 - `disabled` Pressable must set both `disabled={true}` and `accessibilityState={{ disabled: true }}` — TalkBack ignores the `disabled` prop alone
 - Error messages must use `accessibilityLiveRegion="assertive"` not `"polite"` — use `InlineError` component, not `Alert.alert()`
-- Async state transitions (success, error, limit-reached) must call `AccessibilityInfo.announceForAccessibility` on iOS, paired with `accessibilityLiveRegion="assertive"` on Android
+- Async state transitions (success, error, limit-reached) must call `AccessibilityInfo.announceForAccessibility` on iOS
 - Radio buttons: use `accessibilityState={{ selected: bool }}` not `{{ checked: bool }}` — `checked` maps to checkbox semantics on TalkBack
 - Radio chip rows need a `role="radiogroup"` wrapper `View`
 - Progress bars need `accessibilityRole="progressbar"` + `accessibilityValue={{ min: 0, max: 100, now: value }}`
