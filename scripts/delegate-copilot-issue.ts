@@ -258,6 +258,43 @@ export function domainsForPath(filePath: string): Domain[] {
   return [...matched];
 }
 
+// Label → forced domain. Only `testing` and `performance` map to rules
+// domains. Other allowed labels (code-quality, docs, refactor) don't have
+// dedicated rules files and are ignored.
+const LABEL_TO_FORCED_DOMAIN: Record<string, Domain> = {
+  test: "testing",
+  testing: "testing",
+  performance: "performance",
+};
+
+export function detectedDomains(
+  referencedFiles: readonly string[],
+  labels: readonly string[],
+): Domain[] {
+  const matched = new Set<Domain>();
+
+  for (const file of referencedFiles) {
+    for (const d of domainsForPath(file)) {
+      matched.add(d);
+    }
+  }
+
+  for (const label of labels) {
+    const forced = LABEL_TO_FORCED_DOMAIN[label.toLowerCase()];
+    if (forced) {
+      matched.add(forced);
+    }
+  }
+
+  // typescript rules apply to any TS/TSX file regardless of domain.
+  const hasTsFile = referencedFiles.some((f) => /\.(ts|tsx)$/.test(f));
+  if (hasTsFile) {
+    matched.add("typescript");
+  }
+
+  return [...matched].sort();
+}
+
 const FILE_EXTENSIONS = new Set([
   ".ts",
   ".tsx",

@@ -5,6 +5,7 @@ import * as path from "path";
 import {
   buildIssueBody,
   createCopilotIssue,
+  detectedDomains,
   domainsForPath,
   evaluateEligibility,
   parseTodoMarkdown,
@@ -575,6 +576,83 @@ Pull production data snapshot from cold storage for the test fixture.
       expect(nonAiPromptingServices).toEqual([]);
       expect(aiPromptingServices.length).toBe(empirical.length);
       expect(empirical.length).toBeGreaterThan(0); // sanity — we have LLM services
+    });
+  });
+
+  describe("detectedDomains", () => {
+    it("aggregates domains across multiple files", () => {
+      const result = detectedDomains(
+        ["server/routes/recipe-catalog.ts", "server/storage/recipes.ts"],
+        [],
+      );
+      expect(result.sort()).toEqual([
+        "api",
+        "architecture",
+        "database",
+        "security",
+        "typescript",
+      ]);
+    });
+
+    it("includes typescript when any .ts file is in scope", () => {
+      const result = detectedDomains(
+        ["server/services/goal-calculator.ts"],
+        [],
+      );
+      expect(result).toContain("typescript");
+    });
+
+    it("includes typescript when any .tsx file is in scope", () => {
+      const result = detectedDomains(["client/components/Button.tsx"], []);
+      expect(result).toContain("typescript");
+    });
+
+    it("does NOT include typescript for non-.ts/.tsx files", () => {
+      const result = detectedDomains([".github/workflows/ci.yml"], []);
+      expect(result).not.toContain("typescript");
+    });
+
+    it("force-adds testing from a testing label", () => {
+      const result = detectedDomains(
+        ["evals/datasets/fixtures.json"],
+        ["testing"],
+      );
+      expect(result).toContain("testing");
+    });
+
+    it("force-adds testing from a test label (alias)", () => {
+      const result = detectedDomains(
+        ["evals/datasets/fixtures.json"],
+        ["test"],
+      );
+      expect(result).toContain("testing");
+    });
+
+    it("force-adds performance from a performance label", () => {
+      const result = detectedDomains(["docs/PERF_NOTES.md"], ["performance"]);
+      expect(result).toContain("performance");
+    });
+
+    it("ignores labels that don't correspond to rules domains", () => {
+      const result = detectedDomains(
+        ["docs/CHANGELOG.md"],
+        ["code-quality", "refactor", "docs", "deferred"],
+      );
+      expect(result).toEqual([]);
+    });
+
+    it("returns alphabetically sorted result for determinism", () => {
+      const result = detectedDomains(
+        ["client/components/Button.tsx", "server/storage/users.ts"],
+        ["testing"],
+      );
+      // Verify the array is sorted ascending
+      const sorted = [...result].sort();
+      expect(result).toEqual(sorted);
+    });
+
+    it("returns empty array when no files match and no relevant labels", () => {
+      expect(detectedDomains(["README.md"], ["docs"])).toEqual([]);
     });
   });
 });
