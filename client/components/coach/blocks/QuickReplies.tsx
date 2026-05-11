@@ -39,7 +39,7 @@ const QuickReplies = React.memo(function QuickReplies({
             },
           ]}
           onPress={() => onSelect?.(option.message, blockKey)}
-          hitSlop={{ top: 7, bottom: 7 }}
+          hitSlop={{ top: 16, bottom: 16, left: 8, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel={option.label}
         >
@@ -59,7 +59,7 @@ const styles = StyleSheet.create({
   content: { gap: 8, paddingHorizontal: 2 },
   chip: {
     borderRadius: 16,
-    paddingVertical: 6,
+    paddingVertical: 10,
     paddingHorizontal: 14,
     borderWidth: 1,
   },
