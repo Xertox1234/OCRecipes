@@ -130,7 +130,7 @@ describe("recipe-search routes", () => {
       expect(res.status).toBe(400);
     });
 
-    it("keeps H10 filter parsing behavior for empty-string numeric params", async () => {
+    it("parses empty minProtein query as numeric zero", async () => {
       const res = await request(app).get("/api/recipes/search?minProtein=");
 
       expect(res.status).toBe(200);

@@ -252,7 +252,7 @@ describe("recipe-import routes", () => {
         }),
       );
 
-      let resolveImage!: (value: string | null) => void;
+      let resolveImage: (value: string | null) => void = () => {};
       const imagePromise = new Promise<string | null>((resolve) => {
         resolveImage = resolve;
       });
