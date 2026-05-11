@@ -252,7 +252,9 @@ describe("recipe-import routes", () => {
         }),
       );
 
-      let resolveImage: (value: string | null) => void = () => {};
+      let resolveImage: (value: string | null) => void = () => {
+        throw new Error("image resolver not initialized");
+      };
       const imagePromise = new Promise<string | null>((resolve) => {
         resolveImage = resolve;
       });
