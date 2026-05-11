@@ -1541,3 +1541,35 @@ async function executeToolCall(
 - `server/services/nutrition-coach.ts` — `generateCoachProResponse` optional `preloadedProfile` param
 - `server/services/coach-pro-chat.ts` — passes pre-fetched profile from `Promise.all`
 - Audit finding L8 (2026-05-09)
+
+---
+
+### Sentinel Constants for Internal Safety Override Signals
+
+When a streaming generator or async pipeline needs to signal a special internal condition (e.g. a safety override) to its caller — without raising an exception or leaking user-facing text — use a null-byte-delimited sentinel constant exported from the service module.
+
+```typescript
+// server/services/nutrition-coach.ts
+export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
+
+// Inside generator — yield sentinel, then return
+if (containsUnsafeCoachAdvice(fullResponse)) {
+  yield SAFETY_OVERRIDE_SENTINEL;
+  return;
+}
+
+// Caller — detect and handle
+for await (const chunk of stream) {
+  if (chunk === SAFETY_OVERRIDE_SENTINEL) {
+    // surface override message to user
+    break;
+  }
+  // normal chunk handling
+}
+```
+
+**Why null bytes:** The sentinel must not appear in any valid AI response. Null bytes (`\x00`) are never produced by OpenAI completions, making false-positive matches impossible. Wrapping the label (`\x00SAFETY_OVERRIDE\x00`) makes accidental prefix/suffix collisions with real text even less likely.
+
+**Why exported constant:** Callers import the same constant rather than duplicating the string — string drift between producer and consumer is a silent bug.
+
+**References:** `server/services/nutrition-coach.ts` (`SAFETY_OVERRIDE_SENTINEL`)

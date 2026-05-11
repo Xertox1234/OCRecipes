@@ -3829,3 +3829,41 @@ const isAccepted = acceptedCommitmentsRef.current.has(
 **When to use:** Any optimistic UI where the server ID arrives asynchronously (AI extraction, background job) but the user action must register immediately.
 
 **References:** `client/components/coach/CoachChat.tsx` (`handleCommitmentAccept`, `acceptedCommitmentsRef`).
+
+---
+
+### Switch Row Wrapped in Pressable for Full-Row Accessibility
+
+When a settings row contains a `Switch` and tapping anywhere on the row should toggle it, wrap the row in `Pressable` and hide the `Switch` from assistive technology entirely. This gives screen readers one coherent element (the row) with a correct `checked` state and full label, rather than two separate focusable elements (the row label + the switch).
+
+```typescript
+<Pressable
+  style={styles.row}
+  onPress={() => handleToggle(item.key, currentValue)}
+  accessible={true}
+  accessibilityRole="switch"
+  accessibilityLabel={item.label}
+  accessibilityState={{
+    checked: isEnabled,
+    disabled: isLoading || mutation.isPending,
+  }}
+  disabled={isLoading || mutation.isPending}
+>
+  <View style={styles.labelContainer} accessible={false}>
+    <ThemedText>{item.label}</ThemedText>
+  </View>
+  <Switch
+    value={isEnabled}
+    // No onValueChange — Pressable owns the interaction
+    accessible={false}
+    importantForAccessibility="no"
+    pointerEvents="none"
+  />
+</Pressable>
+```
+
+**Why three props on Switch:** `accessible={false}` removes it from the VoiceOver/TalkBack focus order; `importantForAccessibility="no"` suppresses it on Android's accessibility tree; `pointerEvents="none"` prevents it from intercepting tap events so the `Pressable` receives them.
+
+**When to use:** Any list row where a `Switch` is a secondary visual indicator but the primary interaction is the full row tap. **When NOT to use:** Standalone `Switch` elements not embedded in a larger tappable row — those should keep their native accessibility intact.
+
+**References:** `client/screens/CoachRemindersScreen.tsx`

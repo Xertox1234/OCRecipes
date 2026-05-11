@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Calorie Restriction Regex Missed 4-Digit Unsafe Targets (1000–1199 kcal) (2026-05-11)](#calorie-restriction-regex-missed-4-digit-unsafe-targets-10001199-kcal-2026-05-11)
 - [`accessibilityLiveRegion` + `announceForAccessibility` Causes Double TalkBack Announcements (2026-05-10)](#accessibilityliveregion--announceforaccessibility-causes-double-talkback-announcements-2026-05-10)
 - [Drizzle `.default([])` Does Not Make TypeScript Type Non-Nullable (2026-05-09)](#drizzle-default-does-not-make-typescript-type-non-nullable-2026-05-09)
 - [fullScreenModal Dismissal Requires `navigation.goBack()` After `navigate()` (2026-05-09)](#fullscreenmodal-dismissal-requires-navigationgoback-after-navigate-2026-05-09)
@@ -131,6 +132,20 @@ await Promise.all(toPromote.map((r) => storage.markCanonical(r.id)));
 **Rule:** Any multi-phase pipeline where phase 1 changes permanent state should design the eligibility query to detect phase-1-complete + phase-2-incomplete as a retriable state, rather than relying on a separate retry table. Self-healing via the existing scheduled job is simpler and has no additional infrastructure cost.
 
 **Reference:** `server/storage/canonical-recipes.ts` — `getEligibleForPromotion`, PR #82 code review 2026-05-09.
+
+---
+
+## Calorie Restriction Regex Missed 4-Digit Unsafe Targets (1000–1199 kcal) (2026-05-11)
+
+**Category:** Gotcha — Safety regex / AI coaching guardrails
+
+**Root cause:** The safety classifier used `\d{2,3}` to match calorie counts in patterns like "1000 calories a day." This quantifier matches 2–3 digits, so targets in the range 1000–1199 (four digits, but below the 1200 kcal safety threshold) were never captured. The parseInt < 1200 guard was correct — but the regex never reached it for these values.
+
+**Fix:** Changed to `\d{2,4}`. The negative lookbehind `(?<!\d)` and lookahead `(?!\d)` still prevent matching mid-number (e.g. "500" inside "1500"), so expanding to 4 digits doesn't create false positives on realistic calorie targets like "2000 cal/day."
+
+**Takeaway:** Safety regexes that match numeric ranges need to be validated against the full digit-count range they're meant to cover, not just representative examples. A regex that works for 500 and 800 doesn't automatically handle 1000–1199 if the quantifier is `{2,3}`.
+
+**Reference:** `server/services/coach-intent-classifier.ts` (`CALORIE_RESTRICTION_RE`)
 
 ---
 

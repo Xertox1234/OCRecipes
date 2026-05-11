@@ -314,6 +314,7 @@ When reviewing or writing AI service code, verify:
 - [ ] `fireAndForget()` for non-critical cache operations
 - [ ] Cache key hashes **every input that changes the prompt or tool set**: user tier (`isCoachPro`, `subscriptionTier`), time-sensitive context (UTC `dayBucket` — `new Date().toISOString().slice(0, 10)`, not `Math.floor(Date.now()/DAY_MS)`), and a prompt-version constant (`COACH_CACHE_VERSION = "v3"` in the module). Missing any = stale or cross-tier serving. Also gate `isCacheable` on tier when Pro responses depend on ephemeral context (notebook entries, tool calls).
 - [ ] Bump the prompt-version constant when changing the system prompt, tool schema, or safety regex — old responses should cache-miss.
+- [ ] Safety regexes that match numeric ranges use digit-count quantifiers covering the full unsafe range: `\d{2,4}` not `\d{2,3}` — 4-digit values like 1000–1199 are unsafe calorie targets that `\d{2,3}` silently skips. Validate regex against boundary values (e.g. 999, 1000, 1199, 1200) not just representative ones.
 
 ### Streaming Generator Exits
 
