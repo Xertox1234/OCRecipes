@@ -14,6 +14,10 @@
   Open Questions 1 & 3 resolved (TS authoritative + CI drift check;
   8 KT cap); CLAUDE.md AC clarified as a local-only note; domain detection
   scoping documented.
+- 2026-05-11 (v3): replaced the speculative LLM-touching services glob with
+  an empirically derived 18-entry `LLM_TOUCHING_SERVICES` set (Appendix A),
+  added a grep-based drift-detection unit test, kept the base
+  `server/services/**` → architecture row unchanged.
 
 ## Goal
 
@@ -81,23 +85,24 @@ Copilot agent invocation in this repo. Contents:
   for full context."
 - **Path → domain mapping** (the same one CLAUDE.md uses for `kimi-review --patterns`):
 
-  | Path pattern                                                                                                       | Domains                                                 |
-  | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-  | `server/routes/**/*.ts` (non-auth)                                                                                 | api, security, architecture                             |
-  | `server/storage/**/*.ts` (non-auth)                                                                                | database, security, architecture                        |
-  | `server/services/**/*.ts`                                                                                          | architecture                                            |
-  | `server/services/{coach-,nutrition-coach,recipe-chat,recipe-generation,photo-analysis,menu-,receipt-analysis}*.ts` | architecture, ai-prompting (LLM-touching services)      |
-  | `client/**/*.tsx`, `client/**/*.ts`                                                                                | react-native, design-system, accessibility              |
-  | `client/components/**`                                                                                             | react-native, design-system, accessibility, performance |
-  | `client/screens/**`                                                                                                | react-native, design-system, accessibility              |
-  | `client/hooks/**`                                                                                                  | hooks, client-state                                     |
-  | `client/context/**`                                                                                                | client-state                                            |
-  | `client/lib/**`                                                                                                    | typescript, client-state                                |
-  | `evals/**`                                                                                                         | ai-prompting, testing                                   |
-  | `*test*.ts`, `*test*.tsx`, `__tests__/**`                                                                          | testing                                                 |
-  | `.github/workflows/**`                                                                                             | architecture, testing                                   |
-  | `vitest.config.ts`, `eslint.config.*`                                                                              | testing, typescript                                     |
+  | Path pattern                                                       | Domains                                                 |
+  | ------------------------------------------------------------------ | ------------------------------------------------------- |
+  | `server/routes/**/*.ts` (non-auth)                                 | api, security, architecture                             |
+  | `server/storage/**/*.ts` (non-auth)                                | database, security, architecture                        |
+  | `server/services/**/*.ts`                                          | architecture                                            |
+  | `server/services/<name>.ts` where `<name>` ∈ LLM_TOUCHING_SERVICES | architecture, ai-prompting                              |
+  | `client/**/*.tsx`, `client/**/*.ts`                                | react-native, design-system, accessibility              |
+  | `client/components/**`                                             | react-native, design-system, accessibility, performance |
+  | `client/screens/**`                                                | react-native, design-system, accessibility              |
+  | `client/hooks/**`                                                  | hooks, client-state                                     |
+  | `client/context/**`                                                | client-state                                            |
+  | `client/lib/**`                                                    | typescript, client-state                                |
+  | `evals/**`                                                         | ai-prompting, testing                                   |
+  | `*test*.ts`, `*test*.tsx`, `__tests__/**`                          | testing                                                 |
+  | `.github/workflows/**`                                             | architecture, testing                                   |
+  | `vitest.config.ts`, `eslint.config.*`                              | testing, typescript                                     |
 
+- **`LLM_TOUCHING_SERVICES` constant** — explicit set of service file basenames that import an LLM client (OpenAI / Anthropic / etc.). Empirically grep-derived as of 2026-05-11 (18 entries; see Appendix A). Maintained by a unit test that re-runs the grep and asserts the constant matches — any new LLM service must be added or the test fails. See Implementation Plan steps 1a and 10.
 - **Hard exclusions reminder** — even though the eligibility filter already
   rejects these paths, restate them so Copilot knows why a particular
   acceptance criterion shouldn't be expanded into auth/IAP/secrets/health-data/
@@ -274,6 +279,10 @@ on adjacent code.
 1. Define `PATH_TO_DOMAINS` constant in `scripts/delegate-copilot-issue.ts`
    as the authoritative mapping (see Resolved Decision 1). Add unit tests
    for each row.
+   1a. Define `LLM_TOUCHING_SERVICES` constant — explicit `Set<string>` of
+   service file basenames listed in Appendix A. The path mapping looks up
+   `path.basename(file)` in this set when the file is under `server/services/`
+   to decide whether to add `ai-prompting` to the detected domains.
 2. Add `npm run build:copilot-instructions` script that reads
    `PATH_TO_DOMAINS` and writes `.github/copilot-instructions.md` with the
    stack overview, mandatory workflow paragraph, generated mapping table,
@@ -394,6 +403,10 @@ insufficient.
       gitignored — this is a local note for Claude's awareness, not a
       tracked-file change. Copilot reads `.github/copilot-instructions.md`
       directly.)
+- [ ] `LLM_TOUCHING_SERVICES` constant seeded with the 18 entries in
+      Appendix A. Unit test re-runs the grep at test time and asserts the
+      constant matches the empirical result; test fails if a new LLM
+      service is added to `server/services/` without updating the constant.
 
 ## Out of Scope (deferred to v2)
 
@@ -402,3 +415,30 @@ insufficient.
   the Issue is filed, its body is a snapshot.
 - GitHub Actions workflow that post-comments rule reminders on Copilot PRs.
 - Inlining anything from `docs/patterns/*.md` (still pointers only).
+
+## Appendix A — LLM_TOUCHING_SERVICES (empirically derived 2026-05-11)
+
+Result of `grep -l "openai\|OpenAI\|gpt-\|completions\|anthropic" server/services/*.ts | grep -v __tests__ | sort`:
+
+- canonical-enrichment.ts
+- coach-pro-chat.ts
+- coach-tools.ts
+- cooking-session.ts
+- food-nlp.ts
+- front-label-analysis.ts
+- ingredient-substitution.ts
+- meal-suggestions.ts
+- menu-analysis.ts
+- notebook-extraction.ts
+- nutrition-coach.ts
+- pantry-meal-plan.ts
+- photo-analysis.ts
+- receipt-analysis.ts
+- recipe-chat.ts
+- recipe-generation.ts
+- suggestion-generation.ts
+- voice-transcription.ts
+
+The drift-detection unit test re-runs this grep at test time and asserts
+the constant equals the result. If a developer adds an LLM client import
+to a new service without updating `LLM_TOUCHING_SERVICES`, the test fails.
