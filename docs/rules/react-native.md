@@ -9,3 +9,4 @@
 - Camera: always set `isActive={isFocused}` on `CameraView` — stops the camera when navigating away
 - Mic: always call `stopListening()` in session reset/cleanup — leaving it open mutates state after the component is gone
 - `Alert.prompt` is iOS-only — always guard with `Platform.OS === "ios"` and provide a `TextInput` fallback for Android
+- Never gate `Linking.openURL(httpUrl)` behind `Linking.canOpenURL` — `canOpenURL` returns false on iOS for HTTP(S) without `LSApplicationQueriesSchemes` entries and blocks legitimate links. Call `openURL` directly and `try/catch` the failure instead
