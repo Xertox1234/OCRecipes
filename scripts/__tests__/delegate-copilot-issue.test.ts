@@ -148,6 +148,98 @@ describe("delegate-copilot-issue", () => {
     );
   });
 
+  it("allows test-labeled todos to mention sensitive areas in their description", () => {
+    const testTodo = parseTodoMarkdown(
+      `---
+title: "HTTP-level tests for recipe routes"
+status: backlog
+priority: medium
+created: 2026-05-11
+updated: 2026-05-11
+labels: [testing, deferred]
+github_issue:
+---
+
+# HTTP-level tests for recipe routes
+
+## Summary
+
+Add tests covering the HTTP boundary including auth response codes.
+
+## Background
+
+The route handlers in server/routes/recipe-catalog.ts return 401 without a
+valid token. Coverage is missing for that boundary.
+
+## Acceptance Criteria
+
+- [ ] 401 without Authorization header
+- [ ] 200 with a valid token
+- [ ] Tests live in server/routes/__tests__/recipe-catalog.test.ts
+
+## Implementation Notes
+
+Reuse the request-auth helpers in server/__tests__/test-helpers.ts.
+The implementation files (server/middleware/auth.ts) are NOT in scope.
+`,
+      "todos/route-tests.md",
+    );
+
+    const result = evaluateEligibility(testTodo);
+
+    expect(result.reasons).not.toContain(
+      "JWT/auth work is not eligible for Copilot delegation",
+    );
+  });
+
+  it("still blocks non-test todos that describe auth changes", () => {
+    const implTodo = parseTodoMarkdown(
+      eligibleTodo.replace(
+        "Only edit docs/AI_WORKFLOW.md.",
+        "Change JWT auth behavior in server/routes/auth.ts.",
+      ),
+      "todos/auth-change.md",
+    );
+
+    expect(evaluateEligibility(implTodo).reasons).toContain(
+      "JWT/auth work is not eligible for Copilot delegation",
+    );
+  });
+
+  it("does not bypass conceptual blocks for test todos", () => {
+    const testTodoWithProdData = parseTodoMarkdown(
+      `---
+title: "Test against production data snapshot"
+status: backlog
+priority: low
+created: 2026-05-11
+updated: 2026-05-11
+labels: [testing, deferred]
+github_issue:
+---
+
+# Test against production data snapshot
+
+## Summary
+
+Validate behavior using production data export.
+
+## Acceptance Criteria
+
+- [ ] Use production data snapshot at server/__tests__/fixtures/prod.json
+
+## Implementation Notes
+
+Pull production data snapshot from cold storage for the test fixture.
+`,
+      "todos/prod-data-test.md",
+    );
+
+    expect(evaluateEligibility(testTodoWithProdData).reasons).toContain(
+      "production data handling is not eligible for Copilot delegation",
+    );
+  });
+
   it("ignores delegation safety boilerplate when checking eligibility", () => {
     const todo = parseTodoMarkdown(
       `${eligibleTodo}\n## Copilot Delegation\n\nDo not delegate JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture changes.\n`,

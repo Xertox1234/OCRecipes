@@ -87,6 +87,18 @@ const BLOCKED_PATTERNS: [RegExp, string][] = [
   ],
 ];
 
+// Body-text reasons that test-labeled todos may skip. Tests describe the code
+// under test, so an incidental mention of these areas in a test todo's
+// description does not imply the work modifies them. Conceptual concerns
+// (goal-safety, production data, broad architecture, schema/migrations) are
+// NOT bypassable — those describe scope, not just context.
+const TEST_BYPASSABLE_REASONS = new Set<string>([
+  "JWT/auth work is not eligible for Copilot delegation",
+  "IAP receipt validation is not eligible for Copilot delegation",
+  "secrets handling is not eligible for Copilot delegation",
+  "health-data boundary work is not eligible for Copilot delegation",
+]);
+
 const FILE_EXTENSIONS = new Set([
   ".ts",
   ".tsx",
@@ -281,10 +293,20 @@ export function evaluateEligibility(todo: TodoTask): EligibilityResult {
     );
   }
 
+  const isTestOnly = labelSet.has("test") || labelSet.has("testing");
+
   for (const [pattern, reason] of BLOCKED_PATTERNS) {
-    if (pattern.test(taskText)) {
-      reasons.push(reason);
+    if (!pattern.test(taskText)) {
+      continue;
     }
+    if (isTestOnly && TEST_BYPASSABLE_REASONS.has(reason)) {
+      // A todo labeled test/testing describes the code under test; an incidental
+      // mention of auth, IAP, secrets, or health-data in the description doesn't
+      // mean the work modifies those areas. Implementation files would still
+      // have to appear in referencedFiles, where path-scoped blocks below apply.
+      continue;
+    }
+    reasons.push(reason);
   }
 
   for (const file of todo.referencedFiles) {
