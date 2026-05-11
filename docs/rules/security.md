@@ -10,3 +10,5 @@
 - All route request bodies must be Zod-validated before any field access — never `req.body.x` without a schema parse
 - `req.userId` is a string (UUID) — never parse with `parseInt` (returns NaN, bypasses ownership checks silently)
 - Legal attestations / consent fields (COPPA age confirmation, ToS acceptance, marketing opt-in) must be propagated as a parameter from the UI checkbox state through every intermediate hook to the API call — never hardcode `true` in an auth hook or wrapper. The server gate is still enforced (zero-trust client), but a hardcoded client bypass falsifies the legal attestation record.
+- Consent / audit timestamps (CCPA/PIPEDA, terms acceptance, age gate) must be stamped server-side from `new Date()` — clients send a boolean intent flag, never a timestamp; omit the column from the Zod input schema so client-supplied values are silently dropped
+- Consent / audit timestamps must be append-only at the storage layer — use SQL `COALESCE(existing, incoming)` in partial updates and existence guards in transactional upserts so a re-stamp can never overwrite the original record
