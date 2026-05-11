@@ -9,6 +9,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<User>;
   register: (username: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<User | undefined>;
   checkAuth: () => Promise<void>;
 }

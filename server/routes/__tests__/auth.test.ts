@@ -30,6 +30,7 @@ vi.mock("../../storage", () => ({
     updateUser: vi.fn(),
     incrementTokenVersion: vi.fn(),
     getSubscriptionStatus: vi.fn(),
+    deleteUser: vi.fn(),
   },
 }));
 
@@ -348,6 +349,134 @@ describe("Auth Routes", () => {
         .send({ displayName: "Test" });
 
       expect(res.status).toBe(500);
+    });
+  });
+
+  describe("DELETE /api/auth/account", () => {
+    let invalidateTokenVersionCache: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+      const authMod = await import("../../middleware/auth");
+      invalidateTokenVersionCache = vi.mocked(
+        authMod.invalidateTokenVersionCache,
+      );
+      invalidateTokenVersionCache.mockClear();
+    });
+
+    it("hard-deletes the user with the correct password and invalidates token cache", async () => {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("correctpassword", 10);
+      const userWithHash = createMockUser({ password: hash });
+
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(userWithHash);
+      vi.mocked(storage.deleteUser).mockResolvedValue(true);
+
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "correctpassword" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(storage.deleteUser).toHaveBeenCalledWith("1");
+      expect(invalidateTokenVersionCache).toHaveBeenCalledWith("1");
+      // deleteUser must be called BEFORE invalidateTokenVersionCache
+      const deleteOrder = vi.mocked(storage.deleteUser).mock
+        .invocationCallOrder[0];
+      const invalidateOrder =
+        invalidateTokenVersionCache.mock.invocationCallOrder[0];
+      expect(deleteOrder).toBeLessThan(invalidateOrder);
+    });
+
+    it("returns 401 for wrong password and does NOT delete the user", async () => {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("correctpassword", 10);
+      const userWithHash = createMockUser({ password: hash });
+
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(userWithHash);
+
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "wrongpassword" });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe("Invalid credentials");
+      expect(storage.deleteUser).not.toHaveBeenCalled();
+      expect(invalidateTokenVersionCache).not.toHaveBeenCalled();
+    });
+
+    it("returns 404 if user no longer exists", async () => {
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "anypassword" });
+
+      expect(res.status).toBe(404);
+      expect(storage.deleteUser).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when password is missing", async () => {
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(storage.getUserForAuth).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when password is empty string", async () => {
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "" });
+
+      expect(res.status).toBe(400);
+      expect(storage.getUserForAuth).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 when storage.deleteUser throws", async () => {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("correctpassword", 10);
+      const userWithHash = createMockUser({ password: hash });
+
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(userWithHash);
+      vi.mocked(storage.deleteUser).mockRejectedValue(new Error("DB error"));
+
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "correctpassword" });
+
+      expect(res.status).toBe(500);
+      expect(invalidateTokenVersionCache).not.toHaveBeenCalled();
+    });
+
+    it("cleans up the user's avatar file on successful deletion", async () => {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("correctpassword", 10);
+      const userWithHash = createMockUser({
+        password: hash,
+        avatarUrl: "/api/avatars/1-123.jpg",
+      });
+
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(userWithHash);
+      vi.mocked(storage.deleteUser).mockResolvedValue(true);
+      mockUnlink.mockClear();
+
+      const res = await request(app)
+        .delete("/api/auth/account")
+        .set("Authorization", "Bearer mock-token")
+        .send({ password: "correctpassword" });
+
+      expect(res.status).toBe(200);
+      const unlinkCalls = mockUnlink.mock.calls;
+      expect(unlinkCalls.length).toBeGreaterThan(0);
+      const lastCall = unlinkCalls[unlinkCalls.length - 1];
+      expect(lastCall[0]).toMatch(/avatars[/\\]1-123\.jpg$/);
     });
   });
 
