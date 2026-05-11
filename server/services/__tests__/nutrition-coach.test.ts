@@ -284,6 +284,83 @@ describe("generateCoachProResponse", () => {
     expect(executeToolCall).toHaveBeenCalledOnce();
   });
 
+  it("short-circuits with serviceUnavailable when tool args are malformed JSON", async () => {
+    // First round: model emits a tool call whose arguments JSON is truncated /
+    // syntactically invalid (e.g. finish_reason === "length" cut it off).
+    const toolCallStream = createMockStream([
+      {
+        tool_calls: [
+          {
+            index: 0,
+            id: "call_bad_json",
+            function: {
+              name: "lookup_nutrition",
+              arguments: '{"query":"chick', // unterminated string — JSON.parse throws
+            },
+          },
+        ],
+      },
+      { finish_reason: "tool_calls" },
+    ]);
+
+    const textStream = createMockStream([
+      { content: "Something went wrong." },
+      { finish_reason: "stop" },
+    ]);
+
+    vi.mocked(openai.chat.completions.create)
+      .mockResolvedValueOnce(toolCallStream as any)
+      .mockResolvedValueOnce(textStream as any);
+
+    const messages = [
+      { role: "user" as const, content: "calories in chicken" },
+    ];
+    const result = await collectStream(
+      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+    );
+
+    // executeToolCall must NOT be invoked when JSON.parse fails.
+    expect(executeToolCall).not.toHaveBeenCalled();
+    expect(result).toBe("Something went wrong.");
+  });
+
+  it("short-circuits with serviceUnavailable when tool args parse to a non-object", async () => {
+    // Model returns valid JSON that is not an object (array / primitive).
+    const toolCallStream = createMockStream([
+      {
+        tool_calls: [
+          {
+            index: 0,
+            id: "call_array_args",
+            function: {
+              name: "lookup_nutrition",
+              arguments: "[1,2,3]",
+            },
+          },
+        ],
+      },
+      { finish_reason: "tool_calls" },
+    ]);
+
+    const textStream = createMockStream([
+      { content: "I couldn't process that." },
+      { finish_reason: "stop" },
+    ]);
+
+    vi.mocked(openai.chat.completions.create)
+      .mockResolvedValueOnce(toolCallStream as any)
+      .mockResolvedValueOnce(textStream as any);
+
+    const messages = [{ role: "user" as const, content: "weird" }];
+    const result = await collectStream(
+      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+    );
+
+    // Non-object args must be rejected before executeToolCall runs.
+    expect(executeToolCall).not.toHaveBeenCalled();
+    expect(result).toBe("I couldn't process that.");
+  });
+
   it("builds multi-round conversation with tool results", async () => {
     // Round 1: tool call with partial text
     const round1Stream = createMockStream([

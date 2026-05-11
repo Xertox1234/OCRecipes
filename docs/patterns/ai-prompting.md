@@ -595,3 +595,87 @@ production rather than after.
 **Origin:** 2026-04-28 — deferred from 2026-04-19 coach improvements
 plan; implemented when tool-call payloads made the 20-message fixed cap
 insufficient.
+
+### Tool-Call Argument Parsing — Three-Stage Guard (Parse → Shape → Schema)
+
+OpenAI streams `tc.function.arguments` as an accumulated string. When the
+model hits `finish_reason: "length"` mid-tool-call, the string is
+syntactically invalid JSON. When the model emits creative output, the
+top-level value may be an array or a primitive even though the schema is
+`type: "object"`. Per-tool Zod schemas only catch field-level errors —
+they assume the input is already a plain object.
+
+**The fix:** three separate guards before dispatch, each with its own
+log signal and `serviceUnavailable` short-circuit. Never collapse them
+into a single outer `try`/`catch` — distinct failure modes need distinct
+telemetry.
+
+```typescript
+let args: unknown;
+try {
+  args = JSON.parse(tc.function.arguments);
+} catch (error) {
+  log.warn(
+    {
+      err: toError(error),
+      tool: tc.function.name,
+      argsLength: tc.function.arguments?.length, // optional chain — string may be undefined when parse threw
+    },
+    "Tool call arguments JSON parse failed",
+  );
+  return { tc, result: serviceUnavailable(tc.function.name) };
+}
+
+// Top-level shape guard. Per-tool Zod schemas assume an object;
+// arrays and primitives must be rejected before `as Record<string, unknown>`.
+if (typeof args !== "object" || args === null || Array.isArray(args)) {
+  log.warn(
+    {
+      tool: tc.function.name,
+      argsType: Array.isArray(args)
+        ? "array"
+        : args === null
+          ? "null"
+          : typeof args,
+    },
+    "Tool call arguments not a plain object",
+  );
+  return { tc, result: serviceUnavailable(tc.function.name) };
+}
+
+// Per-tool Zod safeParse runs inside executeToolCall.
+const result = await executeToolCall(
+  tc.function.name,
+  args as Record<string, unknown>,
+  userId,
+  preloadedProfile,
+);
+```
+
+**Why three log lines, not one:** "JSON parse failed" with `argsLength`
+is a truncation signal — operators see it spike and know to raise
+`max_tokens` or shorten system prompts. "Not a plain object" with a
+precise `argsType` (`"array"`, `"null"`, `"number"`, ...) is a model
+behavior signal — operators see it and know to tighten the tool schema
+or add a fewshot example. Collapsing both into "Tool call failed" hides
+the distinction and burns diagnostic time.
+
+**Why the precise `argsType` discriminator:** `typeof null === "object"`
+and `typeof []` === "object"`. Logging `argsType: typeof args`reports`"object"`for both the null and array branches, so log readers cannot
+tell which rejection fired. Use the explicit discriminator:`Array.isArray(args) ? "array" : args === null ? "null" : typeof args`.
+
+**Why `?.length` on `tc.function.arguments`:** when `JSON.parse` throws,
+the most common cause is truncation but the runtime path also covers
+defensive cases where `arguments` itself could be undefined. Optional
+chaining prevents the catch block from raising a second
+`TypeError: Cannot read properties of undefined` that would reject the
+enclosing `Promise.all` and kill the entire tool-call round.
+
+**Reference:** `server/services/nutrition-coach.ts` (parse + shape
+guard), `server/services/coach-tools.ts` (per-tool Zod schemas in
+`executeToolCall`).
+
+**Origin:** 2026-05-11 — audit 2026-05-10 finding M15. Outer
+`try`/`catch` was incidentally catching `SyntaxError`, but the unified
+"Tool call failed" log line hid truncation as a distinct failure mode
+and the cast to `Record<string, unknown>` silently passed arrays.
