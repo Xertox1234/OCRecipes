@@ -20,13 +20,13 @@ vi.mock("../../storage", () => ({
 }));
 
 function setupDefaults() {
-  vi.mocked(storage.getUserProfile).mockResolvedValue(
-    createMockUserProfile({
-      dietType: null,
-      allergies: [],
-      foodDislikes: null as unknown as string[],
-    }),
-  );
+  const emptyProfile = createMockUserProfile({
+    dietType: null,
+    allergies: [],
+  });
+  Object.assign(emptyProfile, { foodDislikes: null });
+
+  vi.mocked(storage.getUserProfile).mockResolvedValue(emptyProfile);
   vi.mocked(storage.getDailySummary).mockResolvedValue({
     totalCalories: 1200,
     totalProtein: 60,
@@ -132,16 +132,13 @@ describe("buildCoachContext", () => {
   });
 
   it("handles partial profile values and null allergies", async () => {
-    vi.mocked(storage.getUserProfile).mockResolvedValue(
-      createMockUserProfile({
-        dietType: null,
-        allergies: null as unknown as {
-          name: string;
-          severity: "mild" | "moderate" | "severe";
-        }[],
-        foodDislikes: ["mushrooms"],
-      }),
-    );
+    const partialProfile = createMockUserProfile({
+      dietType: null,
+      foodDislikes: ["mushrooms"],
+    });
+    Object.assign(partialProfile, { allergies: null });
+
+    vi.mocked(storage.getUserProfile).mockResolvedValue(partialProfile);
 
     const result = await buildCoachContext("user-1", TIER_FEATURES.premium);
 
