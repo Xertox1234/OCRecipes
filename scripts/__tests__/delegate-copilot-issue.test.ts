@@ -580,12 +580,12 @@ Pull production data snapshot from cold storage for the test fixture.
   });
 
   describe("detectedDomains", () => {
-    it("aggregates domains across multiple files", () => {
+    it("aggregates domains across multiple files in sorted order", () => {
       const result = detectedDomains(
         ["server/routes/recipe-catalog.ts", "server/storage/recipes.ts"],
         [],
       );
-      expect(result.sort()).toEqual([
+      expect(result).toEqual([
         "api",
         "architecture",
         "database",
@@ -633,6 +633,17 @@ Pull production data snapshot from cold storage for the test fixture.
       expect(result).toContain("performance");
     });
 
+    it("matches labels case-insensitively", () => {
+      // The spec calls for case-insensitive label lookup via .toLowerCase().
+      // This test locks in that behavior so a future refactor that drops the
+      // lowercasing would be caught.
+      const result = detectedDomains(["docs/PERF.md"], ["PERFORMANCE"]);
+      expect(result).toContain("performance");
+
+      const result2 = detectedDomains(["docs/T.md"], ["Testing"]);
+      expect(result2).toContain("testing");
+    });
+
     it("ignores labels that don't correspond to rules domains", () => {
       const result = detectedDomains(
         ["docs/CHANGELOG.md"],
@@ -641,14 +652,22 @@ Pull production data snapshot from cold storage for the test fixture.
       expect(result).toEqual([]);
     });
 
-    it("returns alphabetically sorted result for determinism", () => {
+    it("returns alphabetically sorted result with pinned expected output", () => {
       const result = detectedDomains(
         ["client/components/Button.tsx", "server/storage/users.ts"],
         ["testing"],
       );
-      // Verify the array is sorted ascending
-      const sorted = [...result].sort();
-      expect(result).toEqual(sorted);
+      expect(result).toEqual([
+        "accessibility",
+        "architecture",
+        "database",
+        "design-system",
+        "performance",
+        "react-native",
+        "security",
+        "testing",
+        "typescript",
+      ]);
     });
 
     it("returns empty array when no files match and no relevant labels", () => {
