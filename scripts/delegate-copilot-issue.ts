@@ -51,53 +51,75 @@ const ALLOWED_LABELS = new Set([
   "testing",
 ]);
 
-const BLOCKED_PATTERNS: [RegExp, string][] = [
-  [/\bjwt\b/i, "JWT/auth work is not eligible for Copilot delegation"],
-  [
-    /\bauth(?:entication|orization)?\b/i,
-    "JWT/auth work is not eligible for Copilot delegation",
-  ],
-  [
-    /\biap\b|\breceipt validation\b/i,
-    "IAP receipt validation is not eligible for Copilot delegation",
-  ],
-  [
-    /\bsecret(s)?\b/i,
-    "secrets handling is not eligible for Copilot delegation",
-  ],
-  [
-    /\bhealth[-\s]?data\b|\bhealth data boundaries\b/i,
+type BlockKey =
+  | "JWT_AUTH"
+  | "IAP_RECEIPT"
+  | "SECRETS"
+  | "HEALTH_DATA"
+  | "GOAL_SAFETY"
+  | "SCHEMA_MIGRATION"
+  | "PRODUCTION_DATA"
+  | "BROAD_ARCHITECTURE";
+
+const BLOCK_REASONS: Record<BlockKey, string> = {
+  JWT_AUTH: "JWT/auth work is not eligible for Copilot delegation",
+  IAP_RECEIPT: "IAP receipt validation is not eligible for Copilot delegation",
+  SECRETS: "secrets handling is not eligible for Copilot delegation",
+  HEALTH_DATA:
     "health-data boundary work is not eligible for Copilot delegation",
-  ],
-  [
-    /\bgoal[-\s]?safety\b/i,
-    "goal-safety behavior is not eligible for Copilot delegation",
-  ],
+  GOAL_SAFETY: "goal-safety behavior is not eligible for Copilot delegation",
+  SCHEMA_MIGRATION:
+    "schema and migration work is not eligible for Copilot delegation",
+  PRODUCTION_DATA:
+    "production data handling is not eligible for Copilot delegation",
+  BROAD_ARCHITECTURE:
+    "broad architecture work needs a human-approved plan first",
+};
+
+const BLOCKED_PATTERNS: [RegExp, BlockKey][] = [
+  [/\bjwt\b/i, "JWT_AUTH"],
+  [/\bauth(?:entication|orization)?\b/i, "JWT_AUTH"],
+  [/\biap\b|\breceipt validation\b/i, "IAP_RECEIPT"],
+  [/\bsecret(s)?\b/i, "SECRETS"],
+  [/\bhealth[-\s]?data\b|\bhealth data boundaries\b/i, "HEALTH_DATA"],
+  [/\bgoal[-\s]?safety\b/i, "GOAL_SAFETY"],
   [
     /\bshared\/schema\.ts\b|\bmigrations\/|\bmigration(s)?\b/i,
-    "schema and migration work is not eligible for Copilot delegation",
+    "SCHEMA_MIGRATION",
   ],
-  [
-    /\bproduction data\b|\bprod data\b/i,
-    "production data handling is not eligible for Copilot delegation",
-  ],
-  [
-    /\bbroad architecture\b|\barchitecture overhaul\b/i,
-    "broad architecture work needs a human-approved plan first",
-  ],
+  [/\bproduction data\b|\bprod data\b/i, "PRODUCTION_DATA"],
+  [/\bbroad architecture\b|\barchitecture overhaul\b/i, "BROAD_ARCHITECTURE"],
 ];
 
 // Body-text reasons that test-labeled todos may skip. Tests describe the code
 // under test, so an incidental mention of these areas in a test todo's
 // description does not imply the work modifies them. Conceptual concerns
 // (goal-safety, production data, broad architecture, schema/migrations) are
-// NOT bypassable — those describe scope, not just context.
-const TEST_BYPASSABLE_REASONS = new Set<string>([
-  "JWT/auth work is not eligible for Copilot delegation",
-  "IAP receipt validation is not eligible for Copilot delegation",
-  "secrets handling is not eligible for Copilot delegation",
-  "health-data boundary work is not eligible for Copilot delegation",
+// NOT bypassable — those describe scope, not just context. Implementation
+// files in those bypassable areas are still blocked via BLOCKED_FILE_PATTERNS
+// below, so the bypass only relaxes incidental text mentions, not actual scope.
+const TEST_BYPASSABLE_KEYS = new Set<BlockKey>([
+  "JWT_AUTH",
+  "IAP_RECEIPT",
+  "SECRETS",
+  "HEALTH_DATA",
 ]);
+
+// Path-based blocks. These apply regardless of label — a todo whose
+// referencedFiles list includes one of these implementation paths cannot be
+// delegated even if labeled test/testing. Test files under __tests__/ and
+// mocks under __mocks__/ naturally do NOT match these prefixes.
+const BLOCKED_FILE_PATTERNS: [RegExp, BlockKey][] = [
+  [/^shared\/schema\.ts$/, "SCHEMA_MIGRATION"],
+  [/^migrations\//, "SCHEMA_MIGRATION"],
+  [/^server\/middleware\/auth\.ts$/, "JWT_AUTH"],
+  [/^server\/routes\/auth\.ts$/, "JWT_AUTH"],
+  [/^server\/lib\/jwt-/, "JWT_AUTH"],
+  [/^server\/services\/receipt-validation\./, "IAP_RECEIPT"],
+  [/^server\/storage\/health\.ts$/, "HEALTH_DATA"],
+  [/^server\/services\/healthkit/, "HEALTH_DATA"],
+  [/^server\/routes\/healthkit/, "HEALTH_DATA"],
+];
 
 const FILE_EXTENSIONS = new Set([
   ".ts",
@@ -295,24 +317,31 @@ export function evaluateEligibility(todo: TodoTask): EligibilityResult {
 
   const isTestOnly = labelSet.has("test") || labelSet.has("testing");
 
-  for (const [pattern, reason] of BLOCKED_PATTERNS) {
+  for (const [pattern, key] of BLOCKED_PATTERNS) {
     if (!pattern.test(taskText)) {
       continue;
     }
-    if (isTestOnly && TEST_BYPASSABLE_REASONS.has(reason)) {
+    if (isTestOnly && TEST_BYPASSABLE_KEYS.has(key)) {
       // A todo labeled test/testing describes the code under test; an incidental
       // mention of auth, IAP, secrets, or health-data in the description doesn't
-      // mean the work modifies those areas. Implementation files would still
-      // have to appear in referencedFiles, where path-scoped blocks below apply.
+      // mean the work modifies those areas. The BLOCKED_FILE_PATTERNS loop
+      // below still blocks any actual implementation file in scope.
       continue;
     }
-    reasons.push(reason);
+    reasons.push(BLOCK_REASONS[key]);
   }
 
+  const reportedFileBlocks = new Set<BlockKey>();
   for (const file of todo.referencedFiles) {
-    if (file === "shared/schema.ts" || file.startsWith("migrations/")) {
+    for (const [pattern, key] of BLOCKED_FILE_PATTERNS) {
+      if (!pattern.test(file) || reportedFileBlocks.has(key)) {
+        continue;
+      }
+      reportedFileBlocks.add(key);
       reasons.push(
-        "schema and migration files are not eligible for Copilot delegation",
+        key === "SCHEMA_MIGRATION"
+          ? "schema and migration files are not eligible for Copilot delegation"
+          : BLOCK_REASONS[key],
       );
     }
   }

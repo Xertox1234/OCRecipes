@@ -192,6 +192,84 @@ The implementation files (server/middleware/auth.ts) are NOT in scope.
     );
   });
 
+  it("blocks test-labeled todos that put auth implementation files in scope", () => {
+    // Closes the gap from the body-text bypass: a [testing] todo can describe
+    // auth code freely, but if it lists server/middleware/auth.ts as a file in
+    // scope, the path-based block still rejects it.
+    const testTodoWithAuthImpl = parseTodoMarkdown(
+      `---
+title: "Rewrite auth middleware tests (and the middleware)"
+status: backlog
+priority: low
+created: 2026-05-11
+updated: 2026-05-11
+labels: [testing, deferred]
+github_issue:
+---
+
+# Rewrite auth middleware tests
+
+## Summary
+
+Rewrite tests AND refactor the middleware.
+
+## Acceptance Criteria
+
+- [ ] Modify server/middleware/auth.ts to add a new option
+- [ ] Add tests in server/middleware/__tests__/auth.test.ts
+
+## Implementation Notes
+
+See server/middleware/auth.ts for the current structure.
+`,
+      "todos/auth-rewrite.md",
+    );
+
+    expect(evaluateEligibility(testTodoWithAuthImpl).reasons).toContain(
+      "JWT/auth work is not eligible for Copilot delegation",
+    );
+  });
+
+  it("does not block test files in sensitive directories", () => {
+    // The mirror case: a [testing] todo that only references __tests__ paths
+    // for auth code is eligible. The path patterns only match implementation
+    // files, not test files under __tests__/ or __mocks__/.
+    const testOnlyTodo = parseTodoMarkdown(
+      `---
+title: "Add tests for auth middleware"
+status: backlog
+priority: low
+created: 2026-05-11
+updated: 2026-05-11
+labels: [testing, deferred]
+github_issue:
+---
+
+# Add tests for auth middleware
+
+## Summary
+
+Coverage for the auth middleware behavior.
+
+## Acceptance Criteria
+
+- [ ] Tests live in server/middleware/__tests__/auth.test.ts
+- [ ] Use server/middleware/__mocks__/auth.ts where helpful
+
+## Implementation Notes
+
+Only edit server/middleware/__tests__/auth.test.ts. Do not modify the
+middleware itself.
+`,
+      "todos/auth-tests-only.md",
+    );
+
+    const result = evaluateEligibility(testOnlyTodo);
+    expect(result.reasons).not.toContain(
+      "JWT/auth work is not eligible for Copilot delegation",
+    );
+  });
+
   it("still blocks non-test todos that describe auth changes", () => {
     const implTodo = parseTodoMarkdown(
       eligibleTodo.replace(
