@@ -29,30 +29,56 @@ add_domain() {
   esac
 }
 
-case "$FILE_PATH" in
-  */server/routes/*|server/routes/*)
-    add_domain api; add_domain security; add_domain architecture ;;
-  */server/storage/*|server/storage/*|*/shared/schema.ts|shared/schema.ts|*/migrations/*|migrations/*)
-    add_domain database; add_domain security; add_domain architecture ;;
-  */server/middleware/*|server/middleware/*)
-    add_domain security; add_domain api ;;
-  */server/services/photo-analysis.ts|*/server/services/nutrition-coach.ts|*/server/services/recipe-chat.ts|*/server/services/recipe-generation.ts|*/evals/*|server/services/photo-analysis.ts|server/services/nutrition-coach.ts|server/services/recipe-chat.ts|server/services/recipe-generation.ts|evals/*)
-    add_domain ai-prompting; add_domain security ;;
-  */server/services/*|server/services/*)
-    add_domain architecture ;;
-  */client/screens/*|*/client/components/*|client/screens/*|client/components/*)
-    add_domain react-native; add_domain design-system; add_domain accessibility ;;
-  */client/navigation/*|client/navigation/*)
-    add_domain react-native; add_domain accessibility ;;
-  */client/hooks/*|client/hooks/*)
-    add_domain hooks; add_domain client-state; add_domain react-native ;;
-  */client/context/*|*/client/lib/*|client/context/*|client/lib/*)
-    add_domain client-state ;;
-  */client/constants/theme.ts|client/constants/theme.ts|*/design_guidelines.md|design_guidelines.md)
-    add_domain design-system ;;
-  */__tests__/*|__tests__/*|*.test.ts|*.test.tsx|*.spec.ts|*.spec.tsx)
-    add_domain testing ;;
-esac
+# Independent if-blocks so multiple rows can match the same path (e.g. AI service + services + test)
+[[ "$FILE_PATH" == */server/routes/* || "$FILE_PATH" == server/routes/* ]] && \
+  { add_domain api; add_domain security; add_domain architecture; }
+
+[[ "$FILE_PATH" == */server/storage/* || "$FILE_PATH" == server/storage/* || \
+   "$FILE_PATH" == */shared/schema.ts  || "$FILE_PATH" == shared/schema.ts  || \
+   "$FILE_PATH" == */migrations/*      || "$FILE_PATH" == migrations/* ]] && \
+  { add_domain database; add_domain security; add_domain architecture; }
+
+[[ "$FILE_PATH" == */server/middleware/* || "$FILE_PATH" == server/middleware/* ]] && \
+  { add_domain security; add_domain api; }
+
+[[ "$FILE_PATH" == */server/services/photo-analysis.ts   || \
+   "$FILE_PATH" == */server/services/nutrition-coach.ts  || \
+   "$FILE_PATH" == */server/services/recipe-chat.ts      || \
+   "$FILE_PATH" == */server/services/recipe-generation.ts || \
+   "$FILE_PATH" == server/services/photo-analysis.ts     || \
+   "$FILE_PATH" == server/services/nutrition-coach.ts    || \
+   "$FILE_PATH" == server/services/recipe-chat.ts        || \
+   "$FILE_PATH" == server/services/recipe-generation.ts  || \
+   "$FILE_PATH" == */evals/* || "$FILE_PATH" == evals/* ]] && \
+  { add_domain ai-prompting; add_domain security; }
+
+# All server/services get architecture (including the AI ones above)
+[[ "$FILE_PATH" == */server/services/* || "$FILE_PATH" == server/services/* ]] && \
+  add_domain architecture
+
+[[ "$FILE_PATH" == */client/screens/*     || "$FILE_PATH" == client/screens/*     || \
+   "$FILE_PATH" == */client/components/*  || "$FILE_PATH" == client/components/* ]] && \
+  { add_domain react-native; add_domain design-system; add_domain accessibility; }
+
+[[ "$FILE_PATH" == */client/navigation/* || "$FILE_PATH" == client/navigation/* ]] && \
+  { add_domain react-native; add_domain accessibility; }
+
+[[ "$FILE_PATH" == */client/hooks/* || "$FILE_PATH" == client/hooks/* ]] && \
+  { add_domain hooks; add_domain client-state; add_domain react-native; }
+
+[[ "$FILE_PATH" == */client/context/* || "$FILE_PATH" == client/context/* || \
+   "$FILE_PATH" == */client/lib/*     || "$FILE_PATH" == client/lib/* ]] && \
+  add_domain client-state
+
+[[ "$FILE_PATH" == */client/constants/theme.ts || "$FILE_PATH" == client/constants/theme.ts || \
+   "$FILE_PATH" == */design_guidelines.md      || "$FILE_PATH" == design_guidelines.md ]] && \
+  add_domain design-system
+
+# Test files accumulate testing domain regardless of their enclosing directory
+[[ "$FILE_PATH" == */__tests__/* || "$FILE_PATH" == __tests__/* || \
+   "$FILE_PATH" == *.test.ts     || "$FILE_PATH" == *.test.tsx  || \
+   "$FILE_PATH" == *.spec.ts     || "$FILE_PATH" == *.spec.tsx ]] && \
+  add_domain testing
 
 # Always add typescript for .ts/.tsx files
 case "$FILE_PATH" in

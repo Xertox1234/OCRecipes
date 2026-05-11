@@ -80,6 +80,24 @@ check_empty "missing file_path → no output" \
 check_empty "package.json → no output" \
   '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
 
+# AI service file must get architecture domain (case exclusivity regression)
+check "AI service → architecture rules (additive match)" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"server/services/photo-analysis.ts"}}' \
+  "RULES — architecture"
+
+check "AI service → ai-prompting rules still present" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"server/services/photo-analysis.ts"}}' \
+  "RULES — ai-prompting"
+
+# Test file inside a route directory must get testing domain (case exclusivity regression)
+check "route __tests__ file → testing rules (additive match)" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/__tests__/recipes.test.ts"}}' \
+  "RULES — testing"
+
+check "route __tests__ file → api rules still present" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/__tests__/recipes.test.ts"}}' \
+  "RULES — api"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
