@@ -1008,4 +1008,47 @@ The discussion on ## Updates should continue here.
       expect(rulesIdx).toBeGreaterThan(fakeRisksIdx);
     });
   });
+
+  it("writes Project Rules section into the local todo on successful live delegate", () => {
+    const todoContent = `---
+title: "Wire-in test"
+status: backlog
+priority: low
+labels: [testing, deferred]
+github_issue:
+---
+
+# Wire-in test
+
+## Summary
+
+A test.
+
+## Acceptance Criteria
+
+- [ ] Add server/storage/__tests__/example.test.ts
+
+## Implementation Notes
+
+Touch server/storage/__tests__/example.test.ts.
+`;
+    const todoPath = writeWorkspaceTodo(todoContent);
+    const runner = vi.fn<CommandRunner>(() => ({
+      status: 0,
+      stdout: "https://github.com/Xertox1234/OCRecipes/issues/999\n",
+      stderr: "",
+    }));
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const status = runCli(["--live", todoPath], runner);
+
+    expect(status).toBe(0);
+    const updated = fs.readFileSync(todoPath, "utf8");
+    expect(updated).toContain(
+      "github_issue: https://github.com/Xertox1234/OCRecipes/issues/999",
+    );
+    expect(updated).toContain("## Project Rules");
+    expect(updated).toContain("### testing");
+    expect(updated).toContain("### typescript");
+  });
 });

@@ -870,6 +870,11 @@ export function runCli(
 
     const issueUrl = createCopilotIssue(todoForIssue, runner);
     writeGithubIssueToTodo(resolvedPath, issueUrl);
+
+    const domains = detectedDomains(todo.referencedFiles, todo.labels);
+    const projectRules = buildProjectRulesSection(domains);
+    writeProjectRulesSectionToTodo(resolvedPath, projectRules);
+
     console.log(`Created Copilot issue: ${issueUrl}`);
     return 0;
   } catch (error) {
