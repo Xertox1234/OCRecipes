@@ -1,1 +1,17 @@
-NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false
+NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false || exit 1
+
+if [ "$SKIP_KIMI_REVIEW" = "1" ]; then
+  echo "Skipping kimi-review because SKIP_KIMI_REVIEW=1"
+  exit 0
+fi
+
+if ! git diff --cached --name-only --diff-filter=ACM | grep -qE '\.tsx?$'; then
+  exit 0
+fi
+
+if ! command -v kimi-review >/dev/null 2>&1; then
+  echo "Skipping kimi-review because 'kimi-review' is not on PATH"
+  exit 0
+fi
+
+kimi-review --staged --tiers CRITICAL,WARNING --profile ocrecipes --base HEAD || exit 1

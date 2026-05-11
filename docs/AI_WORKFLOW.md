@@ -88,7 +88,11 @@ Do not paste full workflow logs into Claude. Failed-step logs are the useful sig
 
 ### Pre-commit Hook (Husky / lint-staged)
 
-`.husky/pre-commit` runs `lint-staged` only. Staged `.ts`/`.tsx` files get ESLint auto-fix + Prettier. The hook does **not** run `tsc` or `npm test` — CI owns those.
+`.husky/pre-commit` runs `lint-staged` first, then runs `kimi-review` once on the staged diff when staged `.ts`/`.tsx` files are present. CRITICAL findings block the commit; WARNING findings are shown but do not block.
+
+Use `SKIP_KIMI_REVIEW=1 git commit ...` for an emergency bypass. The hook also skips the review step if `kimi-review` is not on `PATH`.
+
+The hook still does **not** run `tsc` or `npm test` — CI owns those.
 
 ### CLAUDE.md
 
