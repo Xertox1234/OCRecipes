@@ -360,18 +360,29 @@ export async function* handleCoachChat(
   const sevenDaysAgo = new Date(today);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const [profile, dailySummary, recentWeights, history, recentLogsForPatterns] =
-    await Promise.all([
-      storage.getUserProfile(userId),
-      storage.getDailySummary(userId, today),
-      storage.getWeightLogs(userId, { limit: 14 }),
-      storage.getChatMessages(conversationId, 20, userId),
-      isCoachPro
-        ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
-        : Promise.resolve(
-            [] as Awaited<ReturnType<typeof storage.getDailyLogsInRange>>,
-          ),
-    ]);
+  const [
+    profile,
+    dailySummary,
+    recentWeights,
+    history,
+    recentLogsForPatterns,
+    notebookEntries,
+  ] = await Promise.all([
+    storage.getUserProfile(userId),
+    storage.getDailySummary(userId, today),
+    storage.getWeightLogs(userId, { limit: 14 }),
+    storage.getChatMessages(conversationId, 20, userId),
+    isCoachPro
+      ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
+      : Promise.resolve(
+          [] as Awaited<ReturnType<typeof storage.getDailyLogsInRange>>,
+        ),
+    isCoachPro
+      ? storage.getActiveNotebookEntries(userId)
+      : Promise.resolve(
+          [] as Awaited<ReturnType<typeof storage.getActiveNotebookEntries>>,
+        ),
+  ]);
 
   // Weekly rate of change — shared pure helper so this logic is unit-tested
   // in isolation rather than through the full orchestrator.
@@ -425,7 +436,7 @@ export async function* handleCoachChat(
     // Always provide blocks formatting instructions for Pro responses
     context.blocksPrompt = BLOCKS_SYSTEM_PROMPT;
 
-    const notebookEntries = await storage.getActiveNotebookEntries(userId);
+    // notebookEntries fetched in parallel above (audit 2026-05-10, H4)
     if (notebookEntries.length > 0) {
       // Include updatedAt so the budget formatter can attach recency labels
       // (recent/this week/this month/older), helping the model weight newer
