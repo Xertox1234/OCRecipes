@@ -650,8 +650,9 @@ export function defaultRunner(
 export function createCopilotIssue(
   todo: TodoTask,
   runner: CommandRunner = defaultRunner,
-  issueBody = buildIssueBody(todo).body,
+  issueBody?: string,
 ): string {
+  const body = issueBody ?? buildIssueBody(todo).body;
   const args = [
     "issue",
     "create",
@@ -667,7 +668,7 @@ export function createCopilotIssue(
     "delegated",
   ];
 
-  const result = runner("gh", args, issueBody);
+  const result = runner("gh", args, body);
   if (result.status !== 0) {
     const detail =
       result.stderr || result.error?.message || "unknown gh failure";
