@@ -19,7 +19,7 @@ A new `todo-researcher` subagent (`.claude/agents/todo-researcher.md`) is spawne
 1. Reads the todo file to extract title, labels, Implementation Notes, and Acceptance Criteria
 2. Detects library families from the affected file paths using a path→library table
 3. Fires three tracks in parallel using a two-turn strategy:
-   - **2a (Context7 MCP)**: `resolve-library-id` → `query-docs` per detected library (Turn 1: all resolve calls; Turn 2: query-docs as each ID arrives)
+   - **2a (library docs lookup)**: resolve the best available library docs source, then query docs per detected library (Turn 1: launch lookups; Turn 2: fetch docs as each library becomes ready)
    - **2b (GitHub MCP, repo)**: search OCRecipes issues/PRs for related prior work
    - **2c (GitHub MCP, global)**: search public repos for similar patterns
 4. Returns a ≤300-word brief with three required sections: `## Library Notes`, `## Project Context`, `## Global Patterns`
@@ -49,8 +49,8 @@ Each executor (Step 10) opens a GitHub PR from its worktree branch instead of me
    - If local `todo/<slug>` already exists (prior failed run): `git branch -D todo/<slug>` then retry
 3. Push: `git push -u origin todo/<slug>`
    - If rejected (remote branch already exists): `git push --force-with-lease` — safe because the branch name is deterministic and the remote branch always belongs to this same todo
-4. Create PR via `mcp__github__create_pull_request`
-   - If PR already exists: look up URL via `mcp__github__list_pull_requests` before falling back to `PR_URL: null`
+4. Create PR via the available GitHub pull request management tools in the environment
+   - If PR already exists: look up the URL via the available PR listing tool before falling back to `PR_URL: null`
 
 The orchestrator collects `PR_URL` from each executor's Step 11 report and displays it in the Phase 5 summary table. If PR creation fails, the code is still committed and pushed — `PR_URL: null` signals the PR needs to be opened manually.
 
@@ -91,13 +91,13 @@ The executor's Failure Path note was updated to reflect worktree isolation: reve
 
 ## Error Handling
 
-| Failure                                     | Behavior                                                               |
-| ------------------------------------------- | ---------------------------------------------------------------------- |
-| Researcher subagent unavailable             | Fall back to label→doc mapping; log "researcher unavailable"           |
-| Researcher returns no section headers       | Same fallback as unavailable                                           |
-| `git branch -m` fails (local branch exists) | `git branch -D todo/<slug>` + retry                                    |
-| `git push` rejected (remote exists)         | `--force-with-lease`                                                   |
-| PR already exists                           | Look up URL via `list_pull_requests` before falling back to null       |
-| PR creation fails for any other reason      | `PR_URL: null`; code is committed; manual PR creation                  |
-| BASE_BRANCH is empty (detached HEAD)        | Fallback to `git rev-parse --abbrev-ref HEAD`; hard stop if still HEAD |
-| Post-batch type check fails                 | Halt session; report to user; do not start next batch                  |
+| Failure                                     | Behavior                                                                  |
+| ------------------------------------------- | ------------------------------------------------------------------------- |
+| Researcher subagent unavailable             | Fall back to label→doc mapping; log "researcher unavailable"              |
+| Researcher returns no section headers       | Same fallback as unavailable                                              |
+| `git branch -m` fails (local branch exists) | `git branch -D todo/<slug>` + retry                                       |
+| `git push` rejected (remote exists)         | `--force-with-lease`                                                      |
+| PR already exists                           | Look up URL via the available PR listing tool before falling back to null |
+| PR creation fails for any other reason      | `PR_URL: null`; code is committed; manual PR creation                     |
+| BASE_BRANCH is empty (detached HEAD)        | Fallback to `git rev-parse --abbrev-ref HEAD`; hard stop if still HEAD    |
+| Post-batch type check fails                 | Halt session; report to user; do not start next batch                     |

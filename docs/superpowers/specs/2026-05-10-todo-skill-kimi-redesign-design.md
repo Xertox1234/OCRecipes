@@ -187,7 +187,7 @@ In Step 4.0, when updating `status` to `in-progress`, add `todos/<filename>.md` 
 Remove the line:
 
 ```
-- `.claude/agents/pattern-codifier.md` — Pattern codification subagent (invoked in Step 9)
+- `.claude/agents/pattern-codifier.md` — Deprecated tombstone only; live codification is inline in executor Step 9
 ```
 
 ---

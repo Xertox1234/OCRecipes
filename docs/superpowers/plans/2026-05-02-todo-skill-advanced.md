@@ -34,7 +34,7 @@ Sections required:
 
 - **Inputs**: two-input model (todo file path + affected files); remaining fields read from todo file
 - **Step 1**: path→library detection table (`client/` → React Native/Expo, `client/navigation/` → React Navigation, `client/hooks/` → TanStack Query, `client/components/` → React Native/Reanimated, `server/` → Express.js, `server/storage/` → Drizzle ORM, `server/services/` → OpenAI API, `shared/` → Zod/TypeScript, `*.test.*`/`__tests__/` → Vitest). A single file can match multiple rows. Guards: empty Affected files → skip 2a, proceed to 2b/2c; non-empty but no matches → skip 2a, write "No library lookup performed — no affected file paths matched the library table."
-- **Step 2**: Two-turn parallel strategy. Turn 1: all `resolve-library-id` calls + 2b + 2c simultaneously. Turn 2: each `query-docs` fires as its ID arrives. Subsections 2a (Context7), 2b (repo GitHub search — issues + PRs, 5 results each), 2c (global GitHub search, 5 results, no `site:github.com`).
+- **Step 2**: Two-turn parallel strategy. Turn 1: launch all available library-doc lookups plus 2b and 2c simultaneously. Turn 2: fetch docs as each library lookup becomes ready. Subsections 2a (library docs), 2b (repo GitHub search — issues + PRs, 5 results each), 2c (global GitHub search, 5 results, no `site:github.com`).
 - **Step 3**: Return brief with exact structure (no code fence): `## Library Notes`, `## Project Context`, `## Global Patterns`. Always include all three headers even with placeholder text.
 - **Guidelines**: always include three headers; concise; no speculation; no new dependencies.
 
@@ -101,8 +101,8 @@ Insert new Step 10 between Codify (Step 9) and Report (Step 11). Step 10:
 1. Determine slug: strip `.md` from todo filename
 2. `git branch -m todo/<slug>` — if fails (local branch exists): `git branch -D todo/<slug>` + retry
 3. `git push -u origin todo/<slug>` — if rejected: `git push --force-with-lease -u origin todo/<slug>` (slug is deterministic → remote branch is always from prior failed run)
-4. `mcp__github__create_pull_request` with owner/repo/title/head/base/body
-5. If create fails (PR exists): `mcp__github__list_pull_requests` with `head: xertox1234:todo/<slug>`, `state: open` to recover URL. If still fails: `PR_URL: null`, continue to Step 11.
+4. Use the available GitHub pull request management tools with owner/repo/title/head/base/body
+5. If create fails (PR exists): use the available PR listing tool with `head: xertox1234:todo/<slug>`, `state: open` to recover URL. If still fails: `PR_URL: null`, continue to Step 11.
 
 PR body template: `## Summary`, `## Changes`, `## Resolves`, `## Test plan`, attribution line.
 

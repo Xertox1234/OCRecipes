@@ -6,7 +6,7 @@
 
 **Architecture:** Two files: an orchestrator skill (`.claude/skills/todo/SKILL.md`) handles triage, dependency analysis, parallel dispatch, and session summary. A `todo-executor` agent (`.claude/agents/todo-executor.md`) handles single-todo lifecycle: parse, research, implement, verify, code review, commit, codify.
 
-**Tech Stack:** Claude Code skills/agents, git worktrees for parallel execution, existing `code-reviewer` and `pattern-codifier` agents.
+**Tech Stack:** Claude Code skills/agents, git worktrees for parallel execution, existing `code-reviewer` agent, and inline codification in the executor (the `pattern-codifier` file is now a retired tombstone).
 
 **Spec:** `docs/superpowers/specs/2026-04-08-todo-batch-skill-design.md`
 
@@ -169,7 +169,7 @@ Evaluate whether the implementation produced knowledge worth codifying:
 - Did you discover a gotcha or pattern not already in `docs/patterns/` or `docs/LEARNINGS.md`?
 - Did you use an approach that would benefit 3+ similar todos?
 
-If YES to any: spawn the `pattern-codifier` agent (`.claude/agents/pattern-codifier.md`) with this prompt:
+If YES to any: in the current implementation, codify inline in the executor by updating the relevant patterns, learnings, reviewer, and specialist-agent files directly.
 
 ```
 Review the changes in the most recent commit. Determine if any finding should be codified as:
@@ -223,11 +223,13 @@ ATTEMPT: <1 or 2>
 1. Revert all uncommitted changes: `git checkout -- .`
 2. Update the todo file — set `status: blocked` in YAML frontmatter
 3. Add an Updates entry with today's date and failure reason:
+
    ```markdown
    ### YYYY-MM-DD
 
    - Blocked by automated executor: <reason>
    ```
+
 4. Commit just the status update:
    ```bash
    git add todos/<filename>.md
@@ -243,7 +245,7 @@ Read back `.claude/agents/todo-executor.md` and confirm:
 - All 10 steps are present (Parse through Report)
 - Documentation inventory table is complete (10 label rows)
 - Failure path covers both attempts
-- Code reviewer and pattern codifier agent paths are correct (`.claude/agents/code-reviewer.md`, `.claude/agents/pattern-codifier.md`)
+- Code reviewer path is correct (`.claude/agents/code-reviewer.md`), and codification behavior is described inline in the executor rather than delegated to an active pattern-codifier agent
 
 - [ ] **Step 3: Commit**
 
@@ -487,7 +489,7 @@ You are a specialized agent that implements a single todo item from the `todos/`
 The executor references two existing agents. Confirm they exist:
 
 ```bash
-ls -la .claude/agents/code-reviewer.md .claude/agents/pattern-codifier.md
+ls -la .claude/agents/code-reviewer.md .claude/agents/pattern-codifier.md  # pattern-codifier is retained only as a deprecation note
 ```
 
 Expected: both files listed, non-empty.

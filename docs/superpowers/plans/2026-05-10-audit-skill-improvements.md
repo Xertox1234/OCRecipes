@@ -428,14 +428,14 @@ Find:
 
 ```
 - **No documentation during the fix phase.** Fix code first (Phases 3-7). Codify patterns after (Phase 8).
-- **Code review is not optional.** Every audit must run Phase 6 before committing. It catches what per-fix verification misses and feeds the codifier complete input.
+- **Code review is not optional.** Every audit must run Phase 6 before committing. It catches what per-fix verification misses and gives the codification phase complete input.
 ```
 
 Replace with:
 
 ```
 - **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns after (Phase 7).
-- **kimi-review is not optional.** Every fix in Phase 3 must pass kimi-review before being marked `verified`. It catches what test-based verification misses and feeds the codifier complete input.
+- **kimi-review is not optional.** Every fix in Phase 3 must pass kimi-review before being marked `verified`. It catches what test-based verification misses and gives the codification phase complete input.
 ```
 
 - [ ] **Step 3: Update the Codification rule**

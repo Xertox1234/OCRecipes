@@ -140,10 +140,10 @@ Other key docs (read when relevant, not always):
 
 ### Step 9 — Codify
 
-- If the code review surfaced non-obvious feedback or the implementation established a reusable pattern, run the `pattern-codifier` agent (`.claude/agents/pattern-codifier.md`)
-- Codifier decides: add to `docs/patterns/*.md`, `docs/LEARNINGS.md`, or update specialist agents (same decision matrix as the audit skill)
+- Superseded by the current inline codification flow in `.claude/agents/todo-executor.md` Step 9
+- If the code review surfaced non-obvious feedback or the implementation established reusable knowledge, update `docs/patterns/*.md`, `docs/LEARNINGS.md`, `.claude/agents/code-reviewer.md`, and relevant specialist agent checklists directly
 - If nothing worth codifying, skip — most routine todos won't produce new patterns
-- Codification changes get a separate commit: `docs: codify pattern from <todo title>`
+- Codification changes get a separate commit: `docs: codify patterns and reviewer checks from <todo title>`
 
 ### Step 10 — Report
 
@@ -188,7 +188,7 @@ Return to orchestrator:
 
 ## Dependencies
 
-- Existing `.claude/agents/code-reviewer.md` — used in Step 5
-- Existing `.claude/agents/pattern-codifier.md` — used in Step 8
+- Existing `.claude/agents/code-reviewer.md` — used in Step 5 and updated when codification reveals new review checks
+- Existing `.claude/agents/pattern-codifier.md` — retired tombstone only; current codification is inline in executor Step 9
 - `todos/TEMPLATE.md` — defines the frontmatter schema
 - `todos/archive/` — destination for completed todos

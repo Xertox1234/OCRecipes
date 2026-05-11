@@ -181,16 +181,16 @@ After code review is clean:
 
 ## Phase 8: Codify (patterns, learnings & agent updates)
 
-After fixes are committed, extract reusable knowledge using the pattern-codifier agent (`.claude/agents/pattern-codifier.md`) and update specialist agents with new checks.
+After fixes are committed, extract reusable knowledge inline from the audit manifest and update specialist agents with new checks.
 
-**Important:** Codify all findings from Phase 3, including any corrections triggered by kimi-review — the codifier should see the complete picture.
+**Important:** Codify all findings from Phase 3, including any corrections triggered by kimi-review — this Phase 8 pass should see the complete picture.
 
 1. Review the manifest for codification candidates. Look for:
    - **Patterns** — Fixes that established reusable approaches (used/needed in 3+ places, non-obvious, project-specific)
    - **Learnings** — Findings that revealed gotchas, bugs with interesting root causes, or security/performance lessons
    - **Code reviewer updates** — New checks the code-reviewer agent should enforce going forward
    - **Specialist agent updates** — New domain-specific checks that a specialist agent should catch in future audits
-2. For each candidate, apply the pattern-codifier's decision matrix:
+2. For each candidate, apply this decision matrix:
    - Recurring solution → **Pattern** → add to appropriate `docs/patterns/*.md` file
    - Bug/gotcha/unexpected behavior → **Learning** → add to `docs/LEARNINGS.md`
    - New check needed → **Code reviewer update** → add to `.claude/agents/code-reviewer.md`
@@ -207,23 +207,12 @@ After fixes are committed, extract reusable knowledge using the pattern-codifier
    | Camera/vision  | `camera-specialist.md`, `rn-ui-ux-specialist.md`                             |
    | Accessibility  | `accessibility-specialist.md`, `rn-ui-ux-specialist.md`                      |
 
-4. Run the pattern-codifier as a subagent with this prompt structure:
-
-   ```
-   Review the audit manifest at docs/audits/[manifest-file].md.
-   For each verified fix, determine if it should be codified as a pattern,
-   learning, code reviewer update, or specialist agent update.
-   Follow the workflow in .claude/agents/pattern-codifier.md.
-   Only codify items that meet the criteria (recurring, non-obvious,
-   project-specific). Skip standard fixes.
-
-   For specialist agent updates, add new checklist items to the "Review
-   Checklist" section of the appropriate agent in .claude/agents/.
-   Also add entries to the "Common Mistakes to Catch" section if the
-   finding represents a recurring mistake pattern.
-   ```
-
-5. Review the codifier's output and apply changes to docs and agents
+4. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip standard fixes.
+   - For **patterns**, extend the relevant `docs/patterns/*.md` file with a concise rule, rationale, and an example or constraint when useful.
+   - For **learnings**, add an entry to `docs/LEARNINGS.md` describing the root cause and the practical takeaway.
+   - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
+   - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
+5. Review the codification diff for accuracy and scope. Keep it limited to the reusable knowledge extracted from the audit.
 6. Commit documentation separately:
    ```
    docs: codify patterns and learnings from [scope] audit
@@ -240,8 +229,8 @@ After fixes are committed, extract reusable knowledge using the pattern-codifier
 
 - **The manifest is the source of truth.** Every finding must be in it. Every status change must be recorded.
 - **Zero open findings at close.** Everything is either verified, deferred (with todo), or false-positive.
-- **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns after (Phase 7).
-- **kimi-review is not optional.** Every fix in Phase 3 must pass kimi-review before being marked `verified`. It catches what test-based verification misses and feeds the codifier complete input.
+- **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns only after the fix commit in Phase 8.
+- **kimi-review is not optional.** Every fix in Phase 3 must pass kimi-review before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
 - **Deferred is not dropped.** Deferred items must have a todo with priority and rationale. "We'll get to it" is not a rationale.
 - **The changelog is append-only.** Never edit previous entries.
-- **Codification is not optional.** Every audit must run Phase 7 to extract knowledge. But it happens AFTER fixes are committed.
+- **Codification is not optional.** Every audit must run Phase 8 to extract knowledge. Do not spawn `.claude/agents/pattern-codifier.md`; codify directly from the manifest after fixes are committed.

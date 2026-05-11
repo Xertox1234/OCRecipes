@@ -28,11 +28,11 @@ Scan the `Affected files` list and match each file path against this table to id
 | `*.test.*` or `__tests__/` | Vitest                    |
 | `express`                  | Express.js                |
 
-Collect the unique list of detected package families. A single file can match multiple rows — collect all matches, not just the first. This drives the Context7 lookups in Step 2.
+Collect the unique list of detected package families. A single file can match multiple rows — collect all matches, not just the first. This drives the pinned docs lookups in Step 2.
 
 If `Affected files` is empty or no file paths were provided, skip Step 1 and Step 2a entirely. Proceed directly to Step 2b and 2c using keywords from the todo title and labels.
 
-If `Affected files` is non-empty but no paths match the table above (e.g., all files are in `docs/`), do NOT skip Step 2a entirely. Instead, read the first 60 lines of each affected file and extract external import statements (lines matching `import ... from '...'` or `require('...')`). Collect package names that do not start with `./`, `../`, `@/`, `~/`, or other internal prefixes. Use the top 3 most-referenced external packages as library families for Step 2a Context7 lookups. If no external packages are found after this scan, skip Step 2a and write "No library lookup performed — no external dependencies detected in affected files." in the Library Notes section.
+If `Affected files` is non-empty but no paths match the table above (e.g., all files are in `docs/`), do NOT skip Step 2a entirely. Instead, read the first 60 lines of each affected file and extract external import statements (lines matching `import ... from '...'` or `require('...')`). Collect package names that do not start with `./`, `../`, `@/`, `~/`, or other internal prefixes. Use the top 3 most-referenced external packages as library families for Step 2a docs lookups. If no external packages are found after this scan, skip Step 2a and write "No library lookup performed — no external dependencies detected in affected files." in the Library Notes section.
 
 ---
 
@@ -40,35 +40,54 @@ If `Affected files` is non-empty but no paths match the table above (e.g., all f
 
 Use two turns:
 
-- **Turn 1**: Fire all `resolve-library-id` calls (one per detected library family), 2b, and 2c simultaneously in the same response turn.
-- **Turn 2**: As each `resolve-library-id` response arrives, immediately fire its corresponding `query-docs` call. Do not wait for other libraries to finish resolving before starting a `query-docs` call.
+- **Turn 1**: Fire all Step 2a `fetch_webpage` docs lookups, one Step 2b `github_text_search`, and one Step 2c `mcp_github_search_code` call simultaneously in the same response turn.
+- **Turn 2**: If Step 2b keyword search is weak or empty, run one fallback `github_repo` search against `xertox1234/OCRecipes` before returning the brief.
 
 Never serialize all calls into a single sequential chain.
 
-### 2a — Context7 library docs (one pair per detected library)
+### 2a — Library docs via `fetch_webpage`
 
 For each library family detected in Step 1:
 
-1. Call `mcp__plugin_context7_context7__resolve-library-id` with the library name to get its Context7 ID.
-2. Call `mcp__plugin_context7_context7__query-docs` with:
-   - `context7CompatibleLibraryId`: the ID returned above
-   - `topic`: the specific API or concept mentioned in the todo. For each library, derive the topic from mentions of that library's API in the todo's Implementation Notes or Acceptance Criteria. If no library-specific mention exists, use the todo title as the topic.
-   - `tokens`: 3000
+1. Use `fetch_webpage` against the smallest official docs page that matches the todo's topic. Prefer topic-specific API or guide pages when the todo already names the API, hook, component, route, or concept.
+2. Query the fetched docs for:
+   - the specific API or concept mentioned in the todo; derive the topic from the todo's Implementation Notes or Acceptance Criteria when possible
+   - otherwise, use the todo title as the topic
+   - enough result budget to capture current API behavior, gotchas, and deprecations
 
-If Context7 returns no results for a library, note 'No docs available for <library>.' in the brief.
+Pinned fallback docs URL table:
 
-### 2b — Repo issue/PR search
+| Library family            | URL(s) to fetch with `fetch_webpage`                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| React Native / Expo       | `https://docs.expo.dev/`, `https://reactnative.dev/docs/getting-started`                                                                |
+| React Navigation          | `https://reactnavigation.org/docs/getting-started/`                                                                                     |
+| TanStack Query            | `https://tanstack.com/query/latest/docs/framework/react/overview`                                                                       |
+| React Native / Reanimated | `https://reactnative.dev/docs/getting-started`, `https://docs.swmansion.com/react-native-reanimated/docs/fundamentals/getting-started/` |
+| Express.js                | `https://expressjs.com/en/5x/api.html`                                                                                                  |
+| Drizzle ORM               | `https://orm.drizzle.team/docs/overview`                                                                                                |
+| OpenAI API                | `https://platform.openai.com/docs/overview`                                                                                             |
+| Zod / TypeScript          | `https://zod.dev/`, `https://www.typescriptlang.org/docs/`                                                                              |
+| Vitest                    | `https://vitest.dev/guide/`                                                                                                             |
 
-Search the OCRecipes GitHub repo for issues or PRs related to this todo:
+Use the table above as a fallback seed list when the todo does not give enough information to infer a narrower official docs page.
 
-1. Search issues: keywords from the todo title + relevant label (e.g., `bug`, `feat`)
-2. Search PRs: same keywords to find prior attempts or related merges
+If a library family is detected but no URL is listed above, note `No pinned docs URL for <library>.` in the brief.
+
+If `fetch_webpage` returns no useful result for a library, note `No docs available for <library>.` in the brief.
+
+### 2b — Repo context via `github_text_search` and `github_repo`
+
+Search the OCRecipes repo using the currently available repo-search tools:
+
+1. Run `github_text_search` with `scope: xertox1234/OCRecipes` using keywords from the todo title, relevant labels, and any distinctive file or symbol names.
+2. If that keyword search is weak or empty, run `github_repo` with `repo: xertox1234/OCRecipes` for a semantic fallback.
+3. This environment does **not** currently expose a dedicated issue/PR search tool for the researcher. If issue or PR lookup would materially matter, say so in the brief instead of inventing results.
 
 Limit to the 5 most relevant results from each call.
 
-### 2c — Global pattern search
+### 2c — Global pattern search via `mcp_github_search_code`
 
-Search for how similar problems have been solved across public repositories:
+Search for how similar problems have been solved across public repositories using `mcp_github_search_code`.
 
 Examples of effective queries:
 
@@ -87,7 +106,7 @@ Return the brief using this exact structure (no wrapping code block):
 
 ## Library Notes
 
-[For each library where Context7 returned results: note current API behavior, version-specific gotchas, deprecation warnings, or relevant configuration. If no docs were available for a specific library, write "No docs available for <library>." If Step 2a was skipped entirely because no affected files were provided, write "No library lookup performed — no affected files provided."]
+[For each library where `fetch_webpage` returned useful results: note current API behavior, version-specific gotchas, deprecation warnings, or relevant configuration. If no docs were available for a specific library, write `No docs available for <library>.` If Step 2a was skipped entirely because no affected files were provided, write `No library lookup performed — no affected files provided.`]
 
 ## Project Context
 

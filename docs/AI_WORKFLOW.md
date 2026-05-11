@@ -249,3 +249,9 @@ Update `/memories/repo/ocrecipes-architecture.md` only when durable architecture
 - Pattern-index changes that future agents should know before opening source files
 
 Do **not** store transient TODOs, implementation notes, eval output, or details already isolated in a specific plan doc. Repo memory is loaded as compact context; keep it short and factual.
+
+## Drift Checklist
+
+The canonical recurring drift list lives in `docs/AI_DRIFT_CHECKLIST.md`.
+
+Use that file for anything you want to monitor via cron or another scheduled job. Keep IDs stable, update the status fields instead of renaming rows, and add new drift-prone items there rather than duplicating checklist logic in multiple docs.

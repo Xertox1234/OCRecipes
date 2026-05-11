@@ -233,7 +233,13 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 **If codifying:**
 
-1. Determine the target pattern file from the todo's primary label:
+1. Determine which reusable knowledge was produced. A single todo may update more than one target:
+   - **Pattern** — a reusable implementation rule for `docs/patterns/*.md`
+   - **Learning** — a gotcha, bug root cause, or platform behavior for `docs/LEARNINGS.md`
+   - **Code reviewer update** — a new review rule for `.claude/agents/code-reviewer.md`
+   - **Specialist agent update** — a new domain-specific review rule for one or more specialist agents
+
+2. Determine the pattern or learning target from the todo's primary label:
 
    | Label                         | Target file                     |
    | ----------------------------- | ------------------------------- |
@@ -249,30 +255,48 @@ Decide inline whether this implementation produced knowledge worth preserving. U
    | `client-state`                | `docs/patterns/client-state.md` |
    | _(no match)_                  | `docs/LEARNINGS.md`             |
 
-2. Compose a description of what was learned (the non-obvious constraint, workaround, or reusable rule — 3–5 sentences).
+3. Route specialist-agent updates using this table when a finding reveals a reusable domain-specific check:
 
-3. Run `kimi-write`, passing the existing file as `--context` so it preserves and extends the file:
+   | Finding Domain | Update Agent(s)                                                              |
+   | -------------- | ---------------------------------------------------------------------------- |
+   | Security       | `security-auditor.md`, `ai-llm-specialist.md`                                |
+   | Performance    | `performance-specialist.md`, `database-specialist.md`                        |
+   | Data integrity | `database-specialist.md`, `nutrition-domain-expert.md`                       |
+   | Architecture   | `architecture-specialist.md`, `api-specialist.md`                            |
+   | Code quality   | `quality-specialist.md`, `typescript-specialist.md`, `testing-specialist.md` |
+   | Camera/vision  | `camera-specialist.md`, `rn-ui-ux-specialist.md`                             |
+   | Accessibility  | `accessibility-specialist.md`, `rn-ui-ux-specialist.md`                      |
+
+4. Compose a short description of what was learned: the non-obvious constraint, workaround, reusable rule, or review gap exposed by the todo or by `review_output`.
+
+5. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip routine fixes.
+   - For **patterns**, extend the relevant `docs/patterns/*.md` file with a concise rule, rationale, and example or constraint when useful.
+   - For **learnings**, add an entry to `docs/LEARNINGS.md` describing the root cause and practical takeaway.
+   - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
+   - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
+
+6. Use `kimi-write` for each target file, passing the existing file as `--context` so it preserves and extends the file. Tailor the spec to the file type:
 
    ```bash
    kimi-write \
-     --spec "Add a new section to this patterns file documenting the following pattern discovered during implementation of '<todo title>': <description of what was learned>. Preserve all existing content exactly." \
+     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. Preserve all existing content exactly. If this is a patterns file, add a concise pattern section. If this is docs/LEARNINGS.md, add a learning entry. If this is an agent file, add checklist items to the review checklist and update Common Mistakes to Catch when the issue is a recurring failure mode." \
      --context <target file> \
      --target <target file>
    ```
 
-4. Stage and commit:
+7. Stage and commit all codification targets together:
 
    ```bash
-   git add <target file>
+   git add <target file(s)>
    git commit -m "$(cat <<'EOF'
-   docs: codify pattern from <todo title>
+   docs: codify patterns and reviewer checks from <todo title>
 
    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
    EOF
    )"
    ```
 
-   If `kimi-write` exits non-zero, log "codification skipped — kimi-write failed" and continue to Step 10. Codification failure is non-blocking.
+   If `kimi-write` exits non-zero for any target, log "codification skipped — kimi-write failed" for that target and continue to Step 10. Codification failure is non-blocking.
 
 ---
 
@@ -311,7 +335,9 @@ If the push is rejected because `todo/<todo-slug>` already exists on the remote,
 git push --force-with-lease -u origin todo/<todo-slug>
 ```
 
-3. **Create the PR** using the GitHub MCP tool — call `mcp__github__create_pull_request` with:
+3. **Create the PR** using the current pull-request tool path for this environment:
+   - First call `activate_pull_request_management_tools`
+   - Then use the PR creation tool exposed by that category with these fields:
    - `owner`: `xertox1234`
    - `repo`: `OCRecipes`
    - `title`: `<todo title from frontmatter>`
@@ -339,7 +365,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
 🤖 Implemented by Claude Code /todo skill
 ```
 
-4. **If `mcp__github__create_pull_request` fails** because a PR already exists for `todo/<todo-slug>`, look up the existing PR URL before giving up: call `mcp__github__list_pull_requests` with `owner: xertox1234`, `repo: OCRecipes`, `head: xertox1234:todo/<todo-slug>`, `state: open`. If a PR is found, use its URL as `PR_URL`. If no open PR is found or the call fails for any other reason (network error, auth error, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
+4. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, use the PR listing tool exposed after `activate_pull_request_management_tools` to look up an existing open PR for `head: xertox1234:todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL`. If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
 
 ---
 

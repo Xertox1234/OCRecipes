@@ -205,7 +205,7 @@ After all batches have been executed (or after early termination):
 - **Baseline must be green.** Never start batch processing on a broken codebase.
 - **Max 4 parallel agents.** Respect the limit to avoid overwhelming system resources and context.
 - **Sequential when scope is unknown.** If a todo mentions no files, it runs alone — never assume it is safe to parallelize.
-- **Full verification in Phase 5 only.** Never run `npm run test:run` between batches — full verification happens at the end. This is an accepted tradeoff: if a batch introduces a regression it won't surface until Phase 5.
+- **Top-level batch verification happens in Phase 5 only.** Do not run an extra orchestrator-level `npm run test:run` / `check:types` / `lint` pass between batches. Each executor still performs its own scoped verification inside the worktree before reporting success, and the orchestrator runs one final repo-level verification pass at the end.
 - **The executor agent does the work.** This orchestrator only triages, dispatches, and summarizes. Never implement todo changes directly.
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
