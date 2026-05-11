@@ -72,6 +72,38 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
 
+## Post-Server-Success Local Cleanup Must Not Throw to the Caller (2026-05-10)
+
+**Category:** Gotcha — Client state / Auth flows
+
+When a client mutation has irreversible server consequences (account deletion, payment confirmation, etc.), the local cleanup that follows MUST be wrapped to swallow errors. If `tokenStorage.clear()` or `AsyncStorage.removeItem()` rejects after the server has already permanently deleted the account, the rejection propagates back through the hook to the UI — which surfaces a generic "Failed to delete account, please try again" message. The user then taps Retry, hits a 401 (account is gone), sees another error, and loses trust in the app.
+
+**The fix:** Once the server returns success for an irreversible op, treat local cleanup as best-effort:
+
+```typescript
+// ✅ GOOD — server success means the caller MUST see success
+const deleteAccount = useCallback(async (password: string) => {
+  // Server errors propagate so the user can correct + retry.
+  await apiRequest("DELETE", "/api/auth/account", { password });
+
+  // Server confirmed deletion. Past this point we cannot let local
+  // storage errors surface — the account is gone, retry will 401.
+  try {
+    await tokenStorage.clear();
+  } catch {}
+  try {
+    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {}
+  setState({ user: null, isLoading: false, isAuthenticated: false });
+}, []);
+```
+
+**Rule:** Whenever a hook awaits an irreversible server call, draw a mental line at the response. Pre-line: errors are recoverable (user retries). Post-line: errors must not propagate; clear local state unconditionally and resolve.
+
+**Reference:** `client/hooks/useAuth.ts` — `deleteAccount`, PR account-deletion-flow code review 2026-05-10.
+
+---
+
 ## Mark-Then-Enrich Creates an Orphan State Window (2026-05-09)
 
 **Category:** Gotcha — Background jobs / Multi-phase async pipelines
