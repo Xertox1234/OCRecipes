@@ -9,8 +9,11 @@
  * corresponding `EXPO_PUBLIC_*` env var is not set.
  */
 
+// `||` (not `??`) so an empty-string env value falls back to the canonical
+// hosted page instead of producing a broken empty URL.
 export const PRIVACY_POLICY_URL: string =
-  process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL ?? "https://ocrecipes.app/privacy";
+  process.env.EXPO_PUBLIC_PRIVACY_POLICY_URL?.trim() ||
+  "https://ocrecipes.app/privacy";
 
 export const TERMS_URL: string =
-  process.env.EXPO_PUBLIC_TERMS_URL ?? "https://ocrecipes.app/terms";
+  process.env.EXPO_PUBLIC_TERMS_URL?.trim() || "https://ocrecipes.app/terms";

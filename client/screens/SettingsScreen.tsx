@@ -170,11 +170,10 @@ export default function SettingsScreen() {
         // Haptics may fail in simulators or restricted environments — never
         // block opening a legal URL on a secondary effect.
       }
+      // Call openURL directly. `canOpenURL` is unreliable for HTTP(S) on
+      // iOS (false negatives without LSApplicationQueriesSchemes entries)
+      // and would block users from reaching required legal documents.
       try {
-        const supported = await Linking.canOpenURL(url);
-        if (!supported) {
-          throw new Error("URL not supported");
-        }
         await Linking.openURL(url);
       } catch (error) {
         console.warn("Failed to open legal URL", { url, error });
