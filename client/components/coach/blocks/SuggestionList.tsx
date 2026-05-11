@@ -28,7 +28,7 @@ export default function SuggestionList({ block, onAction }: Props) {
             item.action && onAction?.(item.action as Record<string, unknown>)
           }
           disabled={!item.action}
-          accessibilityRole={item.action ? "button" : "text"}
+          accessibilityRole={item.action ? "button" : undefined}
           accessibilityLabel={`${item.title}. ${item.subtitle}`}
         >
           <View style={styles.itemContent}>

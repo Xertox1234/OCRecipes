@@ -12,6 +12,10 @@ import { apiRequest } from "@/lib/query-client";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { TasteProfileScreenNavigationProp } from "@/types/navigation";
 import type { RecipeCandidate } from "@shared/types/taste-picks";
+import {
+  tastePickCandidatesResponseSchema,
+  tastePicksResponseSchema,
+} from "@shared/schemas/taste-picks";
 
 const PAGE_LIMIT = 30;
 
@@ -31,11 +35,18 @@ export default function TasteProfileScreen() {
   useEffect(() => {
     async function loadPicks() {
       const res = await apiRequest("GET", "/api/taste-picks");
-      if (!res.ok) return;
-      const body = await res.json();
-      setSelectedIds(
-        new Set(body.picks.map((p: { recipeId: number }) => p.recipeId)),
-      );
+      if (!res.ok) {
+        setLoadError(true);
+        return;
+      }
+      const json = await res.json();
+      const parsed = tastePicksResponseSchema.safeParse(json);
+      if (!parsed.success) {
+        console.error("loadPicks: invalid response shape", parsed.error);
+        setLoadError(true);
+        return;
+      }
+      setSelectedIds(new Set(parsed.data.picks.map((p) => p.recipeId)));
     }
     loadPicks();
   }, []);
@@ -54,7 +65,14 @@ export default function TasteProfileScreen() {
       setLoadError(true);
       return;
     }
-    const body = await res.json();
+    const json = await res.json();
+    const parsed = tastePickCandidatesResponseSchema.safeParse(json);
+    if (!parsed.success) {
+      console.error("loadCandidates: invalid response shape", parsed.error);
+      setLoadError(true);
+      return;
+    }
+    const body = parsed.data;
     setCandidates((prev) =>
       pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
     );

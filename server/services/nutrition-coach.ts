@@ -19,6 +19,12 @@ import type { UserProfile } from "@shared/schema";
 const log = createServiceLogger("nutrition-coach");
 
 /**
+ * Tool definitions are static — hoist to module scope so we build the array
+ * once at module load instead of per-request inside generateCoachProResponse.
+ */
+const TOOL_DEFINITIONS = getToolDefinitions();
+
+/**
  * Sentinel yielded by generateCoachResponse when the safety check fires after
  * streaming has already begun. The caller (handleCoachChat) converts this to a
  * safety_override SSE event so the client can reset and display the safe message.
@@ -382,7 +388,7 @@ export async function* generateCoachProResponse(
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
   const { intent } = classifyIntent(lastUserMessage);
   const systemPrompt = buildSystemPrompt(context, intent);
-  const tools = getToolDefinitions();
+  const tools = TOOL_DEFINITIONS;
 
   const sanitizedMessages = messages.map((m) => ({
     role: m.role,

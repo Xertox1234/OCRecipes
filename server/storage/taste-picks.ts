@@ -1,5 +1,6 @@
 import { eq, inArray, isNotNull, sql, count, and, desc } from "drizzle-orm";
 import { db } from "../db";
+import { logger } from "../lib/logger";
 import { tastePicks, communityRecipes, userProfiles } from "@shared/schema";
 import type {
   RecipeCandidate,
@@ -54,11 +55,13 @@ export async function setTastePicks(
   return db.transaction(async (tx) => {
     // 1. Replace picks
     await tx.delete(tastePicks).where(eq(tastePicks.userId, userId));
-    if (recipeIds.length > 0) {
+    // Dedupe to honor the (userId, recipeId) unique constraint without
+    // needing onConflictDoNothing — DELETE above clears all existing rows.
+    const uniqueRecipeIds = [...new Set(recipeIds)];
+    if (uniqueRecipeIds.length > 0) {
       await tx
         .insert(tastePicks)
-        .values(recipeIds.map((recipeId) => ({ userId, recipeId })))
-        .onConflictDoNothing();
+        .values(uniqueRecipeIds.map((recipeId) => ({ userId, recipeId })));
     }
 
     // 2. Derive cuisines from picked recipes
@@ -91,6 +94,13 @@ export async function setTastePicks(
         .update(userProfiles)
         .set({ cuisinePreferences: merged, updatedAt: new Date() })
         .where(eq(userProfiles.userId, userId));
+    } else if (derivedCuisines.length > 0) {
+      // Cuisine merge is silently dropped when the user has no profile row yet.
+      // Surface this gap in logs so the missing write-through is debuggable.
+      logger.warn(
+        { userId, derivedCuisines },
+        "setTastePicks: no profile row, cuisine merge skipped",
+      );
     }
 
     // 4. Fetch final picks for response

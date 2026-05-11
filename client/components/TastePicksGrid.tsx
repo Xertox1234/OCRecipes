@@ -26,7 +26,11 @@ function RecipeCard({
   return (
     <Pressable
       onPress={() => onToggle(item.id)}
-      accessibilityLabel={item.title}
+      accessibilityLabel={
+        item.cuisineOrigin
+          ? `${item.title}, ${item.cuisineOrigin} cuisine`
+          : item.title
+      }
       accessibilityRole="checkbox"
       accessibilityState={{ checked: selected }}
       style={[
