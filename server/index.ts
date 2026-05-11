@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import type { Request, Response, NextFunction } from "express";
 import pinoHttp from "pino-http";
+import cron from "node-cron";
 import { registerRoutes } from "./routes";
 import * as path from "path";
 import { pool } from "./db";
@@ -11,6 +12,10 @@ import { startPromotionJob } from "./services/canonical-promotion";
 import { validateEnv } from "./lib/env";
 import { logger, rootLogger, toError } from "./lib/logger";
 import { requestContextMiddleware } from "./lib/request-context";
+import {
+  runRetentionCleanup,
+  assertExecutionAllowed as assertRetentionAllowed,
+} from "./scripts/cleanup-retention";
 import crypto from "node:crypto";
 
 // Validate all environment variables before anything else
@@ -225,15 +230,77 @@ function setupErrorHandler(app: express.Application) {
   // Start canonical recipe promotion job (every 6 hours)
   const promotionInterval = startPromotionJob();
 
+  // Daily retention cleanup at 03:00 UTC. Opt-in only — refuses to start in
+  // NODE_ENV=production without RETENTION_CLEANUP_ENABLED=true so the
+  // destructive job can never run by accident. The flag is also required to
+  // enable scheduling outside production so dev/test boots stay
+  // side-effect-free; explicit flips on a dev box are still possible.
+  let retentionCleanupTask: ReturnType<typeof cron.schedule> | null = null;
+  // Track the most recent in-flight cleanup so graceful shutdown can wait
+  // for it. The cron handler resets this to `null` when the run resolves,
+  // so the shutdown path only awaits an actually-running purge.
+  let retentionInFlight: Promise<unknown> | null = null;
+  if (process.env.RETENTION_CLEANUP_ENABLED === "true") {
+    try {
+      assertRetentionAllowed();
+      retentionCleanupTask = cron.schedule(
+        "0 3 * * *",
+        () => {
+          const run = runRetentionCleanup().catch((err) => {
+            logger.error(
+              { err: toError(err) },
+              "retention cleanup: unhandled error",
+            );
+          });
+          retentionInFlight = run;
+          run.finally(() => {
+            if (retentionInFlight === run) {
+              retentionInFlight = null;
+            }
+          });
+        },
+        { timezone: "UTC" },
+      );
+      logger.info(
+        { schedule: "0 3 * * * UTC" },
+        "retention cleanup: scheduled daily run",
+      );
+    } catch (err) {
+      logger.error(
+        { err: toError(err) },
+        "retention cleanup: refusing to schedule",
+      );
+    }
+  } else {
+    logger.info(
+      "retention cleanup: disabled (RETENTION_CLEANUP_ENABLED!=true)",
+    );
+  }
+
   // Graceful shutdown
   function shutdown(signal: string) {
     logger.info({ signal }, "graceful shutdown initiated");
     rootLogger.flush();
     clearInterval(cacheCleanupInterval);
     clearInterval(promotionInterval);
-    server.close(() => {
-      pool.end().then(() => {
-        process.exit(0);
+    if (retentionCleanupTask) {
+      retentionCleanupTask.stop();
+    }
+    // Wait up to the shutdown deadline for an in-flight retention cleanup
+    // to finish its current batch before draining the pool. A truncation
+    // mid-batch can leave a partial DELETE uncommitted, so we'd rather
+    // hold the connection a few extra seconds than race the pool close.
+    const finishRetention = retentionInFlight
+      ? Promise.race([
+          retentionInFlight,
+          new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+        ])
+      : Promise.resolve();
+    finishRetention.finally(() => {
+      server.close(() => {
+        pool.end().then(() => {
+          process.exit(0);
+        });
       });
     });
     // Force exit after 10 seconds if graceful shutdown hangs
