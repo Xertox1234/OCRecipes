@@ -2,7 +2,18 @@
 
 **Date:** 2026-05-11
 **Topic:** Make GitHub Copilot pattern/rule-aware when implementing delegated Issues
-**Status:** Draft for user review
+**Status:** Reviewed; awaiting final approval before implementation plan
+
+## Revision history
+
+- 2026-05-11 (v1): initial draft.
+- 2026-05-11 (v2): incorporated review feedback — todo-file insertion anchor
+  changed from a non-existent `## Files In Scope` heading to a real anchor
+  priority chain; `server/services/**` mapping split into base + LLM-touching
+  enumeration; back-fill mechanism made explicit (`gh issue comment`);
+  Open Questions 1 & 3 resolved (TS authoritative + CI drift check;
+  8 KT cap); CLAUDE.md AC clarified as a local-only note; domain detection
+  scoping documented.
 
 ## Goal
 
@@ -70,21 +81,22 @@ Copilot agent invocation in this repo. Contents:
   for full context."
 - **Path → domain mapping** (the same one CLAUDE.md uses for `kimi-review --patterns`):
 
-  | Path pattern                              | Domains                                                 |
-  | ----------------------------------------- | ------------------------------------------------------- |
-  | `server/routes/**/*.ts` (non-auth)        | api, security, architecture                             |
-  | `server/storage/**/*.ts` (non-auth)       | database, security, architecture                        |
-  | `server/services/**/*.ts`                 | architecture (plus domain-specific based on content)    |
-  | `client/**/*.tsx`, `client/**/*.ts`       | react-native, design-system, accessibility              |
-  | `client/components/**`                    | react-native, design-system, accessibility, performance |
-  | `client/screens/**`                       | react-native, design-system, accessibility              |
-  | `client/hooks/**`                         | hooks, client-state                                     |
-  | `client/context/**`                       | client-state                                            |
-  | `client/lib/**`                           | typescript, client-state                                |
-  | `evals/**`                                | ai-prompting, testing                                   |
-  | `*test*.ts`, `*test*.tsx`, `__tests__/**` | testing                                                 |
-  | `.github/workflows/**`                    | architecture, testing                                   |
-  | `vitest.config.ts`, `eslint.config.*`     | testing, typescript                                     |
+  | Path pattern                                                                                                       | Domains                                                 |
+  | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+  | `server/routes/**/*.ts` (non-auth)                                                                                 | api, security, architecture                             |
+  | `server/storage/**/*.ts` (non-auth)                                                                                | database, security, architecture                        |
+  | `server/services/**/*.ts`                                                                                          | architecture                                            |
+  | `server/services/{coach-,nutrition-coach,recipe-chat,recipe-generation,photo-analysis,menu-,receipt-analysis}*.ts` | architecture, ai-prompting (LLM-touching services)      |
+  | `client/**/*.tsx`, `client/**/*.ts`                                                                                | react-native, design-system, accessibility              |
+  | `client/components/**`                                                                                             | react-native, design-system, accessibility, performance |
+  | `client/screens/**`                                                                                                | react-native, design-system, accessibility              |
+  | `client/hooks/**`                                                                                                  | hooks, client-state                                     |
+  | `client/context/**`                                                                                                | client-state                                            |
+  | `client/lib/**`                                                                                                    | typescript, client-state                                |
+  | `evals/**`                                                                                                         | ai-prompting, testing                                   |
+  | `*test*.ts`, `*test*.tsx`, `__tests__/**`                                                                          | testing                                                 |
+  | `.github/workflows/**`                                                                                             | architecture, testing                                   |
+  | `vitest.config.ts`, `eslint.config.*`                                                                              | testing, typescript                                     |
 
 - **Hard exclusions reminder** — even though the eligibility filter already
   rejects these paths, restate them so Copilot knows why a particular
@@ -163,13 +175,33 @@ post-injection body is ~4–5 KB. Well within GitHub Issue limits.
 ### 3. Same `## Project Rules` block written into the local todo file
 
 When the script delegates a todo successfully, it also writes the same
-`## Project Rules` section back into `todos/YYYY-MM-DD-<slug>.md`, inserted
-between `## Files In Scope` and `## Implementation Notes`. Two reasons:
+`## Project Rules` section back into `todos/YYYY-MM-DD-<slug>.md`. The
+insertion is done by anchor, in this priority order:
+
+1. If the todo has a `## Updates` heading, insert immediately **before** it.
+2. Else if the todo has a `## Risks` heading, insert immediately **after** it.
+3. Else if the todo has a `## Dependencies` heading, insert immediately **after** it.
+4. Else if the todo has a `## Implementation Notes` heading, insert immediately **after** it (and after any content that follows it, up to EOF or the next `## ` heading).
+5. Else append at end of file.
+
+Note: real todos do NOT have a `## Files In Scope` heading — file paths
+live as plain text inside `## Implementation Notes` (typically as a
+`Files in scope:` sub-block). The anchor above respects that. The Issue
+body, by contrast, DOES have a `## Files In Scope` heading because
+`buildIssueBody` generates it from `referencedFiles` — that's where the
+between-Files-In-Scope-and-Implementation-Notes insertion in §2 applies.
+
+Two reasons to write the section back into the local todo:
 
 - The todo becomes self-contained — anyone reading the local todo sees the
   same rules Copilot saw, so review can verify against the same context.
 - If the Issue is closed/deleted on GitHub, the local todo retains the
   delegation context.
+
+If no insertion anchor matches and the todo is malformed (no recognized
+top-level sections), fall back to appending at EOF with a leading
+blank line. The script does NOT abort on this case — losing the rules
+back-fill is preferable to refusing to delegate.
 
 Trade-off: the todo template grows by 1–3 KB per delegation. Acceptable —
 todos are local and gitignored, and the growth happens automatically.
@@ -196,6 +228,14 @@ because `referencedFiles` only captures _files explicitly mentioned in
 the body_ — a fixture-update todo or a config-only todo may legitimately
 have no domain-matching paths even though the work is clearly testing
 or performance flavored.
+
+**Scoping note:** `referencedFiles` is extracted from
+`scopedText = [acceptanceSection, implementationNotes].join("\n\n")` only —
+file paths mentioned in `## Background`, `## Summary`, etc. are deliberately
+excluded. This matches the existing eligibility check's scope; domain
+detection inherits the same boundary. If a todo author needs a file to
+contribute to domain detection, it must appear in Acceptance Criteria or
+Implementation Notes.
 
 ### Edge cases
 
@@ -231,62 +271,88 @@ on adjacent code.
 
 ## Implementation Plan
 
-1. Create `.github/copilot-instructions.md` with the stack overview, mandatory
-   workflow paragraph, path → domain mapping table, and hard exclusions.
-2. Add `PATH_TO_DOMAINS` constant in `scripts/delegate-copilot-issue.ts`
-   defining the same mapping as the instructions file. (Single source of
-   truth question: do we duplicate it, generate one from the other, or
-   parse one from the other at runtime? See Open Question 1.)
-3. Add `detectedDomains(referencedFiles)` function.
-4. Add `buildProjectRulesSection(domains)` that reads
+1. Define `PATH_TO_DOMAINS` constant in `scripts/delegate-copilot-issue.ts`
+   as the authoritative mapping (see Resolved Decision 1). Add unit tests
+   for each row.
+2. Add `npm run build:copilot-instructions` script that reads
+   `PATH_TO_DOMAINS` and writes `.github/copilot-instructions.md` with the
+   stack overview, mandatory workflow paragraph, generated mapping table,
+   and hard exclusions reminder.
+3. Run the script once and commit the generated `.github/copilot-instructions.md`
+   as a real file (not gitignored generated artifact).
+4. Add a CI check (e.g., in `.github/workflows/ci.yml`) that runs
+   `npm run build:copilot-instructions -- --check` and fails if the
+   committed file differs from what the script would generate. Pattern
+   matches how generated type files are typically validated.
+5. Add `detectedDomains(referencedFiles, labels)` function.
+6. Add `buildProjectRulesSection(domains)` that reads
    `docs/rules/<domain>.md` for each detected domain, concatenates with
-   subheadings, and appends pattern URLs.
-5. Modify `buildIssueBody` to insert the section between Files In Scope and
-   Implementation Notes.
-6. After successful delegation, also write the same block into the local
-   todo file (between the same headings).
-7. Tests:
-   - `detectedDomains` returns expected domains for each path-pattern row
-   - `detectedDomains` returns `["typescript"]` for a `.ts`-only Issue
-   - Multi-file Issues return deduplicated union
-   - Missing rule file throws clear error
-   - `buildProjectRulesSection` produces expected markdown
-   - `buildIssueBody` includes the section in the correct position
-   - End-to-end: `evaluateEligibility` + `buildIssueBody` for a sample
-     RN testing todo includes react-native, testing, typescript rules
-8. Verify on a real delegation (dry-run new + redelegate one of the recent
-   Issues if convenient).
+   `### <domain>` subheadings, and appends pattern URLs.
+7. Modify `buildIssueBody` to insert the section between `## Files In Scope`
+   and `## Implementation Notes` in the generated Issue body.
+8. Add `writeProjectRulesSectionToTodo(todoPath, section)` that inserts
+   the same block into the local todo file using the anchor priority
+   defined in Architecture §3 (before `## Updates` → after `## Risks` →
+   after `## Dependencies` → after `## Implementation Notes` body → EOF
+   append).
+9. Add an `--update-existing-issue <issueId>` flag (or a separate
+   `npm run copilot:backfill -- <issueId> <todoPath>`) that posts a
+   `gh issue comment <issueId> --body "<rules-section>"` for an Issue
+   created before this design landed. Documented as a manual back-fill
+   path, not auto-invoked. **Minimum viable**: just document the
+   `gh issue comment` invocation in the AC and don't add a script flag
+   in v1.
+10. Tests:
+    - `detectedDomains` returns expected domains for each path-pattern row
+    - `detectedDomains` returns `["typescript"]` for a `.ts`-only Issue
+    - `detectedDomains` adds `testing` from a `[testing]` label even with no test files in scope
+    - Multi-file Issues return deduplicated union
+    - Missing rule file throws clear error (no silent skip)
+    - `buildProjectRulesSection` produces expected markdown
+    - `buildIssueBody` includes the section in the correct position
+    - `writeProjectRulesSectionToTodo` inserts at correct anchor for each
+      of the 5 anchor cases (Updates / Risks / Dependencies / Impl Notes / EOF)
+    - End-to-end: `evaluateEligibility` + `buildIssueBody` for a sample
+      RN testing todo includes react-native, testing, typescript rules
+    - `build:copilot-instructions --check` exits non-zero when the committed
+      file diverges from the generated content
+11. Verify on a real delegation (delegate a fresh todo, inspect the
+    resulting Issue body in the GitHub UI).
+12. Back-fill the 9 Issues from the 2026-05-11 session via
+    `gh issue comment` — one per Issue, posting the rules block as a
+    new comment so Copilot picks it up on its next read of the Issue
+    thread.
+
+## Resolved Decisions
+
+### 1. Single source of truth for the path→domain mapping → **TypeScript authoritative**
+
+Define mapping in `scripts/delegate-copilot-issue.ts` (typed, testable).
+Generate `.github/copilot-instructions.md` from it via
+`npm run build:copilot-instructions`. The instructions file IS committed as
+a real tracked file (not a gitignored generated artifact) so Copilot can
+read it from a fresh clone. CI verifies the committed file matches what
+the script would generate (`--check` flag fails on drift), so the two
+never silently diverge. Rationale: the script needs typed access for
+detection logic, Markdown parsing is fragile, and CI drift-detection is
+a small one-time investment.
+
+### 3. `.github/copilot-instructions.md` size cap → **8,000 tokens (~32 KB)**
+
+GitHub's documented soft limit for repo-level Copilot custom instructions
+is 8,000 tokens (approximately 32 KB). Our planned ~3 KB is safely under,
+with comfortable headroom for future expansion.
 
 ## Open Questions
 
-### 1. Single source of truth for the path→domain mapping
-
-Two reasonable answers:
-
-- **(a)** Define mapping in the TypeScript script (typed, testable), and
-  GENERATE `.github/copilot-instructions.md` from it via a `npm run
-build:copilot-instructions` script. The instructions file is then a
-  committed artifact, but the script is authoritative.
-- **(b)** Define mapping in `.github/copilot-instructions.md` as a parseable
-  table, and parse it at script runtime. Instructions file is authoritative.
-
-I recommend (a). The script needs typed access for detection logic, and
-Markdown parsing in a TypeScript script is fragile.
-
-### 2. Should LEARNINGS be injected too?
+### 2. Should LEARNINGS be injected too? → **Defer to v2**
 
 The write-time hook also surfaces `[LEARNINGS — matches for "<title>"]` from
 `docs/LEARNINGS.md`. Could be added here as well — a "Known gotchas" section.
 LEARNINGS is 30+ KB though, so we'd need keyword/title matching rather than
-inlining all of it. **Recommend: defer to v2.** Rules + patterns get us most
-of the way; LEARNINGS is a nice-to-have if Copilot still drifts.
-
-### 3. `.github/copilot-instructions.md` size discovery
-
-GitHub's documented soft limit for this file. Before committing the
-instructions file, I'll web-fetch GitHub's docs to confirm the cap and
-adjust accordingly. Our planned size (~3 KB) is almost certainly safe but
-verifying is cheap.
+inlining all of it. Rules + patterns get us most of the way; LEARNINGS is a
+nice-to-have if Copilot still drifts. Will revisit if v1 quality is
+insufficient.
 
 ## Acceptance Criteria
 
@@ -300,18 +366,34 @@ verifying is cheap.
       detected domain, with `### <domain>` subheadings.
 - [ ] Section includes pattern URLs as further-reading pointers.
 - [ ] Local todo file is also updated with the same `## Project Rules` section
-      after successful delegation.
+      after successful delegation, using the anchor priority defined in
+      Architecture §3 (before `## Updates` → after `## Risks` → after
+      `## Dependencies` → after `## Implementation Notes` body → EOF append).
 - [ ] Domain detection includes `typescript` whenever a `.ts`/`.tsx` file is
       in scope.
+- [ ] Domain detection augments domains from intent labels (`testing` /
+      `test` → testing; `performance` → performance) even when no
+      domain-matching paths are referenced.
+- [ ] `server/services/**` mapping is split into a base rule (architecture only)
+      and an explicit LLM-touching enumeration (`coach-*`, `nutrition-coach*`,
+      `recipe-chat`, `recipe-generation`, `photo-analysis`, `menu-*`,
+      `receipt-analysis`) that adds `ai-prompting`. No content-based detection.
 - [ ] Missing rule file fails the delegation with a clear error (no silent
       skip).
-- [ ] Tests cover detection, section building, body insertion, and the
-      missing-rule-file failure path.
-- [ ] One existing Issue (e.g., #130 or #142) re-receives the rules via a
-      manual GitHub comment, as a sanity check that the inlined format is
-      readable in the GitHub UI.
+- [ ] Tests cover detection, section building, body insertion, the
+      missing-rule-file failure path, and all 5 todo-file anchor cases.
+- [ ] `npm run build:copilot-instructions` generates a `.github/copilot-instructions.md`
+      that compiles from `PATH_TO_DOMAINS`; CI runs the same command with
+      `--check` and fails on drift.
+- [ ] All 9 Issues from the 2026-05-11 session (#130, #132, #134, #136, #137,
+      #139, #142, #144, #146) back-filled via `gh issue comment <id> --body-file <rules>.md`,
+      one per Issue. Documented in the spec as the canonical back-fill
+      mechanism for now; no `--update-existing-issue` script flag added in v1.
 - [ ] CLAUDE.md updated to mention `.github/copilot-instructions.md` as the
-      Copilot equivalent of the local MUST CHECK gates.
+      Copilot equivalent of the local MUST CHECK gates. (CLAUDE.md is
+      gitignored — this is a local note for Claude's awareness, not a
+      tracked-file change. Copilot reads `.github/copilot-instructions.md`
+      directly.)
 
 ## Out of Scope (deferred to v2)
 
