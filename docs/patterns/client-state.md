@@ -737,3 +737,56 @@ The extra round-trip from `invalidateQueries` is the correct trade-off here — 
 **References:**
 
 - See also: Optimistic Mutation with Snapshot Rollback (above) — the contrast case
+
+### Partial-Failure Recovery for Multi-Step Server + Local Sync Flows
+
+A common shape: a flow makes a server-state mutation (POST/PUT) and then performs a separate "sync local state" call (`updateUser`, `invalidateQueries`, etc.) that also hits the server. When the network blips between the two calls, the server is updated but the local state is stale — the user gets stuck behind a navigation gate or repeats already-completed work.
+
+**The two acceptable recovery models:**
+
+**(a) Server-atomic + client idempotency.** The server step writes the data AND flips any "completed" flags in one transaction (e.g. `upsertProfileWithOnboarding`). The local sync call becomes idempotent — calling it again on retry is a safe no-op against the now-committed server state. This is the preferred model when you control the server route.
+
+**(b) Best-effort re-fetch on partial success.** If the local sync step fails after the server step succeeded, fall back to a fresh server read (`checkAuth()`, `refetch()`, `invalidateQueries`) that re-derives local state from the authoritative source. Use this when the local sync call wraps logic beyond a simple field write (auth state, AsyncStorage hydration, etc.).
+
+```typescript
+// Pattern: tracked-phase + best-effort resync, with explicit recovery model
+const completeOnboarding = async () => {
+  setIsSubmitting(true);
+  let profileSaved = false;
+  try {
+    // Server atomically saves profile + marks onboardingCompleted=true
+    await apiRequest("POST", "/api/user/dietary-profile", data);
+    profileSaved = true;
+    // Sync local auth state to the new server state
+    await updateUser({ onboardingCompleted: true });
+  } catch (err) {
+    console.error(
+      profileSaved
+        ? "completeOnboarding: server saved but client sync failed (resyncing):"
+        : "completeOnboarding: profile save failed:",
+      err,
+    );
+    if (profileSaved) {
+      // Best-effort re-fetch; swallow errors so we still re-throw the original
+      try {
+        await checkAuth();
+      } catch (resyncErr) {
+        console.warn("onboarding resync via checkAuth failed:", resyncErr);
+      }
+    }
+    throw err;
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+```
+
+**Why track `profileSaved` separately:** without the flag, the catch can't distinguish "POST failed (server is in original state, retry is safe)" from "POST succeeded but local sync failed (server is in new state, retry needs server idempotency)". Different log messages and recovery paths apply.
+
+**Anti-pattern:** swallowing the inner failure without resyncing — the user sees `isSubmitting=false`, no error, but their local state still says onboarding=false, so the navigation gate keeps them on the onboarding screen. Either re-throw so the caller can surface a retry, or actually resync.
+
+**References:**
+
+- `client/context/OnboardingContext.tsx` — `skipOnboarding` / `completeOnboarding`
+- `server/routes/profile.ts` — `upsertProfileWithOnboarding` (atomic flag flip)
+- `client/hooks/useAuth.ts` — `checkAuth` (best-effort resync source)
