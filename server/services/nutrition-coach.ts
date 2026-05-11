@@ -525,11 +525,44 @@ export async function* generateCoachProResponse(
     onBeforeToolCalls?.(toolCallsArray.map((tc) => tc.function.name));
     const toolResults = await Promise.all(
       toolCallsArray.map(async (tc) => {
+        // Parse JSON args explicitly so malformed/truncated argument strings
+        // (e.g. when finish_reason === "length") are surfaced as their own
+        // failure mode rather than falling through the generic outer catch
+        // below. (M15 — 2026-05-11)
+        let args: unknown;
         try {
-          const args = JSON.parse(tc.function.arguments);
+          args = JSON.parse(tc.function.arguments);
+        } catch (error) {
+          log.warn(
+            {
+              err: toError(error),
+              tool: tc.function.name,
+              argsLength: tc.function.arguments?.length,
+            },
+            "Tool call arguments JSON parse failed",
+          );
+          return {
+            tc,
+            result: serviceUnavailable(tc.function.name),
+          };
+        }
+        // Per-tool Zod schemas inside executeToolCall validate fields, but
+        // they assume the top-level value is an object. Reject primitives /
+        // arrays explicitly so `as Record<string, unknown>` never lies. (M15)
+        if (typeof args !== "object" || args === null || Array.isArray(args)) {
+          log.warn(
+            { tool: tc.function.name, argsType: typeof args },
+            "Tool call arguments not a plain object",
+          );
+          return {
+            tc,
+            result: serviceUnavailable(tc.function.name),
+          };
+        }
+        try {
           const result = await executeToolCall(
             tc.function.name,
-            args,
+            args as Record<string, unknown>,
             userId,
             preloadedProfile,
           );
