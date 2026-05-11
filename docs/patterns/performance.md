@@ -631,10 +631,10 @@ export const FLATLIST_DEFAULTS = {
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 
 <FlatList
+  {...FLATLIST_DEFAULTS}
   data={items}
   renderItem={renderItem}
   keyExtractor={(item) => item.id.toString()}
-  {...FLATLIST_DEFAULTS}
 />
 ```
 
@@ -646,7 +646,7 @@ import { FLATLIST_DEFAULTS } from "@/constants/performance";
 
 - `removeClippedSubviews`, `maxToRenderPerBatch`, and `windowSize` are commonly copy-pasted with inconsistent values across screens
 - Tuning these values (e.g., increasing `maxToRenderPerBatch` for devices with more RAM) requires touching every screen without centralization
-- The spread syntax `{...FLATLIST_DEFAULTS}` is overridable — a screen can override individual props after the spread if needed
+- Always spread FLATLIST_DEFAULTS **first** so explicit props override defaults, not the other way around. Spreading last silently lets default values win over screen-specific configuration.
 
 **References:**
 

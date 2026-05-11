@@ -15,6 +15,18 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-10 — Full Codebase Audit
+
+- **Trigger:** Periodic full codebase audit (7 specialist agents: security, performance, data-integrity, architecture, code-quality, camera, accessibility)
+- **Manifest:** [docs/audits/2026-05-10-full.md](2026-05-10-full.md)
+- **Findings:** 0 critical, 12 high, 15 medium, 8 low (35 total)
+- **Resolved:** 14 verified, 21 deferred, 0 false-positive
+- **Commit(s):** `b246c92a` (code fixes)
+- **Key fixes:** TastePicksGrid React.memo+FLATLIST_DEFAULTS perf rewrite, taste-picks IDOR isPublic guard on read+write paths, ScanScreen/CookSession/ReceiptCapture null-photo Alerts, TastePicksScreen/TasteProfileScreen catch handlers, goalAdjustmentLogs CHECK constraints
+- **Codification:** `accessibilityLiveRegion`+`announceForAccessibility` double-announce gotcha (LEARNINGS.md, react-native.md corrected), isPublic write-path IDOR rule (security.md), FLATLIST_DEFAULTS spread-first pattern (performance.md), camera null-photo both-catch-and-else pattern (camera-specialist.md)
+
+---
+
 ## 2026-05-09 — Full Codebase Audit (Phase 3: audit closure)
 
 - **Trigger:** Closing out remaining 14 open audit findings — all routed to `todos/2026-05-09-low-severity-audit-items.md` or marked false-positive
