@@ -63,15 +63,26 @@ export const profileUpdateSchema = z.object({
 });
 
 // Enhanced user profile schema with proper validation for nested objects
-export const userProfileInputSchema = insertUserProfileSchema.extend({
-  allergies: z.array(allergySchema).max(30).optional(),
-  healthConditions: z.array(z.string().max(200)).max(20).optional(),
-  foodDislikes: z.array(z.string().max(100)).max(50).optional(),
-  cuisinePreferences: z.array(z.string().max(100)).max(20).optional(),
-  householdSize: z.number().int().min(1).max(20).optional(),
-  dietType: z.string().max(50).optional().nullable(),
-  primaryGoal: z.string().max(100).optional().nullable(),
-  activityLevel: z.string().max(50).optional().nullable(),
-  cookingSkillLevel: z.string().max(50).optional().nullable(),
-  cookingTimeAvailable: z.string().max(50).optional().nullable(),
-});
+export const userProfileInputSchema = insertUserProfileSchema
+  .omit({
+    // Consent timestamp is never client-supplied — the route stamps `new Date()`
+    // server-side when `healthDataConsent === true`. Prevents client clock spoofing
+    // and accidental erasure via profile updates.
+    healthDataConsentAt: true,
+  })
+  .extend({
+    allergies: z.array(allergySchema).max(30).optional(),
+    healthConditions: z.array(z.string().max(200)).max(20).optional(),
+    foodDislikes: z.array(z.string().max(100)).max(50).optional(),
+    cuisinePreferences: z.array(z.string().max(100)).max(20).optional(),
+    householdSize: z.number().int().min(1).max(20).optional(),
+    dietType: z.string().max(50).optional().nullable(),
+    primaryGoal: z.string().max(100).optional().nullable(),
+    activityLevel: z.string().max(50).optional().nullable(),
+    cookingSkillLevel: z.string().max(50).optional().nullable(),
+    cookingTimeAvailable: z.string().max(50).optional().nullable(),
+    // Boolean intent flag — `true` means the user accepted the consent screen.
+    // The route translates this to a server-stamped `Date`. The actual
+    // `healthDataConsentAt` timestamp column cannot be set or cleared by clients.
+    healthDataConsent: z.boolean().optional(),
+  });

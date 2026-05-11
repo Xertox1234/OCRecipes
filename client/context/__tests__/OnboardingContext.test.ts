@@ -23,6 +23,7 @@ interface OnboardingData {
   cuisinePreferences: string[];
   cookingSkillLevel: string | null;
   cookingTimeAvailable: string | null;
+  healthDataConsent: boolean;
 }
 
 const defaultData: OnboardingData = {
@@ -36,6 +37,7 @@ const defaultData: OnboardingData = {
   cuisinePreferences: [],
   cookingSkillLevel: null,
   cookingTimeAvailable: null,
+  healthDataConsent: false,
 };
 
 describe("OnboardingContext", () => {
@@ -59,8 +61,12 @@ describe("OnboardingContext", () => {
       expect(defaultData.householdSize).toBe(1);
     });
 
-    it("should have exactly 10 fields", () => {
-      expect(Object.keys(defaultData)).toHaveLength(10);
+    it("should have exactly 11 fields", () => {
+      expect(Object.keys(defaultData)).toHaveLength(11);
+    });
+
+    it("should have healthDataConsent false by default", () => {
+      expect(defaultData.healthDataConsent).toBe(false);
     });
   });
 
@@ -125,10 +131,10 @@ describe("OnboardingContext", () => {
   });
 
   describe("step navigation logic", () => {
-    const totalSteps = 6;
+    const totalSteps = 8;
 
-    it("should have 6 total steps", () => {
-      expect(totalSteps).toBe(6);
+    it("should have 8 total steps", () => {
+      expect(totalSteps).toBe(8);
     });
 
     it("nextStep should increment within bounds", () => {
@@ -149,7 +155,7 @@ describe("OnboardingContext", () => {
     });
 
     it("nextStep should not exceed totalSteps - 1", () => {
-      let currentStep = 5; // last step
+      let currentStep = totalSteps - 1; // last step
 
       const nextStep = () => {
         if (currentStep < totalSteps - 1) {
@@ -158,10 +164,10 @@ describe("OnboardingContext", () => {
       };
 
       nextStep();
-      expect(currentStep).toBe(5); // should not change
+      expect(currentStep).toBe(totalSteps - 1); // should not change
 
       nextStep();
-      expect(currentStep).toBe(5); // still capped
+      expect(currentStep).toBe(totalSteps - 1); // still capped
     });
 
     it("prevStep should decrement within bounds", () => {
@@ -205,11 +211,11 @@ describe("OnboardingContext", () => {
       for (let i = 0; i < totalSteps - 1; i++) {
         nextStep();
       }
-      expect(currentStep).toBe(5);
+      expect(currentStep).toBe(totalSteps - 1);
     });
 
     it("should be able to navigate back through all steps", () => {
-      let currentStep = 5;
+      let currentStep = totalSteps - 1;
 
       const prevStep = () => {
         if (currentStep > 0) {

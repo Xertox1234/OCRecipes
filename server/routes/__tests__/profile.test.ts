@@ -222,5 +222,163 @@ describe("Profile Routes", () => {
 
       expect(res.status).toBe(500);
     });
+
+    describe("health data consent", () => {
+      it("stamps healthDataConsentAt server-side when healthDataConsent is true", async () => {
+        vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
+          mockProfile,
+        );
+        const before = Date.now();
+
+        await request(app)
+          .post("/api/user/dietary-profile")
+          .set("Authorization", "Bearer token")
+          .send({
+            allergies: [],
+            healthConditions: [],
+            dietType: null,
+            foodDislikes: [],
+            primaryGoal: null,
+            activityLevel: null,
+            householdSize: 1,
+            cuisinePreferences: [],
+            cookingSkillLevel: null,
+            cookingTimeAvailable: null,
+            healthDataConsent: true,
+          });
+
+        const after = Date.now();
+        const [, profileData] = vi.mocked(storage.upsertProfileWithOnboarding)
+          .mock.calls[0];
+        expect(profileData.healthDataConsentAt).toBeInstanceOf(Date);
+        const stamped = (profileData.healthDataConsentAt as Date).getTime();
+        expect(stamped).toBeGreaterThanOrEqual(before);
+        expect(stamped).toBeLessThanOrEqual(after);
+      });
+
+      it("omits healthDataConsentAt when healthDataConsent is false", async () => {
+        vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
+          mockProfile,
+        );
+
+        await request(app)
+          .post("/api/user/dietary-profile")
+          .set("Authorization", "Bearer token")
+          .send({
+            allergies: [],
+            healthConditions: [],
+            dietType: null,
+            foodDislikes: [],
+            primaryGoal: null,
+            activityLevel: null,
+            householdSize: 1,
+            cuisinePreferences: [],
+            cookingSkillLevel: null,
+            cookingTimeAvailable: null,
+            healthDataConsent: false,
+          });
+
+        const [, profileData] = vi.mocked(storage.upsertProfileWithOnboarding)
+          .mock.calls[0];
+        expect(
+          (profileData as Record<string, unknown>).healthDataConsentAt,
+        ).toBeUndefined();
+      });
+
+      it("omits healthDataConsentAt when consent flag is absent", async () => {
+        vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
+          mockProfile,
+        );
+
+        await request(app)
+          .post("/api/user/dietary-profile")
+          .set("Authorization", "Bearer token")
+          .send({
+            allergies: [],
+            healthConditions: [],
+            dietType: null,
+            foodDislikes: [],
+            primaryGoal: null,
+            activityLevel: null,
+            householdSize: 1,
+            cuisinePreferences: [],
+            cookingSkillLevel: null,
+            cookingTimeAvailable: null,
+          });
+
+        const [, profileData] = vi.mocked(storage.upsertProfileWithOnboarding)
+          .mock.calls[0];
+        expect(
+          (profileData as Record<string, unknown>).healthDataConsentAt,
+        ).toBeUndefined();
+      });
+
+      it("ignores client-supplied healthDataConsentAt — only the server stamps the timestamp", async () => {
+        vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
+          mockProfile,
+        );
+        const clientBackdate = "1970-01-01T00:00:00.000Z";
+
+        await request(app)
+          .post("/api/user/dietary-profile")
+          .set("Authorization", "Bearer token")
+          .send({
+            allergies: [],
+            healthConditions: [],
+            dietType: null,
+            foodDislikes: [],
+            primaryGoal: null,
+            activityLevel: null,
+            householdSize: 1,
+            cuisinePreferences: [],
+            cookingSkillLevel: null,
+            cookingTimeAvailable: null,
+            healthDataConsentAt: clientBackdate,
+            healthDataConsent: false,
+          });
+
+        const [, profileData] = vi.mocked(storage.upsertProfileWithOnboarding)
+          .mock.calls[0];
+        // Client value silently dropped (schema omits the field); server only
+        // stamps a Date when `healthDataConsent === true`.
+        expect(
+          (profileData as Record<string, unknown>).healthDataConsentAt,
+        ).toBeUndefined();
+      });
+    });
+  });
+
+  describe("PUT /api/user/dietary-profile health data consent", () => {
+    it("stamps healthDataConsentAt server-side when consent flag is true", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(mockProfile);
+
+      await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ healthDataConsent: true });
+
+      const [, updates] = vi.mocked(storage.updateUserProfile).mock.calls[0];
+      expect(
+        (updates as Record<string, unknown>).healthDataConsentAt,
+      ).toBeInstanceOf(Date);
+      // Transient intent flag must not be passed to storage as a column.
+      expect("healthDataConsent" in (updates as Record<string, unknown>)).toBe(
+        false,
+      );
+    });
+
+    it("does not touch healthDataConsentAt when consent flag is absent", async () => {
+      vi.mocked(storage.updateUserProfile).mockResolvedValue(mockProfile);
+
+      await request(app)
+        .put("/api/user/dietary-profile")
+        .set("Authorization", "Bearer token")
+        .send({ dietType: "vegan" });
+
+      const [, updates] = vi.mocked(storage.updateUserProfile).mock.calls[0];
+      expect(
+        "healthDataConsentAt" in (updates as Record<string, unknown>),
+      ).toBe(false);
+    });
   });
 });

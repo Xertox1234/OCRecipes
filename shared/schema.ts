@@ -82,6 +82,7 @@ export const userProfiles = pgTable("user_profiles", {
   glp1Mode: boolean("glp1_mode").default(false),
   glp1Medication: text("glp1_medication"),
   glp1StartDate: timestamp("glp1_start_date"),
+  healthDataConsentAt: timestamp("health_data_consent_at"),
   reminderMutes: jsonb("reminder_mutes")
     .$type<ReminderMutes>()
     .default(sql`'{}'::jsonb`)
