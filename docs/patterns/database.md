@@ -2682,3 +2682,65 @@ export async function getChatMessageByTurnKey( // idor-safe: callers must pre-ve
 **When to use:** Any AI-generated write that can be retried — assistant messages, recipe saves, any `onConflictDoNothing` pattern where the source is a client-triggered operation.
 
 **References:** `shared/schema.ts` (`chatMessages.turnKey`), `server/storage/chat.ts` (`getChatMessageByTurnKey`), `server/services/coach-pro-chat.ts` (usage in `handleCoachChat`).
+
+### Batch DELETE with `ctid` + LIMIT Subquery
+
+PostgreSQL does **not** support `LIMIT` on `DELETE`. To delete in bounded batches (avoiding long-running transactions and lock contention), select `ctid` (the row's physical tuple address) from a LIMITed subquery and delete by ctid:
+
+```typescript
+const result = await db.execute(sql`
+  DELETE FROM ${tableId}
+  WHERE ctid IN (
+    SELECT ctid FROM ${tableId}
+    WHERE ${timeId} < ${cutoff}
+    LIMIT ${batchSize}
+  )
+`);
+const rowCount = (result as { rowCount?: number | null }).rowCount ?? 0;
+```
+
+Loop until `rowCount < batchSize`. The ctid value uniquely identifies a tuple within a single statement, so the inner SELECT and outer DELETE are race-safe.
+
+**When to use:** Background retention/cleanup jobs (`scanned_items`, `daily_logs`, audit log purges) that may delete tens of thousands of rows per night.
+
+**Reference:** `server/scripts/cleanup-retention.ts::purgeBatch`.
+
+### Avoid Parameter-Limit Overflow in `NOT IN` Lists — Use `<> ALL($1::text[])`
+
+A `NOT IN ($1, $2, ..., $n)` predicate with one bind per id can blow past PostgreSQL's ≈65k parameter limit once the exclusion list grows. Pass the list as a single SQL array parameter instead:
+
+```typescript
+// BAD — one bind per id, may exceed pg parameter limit
+sql`${userId} NOT IN (${sql.join(
+  excludedIds.map((id) => sql`${id}`),
+  sql`, `,
+)})`;
+
+// GOOD — single array parameter, scales to millions of ids
+sql`${userId} <> ALL(${excludedIds}::text[])`;
+```
+
+The planner evaluates the membership test internally and a single bind covers any list size. For an empty exclusion list, emit a tautology (`TRUE`) rather than `<> ALL('{}')` — both are equivalent but the tautology keeps EXPLAIN plans cleaner.
+
+**When to use:** Anywhere the IN/NOT IN list size is data-driven and could exceed a few thousand entries (active-user exemption sets, blocked-id batches, etc.).
+
+**Reference:** `server/scripts/cleanup-retention.ts::purgeBatch`.
+
+### Cascade-Aware Retention Ordering
+
+When multiple tables have independent retention windows AND a parent→child FK with `ON DELETE CASCADE`, the parent's retention can silently override the child's. Example: `daily_logs.scanned_item_id` cascades from `scanned_items`. If `scanned_items` (365d) purges before `daily_logs` (730d), the 365d window applies to scan-sourced logs.
+
+Run the child purge **first** so its own window applies. Document the resulting effective retention next to the policy constants:
+
+```typescript
+/**
+ * Effective retention for scan-sourced daily_logs is
+ * min(SCANNED_ITEMS_RETENTION_DAYS, DAILY_LOGS_RETENTION_DAYS).
+ * Recipe-sourced logs (no scanned_item_id) are governed only by
+ * DAILY_LOGS_RETENTION_DAYS.
+ */
+```
+
+**When to use:** Any cleanup or anonymisation pipeline that deletes from multiple tables linked by `ON DELETE CASCADE` with differing retention policies.
+
+**Reference:** `server/scripts/cleanup-retention.ts::runRetentionCleanup`, `server/lib/retention-policy.ts`.
