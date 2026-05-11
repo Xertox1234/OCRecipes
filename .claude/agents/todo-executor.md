@@ -88,7 +88,8 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 | `client/navigation/*`                                                                                                                                          | react-native, accessibility                |
 | `client/hooks/*`                                                                                                                                               | hooks, client-state, react-native          |
 | `client/context/*`, `client/lib/*`                                                                                                                             | client-state                               |
-| `*.test.ts`, `*.test.tsx`                                                                                                                                      | testing                                    |
+| `client/constants/theme.ts`, `design_guidelines.md`                                                                                                            | design-system                              |
+| `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`, `*/__tests__/*`                                                                                          | testing                                    |
 | `*.ts`, `*.tsx`                                                                                                                                                | typescript                                 |
 
 ## Step 4 — Implement
@@ -257,19 +258,21 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 2. Determine the pattern or learning target from the todo's primary label:
 
-   | Label                         | Target file                     |
-   | ----------------------------- | ------------------------------- |
-   | `security`                    | `docs/patterns/security.md`     |
-   | `architecture`, `duplication` | `docs/patterns/architecture.md` |
-   | `ui`, `remix`                 | `docs/patterns/react-native.md` |
-   | `performance`                 | `docs/patterns/performance.md`  |
-   | `testing`, `test`             | `docs/patterns/testing.md`      |
-   | `database`                    | `docs/patterns/database.md`     |
-   | `api`                         | `docs/patterns/api.md`          |
-   | `hooks`                       | `docs/patterns/hooks.md`        |
-   | `typescript`, `types`         | `docs/patterns/typescript.md`   |
-   | `client-state`                | `docs/patterns/client-state.md` |
-   | _(no match)_                  | `docs/LEARNINGS.md`             |
+   | Label                         | Target file                      |
+   | ----------------------------- | -------------------------------- |
+   | `security`                    | `docs/patterns/security.md`      |
+   | `architecture`, `duplication` | `docs/patterns/architecture.md`  |
+   | `ui`, `remix`                 | `docs/patterns/react-native.md`  |
+   | `accessibility`, `a11y`       | `docs/LEARNINGS.md`              |
+   | `design-system`, `theme`      | `docs/patterns/design-system.md` |
+   | `performance`                 | `docs/patterns/performance.md`   |
+   | `testing`, `test`             | `docs/patterns/testing.md`       |
+   | `database`                    | `docs/patterns/database.md`      |
+   | `api`                         | `docs/patterns/api.md`           |
+   | `hooks`                       | `docs/patterns/hooks.md`         |
+   | `typescript`, `types`         | `docs/patterns/typescript.md`    |
+   | `client-state`                | `docs/patterns/client-state.md`  |
+   | _(no match)_                  | `docs/LEARNINGS.md`              |
 
 3. Route specialist-agent updates using this table when a finding reveals a reusable domain-specific check:
 
@@ -291,7 +294,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 
-5b. **Rules routing**: If the finding was CRITICAL or HIGH severity AND is a "never do X" class that can be stated in one bullet, append the rule to `docs/rules/{domain}.md` using the same domain routing table from item 2 above. Include it in the codification commit at step 7.
+5b. **Rules routing**: If the finding was CRITICAL or HIGH severity AND is a "never do X" class that can be stated in one bullet, append the rule to `docs/rules/{domain}.md`. The domain name is the rules file basename — `security` → `docs/rules/security.md`, `react-native` → `docs/rules/react-native.md`, `accessibility` → `docs/rules/accessibility.md`, etc. All 13 domain files exist: `api`, `architecture`, `database`, `security`, `react-native`, `accessibility`, `design-system`, `hooks`, `client-state`, `typescript`, `performance`, `testing`, `ai-prompting`. Include the updated rules file in the codification commit at step 7.
 
 6. Use `kimi-write` for each target file, passing the existing file as `--context` so it preserves and extends the file. Tailor the spec to the file type:
 

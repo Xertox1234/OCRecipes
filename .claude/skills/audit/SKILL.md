@@ -218,7 +218,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    - It can be stated in one bullet line
    - The domain has a corresponding `docs/rules/{domain}.md` file
 
-   Domain → rules file mapping mirrors the patterns routing table above. If a rule entry is warranted, append the bullet to the matching `docs/rules/{domain}.md` and include it in the codification commit.
+   The domain name is the rules file basename (e.g., `Security` → `docs/rules/security.md`, `Accessibility` → `docs/rules/accessibility.md`). All 13 domain files exist: `api`, `architecture`, `database`, `security`, `react-native`, `accessibility`, `design-system`, `hooks`, `client-state`, `typescript`, `performance`, `testing`, `ai-prompting`. If a rule entry is warranted, append the bullet to the matching file and include it in the codification commit.
 
 6. Commit documentation separately:
    ```
