@@ -31,7 +31,7 @@ import {
   containsDangerousDietaryAdvice,
 } from "../lib/ai-safety";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { logger } from "../lib/logger";
+import { createServiceLogger } from "../lib/logger";
 import { consumeWarmUp } from "./coach-warm-up";
 import { calculateWeeklyRate } from "./weight-trend";
 import {
@@ -44,6 +44,8 @@ import {
 } from "../lib/chat-history-truncate";
 import type { DailyLog } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+
+const log = createServiceLogger("coach-pro-chat");
 
 /**
  * Derive a short meal-pattern summary from 7 days of daily logs.
@@ -581,7 +583,7 @@ export async function* handleCoachChat(
         turnKey,
       );
       if (existing) {
-        logger.info(
+        log.info(
           { turnKey },
           "assistant message already persisted, skipping duplicate write",
         );
