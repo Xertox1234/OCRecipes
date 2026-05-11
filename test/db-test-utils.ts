@@ -7,7 +7,8 @@
  * IMPORTANT: This module uses module-level mutable state (testClient, testTx).
  * It relies on Vitest running each test file in its own worker (the default
  * "forks" or "threads" pool mode). Do NOT use with singleThread or
- * fileParallelism: false, as that would share state across test files.
+ * fileParallelism: false, as that would share state across test files. CI
+ * sharding is safe because each shard runs in an isolated process/runner.
  */
 import pg from "pg";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
