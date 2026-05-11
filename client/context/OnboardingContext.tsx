@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  ReactNode,
+} from "react";
 import { apiRequest } from "@/lib/query-client";
 import { useAuthContext } from "@/context/AuthContext";
 
@@ -45,6 +52,8 @@ const defaultData: OnboardingData = {
   cookingTimeAvailable: null,
 };
 
+const TOTAL_STEPS = 7;
+
 const OnboardingContext = createContext<OnboardingContextType | null>(null);
 
 export function OnboardingProvider({ children }: { children: ReactNode }) {
@@ -52,58 +61,73 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { updateUser } = useAuthContext();
-  const totalSteps = 7;
 
-  const updateData = (updates: Partial<OnboardingData>) => {
+  const updateData = useCallback((updates: Partial<OnboardingData>) => {
     setData((prev) => ({ ...prev, ...updates }));
-  };
+  }, []);
 
-  const nextStep = () => {
-    if (currentStep < totalSteps - 1) {
-      setCurrentStep((prev) => prev + 1);
-    }
-  };
+  const nextStep = useCallback(() => {
+    setCurrentStep((prev) => (prev < TOTAL_STEPS - 1 ? prev + 1 : prev));
+  }, []);
 
-  const prevStep = () => {
-    if (currentStep > 0) {
-      setCurrentStep((prev) => prev - 1);
-    }
-  };
+  const prevStep = useCallback(() => {
+    setCurrentStep((prev) => (prev > 0 ? prev - 1 : prev));
+  }, []);
 
-  const skipOnboarding = async () => {
+  const skipOnboarding = useCallback(async () => {
     setIsSubmitting(true);
     try {
       await apiRequest("POST", "/api/user/dietary-profile", defaultData);
       await updateUser({ onboardingCompleted: true });
+    } catch (error) {
+      // Callers (e.g. WelcomeScreen) invoke this without awaiting, so we must
+      // not re-throw — that would surface as an unhandled promise rejection.
+      console.error("Failed to skip onboarding:", error);
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [updateUser]);
 
-  const completeOnboarding = async () => {
+  const completeOnboarding = useCallback(async () => {
     setIsSubmitting(true);
     try {
       await apiRequest("POST", "/api/user/dietary-profile", data);
       await updateUser({ onboardingCompleted: true });
+    } catch (error) {
+      // Catch + log to keep parity with skipOnboarding; callers may fire-and-
+      // forget so re-throwing would risk unhandled rejections.
+      console.error("Failed to complete onboarding:", error);
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [data, updateUser]);
+
+  const value = useMemo<OnboardingContextType>(
+    () => ({
+      data,
+      currentStep,
+      totalSteps: TOTAL_STEPS,
+      updateData,
+      nextStep,
+      prevStep,
+      skipOnboarding,
+      completeOnboarding,
+      isSubmitting,
+    }),
+    [
+      data,
+      currentStep,
+      updateData,
+      nextStep,
+      prevStep,
+      skipOnboarding,
+      completeOnboarding,
+      isSubmitting,
+    ],
+  );
 
   return (
-    <OnboardingContext.Provider
-      value={{
-        data,
-        currentStep,
-        totalSteps,
-        updateData,
-        nextStep,
-        prevStep,
-        skipOnboarding,
-        completeOnboarding,
-        isSubmitting,
-      }}
-    >
+    <OnboardingContext.Provider value={value}>
       {children}
     </OnboardingContext.Provider>
   );
