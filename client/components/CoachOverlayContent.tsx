@@ -6,6 +6,7 @@ import {
   Pressable,
   ActivityIndicator,
   AccessibilityInfo,
+  Platform,
   findNodeHandle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +22,13 @@ import { useCoachStream } from "@/hooks/useCoachStream";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
+import {
+  isCoachDisclaimerDismissed,
+  setCoachDisclaimerDismissed,
+} from "@/lib/coach-disclaimer-storage";
+
+const COACH_DISCLAIMER_TEXT =
+  "OCRecipes provides general nutrition information, not medical advice. Always consult a qualified healthcare professional before making changes to your diet or medication.";
 
 export interface CoachQuestion {
   readonly text: string;
@@ -47,9 +55,56 @@ export function CoachOverlayContent({
   const [inputText, setInputText] = useState("");
   const [createError, setCreateError] = useState(false);
   const [streamError, setStreamError] = useState(false);
+  // `null` while loading from AsyncStorage to avoid a flicker of the banner
+  // before the persisted dismissal has been read.
+  const [disclaimerVisible, setDisclaimerVisible] = useState<boolean | null>(
+    null,
+  );
 
   const scrollRef = useRef<ScrollView>(null);
   const titleRef = useRef<View>(null);
+
+  // Load disclaimer dismissal state from AsyncStorage on mount.
+  // `isCoachDisclaimerDismissed()` already swallows read failures and returns
+  // `false` (show disclaimer) on error, but we add an explicit `.catch()`
+  // here as defense-in-depth so a thrown promise can never leave
+  // `disclaimerVisible` stuck at `null` and silently hide the medical notice.
+  useEffect(() => {
+    let cancelled = false;
+    isCoachDisclaimerDismissed()
+      .then((dismissed) => {
+        if (cancelled) return;
+        setDisclaimerVisible(!dismissed);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Safe default — show the medical disclaimer on any unexpected error.
+        setDisclaimerVisible(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Announce disclaimer to screen readers on iOS when it first becomes visible
+  // (Android picks it up via accessibilityLiveRegion on the banner).
+  const didAnnounceDisclaimerRef = useRef(false);
+  useEffect(() => {
+    if (
+      disclaimerVisible === true &&
+      !didAnnounceDisclaimerRef.current &&
+      Platform.OS === "ios"
+    ) {
+      didAnnounceDisclaimerRef.current = true;
+      AccessibilityInfo.announceForAccessibility(COACH_DISCLAIMER_TEXT);
+    }
+  }, [disclaimerVisible]);
+
+  const handleDismissDisclaimer = useCallback(() => {
+    setDisclaimerVisible(false);
+    // Fire-and-forget — UI state already reflects dismissal.
+    void setCoachDisclaimerDismissed();
+  }, []);
 
   const createConversation = useCreateConversation();
   const { data: messages } = useChatMessages(conversationId);
@@ -282,6 +337,51 @@ export function CoachOverlayContent({
           ]}
           keyboardShouldPersistTaps="handled"
         >
+          {disclaimerVisible === true && (
+            // The wrapper is intentionally NOT `accessible` — collapsing
+            // children into a single node would hide the dismiss button from
+            // VoiceOver/TalkBack. The disclaimer text and dismiss button are
+            // independent accessibility nodes; the text node carries the
+            // live-region announcement and full label.
+            <View
+              style={[
+                styles.disclaimerBanner,
+                {
+                  backgroundColor: theme.backgroundSecondary,
+                  borderColor: theme.border,
+                },
+              ]}
+              accessibilityLiveRegion="polite"
+            >
+              <Feather
+                name="info"
+                size={14}
+                color={theme.textSecondary}
+                importantForAccessibility="no"
+              />
+              <ThemedText
+                type="small"
+                accessibilityRole="text"
+                style={[styles.disclaimerText, { color: theme.textSecondary }]}
+              >
+                {COACH_DISCLAIMER_TEXT}
+              </ThemedText>
+              <Pressable
+                onPress={handleDismissDisclaimer}
+                accessibilityLabel="Dismiss disclaimer"
+                accessibilityRole="button"
+                hitSlop={12}
+                style={styles.disclaimerDismiss}
+              >
+                <Feather
+                  name="x"
+                  size={16}
+                  color={theme.textSecondary}
+                  importantForAccessibility="no"
+                />
+              </Pressable>
+            </View>
+          )}
           {displayMessages.map((msg) => (
             <ChatBubble
               key={msg.id}
@@ -370,5 +470,22 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 13,
     fontFamily: FontFamily.regular,
+  },
+  disclaimerBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+  },
+  disclaimerText: {
+    flex: 1,
+    fontFamily: FontFamily.regular,
+    lineHeight: 18,
+  },
+  disclaimerDismiss: {
+    marginTop: -2,
   },
 });

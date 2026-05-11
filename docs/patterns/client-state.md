@@ -79,6 +79,75 @@ useEffect(() => {
 
 ---
 
+### Dismissible-Banner Persistence with Three-State Visibility
+
+For dismissible UI banners (medical disclaimers, onboarding hints, one-time
+notices) that persist across sessions, model visibility as `boolean | null`
+— `null` means "not yet loaded from storage" so the banner never flashes
+before the persisted state is known. Extract the AsyncStorage read/write
+into a small module so the contract can be unit-tested without rendering
+the consuming component.
+
+```typescript
+// client/lib/coach-disclaimer-storage.ts — pure, testable
+export const COACH_DISCLAIMER_STORAGE_KEY =
+  "@ocrecipes/coach_disclaimer_dismissed";
+
+export async function isCoachDisclaimerDismissed(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(COACH_DISCLAIMER_STORAGE_KEY);
+    return value === "true";
+  } catch {
+    return false; // Safe default — show the disclaimer
+  }
+}
+
+export async function setCoachDisclaimerDismissed(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(COACH_DISCLAIMER_STORAGE_KEY, "true");
+  } catch {
+    // Swallow — UI has already updated, persistence is best-effort
+  }
+}
+```
+
+```typescript
+// Consumer component
+const [visible, setVisible] = useState<boolean | null>(null);
+
+useEffect(() => {
+  let cancelled = false;
+  isCoachDisclaimerDismissed()
+    .then((dismissed) => {
+      if (cancelled) return;
+      setVisible(!dismissed);
+    })
+    .catch(() => {
+      // Defense-in-depth — never let the legal/medical banner
+      // get stuck at `null` on an unexpected error.
+      if (!cancelled) setVisible(true);
+    });
+  return () => {
+    cancelled = true;
+  };
+}, []);
+
+// Only render when explicitly true — `null` (loading) hides the banner
+{visible === true && <DisclaimerBanner onDismiss={() => setVisible(false)} />}
+```
+
+**Key rules:**
+
+- Three-state (`true | false | null`) avoids the banner flashing on first render
+- Extract storage to a `*-storage.ts` module so the contract is testable in Vitest
+- Always default to "show" on read failure for legal/medical/compliance banners
+- Storage keys are **device-level** by convention — no `userId` suffix unless a specific user-scoping requirement exists (matches `discovery-storage.ts`, `home-actions-storage.ts`, theme)
+- Use safe-default values in `.catch()` even though the storage module already catches — defense in depth for legal content
+
+**Reference:** `client/lib/coach-disclaimer-storage.ts`, `client/components/CoachOverlayContent.tsx`
+
+---
+
 ### Authorization Header Pattern
 
 Include auth token via Authorization header, not cookies:
