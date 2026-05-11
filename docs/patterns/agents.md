@@ -162,3 +162,47 @@ fi
 **When to use:** Any agent step that reviews local modifications before they are committed. State the stdin pattern explicitly in the instructions; do not rely on the agent to infer the correct git invocation.
 
 **Origin:** `todo-executor.md` pre-commit review step — redesign of the /todo skill system (PR #107). The executor initially used `--base main` for pre-commit review and received empty diffs because the changes were not yet committed.
+
+---
+
+### PreToolUse Hook Contract
+
+When writing a Claude Code `PreToolUse` hook that injects `additionalContext`, three non-obvious constraints apply:
+
+**1. Always exit 0 — never block an edit.**
+Use `set -uo pipefail` (not `set -euo pipefail`). `-e` causes the script to exit non-zero on benign failures like a missing `jq` field or an empty `grep` result, which blocks the tool call. Guard every failure path explicitly with `|| exit 0` or `|| true` instead of relying on `-e`.
+
+**2. Build multi-line output in a tmpfile, not a subshell.**
+Subshell command substitution (`$(...)`) strips trailing newlines, collapsing multi-line context into a single line. Build the string by appending to a tmpfile and `cat` it at the end:
+
+```bash
+TMPFILE=$(mktemp)
+trap 'rm -f "$TMPFILE"' EXIT
+printf '[RULES — %s]\n' "$domain" >> "$TMPFILE"
+cat "$rules_file" >> "$TMPFILE"
+CONTEXT=$(cat "$TMPFILE")
+jq -n --arg ctx "$CONTEXT" '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$ctx}}'
+```
+
+**3. Output JSON shape for `additionalContext`:**
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "..."
+  }
+}
+```
+
+The hook must exit 0 and write this JSON to stdout. Any other exit code or output shape is silently ignored or causes the hook to block.
+
+**Additional practices:**
+
+- Use `printf '%s' "$INPUT" | jq ...` not `echo "$INPUT" | jq ...` — `echo` interprets `\n`, `\t` on some shells, corrupting JSON with backslash sequences
+- Use `grep -F` for basename matching in `LEARNINGS.md` lookups — the basename is treated as a literal string, not a BRE regex (prevents `.` in filenames matching unrelated lines)
+- Use `head -n 80` not `head -80` — the `-N` flag form is deprecated in POSIX
+
+**When to use:** Any hook that injects context before a tool call. The exit-0 contract and tmpfile pattern apply to all PreToolUse hooks regardless of what they inject.
+
+**Origin:** `.claude/hooks/inject-patterns.sh` — write-time pattern injection system (2026-05-10). The tmpfile pattern was required because initial subshell-based context building collapsed multi-line rule files into a single line.
