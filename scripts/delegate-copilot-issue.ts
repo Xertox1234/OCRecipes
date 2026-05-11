@@ -722,19 +722,30 @@ export function writeProjectRulesSectionToTodo(
   const newline = original.includes("\r\n") ? "\r\n" : "\n";
   const normalized = original.replace(/\r\n/g, "\n");
 
-  // Idempotency: if a ## Project Rules section already exists, replace
-  // (overwrite) it in place rather than inserting a second one.
-  const existingMatch = normalized.match(/^## Project Rules$/m);
-  if (existingMatch) {
-    const start = normalized.indexOf("## Project Rules");
-    // Find the next top-level heading after Project Rules (or EOF).
-    const restAfter = normalized.slice(start + "## Project Rules".length);
+  // Find the byte offset of a `## Heading` line that's on its own line
+  // (i.e., a real heading, not a mid-sentence mention in body text).
+  // Returns -1 if not found.
+  const findHeadingOffset = (heading: string): number => {
+    if (normalized.startsWith(`${heading}\n`)) return 0;
+    const needle = `\n${heading}\n`;
+    const newlineIdx = normalized.indexOf(needle);
+    return newlineIdx === -1 ? -1 : newlineIdx + 1;
+  };
+
+  // Idempotency: if a ## Project Rules section already exists (as a real
+  // heading, not a mid-sentence mention), replace it in place rather than
+  // inserting a duplicate.
+  const existingStart = findHeadingOffset("## Project Rules");
+  if (existingStart !== -1) {
+    const restAfter = normalized.slice(
+      existingStart + "## Project Rules".length,
+    );
     const nextHeadingOffset = restAfter.search(/\n## /);
     const end =
       nextHeadingOffset === -1
         ? normalized.length
-        : start + "## Project Rules".length + nextHeadingOffset + 1;
-    const before = normalized.slice(0, start);
+        : existingStart + "## Project Rules".length + nextHeadingOffset + 1;
+    const before = normalized.slice(0, existingStart);
     const after = normalized.slice(end);
     const updated = `${before}${section.trim()}\n\n${after}`.replace(
       /\n{3,}/g,
@@ -750,13 +761,13 @@ export function writeProjectRulesSectionToTodo(
   // Anchor priority: before ## Updates → after ## Risks → after ## Dependencies
   // → after ## Implementation Notes body → EOF append.
   const insertBefore = (anchor: string): string | null => {
-    const idx = normalized.indexOf(anchor);
+    const idx = findHeadingOffset(anchor);
     if (idx === -1) return null;
     return `${normalized.slice(0, idx)}${section.trim()}\n\n${normalized.slice(idx)}`;
   };
 
   const insertAfterSection = (anchor: string): string | null => {
-    const idx = normalized.indexOf(anchor);
+    const idx = findHeadingOffset(anchor);
     if (idx === -1) return null;
     const after = normalized.slice(idx + anchor.length);
     const nextHeadingOffset = after.search(/\n## /);

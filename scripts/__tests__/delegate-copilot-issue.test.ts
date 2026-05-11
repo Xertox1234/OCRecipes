@@ -939,6 +939,73 @@ Notes.
       // Should only contain ONE occurrence of "## Project Rules"
       const matches = updated.match(/^## Project Rules$/gm);
       expect(matches?.length).toBe(1);
+      // Content integrity: the injected rules block body must still be present
+      // after the re-write (so we know the section was replaced cleanly, not
+      // corrupted in some way that still leaves a single heading).
+      expect(updated).toContain("Injected rules block.");
+    });
+
+    it("Updates wins when Risks AND Dependencies AND Updates are all present", () => {
+      // Locks in the priority chain: Updates > Risks > Dependencies > Impl Notes > EOF.
+      const path = writeWorkspaceTodo(
+        `${baseFrontmatter}
+## Implementation Notes
+
+Notes.
+
+## Dependencies
+
+- None.
+
+## Risks
+
+- low
+
+## Updates
+
+### 2026-05-11
+- created
+`,
+      );
+      writeProjectRulesSectionToTodo(path, rulesBlock);
+      const updated = fs.readFileSync(path, "utf8");
+      const rulesIdx = updated.indexOf("## Project Rules");
+      const updatesIdx = updated.indexOf("## Updates");
+      const risksIdx = updated.indexOf("## Risks");
+      const depsIdx = updated.indexOf("## Dependencies");
+      // Rules must land before Updates (highest priority anchor)
+      expect(rulesIdx).toBeLessThan(updatesIdx);
+      // And after Dependencies and Risks (since Updates wins, rules aren't inserted there)
+      expect(rulesIdx).toBeGreaterThan(depsIdx);
+      expect(rulesIdx).toBeGreaterThan(risksIdx);
+    });
+
+    it("ignores mid-sentence anchor mentions in body text", () => {
+      // A todo whose Notes body mentions "## Risks" in prose must not be
+      // mistakenly anchored on that text. The insertion should fall through
+      // to the EOF append since no real ## heading exists for Updates/Risks/
+      // Dependencies/Impl-Notes other than Implementation Notes.
+      const path = writeWorkspaceTodo(
+        `${baseFrontmatter}
+## Implementation Notes
+
+See ## Risks for context (this is body text, not a real heading).
+The discussion on ## Updates should continue here.
+`,
+      );
+      writeProjectRulesSectionToTodo(path, rulesBlock);
+      const updated = fs.readFileSync(path, "utf8");
+      // Project Rules should be inserted AFTER Implementation Notes body,
+      // not before the fake "## Risks" prose mention.
+      const implIdx = updated.indexOf("## Implementation Notes");
+      const fakeRisksIdx = updated.indexOf("## Risks");
+      const rulesIdx = updated.indexOf("## Project Rules");
+      expect(implIdx).toBeGreaterThan(-1);
+      expect(fakeRisksIdx).toBeGreaterThan(-1); // body text still present
+      expect(rulesIdx).toBeGreaterThan(implIdx);
+      // The body prose "## Risks" remains in its original position;
+      // Project Rules is NOT inserted before it.
+      expect(rulesIdx).toBeGreaterThan(fakeRisksIdx);
     });
   });
 });
