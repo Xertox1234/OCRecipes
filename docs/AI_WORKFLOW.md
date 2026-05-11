@@ -255,3 +255,5 @@ Do **not** store transient TODOs, implementation notes, eval output, or details 
 The canonical recurring drift list lives in `docs/AI_DRIFT_CHECKLIST.md`.
 
 Use that file for anything you want to monitor via cron or another scheduled job. Keep IDs stable, update the status fields instead of renaming rows, and add new drift-prone items there rather than duplicating checklist logic in multiple docs.
+
+The implementation plan for the scheduled checker that reads the checklist lives at [`docs/AI_DRIFT_AUTOMATION.md`](AI_DRIFT_AUTOMATION.md).
