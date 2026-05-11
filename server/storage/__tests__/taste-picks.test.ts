@@ -89,6 +89,30 @@ describe("getTastePicks", () => {
     expect(picks[0].title).toBe("Pasta");
     expect(picks[0].cuisineOrigin).toBe("Italian");
   });
+
+  it("excludes private recipes from read path (isPublic guard)", async () => {
+    await createProfile();
+    const publicRecipe = await createCommunityRecipe({ title: "Public Pasta" });
+    const privateRecipe = await createCommunityRecipe({
+      title: "Private Pasta",
+      isPublic: false,
+      normalizedProductName: "test-private-read",
+    });
+    // Directly insert a pick for the private recipe to simulate a stale row
+    const { tastePicks: picksTable } = await import("@shared/schema");
+    const { getTestTx: getTx } = await import("../../../test/db-test-utils");
+    await getTx()
+      .insert(picksTable)
+      .values([
+        { userId: testUserId, recipeId: publicRecipe.id },
+        { userId: testUserId, recipeId: privateRecipe.id },
+      ]);
+
+    const picks = await getTastePicks(testUserId);
+    const titles = picks.map((p) => p.title);
+    expect(titles).toContain("Public Pasta");
+    expect(titles).not.toContain("Private Pasta");
+  });
 });
 
 describe("setTastePicks", () => {
@@ -165,6 +189,41 @@ describe("setTastePicks", () => {
 
     expect(result.cuisinePreferences).not.toContain(null);
     expect(result.cuisinePreferences).not.toContain("");
+  });
+
+  it("silently ignores private recipeIds — does not insert them", async () => {
+    await createProfile([]);
+    const privateRecipe = await createCommunityRecipe({
+      isPublic: false,
+      normalizedProductName: "test-private-set",
+    });
+    const result = await setTastePicks(testUserId, [privateRecipe.id]);
+
+    expect(result.picks).toHaveLength(0);
+  });
+
+  it("with mixed public/private IDs, only inserts public ones and excludes private cuisine", async () => {
+    await createProfile([]);
+    const publicRecipe = await createCommunityRecipe({
+      title: "Public",
+      cuisineOrigin: "Japanese",
+      normalizedProductName: "test-public-mix",
+    });
+    const privateRecipe = await createCommunityRecipe({
+      title: "Private",
+      isPublic: false,
+      cuisineOrigin: "Korean",
+      normalizedProductName: "test-private-mix",
+    });
+    const result = await setTastePicks(testUserId, [
+      publicRecipe.id,
+      privateRecipe.id,
+    ]);
+
+    expect(result.picks).toHaveLength(1);
+    expect(result.picks[0].recipeId).toBe(publicRecipe.id);
+    expect(result.cuisinePreferences).toContain("Japanese");
+    expect(result.cuisinePreferences).not.toContain("Korean");
   });
 });
 
