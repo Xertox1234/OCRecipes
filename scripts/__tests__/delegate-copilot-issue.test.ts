@@ -5,6 +5,7 @@ import * as path from "path";
 import {
   buildIssueBody,
   createCopilotIssue,
+  domainsForPath,
   evaluateEligibility,
   parseTodoMarkdown,
   resolveTodoPath,
@@ -447,5 +448,82 @@ Pull production data snapshot from cold storage for the test fixture.
     expect(() => resolveTodoPath("todos/example.txt")).toThrow(
       "todo path must point to a markdown file",
     );
+  });
+
+  describe("domainsForPath", () => {
+    it("maps non-auth server/routes to api + security + architecture", () => {
+      const result = domainsForPath("server/routes/recipe-catalog.ts");
+      expect(result.sort()).toEqual(["api", "architecture", "security"]);
+    });
+
+    it("maps non-auth server/storage to database + security + architecture", () => {
+      const result = domainsForPath("server/storage/recipes.ts");
+      expect(result.sort()).toEqual(["architecture", "database", "security"]);
+    });
+
+    it("maps base server/services to architecture only", () => {
+      const result = domainsForPath("server/services/goal-calculator.ts");
+      expect(result.sort()).toEqual(["architecture"]);
+    });
+
+    it("maps LLM-touching service to architecture + ai-prompting", () => {
+      const result = domainsForPath("server/services/nutrition-coach.ts");
+      expect(result.sort()).toEqual(["ai-prompting", "architecture"]);
+    });
+
+    it("maps client component to react-native + design-system + accessibility + performance", () => {
+      const result = domainsForPath("client/components/Button.tsx");
+      expect(result.sort()).toEqual([
+        "accessibility",
+        "design-system",
+        "performance",
+        "react-native",
+      ]);
+    });
+
+    it("maps client screen to react-native + design-system + accessibility", () => {
+      const result = domainsForPath("client/screens/HomeScreen.tsx");
+      expect(result.sort()).toEqual([
+        "accessibility",
+        "design-system",
+        "react-native",
+      ]);
+    });
+
+    it("maps client hook to hooks + client-state", () => {
+      const result = domainsForPath("client/hooks/useFoo.ts");
+      expect(result.sort()).toEqual(["client-state", "hooks"]);
+    });
+
+    it("maps client context to client-state", () => {
+      const result = domainsForPath("client/context/AuthContext.tsx");
+      expect(result.sort()).toEqual(["client-state"]);
+    });
+
+    it("maps client lib to typescript + client-state", () => {
+      const result = domainsForPath("client/lib/format.ts");
+      expect(result.sort()).toEqual(["client-state", "typescript"]);
+    });
+
+    it("maps evals to ai-prompting + testing", () => {
+      const result = domainsForPath("evals/runner.ts");
+      expect(result.sort()).toEqual(["ai-prompting", "testing"]);
+    });
+
+    it("maps __tests__ paths to testing", () => {
+      const result = domainsForPath(
+        "server/routes/__tests__/recipe-catalog.test.ts",
+      );
+      expect(result).toContain("testing");
+    });
+
+    it("maps .github/workflows to architecture + testing", () => {
+      const result = domainsForPath(".github/workflows/ci.yml");
+      expect(result.sort()).toEqual(["architecture", "testing"]);
+    });
+
+    it("returns empty array for unmapped path", () => {
+      expect(domainsForPath("README.md")).toEqual([]);
+    });
   });
 });

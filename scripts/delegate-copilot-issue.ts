@@ -121,6 +121,141 @@ const BLOCKED_FILE_PATTERNS: [RegExp, BlockKey][] = [
   [/^server\/routes\/healthkit/, "HEALTH_DATA"],
 ];
 
+export type Domain =
+  | "accessibility"
+  | "ai-prompting"
+  | "api"
+  | "architecture"
+  | "client-state"
+  | "database"
+  | "design-system"
+  | "hooks"
+  | "performance"
+  | "react-native"
+  | "security"
+  | "testing"
+  | "typescript";
+
+// Service file basenames (under server/services/) that import an LLM client.
+// Empirically derived 2026-05-11 via:
+//   grep -l "openai\|OpenAI\|gpt-\|completions\|anthropic" server/services/*.ts | grep -v __tests__
+// A unit test re-runs this grep at test time and fails on drift.
+const LLM_TOUCHING_SERVICES: ReadonlySet<string> = new Set([
+  "canonical-enrichment.ts",
+  "coach-pro-chat.ts",
+  "coach-tools.ts",
+  "cooking-session.ts",
+  "food-nlp.ts",
+  "front-label-analysis.ts",
+  "ingredient-substitution.ts",
+  "meal-suggestions.ts",
+  "menu-analysis.ts",
+  "notebook-extraction.ts",
+  "nutrition-coach.ts",
+  "pantry-meal-plan.ts",
+  "photo-analysis.ts",
+  "receipt-analysis.ts",
+  "recipe-chat.ts",
+  "recipe-generation.ts",
+  "suggestion-generation.ts",
+  "voice-transcription.ts",
+]);
+
+// Path → Domain mapping. Order matters only for the rendered table; the
+// detection function takes a UNION across all matching rules. Patterns are
+// regexes (not globs) to avoid a glob library dependency.
+//
+// `description` is for the markdown table rendered into
+// `.github/copilot-instructions.md` by build-copilot-instructions.ts.
+export interface PathDomainRule {
+  readonly pattern: RegExp;
+  readonly domains: readonly Domain[];
+  readonly description: string;
+}
+
+export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
+  {
+    pattern: /^server\/routes\/[^/]+\.ts$/,
+    domains: ["api", "security", "architecture"],
+    description: "`server/routes/**/*.ts` (non-auth blocked separately)",
+  },
+  {
+    pattern: /^server\/storage\/[^/]+\.ts$/,
+    domains: ["database", "security", "architecture"],
+    description: "`server/storage/**/*.ts` (non-auth blocked separately)",
+  },
+  {
+    pattern: /^server\/services\/[^/]+\.ts$/,
+    domains: ["architecture"],
+    description: "`server/services/**/*.ts` (base — architecture only)",
+  },
+  // LLM-touching services: matched additionally by Set lookup, not regex.
+  // See domainsForPath().
+  {
+    pattern: /^client\/screens\//,
+    domains: ["react-native", "design-system", "accessibility"],
+    description: "`client/screens/**`",
+  },
+  {
+    pattern: /^client\/components\//,
+    domains: ["react-native", "design-system", "accessibility", "performance"],
+    description: "`client/components/**`",
+  },
+  {
+    pattern: /^client\/hooks\//,
+    domains: ["hooks", "client-state"],
+    description: "`client/hooks/**`",
+  },
+  {
+    pattern: /^client\/context\//,
+    domains: ["client-state"],
+    description: "`client/context/**`",
+  },
+  {
+    pattern: /^client\/lib\//,
+    domains: ["typescript", "client-state"],
+    description: "`client/lib/**`",
+  },
+  {
+    pattern: /^evals\//,
+    domains: ["ai-prompting", "testing"],
+    description: "`evals/**`",
+  },
+  {
+    pattern: /\/__tests__\/|\.test\.tsx?$|\.spec\.tsx?$/,
+    domains: ["testing"],
+    description: "`*test*.ts`, `*.test.tsx`, `__tests__/**`",
+  },
+  {
+    pattern: /^\.github\/workflows\//,
+    domains: ["architecture", "testing"],
+    description: "`.github/workflows/**`",
+  },
+  {
+    pattern: /^(vitest\.config\.[^/]+|eslint\.config\.[^/]+)$/,
+    domains: ["testing", "typescript"],
+    description: "`vitest.config.*`, `eslint.config.*`",
+  },
+];
+
+export function domainsForPath(filePath: string): Domain[] {
+  const matched = new Set<Domain>();
+  for (const rule of PATH_TO_DOMAINS) {
+    if (rule.pattern.test(filePath)) {
+      for (const d of rule.domains) matched.add(d);
+    }
+  }
+  // LLM-touching services special case: add ai-prompting if the basename
+  // is in the enumerated set.
+  if (filePath.startsWith("server/services/")) {
+    const basename = filePath.slice("server/services/".length);
+    if (!basename.includes("/") && LLM_TOUCHING_SERVICES.has(basename)) {
+      matched.add("ai-prompting");
+    }
+  }
+  return [...matched];
+}
+
 const FILE_EXTENSIONS = new Set([
   ".ts",
   ".tsx",
