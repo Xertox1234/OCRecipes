@@ -14,4 +14,4 @@ if ! command -v kimi-review >/dev/null 2>&1; then
   exit 0
 fi
 
-kimi-review --staged --tiers CRITICAL,WARNING --profile ocrecipes --base HEAD || exit 1
+kimi-review --staged --tiers CRITICAL,WARNING --profile ocrecipes || exit 1
