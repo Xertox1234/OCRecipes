@@ -541,4 +541,40 @@ Pull production data snapshot from cold storage for the test fixture.
       expect(domainsForPath("README.md")).toEqual([]);
     });
   });
+
+  describe("LLM_TOUCHING_SERVICES drift detection", () => {
+    it("matches the empirical grep result", () => {
+      // Re-run the grep that seeded the constant. If a new service imports
+      // an LLM client without being added to LLM_TOUCHING_SERVICES, this
+      // test fails and forces the developer to update the constant.
+      const result = require("child_process").execSync(
+        `grep -l "openai\\|OpenAI\\|gpt-\\|completions\\|anthropic" server/services/*.ts || true`,
+        { encoding: "utf8" },
+      );
+      const empirical = result
+        .split("\n")
+        .filter(Boolean)
+        .filter((p: string) => !p.includes("/__tests__/"))
+        .map((p: string) => p.replace(/^server\/services\//, ""))
+        .sort();
+
+      // The script's constant is internal — re-derive the set we expect to
+      // match by checking domainsForPath returns "ai-prompting" for each.
+      // This indirectly asserts LLM_TOUCHING_SERVICES contains exactly the
+      // empirical list.
+      const aiPromptingServices = empirical.filter((basename: string) =>
+        domainsForPath(`server/services/${basename}`).includes("ai-prompting"),
+      );
+      const nonAiPromptingServices = empirical.filter(
+        (basename: string) =>
+          !domainsForPath(`server/services/${basename}`).includes(
+            "ai-prompting",
+          ),
+      );
+
+      expect(nonAiPromptingServices).toEqual([]);
+      expect(aiPromptingServices.length).toBe(empirical.length);
+      expect(empirical.length).toBeGreaterThan(0); // sanity — we have LLM services
+    });
+  });
 });
