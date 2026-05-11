@@ -12,6 +12,28 @@
   "hooks": {
     "PreToolUse": [
       {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/inject-patterns.sh",
+            "timeout": 10,
+            "statusMessage": "Loading patterns for this file..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/inject-patterns.sh",
+            "timeout": 10,
+            "statusMessage": "Loading patterns for this file..."
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {
