@@ -1708,6 +1708,7 @@ export type InsertGroceryList = z.infer<typeof insertGroceryListSchema>;
 export type GroceryListItem = typeof groceryListItems.$inferSelect;
 export type InsertGroceryListItem = z.infer<typeof insertGroceryListItemSchema>;
 export type MealSuggestionCacheEntry = typeof mealSuggestionCache.$inferSelect;
+export type CoachResponseCacheEntry = typeof coachResponseCache.$inferSelect;
 
 export const insertMealPlanRecipeSchema = createInsertSchema(
   mealPlanRecipes,
