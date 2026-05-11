@@ -24,6 +24,7 @@
     "test:unit": "vitest run --exclude 'server/storage/__tests__/**'",
     "test:integration": "vitest run server/storage/__tests__/",
     "test:coverage": "vitest run --coverage",
+    "test:coverage:ci": "vitest run --coverage --coverage.thresholds.autoUpdate=false",
     "prepare": "husky",
     "android": "expo run:android",
     "ios": "expo run:ios",

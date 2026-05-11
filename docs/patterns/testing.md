@@ -1,5 +1,21 @@
 # Testing Patterns
 
+### CI Coverage Threshold Gate (Vitest)
+
+Use a hard global floor in `vitest.config.ts` via `test.coverage.thresholds` and enforce it in CI with:
+
+```bash
+npm run test:coverage:ci
+```
+
+This script runs Vitest with `--coverage --coverage.thresholds.autoUpdate=false`, so CI fails if coverage drops below the configured floor.
+
+When coverage genuinely improves:
+
+1. Run `npm run test:coverage` locally and record the new global baseline (`All files` lines/functions/branches).
+2. Raise thresholds in `vitest.config.ts` conservatively (usually to the new baseline rounded down, not up).
+3. Keep `autoUpdate=false` in CI so threshold updates remain intentional code reviews, not automatic drift.
+
 ### Pure Function Extraction for Vitest Testability
 
 When a React Native hook or component contains business logic that you want to unit test, extract the pure functions into a separate `*-utils.ts` file that does **not** import from `react-native`, `expo-*`, or any native module. Vitest runs in Node via Vite/Rollup, which cannot parse React Native's JSX runtime or native module bindings.

@@ -23,6 +23,11 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json", "html"],
       exclude: ["node_modules", "server_dist", "**/*.test.ts"],
+      thresholds: {
+        lines: 70,
+        functions: 68,
+        branches: 68,
+      },
     },
     pool: "forks",
     testTimeout: 10000,
