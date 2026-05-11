@@ -1849,6 +1849,94 @@ export function buildMacroGapEmphasis(targets, remaining): string { ... }
 
 ---
 
+### Drift-Detection Test for Empirically-Derived Constants
+
+When a constant is a hand-maintained list whose canonical source is something
+external (a `grep` over the codebase, a file listing, an API enumeration),
+pair it with a unit test that **re-runs the empirical scan at test time**
+and asserts the constant matches. The test acts as a guard so a new entry
+added to the source can't silently bypass the constant.
+
+**When to use:**
+
+- Constants seeded from a `grep -l ...` over source files (e.g., "services that
+  import an LLM client", "routes that use rate limiting middleware")
+- Lists hand-curated from external API enumerations that change over time
+- Allowlists / blocklists that mirror runtime behavior in a sibling system
+
+**Pattern:**
+
+```typescript
+it("matches the empirical grep result", () => {
+  const result = execSync(
+    `grep -l "openai\\|anthropic" server/services/*.ts || true`,
+    { encoding: "utf8" },
+  );
+  const empirical = result
+    .split("\n")
+    .filter(Boolean)
+    .filter((p) => !p.includes("/__tests__/"))
+    .map((p) => p.replace(/^server\/services\//, ""))
+    .sort();
+
+  // Indirectly assert the constant matches by checking the consumer
+  // (here: domainsForPath returns "ai-prompting" for each empirical hit).
+  const missing = empirical.filter(
+    (basename) =>
+      !domainsForPath(`server/services/${basename}`).includes("ai-prompting"),
+  );
+  expect(missing).toEqual([]);
+  expect(empirical.length).toBeGreaterThan(0); // sanity: grep isn't vacuous
+});
+```
+
+**Why:** The constant exists because the runtime cost of re-running the grep
+on every invocation is unacceptable, OR the source data isn't available at
+runtime. The test trades a one-time test-time grep for a guarantee that the
+constant stays accurate. The sanity assertion (`length > 0`) guards against
+a grep that silently returns nothing (e.g., paths changed, regex broken)
+which would otherwise turn the drift check into a no-op.
+
+**Pair with:** `--check`-mode build script if the constant feeds a generated
+artifact — see `architecture.md` "CI Drift-Check for Generated Artifacts."
+
+**Example:** `scripts/__tests__/delegate-copilot-issue.test.ts` —
+`LLM_TOUCHING_SERVICES drift detection` block.
+
+### Sort-Order Assertions: Pin Expected Output
+
+When testing a function whose contract includes sort order, **assert against
+a pinned expected array**, not against a self-sorted or structurally-checked
+result. Two specific traps to avoid:
+
+```typescript
+// ❌ WRONG — self-sorting masks sort regressions
+expect(result.sort()).toEqual(["a", "b", "c"]);
+// If the function returns ["c", "a", "b"], .sort() mutates it back to
+// ["a", "b", "c"] and the test passes. The function's sort behavior is
+// never actually tested.
+
+// ❌ WRONG — meta-assertion passes trivially for length-1 results
+const sorted = [...result].sort();
+expect(result).toEqual(sorted);
+// If the function returns ["typescript"] (single element), it's trivially
+// "sorted" by definition. The test gives confidence the function returned
+// something, not that it returned the right thing in the right order.
+
+// ✅ CORRECT — pinned expected output
+expect(result).toEqual(["a", "b", "c"]);
+// Locks in both element presence AND order. A regression in either is
+// caught.
+```
+
+**Why:** Sort-order contracts are easy to break (a refactor that swaps a
+`Set` for an `Array` loses determinism; a removed `.sort()` call goes
+unnoticed). The only test that catches it reliably is one that names the
+exact expected sequence. If the inputs make the expected list verbose,
+that's the cost of the contract — write it out.
+
+---
+
 ## Adding New Patterns
 
 When you establish a new pattern:

@@ -1573,3 +1573,85 @@ for await (const chunk of stream) {
 **Why exported constant:** Callers import the same constant rather than duplicating the string — string drift between producer and consumer is a silent bug.
 
 **References:** `server/services/nutrition-coach.ts` (`SAFETY_OVERRIDE_SENTINEL`)
+
+## CI Drift-Check for Generated Tracked Artifacts
+
+**Rule:** When a script generates a file that gets committed (config files,
+instruction files, code listings, etc.), add a `--check` mode that compares
+the committed bytes to current generator output and exits non-zero on
+mismatch. Wire it into CI so a forgotten regeneration fails fast.
+
+```typescript
+// scripts/build-foo.ts
+export function generateFoo(): string {
+  /* ... */
+}
+
+export function runBuildCli(argv: ReadonlyArray<string>): number {
+  const args = [...argv];
+  const checkMode = args.includes("--check");
+  if (checkMode) args.splice(args.indexOf("--check"), 1);
+  const target = args[0];
+  const generated = generateFoo();
+
+  if (checkMode) {
+    if (!fs.existsSync(target)) {
+      console.error(
+        `[--check] ${target} does not exist. Run 'npm run build:foo'.`,
+      );
+      return 1;
+    }
+    if (fs.readFileSync(target, "utf8") !== generated) {
+      console.error(`[--check] ${target} is stale. Run 'npm run build:foo'.`);
+      return 1;
+    }
+    return 0;
+  }
+
+  fs.writeFileSync(target, generated);
+  return 0;
+}
+```
+
+```jsonc
+// package.json
+"build:foo": "tsx scripts/build-foo.ts artifacts/foo.md",
+"build:foo:check": "tsx scripts/build-foo.ts --check artifacts/foo.md"
+```
+
+```yaml
+# .github/workflows/ci.yml
+- name: Verify artifacts/foo.md is current
+  run: npm run build:foo:check
+```
+
+**Why:** Generated files diverge silently. Two common failure modes the
+`--check` mode catches:
+
+- A developer edits the source the generator reads from (e.g., updates a
+  mapping constant) but forgets to regenerate.
+- A pre-commit hook (Prettier, ESLint, etc.) reformats the committed
+  artifact AFTER it was generated, so the next regeneration produces
+  different bytes than what's committed.
+
+For the second case, **also add the artifact to `.prettierignore`** (and any
+other formatter ignore lists) so the hook can't silently mutate it. See
+`docs/LEARNINGS.md` "Prettier reformats generated files after commit."
+
+**When to use:** Any committed artifact whose contents should equal the
+output of a deterministic script. Examples: generated docs, generated CI
+config, generated client/server type stubs, generated API schemas.
+
+**When NOT to use:** Files that are generated AND hand-edited (e.g., a
+README scaffolded from a template then prose-edited). The byte-equality
+contract doesn't apply.
+
+**Pair with:** A unit test asserting `generateFoo()` produces non-empty
+content with the expected structural markers, so a refactor of the
+generator can't silently produce garbage that still matches a stale
+committed file (only useful if both files are wrong in the same way —
+which is rare but possible).
+
+**Origin:** `scripts/build-copilot-instructions.ts`,
+`.github/workflows/ci.yml` "Verify .github/copilot-instructions.md is current";
+PR #149.

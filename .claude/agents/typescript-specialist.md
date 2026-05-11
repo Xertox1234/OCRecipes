@@ -220,6 +220,8 @@ if (state.status === "success") {
 3. **`parseInt(req.userId)`** — `req.userId` is a UUID string. `parseInt(uuidString)` returns `NaN`. If a Zod schema field stores a user ID, use `z.string()`. Audit 2026-04-28 H2.
 4. **Untyped JSON.parse** — Always validate with Zod or a type guard
 5. **Ignoring `noImplicitAny`** — Strict mode is on; if a type is unclear, write a type guard
+6. **`indexOf("## Heading")` for markdown anchor matching** — Matches mid-sentence prose mentions, not just real headings. Use a line-anchored matcher (`startsWith(heading + "\n")` or `\n${heading}\n`) or a multiline regex (`/^## Heading$/m`). See `docs/patterns/typescript.md` "Line-Anchored Heading Matching in Markdown Manipulation."
+7. **Bypass / exemption Set keyed off display strings** — When code in two places agrees on "the same item" via human-readable text (reason messages, labels), the bypass silently breaks the next time someone edits the wording. Promote the identifier to a stable union/enum key and look up via that key. See `docs/patterns/typescript.md` "Stable Identifier Keys for Bypass / Exemption Sets."
 
 ---
 

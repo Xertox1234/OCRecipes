@@ -303,6 +303,10 @@ describe("ServiceName", () => {
 6. **Missing mock cleanup** - `vi.clearAllMocks()` in `beforeEach`
 7. **Testing implementation** - Assert on return values and behavior, not on which functions were called
 8. **Missing factory for new table** - Schema additions need corresponding factory
+9. **`expect(result.sort()).toEqual([...])`** - Mutates the result before assertion; if the function returned an unsorted array, `.sort()` re-sorts it and the test silently passes. Use `expect(result).toEqual([sorted, list])` so the function's own sort order is asserted.
+10. **`expect(result).toEqual([...result].sort())` as a "sorted" check** - Meta-assertion that passes trivially for length-1 results. Pin the concrete expected output instead.
+11. **`toContain` for sort/order/membership-set contracts** - `toContain` only checks one element; if the function leaks unrelated domain values, it would still pass. Use `toEqual` with a pinned array when the function's contract is "returns exactly X."
+12. **Hand-curated constant with no drift detector** - When a constant is seeded from a `grep` or external scan, pair it with a unit test that re-runs the scan and asserts the constant matches. See `docs/patterns/testing.md` "Drift-Detection Test for Empirically-Derived Constants."
 
 ---
 
