@@ -9,6 +9,7 @@
 - Radio chip rows need a `role="radiogroup"` wrapper `View`
 - Progress bars need `accessibilityRole="progressbar"` + `accessibilityValue={{ min: 0, max: 100, now: value }}`
 - Decorative emoji must be wrapped in a `Text` with `accessible={false}` — VoiceOver announces them literally otherwise
-- `accessibilityLiveRegion` is Android-only — always pair with `AccessibilityInfo.announceForAccessibility()` for iOS coverage
+- `accessibilityLiveRegion` is Android-only — always pair with `AccessibilityInfo.announceForAccessibility()` for iOS coverage, but gate the announce call to `Platform.OS === "ios"` when the same element already has a live region (Android `TYPE_ANNOUNCEMENT` + live region = double-announce)
 - Badges that are purely decorative inside a parent with an `accessibilityLabel` need `accessible={false}` — prevents double-announcement
 - Never set `accessible={true}` on a banner/card wrapper that contains an interactive child (dismiss/CTA Pressable) — VoiceOver/TalkBack collapses children into one node and the button becomes unreachable. Put `accessibilityRole`/`accessibilityLabel` on the text node and let the Pressable stay its own a11y node
+- Never apply `accessibilityRole="checkbox"` (or `"radio"`, `"switch"`) to a non-`Pressable` element — assistive tech announces the toggle affordance but the gesture does nothing. For visual-only status indicators, set `accessible={false}` + `importantForAccessibility="no"` and roll the state into a parent group's `accessibilityLabel` (e.g., "Accepted commitment: …" vs "Commitment: …")
