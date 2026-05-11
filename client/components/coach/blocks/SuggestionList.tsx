@@ -8,7 +8,10 @@ interface Props {
   onAction?: (action: Record<string, unknown>) => void;
 }
 
-export default function SuggestionList({ block, onAction }: Props) {
+const SuggestionList = React.memo(function SuggestionList({
+  block,
+  onAction,
+}: Props) {
   const { theme } = useTheme();
   return (
     <View
@@ -48,7 +51,9 @@ export default function SuggestionList({ block, onAction }: Props) {
       ))}
     </View>
   );
-}
+});
+
+export default SuggestionList;
 
 const styles = StyleSheet.create({
   container: { borderRadius: 12, marginTop: 8, overflow: "hidden" },

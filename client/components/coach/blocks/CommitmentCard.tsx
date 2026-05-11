@@ -14,7 +14,11 @@ interface Props {
   isAccepted?: boolean;
 }
 
-export default function CommitmentCard({ block, onAccept, isAccepted }: Props) {
+const CommitmentCard = React.memo(function CommitmentCard({
+  block,
+  onAccept,
+  isAccepted,
+}: Props) {
   const { theme } = useTheme();
   const [localAccepted, setLocalAccepted] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -99,7 +103,9 @@ export default function CommitmentCard({ block, onAccept, isAccepted }: Props) {
       )}
     </View>
   );
-}
+});
+
+export default CommitmentCard;
 
 const styles = StyleSheet.create({
   container: { borderRadius: 12, padding: 12, marginTop: 8 },
