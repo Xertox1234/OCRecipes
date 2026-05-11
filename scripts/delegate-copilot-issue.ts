@@ -580,8 +580,53 @@ function checkboxList(items: string[]): string {
 
 export function buildIssueBody(todo: TodoTask): string {
   const labels = todo.labels.length > 0 ? todo.labels.join(", ") : "none";
+  const domains = detectedDomains(todo.referencedFiles, todo.labels);
+  const projectRules = buildProjectRulesSection(domains);
 
-  return `## Source\n\nLocal todo: \`${todo.filePath}\`\n\nPriority: ${todo.priority || "unknown"}\nLabels: ${labels}\n\n## Summary\n\n${todo.summary || todo.title}\n\n## Background\n\n${todo.background || "See the local todo for background."}\n\n## Acceptance Criteria\n\n${checkboxList(todo.acceptanceCriteria)}\n\n## Files In Scope\n\n${formatList(todo.referencedFiles)}\n\n## Implementation Notes\n\n${todo.implementationNotes || "Stay within the acceptance criteria and files in scope."}\n\n## Dependencies\n\n${todo.dependencies || "None listed."}\n\n## Risks\n\n${todo.risks || "None listed."}\n\n## Safety And Review Requirements\n\n- Copilot must open a pull request. Do not commit directly to \`main\`.\n- Do not auto-merge. A human must review the PR.\n- Keep changes limited to the files in scope and acceptance criteria above.\n- Do not touch JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture without a human-approved plan.\n`;
+  return `## Source
+
+Local todo: \`${todo.filePath}\`
+
+Priority: ${todo.priority || "unknown"}
+Labels: ${labels}
+
+## Summary
+
+${todo.summary || todo.title}
+
+## Background
+
+${todo.background || "See the local todo for background."}
+
+## Acceptance Criteria
+
+${checkboxList(todo.acceptanceCriteria)}
+
+## Files In Scope
+
+${formatList(todo.referencedFiles)}
+
+${projectRules}
+
+## Implementation Notes
+
+${todo.implementationNotes || "Stay within the acceptance criteria and files in scope."}
+
+## Dependencies
+
+${todo.dependencies || "None listed."}
+
+## Risks
+
+${todo.risks || "None listed."}
+
+## Safety And Review Requirements
+
+- Copilot must open a pull request. Do not commit directly to \`main\`.
+- Do not auto-merge. A human must review the PR.
+- Keep changes limited to the files in scope and acceptance criteria above.
+- Do not touch JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture without a human-approved plan.
+`;
 }
 
 export function defaultRunner(

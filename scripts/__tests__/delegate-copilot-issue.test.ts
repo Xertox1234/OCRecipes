@@ -724,4 +724,79 @@ Pull production data snapshot from cold storage for the test fixture.
       );
     });
   });
+
+  describe("buildIssueBody Project Rules injection", () => {
+    it("inserts ## Project Rules between Files In Scope and Implementation Notes", () => {
+      const todo = parseTodoMarkdown(
+        `---
+title: "Test rules injection"
+status: backlog
+priority: low
+labels: [testing, deferred]
+github_issue:
+---
+
+# Test rules injection
+
+## Summary
+
+A test.
+
+## Acceptance Criteria
+
+- [ ] Add tests in server/storage/__tests__/example.test.ts
+
+## Implementation Notes
+
+Touch server/storage/__tests__/example.test.ts.
+`,
+        "todos/test-rules-injection.md",
+      );
+
+      const body = buildIssueBody(todo);
+      const filesIdx = body.indexOf("## Files In Scope");
+      const rulesIdx = body.indexOf("## Project Rules");
+      const implIdx = body.indexOf("## Implementation Notes");
+
+      expect(filesIdx).toBeGreaterThan(-1);
+      expect(rulesIdx).toBeGreaterThan(filesIdx);
+      expect(implIdx).toBeGreaterThan(rulesIdx);
+      // typescript rules content should appear (any .ts file forces typescript domain):
+      expect(body).toContain("### typescript");
+      // testing rules content (forced by label):
+      expect(body).toContain("### testing");
+    });
+
+    it("includes the no-domains minimal block when nothing matches", () => {
+      const todo = parseTodoMarkdown(
+        `---
+title: "Docs-only change"
+status: backlog
+priority: low
+labels: [docs, deferred]
+github_issue:
+---
+
+# Docs-only change
+
+## Summary
+
+Edit a doc.
+
+## Acceptance Criteria
+
+- [ ] Update docs/README.md
+
+## Implementation Notes
+
+Only edit docs/README.md.
+`,
+        "todos/docs-only.md",
+      );
+
+      const body = buildIssueBody(todo);
+      expect(body).toContain("## Project Rules");
+      expect(body).toContain("No domain rules apply");
+    });
+  });
 });
