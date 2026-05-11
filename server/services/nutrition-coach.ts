@@ -551,7 +551,14 @@ export async function* generateCoachProResponse(
         // arrays explicitly so `as Record<string, unknown>` never lies. (M15)
         if (typeof args !== "object" || args === null || Array.isArray(args)) {
           log.warn(
-            { tool: tc.function.name, argsType: typeof args },
+            {
+              tool: tc.function.name,
+              argsType: Array.isArray(args)
+                ? "array"
+                : args === null
+                  ? "null"
+                  : typeof args,
+            },
             "Tool call arguments not a plain object",
           );
           return {
