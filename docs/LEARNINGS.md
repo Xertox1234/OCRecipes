@@ -9,6 +9,8 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Calorie Restriction Regex Missed 4-Digit Unsafe Targets (1000–1199 kcal) (2026-05-11)](#calorie-restriction-regex-missed-4-digit-unsafe-targets-10001199-kcal-2026-05-11)
 - [Non-Interactive `accessibilityRole="checkbox"` Misleads Screen Readers (2026-05-10)](#non-interactive-accessibilityrolecheckbox-misleads-screen-readers-2026-05-10)
 - [`accessibilityLiveRegion` + `announceForAccessibility` Causes Double TalkBack Announcements (2026-05-10)](#accessibilityliveregion--announceforaccessibility-causes-double-talkback-announcements-2026-05-10)
+- [Dead-Letter Filter Argument — Storage Accepts a Filter It Never Applies (2026-05-10)](#dead-letter-filter-argument--storage-accepts-a-filter-it-never-applies-2026-05-10)
+- [CURRENT_TIMESTAMP Is Fixed at Transaction Start — Sequential Inserts Tie (2026-05-10)](#current_timestamp-is-fixed-at-transaction-start--sequential-inserts-tie-2026-05-10)
 - [Drizzle `.default([])` Does Not Make TypeScript Type Non-Nullable (2026-05-09)](#drizzle-default-does-not-make-typescript-type-non-nullable-2026-05-09)
 - [fullScreenModal Dismissal Requires `navigation.goBack()` After `navigate()` (2026-05-09)](#fullscreenmodal-dismissal-requires-navigationgoback-after-navigate-2026-05-09)
 - [onConflictDoNothing({ target }) Silently No-Ops on Partial Unique Indexes (2026-05-09)](#onconflictdonothing-target-silently-no-ops-on-partial-unique-indexes-2026-05-09)
@@ -214,6 +216,65 @@ Applying `accessibilityRole="checkbox"` (+ `accessibilityState={{ checked }}`) t
 ```
 
 `accessibilityRole="checkbox"` should only be used on a Pressable (or other actionable component) that actually toggles its own state. If the surrounding UX makes the checkbox the active control, fine — otherwise leave it decorative and convey state in a parent label.
+
+---
+
+## Dead-Letter Filter Argument — Storage Accepts a Filter It Never Applies (2026-05-10)
+
+**Category:** Gotcha — Storage layer / API drift
+
+`getRecentCommunityRecipes(userId, filters)` accepted `cuisinePreferences`, `dietType`, and `allergies` in its `RecentRecipeFilters` interface — but the SQL builder only filtered on `isPublic`, `imageUrl`, and `dismissedIds`. The three personalization filters were dead letters: callers (carousel-builder) passed them in expecting filtering, the type signature implied filtering, the DB query silently dropped them on the floor.
+
+This created a cascading bug where two prior fixes correctly addressed downstream symptoms (client cache invalidation, write-through of cuisinePreferences), but the actual recipes returned to the carousel didn't reliably contain any whose `dietTags` matched the user's cuisine prefs — so the `generateCommunityReason()` cuisine branch never fired.
+
+**Rule:** When a storage function's parameter is in the type signature but unused in the query, it's a contract bug, not a code-smell. Audit:
+
+```typescript
+// ❌ BAD — caller passes cuisinePreferences expecting filtering; SQL ignores it
+export async function getX(
+  userId: string,
+  filters: {
+    cuisinePreferences?: string[]; // never referenced below
+    limit?: number;
+  },
+) {
+  return db.select().from(table).where(eq(table.userId, userId));
+}
+
+// ✅ GOOD — either wire it in (boost via ORDER BY, or filter via WHERE), or remove it from the type
+//   Boost (preserves a full result set when no match):
+//     ORDER BY (CASE WHEN <match> THEN 0 ELSE 1 END), <secondary>
+//   Filter (drops non-matching rows):
+//     WHERE <match-condition>
+```
+
+**Investigation checklist for "labels/personalization didn't apply" bugs:**
+
+1. Does the client invalidate the right query key after the mutation?
+2. Does the mutation actually write the field to the DB?
+3. **Does the read path actually consume the field?** — most often missed.
+
+**Reference:** `server/storage/carousel.ts:getRecentCommunityRecipes`, todo `2026-05-10-fix-carousel-cuisine-labels.md`.
+
+---
+
+## CURRENT_TIMESTAMP Is Fixed at Transaction Start — Sequential Inserts Tie (2026-05-10)
+
+**Category:** Gotcha — PostgreSQL / Test isolation
+
+Within a single PostgreSQL transaction, `CURRENT_TIMESTAMP` (and `now()`) returns the time the transaction started — not the time of each statement. Drizzle's `.default(sql\`CURRENT_TIMESTAMP\`)`therefore stamps every row inserted in the same transaction with the same`createdAt`. When a test does `INSERT A; await sleep(50ms); INSERT B`inside a single`setupTestTransaction`, A and B end up with identical `createdAt`values and`ORDER BY created_at DESC` returns them in arbitrary (insertion-order or row-id) order.
+
+**The fix:** explicitly pass `createdAt: new Date(baseTime - 60_000)` for the older row when ordering matters:
+
+```typescript
+const baseTime = Date.now();
+const older = await createRecipe({ createdAt: new Date(baseTime - 60_000) });
+const newer = await createRecipe({ createdAt: new Date(baseTime) });
+```
+
+If you actually need wall-clock-distinct timestamps, use `statement_timestamp()` (changes per statement) or `clock_timestamp()` (changes per call) instead of `CURRENT_TIMESTAMP`. For test code, explicit dates are simpler.
+
+**Reference:** `server/storage/__tests__/carousel.test.ts`, transaction-based test isolation in `test/db-test-utils.ts`.
 
 ---
 
