@@ -213,6 +213,13 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 5. Review the codification diff for accuracy and scope. Keep it limited to the reusable knowledge extracted from the audit.
+   5b. **Rules routing**: For each codified finding that was CRITICAL or HIGH severity, evaluate whether it warrants a `docs/rules/{domain}.md` entry. Criteria — all three must be true:
+   - It is a "never do X" class (not a preference or style choice)
+   - It can be stated in one bullet line
+   - The domain has a corresponding `docs/rules/{domain}.md` file
+
+   Domain → rules file mapping mirrors the patterns routing table above. If a rule entry is warranted, append the bullet to the matching `docs/rules/{domain}.md` and include it in the codification commit.
+
 6. Commit documentation separately:
    ```
    docs: codify patterns and learnings from [scope] audit

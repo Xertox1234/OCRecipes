@@ -291,6 +291,8 @@ Decide inline whether this implementation produced knowledge worth preserving. U
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 
+5b. **Rules routing**: If the finding was CRITICAL or HIGH severity AND is a "never do X" class that can be stated in one bullet, append the rule to `docs/rules/{domain}.md` using the same domain routing table from item 2 above. Include it in the codification commit at step 7.
+
 6. Use `kimi-write` for each target file, passing the existing file as `--context` so it preserves and extends the file. Tailor the spec to the file type:
 
    ```bash
