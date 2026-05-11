@@ -1,6 +1,6 @@
 // client/screens/TasteProfileScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import { View, StyleSheet, Pressable, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -30,35 +30,39 @@ export default function TasteProfileScreen() {
 
   useEffect(() => {
     async function loadPicks() {
-      const res = await apiRequest("GET", "/api/taste-picks");
-      if (!res.ok) return;
-      const body = await res.json();
-      setSelectedIds(
-        new Set(body.picks.map((p: { recipeId: number }) => p.recipeId)),
-      );
+      try {
+        const res = await apiRequest("GET", "/api/taste-picks");
+        const body = await res.json();
+        setSelectedIds(
+          new Set(body.picks.map((p: { recipeId: number }) => p.recipeId)),
+        );
+      } catch (err) {
+        console.error("loadPicks failed:", err);
+      }
     }
     loadPicks();
   }, []);
 
   const loadCandidates = useCallback(async (pageNum: number) => {
     setLoadError(false);
-    const params = new URLSearchParams({
-      page: String(pageNum),
-      limit: String(PAGE_LIMIT),
-    });
-    const res = await apiRequest(
-      "GET",
-      `/api/taste-picks/candidates?${params}`,
-    );
-    if (!res.ok) {
+    try {
+      const params = new URLSearchParams({
+        page: String(pageNum),
+        limit: String(PAGE_LIMIT),
+      });
+      const res = await apiRequest(
+        "GET",
+        `/api/taste-picks/candidates?${params}`,
+      );
+      const body = await res.json();
+      setCandidates((prev) =>
+        pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
+      );
+      setHasMore(body.candidates.length === PAGE_LIMIT);
+    } catch (err) {
+      console.error("loadCandidates failed:", err);
       setLoadError(true);
-      return;
     }
-    const body = await res.json();
-    setCandidates((prev) =>
-      pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
-    );
-    setHasMore(body.candidates.length === PAGE_LIMIT);
   }, []);
 
   useEffect(() => {
@@ -99,6 +103,9 @@ export default function TasteProfileScreen() {
       });
       setIsDirty(false);
       navigation.goBack();
+    } catch (err) {
+      console.error("handleSave failed:", err);
+      Alert.alert("Something went wrong", "Please try again.");
     } finally {
       setIsSubmitting(false);
     }
