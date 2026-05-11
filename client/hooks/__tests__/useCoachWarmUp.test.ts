@@ -11,6 +11,14 @@ vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
 
+function mockFetchResponse(body: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+}
+
 describe("useCoachWarmUp", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -30,9 +38,9 @@ describe("useCoachWarmUp", () => {
 
     it("fires warm-up after 20+ chars and 500ms debounce", async () => {
       vi.useFakeTimers();
-      mockApiRequest.mockResolvedValue({
-        json: async () => ({ warmUpId: "test-id" }),
-      } as unknown as Response);
+      mockApiRequest.mockResolvedValue(
+        mockFetchResponse({ warmUpId: "test-id" }),
+      );
       const { result } = renderHook(() => useCoachWarmUp(42));
       act(() => {
         result.current.sendWarmUp(
@@ -67,9 +75,9 @@ describe("useCoachWarmUp", () => {
 
     it("fires warm-up after 3+ chars and 500ms debounce", async () => {
       vi.useFakeTimers();
-      mockApiRequest.mockResolvedValue({
-        json: async () => ({ warmUpId: "test-id" }),
-      } as unknown as Response);
+      mockApiRequest.mockResolvedValue(
+        mockFetchResponse({ warmUpId: "test-id" }),
+      );
       const { result } = renderHook(() => useCoachWarmUp(42));
       act(() => {
         result.current.sendTextWarmUp("hel");
@@ -90,9 +98,9 @@ describe("useCoachWarmUp", () => {
   describe("getWarmUpId", () => {
     it("returns and clears the warmUpId", async () => {
       vi.useFakeTimers();
-      mockApiRequest.mockResolvedValue({
-        json: async () => ({ warmUpId: "test-123" }),
-      } as unknown as Response);
+      mockApiRequest.mockResolvedValue(
+        mockFetchResponse({ warmUpId: "test-123" }),
+      );
       const { result } = renderHook(() => useCoachWarmUp(42));
 
       act(() => {

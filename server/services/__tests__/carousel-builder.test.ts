@@ -423,12 +423,13 @@ describe("carousel-builder", () => {
         title: "Oatmeal",
         mealTypes: ["breakfast"],
       };
+      // @ts-expect-error simulate malformed DB row with null mealTypes
       const nullMealTypesRecipe = {
         ...mockCommunityRecipes[0],
         id: 41,
         title: "Mystery Food",
-        mealTypes: null as unknown as string[],
-      };
+        mealTypes: null,
+      } as (typeof mockCommunityRecipes)[number];
       // DB returns null-mealTypes first (more recent), breakfast second
       vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
         nullMealTypesRecipe,

@@ -143,7 +143,7 @@ function makeForm(overrides: Record<string, unknown> = {}) {
     markDirty: vi.fn(),
     formToPayload: vi.fn(),
     ...overrides,
-  } as unknown as Parameters<typeof PreviewStep>[0]["form"];
+  } as Parameters<typeof PreviewStep>[0]["form"];
 }
 
 describe("PreviewStep — section edit labels (M21)", () => {

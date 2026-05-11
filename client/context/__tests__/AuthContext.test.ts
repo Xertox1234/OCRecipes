@@ -8,6 +8,12 @@ import type { User } from "@shared/types/auth";
  */
 
 describe("AuthContext", () => {
+  const mockUser: User = {
+    id: "1",
+    username: "testuser",
+    onboardingCompleted: false,
+  };
+
   describe("useAuthContext hook", () => {
     it("should throw error when used outside AuthProvider", () => {
       const context = null; // Simulates being outside provider
@@ -84,8 +90,8 @@ describe("AuthContext", () => {
         user: null,
         isLoading: false,
         isAuthenticated: false,
-        login: async (_u: string, _p: string) => ({}) as unknown as User,
-        register: async (_u: string, _p: string) => ({}) as unknown as User,
+        login: async (_u: string, _p: string) => mockUser,
+        register: async (_u: string, _p: string) => mockUser,
         logout: async () => {},
         deleteAccount: async (_p: string) => {},
         updateUser: async (_updates: Record<string, unknown>) => undefined,

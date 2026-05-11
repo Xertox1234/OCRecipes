@@ -474,9 +474,10 @@ describe("handleCoachChat", () => {
     it("yields blocks event when Coach Pro response contains blocks", async () => {
       const mockBlocks: CoachBlock[] = [
         {
-          type: "meal_plan",
-          data: { title: "Lunch plan" },
-        } as unknown as CoachBlock,
+          type: "meal_plan_card",
+          title: "Lunch plan",
+          days: [],
+        },
       ];
       vi.mocked(generateCoachProResponse).mockReturnValue(
         fakeStream(["Here is your plan."]),
@@ -680,9 +681,10 @@ describe("handleCoachChat", () => {
     it("persists blocks metadata when blocks are present", async () => {
       const mockBlocks: CoachBlock[] = [
         {
-          type: "meal_plan",
-          data: { title: "Lunch" },
-        } as unknown as CoachBlock,
+          type: "meal_plan_card",
+          title: "Lunch",
+          days: [],
+        },
       ];
       vi.mocked(generateCoachProResponse).mockReturnValue(
         fakeStream(["Plan here."]),

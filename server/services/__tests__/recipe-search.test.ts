@@ -239,7 +239,7 @@ describe("communityToSearchable", () => {
   it("handles null/empty ingredients", () => {
     const recipe: CommunityRecipe = {
       ...baseCommunityRecipe,
-      ingredients: null as unknown as [],
+      ingredients: null,
     };
     const doc = communityToSearchable(recipe);
     expect(doc.ingredients).toEqual([]);

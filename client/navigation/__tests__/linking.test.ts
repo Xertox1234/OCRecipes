@@ -2,6 +2,11 @@ import { describe, it, expect } from "vitest";
 import { linking } from "../linking";
 
 describe("linking config", () => {
+  type FeaturedRecipeDetailConfig = {
+    path: string;
+    parse: Record<string, (v: string) => number>;
+  };
+
   it("includes both custom scheme and universal link prefixes", () => {
     expect(linking.prefixes).toContain("ocrecipes://");
     expect(linking.prefixes).toContain("https://ocrecipes.app");
@@ -9,10 +14,7 @@ describe("linking config", () => {
 
   it("configures FeaturedRecipeDetail path with numeric parse", () => {
     const recipeDetail = linking.config!.screens
-      .FeaturedRecipeDetail as unknown as {
-      path: string;
-      parse: Record<string, (v: string) => number>;
-    };
+      .FeaturedRecipeDetail as FeaturedRecipeDetailConfig;
 
     expect(recipeDetail.path).toBe("recipe/:recipeId");
     expect(recipeDetail.parse.recipeId("42")).toBe(42);
@@ -41,10 +43,7 @@ describe("linking config", () => {
 
   it("returns 0 when recipeId parse receives a non-numeric string", () => {
     const recipeDetail = linking.config!.screens
-      .FeaturedRecipeDetail as unknown as {
-      path: string;
-      parse: Record<string, (v: string) => number>;
-    };
+      .FeaturedRecipeDetail as FeaturedRecipeDetailConfig;
 
     expect(recipeDetail.parse.recipeId("abc")).toBe(0);
   });

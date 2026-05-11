@@ -43,21 +43,26 @@ describe("useMealPlan", () => {
       });
 
       // Verify the predicate function matches correctly
-      const call = invalidateSpy.mock.calls[0][0] as unknown as {
-        predicate: (query: { queryKey: unknown[] }) => boolean;
-      };
-      const predicate = call.predicate;
+      const call = invalidateSpy.mock.calls[0][0];
+      expect(call?.predicate).toBeDefined();
+      const predicate = call!.predicate!;
 
       expect(
-        predicate({ queryKey: ["/api/meal-plan", "2024-01-01", "2024-01-07"] }),
+        predicate({
+          queryKey: ["/api/meal-plan", "2024-01-01", "2024-01-07"],
+        } as any),
       ).toBe(true);
-      expect(predicate({ queryKey: ["/api/meal-plan"] })).toBe(true);
-      expect(predicate({ queryKey: ["/api/meal-plan/recipes", 1] })).toBe(
+      expect(predicate({ queryKey: ["/api/meal-plan"] } as any)).toBe(true);
+      expect(
+        predicate({ queryKey: ["/api/meal-plan/recipes", 1] } as any),
+      ).toBe(false);
+      expect(predicate({ queryKey: ["/api/meal-plan/items"] } as any)).toBe(
         false,
       );
-      expect(predicate({ queryKey: ["/api/meal-plan/items"] })).toBe(false);
-      expect(predicate({ queryKey: ["/api/recipes/browse"] })).toBe(false);
-      expect(predicate({ queryKey: [] })).toBe(false);
+      expect(predicate({ queryKey: ["/api/recipes/browse"] } as any)).toBe(
+        false,
+      );
+      expect(predicate({ queryKey: [] } as any)).toBe(false);
     });
   });
 

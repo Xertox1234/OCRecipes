@@ -148,9 +148,8 @@ describe("Admin API Keys Routes", () => {
     });
 
     it("returns 404 for non-existent key", async () => {
-      vi.mocked(storage.getApiKey).mockResolvedValue(
-        null as unknown as Awaited<ReturnType<typeof storage.getApiKey>>,
-      );
+      // @ts-expect-error intentional test case: storage may return null for missing key
+      vi.mocked(storage.getApiKey).mockResolvedValue(null);
 
       const res = await request(app).delete("/api/admin/api-keys/999");
 

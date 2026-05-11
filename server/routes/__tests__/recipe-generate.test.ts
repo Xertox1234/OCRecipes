@@ -5,6 +5,7 @@ import request from "supertest";
 import { register } from "../recipe-generate";
 import { generateRecipeContent } from "../../services/recipe-generation";
 import { storage } from "../../storage";
+import { createMockUserProfile } from "../../__tests__/factories";
 
 vi.mock("../../services/recipe-generation", () => ({
   generateRecipeContent: vi.fn(),
@@ -171,10 +172,11 @@ describe("POST /api/meal-plan/recipes/generate", () => {
   });
 
   it("passes the user profile to generateRecipeContent (H2)", async () => {
-    const profile = { allergies: ["peanuts"], dietaryRestrictions: ["vegan"] };
-    vi.mocked(storage.getUserProfile).mockResolvedValue(
-      profile as unknown as Awaited<ReturnType<typeof storage.getUserProfile>>,
-    );
+    const profile = createMockUserProfile({
+      allergies: [{ name: "peanuts", severity: "severe" }],
+      dietType: "vegan",
+    });
+    vi.mocked(storage.getUserProfile).mockResolvedValue(profile);
     vi.mocked(generateRecipeContent).mockResolvedValue({
       title: "X",
       description: "test",

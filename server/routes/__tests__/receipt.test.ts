@@ -162,7 +162,7 @@ describe("Receipt Routes", () => {
 
     it("returns 400 when no photos provided", async () => {
       setupPremiumMock();
-      mockFiles.current = [] as unknown as Express.Multer.File[];
+      mockFiles.current = [];
 
       const res = await request(app)
         .post("/api/receipt/scan")

@@ -66,9 +66,9 @@ describe("subscription-tier-cache", () => {
   it("falls back to free tier for unrecognized tier string", async () => {
     // Cast needed: simulates a DB row with a legacy/invalid tier value
     mockGetSubscriptionStatus.mockResolvedValue({
-      tier: "enterprise_vip",
+      tier: "enterprise_vip" as "free",
       expiresAt: null,
-    } as unknown as typeof freeStatus);
+    });
 
     const features = await resolveSubscriptionTierFeatures("u5");
 

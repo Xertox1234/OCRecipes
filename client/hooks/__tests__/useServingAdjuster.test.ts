@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { renderHook, act } from "@testing-library/react";
-import { useServingAdjuster } from "../useServingAdjuster";
 import type { IngredientItem } from "@/components/recipe-detail";
+import { useServingAdjuster } from "../useServingAdjuster";
+
+type UseServingAdjusterWithNullableInput = (
+  originalServings: number | null,
+  ingredients: Parameters<typeof useServingAdjuster>[1],
+) => ReturnType<typeof useServingAdjuster>;
+
+const useServingAdjusterWithNullableInput =
+  useServingAdjuster as UseServingAdjusterWithNullableInput;
 
 const SAMPLE_INGREDIENTS: IngredientItem[] = [
   { name: "ground beef", quantity: "500", unit: "g" },
@@ -111,7 +119,7 @@ describe("useServingAdjuster", () => {
 
   it("defaults null originalServings to 1", () => {
     const { result } = renderHook(() =>
-      useServingAdjuster(null as unknown as number, SAMPLE_INGREDIENTS),
+      useServingAdjusterWithNullableInput(null, SAMPLE_INGREDIENTS),
     );
     expect(result.current.servingCount).toBe(1);
   });

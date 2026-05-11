@@ -317,11 +317,8 @@ describe("Verification Routes", () => {
     });
 
     it("returns hasFrontLabelData false for unknown barcode", async () => {
-      vi.mocked(storage.getVerification).mockResolvedValue(
-        undefined as unknown as Awaited<
-          ReturnType<typeof storage.getVerification>
-        >,
-      );
+      // @ts-expect-error intentional test case: storage may return no verification row
+      vi.mocked(storage.getVerification).mockResolvedValue(undefined);
 
       const res = await request(app).get("/api/verification/99999999");
 

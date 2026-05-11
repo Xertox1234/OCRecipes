@@ -62,7 +62,8 @@ function makeFakeDb(
     return response;
   });
   return {
-    db: { execute } as unknown as RetentionDb,
+    // @ts-expect-error test double only needs execute()
+    db: { execute } as RetentionDb,
     calls,
     execute,
   };
@@ -166,7 +167,8 @@ describe("getActiveUserIds", () => {
   it("tolerates an array-shaped response (drizzle forward-compat)", async () => {
     // Some Drizzle versions return rows directly as an array rather than
     // `{ rows: [...] }`. The implementation handles both shapes; assert that.
-    const arrayResponse = [{ id: "user-9" }] as unknown as {
+    // @ts-expect-error deliberate array-shaped Drizzle compatibility response
+    const arrayResponse = [{ id: "user-9" }] as {
       rows: { id: string }[];
     };
     const { db } = makeFakeDb([arrayResponse]);
@@ -265,7 +267,8 @@ describe("runRetentionCleanup", () => {
       }
       return { rowCount: 0 };
     });
-    const db = { execute } as unknown as RetentionDb;
+    // @ts-expect-error test double only needs execute()
+    const db = { execute } as RetentionDb;
 
     const first = runRetentionCleanup(db, new Date("2026-05-11T00:00:00Z"));
     // Yield so the first call enters its async work and sets isRunning.

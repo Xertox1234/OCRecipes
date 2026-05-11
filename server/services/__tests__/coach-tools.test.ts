@@ -68,8 +68,8 @@ describe("Coach Tools Service", () => {
     const tools = getToolDefinitions();
     for (const tool of tools) {
       expect(tool).toHaveProperty("type", "function");
-      const fn = (tool as unknown as { function: Record<string, unknown> })
-        .function;
+      if (!("function" in tool)) continue;
+      const fn = tool.function;
       expect(fn).toHaveProperty("name");
       expect(fn).toHaveProperty("description");
       expect(fn).toHaveProperty("parameters");
