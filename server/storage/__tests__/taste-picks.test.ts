@@ -261,8 +261,9 @@ describe("setTastePicks", () => {
 
     expect(result.picks).toHaveLength(1);
     expect(result.picks[0].recipeId).toBe(publicRecipe.id);
-    expect(result.cuisinePreferences).toContain("Japanese");
-    expect(result.cuisinePreferences).not.toContain("Korean");
+    // Derived cuisines are lowercased (see setTastePicks).
+    expect(result.cuisinePreferences).toContain("japanese");
+    expect(result.cuisinePreferences).not.toContain("korean");
   });
 });
 
