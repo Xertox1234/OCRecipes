@@ -2,14 +2,14 @@ export interface RecipeCandidate {
   id: number;
   title: string;
   imageUrl: string;
-  cuisineOrigin: string | null;
+  cuisineOrigin?: string | null;
 }
 
 export interface TastePickEntry {
   recipeId: number;
   title: string;
   imageUrl: string;
-  cuisineOrigin: string | null;
+  cuisineOrigin?: string | null;
 }
 
 export interface TastePickCandidatesResponse {

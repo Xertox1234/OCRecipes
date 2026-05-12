@@ -20,14 +20,19 @@ export const recipeCandidateSchema = z.object({
   id: z.number().int().positive(),
   title: z.string(),
   imageUrl: z.string(),
-  cuisineOrigin: z.string().nullable(),
+  // `nullish()` accepts string | null | undefined so a missing field in the
+  // server payload does not flip the client into an error state. The server
+  // currently always emits an explicit null, but defending against omission
+  // is cheap and keeps the validator forgiving of JSON serializers that
+  // drop undefined values.
+  cuisineOrigin: z.string().nullish(),
 });
 
 export const tastePickEntrySchema = z.object({
   recipeId: z.number().int().positive(),
   title: z.string(),
   imageUrl: z.string(),
-  cuisineOrigin: z.string().nullable(),
+  cuisineOrigin: z.string().nullish(),
 });
 
 export const tastePickCandidatesResponseSchema = z.object({
