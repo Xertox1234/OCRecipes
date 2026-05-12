@@ -7,6 +7,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Prettier Reformats Generated Files After Commit, Breaking Byte-Equality Drift Checks (2026-05-11)](#prettier-reformats-generated-files-after-commit-breaking-byte-equality-drift-checks-2026-05-11)
 - [kimi-review on Cumulative Working-Tree Diff Re-Flags Earlier Audit Fixes (2026-05-11)](#kimi-review-on-cumulative-working-tree-diff-re-flags-earlier-audit-fixes-2026-05-11)
 - [Calorie Restriction Regex Missed 4-Digit Unsafe Targets (1000–1199 kcal) (2026-05-11)](#calorie-restriction-regex-missed-4-digit-unsafe-targets-10001199-kcal-2026-05-11)
+- [Non-Interactive `accessibilityRole="checkbox"` Misleads Screen Readers (2026-05-10)](#non-interactive-accessibilityrolecheckbox-misleads-screen-readers-2026-05-10)
 - [`accessibilityLiveRegion` + `announceForAccessibility` Causes Double TalkBack Announcements (2026-05-10)](#accessibilityliveregion--announceforaccessibility-causes-double-talkback-announcements-2026-05-10)
 - [Drizzle `.default([])` Does Not Make TypeScript Type Non-Nullable (2026-05-09)](#drizzle-default-does-not-make-typescript-type-non-nullable-2026-05-09)
 - [fullScreenModal Dismissal Requires `navigation.goBack()` After `navigate()` (2026-05-09)](#fullscreenmodal-dismissal-requires-navigationgoback-after-navigate-2026-05-09)
@@ -176,6 +177,43 @@ const deleteAccount = useCallback(async (password: string) => {
 **Rule:** Whenever a hook awaits an irreversible server call, draw a mental line at the response. Pre-line: errors are recoverable (user retries). Post-line: errors must not propagate; clear local state unconditionally and resolve.
 
 **Reference:** `client/hooks/useAuth.ts` — `deleteAccount`, PR account-deletion-flow code review 2026-05-10.
+
+---
+
+## Non-Interactive `accessibilityRole="checkbox"` Misleads Screen Readers (2026-05-10)
+
+**Category:** Gotcha — Accessibility / React Native
+
+Applying `accessibilityRole="checkbox"` (+ `accessibilityState={{ checked }}`) to a plain `View` that has no `onPress` handler is misleading: VoiceOver/TalkBack users hear "checkbox, checked" and expect to toggle it, but the gesture does nothing because the actionable element is a sibling Pressable (e.g., an "Accept" button) that triggers the state change. The discovery came from coach `CommitmentCard`, where audit M12 prescribed exposing the checkmark indicator with the checkbox role; kimi-review (round 2) escalated this to CRITICAL.
+
+**The fix pattern:** for status indicators that are visually checkbox-like but not independently actionable, mark them `accessible={false}` (and `importantForAccessibility="no"` for Android symmetry) and roll the state into the parent group's `accessibilityLabel`:
+
+```tsx
+// Good — state conveyed by parent label, indicator is decorative
+<View
+  role="group"
+  accessibilityLabel={`${accepted ? "Accepted commitment" : "Commitment"}: ${title}. ${followUpText}`}
+>
+  <View
+    style={[styles.checkbox, accepted ? styles.filled : styles.outlined]}
+    accessible={false}
+    importantForAccessibility="no"
+  >
+    {accepted && <Text accessible={false}>✓</Text>}
+  </View>
+  …
+  <Pressable accessibilityRole="button" onPress={accept}>Accept</Pressable>
+</View>
+
+// Bad — non-actionable View pretending to be a checkbox
+<View
+  accessible
+  accessibilityRole="checkbox"
+  accessibilityState={{ checked: accepted }}
+/>
+```
+
+`accessibilityRole="checkbox"` should only be used on a Pressable (or other actionable component) that actually toggles its own state. If the surrounding UX makes the checkbox the active control, fine — otherwise leave it decorative and convey state in a parent label.
 
 ---
 

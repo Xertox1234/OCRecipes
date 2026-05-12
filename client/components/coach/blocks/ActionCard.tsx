@@ -5,6 +5,8 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  AccessibilityInfo,
+  Platform,
 } from "react-native";
 import { useTheme } from "@/hooks/useTheme";
 import type { ActionCard as ActionCardType } from "@shared/schemas/coach-blocks";
@@ -30,6 +32,16 @@ const ActionCard = React.memo(function ActionCard({
   const setFeedbackState = useCallback((s: FeedbackState) => {
     stateRef.current = s;
     setState(s);
+    // Announce state transitions to screen readers. The Pressable below has
+    // `accessibilityLiveRegion="polite"` which covers Android; iOS-only here
+    // to avoid Android double-announcing. See docs/rules/accessibility.md.
+    if (Platform.OS === "ios") {
+      if (s === "success") {
+        AccessibilityInfo.announceForAccessibility("Done");
+      } else if (s === "error") {
+        AccessibilityInfo.announceForAccessibility("Failed");
+      }
+    }
   }, []);
 
   const handlePress = useCallback(async () => {
@@ -72,7 +84,6 @@ const ActionCard = React.memo(function ActionCard({
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
-      accessible={false}
     >
       <View style={styles.content}>
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
@@ -86,6 +97,8 @@ const ActionCard = React.memo(function ActionCard({
         disabled={state !== "idle"}
         accessibilityRole="button"
         accessibilityLabel={label}
+        accessibilityLiveRegion="polite"
+        accessibilityState={{ disabled: state !== "idle" }}
       >
         {state === "loading" ? (
           <ActivityIndicator size="small" color="#FFFFFF" /> // hardcoded

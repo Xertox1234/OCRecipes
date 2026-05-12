@@ -28,6 +28,7 @@ const MealPlanCard = React.memo(function MealPlanCard({
         accessibilityLabel={
           expanded ? "Collapse meal plan" : "Expand meal plan"
         }
+        accessibilityState={{ expanded }}
       >
         <Text style={[styles.title, { color: theme.text }]}>{block.title}</Text>
         <Text style={{ color: theme.textSecondary }}>

@@ -14,9 +14,12 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundSecondary }]}
-      accessibilityLabel={`Recipe: ${recipe.title}. ${recipe.calories} calories, ${recipe.protein}g protein, ${recipe.prepTime}`}
     >
-      <View style={styles.info}>
+      <View
+        style={styles.info}
+        accessible={true}
+        accessibilityLabel={`Recipe: ${recipe.title}. ${recipe.calories} calories, ${recipe.protein}g protein, ${recipe.prepTime}`}
+      >
         <Text style={[styles.title, { color: theme.text }]}>
           {recipe.title}
         </Text>
@@ -37,10 +40,12 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
           }
           accessibilityRole="button"
           accessibilityLabel="View recipe"
+          hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
         >
           <Text style={styles.primaryBtnText}>View</Text>
         </Pressable>
         <Pressable
+          style={styles.secondaryBtn}
           onPress={() =>
             onAction?.({
               type: "navigate",
@@ -50,6 +55,7 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
           }
           accessibilityRole="button"
           accessibilityLabel="Add to meal plan"
+          hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
         >
           <Text style={[styles.secondaryText, { color: theme.link }]}>
             Add to Plan
@@ -68,7 +74,21 @@ const styles = StyleSheet.create({
   title: { fontSize: 14, fontWeight: "600" },
   meta: { fontSize: 12, marginTop: 2 },
   actions: { flexDirection: "row", alignItems: "center", gap: 16 },
-  primaryBtn: { borderRadius: 8, paddingVertical: 6, paddingHorizontal: 14 },
+  primaryBtn: {
+    minHeight: 44,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   primaryBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "600" }, // hardcoded
+  secondaryBtn: {
+    minHeight: 44,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   secondaryText: { fontSize: 13 },
 });
