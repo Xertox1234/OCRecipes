@@ -101,43 +101,56 @@ cat >> "$TMPFILE" <<'EOF'
 - Goal-driven execution. Turn vague instructions into verifiable targets before writing a line. "Add validation" becomes "write tests for invalid inputs, then make them pass."
 EOF
 
-# Skip domain section if no domains matched (preamble still emitted above)
-if [ -z "$DOMAINS" ]; then
-  CONTEXT=$(cat "$TMPFILE")
-  jq -n --arg ctx "$CONTEXT" \
-    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$ctx}}'
-  exit 0
+# Domain section (skipped if no domains matched — preamble still emitted above)
+if [ -n "$DOMAINS" ]; then
+  IFS=',' read -ra DOMAIN_LIST <<< "$DOMAINS"
+  for DOMAIN in "${DOMAIN_LIST[@]}"; do
+    RULES_FILE="$RULES_DIR/${DOMAIN}.md"
+    PATTERNS_FILE="$PATTERNS_DIR/${DOMAIN}.md"
+
+    # Inject full rules file (short by design)
+    if [ -f "$RULES_FILE" ]; then
+      printf '\n[RULES — %s]\n' "$DOMAIN" >> "$TMPFILE"
+      cat "$RULES_FILE" >> "$TMPFILE"
+    fi
+
+    # Inject first 80 lines of pattern doc
+    if [ -f "$PATTERNS_FILE" ]; then
+      printf '\n[PATTERNS — %s (excerpt)]\n' "$DOMAIN" >> "$TMPFILE"
+      head -n 80 "$PATTERNS_FILE" >> "$TMPFILE"
+    fi
+  done
+
+  # Inject matching learnings — skip generic basenames that produce grep noise
+  BASENAME=$(basename "$FILE_PATH")
+  BASENAME="${BASENAME%.*}"
+  case "$BASENAME" in
+    index|types|utils|helpers|constants|config|setup|main|app|App|test|tests)
+      BASENAME="" ;;
+  esac
+  if [ -f "$LEARNINGS_FILE" ] && [ -n "$BASENAME" ] && [ "${#BASENAME}" -ge 4 ]; then
+    printf '\n[LEARNINGS — matches for "%s"]\n' "$BASENAME" >> "$TMPFILE"
+    # -F fixed string, -w word boundary (avoids "index" matching "indexing"), -i case-insensitive
+    MATCHES=$(grep -Fwi -- "$BASENAME" "$LEARNINGS_FILE" 2>/dev/null | head -n 20 || true)
+    if [ -n "$MATCHES" ]; then
+      printf '%s\n' "$MATCHES" >> "$TMPFILE"
+    else
+      echo "(none)" >> "$TMPFILE"
+    fi
+  fi
 fi
 
-IFS=',' read -ra DOMAIN_LIST <<< "$DOMAINS"
-for DOMAIN in "${DOMAIN_LIST[@]}"; do
-  RULES_FILE="$RULES_DIR/${DOMAIN}.md"
-  PATTERNS_FILE="$PATTERNS_DIR/${DOMAIN}.md"
-
-  # Inject full rules file (short by design)
-  if [ -f "$RULES_FILE" ]; then
-    printf '\n[RULES — %s]\n' "$DOMAIN" >> "$TMPFILE"
-    cat "$RULES_FILE" >> "$TMPFILE"
-  fi
-
-  # Inject first 80 lines of pattern doc
-  if [ -f "$PATTERNS_FILE" ]; then
-    printf '\n[PATTERNS — %s (excerpt)]\n' "$DOMAIN" >> "$TMPFILE"
-    head -n 80 "$PATTERNS_FILE" >> "$TMPFILE"
-  fi
-done
-
-# Inject matching learnings (first 20 lines that mention this file's basename)
-BASENAME=$(basename "$FILE_PATH")
-BASENAME="${BASENAME%.*}"
-if [ -f "$LEARNINGS_FILE" ] && [ -n "$BASENAME" ]; then
-  printf '\n[LEARNINGS — matches for "%s"]\n' "$BASENAME" >> "$TMPFILE"
-  MATCHES=$(grep -F -i -- "$BASENAME" "$LEARNINGS_FILE" 2>/dev/null | head -n 20 || true)
-  if [ -n "$MATCHES" ]; then
-    printf '%s\n' "$MATCHES" >> "$TMPFILE"
-  else
-    echo "(none)" >> "$TMPFILE"
-  fi
+# Spill overflow to a stable temp file so the agent can read the rest.
+# Claude Code's hook-output cap is ~10K; multi-domain injections routinely exceed this.
+THRESHOLD=9000
+SPILL_FILE="/tmp/ocrecipes-injection-context.md"
+CONTEXT_SIZE=$(wc -c < "$TMPFILE")
+if [ "$CONTEXT_SIZE" -gt "$THRESHOLD" ]; then
+  cp "$TMPFILE" "$SPILL_FILE"
+  head -c 8800 "$TMPFILE" > "${TMPFILE}.trunc"
+  mv "${TMPFILE}.trunc" "$TMPFILE"
+  printf '\n\n[TRUNCATED — %d bytes total. Full pattern context written to %s. Read that file for the rest before editing.]\n' \
+    "$CONTEXT_SIZE" "$SPILL_FILE" >> "$TMPFILE"
 fi
 
 # Output hook response JSON
