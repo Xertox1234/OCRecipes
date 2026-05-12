@@ -2048,6 +2048,24 @@ describe("exportUserColumns", () => {
 
 ---
 
+## Factory Smoke Tests: Per-Factory Variation Cheatsheet
+
+`server/__tests__/factories/__tests__/factories.test.ts` exercises every factory exported from `server/__tests__/factories/index.ts`. When adding a new factory, add a matching `describe` block. Before copy-pasting the canonical `it("creates valid defaults") + it("merges overrides")` pattern, check the factory's signature against these known variations — blanket-applying `toMatchObject({ id: 1 })` and `{ id: 99 }` overrides will fail for several existing factories.
+
+**ID shape varies per factory:**
+
+- `createMockUser` — `id: "1"` (string). Override must be `{ id: "99" }`, not `{ id: 99 }`.
+- `createMockNutritionData`, `createMockCookedNutrition` — no `id` field at all. Use `name` (or another required field) as the invariant.
+- `createMockResolvedFavouriteRecipe` — no `id`, uses `recipeId: 1` instead.
+- `createMockChatCompletion` — `id: "chatcmpl-test"` (string) AND a completely different `(content)` signature instead of `(overrides)`. Treat it as a shape test only; substitute by passing different `content` strings and asserting `choices[0].message.content`.
+
+**Date-vs-string fields:**
+
+- Most date fields are real `Date` instances — assert with `toBeInstanceOf(Date)`.
+- `createMockResolvedFavouriteRecipe.favouritedAt` is an **ISO string**, not a `Date`. Assert `typeof obj.favouritedAt === "string"` instead.
+
+**Why explicit per-factory describe blocks, not dynamic generation:** The variations above make `describe.each(Object.entries(factories))` awkward — you'd need a config map for special signatures (`createMockChatCompletion`), missing-id factories, and string-vs-number ID overrides. The smoke suite's job is shape verification; the "one describe per factory file" convention is enforced at code-review time, not by runtime introspection.
+
 ## Adding New Patterns
 
 When you establish a new pattern:
