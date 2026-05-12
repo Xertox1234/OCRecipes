@@ -257,6 +257,31 @@ Use origin pattern matching, never wildcard `*` with credentials:
 
 ---
 
+## Finding Triage: Exploitable Bug vs. Signature Footgun
+
+When you find a security weakness, classify it before deciding severity:
+
+- **Exploitable bug** — there is a code path _today_ where unsafe input reaches the unsafe sink. CRITICAL severity. Block the PR; require a fix in this change.
+- **Signature footgun** — the function/interface _could_ be misused by a future caller, but no current caller does. WARNING severity. File a deferred-todo for the signature hardening; the current PR may proceed.
+
+**Worked example (from 2026-05-11 PR #119, CCPA consent timestamp):**
+
+- The storage `updateUserProfile` accepts `healthDataConsentAt: Date` from any caller.
+- The route layer Zod-omits `healthDataConsentAt` from client input and only ever passes `new Date()` server-side.
+- **Exploitable today?** No — no code path forwards client input to the storage parameter.
+- **Footgun?** Yes — a future internal caller could accidentally backdate the initial consent stamp.
+- **Triage:** WARNING/deferred. Filed `todos/2026-05-11-harden-consent-timestamp-storage-signature.md` to change the storage signature to `recordConsent: boolean` so the timestamp is generated internally.
+
+**Anti-pattern:** flagging every signature footgun as CRITICAL conflates "will break in production" with "could break under refactor." This wastes engineering time and erodes trust in CRITICAL findings. Reserve CRITICAL for findings that have an actual exploit path through the _current_ code; use WARNING + deferred-todo for hardening opportunities.
+
+**When to escalate a footgun to CRITICAL anyway:**
+
+- The footgun is in an auth/IAP/health-data-export interface AND a fix would not significantly grow PR scope
+- The footgun is one trivial refactor away from being exploitable (e.g., a single removed `.omit()` call)
+- The interface is used by many callers, raising the probability a future caller misuses it
+
+---
+
 ## Audit Checklist
 
 When auditing a route file or service, check every item:

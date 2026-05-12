@@ -1983,6 +1983,69 @@ unnoticed). The only test that catches it reliably is one that names the
 exact expected sequence. If the inputs make the expected list verbose,
 that's the cost of the contract — write it out.
 
+### `TIMESTAMP WITHOUT TIME ZONE` Round-Trip in Real-DB Tests
+
+Drizzle `timestamp("col_name")` maps to PostgreSQL `TIMESTAMP WITHOUT TIME ZONE`. When you write a JS `Date` through `pg`, the client converts to the local timezone for the wire representation; on read-back, `pg` re-interprets the naive timestamp into a JS `Date`. The round-trip preserves wall-clock fields but **not** the original UTC offset.
+
+**Symptom:** an assertion like `expect(stored.getTime()).toBe(originalDate.getTime())` fails by a multiple of 3600000 ms (the local TZ offset in seconds × 1000).
+
+**Don't:** test append-only / consent-timestamp invariants by comparing the DB-stored value to the input JS literal.
+
+**Do:** compare the DB-stored value to itself across calls — the invariant you care about (`COALESCE` preserves the first stamp) is "stored doesn't change between writes," not "stored equals the JS literal you passed in."
+
+```typescript
+// ❌ Brittle: depends on TZ-preserving roundtrip, which TIMESTAMP doesn't provide
+const ts = new Date("2025-01-15T12:00:00Z");
+await updateUserProfile(userId, { healthDataConsentAt: ts });
+const result = await updateUserProfile(userId, { healthDataConsentAt: backdate });
+expect(result.healthDataConsentAt.getTime()).toBe(ts.getTime()); // off by TZ offset
+
+// ✅ Roundtrip-stable: compares two DB-returned values
+const first = await updateUserProfile(userId, { healthDataConsentAt: new Date(...) });
+const stored = first.healthDataConsentAt; // post-roundtrip value
+const result = await updateUserProfile(userId, { healthDataConsentAt: backdate });
+expect(result.healthDataConsentAt.getTime()).toBe(stored.getTime());
+```
+
+**When this matters:** any real-DB test (using `setupTestTransaction` / `getTestTx`) that writes a `timestamp` column and reads it back for comparison. Also affects audit-log timestamps and any "preserve original value" invariants.
+
+**When this doesn't matter:** mocked tests (the storage call is intercepted before reaching PG, so no TZ conversion happens). The bug only surfaces against a live database.
+
+**Reference:** `server/storage/__tests__/users.test.ts` — `healthDataConsentAt` COALESCE tests.
+
+### Static-Object Tests for Security Allowlists
+
+When a feature's load-bearing security control is a plain-object allowlist (e.g., a column projection like `exportUserColumns`), test the allowlist **directly** as a static assertion — not through the HTTP boundary, not through a mocked storage call.
+
+**Why:** the property you care about is "key X is not in this object," which is a property of the object literal, not of any runtime behavior. A static `Object.keys(x).not.toContain("password")` test:
+
+- Runs in ~1ms (no DB, no Express setup, no async)
+- Has no mocks (so it can't drift from reality)
+- Fails immediately on any regression (someone adds `password` to the allowlist → CI red on the next push)
+
+A route-level test that mocks the storage layer cannot catch this — it asserts what the route does with the storage response, not what the storage actually returns.
+
+```typescript
+// server/storage/__tests__/export.test.ts
+import { exportUserColumns } from "../export";
+
+describe("exportUserColumns", () => {
+  const forbiddenKeys = ["password", "tokenVersion"] as const;
+
+  for (const key of forbiddenKeys) {
+    it(`does not include sensitive column "${key}"`, () => {
+      expect(Object.keys(exportUserColumns)).not.toContain(key);
+    });
+  }
+});
+```
+
+**When to use:** any time the security boundary is "this list of fields is the safe export / public projection / accepted-input whitelist."
+
+**When NOT to use:** when the property is dynamic (depends on user role, feature flag, runtime config). Those need full integration tests.
+
+**Reference:** `server/storage/__tests__/export.test.ts` — guards the CCPA/PIPEDA data-export `users` projection.
+
 ---
 
 ## Adding New Patterns
