@@ -197,36 +197,49 @@ describe("users storage", () => {
     });
 
     // CCPA/PIPEDA consent-timestamp invariant: the `healthDataConsentAt` column
-    // is append-only at the SQL layer (COALESCE). Once stamped, a re-write
-    // cannot overwrite or backdate the legally significant moment of consent.
-    // (Assertions compare DB-round-tripped values to each other, not to the
-    // input JS Date, because the column is `TIMESTAMP WITHOUT TIME ZONE` and
-    // would lose offset info on roundtrip — orthogonal to the append-only
-    // property we're testing.)
-    it("sets healthDataConsentAt when no prior value exists", async () => {
+    // is server-stamped (`new Date()` inside the storage function, never a
+    // caller-supplied value) and append-only at the SQL layer (COALESCE).
+    // Once stamped, a re-write cannot overwrite or backdate the legally
+    // significant moment of consent.
+    // (The recency window is widened to ±24h because the column is
+    // `TIMESTAMP WITHOUT TIME ZONE` and PG round-trip drops offset info —
+    // max TZ offset is 14h. The tight ±request-window check is covered by
+    // the route tests where the Date is not PG-roundtripped.)
+    it("stamps a recent healthDataConsentAt when recordConsent is true and none exists", async () => {
       await createTestUserProfile(tx, testUser.id, {});
 
-      const updated = await updateUserProfile(testUser.id, {
-        healthDataConsentAt: new Date("2025-01-15T12:00:00Z"),
-      });
+      const updated = await updateUserProfile(testUser.id, {}, true);
 
       expect(updated!.healthDataConsentAt).toBeInstanceOf(Date);
+      // Recency check: catch "hardcoded epoch / constant Date" regressions
+      // while tolerating up-to-24h drift from TIMESTAMP WITHOUT TIME ZONE.
+      const drift = Math.abs(
+        updated!.healthDataConsentAt!.getTime() - Date.now(),
+      );
+      expect(drift).toBeLessThan(24 * 60 * 60 * 1000);
     });
 
     it("preserves existing healthDataConsentAt via COALESCE on re-stamp", async () => {
       await createTestUserProfile(tx, testUser.id, {});
-      const firstStamp = await updateUserProfile(testUser.id, {
-        healthDataConsentAt: new Date("2025-01-15T12:00:00Z"),
-      });
+      const firstStamp = await updateUserProfile(testUser.id, {}, true);
       const stored = firstStamp!.healthDataConsentAt;
       expect(stored).toBeInstanceOf(Date);
 
-      const result = await updateUserProfile(testUser.id, {
-        healthDataConsentAt: new Date("1970-01-01T00:00:00Z"),
-      });
+      // Re-stamping must not overwrite the original timestamp.
+      const result = await updateUserProfile(testUser.id, {}, true);
 
       // The DB-stored value must be unchanged after the second call.
       expect(result!.healthDataConsentAt?.getTime()).toBe(stored!.getTime());
+    });
+
+    it("does not stamp healthDataConsentAt when recordConsent is omitted", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+
+      const updated = await updateUserProfile(testUser.id, {
+        activityLevel: "high",
+      });
+
+      expect(updated!.healthDataConsentAt).toBeNull();
     });
   });
 
@@ -392,6 +405,8 @@ describe("users storage", () => {
       expect(profile.userId).toBe(testUser.id);
       expect(profile.dietType).toBe("vegan");
       expect(profile.activityLevel).toBe("moderate");
+      // recordConsent omitted → insert path must not stamp the consent column.
+      expect(profile.healthDataConsentAt).toBeNull();
 
       // Verify onboardingCompleted is now true
       const [after] = await tx
@@ -448,19 +463,39 @@ describe("users storage", () => {
     // uses an existence guard to preserve the original `healthDataConsentAt`
     // when one is already recorded — replays of onboarding (e.g., user re-runs
     // the flow) cannot overwrite the legally significant consent moment.
+    // The timestamp itself is generated inside the storage function from
+    // `new Date()`; callers signal intent via the `recordConsent` flag.
+    it("stamps a recent healthDataConsentAt on first onboarding when recordConsent is true", async () => {
+      // `TIMESTAMP WITHOUT TIME ZONE` loses offset info on PG round-trip; we
+      // assert a 24h-tolerant recency window (max TZ offset is 14h) to catch
+      // "hardcoded epoch / constant Date" regressions. The tight
+      // request-window check is covered by route tests where the Date is
+      // not roundtripped through PG.
+      const result = await upsertProfileWithOnboarding(
+        testUser.id,
+        { dietType: "vegan" },
+        true,
+      );
+
+      expect(result.healthDataConsentAt).toBeInstanceOf(Date);
+      const drift = Math.abs(
+        result.healthDataConsentAt!.getTime() - Date.now(),
+      );
+      expect(drift).toBeLessThan(24 * 60 * 60 * 1000);
+    });
+
     it("preserves existing healthDataConsentAt via existence guard on re-onboarding", async () => {
       await createTestUserProfile(tx, testUser.id, { dietType: "vegan" });
-      const firstStamp = await updateUserProfile(testUser.id, {
-        healthDataConsentAt: new Date("2025-01-15T12:00:00Z"),
-      });
+      const firstStamp = await updateUserProfile(testUser.id, {}, true);
       const stored = firstStamp!.healthDataConsentAt;
       expect(stored).toBeInstanceOf(Date);
 
-      // Replay onboarding with a different (backdated) consent timestamp.
-      const result = await upsertProfileWithOnboarding(testUser.id, {
-        dietType: "keto",
-        healthDataConsentAt: new Date("1970-01-01T00:00:00Z"),
-      });
+      // Replay onboarding — re-stamp must NOT overwrite the original timestamp.
+      const result = await upsertProfileWithOnboarding(
+        testUser.id,
+        { dietType: "keto" },
+        true,
+      );
 
       expect(result.healthDataConsentAt?.getTime()).toBe(stored!.getTime());
       // Other fields still update normally — only the consent column is locked.
