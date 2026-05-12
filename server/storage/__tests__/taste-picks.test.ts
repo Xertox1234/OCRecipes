@@ -165,11 +165,14 @@ describe("setTastePicks", () => {
   });
 
   it("write-through: merges cuisineOrigin into profile.cuisinePreferences", async () => {
+    // Pre-existing manual cuisines keep their original casing; derived
+    // cuisines from picks are normalized to lowercase so the carousel boost
+    // SQL and generateCommunityReason can match without re-normalizing.
     await createProfile(["Mexican"]);
     const recipe = await createCommunityRecipe({ cuisineOrigin: "Italian" });
     const result = await setTastePicks(testUserId, [recipe.id]);
 
-    expect(result.cuisinePreferences).toContain("Italian");
+    expect(result.cuisinePreferences).toContain("italian");
     expect(result.cuisinePreferences).toContain("Mexican");
   });
 
@@ -258,8 +261,9 @@ describe("setTastePicks", () => {
 
     expect(result.picks).toHaveLength(1);
     expect(result.picks[0].recipeId).toBe(publicRecipe.id);
-    expect(result.cuisinePreferences).toContain("Japanese");
-    expect(result.cuisinePreferences).not.toContain("Korean");
+    // Derived cuisines are lowercased (see setTastePicks).
+    expect(result.cuisinePreferences).toContain("japanese");
+    expect(result.cuisinePreferences).not.toContain("korean");
   });
 });
 

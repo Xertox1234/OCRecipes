@@ -81,18 +81,57 @@ export async function setTastePicks(
       }
     }
 
-    // 2. Derive cuisines from picked recipes (already scoped to publicIds)
+    // 2. Derive cuisines from picked recipes (already scoped to publicIds).
+    // Prefer cuisineOrigin (set by canonical enrichment); fall back to
+    // cuisine-typed dietTags for non-canonical recipes where cuisineOrigin
+    // is NULL.
+    const CUISINE_TAGS = new Set([
+      "italian",
+      "mexican",
+      "asian",
+      "mediterranean",
+      "vietnamese",
+      "american",
+      "korean",
+      "indian",
+      "greek",
+      "french",
+      "japanese",
+      "chinese",
+      "thai",
+      "spanish",
+      "moroccan",
+      "middle-eastern",
+      "latin",
+    ]);
     const derivedCuisines: string[] = [];
     if (publicIds.length > 0) {
       const recipes = await tx
-        .select({ cuisineOrigin: communityRecipes.cuisineOrigin })
+        .select({
+          cuisineOrigin: communityRecipes.cuisineOrigin,
+          dietTags: communityRecipes.dietTags,
+        })
         .from(communityRecipes)
         .where(inArray(communityRecipes.id, publicIds));
       const seen = new Set<string>();
+      // Store all derived cuisines lowercased so downstream consumers
+      // (carousel boost SQL, generateCommunityReason) can compare without
+      // having to defensively normalize.
       for (const r of recipes) {
-        if (r.cuisineOrigin && !seen.has(r.cuisineOrigin)) {
-          seen.add(r.cuisineOrigin);
-          derivedCuisines.push(r.cuisineOrigin);
+        if (r.cuisineOrigin) {
+          const key = r.cuisineOrigin.toLowerCase();
+          if (!seen.has(key)) {
+            seen.add(key);
+            derivedCuisines.push(key);
+          }
+        } else {
+          for (const tag of (r.dietTags as string[] | null) ?? []) {
+            const key = tag.toLowerCase();
+            if (CUISINE_TAGS.has(key) && !seen.has(key)) {
+              seen.add(key);
+              derivedCuisines.push(key);
+            }
+          }
         }
       }
     }

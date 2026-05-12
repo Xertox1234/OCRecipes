@@ -4,7 +4,7 @@ import {
   type Allergy,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, desc, gte, notInArray, isNotNull } from "drizzle-orm";
+import { eq, and, desc, gte, notInArray, isNotNull, sql } from "drizzle-orm";
 
 /**
  * Display columns needed for the recipe carousel.
@@ -124,10 +124,36 @@ export async function getRecentCommunityRecipes(
     conditions.push(notInArray(communityRecipes.id, dismissedNumericIds));
   }
 
+  // Boost (don't filter) recipes whose dietTags overlap with the user's
+  // cuisinePreferences so "Matches your cuisine preferences" labels surface
+  // when the user has a taste profile, while still returning a full carousel
+  // when no recent recipes match. Compare lowercase on both sides because
+  // setTastePicks may store either original-case cuisineOrigin or lowercased
+  // dietTag values.
+  const cuisinePrefs = (filters.cuisinePreferences ?? [])
+    .map((c) => c.toLowerCase())
+    .filter((c) => c.length > 0);
+  const orderClauses =
+    cuisinePrefs.length > 0
+      ? [
+          // 0 when any lowercased dietTag is in the user's prefs, else 1.
+          // Boost ordering — recipes with matching cuisine float to the top
+          // while non-matching recipes still appear after.
+          sql`CASE WHEN EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(${communityRecipes.dietTags}) AS tag
+            WHERE LOWER(tag) IN (${sql.join(
+              cuisinePrefs.map((c) => sql`${c}`),
+              sql`, `,
+            )})
+          ) THEN 0 ELSE 1 END`,
+          desc(communityRecipes.createdAt),
+        ]
+      : [desc(communityRecipes.createdAt)];
+
   return db
     .select(CAROUSEL_COLUMNS)
     .from(communityRecipes)
     .where(and(...conditions))
-    .orderBy(desc(communityRecipes.createdAt))
+    .orderBy(...orderClauses)
     .limit(limit);
 }
