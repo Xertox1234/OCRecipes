@@ -193,10 +193,9 @@ describe("setTastePicks", () => {
   });
 
   it("dedupes duplicate recipeIds before insert (no unique-constraint crash)", async () => {
-    // L4 fix: caller may pass duplicates; the merge with main's isPublic
-    // SELECT pre-filter naturally dedupes via the recipes PK, but this test
-    // pins the contract — duplicates in the caller's array must not surface
-    // a unique-constraint error.
+    // The isPublic SELECT pre-filter naturally dedupes via the recipes
+    // PK, but this test pins the contract — duplicates in the caller's
+    // array must not surface a unique-constraint error.
     await createProfile();
     const recipe = await createCommunityRecipe();
 

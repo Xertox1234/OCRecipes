@@ -59,11 +59,11 @@ export async function setTastePicks(
     await tx.delete(tastePicks).where(eq(tastePicks.userId, userId));
     let publicIds: number[] = [];
     if (recipeIds.length > 0) {
-      // Filter to public IDs (IDOR defense from main) AND dedupe via the
-      // recipes PK — the SELECT returns at most one row per recipe even if
-      // the caller passed duplicates. With this natural dedupe in place,
-      // `onConflictDoNothing()` is redundant on the insert below. See
-      // docs/rules/database.md "Replace-by-DELETE-then-INSERT".
+      // Restrict to public recipes (IDOR defense) AND dedupe via the
+      // recipes PK — the SELECT returns at most one row per recipe even
+      // if the caller passed duplicates. With this natural dedupe in
+      // place, `onConflictDoNothing()` is redundant on the insert below.
+      // See docs/rules/database.md "Replace-by-DELETE-then-INSERT".
       const publicRecipes = await tx
         .select({ id: communityRecipes.id })
         .from(communityRecipes)
