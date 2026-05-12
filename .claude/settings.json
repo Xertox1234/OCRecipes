@@ -34,6 +34,17 @@
         ]
       },
       {
+        "matcher": "MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/inject-patterns.sh",
+            "timeout": 10,
+            "statusMessage": "Loading patterns for this file..."
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {

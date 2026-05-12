@@ -9,8 +9,8 @@ INPUT=$(cat)
 TOOL_NAME=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 FILE_PATH=$(printf '%s' "$INPUT" | jq -re '.tool_input.file_path' 2>/dev/null) || exit 0
 
-# Only inject for Edit and Write tool calls
-[[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]] || exit 0
+# Only inject for Edit, Write, and MultiEdit tool calls
+[[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "MultiEdit" ]] || exit 0
 
 # Resolve paths relative to project root (two levels up from .claude/hooks/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -85,14 +85,29 @@ case "$FILE_PATH" in
   *.ts|*.tsx) add_domain typescript ;;
 esac
 
-# Exit silently if no domains matched
-[ -n "$DOMAINS" ] || exit 0
-
 # Build context in a temp file (avoids subshell newline stripping)
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 
 printf '=== Pre-write context for %s ===\n' "$FILE_PATH" >> "$TMPFILE"
+
+# Discipline preamble — applies to every Edit/Write regardless of domain match
+cat >> "$TMPFILE" <<'EOF'
+
+[DISCIPLINE — applies before any edit]
+- Think before coding. State your assumptions out loud. If the request is ambiguous, ask. If a simpler approach exists, push back. Stop when you are confused, name what is unclear, do not just pick one interpretation and run.
+- Simplicity first. Write the minimum code that solves the problem. No speculative abstractions. No flexibility nobody asked for. The test: would a senior engineer call this overcomplicated.
+- Surgical changes. Touch only what the task requires. Do not improve neighboring code. Do not refactor what is not broken. Every changed line should trace back to the request.
+- Goal-driven execution. Turn vague instructions into verifiable targets before writing a line. "Add validation" becomes "write tests for invalid inputs, then make them pass."
+EOF
+
+# Skip domain section if no domains matched (preamble still emitted above)
+if [ -z "$DOMAINS" ]; then
+  CONTEXT=$(cat "$TMPFILE")
+  jq -n --arg ctx "$CONTEXT" \
+    '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":$ctx}}'
+  exit 0
+fi
 
 IFS=',' read -ra DOMAIN_LIST <<< "$DOMAINS"
 for DOMAIN in "${DOMAIN_LIST[@]}"; do
