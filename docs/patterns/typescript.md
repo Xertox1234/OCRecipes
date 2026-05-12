@@ -672,6 +672,132 @@ export const coachContextItemSchema = z.discriminatedUnion("type", [
 
 ---
 
+### `Equals<A, B>` for Bidirectional Schema/Type Alignment
+
+When `satisfies z.ZodType<T>` is too permissive — it only checks that the schema is _at least_ as strict as the type, not that they're equivalent — use a higher-kinded `Equals<>` conditional to assert mutual assignability. Use this when you want both directions enforced: schema can't be wider than the type and the type can't be wider than the schema.
+
+```typescript
+// shared/schemas/taste-picks.ts
+import { z } from "zod";
+import type { RecipeCandidate } from "../types/taste-picks";
+
+export const recipeCandidateSchema = z.object({
+  id: z.number().int().positive(),
+  title: z.string(),
+  imageUrl: z.string(),
+  cuisineOrigin: z.string().nullish(),
+});
+
+// Higher-kinded conditional that only resolves to `true` when A and B are
+// mutually assignable. Asymmetric drift in either direction fails to compile.
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+    ? true
+    : false;
+
+const _recipeCandidateAligned: Equals<
+  RecipeCandidate,
+  z.infer<typeof recipeCandidateSchema>
+> = true;
+
+// Suppress unused-variable warning — assertion is for tsc only.
+void _recipeCandidateAligned;
+```
+
+**Why:** `satisfies z.ZodType<T>` succeeds when the schema is a _superset_ of the type (extra fields, looser nullability). `Equals<>` rejects supersets too. This matters for response validation schemas: a hand-written `RecipeCandidate` interface and a Zod `recipeCandidateSchema` that drift apart in either direction can silently mask bugs (server returns extra fields the type doesn't have; type evolves but schema doesn't).
+
+**When to use:**
+
+- API response schemas paired with a hand-written interface in `shared/types/`
+- Any place you'd want a compile failure on _any_ shape drift, not just missing variants
+- Adjacent to `Equals<>` definitions, pin one assertion per related (type, schema) pair
+
+**When NOT to use:**
+
+- Schemas that intentionally accept a subset (use `satisfies` or no guard)
+- Schemas that intentionally accept a superset for forward-compat (use neither)
+
+**Reference:** `shared/schemas/taste-picks.ts` — `Equals<RecipeCandidate, z.infer<typeof recipeCandidateSchema>>` lines for each (type, schema) pair.
+
+---
+
+### Zod `.nullish()` vs `.nullable()` for Resilient API Response Schemas
+
+When validating API responses on the client, prefer `.nullish()` (= `.nullable().optional()`) over `.nullable()` for fields that the server emits as `null`. The reason isn't about the happy path — it's about JSON-serialization edge cases. `JSON.stringify` drops `undefined` fields silently. If any server code path constructs the payload via `{ ...row }` where the column is `undefined` (e.g., a row that was selected without the column), the field disappears from the wire entirely — and `.nullable()` rejects the missing field, flipping the client into an error state on otherwise-valid data.
+
+```typescript
+// Defensive — accepts string | null | undefined | missing
+cuisineOrigin: z.string().nullish(),
+
+// Strict — accepts string | null only; rejects missing field
+cuisineOrigin: z.string().nullable(),
+```
+
+Pair `.nullish()` with optional property syntax in the matching TS interface:
+
+```typescript
+export interface RecipeCandidate {
+  id: number;
+  title: string;
+  imageUrl: string;
+  cuisineOrigin?: string | null; // `?:` matches `z.string().nullish()`
+}
+```
+
+Without the `?:`, the `Equals<>` guard (above) will fail because Zod infers `nullish()` as an optional property.
+
+**Why:** Defense-in-depth for runtime validators. The point of a runtime schema is shape resilience — keeping it permissive at known-safe boundaries (a column that's already nullable in the DB) costs nothing and prevents a class of "server change drops field, client breaks" bugs.
+
+**When to use:**
+
+- Response-validator schemas (client `safeParse`-ing server replies)
+- Any field whose underlying source is nullable in the DB
+- Optional fields where omission and `null` are semantically equivalent
+
+**When NOT to use:**
+
+- Request body schemas (be strict on input; reject unexpected omissions)
+- Schemas where `undefined` and `null` mean different things
+
+**Reference:** `shared/schemas/taste-picks.ts` — `cuisineOrigin: z.string().nullish()` paired with `RecipeCandidate.cuisineOrigin?: string | null`.
+
+---
+
+### `Object.freeze` + Per-Call Spread for Hoisted Constants Passed to Mutable-Typed SDKs
+
+When hoisting an expensive-to-build array (e.g., an OpenAI tool-definition list) from per-request construction to a module-level constant, the array becomes _shared mutable state_ across requests. Defend with `Object.freeze` so accidental top-level mutation throws loudly. But many third-party SDKs type their input parameters as mutable arrays (`T[]`, not `readonly T[]`), so passing a frozen array fails type-checking. Resolve by spreading at the call site — a shallow O(n) copy over references, still vastly cheaper than rebuilding the whole array per request.
+
+```typescript
+// server/services/nutrition-coach.ts
+
+// Module load: build once, freeze the top-level array.
+const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
+
+export async function* generateCoachProResponse(/* ... */) {
+  // Per call: shallow-spread to a fresh mutable array the SDK accepts.
+  // O(n) over references; the nested tool objects are reused.
+  const tools = [...TOOL_DEFINITIONS];
+  yield* openai.chat.completions.create({ /* ... */, tools });
+}
+```
+
+**Why:** Hoisting alone trades per-request allocation for shared mutable state. If a future caller does `tools.push(extraTool)`, the mutation leaks across requests silently. `Object.freeze` makes that mutation throw. The spread workaround is needed because OpenAI's SDK (and many others) types the `tools` field as `ChatCompletionTool[]` (mutable), and a `readonly ChatCompletionTool[]` is not assignable to it.
+
+**When to use:**
+
+- Module-level constants built once but consumed per-request
+- Especially when the value is passed to an external SDK with mutable parameter types
+- Any hoisted array/object referenced from concurrent code paths
+
+**When NOT to use:**
+
+- Local arrays scoped to a single call — no shared state, no defense needed
+- SDKs that accept `readonly T[]` (or `ReadonlyArray<T>`) — pass the frozen value directly
+
+**Reference:** `server/services/nutrition-coach.ts` — `Object.freeze(getToolDefinitions())` + `const tools = [...TOOL_DEFINITIONS]`.
+
+---
+
 ## `??` vs `||` for Optional Numeric Parameters
 
 **Rule:** Use `??` (nullish coalescing), not `||` (logical OR), when falling back from an optional `number` parameter to a default.

@@ -9,3 +9,4 @@
 - Always use `Promise.all` for parallel queries inside transactions — never sequential `await` (causes N sequential round-trips)
 - Never re-query after an insert to build the response — construct from insert params + returned id in-memory
 - Polymorphic batch fetch: collect IDs first, batch with `.inArray()`, resolve with `Map` lookup — never loop-query
+- Replace-by-DELETE-then-INSERT: dedupe the input array with `[...new Set(ids)]` before insert when removing `onConflictDoNothing`; DELETE alone does not prevent duplicate-row failures on a (userId, x) unique constraint when caller-supplied ids contain repeats

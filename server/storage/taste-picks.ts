@@ -1,5 +1,6 @@
 import { eq, inArray, isNotNull, sql, count, and, desc } from "drizzle-orm";
 import { db } from "../db";
+import { logger } from "../lib/logger";
 import { tastePicks, communityRecipes, userProfiles } from "@shared/schema";
 import type {
   RecipeCandidate,
@@ -58,6 +59,11 @@ export async function setTastePicks(
     await tx.delete(tastePicks).where(eq(tastePicks.userId, userId));
     let publicIds: number[] = [];
     if (recipeIds.length > 0) {
+      // Restrict to public recipes (IDOR defense) AND dedupe via the
+      // recipes PK — the SELECT returns at most one row per recipe even
+      // if the caller passed duplicates. With this natural dedupe in
+      // place, `onConflictDoNothing()` is redundant on the insert below.
+      // See docs/rules/database.md "Replace-by-DELETE-then-INSERT".
       const publicRecipes = await tx
         .select({ id: communityRecipes.id })
         .from(communityRecipes)
@@ -71,8 +77,7 @@ export async function setTastePicks(
       if (publicIds.length > 0) {
         await tx
           .insert(tastePicks)
-          .values(publicIds.map((recipeId) => ({ userId, recipeId })))
-          .onConflictDoNothing();
+          .values(publicIds.map((recipeId) => ({ userId, recipeId })));
       }
     }
 
@@ -106,6 +111,13 @@ export async function setTastePicks(
         .update(userProfiles)
         .set({ cuisinePreferences: merged, updatedAt: new Date() })
         .where(eq(userProfiles.userId, userId));
+    } else if (derivedCuisines.length > 0) {
+      // Cuisine merge is silently dropped when the user has no profile row yet.
+      // Surface this gap in logs so the missing write-through is debuggable.
+      logger.warn(
+        { userId, derivedCuisines },
+        "setTastePicks: no profile row, cuisine merge skipped",
+      );
     }
 
     // 4. Fetch final picks for response

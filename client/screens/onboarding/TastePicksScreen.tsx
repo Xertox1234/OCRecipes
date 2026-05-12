@@ -19,6 +19,7 @@ import { apiRequest } from "@/lib/query-client";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import type { RecipeCandidate } from "@shared/types/taste-picks";
+import { tastePickCandidatesResponseSchema } from "@shared/schemas/taste-picks";
 
 const MIN_PICKS = 5;
 const PAGE_LIMIT = 30;
@@ -50,7 +51,14 @@ export default function TastePicksScreen() {
           "GET",
           `/api/taste-picks/candidates?${params}`,
         );
-        const body = await res.json();
+        const json = await res.json();
+        const parsed = tastePickCandidatesResponseSchema.safeParse(json);
+        if (!parsed.success) {
+          console.error("loadCandidates: invalid response shape", parsed.error);
+          setLoadError(true);
+          return;
+        }
+        const body = parsed.data;
         setCandidates((prev) =>
           pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
         );

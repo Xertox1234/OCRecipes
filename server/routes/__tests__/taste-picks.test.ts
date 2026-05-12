@@ -100,6 +100,31 @@ describe("Taste Picks Routes", () => {
         expect.objectContaining({ dietType: "vegetarian" }),
       );
     });
+
+    it("rejects dietType longer than 50 chars (L2)", async () => {
+      const tooLong = "a".repeat(51);
+      const res = await request(app).get(
+        `/api/taste-picks/candidates?dietType=${tooLong}`,
+      );
+
+      expect(res.status).toBe(400);
+      expect(vi.mocked(storage.getTastePickCandidates)).not.toHaveBeenCalled();
+    });
+
+    it("accepts dietType exactly 50 chars (boundary)", async () => {
+      vi.mocked(storage.getTastePickCandidates).mockResolvedValue({
+        candidates: [],
+        total: 0,
+        page: 1,
+      });
+      const fifty = "a".repeat(50);
+
+      const res = await request(app).get(
+        `/api/taste-picks/candidates?dietType=${fifty}`,
+      );
+
+      expect(res.status).toBe(200);
+    });
   });
 
   describe("GET /api/taste-picks", () => {

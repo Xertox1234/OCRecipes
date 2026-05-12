@@ -15,6 +15,7 @@ import {
   getTestTx,
 } from "../../../test/db-test-utils";
 import { communityRecipes, userProfiles } from "@shared/schema";
+import { logger } from "../../lib/logger";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 
@@ -189,6 +190,41 @@ describe("setTastePicks", () => {
 
     expect(result.cuisinePreferences).not.toContain(null);
     expect(result.cuisinePreferences).not.toContain("");
+  });
+
+  it("dedupes duplicate recipeIds before insert (no unique-constraint crash)", async () => {
+    // The isPublic SELECT pre-filter naturally dedupes via the recipes
+    // PK, but this test pins the contract — duplicates in the caller's
+    // array must not surface a unique-constraint error.
+    await createProfile();
+    const recipe = await createCommunityRecipe();
+
+    await expect(
+      setTastePicks(testUserId, [recipe.id, recipe.id, recipe.id]),
+    ).resolves.toBeDefined();
+
+    const picks = await getTastePicks(testUserId);
+    expect(picks).toHaveLength(1);
+    expect(picks[0].recipeId).toBe(recipe.id);
+  });
+
+  it("logs warn when no profile row exists but derived cuisines are non-empty", async () => {
+    // L3 fix: surface the silently-skipped cuisine merge when a user has
+    // taste picks but no userProfiles row yet (e.g. mid-onboarding race).
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+
+    // Intentionally do NOT create a profile row.
+    const recipe = await createCommunityRecipe({ cuisineOrigin: "Italian" });
+    await setTastePicks(testUserId, [recipe.id]);
+
+    const noProfileWarn = warnSpy.mock.calls.find(
+      ([, msg]) =>
+        typeof msg === "string" &&
+        msg.includes("no profile row, cuisine merge skipped"),
+    );
+    expect(noProfileWarn).toBeDefined();
+
+    warnSpy.mockRestore();
   });
 
   it("silently ignores private recipeIds — does not insert them", async () => {
