@@ -110,6 +110,41 @@ if (response.status === 401) {
 }
 ```
 
+### `apiRequest` Throws on Non-2xx — Don't Write `if (!res.ok)` After It
+
+`apiRequest` from `client/lib/query-client.ts` calls `throwIfResNotOk()` internally before returning. Any `if (!res.ok)` check after `await apiRequest(...)` is dead code — control flow never reaches it because the throw fires first.
+
+```typescript
+// BAD — dead guard, error UI never shows
+const res = await apiRequest("GET", "/api/taste-picks");
+if (!res.ok) {
+  // ← Unreachable. apiRequest already threw above.
+  setLoadError(true);
+  return;
+}
+const body = await res.json();
+```
+
+```typescript
+// GOOD — wrap the throwing call in try/catch
+try {
+  const res = await apiRequest("GET", "/api/taste-picks");
+  const body = await res.json();
+  // ... safeParse, set state, etc.
+} catch (err) {
+  console.error("loadPicks failed", err);
+  setLoadError(true);
+}
+```
+
+**Why it's a common mistake:** Plain `fetch` returns `Response` with `res.ok === false` on non-2xx, so the `if (!res.ok)` pattern is muscle memory from any codebase that uses `fetch` directly. `apiRequest` is a thin wrapper that converts non-2xx into thrown errors so callers can stay terse on the happy path — but it breaks the muscle-memory pattern. The dead guards compile, lint clean, and ship.
+
+**Symptom in the wild:** Screens that show stuck loading states or empty UI when the server returns 4xx/5xx — the `setLoadError(true)` line never executes, so no error UI renders, and the screen sits in a half-rendered intermediate state. Confirmed across `loadPicks`, `loadCandidates`, and many `client/hooks/*` query functions.
+
+**When to allow `if (!res.ok)`:** Only when the call is `fetch(...)` directly (not `apiRequest`). The reason `client-state.md` § "Business Logic Errors in Mutations" uses raw `fetch` with `if (!response.ok)` is specifically to bypass `apiRequest`'s throw semantics — so the mutation can distinguish `LIMIT_REACHED` (403) from generic 403 without parsing error strings.
+
+**Reference:** `client/lib/query-client.ts` — `throwIfResNotOk` is called from both `apiRequest` and `getQueryFn` before returning.
+
 ### Business Logic Errors in Mutations
 
 When an API returns a business logic error (like `LIMIT_REACHED`) that should not trigger error states, use custom fetch logic in the mutation to return a discriminated union instead of throwing:

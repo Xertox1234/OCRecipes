@@ -220,6 +220,10 @@ if (state.status === "success") {
 3. **`parseInt(req.userId)`** — `req.userId` is a UUID string. `parseInt(uuidString)` returns `NaN`. If a Zod schema field stores a user ID, use `z.string()`. Audit 2026-04-28 H2.
 4. **Untyped JSON.parse** — Always validate with Zod or a type guard
 5. **Ignoring `noImplicitAny`** — Strict mode is on; if a type is unclear, write a type guard
+6. **Zod schema mirrors hand-written type with no alignment guard** — When `shared/schemas/foo.ts` infers a shape that should match `shared/types/foo.ts`, require either `satisfies z.ZodType<T>` (one-direction) or an `Equals<>` assertion (bidirectional). No guard means silent drift on either side.
+7. **`.nullable()` on response-validator fields the server emits as `null`** — Prefer `.nullish()` so missing/`undefined` fields don't flip the client into an error state. Pair with `cuisineOrigin?: string | null` in the matching TS interface so `Equals<>` still holds.
+8. **`Object.freeze` on hoisted constants without per-call spread** — If the frozen array is passed to an SDK typed as mutable (`T[]`, not `readonly T[]`), the call site needs `[...FROZEN]`. Freezing without the spread fails type-checking; hoisting without freezing leaks mutation across requests.
+9. **`if (!res.ok)` after `await apiRequest(...)`** — `apiRequest` throws on non-2xx via `throwIfResNotOk`, so the guard is unreachable dead code. Wrap the call in `try/catch` instead. (See `docs/patterns/client-state.md` § "apiRequest Throws on Non-2xx".)
 
 ---
 
