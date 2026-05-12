@@ -1,44 +1,20 @@
 // @vitest-environment jsdom
 import { renderHook, act } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
+import * as Reanimated from "react-native-reanimated";
 
-import type * as Haptics from "expo-haptics";
 import { useHaptics } from "../useHaptics";
 
-const {
-  mockUseReducedMotion,
-  mockImpactAsync,
-  mockNotificationAsync,
-  mockSelectionAsync,
-} = vi.hoisted(() => ({
-  mockUseReducedMotion: vi.fn(),
-  mockImpactAsync: vi.fn(),
-  mockNotificationAsync: vi.fn(),
-  mockSelectionAsync: vi.fn(),
-}));
-
-vi.mock("react-native-reanimated", () => ({
-  useReducedMotion: () => mockUseReducedMotion(),
-}));
-
-vi.mock("expo-haptics", () => ({
-  impactAsync: (...args: unknown[]) => mockImpactAsync(...args),
-  notificationAsync: (...args: unknown[]) => mockNotificationAsync(...args),
-  selectionAsync: () => mockSelectionAsync(),
-  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
-  NotificationFeedbackType: {
-    Success: "success",
-    Warning: "warning",
-    Error: "error",
-  },
-}));
-
 describe("useHaptics", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  afterEach(() => {
+    // restoreAllMocks() undoes spy installation. vi.clearAllMocks() in
+    // test/setup.ts only clears call history.
+    vi.restoreAllMocks();
   });
 
   it("triggers impact feedback when reduced motion is disabled", () => {
-    mockUseReducedMotion.mockReturnValue(false);
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(false);
+    const impactSpy = vi.spyOn(Haptics, "impactAsync");
 
     const { result } = renderHook(() => useHaptics());
 
@@ -46,11 +22,12 @@ describe("useHaptics", () => {
       result.current.impact("medium" as Haptics.ImpactFeedbackStyle);
     });
 
-    expect(mockImpactAsync).toHaveBeenCalledWith("medium");
+    expect(impactSpy).toHaveBeenCalledWith("medium");
   });
 
   it("does NOT trigger impact when reduced motion is enabled", () => {
-    mockUseReducedMotion.mockReturnValue(true);
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(true);
+    const impactSpy = vi.spyOn(Haptics, "impactAsync");
 
     const { result } = renderHook(() => useHaptics());
 
@@ -58,11 +35,12 @@ describe("useHaptics", () => {
       result.current.impact("medium" as Haptics.ImpactFeedbackStyle);
     });
 
-    expect(mockImpactAsync).not.toHaveBeenCalled();
+    expect(impactSpy).not.toHaveBeenCalled();
   });
 
   it("triggers notification feedback when allowed", () => {
-    mockUseReducedMotion.mockReturnValue(false);
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(false);
+    const notificationSpy = vi.spyOn(Haptics, "notificationAsync");
 
     const { result } = renderHook(() => useHaptics());
 
@@ -72,11 +50,12 @@ describe("useHaptics", () => {
       );
     });
 
-    expect(mockNotificationAsync).toHaveBeenCalledWith("success");
+    expect(notificationSpy).toHaveBeenCalledWith("success");
   });
 
   it("triggers selection feedback when allowed", () => {
-    mockUseReducedMotion.mockReturnValue(false);
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(false);
+    const selectionSpy = vi.spyOn(Haptics, "selectionAsync");
 
     const { result } = renderHook(() => useHaptics());
 
@@ -84,11 +63,11 @@ describe("useHaptics", () => {
       result.current.selection();
     });
 
-    expect(mockSelectionAsync).toHaveBeenCalled();
+    expect(selectionSpy).toHaveBeenCalled();
   });
 
   it("reports disabled flag based on reduced motion", () => {
-    mockUseReducedMotion.mockReturnValue(true);
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(true);
 
     const { result } = renderHook(() => useHaptics());
 

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { renderHook, waitFor, act } from "@testing-library/react";
+import * as RN from "react-native";
 
 import {
   useFavouriteRecipes,
@@ -10,30 +11,23 @@ import {
 } from "../useFavouriteRecipes";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
-const { mockApiRequest, mockAlert, mockShare, mockPlatform } = vi.hoisted(
-  () => ({
-    mockApiRequest: vi.fn(),
-    mockAlert: { alert: vi.fn() },
-    mockShare: { share: vi.fn() },
-    mockPlatform: { OS: "ios" as string },
-  }),
-);
+const { mockApiRequest } = vi.hoisted(() => ({
+  mockApiRequest: vi.fn(),
+}));
 
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
 
-vi.mock("react-native", async () => {
-  return {
-    Alert: mockAlert,
-    Share: mockShare,
-    Platform: mockPlatform,
-  };
-});
-
 describe("useFavouriteRecipes", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  const originalPlatformOS = RN.Platform.OS;
+
+  afterEach(() => {
+    // Platform.OS is a plain string property, not a function — vi.spyOn can't
+    // intercept it. Mutate-and-restore is the simplest path.
+    RN.Platform.OS = originalPlatformOS;
+    // restoreAllMocks() undoes spies on Alert.alert / Share.share.
+    vi.restoreAllMocks();
   });
 
   describe("useFavouriteRecipes", () => {
@@ -290,6 +284,7 @@ describe("useFavouriteRecipes", () => {
 
     it("shows LIMIT_REACHED alert on 403 with code", async () => {
       const { wrapper, queryClient } = createQueryWrapper();
+      const alertSpy = vi.spyOn(RN.Alert, "alert");
 
       queryClient.setQueryData(["/api/favourite-recipes/ids"], {
         ids: [],
@@ -317,7 +312,7 @@ describe("useFavouriteRecipes", () => {
         expect(result.current.isError).toBe(true);
       });
 
-      expect(mockAlert.alert).toHaveBeenCalledWith(
+      expect(alertSpy).toHaveBeenCalledWith(
         "Favourites Limit Reached",
         "Upgrade to premium for unlimited favourites.",
       );
@@ -326,7 +321,10 @@ describe("useFavouriteRecipes", () => {
 
   describe("useShareRecipe", () => {
     it("calls Share.share with formatted message on iOS", async () => {
-      mockPlatform.OS = "ios";
+      RN.Platform.OS = "ios";
+      const shareSpy = vi
+        .spyOn(RN.Share, "share")
+        .mockResolvedValue({ action: "sharedAction" });
 
       mockApiRequest.mockResolvedValue({
         ok: true,
@@ -339,8 +337,6 @@ describe("useFavouriteRecipes", () => {
           }),
       });
 
-      mockShare.share.mockResolvedValue({ action: "sharedAction" });
-
       const { wrapper } = createQueryWrapper();
       const { result } = renderHook(() => useShareRecipe(), { wrapper });
 
@@ -348,7 +344,7 @@ describe("useFavouriteRecipes", () => {
         await result.current.share(10, "community");
       });
 
-      expect(mockShare.share).toHaveBeenCalledWith({
+      expect(shareSpy).toHaveBeenCalledWith({
         title: "Pasta Carbonara",
         message: expect.stringContaining("Pasta Carbonara"),
         url: "https://example.com/pasta.jpg",
@@ -356,7 +352,10 @@ describe("useFavouriteRecipes", () => {
     });
 
     it("omits url field on Android", async () => {
-      mockPlatform.OS = "android";
+      RN.Platform.OS = "android";
+      const shareSpy = vi
+        .spyOn(RN.Share, "share")
+        .mockResolvedValue({ action: "sharedAction" });
 
       mockApiRequest.mockResolvedValue({
         ok: true,
@@ -369,8 +368,6 @@ describe("useFavouriteRecipes", () => {
           }),
       });
 
-      mockShare.share.mockResolvedValue({ action: "sharedAction" });
-
       const { wrapper } = createQueryWrapper();
       const { result } = renderHook(() => useShareRecipe(), { wrapper });
 
@@ -378,17 +375,21 @@ describe("useFavouriteRecipes", () => {
         await result.current.share(10, "community");
       });
 
-      expect(mockShare.share).toHaveBeenCalledWith({
+      expect(shareSpy).toHaveBeenCalledWith({
         title: "Pasta Carbonara",
         message: expect.stringContaining("Pasta Carbonara"),
       });
       // Should NOT have url key on Android
-      const shareCall = mockShare.share.mock.calls[0][0];
+      const shareCall = shareSpy.mock.calls[0][0];
       expect(shareCall).not.toHaveProperty("url");
     });
 
     it("silently ignores user-cancelled share", async () => {
-      mockPlatform.OS = "ios";
+      RN.Platform.OS = "ios";
+      const alertSpy = vi.spyOn(RN.Alert, "alert");
+      vi.spyOn(RN.Share, "share").mockRejectedValue(
+        new Error("User did not share"),
+      );
 
       mockApiRequest.mockResolvedValue({
         ok: true,
@@ -401,8 +402,6 @@ describe("useFavouriteRecipes", () => {
           }),
       });
 
-      mockShare.share.mockRejectedValue(new Error("User did not share"));
-
       const { wrapper } = createQueryWrapper();
       const { result } = renderHook(() => useShareRecipe(), { wrapper });
 
@@ -411,11 +410,12 @@ describe("useFavouriteRecipes", () => {
       });
 
       // Should NOT show alert for user cancellation
-      expect(mockAlert.alert).not.toHaveBeenCalled();
+      expect(alertSpy).not.toHaveBeenCalled();
     });
 
     it("shows alert on share failure", async () => {
-      mockPlatform.OS = "ios";
+      RN.Platform.OS = "ios";
+      const alertSpy = vi.spyOn(RN.Alert, "alert");
 
       mockApiRequest.mockResolvedValue({
         ok: false,
@@ -430,7 +430,7 @@ describe("useFavouriteRecipes", () => {
         await result.current.share(10, "community");
       });
 
-      expect(mockAlert.alert).toHaveBeenCalledWith(
+      expect(alertSpy).toHaveBeenCalledWith(
         "Share Failed",
         "Could not share this recipe.",
       );

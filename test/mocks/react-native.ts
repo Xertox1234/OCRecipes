@@ -1,12 +1,16 @@
 /* eslint-disable react/display-name */
 // Mock react-native for Vitest — the real module uses Flow syntax that Rollup can't parse.
 import React from "react";
+import { vi } from "vitest";
 
 export const Platform = {
-  OS: "ios" as const,
-  select: (obj: Record<string, unknown>) => obj.ios,
+  OS: "ios" as "ios" | "android",
+  select: (obj: Record<string, unknown>) => obj[Platform.OS],
 };
-export const useColorScheme = () => "light";
+// vi.fn() so tests can `vi.spyOn(RN, "useColorScheme").mockReturnValue("dark")`.
+// Default impl preserves the historical "always light" behaviour for tests that
+// don't care.
+export const useColorScheme = vi.fn((): "light" | "dark" | null => "light");
 export const StyleSheet = {
   create: <T extends Record<string, unknown>>(styles: T): T => styles,
   flatten: (style: unknown) => style,
@@ -14,7 +18,17 @@ export const StyleSheet = {
 export const Appearance = { getColorScheme: () => "light" };
 export const Dimensions = { get: () => ({ width: 375, height: 812 }) };
 export const useWindowDimensions = () => ({ width: 375, height: 812 });
-export const Alert = { alert: () => {} };
+// vi.fn() so tests can assert calls via `vi.spyOn(RN.Alert, "alert")` or
+// import `Alert` and spy directly. Default impl is a no-op.
+export const Alert = { alert: vi.fn() };
+// AppState — used by hooks like usePendingReminders that subscribe to
+// foreground/background events. Subscription returns a `remove` function.
+export const AppState = {
+  addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+};
+// Share API — used by useFavouriteRecipes useShareRecipe. Default impl is a
+// no-op resolved promise; tests `vi.spyOn(RN.Share, "share").mockResolvedValue(...)`.
+export const Share = { share: vi.fn(async () => ({ action: "sharedAction" })) };
 export const Linking = { openURL: async () => {} };
 export const NativeModules = {};
 
