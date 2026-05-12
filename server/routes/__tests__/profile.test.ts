@@ -16,6 +16,16 @@ vi.mock("../../storage", () => ({
   },
 }));
 
+// Capture floating fire-and-forget promises so tests can deterministically
+// await them rather than relying on microtask timing. See
+// docs/patterns/testing.md → "fireAndForget in tests".
+let lastFireAndForgetPromise: Promise<unknown> | null = null;
+vi.mock("../../lib/fire-and-forget", () => ({
+  fireAndForget: (_label: string, promise: Promise<unknown>) => {
+    lastFireAndForgetPromise = promise;
+  },
+}));
+
 vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
@@ -43,6 +53,7 @@ describe("Profile Routes", () => {
 
   beforeEach(() => {
     app = createApp();
+    lastFireAndForgetPromise = null;
   });
 
   describe("GET /api/user/dietary-profile", () => {
@@ -98,9 +109,10 @@ describe("Profile Routes", () => {
         .set("Authorization", "Bearer token")
         .send({ dietType: "keto" });
 
-      // Fire-and-forget — but the call is synchronous
-      // Need to wait a tick for the microtask to resolve
-      await new Promise((r) => setTimeout(r, 10));
+      // Deterministically await the captured fire-and-forget promise rather
+      // than racing a wall-clock or microtask tick.
+      expect(lastFireAndForgetPromise).not.toBeNull();
+      await lastFireAndForgetPromise;
       expect(storage.invalidateSuggestionCacheForUser).toHaveBeenCalledWith(
         "1",
       );
