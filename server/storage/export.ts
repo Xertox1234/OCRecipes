@@ -38,7 +38,8 @@ import { eq, and, isNull, inArray, asc, desc } from "drizzle-orm";
 // allowlist (rather than blocklisting `password`/`tokenVersion`) means any new
 // internal column added to the schema is excluded by default — adding it to
 // the export must be a deliberate edit here, not an accidental side-effect.
-const exportUserColumns = {
+// Exported so the test suite can statically assert sensitive columns are absent.
+export const exportUserColumns = {
   id: users.id,
   username: users.username,
   displayName: users.displayName,
