@@ -7,6 +7,7 @@ import { OnboardingProvider, useOnboarding } from "@/context/OnboardingContext";
 import { OnboardingProgressBar } from "@/components/OnboardingProgressBar";
 import { useTheme } from "@/hooks/useTheme";
 import WelcomeScreen from "@/screens/onboarding/WelcomeScreen";
+import HealthDataConsentScreen from "@/screens/onboarding/HealthDataConsentScreen";
 import AllergiesScreen from "@/screens/onboarding/AllergiesScreen";
 import HealthConditionsScreen from "@/screens/onboarding/HealthConditionsScreen";
 import DietTypeScreen from "@/screens/onboarding/DietTypeScreen";
@@ -16,6 +17,7 @@ import TastePicksScreen from "@/screens/onboarding/TastePicksScreen";
 
 export type OnboardingStackParamList = {
   Welcome: undefined;
+  HealthDataConsent: undefined;
   Allergies: undefined;
   HealthConditions: undefined;
   DietType: undefined;
@@ -28,6 +30,10 @@ const Stack = createNativeStackNavigator<OnboardingStackParamList>();
 
 const SCREENS = [
   { name: "Welcome" as const, component: WelcomeScreen },
+  {
+    name: "HealthDataConsent" as const,
+    component: HealthDataConsentScreen,
+  },
   { name: "Allergies" as const, component: AllergiesScreen },
   { name: "HealthConditions" as const, component: HealthConditionsScreen },
   { name: "DietType" as const, component: DietTypeScreen },

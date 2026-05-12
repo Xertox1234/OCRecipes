@@ -277,6 +277,7 @@ type UpdatableProfileFields = Pick<
   | "glp1Mode"
   | "glp1Medication"
   | "glp1StartDate"
+  | "healthDataConsentAt"
   | "reminderMutes"
 >;
 
@@ -284,9 +285,22 @@ export async function updateUserProfile(
   userId: string,
   updates: Partial<UpdatableProfileFields>,
 ): Promise<UserProfile | undefined> {
+  // Append-only consent: SQL `COALESCE(existing, new)` keeps the first
+  // non-null `healthDataConsentAt` so a re-stamp request cannot overwrite
+  // the original consent record. The route already prevents clients from
+  // supplying the timestamp directly, but this layer is the durable
+  // enforcement point for any future caller that uses updateUserProfile.
+  const { healthDataConsentAt: incomingConsent, ...rest } = updates;
+  const setClause: Record<string, unknown> = {
+    ...rest,
+    updatedAt: new Date(),
+  };
+  if (incomingConsent !== undefined && incomingConsent !== null) {
+    setClause.healthDataConsentAt = sql`COALESCE(${userProfiles.healthDataConsentAt}, ${incomingConsent})`;
+  }
   const [profile] = await db
     .update(userProfiles)
-    .set({ ...updates, updatedAt: new Date() })
+    .set(setClause)
     .where(eq(userProfiles.userId, userId))
     .returning();
   return profile || undefined;
@@ -308,9 +322,23 @@ export async function upsertProfileWithOnboarding(
 
     let result: UserProfile;
     if (existing) {
+      // Append-only consent: never overwrite a previously recorded
+      // `healthDataConsentAt`. Once consent has been captured, replays of
+      // this onboarding endpoint preserve the original timestamp as the
+      // legally significant record of agreement.
+      const { healthDataConsentAt: incomingConsent, ...rest } = profileData;
+      const safeData: Omit<InsertUserProfile, "userId"> =
+        existing.healthDataConsentAt
+          ? rest
+          : {
+              ...rest,
+              ...(incomingConsent
+                ? { healthDataConsentAt: incomingConsent }
+                : {}),
+            };
       [result] = await tx
         .update(userProfiles)
-        .set({ ...profileData, updatedAt: new Date() })
+        .set({ ...safeData, updatedAt: new Date() })
         .where(eq(userProfiles.userId, userId))
         .returning();
     } else {

@@ -195,6 +195,39 @@ describe("users storage", () => {
       const original = await getUserProfile(testUser.id);
       expect(original!.dietType).toBe("balanced");
     });
+
+    // CCPA/PIPEDA consent-timestamp invariant: the `healthDataConsentAt` column
+    // is append-only at the SQL layer (COALESCE). Once stamped, a re-write
+    // cannot overwrite or backdate the legally significant moment of consent.
+    // (Assertions compare DB-round-tripped values to each other, not to the
+    // input JS Date, because the column is `TIMESTAMP WITHOUT TIME ZONE` and
+    // would lose offset info on roundtrip — orthogonal to the append-only
+    // property we're testing.)
+    it("sets healthDataConsentAt when no prior value exists", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+
+      const updated = await updateUserProfile(testUser.id, {
+        healthDataConsentAt: new Date("2025-01-15T12:00:00Z"),
+      });
+
+      expect(updated!.healthDataConsentAt).toBeInstanceOf(Date);
+    });
+
+    it("preserves existing healthDataConsentAt via COALESCE on re-stamp", async () => {
+      await createTestUserProfile(tx, testUser.id, {});
+      const firstStamp = await updateUserProfile(testUser.id, {
+        healthDataConsentAt: new Date("2025-01-15T12:00:00Z"),
+      });
+      const stored = firstStamp!.healthDataConsentAt;
+      expect(stored).toBeInstanceOf(Date);
+
+      const result = await updateUserProfile(testUser.id, {
+        healthDataConsentAt: new Date("1970-01-01T00:00:00Z"),
+      });
+
+      // The DB-stored value must be unchanged after the second call.
+      expect(result!.healthDataConsentAt?.getTime()).toBe(stored!.getTime());
+    });
   });
 
   // ==========================================================================
@@ -409,6 +442,29 @@ describe("users storage", () => {
         activityLevel: "low",
       });
       expect(profile.createdAt).toBeDefined();
+    });
+
+    // CCPA/PIPEDA consent-timestamp invariant: the transactional upsert path
+    // uses an existence guard to preserve the original `healthDataConsentAt`
+    // when one is already recorded — replays of onboarding (e.g., user re-runs
+    // the flow) cannot overwrite the legally significant consent moment.
+    it("preserves existing healthDataConsentAt via existence guard on re-onboarding", async () => {
+      await createTestUserProfile(tx, testUser.id, { dietType: "vegan" });
+      const firstStamp = await updateUserProfile(testUser.id, {
+        healthDataConsentAt: new Date("2025-01-15T12:00:00Z"),
+      });
+      const stored = firstStamp!.healthDataConsentAt;
+      expect(stored).toBeInstanceOf(Date);
+
+      // Replay onboarding with a different (backdated) consent timestamp.
+      const result = await upsertProfileWithOnboarding(testUser.id, {
+        dietType: "keto",
+        healthDataConsentAt: new Date("1970-01-01T00:00:00Z"),
+      });
+
+      expect(result.healthDataConsentAt?.getTime()).toBe(stored!.getTime());
+      // Other fields still update normally — only the consent column is locked.
+      expect(result.dietType).toBe("keto");
     });
   });
 });

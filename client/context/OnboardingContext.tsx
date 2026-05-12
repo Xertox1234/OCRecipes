@@ -25,6 +25,13 @@ export interface OnboardingData {
   cuisinePreferences: string[];
   cookingSkillLevel: string | null;
   cookingTimeAvailable: string | null;
+  /**
+   * Boolean intent flag — `true` after the user explicitly accepts the health
+   * data consent screen, `false` if they skipped. The server stamps the
+   * authoritative `healthDataConsentAt` timestamp (`new Date()`) when this is
+   * `true`; clients cannot supply, backdate, or clear that column.
+   */
+  healthDataConsent: boolean;
 }
 
 interface OnboardingContextType {
@@ -50,9 +57,10 @@ const defaultData: OnboardingData = {
   cuisinePreferences: [],
   cookingSkillLevel: null,
   cookingTimeAvailable: null,
+  healthDataConsent: false,
 };
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 
 const OnboardingContext = createContext<OnboardingContextType | null>(null);
 
