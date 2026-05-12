@@ -30,3 +30,7 @@ For automation, prefer a lightweight report per row with:
 - `summary`
 
 If a scheduled check edits this file automatically, append short notes rather than rewriting the meaning of an existing row.
+
+## Automation Plan
+
+The implementation plan for a scheduled checker that reads this file lives at [`docs/AI_DRIFT_AUTOMATION.md`](AI_DRIFT_AUTOMATION.md). The v1 design is report-only, covers `DRIFT-001` as the first automated check, and runs weekly via GitHub Actions.

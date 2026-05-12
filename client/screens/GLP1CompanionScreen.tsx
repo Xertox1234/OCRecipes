@@ -14,7 +14,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
-import { Spacing } from "@/constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 import {
   useMedicationLogs,
   useMedicationInsights,
@@ -23,6 +23,9 @@ import {
 import MedicationLogCard from "@/components/MedicationLogCard";
 import AppetiteTracker from "@/components/AppetiteTracker";
 import { HighProteinSuggestions } from "@/components/HighProteinSuggestions";
+
+const GLP1_DISCLAIMER_TEXT =
+  "Consult your prescribing physician before adjusting your diet while on GLP-1 medication.";
 
 const COMMON_MEDICATIONS = [
   { name: "semaglutide", brands: ["Ozempic", "Wegovy", "Rybelsus"] },
@@ -226,6 +229,33 @@ export default function GLP1CompanionScreen() {
           />
         }
       >
+        <View
+          style={[
+            styles.disclaimer,
+            {
+              backgroundColor: theme.backgroundSecondary,
+              borderColor: theme.border,
+              marginBottom: Spacing.md,
+            },
+          ]}
+        >
+          <Ionicons
+            name="information-circle-outline"
+            size={16}
+            color={theme.textSecondary}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
+          <ThemedText
+            type="small"
+            accessibilityRole="text"
+            accessibilityLabel={GLP1_DISCLAIMER_TEXT}
+            style={[styles.disclaimerText, { color: theme.textSecondary }]}
+          >
+            {GLP1_DISCLAIMER_TEXT}
+          </ThemedText>
+        </View>
+
         {insightsCards}
 
         {insights?.commonSideEffects &&
@@ -655,4 +685,18 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 80, textAlignVertical: "top" },
   sideEffectsGrid: { flexDirection: "row", flexWrap: "wrap" },
   sideEffectOption: { borderWidth: 1 },
+  disclaimer: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+  },
+  disclaimerText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
 });

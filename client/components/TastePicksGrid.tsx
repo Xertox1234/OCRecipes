@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { View, FlatList, Pressable, Image, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { RecipeCandidate } from "@shared/types/taste-picks";
 
 interface TastePicksGridProps {
@@ -13,7 +14,7 @@ interface TastePicksGridProps {
   onEndReached?: () => void;
 }
 
-function RecipeCard({
+const RecipeCard = React.memo(function RecipeCard({
   item,
   selected,
   onToggle,
@@ -70,7 +71,7 @@ function RecipeCard({
       </View>
     </Pressable>
   );
-}
+});
 
 export function TastePicksGrid({
   candidates,
@@ -78,30 +79,44 @@ export function TastePicksGrid({
   onToggle,
   onEndReached,
 }: TastePicksGridProps) {
+  const renderItem = useCallback(
+    ({ item }: { item: RecipeCandidate }) => (
+      <RecipeCard
+        item={item}
+        selected={selectedIds.has(item.id)}
+        onToggle={onToggle}
+      />
+    ),
+    [selectedIds, onToggle],
+  );
+
   return (
-    <FlatList
-      data={candidates}
-      numColumns={2}
-      keyExtractor={(item) => String(item.id)}
-      columnWrapperStyle={styles.row}
-      contentContainerStyle={styles.list}
-      onEndReached={onEndReached}
-      onEndReachedThreshold={0.4}
-      renderItem={({ item }) => (
-        <RecipeCard
-          item={item}
-          selected={selectedIds.has(item.id)}
-          onToggle={onToggle}
-        />
-      )}
-      showsVerticalScrollIndicator={false}
-    />
+    <View
+      role="group"
+      accessibilityLabel="Recipe selections"
+      style={styles.container}
+    >
+      <FlatList
+        {...FLATLIST_DEFAULTS}
+        data={candidates}
+        numColumns={2}
+        keyExtractor={(item) => String(item.id)}
+        columnWrapperStyle={styles.row}
+        contentContainerStyle={styles.list}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.4}
+        renderItem={renderItem}
+        extraData={selectedIds}
+        showsVerticalScrollIndicator={false}
+      />
+    </View>
   );
 }
 
 const CARD_IMAGE_HEIGHT = 90;
 
 const styles = StyleSheet.create({
+  container: { flex: 1 },
   list: {
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing["2xl"],

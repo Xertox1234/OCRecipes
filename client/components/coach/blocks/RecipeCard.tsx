@@ -8,7 +8,7 @@ interface Props {
   onAction?: (action: Record<string, unknown>) => void;
 }
 
-export default function RecipeCard({ block, onAction }: Props) {
+const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
   const { theme } = useTheme();
   const { recipe } = block;
   return (
@@ -58,7 +58,9 @@ export default function RecipeCard({ block, onAction }: Props) {
       </View>
     </View>
   );
-}
+});
+
+export default RecipeCard;
 
 const styles = StyleSheet.create({
   container: { borderRadius: 12, padding: 12, marginTop: 8 },

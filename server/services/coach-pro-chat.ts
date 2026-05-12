@@ -31,7 +31,7 @@ import {
   containsDangerousDietaryAdvice,
 } from "../lib/ai-safety";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { logger } from "../lib/logger";
+import { createServiceLogger } from "../lib/logger";
 import { consumeWarmUp } from "./coach-warm-up";
 import { calculateWeeklyRate } from "./weight-trend";
 import {
@@ -44,6 +44,8 @@ import {
 } from "../lib/chat-history-truncate";
 import type { DailyLog } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+
+const log = createServiceLogger("coach-pro-chat");
 
 /**
  * Derive a short meal-pattern summary from 7 days of daily logs.
@@ -360,18 +362,29 @@ export async function* handleCoachChat(
   const sevenDaysAgo = new Date(today);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-  const [profile, dailySummary, recentWeights, history, recentLogsForPatterns] =
-    await Promise.all([
-      storage.getUserProfile(userId),
-      storage.getDailySummary(userId, today),
-      storage.getWeightLogs(userId, { limit: 14 }),
-      storage.getChatMessages(conversationId, 20, userId),
-      isCoachPro
-        ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
-        : Promise.resolve(
-            [] as Awaited<ReturnType<typeof storage.getDailyLogsInRange>>,
-          ),
-    ]);
+  const [
+    profile,
+    dailySummary,
+    recentWeights,
+    history,
+    recentLogsForPatterns,
+    notebookEntries,
+  ] = await Promise.all([
+    storage.getUserProfile(userId),
+    storage.getDailySummary(userId, today),
+    storage.getWeightLogs(userId, { limit: 14 }),
+    storage.getChatMessages(conversationId, 20, userId),
+    isCoachPro
+      ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
+      : Promise.resolve(
+          [] as Awaited<ReturnType<typeof storage.getDailyLogsInRange>>,
+        ),
+    isCoachPro
+      ? storage.getActiveNotebookEntries(userId)
+      : Promise.resolve(
+          [] as Awaited<ReturnType<typeof storage.getActiveNotebookEntries>>,
+        ),
+  ]);
 
   // Weekly rate of change — shared pure helper so this logic is unit-tested
   // in isolation rather than through the full orchestrator.
@@ -425,7 +438,7 @@ export async function* handleCoachChat(
     // Always provide blocks formatting instructions for Pro responses
     context.blocksPrompt = BLOCKS_SYSTEM_PROMPT;
 
-    const notebookEntries = await storage.getActiveNotebookEntries(userId);
+    // notebookEntries fetched in parallel above (audit 2026-05-10, H4)
     if (notebookEntries.length > 0) {
       // Include updatedAt so the budget formatter can attach recency labels
       // (recent/this week/this month/older), helping the model weight newer
@@ -581,7 +594,7 @@ export async function* handleCoachChat(
         turnKey,
       );
       if (existing) {
-        logger.info(
+        log.info(
           { turnKey },
           "assistant message already persisted, skipping duplicate write",
         );

@@ -15,6 +15,31 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-11 — Testing Setup Audit
+
+- **Trigger:** First targeted testing-scope audit (previously testing was a sub-domain of code-quality). Discovery agent connection failed at tool 132; remaining discovery + all fixes done inline.
+- **Manifest:** [docs/audits/2026-05-11-testing.md](2026-05-11-testing.md)
+- **Findings:** 0 critical, 3 high, 7 medium, 4 low (14 total)
+- **Resolved:** 3 verified, 11 deferred, 0 false-positive
+- **Commit(s):** `cf180807` (fix commit), `5ec9239a` (codification commit)
+- **Key fixes:** M3 testing-specialist.md pre-commit pipeline doc corrected (was claiming `tsc + test:run + lint-staged`, actual is just `lint-staged`); L1 removed deprecated `environmentMatchGlobs` from vitest.config.ts (Vitest 4) + added explicit `@vitest-environment jsdom` pragma to 2 component tests in nested dirs that previously inherited it via the glob (FastingDrawer.test.tsx, WeightLogDrawer.test.tsx); M1 added 5 missing factories (`createMockTastePick`, `createMockRecipeDismissal`, `createMockCoachResponseCache`, `createMockCarouselSuggestionCache`, `createMockPushToken`) plus `CoachResponseCacheEntry` type export.
+- **Reclassified during fix attempt (real findings, wrong prescribed fix):** H1 timer flakiness scope reduced from 4 files → 1 real (cache.test.ts fire-and-forget DB writes need polling, not fakeTimers) + 1 trivial + 2 false-positive; M2 inline RN mocks reclassified — none are cargo-cult, each provides functionality the global mocks lack (mutable state, missing exports, stateful useSharedValue). Both routed to detailed todos.
+- **Deferred todos created:** `2026-05-11-storage-tests-critical.md` (H2+H3), `storage-tests-medium.md` (M5+M7), `route-tests.md` (M4), `service-tests.md` (M6), `ci-coverage-thresholds.md` (L2), `test-type-cast-cleanup.md` (L3), `ci-test-sharding.md` (L4), `cache-fire-and-forget-flakiness.md` (H1), `spyable-global-mocks.md` (M2). 9 todos total.
+
+---
+
+## 2026-05-10 — Full Codebase Audit
+
+- **Trigger:** Periodic full codebase audit (7 specialist agents: security, performance, data-integrity, architecture, code-quality, camera, accessibility)
+- **Manifest:** [docs/audits/2026-05-10-full.md](2026-05-10-full.md)
+- **Findings:** 0 critical, 12 high, 15 medium, 8 low (35 total)
+- **Resolved:** 14 verified, 21 deferred, 0 false-positive
+- **Commit(s):** `b246c92a` (code fixes)
+- **Key fixes:** TastePicksGrid React.memo+FLATLIST_DEFAULTS perf rewrite, taste-picks IDOR isPublic guard on read+write paths, ScanScreen/CookSession/ReceiptCapture null-photo Alerts, TastePicksScreen/TasteProfileScreen catch handlers, goalAdjustmentLogs CHECK constraints
+- **Codification:** `accessibilityLiveRegion`+`announceForAccessibility` double-announce gotcha (LEARNINGS.md, react-native.md corrected), isPublic write-path IDOR rule (security.md), FLATLIST_DEFAULTS spread-first pattern (performance.md), camera null-photo both-catch-and-else pattern (camera-specialist.md)
+
+---
+
 ## 2026-05-09 — Full Codebase Audit (Phase 3: audit closure)
 
 - **Trigger:** Closing out remaining 14 open audit findings — all routed to `todos/2026-05-09-low-severity-audit-items.md` or marked false-positive

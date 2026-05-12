@@ -244,6 +244,17 @@ Should return zero non-comment hits. Audit 2026-04-18 H9.
 - **ESLint** uses `eslint-config-expo/flat` + the project's local plugin (`eslint-plugin-ocrecipes`) which enforces server-side rules like `no-bare-error-response`.
 - **TypeScript strict mode** is on. `noImplicitAny`, `strictNullChecks`, etc. — work with the compiler, don't fight it.
 - **Custom scripts** that ALSO run on commit: `check-accessibility.js`, `check-hardcoded-colors.js`. These can block commits independently of ESLint.
+- **Generated tracked artifacts MUST be in `.prettierignore`.** If a script generates a file and commits it for CI byte-equality checking (`build:foo:check`), Prettier in the pre-commit hook will reformat the file AFTER `git add`, drifting it from the script output. The `--check` step then fails on a file the developer didn't touch. See `docs/LEARNINGS.md` "Prettier Reformats Generated Files After Commit, Breaking Byte-Equality Drift Checks."
+
+## Generated Artifact CI Drift Check
+
+When a script produces a tracked file (e.g., `.github/copilot-instructions.md` from `scripts/build-copilot-instructions.ts`), three things must coexist:
+
+1. The script has a `--check` mode that compares the committed file byte-for-byte to current generator output and exits non-zero on mismatch.
+2. CI invokes the `--check` step on every push (before tests, so drift is caught fast).
+3. The file is in `.prettierignore` (and any other formatter ignore lists), so the pre-commit hook can't silently mutate it.
+
+If you see a generated file change in a PR diff without a matching change in the source the generator reads from, that's a smell — either the generator is non-deterministic or someone hand-edited the artifact. Flag it. See `docs/patterns/architecture.md` "CI Drift-Check for Generated Tracked Artifacts."
 
 ---
 

@@ -50,11 +50,8 @@ export default function BlockRenderer({
       return (
         <QuickReplies
           block={block}
-          onSelect={
-            blockKey !== undefined
-              ? (message) => onQuickReply?.(message, blockKey)
-              : onQuickReply
-          }
+          onSelect={onQuickReply}
+          blockKey={blockKey}
           used={isUsed}
         />
       );

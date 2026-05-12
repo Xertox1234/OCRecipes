@@ -1483,6 +1483,95 @@ resolve: {
 
 ---
 
+### When Inline `vi.mock` of Globally-Aliased Modules IS Correct
+
+The general guidance ("do NOT inline-mock `react-native` / `react-native-reanimated` / `expo-haptics` — the global aliases handle it") is correct for the _common_ case: a test that renders a component and doesn't care about the mock's return values. But there are legitimate reasons to inline-mock even an already-aliased module — don't blanket-prohibit.
+
+**Inline `vi.mock` IS correct when the test needs:**
+
+1. **Mutable per-test return values** — The global alias exposes `useColorScheme: () => "light"` (a plain function, not `vi.fn()`). To toggle the value per test, you either need to inline-mock with `importOriginal()` + spread + override, or update the global mock to use `vi.fn()` for spy-ability. Until the latter ships, inline mock is the only path.
+
+   ```typescript
+   const mockUseColorScheme = vi.fn();
+   vi.mock("react-native", async (importOriginal) => {
+     const actual = await importOriginal<typeof import("react-native")>();
+     return { ...actual, useColorScheme: () => mockUseColorScheme() };
+   });
+   ```
+
+2. **Stateful behavior the simple alias can't provide** — Tests of hooks like `useScrollLinkedHeader` or `useCollapsibleHeight` need `useSharedValue` to persist across re-renders (backed by `useRef`). The global alias returns a fresh `{value: init}` each call, which mutates fine but doesn't persist. The inline mock provides the ref-backed version.
+
+3. **Missing exports** — The global mock covers commonly-rendered APIs but not every RN export. `AppState`, `Share`, and certain platform APIs may not be in the global alias. Inline mock fills the gap.
+
+**Inline mock is NOT correct when:**
+
+- The test just wants the global behavior (`useColorScheme` returns "light", `Platform.OS` is "ios"). Use the global alias; don't redeclare.
+- The test wants to _assert that a function was called_. Use `vi.spyOn(globalMockNamespace, "fnName")` instead of replacing the whole module — but this requires the global mock to expose the function as a `vi.fn()`, not a plain function.
+
+**Audit triage rule:** Before flagging an inline mock of a globally-aliased module as a violation, ask: does the test need mutable values, statefulness, or missing exports? If yes, the inline mock is legitimate; the real fix (if any) is to make the global mock spy-able, not to delete the inline mock.
+
+**Reference:** Audit 2026-05-11 finding M2 (initially "9 violations" → reclassified after inspection: 0 cargo-cult, 9 legitimate uses of inline mock for behaviors the global aliases can't provide).
+
+---
+
+### `setTimeout` in Test Fixtures vs. Real Async Waits
+
+Not all `setTimeout` in tests is a flake risk. Distinguish two patterns:
+
+**Pattern A — `setTimeout` is part of the test fixture (NOT a flake risk):**
+
+```typescript
+// ✅ The setTimeout simulates async work for the function under test.
+// promise-memo memoizes in-flight promises; the fixture needs the work to
+// take *some* time so concurrent calls land in the same memo window.
+const memo = createPromiseMemo(async () => {
+  await new Promise((r) => setTimeout(r, 10)); // ← fixture, not flake
+  return "session-123";
+});
+
+const p1 = memo.call();
+const p2 = memo.call();
+expect(p1).toBe(p2); // both calls hit the same in-flight promise
+```
+
+The `setTimeout` here is a _behavior_ of the fixture — it's how the test simulates "async work that takes time." 10ms on any modern CI is fine. Don't migrate to `vi.useFakeTimers()` — that adds complexity without reducing flakiness.
+
+**Pattern B — `setTimeout` is waiting on a real async side effect (genuinely flaky):**
+
+```typescript
+// ❌ Wall-clock wait for a fire-and-forget DB write to complete.
+// On a slow CI runner the 50ms may not be enough → flake.
+await setMicronutrientCache("key", data, ttl);
+await getMicronutrientCache("key");  // triggers fire-and-forget hit-count update
+await new Promise((r) => setTimeout(r, 50)); // ← real wait, real flake risk
+
+const [row] = await tx.select(...).where(...);
+expect(row.hitCount).toBe(1); // may fail on slow CI
+```
+
+For Pattern B, the correct fix is deterministic polling, NOT `vi.useFakeTimers()` (which doesn't help with real async DB ops):
+
+```typescript
+async function waitForCondition(
+  check: () => Promise<boolean>,
+  timeoutMs = 1000,
+  pollMs = 20,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  throw new Error(`Condition not met within ${timeoutMs}ms`);
+}
+```
+
+**Audit triage rule:** When auditing test flakiness, look at what the `setTimeout` is waiting for. If it's inside the test's mock/fixture body, it's setting up the test scenario — not a flake. If it's between an action and an assertion, waiting for a real async side effect to land, it IS a flake risk and needs polling.
+
+**Reference:** Audit 2026-05-11 finding H1 (initially "4 files with flaky timers" → reclassified after inspection: 1 genuinely flaky `cache.test.ts` fire-and-forget + 1 trivial microtask wait in `profile.test.ts` + 2 false-positive fixture timers in `promise-memo.test.ts`/`serial-queue.test.ts`).
+
+---
+
 ### Module-Level Cache Variable Not Reset Between Tests
 
 When a module uses a module-level `let` variable as an in-memory cache, Vitest re-uses the same module instance across all tests in a file by default. State left by one test leaks into the next.
@@ -1757,6 +1846,94 @@ export function buildMacroGapEmphasis(targets, remaining): string { ... }
 ```
 
 **Rule:** Before adding a field to the eval schema, check whether the service already derives it from inputs the eval already passes. If yes, calibrate those inputs to exercise the threshold; don't shadow the computation with a parallel field.
+
+---
+
+### Drift-Detection Test for Empirically-Derived Constants
+
+When a constant is a hand-maintained list whose canonical source is something
+external (a `grep` over the codebase, a file listing, an API enumeration),
+pair it with a unit test that **re-runs the empirical scan at test time**
+and asserts the constant matches. The test acts as a guard so a new entry
+added to the source can't silently bypass the constant.
+
+**When to use:**
+
+- Constants seeded from a `grep -l ...` over source files (e.g., "services that
+  import an LLM client", "routes that use rate limiting middleware")
+- Lists hand-curated from external API enumerations that change over time
+- Allowlists / blocklists that mirror runtime behavior in a sibling system
+
+**Pattern:**
+
+```typescript
+it("matches the empirical grep result", () => {
+  const result = execSync(
+    `grep -l "openai\\|anthropic" server/services/*.ts || true`,
+    { encoding: "utf8" },
+  );
+  const empirical = result
+    .split("\n")
+    .filter(Boolean)
+    .filter((p) => !p.includes("/__tests__/"))
+    .map((p) => p.replace(/^server\/services\//, ""))
+    .sort();
+
+  // Indirectly assert the constant matches by checking the consumer
+  // (here: domainsForPath returns "ai-prompting" for each empirical hit).
+  const missing = empirical.filter(
+    (basename) =>
+      !domainsForPath(`server/services/${basename}`).includes("ai-prompting"),
+  );
+  expect(missing).toEqual([]);
+  expect(empirical.length).toBeGreaterThan(0); // sanity: grep isn't vacuous
+});
+```
+
+**Why:** The constant exists because the runtime cost of re-running the grep
+on every invocation is unacceptable, OR the source data isn't available at
+runtime. The test trades a one-time test-time grep for a guarantee that the
+constant stays accurate. The sanity assertion (`length > 0`) guards against
+a grep that silently returns nothing (e.g., paths changed, regex broken)
+which would otherwise turn the drift check into a no-op.
+
+**Pair with:** `--check`-mode build script if the constant feeds a generated
+artifact — see `architecture.md` "CI Drift-Check for Generated Artifacts."
+
+**Example:** `scripts/__tests__/delegate-copilot-issue.test.ts` —
+`LLM_TOUCHING_SERVICES drift detection` block.
+
+### Sort-Order Assertions: Pin Expected Output
+
+When testing a function whose contract includes sort order, **assert against
+a pinned expected array**, not against a self-sorted or structurally-checked
+result. Two specific traps to avoid:
+
+```typescript
+// ❌ WRONG — self-sorting masks sort regressions
+expect(result.sort()).toEqual(["a", "b", "c"]);
+// If the function returns ["c", "a", "b"], .sort() mutates it back to
+// ["a", "b", "c"] and the test passes. The function's sort behavior is
+// never actually tested.
+
+// ❌ WRONG — meta-assertion passes trivially for length-1 results
+const sorted = [...result].sort();
+expect(result).toEqual(sorted);
+// If the function returns ["typescript"] (single element), it's trivially
+// "sorted" by definition. The test gives confidence the function returned
+// something, not that it returned the right thing in the right order.
+
+// ✅ CORRECT — pinned expected output
+expect(result).toEqual(["a", "b", "c"]);
+// Locks in both element presence AND order. A regression in either is
+// caught.
+```
+
+**Why:** Sort-order contracts are easy to break (a refactor that swaps a
+`Set` for an `Array` loses determinism; a removed `.sort()` call goes
+unnoticed). The only test that catches it reliably is one that names the
+exact expected sequence. If the inputs make the expected list verbose,
+that's the cost of the contract — write it out.
 
 ---
 

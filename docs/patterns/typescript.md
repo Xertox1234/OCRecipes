@@ -817,3 +817,99 @@ const hour = userHour ?? new Date().getHours();
 **When NOT to use:** If `0` genuinely means "not set" in your domain (rare — prefer `undefined` for that instead).
 
 **Origin:** `server/services/carousel-builder.ts` — `userHour?: number` where `0` = midnight; caught during PR #104 review.
+
+## Line-Anchored Heading Matching in Markdown Manipulation
+
+**Rule:** When inserting or replacing content relative to a markdown heading
+(`## Foo`), NEVER use `String.prototype.indexOf("## Foo")`. It matches anywhere
+in the string, including mid-sentence prose. Use a line-anchored matcher
+instead.
+
+```typescript
+// ❌ WRONG — matches "see ## Risks above" inside body prose
+const idx = content.indexOf("## Risks");
+return `${content.slice(0, idx)}<inserted>${content.slice(idx)}`;
+
+// ✅ CORRECT — only matches a real heading line
+function findHeadingOffset(content: string, heading: string): number {
+  if (content.startsWith(`${heading}\n`)) return 0;
+  const needle = `\n${heading}\n`;
+  const newlineIdx = content.indexOf(needle);
+  return newlineIdx === -1 ? -1 : newlineIdx + 1;
+}
+```
+
+**Why:** Markdown sources frequently quote their own structure as prose
+("see ## Risks above", "the ## Updates section was..."). A naive `indexOf`
+match on those mentions will split the line in half on insertion, silently
+corrupting the file. The line-anchored form requires the heading to be
+preceded by start-of-file OR newline AND followed by newline — so prose
+mentions can't trigger it.
+
+**When to use:** Any time you're programmatically inserting, replacing, or
+slicing markdown content based on heading position. Apply the same rule to
+`^## Foo$` regex matching: use the `m` (multiline) flag so `^`/`$` mean
+line-start/line-end, not string-start/string-end.
+
+**When NOT to use:** If you're matching INLINE markdown markers (e.g.,
+`**bold**`, `` `code` ``), the line-anchored approach doesn't apply —
+those genuinely can appear anywhere on a line.
+
+**Pair with:** A test that constructs a fixture with the heading mentioned
+in body prose AND as a real heading, then asserts the function only fires
+on the real heading. See `scripts/__tests__/delegate-copilot-issue.test.ts`
+→ `ignores mid-sentence anchor mentions in body text`.
+
+**Origin:** `scripts/delegate-copilot-issue.ts` `writeProjectRulesSectionToTodo`;
+caught during PR #149 Task 6 review (commit `fe1d720b`).
+
+## Stable Identifier Keys for Bypass / Exemption Sets
+
+**Rule:** If you have a set of "exempt" or "bypassed" items keyed off
+human-readable strings (display messages, reason text), and the items can be
+edited, the bypass silently breaks the next time someone edits the wording.
+Use a stable enum / union key and look up via that key, not the display
+text.
+
+```typescript
+// ❌ WRONG — couples bypass to mutable prose
+const BLOCKED_REASONS: [RegExp, string][] = [
+  [/\bauth\b/, "JWT/auth work is not eligible for Copilot delegation"],
+];
+const TEST_BYPASSABLE_REASONS = new Set([
+  "JWT/auth work is not eligible for Copilot delegation",
+]);
+// If anyone tweaks the reason string in BLOCKED_REASONS, the Set lookup
+// silently misses and the bypass stops working — with no type error.
+
+// ✅ CORRECT — stable union key, display text lives in a lookup table
+type BlockKey = "JWT_AUTH" | "IAP_RECEIPT" | "SECRETS" | "HEALTH_DATA";
+
+const BLOCK_REASONS: Record<BlockKey, string> = {
+  JWT_AUTH: "JWT/auth work is not eligible for Copilot delegation",
+  IAP_RECEIPT: "IAP receipt validation is not eligible for Copilot delegation",
+  SECRETS: "secrets handling is not eligible for Copilot delegation",
+  HEALTH_DATA:
+    "health-data boundary work is not eligible for Copilot delegation",
+};
+
+const BLOCKED_PATTERNS: [RegExp, BlockKey][] = [[/\bauth\b/, "JWT_AUTH"]];
+
+const TEST_BYPASSABLE_KEYS = new Set<BlockKey>(["JWT_AUTH", "IAP_RECEIPT"]);
+// Editing display text in BLOCK_REASONS no longer affects bypass logic.
+// The union type prevents typos at the call site.
+```
+
+**Why:** Display strings change for non-functional reasons (clarification,
+i18n, punctuation). The compiler can't tell you a mutated string broke a
+sibling Set lookup, so the bypass silently degrades — exactly the kind of
+bug code review struggles to catch.
+
+**When to use:** Any time two pieces of code agree on "the same item" via a
+string identifier. Promote the identifier to a typed constant. Examples:
+exemption sets, dispatch tables, switch/case discriminators sourced from
+external strings.
+
+**Origin:** `scripts/delegate-copilot-issue.ts` `BLOCKED_PATTERNS` /
+`TEST_BYPASSABLE_KEYS`; surfaced as WARNING during PR #149 kimi-review and
+refactored in commit `93c6a606`.

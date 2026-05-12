@@ -37,11 +37,16 @@ You are a specialized agent for writing, reviewing, and maintaining tests in the
 
 ### Pre-Commit Pipeline
 
-1. `tsc --noEmit --project tsconfig.check.json` (type check, excludes test files)
-2. `npm run test:run` (full Vitest suite)
-3. `lint-staged` (ESLint + Prettier + accessibility + color checks on staged files)
+The pre-commit hook is deliberately fast — **only `lint-staged` runs locally**. Full type-check and the Vitest suite are gated by CI on every push, not by the hook.
 
-All three must pass or the commit is blocked.
+1. `lint-staged` runs on staged files only:
+   - `*.{ts,tsx}` → `eslint --fix` + `prettier --write`
+   - `client/**/*.tsx` → `check-accessibility.js` + `check-hardcoded-colors.js`
+   - `server/storage/*.ts` → `check-idor-storage.js`
+   - `evals/datasets/*.json` → `check-eval-dataset-secrets.js`
+   - `*.{js,md}` → `prettier --write`
+
+CI (`.github/workflows/ci.yml`) enforces the full gate on every push: `lint` → `check:types` → accessibility/colors/IDOR pattern scripts → `test:run`. Per CLAUDE.md, avoid running `test:run` / `check:types` / `lint` locally at session start or as a routine self-verify — trust CI to catch the typical pass/fail. Local runs are appropriate when debugging a specific failure CI reported, or when iterating on a single file's tests.
 
 ---
 
@@ -298,6 +303,10 @@ describe("ServiceName", () => {
 6. **Missing mock cleanup** - `vi.clearAllMocks()` in `beforeEach`
 7. **Testing implementation** - Assert on return values and behavior, not on which functions were called
 8. **Missing factory for new table** - Schema additions need corresponding factory
+9. **`expect(result.sort()).toEqual([...])`** - Mutates the result before assertion; if the function returned an unsorted array, `.sort()` re-sorts it and the test silently passes. Use `expect(result).toEqual([sorted, list])` so the function's own sort order is asserted.
+10. **`expect(result).toEqual([...result].sort())` as a "sorted" check** - Meta-assertion that passes trivially for length-1 results. Pin the concrete expected output instead.
+11. **`toContain` for sort/order/membership-set contracts** - `toContain` only checks one element; if the function leaks unrelated domain values, it would still pass. Use `toEqual` with a pinned array when the function's contract is "returns exactly X."
+12. **Hand-curated constant with no drift detector** - When a constant is seeded from a `grep` or external scan, pair it with a unit test that re-runs the scan and asserts the constant matches. See `docs/patterns/testing.md` "Drift-Detection Test for Empirically-Derived Constants."
 
 ---
 

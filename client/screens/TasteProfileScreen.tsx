@@ -1,6 +1,6 @@
 // client/screens/TasteProfileScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import { View, StyleSheet, Pressable, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -34,49 +34,51 @@ export default function TasteProfileScreen() {
 
   useEffect(() => {
     async function loadPicks() {
-      const res = await apiRequest("GET", "/api/taste-picks");
-      if (!res.ok) {
+      try {
+        const res = await apiRequest("GET", "/api/taste-picks");
+        const json = await res.json();
+        const parsed = tastePicksResponseSchema.safeParse(json);
+        if (!parsed.success) {
+          console.error("loadPicks: invalid response shape", parsed.error);
+          setLoadError(true);
+          return;
+        }
+        setSelectedIds(new Set(parsed.data.picks.map((p) => p.recipeId)));
+      } catch (err) {
+        console.error("loadPicks failed:", err);
         setLoadError(true);
-        return;
       }
-      const json = await res.json();
-      const parsed = tastePicksResponseSchema.safeParse(json);
-      if (!parsed.success) {
-        console.error("loadPicks: invalid response shape", parsed.error);
-        setLoadError(true);
-        return;
-      }
-      setSelectedIds(new Set(parsed.data.picks.map((p) => p.recipeId)));
     }
     loadPicks();
   }, []);
 
   const loadCandidates = useCallback(async (pageNum: number) => {
     setLoadError(false);
-    const params = new URLSearchParams({
-      page: String(pageNum),
-      limit: String(PAGE_LIMIT),
-    });
-    const res = await apiRequest(
-      "GET",
-      `/api/taste-picks/candidates?${params}`,
-    );
-    if (!res.ok) {
+    try {
+      const params = new URLSearchParams({
+        page: String(pageNum),
+        limit: String(PAGE_LIMIT),
+      });
+      const res = await apiRequest(
+        "GET",
+        `/api/taste-picks/candidates?${params}`,
+      );
+      const json = await res.json();
+      const parsed = tastePickCandidatesResponseSchema.safeParse(json);
+      if (!parsed.success) {
+        console.error("loadCandidates: invalid response shape", parsed.error);
+        setLoadError(true);
+        return;
+      }
+      const body = parsed.data;
+      setCandidates((prev) =>
+        pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
+      );
+      setHasMore(body.candidates.length === PAGE_LIMIT);
+    } catch (err) {
+      console.error("loadCandidates failed:", err);
       setLoadError(true);
-      return;
     }
-    const json = await res.json();
-    const parsed = tastePickCandidatesResponseSchema.safeParse(json);
-    if (!parsed.success) {
-      console.error("loadCandidates: invalid response shape", parsed.error);
-      setLoadError(true);
-      return;
-    }
-    const body = parsed.data;
-    setCandidates((prev) =>
-      pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
-    );
-    setHasMore(body.candidates.length === PAGE_LIMIT);
   }, []);
 
   useEffect(() => {
@@ -117,6 +119,9 @@ export default function TasteProfileScreen() {
       });
       setIsDirty(false);
       navigation.goBack();
+    } catch (err) {
+      console.error("handleSave failed:", err);
+      Alert.alert("Something went wrong", "Please try again.");
     } finally {
       setIsSubmitting(false);
     }

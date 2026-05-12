@@ -11,3 +11,4 @@
 - Decorative emoji must be wrapped in a `Text` with `accessible={false}` — VoiceOver announces them literally otherwise
 - `accessibilityLiveRegion` is Android-only — always pair with `AccessibilityInfo.announceForAccessibility()` for iOS coverage
 - Badges that are purely decorative inside a parent with an `accessibilityLabel` need `accessible={false}` — prevents double-announcement
+- Never set `accessible={true}` on a banner/card wrapper that contains an interactive child (dismiss/CTA Pressable) — VoiceOver/TalkBack collapses children into one node and the button becomes unreachable. Put `accessibilityRole`/`accessibilityLabel` on the text node and let the Pressable stay its own a11y node

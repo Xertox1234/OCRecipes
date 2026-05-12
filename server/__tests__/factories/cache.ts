@@ -2,6 +2,8 @@ import type {
   SuggestionCache,
   InstructionCache,
   MealSuggestionCacheEntry,
+  CoachResponseCacheEntry,
+  CarouselSuggestionCacheEntry,
 } from "@shared/schema";
 
 const suggestionCacheDefaults: SuggestionCache = {
@@ -52,4 +54,37 @@ export function createMockMealSuggestionCache(
   overrides: Partial<MealSuggestionCacheEntry> = {},
 ): MealSuggestionCacheEntry {
   return { ...mealSuggestionCacheDefaults, ...overrides };
+}
+
+const coachResponseCacheDefaults: CoachResponseCacheEntry = {
+  id: 1,
+  userId: "1",
+  questionHash: "a".repeat(64),
+  question: "Test question",
+  response: "Test response",
+  hitCount: 0,
+  createdAt: new Date("2024-01-01"),
+  expiresAt: new Date("2025-01-01"),
+};
+
+export function createMockCoachResponseCache(
+  overrides: Partial<CoachResponseCacheEntry> = {},
+): CoachResponseCacheEntry {
+  return { ...coachResponseCacheDefaults, ...overrides };
+}
+
+const carouselSuggestionCacheDefaults: CarouselSuggestionCacheEntry = {
+  id: 1,
+  userId: "1",
+  profileHash: "test-profile-hash",
+  mealType: "breakfast",
+  suggestions: [],
+  expiresAt: new Date("2025-01-01"),
+  createdAt: new Date("2024-01-01"),
+};
+
+export function createMockCarouselSuggestionCache(
+  overrides: Partial<CarouselSuggestionCacheEntry> = {},
+): CarouselSuggestionCacheEntry {
+  return { ...carouselSuggestionCacheDefaults, ...overrides };
 }

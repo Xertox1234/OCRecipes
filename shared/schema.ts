@@ -1295,6 +1295,35 @@ export const goalAdjustmentLogs = pgTable(
   },
   (table) => ({
     userIdx: index("goal_adj_user_idx").on(table.userId),
+    prevCalNonNeg: check(
+      "goal_adj_prev_cal_gte0",
+      sql`${table.previousCalories} >= 0`,
+    ),
+    newCalNonNeg: check(
+      "goal_adj_new_cal_gte0",
+      sql`${table.newCalories} >= 0`,
+    ),
+    prevProteinNonNeg: check(
+      "goal_adj_prev_protein_gte0",
+      sql`${table.previousProtein} >= 0`,
+    ),
+    newProteinNonNeg: check(
+      "goal_adj_new_protein_gte0",
+      sql`${table.newProtein} >= 0`,
+    ),
+    prevCarbsNonNeg: check(
+      "goal_adj_prev_carbs_gte0",
+      sql`${table.previousCarbs} >= 0`,
+    ),
+    newCarbsNonNeg: check(
+      "goal_adj_new_carbs_gte0",
+      sql`${table.newCarbs} >= 0`,
+    ),
+    prevFatNonNeg: check(
+      "goal_adj_prev_fat_gte0",
+      sql`${table.previousFat} >= 0`,
+    ),
+    newFatNonNeg: check("goal_adj_new_fat_gte0", sql`${table.newFat} >= 0`),
   }),
 );
 
@@ -1679,6 +1708,7 @@ export type InsertGroceryList = z.infer<typeof insertGroceryListSchema>;
 export type GroceryListItem = typeof groceryListItems.$inferSelect;
 export type InsertGroceryListItem = z.infer<typeof insertGroceryListItemSchema>;
 export type MealSuggestionCacheEntry = typeof mealSuggestionCache.$inferSelect;
+export type CoachResponseCacheEntry = typeof coachResponseCache.$inferSelect;
 
 export const insertMealPlanRecipeSchema = createInsertSchema(
   mealPlanRecipes,

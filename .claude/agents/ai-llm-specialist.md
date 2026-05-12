@@ -300,6 +300,9 @@ When reviewing or writing AI service code, verify:
 
 - [ ] Multiple tool calls in a single assistant turn execute in parallel (`Promise.all(toolCalls.map(...))`) — not in a `for...of await` loop
 - [ ] Parallel execution preserves tool_call_id ↔ result pairing via captured tuples (`{ tc, result }`), not parallel arrays
+- [ ] `JSON.parse(tc.function.arguments)` is wrapped in its own try/catch with a distinct log line (`"Tool call arguments JSON parse failed"` with `argsLength`) — not relying on an outer catch that also handles tool execution failures. Truncation (`finish_reason: "length"` mid-tool-call) must be diagnosable from logs.
+- [ ] Parsed tool args pass a top-level shape guard (`typeof === "object" && !== null && !Array.isArray(...)`) before `as Record<string, unknown>` — per-tool Zod schemas assume an object input and silently misbehave on arrays/primitives.
+- [ ] Catch blocks that log `tc.function.arguments.length` use optional chaining (`?.length`) — when `JSON.parse` throws, defensive code must not crash on a second `TypeError` and reject the surrounding `Promise.all`.
 
 ### Caching
 
@@ -311,6 +314,7 @@ When reviewing or writing AI service code, verify:
 - [ ] `fireAndForget()` for non-critical cache operations
 - [ ] Cache key hashes **every input that changes the prompt or tool set**: user tier (`isCoachPro`, `subscriptionTier`), time-sensitive context (UTC `dayBucket` — `new Date().toISOString().slice(0, 10)`, not `Math.floor(Date.now()/DAY_MS)`), and a prompt-version constant (`COACH_CACHE_VERSION = "v3"` in the module). Missing any = stale or cross-tier serving. Also gate `isCacheable` on tier when Pro responses depend on ephemeral context (notebook entries, tool calls).
 - [ ] Bump the prompt-version constant when changing the system prompt, tool schema, or safety regex — old responses should cache-miss.
+- [ ] Safety regexes that match numeric ranges use digit-count quantifiers covering the full unsafe range: `\d{2,4}` not `\d{2,3}` — 4-digit values like 1000–1199 are unsafe calorie targets that `\d{2,3}` silently skips. Validate regex against boundary values (e.g. 999, 1000, 1199, 1200) not just representative ones.
 
 ### Streaming Generator Exits
 
@@ -344,6 +348,8 @@ When reviewing or writing AI service code, verify:
 13. **Cache key missing tier / day / version** - `hashCoachCacheKey({ userId, messageHash })` will serve a Pro user a free-tier cached answer, serve "today's" answer for 7 days (default TTL), and serve stale responses across system-prompt tightenings. Always include `isCoachPro`, UTC `dayBucket`, and `COACH_CACHE_VERSION`. Also set `isCacheable = !hasToolCalls && !isCoachPro` when Pro responses depend on tool calls or ephemeral notebook context (Ref: audit 2026-04-18 H4/H5).
 14. **`break` without closing message in streaming tool-call loop** - `if (iteration >= BUDGET) { break; }` leaves the client with a cut-off reply. Yield a short "I've gathered enough to answer" sentence before the break so the user gets closure AND downstream safety checks (`containsDangerousDietaryAdvice`) see the full persisted response (Ref: audit 2026-04-18 H6).
 15. **AI generation route without `userProfile` resolution** - Every AI recipe/photo/coach endpoint must `await storage.getUserProfile(req.userId)` before calling the generator, then pass it through. Allergen safety depends on it. The sibling endpoint often does this correctly — parity-drift is the usual cause (Ref: audit 2026-04-18 H2).
+16. **Unified `try`/`catch` around `JSON.parse` + `executeToolCall`** - `JSON.parse(tc.function.arguments)` and the tool dispatch share one outer catch, so a `SyntaxError` from truncation (`finish_reason: "length"` cuts off mid-tool-call) is logged as a generic "Tool call failed" — operators cannot tell parse failures from upstream service errors. Wrap `JSON.parse` in its own try/catch with `argsLength` in the log payload so truncation is identifiable. Also use `?.length` since `tc.function.arguments` may be undefined at the catch-block reading time and would crash with a second `TypeError` (Ref: audit 2026-05-10 M15).
+17. **Casting tool args to `Record<string, unknown>` without an object guard** - Per-tool Zod `safeParse` schemas inside `executeToolCall` assume the input is an object. If the model returns `[1,2,3]` or a bare string, the cast silently passes; downstream `.safeParse` reports field errors that don't reflect the real shape. Add `typeof args === "object" && args !== null && !Array.isArray(args)` before the cast, and log a precise `argsType` discriminator (`Array.isArray(args) ? "array" : args === null ? "null" : typeof args`) since `typeof null === "object"` and `typeof []` === "object"` collapse those rejection branches in logs (Ref: audit 2026-05-10 M15).
 
 ---
 

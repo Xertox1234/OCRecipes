@@ -13,6 +13,7 @@ import Animated, {
 import ConfettiCannon from "react-native-confetti-cannon";
 import {
   AccessibilityInfo,
+  Alert,
   StyleSheet,
   View,
   TouchableOpacity,
@@ -374,7 +375,10 @@ export default function ScanScreen() {
 
     if (phase.type === "HUNTING") {
       const photo = await cameraRef.current?.takePicture();
-      if (!photo) return;
+      if (!photo) {
+        Alert.alert("Capture failed", "Try again or use the gallery.");
+        return;
+      }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       // Label mode: skip smart classification, go directly to LabelAnalysis
@@ -402,7 +406,10 @@ export default function ScanScreen() {
     }
 
     const photo = await cameraRef.current?.takePicture();
-    if (!photo) return;
+    if (!photo) {
+      Alert.alert("Capture failed", "Try again or use the gallery.");
+      return;
+    }
 
     // Haptic + flash immediately after capture, before async OCR
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

@@ -8,7 +8,10 @@ interface Props {
   onAction?: (action: Record<string, unknown>) => void;
 }
 
-export default function MealPlanCard({ block, onAction }: Props) {
+const MealPlanCard = React.memo(function MealPlanCard({
+  block,
+  onAction,
+}: Props) {
   const { theme } = useTheme();
   const [expanded, setExpanded] = useState(false);
 
@@ -74,7 +77,9 @@ export default function MealPlanCard({ block, onAction }: Props) {
       )}
     </View>
   );
-}
+});
+
+export default MealPlanCard;
 
 const styles = StyleSheet.create({
   container: { borderRadius: 12, marginTop: 8, overflow: "hidden" },

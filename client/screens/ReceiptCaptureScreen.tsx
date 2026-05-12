@@ -8,6 +8,7 @@ import {
   Image,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
@@ -72,10 +73,13 @@ export default function ReceiptCaptureScreen() {
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         setPhotos((prev) => [...prev, photo.uri]);
         setOcrTexts((prev) => [...prev, ocrResult.text || undefined]);
+      } else {
+        Alert.alert("Capture failed", "Try again or pick from your gallery.");
       }
     } catch (error) {
-      console.error("Capture error:", error);
+      console.error("handleCapture failed:", error);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Capture failed", "Try again or pick from your gallery.");
     } finally {
       setIsCapturing(false);
     }

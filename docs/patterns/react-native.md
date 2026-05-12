@@ -2054,23 +2054,31 @@ Add `keyboardDismissMode` to scrollable views on screens with text inputs:
 
 ### Cross-Platform Live Region Announcements
 
-`accessibilityLiveRegion` is Android-only in React Native. For cross-platform coverage, pair it with `AccessibilityInfo.announceForAccessibility()`:
+Use `AccessibilityInfo.announceForAccessibility()` for all cross-platform screen reader announcements. Do **not** combine it with `accessibilityLiveRegion` — combining both causes TalkBack to announce the text twice on Android.
 
 ```typescript
-// Android: live region announces automatically
+// ❌ Bad: causes double TalkBack announcements on Android
 <View accessibilityLiveRegion="polite">
   <ThemedText>{statusText}</ThemedText>
 </View>
-
-// iOS: announce via useEffect when state changes
 useEffect(() => {
-  if (isScanning) {
-    AccessibilityInfo.announceForAccessibility("Scanning");
+  AccessibilityInfo.announceForAccessibility(statusText);
+}, [statusText]);
+
+// ✅ Good: announceForAccessibility only — works on both iOS and Android
+const isFirstRender = useRef(true);
+useEffect(() => {
+  if (isFirstRender.current) {
+    isFirstRender.current = false;
+    return;
   }
-}, [isScanning]);
+  AccessibilityInfo.announceForAccessibility(statusText);
+}, [statusText]);
 ```
 
-**Why:** `accessibilityLiveRegion` has no effect on iOS. The explicit announcement ensures VoiceOver users get the same feedback as TalkBack users.
+**Why:** `accessibilityLiveRegion="polite"` triggers TalkBack to observe and announce DOM-like text changes. When paired with `announceForAccessibility`, TalkBack fires both its observer path and the explicit announcement — users hear the text spoken twice. Skip `accessibilityLiveRegion` entirely and rely on `announceForAccessibility` for cross-platform coverage.
+
+**Skip mount announce:** Use an `isFirstRender` ref (as shown above) to suppress the initial announcement on mount — the component's visible state on render is sufficient context; repeating it via audio on every mount is disruptive.
 
 **Announce ALL outcomes — success AND error:** A common omission is announcing only one branch. Screen reader users who submit a form or trigger an async action have no visual feedback; they must hear the result through an announcement. Both the success path and the error path need an announcement:
 
@@ -3821,3 +3829,41 @@ const isAccepted = acceptedCommitmentsRef.current.has(
 **When to use:** Any optimistic UI where the server ID arrives asynchronously (AI extraction, background job) but the user action must register immediately.
 
 **References:** `client/components/coach/CoachChat.tsx` (`handleCommitmentAccept`, `acceptedCommitmentsRef`).
+
+---
+
+### Switch Row Wrapped in Pressable for Full-Row Accessibility
+
+When a settings row contains a `Switch` and tapping anywhere on the row should toggle it, wrap the row in `Pressable` and hide the `Switch` from assistive technology entirely. This gives screen readers one coherent element (the row) with a correct `checked` state and full label, rather than two separate focusable elements (the row label + the switch).
+
+```typescript
+<Pressable
+  style={styles.row}
+  onPress={() => handleToggle(item.key, currentValue)}
+  accessible={true}
+  accessibilityRole="switch"
+  accessibilityLabel={item.label}
+  accessibilityState={{
+    checked: isEnabled,
+    disabled: isLoading || mutation.isPending,
+  }}
+  disabled={isLoading || mutation.isPending}
+>
+  <View style={styles.labelContainer} accessible={false}>
+    <ThemedText>{item.label}</ThemedText>
+  </View>
+  <Switch
+    value={isEnabled}
+    // No onValueChange — Pressable owns the interaction
+    accessible={false}
+    importantForAccessibility="no"
+    pointerEvents="none"
+  />
+</Pressable>
+```
+
+**Why three props on Switch:** `accessible={false}` removes it from the VoiceOver/TalkBack focus order; `importantForAccessibility="no"` suppresses it on Android's accessibility tree; `pointerEvents="none"` prevents it from intercepting tap events so the `Pressable` receives them.
+
+**When to use:** Any list row where a `Switch` is a secondary visual indicator but the primary interaction is the full row tap. **When NOT to use:** Standalone `Switch` elements not embedded in a larger tappable row — those should keep their native accessibility intact.
+
+**References:** `client/screens/CoachRemindersScreen.tsx`

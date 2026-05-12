@@ -1,5 +1,30 @@
 # Client State Patterns
 
+### Irreversible Mutations: Wrap Post-Server Local Cleanup
+
+When a client hook awaits an irreversible server call (account deletion, payment confirmation, hard-delete of user data), local cleanup that follows MUST NOT throw to the caller. Once the server has confirmed the destructive action, the UI must see success — surfacing a "please retry" error after the account/record is permanently gone is worse than any storage-clear failure, because retry just hits a 401.
+
+```typescript
+// ✅ GOOD — pre-success errors propagate (user retries); post-success errors swallowed.
+const deleteAccount = useCallback(async (password: string) => {
+  // Pre-line: recoverable errors (wrong password, network) propagate.
+  await apiRequest("DELETE", "/api/auth/account", { password });
+
+  // Post-line: server confirmed deletion. Best-effort local clear.
+  try {
+    await tokenStorage.clear();
+  } catch {}
+  try {
+    await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {}
+  setState({ user: null, isLoading: false, isAuthenticated: false });
+}, []);
+```
+
+**Rule:** Draw a mental line at the irreversible server response. Pre-line: errors are recoverable, propagate them. Post-line: errors are non-actionable, swallow them. Always update local state on the success path even if cleanup throws.
+
+**Reference:** `client/hooks/useAuth.ts` — `deleteAccount`.
+
 ### In-Memory Caching for Frequent Reads
 
 When a value is read frequently but changes rarely, cache in memory with lazy initialization:
@@ -76,6 +101,75 @@ useEffect(() => {
 ```
 
 **Reference:** `client/lib/discovery-storage.ts`, `client/hooks/useDiscoveryCards.ts`
+
+---
+
+### Dismissible-Banner Persistence with Three-State Visibility
+
+For dismissible UI banners (medical disclaimers, onboarding hints, one-time
+notices) that persist across sessions, model visibility as `boolean | null`
+— `null` means "not yet loaded from storage" so the banner never flashes
+before the persisted state is known. Extract the AsyncStorage read/write
+into a small module so the contract can be unit-tested without rendering
+the consuming component.
+
+```typescript
+// client/lib/coach-disclaimer-storage.ts — pure, testable
+export const COACH_DISCLAIMER_STORAGE_KEY =
+  "@ocrecipes/coach_disclaimer_dismissed";
+
+export async function isCoachDisclaimerDismissed(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(COACH_DISCLAIMER_STORAGE_KEY);
+    return value === "true";
+  } catch {
+    return false; // Safe default — show the disclaimer
+  }
+}
+
+export async function setCoachDisclaimerDismissed(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(COACH_DISCLAIMER_STORAGE_KEY, "true");
+  } catch {
+    // Swallow — UI has already updated, persistence is best-effort
+  }
+}
+```
+
+```typescript
+// Consumer component
+const [visible, setVisible] = useState<boolean | null>(null);
+
+useEffect(() => {
+  let cancelled = false;
+  isCoachDisclaimerDismissed()
+    .then((dismissed) => {
+      if (cancelled) return;
+      setVisible(!dismissed);
+    })
+    .catch(() => {
+      // Defense-in-depth — never let the legal/medical banner
+      // get stuck at `null` on an unexpected error.
+      if (!cancelled) setVisible(true);
+    });
+  return () => {
+    cancelled = true;
+  };
+}, []);
+
+// Only render when explicitly true — `null` (loading) hides the banner
+{visible === true && <DisclaimerBanner onDismiss={() => setVisible(false)} />}
+```
+
+**Key rules:**
+
+- Three-state (`true | false | null`) avoids the banner flashing on first render
+- Extract storage to a `*-storage.ts` module so the contract is testable in Vitest
+- Always default to "show" on read failure for legal/medical/compliance banners
+- Storage keys are **device-level** by convention — no `userId` suffix unless a specific user-scoping requirement exists (matches `discovery-storage.ts`, `home-actions-storage.ts`, theme)
+- Use safe-default values in `.catch()` even though the storage module already catches — defense in depth for legal content
+
+**Reference:** `client/lib/coach-disclaimer-storage.ts`, `client/components/CoachOverlayContent.tsx`
 
 ---
 

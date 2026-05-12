@@ -131,9 +131,12 @@ export default function CookSessionCaptureScreen() {
       if (photo?.uri) {
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         handleAnalyzePhoto(photo.uri);
+      } else {
+        Alert.alert("Capture failed", "Try again or pick from your gallery.");
       }
     } catch (error) {
-      console.error("Capture error:", error);
+      console.error("handleCapture failed:", error);
+      Alert.alert("Capture failed", "Try again or pick from your gallery.");
     } finally {
       setIsCapturing(false);
     }

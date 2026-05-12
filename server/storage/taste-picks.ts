@@ -27,7 +27,9 @@ export async function getTastePicks(userId: string): Promise<TastePickEntry[]> {
     .select(PICK_COLUMNS)
     .from(tastePicks)
     .innerJoin(communityRecipes, eq(tastePicks.recipeId, communityRecipes.id))
-    .where(eq(tastePicks.userId, userId));
+    .where(
+      and(eq(tastePicks.userId, userId), eq(communityRecipes.isPublic, true)),
+    );
 
   return rows.flatMap((r) => {
     const imageUrl = resolveImage(r.imageUrl, r.canonicalImages);
@@ -53,24 +55,39 @@ export async function setTastePicks(
   recipeIds: number[],
 ): Promise<SetTastePicksResult> {
   return db.transaction(async (tx) => {
-    // 1. Replace picks
+    // 1. Replace picks — only insert IDs referencing public recipes
     await tx.delete(tastePicks).where(eq(tastePicks.userId, userId));
-    // Dedupe to honor the (userId, recipeId) unique constraint without
-    // needing onConflictDoNothing — DELETE above clears all existing rows.
-    const uniqueRecipeIds = [...new Set(recipeIds)];
-    if (uniqueRecipeIds.length > 0) {
-      await tx
-        .insert(tastePicks)
-        .values(uniqueRecipeIds.map((recipeId) => ({ userId, recipeId })));
+    let publicIds: number[] = [];
+    if (recipeIds.length > 0) {
+      // Filter to public IDs (IDOR defense from main) AND dedupe via the
+      // recipes PK — the SELECT returns at most one row per recipe even if
+      // the caller passed duplicates. With this natural dedupe in place,
+      // `onConflictDoNothing()` is redundant on the insert below. See
+      // docs/rules/database.md "Replace-by-DELETE-then-INSERT".
+      const publicRecipes = await tx
+        .select({ id: communityRecipes.id })
+        .from(communityRecipes)
+        .where(
+          and(
+            inArray(communityRecipes.id, recipeIds),
+            eq(communityRecipes.isPublic, true),
+          ),
+        );
+      publicIds = publicRecipes.map((r) => r.id);
+      if (publicIds.length > 0) {
+        await tx
+          .insert(tastePicks)
+          .values(publicIds.map((recipeId) => ({ userId, recipeId })));
+      }
     }
 
-    // 2. Derive cuisines from picked recipes
+    // 2. Derive cuisines from picked recipes (already scoped to publicIds)
     const derivedCuisines: string[] = [];
-    if (recipeIds.length > 0) {
+    if (publicIds.length > 0) {
       const recipes = await tx
         .select({ cuisineOrigin: communityRecipes.cuisineOrigin })
         .from(communityRecipes)
-        .where(inArray(communityRecipes.id, recipeIds));
+        .where(inArray(communityRecipes.id, publicIds));
       const seen = new Set<string>();
       for (const r of recipes) {
         if (r.cuisineOrigin && !seen.has(r.cuisineOrigin)) {
@@ -105,7 +122,7 @@ export async function setTastePicks(
 
     // 4. Fetch final picks for response
     const pickRows =
-      recipeIds.length > 0
+      publicIds.length > 0
         ? await tx
             .select(PICK_COLUMNS)
             .from(tastePicks)
@@ -113,7 +130,12 @@ export async function setTastePicks(
               communityRecipes,
               eq(tastePicks.recipeId, communityRecipes.id),
             )
-            .where(eq(tastePicks.userId, userId))
+            .where(
+              and(
+                eq(tastePicks.userId, userId),
+                eq(communityRecipes.isPublic, true),
+              ),
+            )
         : [];
 
     const picks: TastePickEntry[] = pickRows.flatMap((r) => {

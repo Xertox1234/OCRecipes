@@ -1,6 +1,12 @@
 // client/screens/onboarding/TastePicksScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  Alert,
+  AccessibilityInfo,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -34,32 +40,33 @@ export default function TastePicksScreen() {
   const loadCandidates = useCallback(
     async (pageNum: number) => {
       setLoadError(false);
-      const params = new URLSearchParams({
-        page: String(pageNum),
-        limit: String(PAGE_LIMIT),
-      });
-      if (data.dietType) params.set("dietType", data.dietType);
+      try {
+        const params = new URLSearchParams({
+          page: String(pageNum),
+          limit: String(PAGE_LIMIT),
+        });
+        if (data.dietType) params.set("dietType", data.dietType);
 
-      const res = await apiRequest(
-        "GET",
-        `/api/taste-picks/candidates?${params}`,
-      );
-      if (!res.ok) {
+        const res = await apiRequest(
+          "GET",
+          `/api/taste-picks/candidates?${params}`,
+        );
+        const json = await res.json();
+        const parsed = tastePickCandidatesResponseSchema.safeParse(json);
+        if (!parsed.success) {
+          console.error("loadCandidates: invalid response shape", parsed.error);
+          setLoadError(true);
+          return;
+        }
+        const body = parsed.data;
+        setCandidates((prev) =>
+          pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
+        );
+        setHasMore(body.candidates.length === PAGE_LIMIT);
+      } catch (err) {
+        console.error("loadCandidates failed:", err);
         setLoadError(true);
-        return;
       }
-      const json = await res.json();
-      const parsed = tastePickCandidatesResponseSchema.safeParse(json);
-      if (!parsed.success) {
-        console.error("loadCandidates: invalid response shape", parsed.error);
-        setLoadError(true);
-        return;
-      }
-      const body = parsed.data;
-      setCandidates((prev) =>
-        pageNum === 1 ? body.candidates : [...prev, ...body.candidates],
-      );
-      setHasMore(body.candidates.length === PAGE_LIMIT);
     },
     [data.dietType],
   );
@@ -106,6 +113,9 @@ export default function TastePicksScreen() {
       }
       // 3. Mark onboarding complete
       await updateUser({ onboardingCompleted: true });
+    } catch (err) {
+      console.error("handleContinue failed:", err);
+      Alert.alert("Something went wrong", "Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -116,10 +126,26 @@ export default function TastePicksScreen() {
     try {
       await apiRequest("POST", "/api/user/dietary-profile", data);
       await updateUser({ onboardingCompleted: true });
+    } catch (err) {
+      console.error("handleSkip failed:", err);
+      Alert.alert("Something went wrong", "Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   }, [data, updateUser]);
+
+  const isFirstRender = React.useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    const msg =
+      selectedIds.size >= MIN_PICKS
+        ? `${selectedIds.size} selected. Minimum reached.`
+        : `${selectedIds.size} of ${MIN_PICKS} selected.`;
+    AccessibilityInfo.announceForAccessibility(msg);
+  }, [selectedIds.size]);
 
   const canContinue = selectedIds.size >= MIN_PICKS;
   const chipActive = selectedIds.size >= MIN_PICKS;

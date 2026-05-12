@@ -7,8 +7,13 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<User>;
-  register: (username: string, password: string) => Promise<User>;
+  register: (
+    username: string,
+    password: string,
+    ageConfirmed: boolean,
+  ) => Promise<User>;
   logout: () => Promise<void>;
+  deleteAccount: (password: string) => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<User | undefined>;
   checkAuth: () => Promise<void>;
 }
