@@ -1,5 +1,6 @@
 ---
 title: "Proper Style Typing in React Native Components"
+track: bug
 category: code-quality
 tags: [typescript, react-native, styling, types]
 module: client
