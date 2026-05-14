@@ -1,5 +1,6 @@
 ---
 title: "Stale Closure in React Callbacks - Use Refs for Synchronous Checks"
+track: bug
 category: logic-errors
 tags: [react, hooks, useCallback, useRef, stale-closure, debouncing]
 module: camera

@@ -1,5 +1,6 @@
 ---
 title: "Unsafe Type Cast - Use Zod Validation Instead of 'as'"
+track: bug
 category: runtime-errors
 tags: [typescript, zod, type-safety, validation, database]
 module: server

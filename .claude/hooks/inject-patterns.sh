@@ -18,7 +18,6 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 PATTERNS_DIR="$PROJECT_ROOT/docs/patterns"
 RULES_DIR="$PROJECT_ROOT/docs/rules"
-LEARNINGS_FILE="$PROJECT_ROOT/docs/LEARNINGS.md"
 
 # Map file path to domains
 DOMAINS=""
@@ -114,30 +113,29 @@ if [ -n "$DOMAINS" ]; then
       cat "$RULES_FILE" >> "$TMPFILE"
     fi
 
-    # Inject first 80 lines of pattern doc
+    # Inject subsection TOC for this domain's pattern doc.
+    # Line-numbered headings let Claude jump straight to a relevant subsection with Read
+    # instead of forcing a fixed-position excerpt. First 12 + last 13 entries keeps
+    # foundational primitives (top of file) AND recent codifications (bottom of file),
+    # avoiding both the head-only freshness inversion and the tail-only loss of load-bearing
+    # early sections.
     if [ -f "$PATTERNS_FILE" ]; then
-      printf '\n[PATTERNS — %s (excerpt)]\n' "$DOMAIN" >> "$TMPFILE"
-      head -n 80 "$PATTERNS_FILE" >> "$TMPFILE"
+      printf '\n[PATTERNS — %s (table of contents — Read %s:<line> for the body)]\n' \
+        "$DOMAIN" "$PATTERNS_FILE" >> "$TMPFILE"
+      ALL_HEADINGS=$(grep -nE '^(### |#### )' "$PATTERNS_FILE" 2>/dev/null || true)
+      if [ -n "$ALL_HEADINGS" ]; then
+        HEADING_COUNT=$(printf '%s\n' "$ALL_HEADINGS" | wc -l | tr -d ' ')
+        if [ "$HEADING_COUNT" -le 25 ]; then
+          printf '%s\n' "$ALL_HEADINGS" >> "$TMPFILE"
+        else
+          printf '%s\n' "$ALL_HEADINGS" | head -n 12 >> "$TMPFILE"
+          printf '... (%d middle subsections omitted — Read %s for the full TOC)\n' \
+            "$((HEADING_COUNT - 25))" "$PATTERNS_FILE" >> "$TMPFILE"
+          printf '%s\n' "$ALL_HEADINGS" | tail -n 13 >> "$TMPFILE"
+        fi
+      fi
     fi
   done
-
-  # Inject matching learnings — skip generic basenames that produce grep noise
-  BASENAME=$(basename "$FILE_PATH")
-  BASENAME="${BASENAME%.*}"
-  case "$BASENAME" in
-    index|types|utils|helpers|constants|config|setup|main|app|App|test|tests)
-      BASENAME="" ;;
-  esac
-  if [ -f "$LEARNINGS_FILE" ] && [ -n "$BASENAME" ] && [ "${#BASENAME}" -ge 4 ]; then
-    printf '\n[LEARNINGS — matches for "%s"]\n' "$BASENAME" >> "$TMPFILE"
-    # -F fixed string, -w word boundary (avoids "index" matching "indexing"), -i case-insensitive
-    MATCHES=$(grep -Fwi -- "$BASENAME" "$LEARNINGS_FILE" 2>/dev/null | head -n 20 || true)
-    if [ -n "$MATCHES" ]; then
-      printf '%s\n' "$MATCHES" >> "$TMPFILE"
-    else
-      echo "(none)" >> "$TMPFILE"
-    fi
-  fi
 fi
 
 # Spill overflow to a stable temp file so the agent can read the rest.

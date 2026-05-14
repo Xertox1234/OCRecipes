@@ -1,5 +1,6 @@
 ---
 title: "Memory Leak from Missing useEffect Cleanup"
+track: bug
 category: logic-errors
 tags: [react, hooks, useEffect, memory-leak, cleanup, timers]
 module: camera

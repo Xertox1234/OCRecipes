@@ -1531,6 +1531,30 @@ resolve: {
 
 ---
 
+### `@vitest-environment jsdom` Pragma Required for Component Tests
+
+Every `.test.tsx` file under `client/components/**/__tests__/` MUST declare the jsdom environment in its first 3 lines:
+
+```typescript
+// @vitest-environment jsdom
+```
+
+The JSDoc form is also accepted:
+
+```typescript
+/** @vitest-environment jsdom */
+```
+
+**Why:** `vitest.config.ts` runs in the `node` environment by default. Component tests that render via `@testing-library/react` need DOM globals (`document`, `window`, etc.). Without the pragma, DOM APIs are `undefined` — tests either pass spuriously (assertions never reach the DOM) or fail with confusing `ReferenceError: document is not defined`.
+
+The config used to set this implicitly via `environmentMatchGlobs`, but that option was removed (audit 2026-05-11 L1). The pragma is now the only mechanism.
+
+**Enforcement:** `scripts/check-jsdom-pragma.js` runs in CI and pre-commit (lint-staged) and errors on any in-scope `.test.tsx` file missing the pragma. The check is intentionally scoped to `client/components/**/__tests__/` — tests for extracted pure functions or hooks elsewhere don't need DOM and don't need the pragma.
+
+**Reference:** `scripts/check-jsdom-pragma.js`, audit 2026-05-11 L1 follow-up.
+
+---
+
 ### When Inline `vi.mock` of Globally-Aliased Modules IS Correct
 
 The general guidance ("do NOT inline-mock `react-native` / `react-native-reanimated` / `expo-haptics` — the global aliases handle it") is correct for the _common_ case: a test that renders a component and doesn't care about the mock's return values. But there are legitimate reasons to inline-mock even an already-aliased module — don't blanket-prohibit.
