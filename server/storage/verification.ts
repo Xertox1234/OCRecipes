@@ -16,15 +16,29 @@ export async function getVerification(barcode: string) {
   return result ?? null;
 }
 
-/** Get verification by trying multiple barcode variants. Returns first match. */
+/**
+ * Get verification by trying multiple barcode variants.
+ * Returns the row matching the highest-priority variant (earliest in the array).
+ * Mirrors `getBarcodeNutrition` in api-keys.ts so both lookups agree when
+ * variants map to different products.
+ */
 export async function getVerificationByBarcodes(variants: string[]) {
   if (variants.length === 0) return null;
   const results = await db
     .select()
     .from(barcodeVerifications)
-    .where(inArray(barcodeVerifications.barcode, variants))
-    .limit(1);
-  return results[0] ?? null;
+    .where(inArray(barcodeVerifications.barcode, variants));
+
+  if (results.length === 0) return null;
+
+  // Return the result matching the highest-priority variant (earliest in the array)
+  const indexMap = new Map(variants.map((v, i) => [v, i]));
+  results.sort(
+    (a, b) =>
+      (indexMap.get(a.barcode) ?? Infinity) -
+      (indexMap.get(b.barcode) ?? Infinity),
+  );
+  return results[0];
 }
 
 /** Get verification history entries for a barcode (most recent first, capped) */

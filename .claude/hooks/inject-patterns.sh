@@ -79,10 +79,16 @@ add_domain() {
    "$FILE_PATH" == *.spec.ts     || "$FILE_PATH" == *.spec.tsx ]] && \
   add_domain testing
 
-# Always add typescript for .ts/.tsx files
-case "$FILE_PATH" in
-  *.ts|*.tsx) add_domain typescript ;;
-esac
+# Add typescript for .ts/.tsx files ONLY when no more-specific domain matched.
+# Rationale: typescript rules are mostly general knowledge; project-specific TS conventions
+# are already covered by more-specific domains (api, react-native, etc.). Suppressing
+# typescript-on-top keeps the 4-domain stack under the 9000-byte spill threshold while
+# preserving typescript guidance as the fallback for pure type-utility files (e.g. shared/).
+if [ -z "$DOMAINS" ]; then
+  case "$FILE_PATH" in
+    *.ts|*.tsx) add_domain typescript ;;
+  esac
+fi
 
 # Build context in a temp file (avoids subshell newline stripping)
 TMPFILE=$(mktemp)
@@ -106,6 +112,10 @@ if [ -n "$DOMAINS" ]; then
   for DOMAIN in "${DOMAIN_LIST[@]}"; do
     RULES_FILE="$RULES_DIR/${DOMAIN}.md"
     PATTERNS_FILE="$PATTERNS_DIR/${DOMAIN}.md"
+    # Use repo-relative paths in printed headers — saves ~100 bytes per header in
+    # worktrees where PROJECT_ROOT is a deep absolute path, and matches how files
+    # are referenced elsewhere (CLAUDE.md, docs).
+    PATTERNS_REL="docs/patterns/${DOMAIN}.md"
 
     # Inject full rules file (short by design)
     if [ -f "$RULES_FILE" ]; then
@@ -115,23 +125,24 @@ if [ -n "$DOMAINS" ]; then
 
     # Inject subsection TOC for this domain's pattern doc.
     # Line-numbered headings let Claude jump straight to a relevant subsection with Read
-    # instead of forcing a fixed-position excerpt. First 12 + last 13 entries keeps
-    # foundational primitives (top of file) AND recent codifications (bottom of file),
-    # avoiding both the head-only freshness inversion and the tail-only loss of load-bearing
-    # early sections.
+    # instead of forcing a fixed-position excerpt. First 4 + last 4 entries keeps
+    # foundational primitives (top of file) AND recent codifications (bottom of file)
+    # while staying small enough that the 4-domain stack (e.g. database+security+
+    # architecture + accessibility for storage files) fits under the 9000-byte spill
+    # threshold. Original 12+13 layout consistently overflowed for routes/storage paths.
     if [ -f "$PATTERNS_FILE" ]; then
       printf '\n[PATTERNS — %s (table of contents — Read %s:<line> for the body)]\n' \
-        "$DOMAIN" "$PATTERNS_FILE" >> "$TMPFILE"
+        "$DOMAIN" "$PATTERNS_REL" >> "$TMPFILE"
       ALL_HEADINGS=$(grep -nE '^(### |#### )' "$PATTERNS_FILE" 2>/dev/null || true)
       if [ -n "$ALL_HEADINGS" ]; then
         HEADING_COUNT=$(printf '%s\n' "$ALL_HEADINGS" | wc -l | tr -d ' ')
-        if [ "$HEADING_COUNT" -le 25 ]; then
+        if [ "$HEADING_COUNT" -le 8 ]; then
           printf '%s\n' "$ALL_HEADINGS" >> "$TMPFILE"
         else
-          printf '%s\n' "$ALL_HEADINGS" | head -n 12 >> "$TMPFILE"
+          printf '%s\n' "$ALL_HEADINGS" | head -n 4 >> "$TMPFILE"
           printf '... (%d middle subsections omitted — Read %s for the full TOC)\n' \
-            "$((HEADING_COUNT - 25))" "$PATTERNS_FILE" >> "$TMPFILE"
-          printf '%s\n' "$ALL_HEADINGS" | tail -n 13 >> "$TMPFILE"
+            "$((HEADING_COUNT - 8))" "$PATTERNS_REL" >> "$TMPFILE"
+          printf '%s\n' "$ALL_HEADINGS" | tail -n 4 >> "$TMPFILE"
         fi
       fi
     fi

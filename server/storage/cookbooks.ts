@@ -26,17 +26,26 @@ export async function getUserCookbooks(
   userId: string,
   limit = 50,
 ): Promise<CookbookWithCount[]> {
-  // Count only junction rows whose target recipes still exist (polymorphic FK — no DB-level FK)
+  // Count only junction rows whose target recipes still exist (polymorphic FK — no DB-level FK).
+  //
+  // Column refs inside this correlated subquery use literal SQL (`cookbooks.id`,
+  // `meal_plan_recipes.id`, `community_recipes.id`) instead of `${cookbooks.id}`
+  // etc. — Drizzle's `sql` template parameterizes every `${}` interpolation, so
+  // `${cookbooks.id}` would emit `$N` (a bound value) and the correlation
+  // would silently always return 0. See
+  // `docs/patterns/database.md` → "Drizzle `sql` Template Treats `${column}`
+  // as Bound Parameters". Table interpolations (`${cookbookRecipes}`, etc.)
+  // are safe — they emit qualified table names, not parameters.
   const recipeCountSql = sql<number>`(
     SELECT count(*) FROM ${cookbookRecipes} cr
-    WHERE cr.cookbook_id = ${cookbooks.id}
+    WHERE cr.cookbook_id = cookbooks.id
     AND (
       (cr.recipe_type = 'mealPlan' AND EXISTS (
-        SELECT 1 FROM ${mealPlanRecipes} WHERE ${mealPlanRecipes.id} = cr.recipe_id
+        SELECT 1 FROM ${mealPlanRecipes} WHERE meal_plan_recipes.id = cr.recipe_id
       ))
       OR
       (cr.recipe_type = 'community' AND EXISTS (
-        SELECT 1 FROM ${communityRecipes} WHERE ${communityRecipes.id} = cr.recipe_id
+        SELECT 1 FROM ${communityRecipes} WHERE community_recipes.id = cr.recipe_id
       ))
     )
   )`;
