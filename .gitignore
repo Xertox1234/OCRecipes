@@ -83,7 +83,6 @@ coverage/
 # Local planning docs
 docs/brainstorms/
 docs/plans/
-todos/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .ui-design/
