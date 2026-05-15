@@ -1,6 +1,6 @@
 ---
 title: "kimi scripts: add clean error handling on timeout for ask-kimi, kimi-write, kimi-challenge"
-status: backlog
+status: blocked
 priority: low
 created: 2026-05-11
 updated: 2026-05-11
@@ -27,3 +27,9 @@ Fixed in 2026-05-11 kimi hang audit session. `timeout=90.0` was added to all scr
 - Files: `~/.local/bin/kimi-write`, `~/.local/bin/kimi-challenge`
 - Also update source file `~/.local/share/claude-coworker/tools/kimi-write`
 - Note: `ask-kimi` (both copies) already fixed in 2026-05-11 review pass
+
+## Updates
+
+### 2026-05-14
+
+- Status set to `blocked` (was `backlog`) — all target paths are outside the repo (`~/.local/bin/`, `~/.local/share/claude-coworker/`), so the `/todo` skill cannot dispatch this work via a git worktree. Treat as a personal-tooling todo to be done manually when convenient.

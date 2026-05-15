@@ -1,6 +1,6 @@
 ---
 title: "Phase 2 Step 3 follow-up: 28 deferred LEARNINGS.md extractions"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-05-14
 updated: 2026-05-14
