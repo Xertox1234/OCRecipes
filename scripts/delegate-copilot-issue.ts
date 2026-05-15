@@ -295,6 +295,10 @@ export function detectedDomains(
   return [...matched].sort();
 }
 
+// Hardcoded GitHub URL for the patterns directory. Embedded as
+// further-reading links in every Project Rules section injected into
+// Copilot Issue bodies. Update if the repo is renamed or forked, otherwise
+// the rendered URLs will 404 on the new home.
 const PATTERNS_URL_BASE =
   "https://github.com/Xertox1234/OCRecipes/blob/main/docs/patterns";
 
