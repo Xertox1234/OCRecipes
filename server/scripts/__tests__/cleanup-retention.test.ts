@@ -62,6 +62,9 @@ function makeFakeDb(
     return response;
   });
   return {
+    // Cast: `RetentionDb` is the full `NodePgDatabase<typeof schema>` — too
+    // large to construct in a test. Fake exposes only `.execute()`, which is
+    // all the code under test calls.
     db: { execute } as unknown as RetentionDb,
     calls,
     execute,
@@ -166,6 +169,8 @@ describe("getActiveUserIds", () => {
   it("tolerates an array-shaped response (drizzle forward-compat)", async () => {
     // Some Drizzle versions return rows directly as an array rather than
     // `{ rows: [...] }`. The implementation handles both shapes; assert that.
+    // Cast: deliberately injects the array shape into a slot that the
+    // `makeFakeDb` API types as `{ rows: ... }` to exercise the fallback path.
     const arrayResponse = [{ id: "user-9" }] as unknown as {
       rows: { id: string }[];
     };
@@ -265,6 +270,8 @@ describe("runRetentionCleanup", () => {
       }
       return { rowCount: 0 };
     });
+    // Cast: see `makeFakeDb` — `RetentionDb` is too large to construct;
+    // the code under test only calls `.execute()`.
     const db = { execute } as unknown as RetentionDb;
 
     const first = runRetentionCleanup(db, new Date("2026-05-11T00:00:00Z"));

@@ -28,6 +28,9 @@ describe("useAccessibility", () => {
   });
 
   it("defaults to false when useReducedMotion returns null", () => {
+    // Cast: Reanimated types `useReducedMotion` as `boolean`, but the runtime
+    // returns `null` on initial mount before the OS query resolves. Inject
+    // null to exercise the hook's null-coalescing branch.
     vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(
       null as unknown as boolean,
     );
