@@ -93,7 +93,7 @@ describe("delegate-copilot-issue", () => {
     expect(todo.acceptanceCriteria).toHaveLength(2);
     expect(todo.referencedFiles).toEqual(["docs/AI_WORKFLOW.md"]);
 
-    const body = buildIssueBody(todo);
+    const { body } = buildIssueBody(todo);
     expect(body).toContain("Local todo: `todos/tighten-docs.md`");
     expect(body).toContain("Copilot must open a pull request");
     expect(body).toContain("Do not commit directly to `main`");
@@ -754,7 +754,7 @@ Touch server/storage/__tests__/example.test.ts.
         "todos/test-rules-injection.md",
       );
 
-      const body = buildIssueBody(todo);
+      const { body } = buildIssueBody(todo);
       const filesIdx = body.indexOf("## Files In Scope");
       const rulesIdx = body.indexOf("## Project Rules");
       const implIdx = body.indexOf("## Implementation Notes");
@@ -795,7 +795,7 @@ Only edit docs/README.md.
         "todos/docs-only.md",
       );
 
-      const body = buildIssueBody(todo);
+      const { body } = buildIssueBody(todo);
       expect(body).toContain("## Project Rules");
       expect(body).toContain("No domain rules apply");
     });

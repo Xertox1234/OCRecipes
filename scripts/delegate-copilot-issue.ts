@@ -578,12 +578,15 @@ function checkboxList(items: string[]): string {
   return items.map((item) => `- [ ] ${item}`).join("\n");
 }
 
-export function buildIssueBody(todo: TodoTask): string {
+export function buildIssueBody(todo: TodoTask): {
+  body: string;
+  projectRulesSection: string;
+} {
   const labels = todo.labels.length > 0 ? todo.labels.join(", ") : "none";
   const domains = detectedDomains(todo.referencedFiles, todo.labels);
-  const projectRules = buildProjectRulesSection(domains);
+  const projectRulesSection = buildProjectRulesSection(domains);
 
-  return `## Source
+  const body = `## Source
 
 Local todo: \`${todo.filePath}\`
 
@@ -606,7 +609,7 @@ ${checkboxList(todo.acceptanceCriteria)}
 
 ${formatList(todo.referencedFiles)}
 
-${projectRules}
+${projectRulesSection}
 
 ## Implementation Notes
 
@@ -627,6 +630,8 @@ ${todo.risks || "None listed."}
 - Keep changes limited to the files in scope and acceptance criteria above.
 - Do not touch JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture without a human-approved plan.
 `;
+
+  return { body, projectRulesSection };
 }
 
 export function defaultRunner(
@@ -646,8 +651,9 @@ export function defaultRunner(
 export function createCopilotIssue(
   todo: TodoTask,
   runner: CommandRunner = defaultRunner,
+  body?: string,
 ): string {
-  const body = buildIssueBody(todo);
+  const issueBody = body ?? buildIssueBody(todo).body;
   const args = [
     "issue",
     "create",
@@ -663,7 +669,7 @@ export function createCopilotIssue(
     "delegated",
   ];
 
-  const result = runner("gh", args, body);
+  const result = runner("gh", args, issueBody);
   if (result.status !== 0) {
     const detail =
       result.stderr || result.error?.message || "unknown gh failure";
@@ -857,7 +863,7 @@ export function runCli(
       return 1;
     }
 
-    const body = buildIssueBody(todoForIssue);
+    const { body, projectRulesSection } = buildIssueBody(todoForIssue);
     if (dryRun) {
       console.log("DRY RUN: Copilot issue would be created.");
       console.log(`Title: [Copilot] ${todoForIssue.title}`);
@@ -868,12 +874,9 @@ export function runCli(
       return 0;
     }
 
-    const issueUrl = createCopilotIssue(todoForIssue, runner);
+    const issueUrl = createCopilotIssue(todoForIssue, runner, body);
     writeGithubIssueToTodo(resolvedPath, issueUrl);
-
-    const domains = detectedDomains(todo.referencedFiles, todo.labels);
-    const projectRules = buildProjectRulesSection(domains);
-    writeProjectRulesSectionToTodo(resolvedPath, projectRules);
+    writeProjectRulesSectionToTodo(resolvedPath, projectRulesSection);
 
     console.log(`Created Copilot issue: ${issueUrl}`);
     return 0;
