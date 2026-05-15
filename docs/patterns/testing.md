@@ -2192,6 +2192,63 @@ describe("exportUserColumns", () => {
 
 **Why explicit per-factory describe blocks, not dynamic generation:** The variations above make `describe.each(Object.entries(factories))` awkward — you'd need a config map for special signatures (`createMockChatCompletion`), missing-id factories, and string-vs-number ID overrides. The smoke suite's job is shape verification; the "one describe per factory file" convention is enforced at code-review time, not by runtime introspection.
 
+## Route-Level Auth/Rate-Limit Tests: `vi.doUnmock` Must Be `try/finally`-Wrapped
+
+Route tests mock `../../middleware/auth` and `express-rate-limit` globally at the file level so the default tests get a stubbed authenticated user and a pass-through rate limiter. To assert real 401 / 429 behavior we re-import the route module with the real implementations via `vi.doUnmock(...)` + dynamic `import("...")` + `vi.resetModules()` (see `server/routes/__tests__/recipe-catalog.test.ts`, `recipe-import.test.ts`, `recipe-search.test.ts`, `export.test.ts`).
+
+**Rule:** every `vi.doUnmock("../../middleware/auth")` (or any other globally-mocked module) inside an `it(...)` block must restore the mock in a `finally` clause — not at the end of the test body. If an assertion fails before the restore line runs, the unmock persists in the module registry and the next dynamic import in the same file loads the real module, cascading the failure.
+
+```ts
+it("GET ... returns 401 without a bearer token", async () => {
+  vi.doUnmock("../../middleware/auth");
+  try {
+    const { register: registerReal } = await import("../recipe-catalog");
+    const app = express();
+    app.use(express.json());
+    registerReal(app);
+    const res = await request(app).get("/api/meal-plan/catalog/search?query=x");
+    expect(res.status).toBe(401);
+  } finally {
+    // Restore even if the assertion failed — otherwise the unmock leaks to
+    // later dynamic imports in this file and breaks the 429 / rate-limit test.
+    vi.doMock("../../middleware/auth", async () => {
+      const actual = await vi.importActual<
+        typeof import("../../middleware/__mocks__/auth")
+      >("../../middleware/__mocks__/auth");
+      return actual;
+    });
+  }
+});
+```
+
+For 429 tests, use `vi.doUnmock("express-rate-limit")` in the same `vi.resetModules()` + dynamic-import pattern, but match `windowMs/max` from the actual `_rate-limiters.ts` entry (e.g. `urlImportRateLimit` is `5/min` — fire 6 requests). Don't wrap the 429 test in try/finally — `vi.resetModules()` in the parent `beforeEach` already isolates it from later tests.
+
+## IDOR Assertions: Lock to the Auth-Mock UserId, Not `expect.any(String)`
+
+`expect.objectContaining({ userId: expect.any(String) })` and `toHaveBeenCalledWith(expect.any(String), ...)` pass even if the route handler forwards a hardcoded constant, an attacker-supplied `req.query.userId`, or anything else that happens to be a string. To make the test catch IDOR regressions, assert the exact userId that the auth mock injects.
+
+The default `server/middleware/__mocks__/auth.ts` mock sets `req.userId = "1"` for every request. Use that literal:
+
+```ts
+// Not enough — passes even if the handler ignores req.userId:
+expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+  expect.objectContaining({ userId: expect.any(String) }),
+  expect.any(Array),
+);
+
+// Correct — fails if the handler doesn't propagate the authenticated userId:
+expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+  expect.objectContaining({ userId: "1" }),
+  expect.any(Array),
+);
+expect(storage.findMealPlanRecipeByExternalId).toHaveBeenCalledWith(
+  "1",
+  "123", // external/route param
+);
+```
+
+Apply this to **every storage call that performs a userId-scoped read or write** (dedup lookup, create, update, including fire-and-forget background patches). If a test overrides the auth mock with a different userId via `vi.mocked(requireAuth).mockImplementationOnce(...)`, assert against that override value instead.
+
 ## Adding New Patterns
 
 When you establish a new pattern:
