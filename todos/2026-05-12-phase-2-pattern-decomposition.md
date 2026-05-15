@@ -1,6 +1,6 @@
 ---
 title: "Phase 2: decompose docs/patterns/*.md into docs/solutions/<category>/"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-05-12
 updated: 2026-05-12
