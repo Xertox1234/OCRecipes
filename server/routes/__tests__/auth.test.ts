@@ -18,6 +18,10 @@ import {
   checkPremiumFeature,
 } from "../_helpers";
 import { createMockUser } from "../../__tests__/factories";
+import {
+  mockExpressReq,
+  mockExpressRes,
+} from "../../__tests__/utils/express-mocks";
 
 // Mock storage before importing routes
 vi.mock("../../storage", () => ({
@@ -950,22 +954,27 @@ describe("_helpers utility functions", () => {
 
   describe("ipKeyGenerator", () => {
     it("returns req.ip when available", () => {
-      const req = { ip: "192.168.1.1", socket: { remoteAddress: "10.0.0.1" } };
-      expect(ipKeyGenerator(req as unknown as express.Request)).toBe(
-        "192.168.1.1",
-      );
+      const req = mockExpressReq({
+        ip: "192.168.1.1",
+        socket: { remoteAddress: "10.0.0.1" } as express.Request["socket"],
+      });
+      expect(ipKeyGenerator(req)).toBe("192.168.1.1");
     });
 
     it("falls back to socket.remoteAddress when ip is missing", () => {
-      const req = { ip: "", socket: { remoteAddress: "10.0.0.1" } };
-      expect(ipKeyGenerator(req as unknown as express.Request)).toBe(
-        "10.0.0.1",
-      );
+      const req = mockExpressReq({
+        ip: "",
+        socket: { remoteAddress: "10.0.0.1" } as express.Request["socket"],
+      });
+      expect(ipKeyGenerator(req)).toBe("10.0.0.1");
     });
 
     it("returns 'unknown' when both ip and remoteAddress are missing", () => {
-      const req = { ip: "", socket: { remoteAddress: "" } };
-      expect(ipKeyGenerator(req as unknown as express.Request)).toBe("unknown");
+      const req = mockExpressReq({
+        ip: "",
+        socket: { remoteAddress: "" } as express.Request["socket"],
+      });
+      expect(ipKeyGenerator(req)).toBe("unknown");
     });
   });
 
@@ -1017,7 +1026,7 @@ describe("_helpers utility functions", () => {
   describe("getPremiumFeatures", () => {
     it("returns free tier features when no subscription", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
-      const req = { userId: "1" } as unknown as express.Request;
+      const req = mockExpressReq({ userId: "1" });
       const features = await getPremiumFeatures(req);
       expect(features.maxDailyScans).toBe(3);
       expect(features.recipeGeneration).toBe(false);
@@ -1028,7 +1037,7 @@ describe("_helpers utility functions", () => {
         tier: "premium",
         expiresAt: null,
       });
-      const req = { userId: "1" } as unknown as express.Request;
+      const req = mockExpressReq({ userId: "1" });
       const features = await getPremiumFeatures(req);
       expect(features.maxDailyScans).toBe(999999);
       expect(features.recipeGeneration).toBe(true);
@@ -1039,7 +1048,7 @@ describe("_helpers utility functions", () => {
         tier: "invalid_tier" as "free",
         expiresAt: null,
       });
-      const req = { userId: "1" } as unknown as express.Request;
+      const req = mockExpressReq({ userId: "1" });
       const features = await getPremiumFeatures(req);
       expect(features.maxDailyScans).toBe(3);
     });
@@ -1051,11 +1060,8 @@ describe("_helpers utility functions", () => {
         tier: "premium",
         expiresAt: null,
       });
-      const req = { userId: "1" } as unknown as express.Request;
-      const res = {
-        status: vi.fn().mockReturnThis(),
-        json: vi.fn(),
-      } as unknown as express.Response;
+      const req = mockExpressReq({ userId: "1" });
+      const res = mockExpressRes();
       const features = await checkPremiumFeature(
         req,
         res,
@@ -1068,13 +1074,8 @@ describe("_helpers utility functions", () => {
 
     it("sends 403 and returns null when user lacks the feature", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
-      const req = { userId: "1" } as unknown as express.Request;
-      const jsonMock = vi.fn();
-      const statusMock = vi.fn().mockReturnValue({ json: jsonMock });
-      const res = {
-        status: statusMock,
-        json: jsonMock,
-      } as unknown as express.Response;
+      const req = mockExpressReq({ userId: "1" });
+      const res = mockExpressRes();
       const features = await checkPremiumFeature(
         req,
         res,
@@ -1082,8 +1083,8 @@ describe("_helpers utility functions", () => {
         "Recipe generation",
       );
       expect(features).toBeNull();
-      expect(statusMock).toHaveBeenCalledWith(403);
-      expect(jsonMock).toHaveBeenCalledWith(
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           error: expect.stringContaining("premium subscription"),
         }),

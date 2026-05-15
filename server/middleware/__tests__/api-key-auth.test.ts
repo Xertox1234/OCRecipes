@@ -64,6 +64,9 @@ describe("API Key Auth Middleware", () => {
   });
 
   it("returns 401 when API key prefix not found in DB", async () => {
+    // Cast: `vi.mocked()` infers the success-path return shape; explicit
+    // cast lets us mock the not-found return without expanding the typed
+    // surface of every storage helper.
     vi.mocked(storage.getApiKeyByPrefix).mockResolvedValue(
       undefined as unknown as Awaited<
         ReturnType<typeof storage.getApiKeyByPrefix>

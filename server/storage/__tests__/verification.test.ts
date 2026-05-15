@@ -250,7 +250,9 @@ describe("verification storage", () => {
 
       const userB = await createTestUser(tx);
 
-      // Insert two history rows manually with distinct timestamps
+      // Insert two history rows manually with distinct timestamps.
+      // Cast: jsonb column infers as `Record<string, unknown>` from Drizzle —
+      // bridge our domain `VerificationNutrition` shape into the column type.
       await tx.insert(verificationHistory).values({
         barcode,
         userId: testUser.id,
@@ -638,6 +640,8 @@ describe("verification storage", () => {
       await confirmFrontLabelData(barcode, testUser.id, second);
 
       const verification = await getVerification(barcode);
+      // Cast: jsonb column infers as `unknown` from Drizzle — narrow back to
+      // the domain `FrontLabelData` shape to read `.brand`.
       expect(
         (verification!.frontLabelData as unknown as FrontLabelData).brand,
       ).toBe("Second");
@@ -826,6 +830,8 @@ describe("verification storage", () => {
     // we can control the date sequence without depending on transaction
     // timestamps.
     async function seedHistoryOnDay(barcode: string, day: Date): Promise<void> {
+      // Cast: jsonb column infers as `Record<string, unknown>` from Drizzle —
+      // bridge our domain `VerificationNutrition` shape into the column type.
       await tx.insert(verificationHistory).values({
         barcode,
         userId: testUser.id,
