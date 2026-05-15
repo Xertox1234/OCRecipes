@@ -317,11 +317,18 @@ export async function* generateCoachResponse(
   messages: { role: "user" | "assistant" | "system"; content: string }[],
   context: CoachContext,
   abortSignal?: AbortSignal,
+  /**
+   * Pre-classified intent from the caller. When provided, the internal
+   * `classifyIntent` call is skipped — `handleCoachChat` already classifies
+   * once per turn for the cache key, so passing it avoids redundant work.
+   * Callers that omit it self-classify the last user message.
+   */
+  intent?: CoachIntent,
 ): AsyncGenerator<string> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
-  const { intent } = classifyIntent(lastUserMessage);
-  const systemPrompt = buildSystemPrompt(context, intent);
+  const resolvedIntent = intent ?? classifyIntent(lastUserMessage).intent;
+  const systemPrompt = buildSystemPrompt(context, resolvedIntent);
 
   // Sanitize user messages before including in conversation history
   const sanitizedMessages = messages.map((m) => ({
@@ -385,11 +392,18 @@ export async function* generateCoachProResponse(
   abortSignal?: AbortSignal,
   onBeforeToolCalls?: (toolNames: string[]) => void,
   preloadedProfile?: UserProfile | null,
+  /**
+   * Pre-classified intent from the caller. When provided, the internal
+   * `classifyIntent` call is skipped — `handleCoachChat` already classifies
+   * once per turn for the cache key, so passing it avoids redundant work.
+   * Callers that omit it self-classify the last user message.
+   */
+  intent?: CoachIntent,
 ): AsyncGenerator<string> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
-  const { intent } = classifyIntent(lastUserMessage);
-  const systemPrompt = buildSystemPrompt(context, intent);
+  const resolvedIntent = intent ?? classifyIntent(lastUserMessage).intent;
+  const systemPrompt = buildSystemPrompt(context, resolvedIntent);
   // Shallow-copy the frozen module-level array so the SDK can accept it
   // (its types require a mutable `ChatCompletionTool[]`). The copy is O(n)
   // over references, not over the full tool tree — still far cheaper than
