@@ -307,9 +307,11 @@ describe("meal-plan-recipes storage", () => {
     });
 
     it("creates a recipe with ingredients in a single transaction", async () => {
+      // recipeId is a placeholder — createMealPlanRecipe overwrites it with the
+      // new recipe's id inside its transaction.
       const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
-        { name: "Eggs", displayOrder: 0 } as InsertRecipeIngredient,
-        { name: "Milk", displayOrder: 1 } as InsertRecipeIngredient,
+        { recipeId: 0, name: "Eggs", displayOrder: 0 },
+        { recipeId: 0, name: "Milk", displayOrder: 1 },
       ]);
 
       const ings = await tx
@@ -323,8 +325,8 @@ describe("meal-plan-recipes storage", () => {
 
     it("assigns sequential displayOrder when ingredients omit it", async () => {
       const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
-        { name: "A" } as InsertRecipeIngredient,
-        { name: "B" } as InsertRecipeIngredient,
+        { recipeId: 0, name: "A" },
+        { recipeId: 0, name: "B" },
       ]);
       const ings = await tx
         .select()
