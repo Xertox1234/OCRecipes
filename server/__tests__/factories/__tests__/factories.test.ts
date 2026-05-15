@@ -376,7 +376,7 @@ describe("factories/recipes", () => {
       expect(obj).toMatchObject({
         id: 1,
         userId: "1",
-        recipeIdentifier: "community:1",
+        recipeIdentifier: "1",
         source: "carousel",
       });
       expect(obj.dismissedAt).toBeInstanceOf(Date);
