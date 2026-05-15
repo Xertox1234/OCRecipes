@@ -1557,34 +1557,134 @@ The config used to set this implicitly via `environmentMatchGlobs`, but that opt
 
 ---
 
-### When Inline `vi.mock` of Globally-Aliased Modules IS Correct
+### Spy-On Pattern for Globally-Aliased RN/Reanimated/Haptics Mocks
 
-The general guidance ("do NOT inline-mock `react-native` / `react-native-reanimated` / `expo-haptics` — the global aliases handle it") is correct for the _common_ case: a test that renders a component and doesn't care about the mock's return values. But there are legitimate reasons to inline-mock even an already-aliased module — don't blanket-prohibit.
+The global mocks in `test/mocks/react-native.ts`, `test/mocks/react-native-reanimated.ts`, and `test/mocks/expo-haptics.ts` expose commonly-overridden APIs as `vi.fn()` instances. This lets tests override return values and assert calls via `vi.spyOn` on the imported namespace — no inline `vi.mock` needed.
 
-**Inline `vi.mock` IS correct when the test needs:**
+**Canonical pattern:**
 
-1. **Mutable per-test return values** — The global alias exposes `useColorScheme: () => "light"` (a plain function, not `vi.fn()`). To toggle the value per test, you either need to inline-mock with `importOriginal()` + spread + override, or update the global mock to use `vi.fn()` for spy-ability. Until the latter ships, inline mock is the only path.
+```typescript
+import * as RN from "react-native";
+import * as Reanimated from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
 
-   ```typescript
-   const mockUseColorScheme = vi.fn();
-   vi.mock("react-native", async (importOriginal) => {
-     const actual = await importOriginal<typeof import("react-native")>();
-     return { ...actual, useColorScheme: () => mockUseColorScheme() };
-   });
-   ```
+describe("useTheme", () => {
+  afterEach(() => {
+    // restoreAllMocks() undoes spy installation. test/setup.ts only runs
+    // vi.clearAllMocks() (call history only) — without restore, the spy leaks
+    // into the next test with empty call history.
+    vi.restoreAllMocks();
+  });
 
-2. **Stateful behavior the simple alias can't provide** — Tests of hooks like `useScrollLinkedHeader` or `useCollapsibleHeight` need `useSharedValue` to persist across re-renders (backed by `useRef`). The global alias returns a fresh `{value: init}` each call, which mutates fine but doesn't persist. The inline mock provides the ref-backed version.
+  it("returns dark theme when system reports dark", () => {
+    vi.spyOn(RN, "useColorScheme").mockReturnValue("dark");
+    // ...
+  });
 
-3. **Missing exports** — The global mock covers commonly-rendered APIs but not every RN export. `AppState`, `Share`, and certain platform APIs may not be in the global alias. Inline mock fills the gap.
+  it("does not fire haptic when reduced motion is on", () => {
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(true);
+    const impactSpy = vi.spyOn(Haptics, "impactAsync");
+    // ...
+    expect(impactSpy).not.toHaveBeenCalled();
+  });
+});
+```
+
+**Why it works:** Vite/Vitest uses real ESM, so the destructured `import { useColorScheme } from "react-native"` inside the hook under test is a live binding to the same property the spy is replacing. `vi.spyOn(ns, "name")` rewrites the property on the namespace object _and_ the destructured binding sees it.
+
+**APIs available as `vi.fn()` mocks** (use `vi.spyOn` to assert/override):
+
+| Module                    | Exports                                                                     |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `react-native`            | `useColorScheme`, `Alert.alert`, `AppState.addEventListener`, `Share.share` |
+| `react-native-reanimated` | `useReducedMotion`                                                          |
+| `expo-haptics`            | `impactAsync`, `notificationAsync`, `selectionAsync`                        |
+
+**`afterEach(vi.restoreAllMocks)` is required**, not optional. `vi.clearAllMocks()` (from `test/setup.ts`) only clears call history — it does not undo `vi.spyOn`. Without restore, a spy from test 1 leaks into test 2 as a `vi.fn` returning `undefined`.
+
+**`Platform.OS` cannot be spied on** — it's a string property, not a function. Use mutate-and-restore:
+
+```typescript
+const originalPlatformOS = RN.Platform.OS;
+afterEach(() => {
+  RN.Platform.OS = originalPlatformOS;
+});
+// per-test: RN.Platform.OS = "android";
+```
+
+### When Inline `vi.mock` of Globally-Aliased Modules IS Still Correct
+
+The spy-on pattern covers the common cases. Inline `vi.mock` is still the right tool when:
+
+1. **Stateful behavior the simple alias can't provide** — Tests of hooks like `useScrollLinkedHeader` or `useCollapsibleHeight` need `useSharedValue` to persist across re-renders (backed by `useRef`). The global alias returns a fresh `{value: init}` each call. A ref-backed implementation requires React's render context (`useRef` can only be called inside a component), which can't be imposed globally on every consumer. Keep the inline mock — see "Stateful Animation Mock Pattern" below.
+
+2. **Module exports the global mock doesn't expose** — If a test needs a RN/Reanimated/Haptics export that isn't in the global mock, you can either add it to the global mock (preferred when it's broadly useful, e.g. `AppState`, `Share`) or inline-mock for one-off needs.
+
+3. **Replacing implementation entirely, not just return value** — `vi.spyOn` swaps the implementation but the function is still called. If you need the function to throw at module-load time or be a different shape, inline mock.
 
 **Inline mock is NOT correct when:**
 
 - The test just wants the global behavior (`useColorScheme` returns "light", `Platform.OS` is "ios"). Use the global alias; don't redeclare.
-- The test wants to _assert that a function was called_. Use `vi.spyOn(globalMockNamespace, "fnName")` instead of replacing the whole module — but this requires the global mock to expose the function as a `vi.fn()`, not a plain function.
+- The test wants to override a return value or assert a call on `useColorScheme`, `Alert.alert`, `Share.share`, `AppState.addEventListener`, `useReducedMotion`, `impactAsync`, `notificationAsync`, or `selectionAsync`. Use `vi.spyOn` per the canonical pattern.
 
-**Audit triage rule:** Before flagging an inline mock of a globally-aliased module as a violation, ask: does the test need mutable values, statefulness, or missing exports? If yes, the inline mock is legitimate; the real fix (if any) is to make the global mock spy-able, not to delete the inline mock.
+**Reference:** Audit 2026-05-11 finding M2 → todo `2026-05-11-spyable-global-mocks.md` (global mocks rearchitected for spy-ability; 6 of 8 affected test files migrated to spy-on; 2 stateful files kept inline).
 
-**Reference:** Audit 2026-05-11 finding M2 (initially "9 violations" → reclassified after inspection: 0 cargo-cult, 9 legitimate uses of inline mock for behaviors the global aliases can't provide).
+### Stateful Animation Mock Pattern
+
+Hooks that rely on Reanimated's `useSharedValue` to persist mutable state across re-renders cannot use the global mock — it returns a fresh `{value}` object on every call. Provide a ref-backed implementation inline:
+
+```typescript
+vi.mock("react-native-reanimated", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- mock needs synchronous require
+  const { useRef } = require("react");
+  return {
+    useSharedValue: (initial: number) => {
+      const ref = useRef(null as { value: number } | null);
+      if (ref.current === null) {
+        ref.current = { value: initial };
+      }
+      return ref.current;
+    },
+    useAnimatedStyle: (fn: () => Record<string, unknown>) => {
+      // Proxy that re-evaluates fn() on access — simulates Reanimated's
+      // reactive style updates so tests can observe the latest computed value.
+      const ref = useRef(fn);
+      ref.current = fn;
+      return new Proxy(
+        {},
+        {
+          get(_, prop) {
+            return ref.current()[prop as string];
+          },
+          ownKeys() {
+            return Object.keys(ref.current());
+          },
+          getOwnPropertyDescriptor(_, prop) {
+            const val = ref.current();
+            if (prop in val) {
+              return {
+                configurable: true,
+                enumerable: true,
+                value: val[prop as string],
+              };
+            }
+            return undefined;
+          },
+        },
+      );
+    },
+    withTiming: (toValue: number) => toValue,
+    // ...other exports the hook uses
+  };
+});
+```
+
+**Why this can't be the global mock:** `useRef` can only be called inside a React component/hook render. Hoisting this into the global Reanimated mock would impose a render context requirement on every consumer (including non-hook tests that just import `Reanimated.useSharedValue` to construct a fixture).
+
+**Canonical examples:**
+
+- `client/hooks/__tests__/useScrollLinkedHeader.test.ts`
+- `client/hooks/__tests__/useCollapsibleHeight.test.ts`
 
 ---
 
