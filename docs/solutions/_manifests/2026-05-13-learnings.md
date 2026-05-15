@@ -4,10 +4,13 @@ decomposed_on: 2026-05-13
 source_size: 4007 lines, 78 sections
 phase: 2
 step: 3
-status: partial — 66 of ~94 planned units completed; 28 deferred to follow-up todo
+status: complete — 94 of 94 planned units completed (66 in original 3-agent run on 2026-05-13, 28 in follow-up 3-batch run on 2026-05-15)
 sub_manifests:
   - 2026-05-13-learnings-23-50.md
   - 2026-05-13-learnings-51-78.md
+  - 2026-05-15-learnings-deferred-batch-1.md
+  - 2026-05-15-learnings-deferred-batch-2.md
+  - 2026-05-15-learnings-deferred-batch-3.md
 ---
 
 # LEARNINGS.md → docs/solutions/ unified manifest
@@ -35,30 +38,29 @@ The compounding failure surfaced one durable pattern: **when an agent writes a m
 
 ## Outcomes (summary)
 
-| Range | Source sections                                          | Status       | Files extracted | Prunes                                        |
-| ----- | -------------------------------------------------------- | ------------ | --------------- | --------------------------------------------- |
-| 2-22  | individual post-mortems (lines 5-665)                    | complete     | 21              | 0 (no manifest from original agent)           |
-| 23-50 | individual post-mortems (lines 676-1614)                 | complete     | 26              | 2 (clauses 4 — see sub-manifest)              |
-| 51-62 | individual post-mortems (lines 1659-~2700)               | complete     | ~19             | 0 (in-range)                                  |
-| 63-78 | code-review roll-ups + themed digests (lines ~2700-4007) | **deferred** | 0 in this run   | 17 deferred prunes documented in sub-manifest |
+| Range | Source sections                                          | Status   | Files extracted                          | Prunes                                                   |
+| ----- | -------------------------------------------------------- | -------- | ---------------------------------------- | -------------------------------------------------------- |
+| 2-22  | individual post-mortems (lines 5-665)                    | complete | 21                                       | 0 (no manifest from original agent)                      |
+| 23-50 | individual post-mortems (lines 676-1614)                 | complete | 26                                       | 2 (clauses 4 — see sub-manifest)                         |
+| 51-62 | individual post-mortems (lines 1659-~2700)               | complete | ~19                                      | 0 (in-range)                                             |
+| 63-78 | code-review roll-ups + themed digests (lines ~2700-4007) | complete | 28 (in 2026-05-15 follow-up — see below) | 17 prunes confirmed (already-captured-elsewhere digests) |
 
-**Step 3 totals as of this manifest write**:
+**Step 3 totals (final, after 2026-05-15 follow-up)**:
 
-- Extracted: **66 files** (21 original + 26 Agent A + ~19 Agent B)
-- Pruned: **2** (Agent A clause-4 prunes — decision-style entries and themed digests duplicating existing knowledge-track files)
-- **Deferred: 28 extract files** + **17 deferred prune dispositions** (Agent B's sub-manifest specified them but the file writes did not complete)
+- Extracted: **94 files** (21 original + 26 Agent A + ~19 Agent B + 28 in 3-batch follow-up)
+- Pruned: **19** (2 Agent A clause-4 prunes + 17 Agent-B-planned prunes for digests already captured in Step 1-2 knowledge-track files; the prunes never required file writes — Agent B's disposition rationale stands)
 
-## Files extracted by category (Step 3 additions)
+## Files extracted by category (Step 3 additions, final)
 
-| Category                             | Count | Examples                                                                                                                           |
-| ------------------------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `logic-errors/`                      | ~45   | prettier-reformats-generated-files, calorie-restriction-regex, mark-then-enrich-orphan-state, decorative-badge-double-announcement |
-| `runtime-errors/`                    | ~6    | drizzle-default-array-not-nullable, parseint-on-uuid-userid-returns-nan, onconflictdonothing-cache-expired-skip-crash              |
-| `code-quality/`                      | ~3    | vision-camera-v4-to-v5-migration, visioncamera-v5-frame-processor-runonjs-bridge, jwt-types-shared (deferred)                      |
-| `performance-issues/`                | 1     | avoid-requery-after-insert                                                                                                         |
-| `conventions/` (knowledge-track)     | ~6    | requireauth-middleware-over-manual-checks, whisper-domain-prompt-engineering                                                       |
-| `design-patterns/` (knowledge-track) | ~3    | tdee-back-calculation-adaptive-goals, dev-conditional-require-mock-vs-real-module (deferred)                                       |
-| `best-practices/` (knowledge-track)  | ~2    | simplicity-review-fresh-implementation                                                                                             |
+| Category                             | Count | Examples                                                                                                                                                                                                                             |
+| ------------------------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `logic-errors/`                      | ~51   | prettier-reformats-generated-files, calorie-restriction-regex, mark-then-enrich-orphan-state, decorative-badge-double-announcement, toggle-favourite-race-condition (follow-up), nullable-fk-inner-join-drops-rows (follow-up)       |
+| `runtime-errors/`                    | ~8    | drizzle-default-array-not-nullable, parseint-on-uuid-userid-returns-nan, onconflictdonothing-cache-expired-skip-crash, url-injection-encodeuricomponent-path-segments (follow-up), add-column-default-existing-rows-null (follow-up) |
+| `code-quality/`                      | ~4    | vision-camera-v4-to-v5-migration, visioncamera-v5-frame-processor-runonjs-bridge, react-19-useref-explicit-initial-value (follow-up)                                                                                                 |
+| `performance-issues/`                | ~3    | avoid-requery-after-insert, inline-arrow-functions-defeat-react-memo (follow-up), asyncstorage-in-memory-token-cache (follow-up)                                                                                                     |
+| `conventions/` (knowledge-track)     | ~17   | requireauth-middleware-over-manual-checks, whisper-domain-prompt-engineering, paginate-list-endpoints-default-limits (follow-up), tier-limits-single-source-of-truth (follow-up)                                                     |
+| `design-patterns/` (knowledge-track) | ~7    | tdee-back-calculation-adaptive-goals, dev-conditional-require-mock-vs-real-module (follow-up), jwt-over-cookies-react-native (follow-up), postgres-cache-table-ai-content (follow-up)                                                |
+| `best-practices/` (knowledge-track)  | ~4    | simplicity-review-fresh-implementation, parallel-agent-shared-file-merge-conflicts (follow-up), deferred-security-todo-documentation (follow-up)                                                                                     |
 
 Exact paths are in the two sub-manifests.
 
@@ -80,9 +82,9 @@ Clause 4 (meta/too-narrow) fired on the Table of Contents, "Key Takeaways", and 
 
 Agent A and Agent B's completed portions found **0 inherited content bugs** in their source ranges. The original agent's range (sections 2-22) was not audited for source bugs — those should be reviewed when the deferred items are picked up.
 
-## Deferred items (28 files)
+## Items completed in follow-up (28 files)
 
-The following entries Agent B's sub-manifest specified for extraction but Agent C did not complete. Each maps to a specific source section in `docs/LEARNINGS.md`. Picking these up is a follow-up todo (see `todos/2026-05-14-learnings-step3-deferred-extractions.md`).
+Originally planned by Agent B and deferred when Agent C stalled before any writes. Picked up on 2026-05-15 by a 3-batch parallel agent run (manifests `2026-05-15-learnings-deferred-batch-{1,2,3}.md`). All 28 destination files now exist; the table below stays in the manifest as a traceability record from the Deferred phase. Follow-up details in the **Step 3 follow-up (2026-05-15)** section below.
 
 | Source section | Source line search                                   | Destination                                                                   |
 | -------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -115,11 +117,34 @@ The following entries Agent B's sub-manifest specified for extraction but Agent 
 | 75.1           | `DB Migration` → ADD COLUMN default                  | `runtime-errors/add-column-default-existing-rows-null-2026-05-13.md`          |
 | 75.2           | `DB Migration` → LEFT JOIN rewrite                   | `logic-errors/nullable-fk-inner-join-drops-rows-2026-05-13.md`                |
 
-When picked up, agents should reference Agent B's sub-manifest (`2026-05-13-learnings-51-78.md`) for source-section line numbers and detailed disposition rationale.
+All 28 entries above were extracted on 2026-05-15. See **Step 3 follow-up (2026-05-15)** below for the agent split and source-bug check results.
+
+## Step 3 follow-up (2026-05-15)
+
+Three parallel `general-purpose` agents picked up the 28 deferred items after Step 4 (codify-skill rewrite, commit `bd52d53f`) landed. Sequencing was governed by stall-resistance guidance from the 3-agent recovery experience: scope per agent ≤ 10 files, no full-corpus Jaccard scans, per-batch manifest written before file bodies.
+
+| Agent | Batch   | Items | Source sections                                            | Outcome                      |
+| ----- | ------- | ----- | ---------------------------------------------------------- | ---------------------------- |
+| 1     | batch-1 | 10    | 65.1-65.5, 66.1-66.3, 67.1, 67.3                           | clean completion in ~4.5 min |
+| 2     | batch-2 | 10    | 68.4, 68.5, 69(a), 69(b), 70.2, 70.3, 71, 72.2, 72.3, 72.4 | clean completion in ~5 min   |
+| 3     | batch-3 | 8     | 64.5, 73.1, 73.2, 74.1, 74.3, 74.4, 75.1, 75.2             | clean completion in ~3.5 min |
+
+**Zero stalls** — the smaller per-agent scope + manifest-before-files protocol resolved the failure mode that ate three of four agents in the original Step 3 run.
+
+**`created:` field resolution.** Agent 1 surfaced a prompt-vs-source mismatch in their dispatch: the prompt asserted that sections 65.x, 66.x, 67.x had individual `[YYYY-MM-DD]` prefixes, but in source they sit under umbrella H2s without per-section dates. Resolution per the documented fallback rule: 65.x uses `2026-02-12` (the umbrella `## History Item Actions Learnings (2026-02-12)` date); 66.x (`## Architecture Decisions`, undated) and 67.x (`## React Native / Expo Go Gotchas`, undated) use `2026-05-13`. Batches 2 and 3 all use `2026-05-13` (no incident-date prefixes in their themed roll-up sections).
+
+**Source-bug spot-check.** 3 high-risk extractions audited against LEARNINGS.md source:
+
+- `performance-issues/asyncstorage-in-memory-token-cache-2026-05-13.md` — numeric perf claims (2-10ms / 20-100ms / <1ms) match source verbatim; agent added a small contextual hedge ("depending on device, OS, and AsyncStorage backend") that is engineering-appropriate, not a fabrication.
+- `performance-issues/inline-arrow-functions-defeat-react-memo-2026-05-13.md` — React.memo shallow-prop-equality semantics match source.
+- `runtime-errors/add-column-default-existing-rows-null-2026-05-13.md` — added a PG 11+ non-volatile-default caveat not in source; technically accurate (documented PG behavior), explains why Drizzle's `db push` didn't trigger the in-place backfill optimization. Defensible elaboration.
+
+**Inherited source bugs found: 0** in the spot-checked extractions. Lower than Step 2 baseline of ~1-2 per 10-file batch.
+
+**Cross-link integrity.** Agent 2 flagged two cross-link targets (`stub-service-production-safety-gate-2026-05-13.md`, `check-premium-feature-helper-2026-05-13.md`) for verification; both confirmed present in `design-patterns/`. Agent 3 normalized an absolute file path in 75.2's source content (`/Users/williamtower/...` → repo-relative `server/storage.ts`) at extraction time.
 
 ## Open questions / handoff notes
 
-1. **Step 3 partial completion is acceptable for unblocking Step 4-6.** The codify-skill rewrite (Step 4) and hook rewrite (Step 5) operate on the corpus shape and frontmatter schema — both validated. The 28 deferred items don't change either.
-2. **Source-bug audit for sections 2-22.** The original agent crashed before producing a manifest; its 21 output files were not retrospectively audited for inherited bugs. A spot-check pass at Step 6 retirement time would close this gap.
-3. **Agent stall patterns.** Three of four agents on this source stalled (original socket close, B watchdog, C watchdog). The corpus reading + multi-section iteration appears to exceed the runtime's typical session budget. For Step 4 (codify-skill rewrite) and Step 5 (hook rewrite), prefer scope splits ≤ 15 files per agent and write manifests _before_ files so stalls preserve maximum recovery value.
-4. **`logic-errors/` now dominates the bug-track corpus** (45 of 60 bug-track files post-Step-3). This reflects the OCRecipes-specific nature of LEARNINGS.md — the project has had many "code runs but produces wrong behaviour" incidents historically and fewer hard crashes.
+1. **Source-bug audit for sections 2-22.** The original agent crashed before producing a manifest; its 21 output files were not retrospectively audited for inherited bugs. A spot-check pass at Step 6 retirement time would close this gap.
+2. **Agent stall patterns — original Step 3 vs 2026-05-15 follow-up.** Three of four agents on this source stalled in the original run (original socket close, B watchdog, C watchdog). The 2026-05-15 follow-up (3 agents at ≤10 files each, manifest-before-files, no full-corpus Jaccard) had zero stalls. For Step 5 (hook rewrite) and Step 6 (monolith retirement), prefer the same shape: scope splits ≤ 10-15 files per agent and write manifests _before_ files so stalls preserve maximum recovery value.
+3. **`logic-errors/` dominates the bug-track corpus** (~51 of ~66 bug-track files post-Step-3 final). This reflects the OCRecipes-specific nature of LEARNINGS.md — the project has had many "code runs but produces wrong behaviour" incidents historically and fewer hard crashes.
