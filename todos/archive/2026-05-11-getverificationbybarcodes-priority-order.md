@@ -1,6 +1,6 @@
 ---
 title: "getVerificationByBarcodes should respect variant array priority order"
-status: backlog
+status: complete
 priority: low
 created: 2026-05-11
 updated: 2026-05-11

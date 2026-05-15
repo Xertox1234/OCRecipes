@@ -199,21 +199,38 @@ describe("verification storage", () => {
       expect(result!.barcode).toBe(barcode);
     });
 
-    it("returns a match when any variant is in the DB (limit 1)", async () => {
-      // NOTE: `getVerificationByBarcodes` uses `WHERE barcode IN (...)` +
-      // `LIMIT 1` with no `ORDER BY`, so the row returned is whichever the
-      // DB happens to pick when multiple variants are present. The test
-      // asserts only that a match is returned — it does NOT assert array-
-      // order priority because the production function does not provide it.
-      // Contrast with `getBarcodeNutrition` (api-keys.ts), which does sort
-      // by array index. If priority is desired here, the production code
-      // should change first, then the test.
+    it("returns a match when any variant is in the DB", async () => {
       const barcode = makeBarcode();
       const missing = makeBarcode();
       await seedBarcodeVerification(barcode);
       const result = await getVerificationByBarcodes([missing, barcode]);
       expect(result).not.toBeNull();
       expect(result!.barcode).toBe(barcode);
+    });
+
+    it("returns the row matching the highest-priority variant (earliest in array) when multiple variants are seeded", async () => {
+      // Mirrors `getBarcodeNutrition`'s contract: when multiple variants
+      // resolve to different rows, the row matching the earliest variant in
+      // the input array wins. Both orderings exercised to prove the result
+      // depends on the array order, not arbitrary DB row order.
+      const barcodeA = makeBarcode();
+      const barcodeB = makeBarcode();
+      await seedBarcodeVerification(barcodeA, {
+        verificationLevel: "verified",
+        verificationCount: 5,
+      });
+      await seedBarcodeVerification(barcodeB, {
+        verificationLevel: "single_verified",
+        verificationCount: 1,
+      });
+
+      const aFirst = await getVerificationByBarcodes([barcodeA, barcodeB]);
+      expect(aFirst).not.toBeNull();
+      expect(aFirst!.barcode).toBe(barcodeA);
+
+      const bFirst = await getVerificationByBarcodes([barcodeB, barcodeA]);
+      expect(bFirst).not.toBeNull();
+      expect(bFirst!.barcode).toBe(barcodeB);
     });
   });
 
