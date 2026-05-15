@@ -13,7 +13,7 @@ import {
 } from "@shared/schema";
 import { FEATURED_COLUMNS, type FeaturedRecipe } from "./community";
 import { db } from "../db";
-import { eq, desc, and, or, ilike, sql } from "drizzle-orm";
+import { eq, desc, and, or, ilike, inArray, sql } from "drizzle-orm";
 import { escapeLike } from "./helpers";
 import {
   addToIndex,
@@ -498,13 +498,17 @@ export async function getRecipesWithEmptyMealTypes(): Promise<{
   }
 
   const recipeIds = recipes.map((r) => r.id);
+  // `inArray` — not `sql`...ANY(${recipeIds})``: Drizzle's `sql` tag does not
+  // cast a JS number[] to a PG int array, so the raw-ANY form fails at runtime
+  // with "malformed array literal" once `recipes` is non-empty. Surfaced by
+  // todos/2026-05-15-meal-plan-recipes-tests.md.
   const allIngredients = await db
     .select({
       recipeId: recipeIngredients.recipeId,
       name: recipeIngredients.name,
     })
     .from(recipeIngredients)
-    .where(sql`${recipeIngredients.recipeId} = ANY(${recipeIds})`);
+    .where(inArray(recipeIngredients.recipeId, recipeIds));
 
   const ingredientsByRecipe = new Map<number, string[]>();
   for (const ing of allIngredients) {
