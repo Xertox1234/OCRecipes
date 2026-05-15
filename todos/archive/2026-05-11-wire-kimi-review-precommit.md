@@ -1,9 +1,9 @@
 ---
 title: "Wire kimi-review into the pre-commit hook"
-status: backlog
+status: completed
 priority: low
 created: 2026-05-11
-updated: 2026-05-11
+updated: 2026-05-15
 assignee:
 labels: [code-quality, deferred]
 github_issue:
@@ -42,18 +42,18 @@ would re-run review per-file, which is wrong for cross-file findings.
 
 ## Acceptance Criteria
 
-- [ ] Update `.husky/pre-commit` so `kimi-review` runs on the staged diff after
+- [x] Update `.husky/pre-commit` so `kimi-review` runs on the staged diff after
       `lint-staged` succeeds, defaulting to `--tiers CRITICAL,WARNING --profile ocrecipes`
-- [ ] CRITICAL findings block the commit (non-zero exit); WARNINGs print but
+- [x] CRITICAL findings block the commit (non-zero exit); WARNINGs print but
       do not block
-- [ ] Hook exits early (does not run kimi-review) if no `.ts`/`.tsx` files
+- [x] Hook exits early (does not run kimi-review) if no `.ts`/`.tsx` files
       are staged — kimi-review on docs-only commits is wasted tokens
-- [ ] A trivial way to bypass: respect `SKIP_KIMI_REVIEW=1` env var so commits
+- [x] A trivial way to bypass: respect `SKIP_KIMI_REVIEW=1` env var so commits
       from automation (e.g., merge commits, `lint-staged` retries) can opt out
-- [ ] Document the bypass env var in `CLAUDE.md` "Workflow Standards" section
-- [ ] Verify the hook fires by making a deliberate-violation test commit and
+- [x] Document the bypass env var in `CLAUDE.md` "Workflow Standards" section
+- [x] Verify the hook fires by making a deliberate-violation test commit and
       confirming `kimi-review` runs and CRITICAL exit blocks
-- [ ] No regression on hook performance for docs-only / config-only commits
+- [x] No regression on hook performance for docs-only / config-only commits
 
 ## Implementation Notes
 
@@ -110,3 +110,24 @@ inspect them to mirror their exit-code conventions.
 - Deferred from delegation-workflow fix session. The kimi-review gap was
   surfaced by my own commit not triggering automatic review, which let a
   real WARNING land on `main` until I manually ran kimi-review post-commit.
+
+### 2026-05-15
+
+- Implemented and verified. Hook script in `.husky/pre-commit` runs `lint-staged`
+  first, exits early on non-`.ts`/`.tsx` staged sets, honors `SKIP_KIMI_REVIEW=1`
+  and auto-skips when `kimi-review` is not on PATH. Output is ANSI-stripped before
+  the CRITICAL regex check (supports both `[CRITICAL]` and bare `CRITICAL` line
+  formats). Wraps with `timeout`/`gtimeout` when available; falls back to no
+  timeout on systems missing both (macOS without coreutils).
+- Verification (run by simulating `bash .husky/pre-commit` in this worktree
+  against a staged index — `core.hooksPath` points at the main repo, so a real
+  `git commit` here would invoke the old hook):
+  - Deliberate-violation `server/__test_violation__.ts` (UUID parseInt, raw
+    `req.body`, hardcoded JWT secret, secret in response): 4-5 CRITICAL findings,
+    hook exited 1.
+  - Docs-only commit (`.md` file): hook ran in ~0.7s with no kimi-review call.
+  - `.ts` file + `SKIP_KIMI_REVIEW=1`: hook exited 0 in ~1.7s with no
+    kimi-review call.
+- AC #5 (CLAUDE.md docs): `CLAUDE.md` is gitignored, so the bypass docs at
+  line 16 of the local `CLAUDE.md` are not propagated by this PR. Reviewers
+  on other machines must add the same line manually.
