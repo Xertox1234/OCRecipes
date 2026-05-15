@@ -1,9 +1,10 @@
 ---
 title: "Phase 2 Step 3 follow-up: 28 deferred LEARNINGS.md extractions"
-status: in-progress
+status: complete
 priority: low
 created: 2026-05-14
-updated: 2026-05-14
+updated: 2026-05-15
+completed: 2026-05-15
 assignee:
 labels: [deferred, docs, codification, phase-2]
 github_issue:
