@@ -309,7 +309,7 @@ describe("buildCoachContext", () => {
   });
 
   it("includes a breakfast suggestion before 11 AM", async () => {
-    vi.setSystemTime(new Date("2026-05-15T08:00:00"));
+    vi.setSystemTime(new Date(2026, 4, 15, 8, 0, 0));
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
     mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
@@ -322,7 +322,7 @@ describe("buildCoachContext", () => {
   });
 
   it("includes a recap suggestion at or after 5 PM", async () => {
-    vi.setSystemTime(new Date("2026-05-15T18:00:00"));
+    vi.setSystemTime(new Date(2026, 4, 15, 18, 0, 0));
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
     mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
