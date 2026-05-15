@@ -569,12 +569,13 @@ db.select({ recipeCount: count(cookbookRecipes.id) })
   .groupBy(cookbooks.id);
 ```
 
-**Rule:** Never interpolate `table.column` inside `sql` template strings. Use JOINs via the query builder instead.
+**Rule:** Never interpolate `table.column` inside `sql` template strings. Use JOINs via the query builder instead, OR use literal SQL column names (`cookbooks.id`, not `${cookbooks.id}`) inside the template when a correlated subquery is genuinely required (e.g., orphan-aware counts via `EXISTS`).
 
 **References:**
 
-- `server/storage/cookbooks.ts` — `getUserCookbooks()` uses LEFT JOIN + `count()` for recipe counts
-- `docs/LEARNINGS.md` — Full post-mortem under "Drizzle sql Template Parameterizes Column Refs"
+- `server/storage/cookbooks.ts` — `getUserCookbooks()` uses a correlated subquery with **literal** column refs (`cookbooks.id`, `meal_plan_recipes.id`, `community_recipes.id`) to count only non-orphaned junction rows. The literal-SQL form is required here because the LEFT JOIN + `count()` form cannot distinguish orphans from live recipes without `EXISTS` checks. Table-name interpolations (`${cookbookRecipes}`, etc.) are still used and are safe.
+- `docs/LEARNINGS.md` — "Pattern Doc Reference Drifted From Code — `getUserCookbooks` recipeCount Always 0 in Prod (2026-05-15)" documents a regression of this exact pattern.
+- `docs/LEARNINGS.md` — "Drizzle sql Template Parameterizes Column Refs in Subqueries (2026-03-23)" — original post-mortem.
 
 ### Pre-Fetched IDs to Avoid Redundant Queries
 

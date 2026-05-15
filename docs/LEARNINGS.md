@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Pattern Doc Reference Drifted From Code — `getUserCookbooks` recipeCount Always 0 in Prod (2026-05-15)](#pattern-doc-reference-drifted-from-code--getusercookbooks-recipecount-always-0-in-prod-2026-05-15)
 - [Prettier Reformats Generated Files After Commit, Breaking Byte-Equality Drift Checks (2026-05-11)](#prettier-reformats-generated-files-after-commit-breaking-byte-equality-drift-checks-2026-05-11)
 - [kimi-review on Cumulative Working-Tree Diff Re-Flags Earlier Audit Fixes (2026-05-11)](#kimi-review-on-cumulative-working-tree-diff-re-flags-earlier-audit-fixes-2026-05-11)
 - [Calorie Restriction Regex Missed 4-Digit Unsafe Targets (1000–1199 kcal) (2026-05-11)](#calorie-restriction-regex-missed-4-digit-unsafe-targets-10001199-kcal-2026-05-11)
@@ -78,6 +79,32 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## Pattern Doc Reference Drifted From Code — `getUserCookbooks` recipeCount Always 0 in Prod (2026-05-15)
+
+**Category:** Gotcha — Pattern documentation drift / Drizzle ORM
+
+`docs/patterns/database.md` → "Drizzle `sql` Template Treats `${column}` as Bound Parameters" (line 555) cited `server/storage/cookbooks.ts` → `getUserCookbooks()` as the canonical example of the **safe** form ("uses LEFT JOIN + `count()` for recipe counts"). The code had regressed to the **buggy** form — a correlated subquery interpolating `${cookbooks.id}`, `${mealPlanRecipes.id}`, and `${communityRecipes.id}` inside the `sql` template. Drizzle parameterized those interpolations as `$N` bound values, so the correlated subquery silently returned `0` for every cookbook. `recipeCount` was therefore always 0 in production for ~weeks before audit-2026-05-11 spawned the storage-test todo that uncovered it.
+
+**Root cause:**
+
+1. The original safe form (LEFT JOIN + `count()`) was refactored to a correlated subquery (`sql<number>` template) so that orphan junction rows could be excluded from the count via `EXISTS` checks against the target tables.
+2. The refactor used `${column}` interpolations for the correlated parent-table reference and the EXISTS join keys.
+3. Drizzle's `sql` template parameterizes every `${}` interpolation as `$N` — for table-name interpolations this is harmless (`${cookbookRecipes}` emits a qualified table name), but for column interpolations it emits a bound value, breaking the correlation. The subquery's `WHERE cr.cookbook_id = $N` (with $N = the integer value of `cookbooks.id` at the **outer** row when the subquery was planned, which is **always NULL/0 for a correlated reference**) returns zero rows.
+4. The fix (commit `6b953a5c`) replaces only the column interpolations with literal SQL (`cookbooks.id`, `meal_plan_recipes.id`, `community_recipes.id`); table interpolations remain.
+
+**Why tests didn't catch it earlier:** `getUserCookbooks` had **zero test coverage** before this work. The bug was invisible to type checks and unit tests of unrelated functions. The bug would have shown as "All cookbooks have 0 recipes" in the cookbook list UI, but the polymorphic FK resolution path (`getResolvedCookbookRecipes`, separate function) worked fine — so individual cookbook detail screens looked correct, masking the bug at the list level.
+
+**Practical takeaways:**
+
+1. **Pattern doc references aren't load-bearing.** When a pattern doc cites a file as "this is the right way to do X," treat it as **historical assertion**, not a guarantee. Code drifts; pattern docs lag. The fix is to add tests that verify the documented behavior, not to trust the doc.
+2. **Pre-existing zero-coverage storage modules are bug habitats.** This bug existed because `cookbooks.ts` had no tests. The audit-2026-05-11 testing finding was right to flag every untested storage module — even "looks simple" wrappers can have silent failures (correlated subquery returning 0 was hidden behind a `Number(r.recipeCount)` cast in `cookbooks.ts:59`).
+3. **Surgical fixes inside `sql` templates: column refs → literal SQL.** Drop the `${table.column}` form for correlated subqueries entirely; use the literal column name. Table interpolations are still safe and preferred over hard-coded names because schema renames will propagate.
+4. **Audit pattern: when a `sql<>` template returns unexpected counts/values, grep for `${.*\\..*}` inside the template first** — the parameterization bug is the most common cause and the cheapest to verify.
+
+**Related:** "Drizzle sql Template Parameterizes Column Refs in Subqueries (2026-03-23)" — same root cause discovered in a different file. The 2026-05-15 incident is evidence the failure mode recurs even after being documented, because pattern docs can't enforce themselves at the editor.
+
+---
 
 ## Prettier Reformats Generated Files After Commit, Breaking Byte-Equality Drift Checks (2026-05-11)
 
