@@ -2192,6 +2192,46 @@ describe("exportUserColumns", () => {
 
 **Why explicit per-factory describe blocks, not dynamic generation:** The variations above make `describe.each(Object.entries(factories))` awkward — you'd need a config map for special signatures (`createMockChatCompletion`), missing-id factories, and string-vs-number ID overrides. The smoke suite's job is shape verification; the "one describe per factory file" convention is enforced at code-review time, not by runtime introspection.
 
+### Local-Time `Date` Constructor for `vi.setSystemTime` Around Local-Time Accessors
+
+When a service reads **local-time** components from `new Date()` — `getHours()`, `getMinutes()`, `getDay()`, `getDate()` — the fake-system-time fixture must also be expressed in local time, or the test passes only in some timezones.
+
+**Why:** the ISO 8601 string forms parse differently:
+
+- `new Date("2026-05-15T08:00:00Z")` — explicit UTC.
+- `new Date("2026-05-15T08:00:00")` — per ECMA-262 it's **local time**, but the spec changed mid-stream and several engines have historically disagreed. Linters and reviewers commonly (and reasonably) flag this as "looks like UTC."
+- `new Date(2026, 4, 15, 8, 0, 0)` — unambiguously local time. Month is **0-indexed** (4 = May).
+
+Use the numeric-arg form for deterministic local-time fixtures:
+
+```typescript
+describe("buildCoachContext", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // 13:00 LOCAL — afternoon, neither breakfast (< 11) nor evening (>= 17).
+    // Month is 0-indexed in the Date constructor: 4 = May.
+    vi.setSystemTime(new Date(2026, 4, 15, 13, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("includes a breakfast suggestion before 11 AM", async () => {
+    vi.setSystemTime(new Date(2026, 4, 15, 8, 0, 0)); // 08:00 LOCAL
+    // ...
+  });
+});
+```
+
+**When to use:** any test whose subject calls `getHours`/`getMinutes`/`getDay`/`getDate` on a freshly-constructed `Date`.
+
+**When NOT to use:** code that reads from `getUTCHours`/`getUTCDay`/etc., or that compares `Date` objects directly. For those, `new Date("...Z")` (explicit UTC) is correct and clearer.
+
+**Reference:** `server/services/__tests__/coach-context-builder.test.ts` — the breakfast/recap-suggestion tests in `buildCoachContext`. The service's `new Date().getHours()` call drives time-of-day branching, so the timer fixture must be local-time.
+
+---
+
 ## Adding New Patterns
 
 When you establish a new pattern:
