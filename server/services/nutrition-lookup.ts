@@ -1067,9 +1067,10 @@ export async function lookupBarcode(
   const finalGrams = servingGrams || 100;
   const scale = finalGrams / 100;
 
-  // Populate barcodeNutrition table for Public API (fire-and-forget)
+  // Populate barcodeNutrition table for Public API (fire-and-forget).
+  // First-write-wins: existing rows are not overwritten by newer scans.
   storage
-    .upsertBarcodeNutrition({
+    .insertBarcodeNutritionIfAbsent({
       barcode: code,
       productName: resolvedProductName || null,
       brandName: resolvedBrandName || null,
@@ -1081,7 +1082,7 @@ export async function lookupBarcode(
       source,
     })
     .catch((err) => {
-      log.error({ err: toError(err) }, "failed to upsert barcodeNutrition");
+      log.error({ err: toError(err) }, "failed to insert barcodeNutrition");
     });
 
   return {

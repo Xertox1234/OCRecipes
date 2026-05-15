@@ -127,10 +127,12 @@ export async function getUsageStats(apiKeyId: number) {
 // ── Barcode Nutrition (unverified product data for free tier) ──────
 
 /**
- * Store barcode nutrition data. Uses onConflictDoNothing for idempotent inserts
- * — existing data is never overwritten by newer scans.
+ * Insert barcode nutrition data if absent. Uses onConflictDoNothing for
+ * idempotent inserts — existing data is never overwritten by newer scans
+ * (first-write-wins). For overwrite semantics, change to onConflictDoUpdate
+ * with an explicit conflict-resolution policy.
  */
-export async function upsertBarcodeNutrition(data: {
+export async function insertBarcodeNutritionIfAbsent(data: {
   barcode: string;
   productName?: string | null;
   brandName?: string | null;

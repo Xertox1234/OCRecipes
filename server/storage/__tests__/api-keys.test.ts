@@ -37,7 +37,7 @@ const {
   incrementUsage,
   getUsage,
   getUsageStats,
-  upsertBarcodeNutrition,
+  insertBarcodeNutritionIfAbsent,
   getBarcodeNutrition,
 } = await import("../api-keys");
 
@@ -447,12 +447,12 @@ describe("api-keys storage", () => {
   });
 
   // ==========================================================================
-  // upsertBarcodeNutrition
+  // insertBarcodeNutritionIfAbsent
   // ==========================================================================
 
-  describe("upsertBarcodeNutrition", () => {
+  describe("insertBarcodeNutritionIfAbsent", () => {
     it("inserts a new barcode row when none exists", async () => {
-      await upsertBarcodeNutrition({
+      await insertBarcodeNutritionIfAbsent({
         barcode: "0001234567890",
         productName: "Test Product",
         brandName: "Test Brand",
@@ -473,12 +473,12 @@ describe("api-keys storage", () => {
     });
 
     it("does NOT overwrite existing data on conflict (idempotent insert)", async () => {
-      await upsertBarcodeNutrition({
+      await insertBarcodeNutritionIfAbsent({
         barcode: "0009999999999",
         productName: "Original",
         source: "usda",
       });
-      await upsertBarcodeNutrition({
+      await insertBarcodeNutritionIfAbsent({
         barcode: "0009999999999",
         productName: "Updated",
         source: "api-ninjas",
@@ -493,7 +493,7 @@ describe("api-keys storage", () => {
     });
 
     it("accepts null/undefined optional fields", async () => {
-      await upsertBarcodeNutrition({
+      await insertBarcodeNutritionIfAbsent({
         barcode: "0008888888888",
         source: "cnf",
       });
@@ -524,7 +524,7 @@ describe("api-keys storage", () => {
     });
 
     it("returns the row matching the variant", async () => {
-      await upsertBarcodeNutrition({
+      await insertBarcodeNutritionIfAbsent({
         barcode: "0006666666666",
         productName: "Variant Match",
         source: "usda",
@@ -536,12 +536,12 @@ describe("api-keys storage", () => {
 
     it("returns the highest-priority match when multiple variants exist", async () => {
       // Insert two distinct barcodes
-      await upsertBarcodeNutrition({
+      await insertBarcodeNutritionIfAbsent({
         barcode: "0001111111111",
         productName: "Variant A (priority)",
         source: "usda",
       });
-      await upsertBarcodeNutrition({
+      await insertBarcodeNutritionIfAbsent({
         barcode: "0002222222222",
         productName: "Variant B",
         source: "usda",
@@ -564,7 +564,7 @@ describe("api-keys storage", () => {
     });
 
     it("returns the matching row when only a lower-priority variant exists in DB", async () => {
-      await upsertBarcodeNutrition({
+      await insertBarcodeNutritionIfAbsent({
         barcode: "0003333333333",
         productName: "Only This",
         source: "usda",
