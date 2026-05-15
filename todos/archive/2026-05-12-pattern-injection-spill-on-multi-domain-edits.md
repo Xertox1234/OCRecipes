@@ -1,9 +1,9 @@
 ---
 title: "Pattern injection spills to /tmp on 4-domain edits"
-status: backlog
+status: done
 priority: low
 created: 2026-05-12
-updated: 2026-05-12
+updated: 2026-05-15
 assignee:
 labels: [deferred, hooks, infrastructure]
 github_issue:
@@ -71,3 +71,7 @@ If trigger (b) fires (the spill mechanism is shown to cause failures in practice
 ### 2026-05-12
 
 - Initial creation. Spill problem identified during Phase 1 hook refactor (commit `8fa374d3`). Options (a)-(d) surveyed; (d) chosen for now pending Phase 2.
+
+### 2026-05-15
+
+- Implemented. Option (a) alone was empirically insufficient to clear the 9000-byte budget on the four representative paths — `server/routes/*.ts` still measured 9896 bytes and `server/storage/*.ts` measured 11696 bytes after suppressing typescript. Combined (a) with tightened TOC (4 head + 4 tail entries instead of 12+13, the original option (b)) and switched the printed pattern-doc header from `$PATTERNS_FILE` (worktree absolute path) to `docs/patterns/${DOMAIN}.md` (repo-relative). Final measurements: routes=6992, screens=7020, hooks=6221, storage=8737. All under 9000 with no `TRUNCATED` marker. Spill mechanism preserved and verified by forcibly overflowing a rules file in test.
