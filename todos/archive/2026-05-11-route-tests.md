@@ -1,6 +1,6 @@
 ---
 title: "HTTP-level tests for recipe-catalog, recipe-import, recipe-search routes"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-05-11
 updated: 2026-05-11

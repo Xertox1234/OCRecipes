@@ -1,6 +1,6 @@
 ---
 title: "Test coverage for coach-context-builder and profile-hub services"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-05-11
 updated: 2026-05-11
