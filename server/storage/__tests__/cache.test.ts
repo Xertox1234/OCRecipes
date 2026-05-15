@@ -14,6 +14,7 @@ import {
   createTestUser,
   getTestTx,
 } from "../../../test/db-test-utils";
+import { waitForCondition } from "../../../test/utils/wait-for";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 import type { SuggestionData } from "@shared/schema";
@@ -533,13 +534,20 @@ describe("cache storage", () => {
 
       // Read to trigger a hit increment
       await getMicronutrientCache("micro_reset");
-      // Small delay for the fire-and-forget update
-      await new Promise((r) => setTimeout(r, 50));
+      // Poll until the fire-and-forget hit increment lands (deterministic).
+      // 300ms is ~3× the original wall-clock wait so misfires surface fast.
+      const { eq } = await import("drizzle-orm");
+      await waitForCondition(async () => {
+        const [row] = await tx
+          .select({ hitCount: schema.micronutrientCache.hitCount })
+          .from(schema.micronutrientCache)
+          .where(eq(schema.micronutrientCache.queryKey, "micro_reset"));
+        return row?.hitCount === 1;
+      }, 300);
 
       // Upsert should reset hit count to 0
       await setMicronutrientCache("micro_reset", [{ a: 2 }], 60 * 60 * 1000);
 
-      const { eq } = await import("drizzle-orm");
       const [row] = await tx
         .select({ hitCount: schema.micronutrientCache.hitCount })
         .from(schema.micronutrientCache)
@@ -578,10 +586,17 @@ describe("cache storage", () => {
       await setMicronutrientCache("micro_hit", [{ n: 1 }], 60 * 60 * 1000);
 
       await getMicronutrientCache("micro_hit");
-      // Wait for the fire-and-forget update to complete
-      await new Promise((r) => setTimeout(r, 100));
-
+      // Poll until the fire-and-forget hit increment lands (deterministic).
+      // 300ms is ~3× the original wall-clock wait so misfires surface fast.
       const { eq } = await import("drizzle-orm");
+      await waitForCondition(async () => {
+        const [row] = await tx
+          .select({ hitCount: schema.micronutrientCache.hitCount })
+          .from(schema.micronutrientCache)
+          .where(eq(schema.micronutrientCache.queryKey, "micro_hit"));
+        return row?.hitCount === 1;
+      }, 300);
+
       const [row] = await tx
         .select({ hitCount: schema.micronutrientCache.hitCount })
         .from(schema.micronutrientCache)
