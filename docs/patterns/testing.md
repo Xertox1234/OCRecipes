@@ -2228,6 +2228,20 @@ describe("exportUserColumns", () => {
 
 **Why explicit per-factory describe blocks, not dynamic generation:** The variations above make `describe.each(Object.entries(factories))` awkward — you'd need a config map for special signatures (`createMockChatCompletion`), missing-id factories, and string-vs-number ID overrides. The smoke suite's job is shape verification; the "one describe per factory file" convention is enforced at code-review time, not by runtime introspection.
 
+### Coverage Threshold Ratcheting
+
+CI enforces a hard floor via `coverage.thresholds` in `vitest.config.ts` (global, not per-file). The script `npm run test:coverage:ci` runs the full suite with coverage and passes `--coverage.thresholds.autoUpdate=false` so a green CI run can never silently lower the bar.
+
+**How to raise thresholds when coverage genuinely improves:**
+
+1. Run `npm run test:coverage` locally and read the "All files" summary row.
+2. Edit `vitest.config.ts` → `test.coverage.thresholds` and bump each metric to **at most** the measured baseline minus a 2–4 point buffer (flaky test variance is real, especially across branches/functions).
+3. Never set a threshold above the measured baseline — CI will fail on the next push.
+4. Never enable `coverage.thresholds.autoUpdate: true`. That defeats the gate by rewriting thresholds to whatever last passed, including a regression.
+5. Per-file thresholds (`coverage.thresholds.perFile: true`) are intentionally not used — they're too noisy across a codebase with many small modules and one or two screen shells. Keep the floor global.
+
+If you intentionally add a large file that's hard to cover (UI shell, integration glue), exclude it via `coverage.exclude` rather than lowering thresholds for the whole repo.
+
 ## Typed Partial Express Request / Response Helpers
 
 Unit tests for pure helpers that read a handful of fields off `express.Request` or call `res.status().json()` should use the typed helpers in `server/__tests__/utils/express-mocks.ts` instead of `partial as unknown as express.Request` / `... as unknown as express.Response` casts. The helpers centralize the type bypass and return values typed as the full Express types, so call sites stay cast-free.
