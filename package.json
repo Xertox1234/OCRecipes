@@ -163,6 +163,9 @@
       "node scripts/check-accessibility.js",
       "node scripts/check-hardcoded-colors.js"
     ],
+    "client/components/**/__tests__/*.test.tsx": [
+      "node scripts/check-jsdom-pragma.js"
+    ],
     "server/storage/*.ts": [
       "node scripts/check-idor-storage.js"
     ],

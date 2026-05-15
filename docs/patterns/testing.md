@@ -1018,6 +1018,8 @@ vi.mocked(storage.getUser).mockResolvedValue(null as never);
 
 **Adding a new factory:** When a new table is added to `shared/schema.ts`, add a factory to the appropriate domain file (or create a new file) and re-export from `index.ts`. Fill in all required fields with sensible defaults.
 
+**Format-flexible columns: align defaults with a real production insert site.** When a schema column has no DB-level format constraint (bare `text`, `jsonb`, etc.) and is consumed by parsing logic, the factory default must match a string produced by a real production writer — not a plausible-looking guess. Grep for the writer (`String(recipeId)` in `server/storage/carousel.ts`, etc.) and copy the shape. A mismatched default produces rows that read-side parsers silently drop (e.g. `parseInt("community:1", 10)` → `NaN`), so tests pass while exercising none of the real parsing path. If multiple writers produce different shapes, comment which one the default matches and instruct callers to override per scenario.
+
 ### Storage Return Types: `undefined` for "Not Found"
 
 Storage functions that look up a single record return `T | undefined` (not `T | null`) when the record doesn't exist. This is enforced by Drizzle's `result[0]` pattern which yields `undefined` for empty results.
@@ -2171,6 +2173,24 @@ describe("exportUserColumns", () => {
 **Reference:** `server/storage/__tests__/export.test.ts` — guards the CCPA/PIPEDA data-export `users` projection.
 
 ---
+
+## Factory Smoke Tests: Per-Factory Variation Cheatsheet
+
+`server/__tests__/factories/__tests__/factories.test.ts` exercises every factory exported from `server/__tests__/factories/index.ts`. When adding a new factory, add a matching `describe` block. Before copy-pasting the canonical `it("creates valid defaults") + it("merges overrides")` pattern, check the factory's signature against these known variations — blanket-applying `toMatchObject({ id: 1 })` and `{ id: 99 }` overrides will fail for several existing factories.
+
+**ID shape varies per factory:**
+
+- `createMockUser` — `id: "1"` (string). Override must be `{ id: "99" }`, not `{ id: 99 }`.
+- `createMockNutritionData`, `createMockCookedNutrition` — no `id` field at all. Use `name` (or another required field) as the invariant.
+- `createMockResolvedFavouriteRecipe` — no `id`, uses `recipeId: 1` instead.
+- `createMockChatCompletion` — `id: "chatcmpl-test"` (string) AND a completely different `(content)` signature instead of `(overrides)`. Treat it as a shape test only; substitute by passing different `content` strings and asserting `choices[0].message.content`.
+
+**Date-vs-string fields:**
+
+- Most date fields are real `Date` instances — assert with `toBeInstanceOf(Date)`.
+- `createMockResolvedFavouriteRecipe.favouritedAt` is an **ISO string**, not a `Date`. Assert `typeof obj.favouritedAt === "string"` instead.
+
+**Why explicit per-factory describe blocks, not dynamic generation:** The variations above make `describe.each(Object.entries(factories))` awkward — you'd need a config map for special signatures (`createMockChatCompletion`), missing-id factories, and string-vs-number ID overrides. The smoke suite's job is shape verification; the "one describe per factory file" convention is enforced at code-review time, not by runtime introspection.
 
 ## Adding New Patterns
 

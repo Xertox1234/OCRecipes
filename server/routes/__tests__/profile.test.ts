@@ -16,6 +16,16 @@ vi.mock("../../storage", () => ({
   },
 }));
 
+// Capture floating fire-and-forget promises so tests can deterministically
+// await them rather than relying on microtask timing. See
+// docs/patterns/testing.md → "fireAndForget in tests".
+let lastFireAndForgetPromise: Promise<unknown> | null = null;
+vi.mock("../../lib/fire-and-forget", () => ({
+  fireAndForget: (_label: string, promise: Promise<unknown>) => {
+    lastFireAndForgetPromise = promise;
+  },
+}));
+
 vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
@@ -43,6 +53,7 @@ describe("Profile Routes", () => {
 
   beforeEach(() => {
     app = createApp();
+    lastFireAndForgetPromise = null;
   });
 
   describe("GET /api/user/dietary-profile", () => {
@@ -98,9 +109,10 @@ describe("Profile Routes", () => {
         .set("Authorization", "Bearer token")
         .send({ dietType: "keto" });
 
-      // Fire-and-forget — but the call is synchronous
-      // Need to wait a tick for the microtask to resolve
-      await new Promise((r) => setTimeout(r, 10));
+      // Deterministically await the captured fire-and-forget promise rather
+      // than racing a wall-clock or microtask tick.
+      expect(lastFireAndForgetPromise).not.toBeNull();
+      await lastFireAndForgetPromise;
       expect(storage.invalidateSuggestionCacheForUser).toHaveBeenCalledWith(
         "1",
       );
@@ -224,11 +236,10 @@ describe("Profile Routes", () => {
     });
 
     describe("health data consent", () => {
-      it("stamps healthDataConsentAt server-side when healthDataConsent is true", async () => {
+      it("forwards recordConsent=true to storage when healthDataConsent is true", async () => {
         vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
           mockProfile,
         );
-        const before = Date.now();
 
         await request(app)
           .post("/api/user/dietary-profile")
@@ -247,16 +258,17 @@ describe("Profile Routes", () => {
             healthDataConsent: true,
           });
 
-        const after = Date.now();
-        const [, profileData] = vi.mocked(storage.upsertProfileWithOnboarding)
-          .mock.calls[0];
-        expect(profileData.healthDataConsentAt).toBeInstanceOf(Date);
-        const stamped = (profileData.healthDataConsentAt as Date).getTime();
-        expect(stamped).toBeGreaterThanOrEqual(before);
-        expect(stamped).toBeLessThanOrEqual(after);
+        const [, profileData, recordConsent] = vi.mocked(
+          storage.upsertProfileWithOnboarding,
+        ).mock.calls[0];
+        expect(recordConsent).toBe(true);
+        // Timestamp is generated inside storage, never passed through the route.
+        expect(
+          (profileData as Record<string, unknown>).healthDataConsentAt,
+        ).toBeUndefined();
       });
 
-      it("omits healthDataConsentAt when healthDataConsent is false", async () => {
+      it("forwards recordConsent=false when healthDataConsent is false", async () => {
         vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
           mockProfile,
         );
@@ -278,14 +290,16 @@ describe("Profile Routes", () => {
             healthDataConsent: false,
           });
 
-        const [, profileData] = vi.mocked(storage.upsertProfileWithOnboarding)
-          .mock.calls[0];
+        const [, profileData, recordConsent] = vi.mocked(
+          storage.upsertProfileWithOnboarding,
+        ).mock.calls[0];
+        expect(recordConsent).toBe(false);
         expect(
           (profileData as Record<string, unknown>).healthDataConsentAt,
         ).toBeUndefined();
       });
 
-      it("omits healthDataConsentAt when consent flag is absent", async () => {
+      it("forwards recordConsent=false when consent flag is absent", async () => {
         vi.mocked(storage.upsertProfileWithOnboarding).mockResolvedValue(
           mockProfile,
         );
@@ -306,8 +320,10 @@ describe("Profile Routes", () => {
             cookingTimeAvailable: null,
           });
 
-        const [, profileData] = vi.mocked(storage.upsertProfileWithOnboarding)
-          .mock.calls[0];
+        const [, profileData, recordConsent] = vi.mocked(
+          storage.upsertProfileWithOnboarding,
+        ).mock.calls[0];
+        expect(recordConsent).toBe(false);
         expect(
           (profileData as Record<string, unknown>).healthDataConsentAt,
         ).toBeUndefined();
@@ -337,10 +353,12 @@ describe("Profile Routes", () => {
             healthDataConsent: false,
           });
 
-        const [, profileData] = vi.mocked(storage.upsertProfileWithOnboarding)
-          .mock.calls[0];
-        // Client value silently dropped (schema omits the field); server only
-        // stamps a Date when `healthDataConsent === true`.
+        const [, profileData, recordConsent] = vi.mocked(
+          storage.upsertProfileWithOnboarding,
+        ).mock.calls[0];
+        // Client value silently dropped (schema omits the field); the
+        // storage layer never receives a caller-supplied timestamp.
+        expect(recordConsent).toBe(false);
         expect(
           (profileData as Record<string, unknown>).healthDataConsentAt,
         ).toBeUndefined();
@@ -349,7 +367,7 @@ describe("Profile Routes", () => {
   });
 
   describe("PUT /api/user/dietary-profile health data consent", () => {
-    it("stamps healthDataConsentAt server-side when consent flag is true", async () => {
+    it("forwards recordConsent=true to storage when consent flag is true", async () => {
       vi.mocked(storage.updateUserProfile).mockResolvedValue(mockProfile);
 
       await request(app)
@@ -357,17 +375,20 @@ describe("Profile Routes", () => {
         .set("Authorization", "Bearer token")
         .send({ healthDataConsent: true });
 
-      const [, updates] = vi.mocked(storage.updateUserProfile).mock.calls[0];
+      const [, updates, recordConsent] = vi.mocked(storage.updateUserProfile)
+        .mock.calls[0];
+      expect(recordConsent).toBe(true);
+      // Timestamp is generated inside storage, never passed through the route.
       expect(
-        (updates as Record<string, unknown>).healthDataConsentAt,
-      ).toBeInstanceOf(Date);
+        "healthDataConsentAt" in (updates as Record<string, unknown>),
+      ).toBe(false);
       // Transient intent flag must not be passed to storage as a column.
       expect("healthDataConsent" in (updates as Record<string, unknown>)).toBe(
         false,
       );
     });
 
-    it("does not touch healthDataConsentAt when consent flag is absent", async () => {
+    it("forwards recordConsent=false when consent flag is absent", async () => {
       vi.mocked(storage.updateUserProfile).mockResolvedValue(mockProfile);
 
       await request(app)
@@ -375,7 +396,9 @@ describe("Profile Routes", () => {
         .set("Authorization", "Bearer token")
         .send({ dietType: "vegan" });
 
-      const [, updates] = vi.mocked(storage.updateUserProfile).mock.calls[0];
+      const [, updates, recordConsent] = vi.mocked(storage.updateUserProfile)
+        .mock.calls[0];
+      expect(recordConsent).toBe(false);
       expect(
         "healthDataConsentAt" in (updates as Record<string, unknown>),
       ).toBe(false);

@@ -76,6 +76,9 @@ jobs:
       - name: IDOR storage check
         run: node scripts/check-idor-storage.js
 
+      - name: JSDOM pragma check
+        run: node scripts/check-jsdom-pragma.js
+
       - name: Verify .github/copilot-instructions.md is current
         run: npm run build:copilot-instructions:check
 
