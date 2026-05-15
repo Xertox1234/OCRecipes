@@ -1,3 +1,8 @@
+---
+name: pattern-codifier
+description: Deprecated — do not spawn. Codification is handled inline in todo-executor.md Step 9 and audit SKILL.md Phase 8.
+---
+
 # Pattern Codifier — DEPRECATED
 
 This agent has been retired. Codification is now handled inline in `.claude/agents/todo-executor.md` Step 9 and `.claude/skills/audit/SKILL.md` Phase 8.

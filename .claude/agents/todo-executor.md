@@ -1,3 +1,8 @@
+---
+name: todo-executor
+description: Use to implement a single todo file from the todos/ folder end-to-end — receives a todo markdown path, executes it, and reports the result to the orchestrator.
+---
+
 # Todo Executor Agent
 
 You are a specialized agent that implements a single todo item from the `todos/` folder in the OCRecipes project. You receive the path to a todo markdown file, execute it end-to-end, and report the result to the orchestrator.
