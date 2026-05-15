@@ -244,6 +244,42 @@ it("cleans up orphans", async () => {
 - `server/storage/__tests__/favourite-recipes.test.ts` — 24 integration tests
 - `test/db-test-utils.ts` — shared transaction setup/teardown utilities
 
+**Gotcha — storage `db.transaction()` must emit SAVEPOINT, not BEGIN/COMMIT:** Drizzle's `NodePgSession.transaction(cb)` issues a top-level `BEGIN/COMMIT` pair, while `NodePgTransaction.transaction(cb)` issues `SAVEPOINT/RELEASE SAVEPOINT`. If `setupTestTransaction()` hands back a plain `NodePgDatabase`, any storage function that internally calls `db.transaction(cb)` (e.g. `submitVerification`, `createChatMessage`) issues an inner `COMMIT` that ends the **outer test transaction** — and every subsequent write leaks past `rollbackTestTransaction()` into the real DB. Fix by returning a `NodePgTransaction` instance from `setupTestTransaction()`, so nested `db.transaction()` calls emit savepoints that unwind with the outer ROLLBACK. The sentinel-throw pattern keeps the outer transaction open between `beforeEach` and `afterEach`:
+
+```typescript
+// test/db-test-utils.ts
+const ROLLBACK_SENTINEL = { __testRollback: true };
+
+export async function setupTestTransaction() {
+  const client = await pool.connect();
+  const db = drizzle(client, { schema });
+  // Capture the inner NodePgTransaction Drizzle yields to its callback.
+  let resolveReady: (tx: NodePgDatabase<typeof schema>) => void;
+  const ready = new Promise<NodePgDatabase<typeof schema>>((r) => {
+    resolveReady = r;
+  });
+  let rejectSignal: (err: unknown) => void;
+  const signal = new Promise<never>((_, rej) => {
+    rejectSignal = rej;
+  });
+  const outer = db
+    .transaction(async (tx) => {
+      resolveReady(tx as unknown as NodePgDatabase<typeof schema>);
+      await signal; // parks until rollback is triggered; always rejects
+    })
+    .catch((err) => {
+      if (err !== ROLLBACK_SENTINEL) throw err;
+    });
+  const tx = await ready;
+  // Store `() => rejectSignal(ROLLBACK_SENTINEL)` and `outer` for rollback.
+  return tx;
+}
+```
+
+Verify rollback removed the row via a **separate pool client** — MVCC inside the rolled-back connection cannot see the row regardless of whether the bug is fixed, so an in-transaction assertion always passes. See `test/db-test-utils.test.ts` for the regression test.
+
+**Gotcha — `CURRENT_TIMESTAMP` is fixed inside one test transaction:** Once the savepoint isolation above is correct, every nested `db.transaction()` runs inside the same outer transaction. PostgreSQL freezes `CURRENT_TIMESTAMP` and `now()` at transaction start, so two consecutive `createX()` calls land identical `createdAt` values. Any test that relies on `ORDER BY createdAt` between such inserts becomes non-deterministic. Backdate explicitly with `tx.update(...).set({ createdAt: new Date(base - N) })` after the insert — do not use `setTimeout` between calls. See `server/storage/__tests__/chat.test.ts` (`getChatMessages > returns messages ordered by createdAt asc`) and the rule in `docs/rules/database.md`.
+
 ### Dual-Assertion IDOR Test
 
 When writing integration tests for functions that enforce cross-user data ownership, assert **both** the return value and the database state. Return value alone cannot catch a bug where the function returns `null` but still commits a side-effect write — two independent failure modes require two independent checks.
