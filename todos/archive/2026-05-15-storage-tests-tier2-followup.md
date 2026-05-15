@@ -1,6 +1,6 @@
 ---
 title: "Tier 2 follow-up: tests for 9 remaining untested storage modules"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-05-15
 updated: 2026-05-15
@@ -21,15 +21,15 @@ The audit-2026-05-11 testing finding flagged 12 storage modules with zero covera
 
 ## Acceptance Criteria
 
-- [ ] `server/storage/__tests__/receipt.test.ts` (42 LOC source — small, fast)
-- [ ] `server/storage/__tests__/recipe-from-chat.test.ts` — `saveRecipeFromChat` lineage tracking (referenced in audit 2026-05-09 changelog)
-- [ ] `server/storage/__tests__/reminders.test.ts` (88 LOC source)
-- [ ] `server/storage/__tests__/batch.test.ts` (166 LOC source)
-- [ ] `server/storage/__tests__/meal-plan-recipes.test.ts` (554 LOC source — likely needs its own todo if it grows)
-- [ ] `server/storage/__tests__/meal-plan-items.test.ts` (197 LOC source)
-- [ ] `server/storage/__tests__/meal-plan-analytics.test.ts` (255 LOC source)
-- [ ] `server/storage/__tests__/push-tokens.test.ts` (55 LOC source — small)
-- [ ] `server/storage/__tests__/profile-hub.test.ts` (73 LOC source — small)
+- [x] `server/storage/__tests__/receipt.test.ts` (42 LOC source — small, fast)
+- [x] `server/storage/__tests__/recipe-from-chat.test.ts` — `saveRecipeFromChat` lineage tracking (referenced in audit 2026-05-09 changelog)
+- [x] `server/storage/__tests__/reminders.test.ts` (88 LOC source)
+- [x] `server/storage/__tests__/batch.test.ts` (166 LOC source)
+- [x] `server/storage/__tests__/meal-plan-recipes.test.ts` — split into `todos/2026-05-15-meal-plan-recipes-tests.md` (554 LOC source; parent line flagged the split as likely needed, and 8 other test files already make this PR sizeable)
+- [x] `server/storage/__tests__/meal-plan-items.test.ts` (197 LOC source)
+- [x] `server/storage/__tests__/meal-plan-analytics.test.ts` (255 LOC source)
+- [x] `server/storage/__tests__/push-tokens.test.ts` (55 LOC source — small)
+- [x] `server/storage/__tests__/profile-hub.test.ts` (73 LOC source — small)
 
 ## Implementation Notes
 
@@ -51,3 +51,4 @@ The audit-2026-05-11 testing finding flagged 12 storage modules with zero covera
 ### 2026-05-15
 
 - Created from the Tier 2 leftovers of `todos/archive/2026-05-11-storage-tests-medium.md`.
+- Added the 8 small/medium test files. The 554-LOC `meal-plan-recipes.ts` test was split into `todos/2026-05-15-meal-plan-recipes-tests.md` per the parent acceptance line's own caveat, to keep this PR reviewable. The 8 files added ~75 tests via the transaction-rollback + per-test-unique-id patterns; no source code under test was modified.
