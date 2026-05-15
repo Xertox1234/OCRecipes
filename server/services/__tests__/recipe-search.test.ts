@@ -237,6 +237,9 @@ describe("communityToSearchable", () => {
   });
 
   it("handles null/empty ingredients", () => {
+    // Cast: deliberately injects `null` to exercise the function's null-guard
+    // branch; `CommunityRecipe.ingredients` is typed non-nullable but legacy
+    // DB rows can carry NULL (`.default([])` without `.notNull()`).
     const recipe: CommunityRecipe = {
       ...baseCommunityRecipe,
       ingredients: null as unknown as [],

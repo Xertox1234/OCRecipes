@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
 import React from "react";
+import * as RN from "react-native";
 
 import { ThemeProvider, useThemePreference } from "../ThemeContext";
 
-const { mockAsyncStorage, mockSystemColorScheme } = vi.hoisted(() => ({
+const { mockAsyncStorage } = vi.hoisted(() => ({
   mockAsyncStorage: {} as Record<string, string>,
-  mockSystemColorScheme: { value: "light" as "light" | "dark" | null },
 }));
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
@@ -25,13 +25,6 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
-// Override the global react-native mock to make useColorScheme controllable
-vi.mock("react-native", () => ({
-  Platform: { OS: "ios", select: (obj: Record<string, unknown>) => obj.ios },
-  useColorScheme: () => mockSystemColorScheme.value,
-  StyleSheet: { create: <T>(s: T): T => s },
-}));
-
 vi.mock("@/hooks/useTheme", () => ({
   registerThemeContext: vi.fn(),
 }));
@@ -45,9 +38,15 @@ function createWrapper() {
 
 describe("ThemeContext", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
     Object.keys(mockAsyncStorage).forEach((k) => delete mockAsyncStorage[k]);
-    mockSystemColorScheme.value = "light";
+    // Default useColorScheme to "light"; tests override via spyOn as needed.
+    vi.spyOn(RN, "useColorScheme").mockReturnValue("light");
+  });
+
+  afterEach(() => {
+    // restoreAllMocks() undoes the useColorScheme spy. vi.clearAllMocks() in
+    // test/setup.ts only clears call history.
+    vi.restoreAllMocks();
   });
 
   describe("useThemePreference", () => {
@@ -72,7 +71,7 @@ describe("ThemeContext", () => {
     });
 
     it("resolves system preference to dark when system is dark", async () => {
-      mockSystemColorScheme.value = "dark";
+      vi.spyOn(RN, "useColorScheme").mockReturnValue("dark");
 
       const wrapper = createWrapper();
       const { result } = renderHook(() => useThemePreference(), { wrapper });
@@ -128,7 +127,7 @@ describe("ThemeContext", () => {
     });
 
     it("explicit light preference overrides dark system scheme", async () => {
-      mockSystemColorScheme.value = "dark";
+      vi.spyOn(RN, "useColorScheme").mockReturnValue("dark");
 
       const wrapper = createWrapper();
       const { result } = renderHook(() => useThemePreference(), { wrapper });
@@ -146,7 +145,7 @@ describe("ThemeContext", () => {
     });
 
     it("falls back to light when system color scheme is null", async () => {
-      mockSystemColorScheme.value = null;
+      vi.spyOn(RN, "useColorScheme").mockReturnValue(null);
 
       const wrapper = createWrapper();
       const { result } = renderHook(() => useThemePreference(), { wrapper });

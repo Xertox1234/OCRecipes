@@ -1,6 +1,6 @@
 ---
 title: "Document the hardcoded PATTERNS_URL_BASE with a rename caveat"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-05-11
 updated: 2026-05-11

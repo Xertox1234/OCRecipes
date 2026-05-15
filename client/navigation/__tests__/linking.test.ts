@@ -8,6 +8,9 @@ describe("linking config", () => {
   });
 
   it("configures FeaturedRecipeDetail path with numeric parse", () => {
+    // Cast: React Navigation's linking config types screen entries as a
+    // discriminated union of `string | { path; parse?; screens? }`; narrow to
+    // the object variant to read `.path` and `.parse`.
     const recipeDetail = linking.config!.screens
       .FeaturedRecipeDetail as unknown as {
       path: string;
@@ -40,6 +43,7 @@ describe("linking config", () => {
   });
 
   it("returns 0 when recipeId parse receives a non-numeric string", () => {
+    // Cast: see above — narrow union to the object variant for `.parse`.
     const recipeDetail = linking.config!.screens
       .FeaturedRecipeDetail as unknown as {
       path: string;

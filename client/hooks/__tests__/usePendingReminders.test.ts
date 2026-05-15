@@ -11,17 +11,11 @@ vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
 
-vi.mock("react-native", () => ({
-  AppState: {
-    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
-  },
-}));
+// AppState is provided as a vi.fn()-based mock by test/mocks/react-native.ts —
+// no inline RN re-mock needed. vi.clearAllMocks() in test/setup.ts clears call
+// history between tests, so the AppState.addEventListener spy stays usable.
 
 describe("usePendingReminders", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it("returns hasPending: true when the API reports pending reminders", async () => {
     const { wrapper } = createQueryWrapper();
     mockApiRequest.mockResolvedValue({

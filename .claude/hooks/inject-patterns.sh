@@ -40,10 +40,6 @@ add_domain() {
 [[ "$FILE_PATH" == */server/middleware/* || "$FILE_PATH" == server/middleware/* ]] && \
   { add_domain security; add_domain api; }
 
-# LLM-touching services → ai-prompting (architecture comes from the generic
-# server/services rule below). Keep this list aligned with
-# scripts/delegate-copilot-issue.ts LLM_TOUCHING_SERVICES and the
-# `server/services/<llm-touching>.ts` row in .github/copilot-instructions.md.
 [[ "$FILE_PATH" == */server/services/photo-analysis.ts   || \
    "$FILE_PATH" == */server/services/nutrition-coach.ts  || \
    "$FILE_PATH" == */server/services/recipe-chat.ts      || \
@@ -51,24 +47,17 @@ add_domain() {
    "$FILE_PATH" == server/services/photo-analysis.ts     || \
    "$FILE_PATH" == server/services/nutrition-coach.ts    || \
    "$FILE_PATH" == server/services/recipe-chat.ts        || \
-   "$FILE_PATH" == server/services/recipe-generation.ts ]] && \
-  add_domain ai-prompting
-
-# evals/* → ai-prompting + testing (the copilot-instructions table maps
-# `evals/**` to {ai-prompting, testing}; security is not part of that mapping).
-[[ "$FILE_PATH" == */evals/* || "$FILE_PATH" == evals/* ]] && \
-  { add_domain ai-prompting; add_domain testing; }
+   "$FILE_PATH" == server/services/recipe-generation.ts  || \
+   "$FILE_PATH" == */evals/* || "$FILE_PATH" == evals/* ]] && \
+  { add_domain ai-prompting; add_domain security; }
 
 # All server/services get architecture (including the AI ones above)
 [[ "$FILE_PATH" == */server/services/* || "$FILE_PATH" == server/services/* ]] && \
   add_domain architecture
 
-[[ "$FILE_PATH" == */client/screens/* || "$FILE_PATH" == client/screens/* ]] && \
+[[ "$FILE_PATH" == */client/screens/*     || "$FILE_PATH" == client/screens/*     || \
+   "$FILE_PATH" == */client/components/*  || "$FILE_PATH" == client/components/* ]] && \
   { add_domain react-native; add_domain design-system; add_domain accessibility; }
-
-# client/components/** additionally gets performance per the copilot-instructions table.
-[[ "$FILE_PATH" == */client/components/* || "$FILE_PATH" == client/components/* ]] && \
-  { add_domain react-native; add_domain design-system; add_domain accessibility; add_domain performance; }
 
 [[ "$FILE_PATH" == */client/navigation/* || "$FILE_PATH" == client/navigation/* ]] && \
   { add_domain react-native; add_domain accessibility; }
@@ -84,27 +73,22 @@ add_domain() {
    "$FILE_PATH" == */design_guidelines.md      || "$FILE_PATH" == design_guidelines.md ]] && \
   add_domain design-system
 
-# .github/workflows/** → architecture + testing
-[[ "$FILE_PATH" == */.github/workflows/* || "$FILE_PATH" == .github/workflows/* ]] && \
-  { add_domain architecture; add_domain testing; }
-
-# Root tool configs → testing + typescript (eslint.config.* is .js so the
-# .ts/.tsx fallback wouldn't add typescript automatically — pin it here).
-case "$FILE_PATH" in
-  */vitest.config.*|vitest.config.*|*/eslint.config.*|eslint.config.*)
-    add_domain testing; add_domain typescript ;;
-esac
-
 # Test files accumulate testing domain regardless of their enclosing directory
 [[ "$FILE_PATH" == */__tests__/* || "$FILE_PATH" == __tests__/* || \
    "$FILE_PATH" == *.test.ts     || "$FILE_PATH" == *.test.tsx  || \
    "$FILE_PATH" == *.spec.ts     || "$FILE_PATH" == *.spec.tsx ]] && \
   add_domain testing
 
-# Always add typescript for .ts/.tsx files
-case "$FILE_PATH" in
-  *.ts|*.tsx) add_domain typescript ;;
-esac
+# Add typescript for .ts/.tsx files ONLY when no more-specific domain matched.
+# Rationale: typescript rules are mostly general knowledge; project-specific TS conventions
+# are already covered by more-specific domains (api, react-native, etc.). Suppressing
+# typescript-on-top keeps the 4-domain stack under the 9000-byte spill threshold while
+# preserving typescript guidance as the fallback for pure type-utility files (e.g. shared/).
+if [ -z "$DOMAINS" ]; then
+  case "$FILE_PATH" in
+    *.ts|*.tsx) add_domain typescript ;;
+  esac
+fi
 
 # Build context in a temp file (avoids subshell newline stripping)
 TMPFILE=$(mktemp)
@@ -128,6 +112,10 @@ if [ -n "$DOMAINS" ]; then
   for DOMAIN in "${DOMAIN_LIST[@]}"; do
     RULES_FILE="$RULES_DIR/${DOMAIN}.md"
     PATTERNS_FILE="$PATTERNS_DIR/${DOMAIN}.md"
+    # Use repo-relative paths in printed headers — saves ~100 bytes per header in
+    # worktrees where PROJECT_ROOT is a deep absolute path, and matches how files
+    # are referenced elsewhere (CLAUDE.md, docs).
+    PATTERNS_REL="docs/patterns/${DOMAIN}.md"
 
     # Inject full rules file (short by design)
     if [ -f "$RULES_FILE" ]; then
@@ -137,23 +125,24 @@ if [ -n "$DOMAINS" ]; then
 
     # Inject subsection TOC for this domain's pattern doc.
     # Line-numbered headings let Claude jump straight to a relevant subsection with Read
-    # instead of forcing a fixed-position excerpt. First 12 + last 13 entries keeps
-    # foundational primitives (top of file) AND recent codifications (bottom of file),
-    # avoiding both the head-only freshness inversion and the tail-only loss of load-bearing
-    # early sections.
+    # instead of forcing a fixed-position excerpt. First 4 + last 4 entries keeps
+    # foundational primitives (top of file) AND recent codifications (bottom of file)
+    # while staying small enough that the 4-domain stack (e.g. database+security+
+    # architecture + accessibility for storage files) fits under the 9000-byte spill
+    # threshold. Original 12+13 layout consistently overflowed for routes/storage paths.
     if [ -f "$PATTERNS_FILE" ]; then
       printf '\n[PATTERNS — %s (table of contents — Read %s:<line> for the body)]\n' \
-        "$DOMAIN" "$PATTERNS_FILE" >> "$TMPFILE"
+        "$DOMAIN" "$PATTERNS_REL" >> "$TMPFILE"
       ALL_HEADINGS=$(grep -nE '^(### |#### )' "$PATTERNS_FILE" 2>/dev/null || true)
       if [ -n "$ALL_HEADINGS" ]; then
         HEADING_COUNT=$(printf '%s\n' "$ALL_HEADINGS" | wc -l | tr -d ' ')
-        if [ "$HEADING_COUNT" -le 25 ]; then
+        if [ "$HEADING_COUNT" -le 8 ]; then
           printf '%s\n' "$ALL_HEADINGS" >> "$TMPFILE"
         else
-          printf '%s\n' "$ALL_HEADINGS" | head -n 12 >> "$TMPFILE"
+          printf '%s\n' "$ALL_HEADINGS" | head -n 4 >> "$TMPFILE"
           printf '... (%d middle subsections omitted — Read %s for the full TOC)\n' \
-            "$((HEADING_COUNT - 25))" "$PATTERNS_FILE" >> "$TMPFILE"
-          printf '%s\n' "$ALL_HEADINGS" | tail -n 13 >> "$TMPFILE"
+            "$((HEADING_COUNT - 8))" "$PATTERNS_REL" >> "$TMPFILE"
+          printf '%s\n' "$ALL_HEADINGS" | tail -n 4 >> "$TMPFILE"
         fi
       fi
     fi

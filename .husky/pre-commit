@@ -1,1 +1,70 @@
-NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false
+#!/usr/bin/env bash
+# Pre-commit hook: lint-staged + kimi-review staged-diff review.
+#
+# kimi-review runs after lint-staged when .ts/.tsx files are staged. CRITICAL
+# findings block the commit; WARNING findings print but do not block.
+#
+# Bypass: set SKIP_KIMI_REVIEW=1 to skip review (lint-staged still runs).
+# Auto-skips when kimi-review is not on PATH so devs without the tool aren't blocked.
+
+NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false || exit 1
+
+if [ "$SKIP_KIMI_REVIEW" = "1" ]; then
+  exit 0
+fi
+
+if ! command -v kimi-review >/dev/null 2>&1; then
+  exit 0
+fi
+
+# Skip review when no .ts/.tsx changes are staged — kimi-review on docs/config
+# only commits is wasted tokens.
+if ! git diff --cached --name-only --diff-filter=ACM | grep -qE '\.(ts|tsx)$'; then
+  exit 0
+fi
+
+REVIEW_DIFF=$(git diff --cached -- '*.ts' '*.tsx')
+if [ -z "$REVIEW_DIFF" ]; then
+  exit 0
+fi
+
+# Wrap kimi-review with `timeout` when available (GNU coreutils, Linux/CI; on
+# macOS install via `brew install coreutils` for `gtimeout`). If neither is
+# present, run without a timeout — better than a missing-binary hook failure.
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_CMD="timeout 120"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_CMD="gtimeout 120"
+else
+  TIMEOUT_CMD=""
+fi
+
+REVIEW_RAW=$(printf '%s' "$REVIEW_DIFF" | NO_COLOR=1 $TIMEOUT_CMD kimi-review \
+  --scope "pre-commit staged diff" \
+  --tiers CRITICAL,WARNING \
+  --profile ocrecipes 2>&1)
+REVIEW_STATUS=$?
+# Strip ANSI escape codes so the CRITICAL gate isn't bypassed by colored output.
+REVIEW_OUTPUT=$(printf '%s' "$REVIEW_RAW" | sed $'s/\x1b\\[[0-9;]*m//g')
+
+printf '%s\n' "$REVIEW_OUTPUT"
+
+# Check for CRITICAL findings FIRST, before any tool-failure short-circuit —
+# kimi-review may print findings and still exit non-zero, and we don't want
+# a crash-after-detection to silently let CRITICAL findings land.
+if printf '%s' "$REVIEW_OUTPUT" | grep -qE '^\[?CRITICAL\]?[[:space:]]'; then
+  echo "" >&2
+  echo "Commit blocked: kimi-review reported CRITICAL findings above." >&2
+  echo "Fix the issues or set SKIP_KIMI_REVIEW=1 to bypass." >&2
+  exit 1
+fi
+
+if [ $REVIEW_STATUS -eq 124 ]; then
+  echo "kimi-review timed out after 120s; skipping gate." >&2
+  exit 0
+fi
+
+if [ $REVIEW_STATUS -ne 0 ]; then
+  echo "kimi-review failed to run (exit $REVIEW_STATUS); skipping gate." >&2
+  exit 0
+fi

@@ -3,10 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    # Docs-only pushes are skipped to keep CI cheap. The companion workflow
-    # `.github/workflows/copilot-instructions-check.yml` runs the drift check
-    # whenever `docs/rules/**` changes, so this ignore cannot hide a stale
-    # `.github/copilot-instructions.md`.
     paths-ignore:
       - "**/*.md"
       - "docs/**"
@@ -19,9 +15,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Lint · Types · Tests
+  checks:
+    name: Lint · Types · Patterns
     runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run check:types
+
+      - name: Accessibility patterns
+        run: node scripts/check-accessibility.js
+
+      - name: Hardcoded colors
+        run: node scripts/check-hardcoded-colors.js
+
+      - name: IDOR storage check
+        run: node scripts/check-idor-storage.js
+
+      - name: JSDOM pragma check
+        run: node scripts/check-jsdom-pragma.js
+
+      - name: Verify .github/copilot-instructions.md is current
+        run: npm run build:copilot-instructions:check
+
+  test:
+    name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    needs: checks
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     services:
       postgres:
@@ -65,26 +103,54 @@ jobs:
       - name: Push database schema
         run: npm run db:push
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Type check
-        run: npm run check:types
-
-      - name: Accessibility patterns
-        run: node scripts/check-accessibility.js
-
-      - name: Hardcoded colors
-        run: node scripts/check-hardcoded-colors.js
-
-      - name: IDOR storage check
-        run: node scripts/check-idor-storage.js
-
-      - name: JSDOM pragma check
-        run: node scripts/check-jsdom-pragma.js
-
-      - name: Verify .github/copilot-instructions.md is current
-        run: npm run build:copilot-instructions:check
-
       - name: Tests
-        run: npm run test:run
+        run: npm run test:run -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
+  coverage:
+    name: Coverage thresholds
+    runs-on: ubuntu-latest
+    needs: checks
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocrecipes
+          POSTGRES_PASSWORD: ocrecipes
+          POSTGRES_DB: ocrecipes_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
+      JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
+      LOG_LEVEL: silent
+      AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
+      USDA_API_KEY: stub
+      API_NINJAS_KEY: stub
+      RECEIPT_VALIDATION_STUB: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Enable pg_trgm extension
+        run: psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+      - name: Push database schema
+        run: npm run db:push
+
+      - name: Tests (with coverage)
+        run: npm run test:coverage:ci

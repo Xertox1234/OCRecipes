@@ -80,7 +80,7 @@ The code-reviewer subagent reviewed this range against the full rubric in
       motion is reduced (apply `opacity: 0.7` as a static style).
 - [x] **M-3** Persist `judgeModel` per case —
       `evals/runner.ts:120-132` destructures only `{ scores,
-    calorieAssertionPassed }` from `judgeResponse`, dropping
+calorieAssertionPassed }` from `judgeResponse`, dropping
       `judgeModel`. Add `judgeModel: string` to `EvalCaseResult`
       (`evals/types.ts:106-117`) and populate in `evaluateCase`. Required
       by the "Version-Anchor LLM Models in Persisted Results" pattern —
@@ -88,7 +88,7 @@ The code-reviewer subagent reviewed this range against the full rubric in
 - [x] **M-4** `coach_notebook.dedupeKey` NULL rows bypass uniqueness —
       `shared/schema.ts:1439` keeps `dedupeKey` nullable for legacy rows.
       Postgres treats NULLs as distinct, so `onConflictDoNothing({ target:
-    coachNotebook.dedupeKey })` in `server/storage/coach-notebook.ts:55-59`
+coachNotebook.dedupeKey })` in `server/storage/coach-notebook.ts:55-59`
       doesn't protect paths that forget to set the key. Either backfill
       legacy rows with synthetic fingerprints + `NOT NULL`, or add a
       log-warn in `createNotebookEntries` when entries arrive without a
@@ -97,13 +97,13 @@ The code-reviewer subagent reviewed this range against the full rubric in
 ### Low
 
 - [x] **L-1** `server/routes/recipes.ts:370` uses inline `const { authorId:
-    _, ...safeRecipe } = recipe;` — other handlers (lines 60, 99) and
+_, ...safeRecipe } = recipe;` — other handlers (lines 60, 99) and
       `recipe-search.ts:109` use the shared `stripAuthorId()` helper.
       Either extend `_recipe-helpers.ts` with a `stripAuthorIdOne()`
       variant or call `stripAuthorId([recipe])[0]`.
 - [x] **L-2** `server/routes/recipe-import.ts:93-96, 221-228` catch blocks
       use `logger.error + sendError` instead of `handleRouteError(res,
-    err, "context")`. ZodErrors currently pre-parse via `.safeParse()`
+err, "context")`. ZodErrors currently pre-parse via `.safeParse()`
       so no Zod instance reaches the catch, but normalize the pattern per
       audit M14.
 - [x] **L-3** `recipe-import.ts:22-30` URL schema `max(2000)` allows

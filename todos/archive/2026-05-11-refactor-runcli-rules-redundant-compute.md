@@ -1,6 +1,6 @@
 ---
 title: "Eliminate redundant computation of Project Rules in runCli live mode"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-05-11
 updated: 2026-05-11

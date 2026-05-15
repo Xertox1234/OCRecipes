@@ -1,6 +1,6 @@
 ---
 title: "Test coverage for api-keys and verification storage modules"
-status: in-progress
+status: complete
 priority: high
 created: 2026-05-11
 updated: 2026-05-11

@@ -468,6 +468,8 @@ describe("carousel-builder", () => {
         ...mockCommunityRecipes[0],
         id: 41,
         title: "Mystery Food",
+        // Cast: legacy DB rows may carry NULL for `mealTypes` (`.default([])`
+        // without `.notNull()`); inject null to exercise the boost-skip path.
         mealTypes: null as unknown as string[],
       };
       // DB returns null-mealTypes first (more recent), breakfast second

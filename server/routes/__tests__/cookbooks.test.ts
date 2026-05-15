@@ -268,6 +268,7 @@ describe("Cookbook Routes", () => {
         1,
         10,
         "mealPlan",
+        "1",
       );
     });
   });
@@ -306,6 +307,7 @@ describe("Cookbook Routes", () => {
         1,
         10,
         "mealPlan",
+        "1",
       );
     });
 
@@ -322,6 +324,7 @@ describe("Cookbook Routes", () => {
         1,
         10,
         "community",
+        "1",
       );
     });
   });

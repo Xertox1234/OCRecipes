@@ -148,6 +148,8 @@ describe("Admin API Keys Routes", () => {
     });
 
     it("returns 404 for non-existent key", async () => {
+      // Cast: `vi.mocked()` infers the success-path return type; cast lets us
+      // mock the not-found return.
       vi.mocked(storage.getApiKey).mockResolvedValue(
         null as unknown as Awaited<ReturnType<typeof storage.getApiKey>>,
       );

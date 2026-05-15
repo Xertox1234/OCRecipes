@@ -51,11 +51,11 @@ export function register(app: Express): void {
           userId: req.userId,
         });
 
-        // Consent is append-only and server-stamped. The route translates the
-        // client's `healthDataConsent: true` intent into `new Date()` server-side;
-        // clients cannot supply, backdate, or clear `healthDataConsentAt`. Omitting
-        // the field when the flag is absent preserves any previously recorded
-        // consent timestamp (storage layer ignores `undefined`).
+        // Consent is append-only and server-stamped. The route forwards the
+        // client's `healthDataConsent: true` intent as a boolean flag; the
+        // storage layer generates `new Date()` internally so clients cannot
+        // supply, backdate, or clear `healthDataConsentAt`. When the flag is
+        // absent any previously recorded consent timestamp is preserved.
         const profileData = {
           allergies: validated.allergies,
           healthConditions: validated.healthConditions,
@@ -67,15 +67,13 @@ export function register(app: Express): void {
           cuisinePreferences: validated.cuisinePreferences,
           cookingSkillLevel: validated.cookingSkillLevel,
           cookingTimeAvailable: validated.cookingTimeAvailable,
-          ...(validated.healthDataConsent === true
-            ? { healthDataConsentAt: new Date() }
-            : {}),
         };
 
         // Upsert profile + mark onboarding complete atomically
         const profile = await storage.upsertProfileWithOnboarding(
           req.userId,
           profileData,
+          validated.healthDataConsent === true,
         );
 
         res.status(201).json(profile);
@@ -98,18 +96,16 @@ export function register(app: Express): void {
         const validated = updateSchema.parse(req.body);
 
         // `healthDataConsent` is a transient intent flag, not a storage column.
-        // Translate to a server-stamped `healthDataConsentAt` only when the user
-        // is granting consent for the first time — append-only, so we never
-        // clear or overwrite an existing timestamp via this PUT path.
+        // Forward it as a boolean to the storage layer, which generates the
+        // server-stamped `new Date()` internally. Append-only at the storage
+        // layer means we never clear or overwrite an existing timestamp via
+        // this PUT path even when the flag is true.
         const { healthDataConsent, ...updates } = validated;
-        const updatesWithConsent =
-          healthDataConsent === true
-            ? { ...updates, healthDataConsentAt: new Date() }
-            : updates;
 
         const profile = await storage.updateUserProfile(
           req.userId,
-          updatesWithConsent,
+          updates,
+          healthDataConsent === true,
         );
 
         if (!profile) {

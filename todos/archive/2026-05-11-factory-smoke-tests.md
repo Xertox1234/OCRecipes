@@ -1,6 +1,6 @@
 ---
 title: "Add smoke tests for all factories under server/__tests__/factories/"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-05-11
 updated: 2026-05-11

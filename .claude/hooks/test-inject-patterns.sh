@@ -66,13 +66,32 @@ check "server/routes → security rules" \
   '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}' \
   "RULES — security"
 
-check "server/routes → typescript rules" \
-  '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}' \
-  "RULES — typescript"
-
 check "server/routes → pattern excerpt" \
   '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}' \
   "PATTERNS — api"
+
+# typescript domain is suppressed when any more-specific domain matched (option (a)
+# from todos/archive/2026-05-12-pattern-injection-spill-on-multi-domain-edits.md).
+# Keeps the 4-domain stack under the 9000-byte spill threshold.
+check_not() {
+  local name="$1" input="$2" pattern="$3"
+  local output
+  output=$(echo "$input" | bash "$HOOK" 2>/dev/null || true)
+  if echo "$output" | grep -q "$pattern"; then
+    echo "FAIL: $name (pattern '$pattern' should be absent)"; FAIL=$((FAIL + 1))
+  else
+    echo "PASS: $name"; PASS=$((PASS + 1))
+  fi
+}
+
+check_not "server/routes → typescript rules suppressed (more-specific domain matched)" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}' \
+  "RULES — typescript"
+
+# typescript remains the fallback for .ts/.tsx files that match no other domain
+check "shared/types.ts → typescript rules (fallback when no other domain matched)" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"shared/types.ts"}}' \
+  "RULES — typescript"
 
 # client/screens → react-native + accessibility + design-system
 check "client/screens → accessibility rules" \

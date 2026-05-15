@@ -472,6 +472,9 @@ describe("handleCoachChat", () => {
     });
 
     it("yields blocks event when Coach Pro response contains blocks", async () => {
+      // Cast: `CoachBlock` is a discriminated union whose `meal_plan` variant
+      // requires more fields than this test exercises — the code under test
+      // only forwards the block opaquely, so a minimal partial is sufficient.
       const mockBlocks: CoachBlock[] = [
         {
           type: "meal_plan",
@@ -678,6 +681,7 @@ describe("handleCoachChat", () => {
     });
 
     it("persists blocks metadata when blocks are present", async () => {
+      // Cast: see above — minimal partial `CoachBlock` for opaque forwarding.
       const mockBlocks: CoachBlock[] = [
         {
           type: "meal_plan",

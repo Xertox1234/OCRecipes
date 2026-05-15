@@ -80,6 +80,9 @@ describe("AuthContext", () => {
 
   describe("auth interface", () => {
     it("should expose all expected methods", () => {
+      // Shape-only smoke test: asserts the interface exposes the named
+      // methods. Casts on `login`/`register` returns are necessary because
+      // this test never constructs or inspects a real `User`.
       const authInterface = {
         user: null,
         isLoading: false,

@@ -1,23 +1,18 @@
 // @vitest-environment jsdom
 import { renderHook } from "@testing-library/react";
+import * as Reanimated from "react-native-reanimated";
 
 import { useAccessibility } from "../useAccessibility";
 
-const { mockUseReducedMotion } = vi.hoisted(() => ({
-  mockUseReducedMotion: vi.fn(),
-}));
-
-vi.mock("react-native-reanimated", () => ({
-  useReducedMotion: () => mockUseReducedMotion(),
-}));
-
 describe("useAccessibility", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  afterEach(() => {
+    // vi.clearAllMocks() in test/setup.ts only clears call history.
+    // restoreAllMocks() undoes the spy installation so it doesn't leak.
+    vi.restoreAllMocks();
   });
 
   it("returns reducedMotion false when system reports false", () => {
-    mockUseReducedMotion.mockReturnValue(false);
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(false);
 
     const { result } = renderHook(() => useAccessibility());
 
@@ -25,7 +20,7 @@ describe("useAccessibility", () => {
   });
 
   it("returns reducedMotion true when system reports true", () => {
-    mockUseReducedMotion.mockReturnValue(true);
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(true);
 
     const { result } = renderHook(() => useAccessibility());
 
@@ -33,7 +28,12 @@ describe("useAccessibility", () => {
   });
 
   it("defaults to false when useReducedMotion returns null", () => {
-    mockUseReducedMotion.mockReturnValue(null);
+    // Cast: Reanimated types `useReducedMotion` as `boolean`, but the runtime
+    // returns `null` on initial mount before the OS query resolves. Inject
+    // null to exercise the hook's null-coalescing branch.
+    vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(
+      null as unknown as boolean,
+    );
 
     const { result } = renderHook(() => useAccessibility());
 

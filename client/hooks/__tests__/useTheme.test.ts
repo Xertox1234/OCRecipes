@@ -1,27 +1,19 @@
 // @vitest-environment jsdom
 import { renderHook } from "@testing-library/react";
+import * as RN from "react-native";
 
 import { useTheme } from "../useTheme";
 
-const { mockUseColorScheme } = vi.hoisted(() => ({
-  mockUseColorScheme: vi.fn(),
-}));
-
-vi.mock("react-native", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react-native")>();
-  return {
-    ...actual,
-    useColorScheme: () => mockUseColorScheme(),
-  };
-});
-
 describe("useTheme", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  afterEach(() => {
+    // restoreAllMocks() undoes the spy installation. vi.clearAllMocks() in
+    // test/setup.ts only clears call history, which would leave the spy
+    // returning undefined for the next test.
+    vi.restoreAllMocks();
   });
 
   it("returns light theme when system reports light", () => {
-    mockUseColorScheme.mockReturnValue("light");
+    vi.spyOn(RN, "useColorScheme").mockReturnValue("light");
 
     const { result } = renderHook(() => useTheme());
 
@@ -32,7 +24,7 @@ describe("useTheme", () => {
   });
 
   it("returns dark theme when system reports dark", () => {
-    mockUseColorScheme.mockReturnValue("dark");
+    vi.spyOn(RN, "useColorScheme").mockReturnValue("dark");
 
     const { result } = renderHook(() => useTheme());
 
@@ -41,7 +33,7 @@ describe("useTheme", () => {
   });
 
   it("defaults to light when system returns null", () => {
-    mockUseColorScheme.mockReturnValue(null);
+    vi.spyOn(RN, "useColorScheme").mockReturnValue(null);
 
     const { result } = renderHook(() => useTheme());
 
@@ -50,10 +42,10 @@ describe("useTheme", () => {
   });
 
   it("returns different color values for light vs dark", () => {
-    mockUseColorScheme.mockReturnValue("light");
+    const spy = vi.spyOn(RN, "useColorScheme").mockReturnValue("light");
     const { result: lightResult } = renderHook(() => useTheme());
 
-    mockUseColorScheme.mockReturnValue("dark");
+    spy.mockReturnValue("dark");
     const { result: darkResult } = renderHook(() => useTheme());
 
     expect(lightResult.current.theme.backgroundRoot).not.toBe(

@@ -143,6 +143,9 @@ function makeForm(overrides: Record<string, unknown> = {}) {
     markDirty: vi.fn(),
     formToPayload: vi.fn(),
     ...overrides,
+    // Cast: `useRecipeForm` returns a large hook surface (40+ fields); this
+    // helper builds only the subset PreviewStep actually reads. The cast
+    // bridges the partial mock into the full hook-return type.
   } as unknown as Parameters<typeof PreviewStep>[0]["form"];
 }
 

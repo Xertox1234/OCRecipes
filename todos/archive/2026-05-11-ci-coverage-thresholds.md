@@ -1,9 +1,9 @@
 ---
 title: "Add coverage threshold gate to CI"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-05-11
-updated: 2026-05-11
+updated: 2026-05-15
 assignee:
 labels: [testing, ci, deferred, audit-2026-05-11]
 github_issue:

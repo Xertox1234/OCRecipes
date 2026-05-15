@@ -1,6 +1,6 @@
 ---
 title: "Harden consent-timestamp storage signature (CCPA/PIPEDA defense-in-depth)"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-11
 updated: 2026-05-11
