@@ -1,6 +1,6 @@
 ---
 title: "Replace require() with ESM import in LLM drift-detection test"
-status: backlog
+status: done
 priority: low
 created: 2026-05-11
 updated: 2026-05-11
