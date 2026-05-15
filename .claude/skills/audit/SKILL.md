@@ -36,7 +36,7 @@ For each finding, report:
 - A concise description of the issue
 - The exact file path and line number(s)
 - Severity: Critical / High / Medium / Low
-- The specific pattern or rule being violated (reference docs/patterns/ where applicable)
+- The specific pattern or rule being violated (reference docs/solutions/, docs/rules/, or docs/patterns/ where applicable)
 
 Do NOT fix anything — only report findings. Do NOT report issues that are already handled correctly.
 Focus on genuinely new issues, not style preferences.
@@ -191,8 +191,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    - **Code reviewer updates** — New checks the code-reviewer agent should enforce going forward
    - **Specialist agent updates** — New domain-specific checks that a specialist agent should catch in future audits
 2. For each candidate, apply this decision matrix:
-   - Recurring solution → **Pattern** → add to appropriate `docs/patterns/*.md` file
-   - Bug/gotcha/unexpected behavior → **Learning** → add to `docs/LEARNINGS.md`
+   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are slated for Step 6 retirement.
    - New check needed → **Code reviewer update** → add to `.claude/agents/code-reviewer.md`
    - Domain-specific check → **Specialist agent update** → add to the relevant `.claude/agents/*.md` checklist
 3. **Specialist agent update routing:** When a finding reveals a new domain-specific check, add it to the appropriate specialist agent's review checklist:
@@ -208,8 +207,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    | Accessibility  | `accessibility-specialist.md`, `rn-ui-ux-specialist.md`                      |
 
 4. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip standard fixes.
-   - For **patterns**, extend the relevant `docs/patterns/*.md` file with a concise rule, rationale, and an example or constraint when useful.
-   - For **learnings**, add an entry to `docs/LEARNINGS.md` describing the root cause and the practical takeaway.
+   - For **solutions**, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 5. Review the codification diff for accuracy and scope. Keep it limited to the reusable knowledge extracted from the audit.

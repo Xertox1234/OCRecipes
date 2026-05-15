@@ -239,7 +239,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 **Codify if any one is true:**
 
-- The solution required a workaround or constraint not currently in `docs/patterns/`
+- The solution required a workaround or constraint not currently captured in `docs/solutions/` or `docs/rules/`
 - The implementation revealed a library gotcha or platform-specific behavior
 - `review_output` contained a CRITICAL or WARNING finding that reveals a reusable rule
 
@@ -251,28 +251,23 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 **If codifying:**
 
 1. Determine which reusable knowledge was produced. A single todo may update more than one target:
-   - **Pattern** — a reusable implementation rule for `docs/patterns/*.md`
-   - **Learning** — a gotcha, bug root cause, or platform behavior for `docs/LEARNINGS.md`
+   - **Solution** — a reusable rule (knowledge-track) or post-mortem (bug-track) written as one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. See `.claude/skills/codify/SKILL.md` Steps 5-6 for the canonical routing rubric and body template; see `docs/solutions/README.md` for the frontmatter schema.
    - **Code reviewer update** — a new review rule for `.claude/agents/code-reviewer.md`
    - **Specialist agent update** — a new domain-specific review rule for one or more specialist agents
 
-2. Determine the pattern or learning target from the todo's primary label:
+2. Pick the solution category by **nature of the finding**, not by the todo's label. A `security`-labelled todo can produce a `runtime-errors/` crash post-mortem OR a `conventions/` rule depending on what was actually learned. Choose exactly one of the seven destinations:
 
-   | Label                         | Target file                      |
-   | ----------------------------- | -------------------------------- |
-   | `security`                    | `docs/patterns/security.md`      |
-   | `architecture`, `duplication` | `docs/patterns/architecture.md`  |
-   | `ui`, `remix`                 | `docs/patterns/react-native.md`  |
-   | `accessibility`, `a11y`       | `docs/LEARNINGS.md`              |
-   | `design-system`, `theme`      | `docs/patterns/design-system.md` |
-   | `performance`                 | `docs/patterns/performance.md`   |
-   | `testing`, `test`             | `docs/patterns/testing.md`       |
-   | `database`                    | `docs/patterns/database.md`      |
-   | `api`                         | `docs/patterns/api.md`           |
-   | `hooks`                       | `docs/patterns/hooks.md`         |
-   | `typescript`, `types`         | `docs/patterns/typescript.md`    |
-   | `client-state`                | `docs/patterns/client-state.md`  |
-   | _(no match)_                  | `docs/LEARNINGS.md`              |
+   | Finding nature                                                        | Track       | Destination dir       |
+   | --------------------------------------------------------------------- | ----------- | --------------------- |
+   | Crash / uncaught exception / throws                                   | `bug`       | `runtime-errors/`     |
+   | Wrong behavior, no crash (off-by-one, race, stale-state, etc.)        | `bug`       | `logic-errors/`       |
+   | Type-safety / DX / maintainability smell (no behavior bug)            | `bug`       | `code-quality/`       |
+   | Speed / memory / N+1 / wasted work                                    | `bug`       | `performance-issues/` |
+   | "Always do X / never do Y" project rule                               | `knowledge` | `conventions/`        |
+   | Reusable structural pattern (composable code shape)                   | `knowledge` | `design-patterns/`    |
+   | Procedural checklist triggered by an event (migration, rebrand, etc.) | `knowledge` | `best-practices/`     |
+
+   Do **not** append to `docs/patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are slated for Step 6 retirement in the Phase 2 pattern-codification refactor. The codify skill (`.claude/skills/codify/SKILL.md`) is the single source of truth for routing.
 
 3. Route specialist-agent updates using this table when a finding reveals a reusable domain-specific check:
 
@@ -289,8 +284,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 4. Compose a short description of what was learned: the non-obvious constraint, workaround, reusable rule, or review gap exposed by the todo or by `review_output`.
 
 5. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip routine fixes.
-   - For **patterns**, extend the relevant `docs/patterns/*.md` file with a concise rule, rationale, and example or constraint when useful.
-   - For **learnings**, add an entry to `docs/LEARNINGS.md` describing the root cause and practical takeaway.
+   - For **solutions**, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 
@@ -300,7 +294,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
    ```bash
    kimi-write \
-     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. Preserve all existing content exactly. If this is a patterns file, add a concise pattern section. If this is docs/LEARNINGS.md, add a learning entry. If this is an agent file, add checklist items to the review checklist and update Common Mistakes to Catch when the issue is a recurring failure mode." \
+     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. For new files at docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md, use the frontmatter schema in docs/solutions/README.md and the body template for the chosen track (bug or knowledge); create cleanly. For existing agent files, preserve all existing content exactly and add checklist items to the review checklist; update Common Mistakes to Catch when the issue is a recurring failure mode." \
      --context <target file> \
      --target <target file>
    ```
