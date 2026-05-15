@@ -181,15 +181,19 @@ If no labels matched the table, omit `--patterns`.
 
 ## Step 7 — Address Feedback
 
-Process the code review findings:
+Process the code review findings. The project convention (see `CLAUDE.md` and `docs/AI_WORKFLOW.md`) is that **only CRITICAL blocks**; WARNING surfaces a real issue but is judgment-based, and SUGGESTION is informational.
 
-1. Fix all **CRITICAL** and **WARNING** issues. These are mandatory.
-2. Fix **SUGGESTION** issues unless doing so would exceed the scope of the todo.
-3. There is no tier below SUGGESTION — findings not marked CRITICAL, WARNING, or SUGGESTION can be ignored.
-4. After fixing, re-run Step 5 (verify) to ensure fixes did not break anything.
-5. If fixes were non-trivial, run Step 6 again (second review round).
+1. **CRITICAL** — mandatory. Fix every CRITICAL finding before continuing.
+2. **WARNING** — surface and address with judgment:
+   - Fix it **inline** if the change is clearly inside this todo's scope and small (a few lines, same files you already touched, no new architectural decisions).
+   - Otherwise **defer**: create a follow-up todo in `todos/` per the "Deferred Item Todos" workflow in `CLAUDE.md` (frontmatter `status: backlog`, `labels: [deferred, <domain>]`, plus the affected file paths in Implementation Notes). Mention the new todo path in the final report so the orchestrator can see it. A surfaced-and-deferred WARNING is not a failure.
+   - Also consider whether the WARNING reveals a reusable rule worth codifying — flag it for Step 9.
+3. **SUGGESTION** — informational only. Apply only if it lands in scope and is trivial; otherwise ignore.
+4. There is no tier below SUGGESTION — findings not marked CRITICAL, WARNING, or SUGGESTION can be ignored.
+5. After fixing, re-run Step 5 (verify) to ensure fixes did not break anything.
+6. If fixes were non-trivial, run Step 6 again (second review round).
 
-**Cap at 2 review rounds.** If CRITICAL or WARNING issues remain after 2 rounds of review + fix, treat the todo as failed and enter the Failure Path.
+**Cap at 2 review rounds.** Only unresolved **CRITICAL** issues after 2 rounds count as failure (enter the Failure Path). Remaining WARNINGs at the round-2 boundary should be deferred via a follow-up todo, not treated as a blocker.
 
 ---
 
@@ -408,7 +412,7 @@ REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was neede
 
 ```
 STATUS: failed
-REASON: <why it failed — test failure, type error, unresolvable review issue, etc.>
+REASON: <why it failed — test failure, type error, unresolvable CRITICAL review issue, etc. WARNING-only review output never counts as failure.>
 ATTEMPT: <1 or 2>
 ```
 

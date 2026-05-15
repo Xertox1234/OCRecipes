@@ -139,6 +139,57 @@ check "route __tests__ file → api rules still present" \
   '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/__tests__/recipes.test.ts"}}' \
   "RULES — api"
 
+# client/components/** must include performance per copilot-instructions table
+check "client/components → performance rules" \
+  '{"tool_name":"Write","tool_input":{"file_path":"client/components/RecipeCard.tsx"}}' \
+  "RULES — performance"
+
+check "client/components → react-native rules" \
+  '{"tool_name":"Write","tool_input":{"file_path":"client/components/RecipeCard.tsx"}}' \
+  "RULES — react-native"
+
+# evals/** must map to ai-prompting + testing (no security)
+check "evals/** → ai-prompting rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"evals/runner.ts"}}' \
+  "RULES — ai-prompting"
+
+check "evals/** → testing rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"evals/runner.ts"}}' \
+  "RULES — testing"
+
+check_no_match "evals/** → no security rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"evals/runner.ts"}}' \
+  "RULES — security"
+
+# .github/workflows/** → architecture + testing
+check ".github/workflows → architecture rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".github/workflows/ci.yml"}}' \
+  "RULES — architecture"
+
+check ".github/workflows → testing rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".github/workflows/ci.yml"}}' \
+  "RULES — testing"
+
+# Root tool configs → testing + typescript (eslint.config.js is not .ts/.tsx,
+# so typescript must come from the explicit config rule)
+check "eslint.config.js → testing rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"eslint.config.js"}}' \
+  "RULES — testing"
+
+check "eslint.config.js → typescript rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"eslint.config.js"}}' \
+  "RULES — typescript"
+
+check "vitest.config.ts → testing rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"vitest.config.ts"}}' \
+  "RULES — testing"
+
+# AI service must NOT have security as a directly-injected domain — the
+# copilot-instructions table maps LLM-touching services to {architecture, ai-prompting} only.
+check_no_match "AI service → no security rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"server/services/photo-analysis.ts"}}' \
+  "RULES — security"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

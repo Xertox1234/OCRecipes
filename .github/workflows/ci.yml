@@ -3,6 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    # Docs-only pushes are skipped to keep CI cheap. The companion workflow
+    # `.github/workflows/copilot-instructions-check.yml` runs the drift check
+    # whenever `docs/rules/**` changes, so this ignore cannot hide a stale
+    # `.github/copilot-instructions.md`.
     paths-ignore:
       - "**/*.md"
       - "docs/**"

@@ -40,6 +40,10 @@ add_domain() {
 [[ "$FILE_PATH" == */server/middleware/* || "$FILE_PATH" == server/middleware/* ]] && \
   { add_domain security; add_domain api; }
 
+# LLM-touching services → ai-prompting (architecture comes from the generic
+# server/services rule below). Keep this list aligned with
+# scripts/delegate-copilot-issue.ts LLM_TOUCHING_SERVICES and the
+# `server/services/<llm-touching>.ts` row in .github/copilot-instructions.md.
 [[ "$FILE_PATH" == */server/services/photo-analysis.ts   || \
    "$FILE_PATH" == */server/services/nutrition-coach.ts  || \
    "$FILE_PATH" == */server/services/recipe-chat.ts      || \
@@ -47,17 +51,24 @@ add_domain() {
    "$FILE_PATH" == server/services/photo-analysis.ts     || \
    "$FILE_PATH" == server/services/nutrition-coach.ts    || \
    "$FILE_PATH" == server/services/recipe-chat.ts        || \
-   "$FILE_PATH" == server/services/recipe-generation.ts  || \
-   "$FILE_PATH" == */evals/* || "$FILE_PATH" == evals/* ]] && \
-  { add_domain ai-prompting; add_domain security; }
+   "$FILE_PATH" == server/services/recipe-generation.ts ]] && \
+  add_domain ai-prompting
+
+# evals/* → ai-prompting + testing (the copilot-instructions table maps
+# `evals/**` to {ai-prompting, testing}; security is not part of that mapping).
+[[ "$FILE_PATH" == */evals/* || "$FILE_PATH" == evals/* ]] && \
+  { add_domain ai-prompting; add_domain testing; }
 
 # All server/services get architecture (including the AI ones above)
 [[ "$FILE_PATH" == */server/services/* || "$FILE_PATH" == server/services/* ]] && \
   add_domain architecture
 
-[[ "$FILE_PATH" == */client/screens/*     || "$FILE_PATH" == client/screens/*     || \
-   "$FILE_PATH" == */client/components/*  || "$FILE_PATH" == client/components/* ]] && \
+[[ "$FILE_PATH" == */client/screens/* || "$FILE_PATH" == client/screens/* ]] && \
   { add_domain react-native; add_domain design-system; add_domain accessibility; }
+
+# client/components/** additionally gets performance per the copilot-instructions table.
+[[ "$FILE_PATH" == */client/components/* || "$FILE_PATH" == client/components/* ]] && \
+  { add_domain react-native; add_domain design-system; add_domain accessibility; add_domain performance; }
 
 [[ "$FILE_PATH" == */client/navigation/* || "$FILE_PATH" == client/navigation/* ]] && \
   { add_domain react-native; add_domain accessibility; }
@@ -72,6 +83,17 @@ add_domain() {
 [[ "$FILE_PATH" == */client/constants/theme.ts || "$FILE_PATH" == client/constants/theme.ts || \
    "$FILE_PATH" == */design_guidelines.md      || "$FILE_PATH" == design_guidelines.md ]] && \
   add_domain design-system
+
+# .github/workflows/** → architecture + testing
+[[ "$FILE_PATH" == */.github/workflows/* || "$FILE_PATH" == .github/workflows/* ]] && \
+  { add_domain architecture; add_domain testing; }
+
+# Root tool configs → testing + typescript (eslint.config.* is .js so the
+# .ts/.tsx fallback wouldn't add typescript automatically — pin it here).
+case "$FILE_PATH" in
+  */vitest.config.*|vitest.config.*|*/eslint.config.*|eslint.config.*)
+    add_domain testing; add_domain typescript ;;
+esac
 
 # Test files accumulate testing domain regardless of their enclosing directory
 [[ "$FILE_PATH" == */__tests__/* || "$FILE_PATH" == __tests__/* || \

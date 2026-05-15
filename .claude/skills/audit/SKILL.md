@@ -113,10 +113,10 @@ For **each** finding the user wants fixed:
    | camera / RN-UX | `react-native`     |
    | accessibility  | `react-native`     |
 
-   Response handling:
-   - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved
-   - **WARNING finding**: return to step 3 for the kimi-review finding, then re-run steps 4–7
-   - **SUGGESTION**: proceed — note in manifest Verification column if worth tracking for codification
+   Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
+   - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
+   - **WARNING finding**: judgment call. **Fix inline** when the change is clearly in scope and small (a few lines, same files already touched, no new architectural decision) — then re-run steps 4–7. Otherwise **record in the manifest Verification column** as a surfaced WARNING, **create a follow-up todo** in `todos/` (frontmatter `status: backlog`, `labels: [deferred, <domain>]`, link from the manifest's Deferred Items table), and continue. WARNING is not a mandatory blocker.
+   - **SUGGESTION**: proceed — note in manifest Verification column if worth tracking for codification.
 
 8. Update manifest:
    - Status → `verified`
