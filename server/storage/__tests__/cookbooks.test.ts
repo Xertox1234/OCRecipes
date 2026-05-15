@@ -147,7 +147,12 @@ describe("cookbooks storage", () => {
         name: "My Cookbook",
       });
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "mealPlan");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        testUser.id,
+      );
 
       const result = await getUserCookbooks(testUser.id);
       expect(result).toHaveLength(1);
@@ -170,8 +175,18 @@ describe("cookbooks storage", () => {
       });
       const mpRecipe = await createTestMealPlanRecipe(testUser.id);
       const cRecipe = await createTestCommunityRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, mpRecipe.id, "mealPlan");
-      await addRecipeToCookbook(cookbook.id, cRecipe.id, "community");
+      await addRecipeToCookbook(
+        cookbook.id,
+        mpRecipe.id,
+        "mealPlan",
+        testUser.id,
+      );
+      await addRecipeToCookbook(
+        cookbook.id,
+        cRecipe.id,
+        "community",
+        testUser.id,
+      );
 
       // Delete the meal-plan recipe; junction row remains as orphan.
       const { eq } = await import("drizzle-orm");
@@ -303,12 +318,11 @@ describe("cookbooks storage", () => {
   // --------------------------------------------------------------------------
   // addRecipeToCookbook / removeRecipeFromCookbook
   //
-  // Ownership enforcement is enforced by the route layer, not the storage
-  // layer: routes call `getCookbook(id, userId)` first and 404 if the cookbook
-  // is not owned by the caller (see `server/routes/cookbooks.ts` POST/DELETE
-  // handlers). The storage functions intentionally do not take `userId` —
-  // they trust their callers. Tests therefore cover happy-path + duplicate /
-  // missing-recipe cases only.
+  // Both mutations enforce ownership at the storage layer (defense-in-depth)
+  // by guarding the write with a `WHERE EXISTS / cookbooks.user_id` check in
+  // the same statement. Route handlers still pre-verify ownership with
+  // `getCookbook(id, userId)`, so the storage guard is a backstop — these
+  // tests cover happy-path + duplicate / missing-recipe / cross-user IDOR.
   // --------------------------------------------------------------------------
   describe("addRecipeToCookbook", () => {
     it("adds a mealPlan recipe and bumps updatedAt", async () => {
@@ -327,6 +341,7 @@ describe("cookbooks storage", () => {
         cookbook.id,
         recipe.id,
         "mealPlan",
+        testUser.id,
       );
       expect(added).toBeDefined();
       expect(added!.recipeId).toBe(recipe.id);
@@ -349,6 +364,7 @@ describe("cookbooks storage", () => {
         cookbook.id,
         recipe.id,
         "community",
+        testUser.id,
       );
       expect(added).toBeDefined();
       expect(added!.recipeType).toBe("community");
@@ -365,6 +381,7 @@ describe("cookbooks storage", () => {
         cookbook.id,
         recipe.id,
         "mealPlan",
+        testUser.id,
       );
       expect(first).toBeDefined();
 
@@ -372,8 +389,33 @@ describe("cookbooks storage", () => {
         cookbook.id,
         recipe.id,
         "mealPlan",
+        testUser.id,
       );
       expect(second).toBeUndefined();
+    });
+
+    it("returns undefined and does not insert when caller does not own the cookbook (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const cookbook = await createCookbook({
+        userId: otherUser.id,
+        name: "Theirs",
+      });
+      const recipe = await createTestMealPlanRecipe(testUser.id);
+
+      // Attempt to add a recipe to a cookbook owned by `otherUser` while
+      // authenticated as `testUser`.
+      const result = await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        testUser.id,
+      );
+      expect(result).toBeUndefined();
+
+      // No junction row should have been created — the legitimate owner sees
+      // an empty cookbook.
+      const rows = await getCookbookRecipes(cookbook.id, otherUser.id);
+      expect(rows).toEqual([]);
     });
   });
 
@@ -387,12 +429,18 @@ describe("cookbooks storage", () => {
         name: "C",
       });
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "mealPlan");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        testUser.id,
+      );
 
       const result = await removeRecipeFromCookbook(
         cookbook.id,
         recipe.id,
         "mealPlan",
+        testUser.id,
       );
       expect(result).toBe(true);
 
@@ -409,6 +457,7 @@ describe("cookbooks storage", () => {
         cookbook.id,
         999999,
         "mealPlan",
+        testUser.id,
       );
       expect(result).toBe(false);
     });
@@ -419,18 +468,52 @@ describe("cookbooks storage", () => {
         name: "C",
       });
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "mealPlan");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        testUser.id,
+      );
 
       // Caller asks to remove with the wrong recipeType.
       const result = await removeRecipeFromCookbook(
         cookbook.id,
         recipe.id,
         "community",
+        testUser.id,
       );
       expect(result).toBe(false);
 
       // Original row is untouched.
       const rows = await getCookbookRecipes(cookbook.id, testUser.id);
+      expect(rows).toHaveLength(1);
+    });
+
+    it("returns false and does not delete when caller does not own the cookbook (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const cookbook = await createCookbook({
+        userId: otherUser.id,
+        name: "Theirs",
+      });
+      const recipe = await createTestMealPlanRecipe(otherUser.id);
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        otherUser.id,
+      );
+
+      // Attempt to remove the recipe while authenticated as `testUser`.
+      const result = await removeRecipeFromCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        testUser.id,
+      );
+      expect(result).toBe(false);
+
+      // The original junction row must still be present for the legitimate owner.
+      const rows = await getCookbookRecipes(cookbook.id, otherUser.id);
       expect(rows).toHaveLength(1);
     });
   });
@@ -455,8 +538,8 @@ describe("cookbooks storage", () => {
       });
       const mp = await createTestMealPlanRecipe(testUser.id);
       const c = await createTestCommunityRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, mp.id, "mealPlan");
-      await addRecipeToCookbook(cookbook.id, c.id, "community");
+      await addRecipeToCookbook(cookbook.id, mp.id, "mealPlan", testUser.id);
+      await addRecipeToCookbook(cookbook.id, c.id, "community", testUser.id);
 
       const rows = await getCookbookRecipes(cookbook.id, testUser.id);
       expect(rows).toHaveLength(2);
@@ -473,7 +556,12 @@ describe("cookbooks storage", () => {
         name: "Theirs",
       });
       const recipe = await createTestMealPlanRecipe(otherUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "mealPlan");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        otherUser.id,
+      );
 
       const rows = await getCookbookRecipes(cookbook.id, testUser.id);
       expect(rows).toEqual([]);
@@ -503,7 +591,12 @@ describe("cookbooks storage", () => {
         name: "Theirs",
       });
       const recipe = await createTestMealPlanRecipe(otherUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "mealPlan");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        otherUser.id,
+      );
 
       const result = await getResolvedCookbookRecipes(cookbook.id, testUser.id);
       expect(result).toEqual([]);
@@ -528,8 +621,8 @@ describe("cookbooks storage", () => {
         servings: 2,
         difficulty: "medium",
       });
-      await addRecipeToCookbook(cookbook.id, mp.id, "mealPlan");
-      await addRecipeToCookbook(cookbook.id, c.id, "community");
+      await addRecipeToCookbook(cookbook.id, mp.id, "mealPlan", testUser.id);
+      await addRecipeToCookbook(cookbook.id, c.id, "community", testUser.id);
 
       const result = await getResolvedCookbookRecipes(cookbook.id, testUser.id);
       expect(result).toHaveLength(2);
@@ -549,7 +642,12 @@ describe("cookbooks storage", () => {
         name: "C",
       });
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "mealPlan");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        testUser.id,
+      );
 
       // Delete the underlying recipe to create an orphan junction row.
       const { eq } = await import("drizzle-orm");
@@ -573,7 +671,12 @@ describe("cookbooks storage", () => {
         name: "C",
       });
       const recipe = await createTestCommunityRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "community");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "community",
+        testUser.id,
+      );
 
       const { eq } = await import("drizzle-orm");
       await tx
@@ -604,9 +707,24 @@ describe("cookbooks storage", () => {
       const liveC = await createTestCommunityRecipe(testUser.id, {
         title: "Live C",
       });
-      await addRecipeToCookbook(cookbook.id, liveMp.id, "mealPlan");
-      await addRecipeToCookbook(cookbook.id, orphanMp.id, "mealPlan");
-      await addRecipeToCookbook(cookbook.id, liveC.id, "community");
+      await addRecipeToCookbook(
+        cookbook.id,
+        liveMp.id,
+        "mealPlan",
+        testUser.id,
+      );
+      await addRecipeToCookbook(
+        cookbook.id,
+        orphanMp.id,
+        "mealPlan",
+        testUser.id,
+      );
+      await addRecipeToCookbook(
+        cookbook.id,
+        liveC.id,
+        "community",
+        testUser.id,
+      );
 
       // Orphan one of the meal-plan recipes.
       const { eq } = await import("drizzle-orm");
@@ -637,7 +755,12 @@ describe("cookbooks storage", () => {
         name: "C",
       });
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "mealPlan");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        testUser.id,
+      );
 
       await getResolvedCookbookRecipes(cookbook.id, testUser.id);
       expect(lastFireAndForgetPromise).toBeNull();
@@ -654,7 +777,12 @@ describe("cookbooks storage", () => {
         name: "ToDelete",
       });
       const recipe = await createTestMealPlanRecipe(testUser.id);
-      await addRecipeToCookbook(cookbook.id, recipe.id, "mealPlan");
+      await addRecipeToCookbook(
+        cookbook.id,
+        recipe.id,
+        "mealPlan",
+        testUser.id,
+      );
 
       await deleteCookbook(cookbook.id, testUser.id);
 

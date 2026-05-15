@@ -1,6 +1,6 @@
 ---
 title: "Add storage-layer ownership enforcement to addRecipeToCookbook / removeRecipeFromCookbook"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-15
 updated: 2026-05-15
@@ -46,3 +46,4 @@ Surfaced by `kimi-review` during execution of `todos/archive/2026-05-11-storage-
 ### 2026-05-15
 
 - Created as follow-up to `todos/archive/2026-05-11-storage-tests-medium.md`; kimi-review flagged the missing storage-layer check during that todo but it was out of scope.
+- Implemented via single-statement `INSERT ... SELECT ... WHERE EXISTS` (add) and correlated `EXISTS` (remove) in `server/storage/cookbooks.ts`. Both mutations now accept `userId` and self-enforce ownership in one SQL statement. Route call sites pass `req.userId`. `scripts/check-idor-storage.js` allowlist entries removed for both functions. Negative IDOR tests added in `server/storage/__tests__/cookbooks.test.ts`. 65/65 scoped tests pass; kimi-review returned no CRITICAL/WARNING findings.

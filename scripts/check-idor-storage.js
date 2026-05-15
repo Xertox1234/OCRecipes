@@ -73,9 +73,6 @@ const ALLOWLIST = new Set([
   // Chat child-table ops - route verifies conversation ownership via getChatConversation(id, userId)
   "getChatMessages",
   "createChatMessage",
-  // Cookbook junction ops - route verifies cookbook ownership via getCookbook(id, userId)
-  "addRecipeToCookbook",
-  "removeRecipeFromCookbook",
   // Grocery list item ops - scoped by groceryListId; route verifies list ownership
   "updateGroceryListItemChecked",
   "deleteGroceryListItem",

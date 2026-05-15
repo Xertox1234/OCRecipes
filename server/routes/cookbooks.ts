@@ -239,6 +239,7 @@ export function register(app: Express): void {
           id,
           parsed.data.recipeId,
           parsed.data.recipeType,
+          req.userId,
         );
         if (!added) {
           sendError(
@@ -296,6 +297,7 @@ export function register(app: Express): void {
           id,
           recipeId,
           recipeType,
+          req.userId,
         );
         if (!removed) {
           sendError(
