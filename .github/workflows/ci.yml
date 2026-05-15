@@ -82,5 +82,5 @@ jobs:
       - name: Verify .github/copilot-instructions.md is current
         run: npm run build:copilot-instructions:check
 
-      - name: Tests
-        run: npm run test:run
+      - name: Tests (with coverage)
+        run: npm run test:coverage:ci

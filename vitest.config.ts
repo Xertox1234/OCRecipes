@@ -19,8 +19,29 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8",
-      reporter: ["text", "json", "html"],
-      exclude: ["node_modules", "server_dist", "**/*.test.ts"],
+      reporter: ["text", "text-summary", "json", "html"],
+      exclude: [
+        "node_modules",
+        "server_dist",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "test/mocks/**",
+        "test/setup.ts",
+        "test/global-teardown.ts",
+      ],
+      // Hard floor — set below current measured baseline (as of 2026-05-15:
+      // lines 83.92%, statements 83.14%, functions 81.54%, branches 74.02%)
+      // to leave room for normal variance. Ratchet up over time;
+      // see docs/patterns/testing.md → "Coverage Threshold Ratcheting".
+      thresholds: {
+        // autoUpdate must stay false — never let CI rewrite this config.
+        // Set in config (not CLI) so it cannot be parsed as the truthy string "false".
+        autoUpdate: false,
+        lines: 80,
+        functions: 78,
+        statements: 80,
+        branches: 70,
+      },
     },
     pool: "forks",
     testTimeout: 10000,
