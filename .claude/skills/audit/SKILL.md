@@ -225,9 +225,10 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
 
 **Why the order is fix → commit → codify:**
 
-- kimi-review runs per-fix inside Phase 3, so every fix is reviewed and verified before it reaches Phase 6 (Commit)
+- kimi-review runs per-fix inside Phase 3, so every fix is reviewed and verified before Phase 6 (Code Review) deepens the inspection across files
+- Phase 6 (Code Review) is a subagent-based audit pass over the multi-file diff; Phase 7 (Commit) follows once review is clean
 - Committing before codifying keeps the fix diff clean and reviewable without docs noise
-- Codification happens last so the codifier sees the complete picture — all verified fixes, including any corrections triggered by kimi-review
+- Codification (Phase 8) happens last so the codifier sees the complete picture — all verified fixes, including any corrections triggered by kimi-review or by the Phase 6 review
 - If codification reveals issues, the fixes are already safely committed
 
 ## Rules

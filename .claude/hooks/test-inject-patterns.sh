@@ -3,22 +3,52 @@
 set -uo pipefail
 
 HOOK="$(cd "$(dirname "$0")" && pwd)/inject-patterns.sh"
+SPILL_FILE="/tmp/ocrecipes-injection-context.md"
 PASS=0; FAIL=0
+
+# run_hook: clear stale spill, invoke hook, echo stdout+spill combined so callers can grep both.
+# Multi-domain matches routinely exceed the 9 KB inline cap and the hook copies overflow to
+# $SPILL_FILE — searching both keeps tests assertion-correct without depending on which side
+# of the threshold a given input lands on.
+run_hook() {
+  local input="$1"
+  rm -f "$SPILL_FILE"
+  local output
+  output=$(echo "$input" | bash "$HOOK" 2>/dev/null || true)
+  local spill=""
+  [ -f "$SPILL_FILE" ] && spill=$(cat "$SPILL_FILE")
+  printf '%s\n%s' "$output" "$spill"
+}
 
 check() {
   local name="$1" input="$2" pattern="$3"
-  local output
-  output=$(echo "$input" | bash "$HOOK" 2>/dev/null || true)
-  if echo "$output" | grep -q "$pattern"; then
+  local combined
+  combined=$(run_hook "$input")
+  if echo "$combined" | grep -q "$pattern"; then
     echo "PASS: $name"; PASS=$((PASS + 1))
   else
-    echo "FAIL: $name"; echo "  expected to find: $pattern"; FAIL=$((FAIL + 1))
+    echo "FAIL: $name"; echo "  expected to find (in stdout or spill): $pattern"; FAIL=$((FAIL + 1))
   fi
 }
 
+check_no_match() {
+  local name="$1" input="$2" pattern="$3"
+  local combined
+  combined=$(run_hook "$input")
+  if echo "$combined" | grep -q "$pattern"; then
+    echo "FAIL: $name (expected NOT to find: $pattern)"; FAIL=$((FAIL + 1))
+  else
+    echo "PASS: $name"; PASS=$((PASS + 1))
+  fi
+}
+
+# check_empty: hook short-circuited entirely (no JSON, no preamble). Used for tools the hook
+# rejects (non-Edit/Write) or malformed input. Edit/Write with a valid file_path always emits
+# at least the discipline preamble — use check + check_no_match for that case instead.
 check_empty() {
   local name="$1" input="$2"
   local output
+  rm -f "$SPILL_FILE"
   output=$(echo "$input" | bash "$HOOK" 2>/dev/null || true)
   if [ -z "$output" ]; then
     echo "PASS: $name"; PASS=$((PASS + 1))
@@ -76,9 +106,20 @@ check_empty "Read tool → no output" \
 check_empty "missing file_path → no output" \
   '{"tool_name":"Edit","tool_input":{}}'
 
-# File with no domain match → no output
-check_empty "package.json → no output" \
-  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
+# File with no domain match → discipline preamble only (no RULES/PATTERNS blocks).
+# The hook emits the preamble unconditionally for Edit/Write on a valid file_path so the
+# agent always sees the workflow reminders, even when no domain mapping triggers.
+check "package.json → discipline preamble emitted" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}' \
+  "DISCIPLINE"
+
+check_no_match "package.json → no domain RULES blocks" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}' \
+  "RULES — "
+
+check_no_match "package.json → no PATTERNS blocks" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}' \
+  "PATTERNS — "
 
 # AI service file must get architecture domain (case exclusivity regression)
 check "AI service → architecture rules (additive match)" \
