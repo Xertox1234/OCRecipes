@@ -2192,6 +2192,47 @@ describe("exportUserColumns", () => {
 
 **Why explicit per-factory describe blocks, not dynamic generation:** The variations above make `describe.each(Object.entries(factories))` awkward — you'd need a config map for special signatures (`createMockChatCompletion`), missing-id factories, and string-vs-number ID overrides. The smoke suite's job is shape verification; the "one describe per factory file" convention is enforced at code-review time, not by runtime introspection.
 
+## Typed Partial Express Request / Response Helpers
+
+Unit tests for pure helpers that read a handful of fields off `express.Request` or call `res.status().json()` should use the typed helpers in `server/__tests__/utils/express-mocks.ts` instead of `partial as unknown as express.Request` / `... as unknown as express.Response` casts. The helpers centralize the type bypass and return values typed as the full Express types, so call sites stay cast-free.
+
+```typescript
+import {
+  mockExpressReq,
+  mockExpressRes,
+} from "../../__tests__/utils/express-mocks";
+
+// Reading req.ip / req.userId in a pure helper
+const req = mockExpressReq({ ip: "192.168.1.1" });
+expect(ipKeyGenerator(req)).toBe("192.168.1.1");
+
+// Asserting res.status().json() was called with a 403 body
+const res = mockExpressRes();
+await checkPremiumFeature(req, res, "recipeGeneration", "Recipe generation");
+expect(res.status).toHaveBeenCalledWith(403);
+expect(res.json).toHaveBeenCalledWith(
+  expect.objectContaining({ error: expect.stringContaining("premium") }),
+);
+```
+
+The helpers spread caller-supplied properties through, so a test that needs `req.socket.remoteAddress` can pass it as part of the override; if a helper does not surface a field the test needs, extend the override locally rather than reintroducing a `as unknown as` cast.
+
+`mockExpressRes()` returns a `Response` whose `status` is `vi.fn().mockReturnThis()` and `json` is `vi.fn()`, so the common `res.status(N).json(body)` chained call works without extra setup. Assert on the spies via `res.status` / `res.json` — do not construct separate `statusMock` / `jsonMock` `vi.fn()` instances and wire them in by hand.
+
+## `as unknown as X` in Tests: Comment-or-Replace Rule
+
+`as unknown as X` casts in `__tests__/` files are not banned, but every cast that survives a review must be one of:
+
+- **Intentional null/undefined injection** to exercise a runtime null-guard branch in code typed against non-nullable inputs (e.g. `null as unknown as number` to assert a hook's null fallback)
+- **Narrowing into a discriminated union variant** when the test only needs one variant's shape (e.g. OpenAI tool definitions, React Navigation linking config)
+- **Bridging Drizzle jsonb columns into domain types** that the schema does not hint with `$type<>()` (e.g. `extractedNutrition: makeNutrition() as unknown as Record<string, unknown>`)
+- **Constructing partial mocks of huge opaque types** that are impractical to build in full (e.g. `NodePgDatabase<typeof schema>` for retention scripts, `useRecipeForm` return for component tests)
+- **`vi.mocked(storage.fn).mockResolvedValue(undefined as unknown as Awaited<…>)` for not-found returns** — `vi.mocked()` infers the success-path return type and rejects the documented `null` / `undefined` branch; cast bridges back
+
+Each cast must carry a brief inline comment explaining which class above it falls into so reviewers can spot drift. When the cast is replacing a real type-bypass (e.g. wrong-shape mock data), prefer fixing the mock data — the cast is the smell.
+
+A blanket ESLint rule banning `as unknown as` in `__tests__/` was considered and rejected during the 2026-05-11 cleanup: there are ~30 cases across 18 files, several have no clean alternative (Drizzle jsonb, opaque DB types), and an allow-list comment per case is the same friction as the required justification comment without the lint noise.
+
 ## Adding New Patterns
 
 When you establish a new pattern:
