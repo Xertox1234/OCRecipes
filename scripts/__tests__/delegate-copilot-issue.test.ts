@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { execSync } from "node:child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -551,7 +552,7 @@ Pull production data snapshot from cold storage for the test fixture.
       // Re-run the grep that seeded the constant. If a new service imports
       // an LLM client without being added to LLM_TOUCHING_SERVICES, this
       // test fails and forces the developer to update the constant.
-      const result = require("child_process").execSync(
+      const result = execSync(
         `grep -l "openai\\|OpenAI\\|gpt-\\|completions\\|anthropic" server/services/*.ts || true`,
         { encoding: "utf8" },
       );
