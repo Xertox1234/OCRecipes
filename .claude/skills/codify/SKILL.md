@@ -76,25 +76,27 @@ If nothing qualifies, output: "Nothing to codify from this session." and stop.
 
 ## Step 5 — Route each candidate
 
-For each codification candidate, determine both targets:
+For each codification candidate, classify by **nature of the finding**, not by kimi-review tier — a `CRITICAL` can be a knowledge-track convention; a `WARNING` can be a runtime-errors crash. Pick exactly one **solution target** from the 7-way table below.
 
-**Pattern target** (reusable implementation rule):
+**Solution target** — directory under `docs/solutions/`:
 
-| Primary domain                 | Target file                     |
-| ------------------------------ | ------------------------------- |
-| `security`                     | `docs/patterns/security.md`     |
-| `architecture`, `duplication`  | `docs/patterns/architecture.md` |
-| `react-native`, `ui`, `camera` | `docs/patterns/react-native.md` |
-| `performance`                  | `docs/patterns/performance.md`  |
-| `testing`, `test`              | `docs/patterns/testing.md`      |
-| `database`                     | `docs/patterns/database.md`     |
-| `api`                          | `docs/patterns/api.md`          |
-| `hooks`                        | `docs/patterns/hooks.md`        |
-| `typescript`, `types`          | `docs/patterns/typescript.md`   |
-| `client-state`                 | `docs/patterns/client-state.md` |
-| _(no match)_                   | `docs/LEARNINGS.md`             |
+| Finding nature                                                        | Track       | Destination dir       |
+| --------------------------------------------------------------------- | ----------- | --------------------- |
+| Crash / uncaught exception / throws                                   | `bug`       | `runtime-errors/`     |
+| Wrong behavior, no crash (off-by-one, race, stale-state, etc.)        | `bug`       | `logic-errors/`       |
+| Type-safety / DX / maintainability smell (no behavior bug)            | `bug`       | `code-quality/`       |
+| Speed / memory / N+1 / wasted work                                    | `bug`       | `performance-issues/` |
+| "Always do X / never do Y" project rule                               | `knowledge` | `conventions/`        |
+| Reusable structural pattern (composable code shape)                   | `knowledge` | `design-patterns/`    |
+| Procedural checklist triggered by an event (migration, rebrand, etc.) | `knowledge` | `best-practices/`     |
 
-**Agent update target** (self-improvement — only when the finding reveals a reusable review rule):
+**Tie-break — apply in this order if a finding fits multiple rows:**
+
+1. If the finding documents a fix to a defect that was in the diff → **bug-track** (the user needs the symptom + root-cause + fix shape).
+2. If the finding documents a rule the diff complied with, or a pattern the diff exemplifies → **knowledge-track** (the user needs the rule + why + examples shape).
+3. Within bug-track, prefer the more specific category (`runtime-errors` > `logic-errors` > `code-quality`). A crash is also a logic error, but `runtime-errors` is the more useful surface for retrieval.
+
+**Agent update target** (self-improvement — only when the finding reveals a reusable review rule). A single candidate may update both a solution file and one or more agents.
 
 | Finding domain | Update agent(s)                                                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------- |
@@ -106,20 +108,77 @@ For each codification candidate, determine both targets:
 | Camera/vision  | `.claude/agents/camera-specialist.md`, `.claude/agents/rn-ui-ux-specialist.md`                                            |
 | Accessibility  | `.claude/agents/accessibility-specialist.md`, `.claude/agents/rn-ui-ux-specialist.md`                                     |
 
-A single candidate may update both a pattern doc and one or more agents.
+## Step 6 — Overlap-check, then write one file per finding
 
-## Step 6 — Write additions
+Write one file per finding at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Do **not** append to `docs/patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are retained until Step 6 of the Phase 2 refactor (`docs/research/pattern-codification-alternatives.md`) but are no longer codification targets.
 
-Read the target file first. Write each addition directly to the target file — one rule, the rationale, and an example or constraint when useful. Do not duplicate entries already present.
+### 6a. Compute the slug
+
+Kebab-case the finding's intended title; cap at ~60 characters. Avoid generic words like `error`, `bug`, `fix` that don't aid disambiguation.
+
+### 6b. Overlap-check (advisory, within-category only)
+
+Scope the search to the target category directory. Full-corpus Jaccard scans caused the agent slowdown documented in `docs/solutions/_manifests/2026-05-13-learnings.md` — do not repeat it. Cross-category overlap is handled by `## See Also` links, not by reclassifying the file.
+
+```bash
+# Search ONLY the target category, not all of docs/solutions/
+rg -l "^title:" "docs/solutions/<category>/" | head -50
+```
+
+For each candidate, `head -n 20` the frontmatter and compute:
+
+- **Title Jaccard** — bag-of-words overlap between candidate `title:` and the new title.
+- **Tag Jaccard** — overlap between candidate `tags:` and the new tags.
+
+If **both ≥ 0.7**, print `near-duplicate: <path>` to stdout before writing. **Advisory only — write the new file anyway.** Surfacing the duplicate lets the user manually merge or set `last_updated:` on the existing file if they choose. (Steps 1-3 of the Phase 2 refactor recorded 0 merges across 366 files using a similar rubric; strict-block-on-overlap would have added friction with no benefit.)
+
+### 6c. Write the file
+
+Frontmatter — match `docs/solutions/README.md` schema exactly. Required fields per track:
+
+| Field        | bug-track                                                                    | knowledge-track                                      |
+| ------------ | ---------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `title`      | required                                                                     | required                                             |
+| `track`      | `bug`                                                                        | `knowledge`                                          |
+| `category`   | `logic-errors` / `runtime-errors` / `code-quality` / `performance-issues`    | `conventions` / `design-patterns` / `best-practices` |
+| `tags`       | required (list)                                                              | required (list)                                      |
+| `module`     | `camera` / `server` / `client` / `shared`                                    | same                                                 |
+| `applies_to` | optional — glob list (e.g. `["server/storage/**/*.ts"]`) for the future hook | same                                                 |
+| `symptoms`   | required (bulleted list)                                                     | optional ("smell patterns")                          |
+| `created`    | today's ISO date (`YYYY-MM-DD`)                                              | same                                                 |
+| `severity`   | required: `low` / `medium` / `high` / `critical`                             | omit                                                 |
+
+Body — match the section template from `docs/solutions/README.md`:
+
+| Section        | bug-track heading  | knowledge-track heading             |
+| -------------- | ------------------ | ----------------------------------- |
+| H1 title       | `# <title>`        | `# <title>`                         |
+| Statement      | `## Problem`       | `## Rule` or `## When this applies` |
+| Symptoms       | `## Symptoms`      | `## Smell patterns` (optional)      |
+| Explanation    | `## Root Cause`    | `## Why`                            |
+| Resolution     | `## Solution`      | `## Examples`                       |
+| Edge cases     | (n/a)              | `## Exceptions`                     |
+| Prevention     | `## Prevention`    | (subsumed into Why / Exceptions)    |
+| File pointers  | `## Related Files` | `## Related Files`                  |
+| Outbound links | `## See Also`      | `## See Also`                       |
+
+Cross-link convention for `## See Also`:
+
+- **Same category** → bare slug: `- [other slug](other-slug-2026-05-15.md) — one-liner`
+- **Cross category** → `../<target-cat>/<slug>.md` prefix: `- [cross-link](../conventions/some-rule-2026-05-15.md) — one-liner`
+
+(The 5 broken-link fixes in Step 2 batch 1 of the Phase 2 refactor codified this rule — same-category writes are routinely mis-typed with a `../` prefix.)
 
 ## Step 7 — Commit
 
-Only stage files you actually modified — list them explicitly, not whole directories:
+Stage each new solution file explicitly (and any agent files you also updated). Do not `git add` the whole directory.
 
 ```bash
-# Example — substitute the actual files you changed:
-git add docs/patterns/security.md docs/LEARNINGS.md .claude/agents/security-auditor.md
-git commit -m "docs: codify patterns and learnings from $(git branch --show-current) session"
+# Example — substitute the actual files you wrote:
+git add docs/solutions/conventions/<slug-1>-YYYY-MM-DD.md \
+        docs/solutions/runtime-errors/<slug-2>-YYYY-MM-DD.md \
+        .claude/agents/security-auditor.md
+git commit -m "docs(solutions): codify findings from $(git branch --show-current)"
 ```
 
-Using `git add docs/patterns/` would stage everything in that directory, including files you didn't touch. Name each file.
+Use `docs(solutions):` as the conventional-commit type — matches Step 2-3 commits from the Phase 2 refactor (e.g. `88c16a6e`, `247eacd9`). The pre-commit hook re-runs `kimi-review` on the staged diff; resolve any CRITICAL findings before the commit lands.
