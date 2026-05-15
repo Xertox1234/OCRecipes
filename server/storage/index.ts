@@ -264,7 +264,7 @@ export const storage = {
   incrementApiKeyUsage: apiKeysStorage.incrementUsage,
   getApiKeyUsage: apiKeysStorage.getUsage,
   getApiKeyUsageStats: apiKeysStorage.getUsageStats,
-  upsertBarcodeNutrition: apiKeysStorage.upsertBarcodeNutrition,
+  insertBarcodeNutritionIfAbsent: apiKeysStorage.insertBarcodeNutritionIfAbsent,
   getBarcodeNutrition: apiKeysStorage.getBarcodeNutrition,
 
   // Batch scan
