@@ -1,6 +1,6 @@
 ---
 title: "Rename or fix `upsertBarcodeNutrition` — current impl is insert-if-absent, not upsert"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-05-11
 updated: 2026-05-11

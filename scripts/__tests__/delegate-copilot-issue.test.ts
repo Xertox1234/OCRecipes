@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { execSync } from "node:child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -93,7 +94,7 @@ describe("delegate-copilot-issue", () => {
     expect(todo.acceptanceCriteria).toHaveLength(2);
     expect(todo.referencedFiles).toEqual(["docs/AI_WORKFLOW.md"]);
 
-    const body = buildIssueBody(todo);
+    const { body } = buildIssueBody(todo);
     expect(body).toContain("Local todo: `todos/tighten-docs.md`");
     expect(body).toContain("Copilot must open a pull request");
     expect(body).toContain("Do not commit directly to `main`");
@@ -551,7 +552,7 @@ Pull production data snapshot from cold storage for the test fixture.
       // Re-run the grep that seeded the constant. If a new service imports
       // an LLM client without being added to LLM_TOUCHING_SERVICES, this
       // test fails and forces the developer to update the constant.
-      const result = require("child_process").execSync(
+      const result = execSync(
         `grep -l "openai\\|OpenAI\\|gpt-\\|completions\\|anthropic" server/services/*.ts || true`,
         { encoding: "utf8" },
       );
@@ -754,7 +755,7 @@ Touch server/storage/__tests__/example.test.ts.
         "todos/test-rules-injection.md",
       );
 
-      const body = buildIssueBody(todo);
+      const { body } = buildIssueBody(todo);
       const filesIdx = body.indexOf("## Files In Scope");
       const rulesIdx = body.indexOf("## Project Rules");
       const implIdx = body.indexOf("## Implementation Notes");
@@ -795,7 +796,7 @@ Only edit docs/README.md.
         "todos/docs-only.md",
       );
 
-      const body = buildIssueBody(todo);
+      const { body } = buildIssueBody(todo);
       expect(body).toContain("## Project Rules");
       expect(body).toContain("No domain rules apply");
     });

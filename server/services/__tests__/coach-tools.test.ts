@@ -68,6 +68,8 @@ describe("Coach Tools Service", () => {
     const tools = getToolDefinitions();
     for (const tool of tools) {
       expect(tool).toHaveProperty("type", "function");
+      // Cast: OpenAI tool definitions are a discriminated union; narrow to the
+      // `function` variant for property-shape assertions without a type guard.
       const fn = (tool as unknown as { function: Record<string, unknown> })
         .function;
       expect(fn).toHaveProperty("name");

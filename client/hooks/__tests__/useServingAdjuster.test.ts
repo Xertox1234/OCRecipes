@@ -110,6 +110,8 @@ describe("useServingAdjuster", () => {
   });
 
   it("defaults null originalServings to 1", () => {
+    // Cast: deliberately injects `null` to exercise the hook's null-guard
+    // branch (typed `number`, but legacy/missing server fields can be null).
     const { result } = renderHook(() =>
       useServingAdjuster(null as unknown as number, SAMPLE_INGREDIENTS),
     );

@@ -1,9 +1,9 @@
 ---
 title: "Coach blocks: wrap all 7 block components in React.memo"
-status: backlog
+status: completed
 priority: medium
 created: 2026-05-10
-updated: 2026-05-11
+updated: 2026-05-15
 assignee:
 labels: [performance, react-native, coach, deferred]
 github_issue:
@@ -21,14 +21,14 @@ Audit 2026-05-10, finding M2. With streaming at ~20 re-renders/sec, this impacts
 
 ## Acceptance Criteria
 
-- [ ] `ActionCard` wrapped in `React.memo`
-- [ ] `QuickReplies` wrapped in `React.memo`
-- [ ] `RecipeCard` (coach block) wrapped in `React.memo`
-- [ ] `CommitmentCard` wrapped in `React.memo`
-- [ ] `MealPlanCard` wrapped in `React.memo`
-- [ ] `SuggestionList` wrapped in `React.memo`
-- [ ] `InlineChart` wrapped in `React.memo`
-- [ ] No functional regressions in coach chat
+- [x] `ActionCard` wrapped in `React.memo`
+- [x] `QuickReplies` wrapped in `React.memo`
+- [x] `RecipeCard` (coach block) wrapped in `React.memo`
+- [x] `CommitmentCard` wrapped in `React.memo`
+- [x] `MealPlanCard` wrapped in `React.memo`
+- [x] `SuggestionList` wrapped in `React.memo`
+- [x] `InlineChart` wrapped in `React.memo`
+- [x] No functional regressions in coach chat
 
 ## Implementation Notes
 
@@ -49,3 +49,10 @@ Files in scope:
 ### 2026-05-10
 
 - Deferred from audit 2026-05-10 (M2) — performance improvement, not blocking
+
+### 2026-05-15
+
+- Verified all 7 components already wrapped in `React.memo` on main: `ActionCard`, `QuickReplies`, `RecipeCard`, `CommitmentCard`, `MealPlanCard`, `SuggestionList`, `InlineChart`.
+- Memoization landed via commit `53d192c4` (PR #122, "Coach blocks: wrap all 7 block components in React.memo").
+- Companion accessibility fixes (M8-M13) landed via commit `9aa9b4c7` (PR #117).
+- Archiving the stale todo file — no code changes needed.

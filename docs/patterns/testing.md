@@ -244,6 +244,42 @@ it("cleans up orphans", async () => {
 - `server/storage/__tests__/favourite-recipes.test.ts` — 24 integration tests
 - `test/db-test-utils.ts` — shared transaction setup/teardown utilities
 
+**Gotcha — storage `db.transaction()` must emit SAVEPOINT, not BEGIN/COMMIT:** Drizzle's `NodePgSession.transaction(cb)` issues a top-level `BEGIN/COMMIT` pair, while `NodePgTransaction.transaction(cb)` issues `SAVEPOINT/RELEASE SAVEPOINT`. If `setupTestTransaction()` hands back a plain `NodePgDatabase`, any storage function that internally calls `db.transaction(cb)` (e.g. `submitVerification`, `createChatMessage`) issues an inner `COMMIT` that ends the **outer test transaction** — and every subsequent write leaks past `rollbackTestTransaction()` into the real DB. Fix by returning a `NodePgTransaction` instance from `setupTestTransaction()`, so nested `db.transaction()` calls emit savepoints that unwind with the outer ROLLBACK. The sentinel-throw pattern keeps the outer transaction open between `beforeEach` and `afterEach`:
+
+```typescript
+// test/db-test-utils.ts
+const ROLLBACK_SENTINEL = { __testRollback: true };
+
+export async function setupTestTransaction() {
+  const client = await pool.connect();
+  const db = drizzle(client, { schema });
+  // Capture the inner NodePgTransaction Drizzle yields to its callback.
+  let resolveReady: (tx: NodePgDatabase<typeof schema>) => void;
+  const ready = new Promise<NodePgDatabase<typeof schema>>((r) => {
+    resolveReady = r;
+  });
+  let rejectSignal: (err: unknown) => void;
+  const signal = new Promise<never>((_, rej) => {
+    rejectSignal = rej;
+  });
+  const outer = db
+    .transaction(async (tx) => {
+      resolveReady(tx as unknown as NodePgDatabase<typeof schema>);
+      await signal; // parks until rollback is triggered; always rejects
+    })
+    .catch((err) => {
+      if (err !== ROLLBACK_SENTINEL) throw err;
+    });
+  const tx = await ready;
+  // Store `() => rejectSignal(ROLLBACK_SENTINEL)` and `outer` for rollback.
+  return tx;
+}
+```
+
+Verify rollback removed the row via a **separate pool client** — MVCC inside the rolled-back connection cannot see the row regardless of whether the bug is fixed, so an in-transaction assertion always passes. See `test/db-test-utils.test.ts` for the regression test.
+
+**Gotcha — `CURRENT_TIMESTAMP` is fixed inside one test transaction:** Once the savepoint isolation above is correct, every nested `db.transaction()` runs inside the same outer transaction. PostgreSQL freezes `CURRENT_TIMESTAMP` and `now()` at transaction start, so two consecutive `createX()` calls land identical `createdAt` values. Any test that relies on `ORDER BY createdAt` between such inserts becomes non-deterministic. Backdate explicitly with `tx.update(...).set({ createdAt: new Date(base - N) })` after the insert — do not use `setTimeout` between calls. See `server/storage/__tests__/chat.test.ts` (`getChatMessages > returns messages ordered by createdAt asc`) and the rule in `docs/rules/database.md`.
+
 ### Dual-Assertion IDOR Test
 
 When writing integration tests for functions that enforce cross-user data ownership, assert **both** the return value and the database state. Return value alone cannot catch a bug where the function returns `null` but still commits a side-effect write — two independent failure modes require two independent checks.
@@ -2205,6 +2241,142 @@ CI enforces a hard floor via `coverage.thresholds` in `vitest.config.ts` (global
 5. Per-file thresholds (`coverage.thresholds.perFile: true`) are intentionally not used — they're too noisy across a codebase with many small modules and one or two screen shells. Keep the floor global.
 
 If you intentionally add a large file that's hard to cover (UI shell, integration glue), exclude it via `coverage.exclude` rather than lowering thresholds for the whole repo.
+
+## Typed Partial Express Request / Response Helpers
+
+Unit tests for pure helpers that read a handful of fields off `express.Request` or call `res.status().json()` should use the typed helpers in `server/__tests__/utils/express-mocks.ts` instead of `partial as unknown as express.Request` / `... as unknown as express.Response` casts. The helpers centralize the type bypass and return values typed as the full Express types, so call sites stay cast-free.
+
+```typescript
+import {
+  mockExpressReq,
+  mockExpressRes,
+} from "../../__tests__/utils/express-mocks";
+
+// Reading req.ip / req.userId in a pure helper
+const req = mockExpressReq({ ip: "192.168.1.1" });
+expect(ipKeyGenerator(req)).toBe("192.168.1.1");
+
+// Asserting res.status().json() was called with a 403 body
+const res = mockExpressRes();
+await checkPremiumFeature(req, res, "recipeGeneration", "Recipe generation");
+expect(res.status).toHaveBeenCalledWith(403);
+expect(res.json).toHaveBeenCalledWith(
+  expect.objectContaining({ error: expect.stringContaining("premium") }),
+);
+```
+
+The helpers spread caller-supplied properties through, so a test that needs `req.socket.remoteAddress` can pass it as part of the override; if a helper does not surface a field the test needs, extend the override locally rather than reintroducing a `as unknown as` cast.
+
+`mockExpressRes()` returns a `Response` whose `status` is `vi.fn().mockReturnThis()` and `json` is `vi.fn()`, so the common `res.status(N).json(body)` chained call works without extra setup. Assert on the spies via `res.status` / `res.json` — do not construct separate `statusMock` / `jsonMock` `vi.fn()` instances and wire them in by hand.
+
+## `as unknown as X` in Tests: Comment-or-Replace Rule
+
+`as unknown as X` casts in `__tests__/` files are not banned, but every cast that survives a review must be one of:
+
+- **Intentional null/undefined injection** to exercise a runtime null-guard branch in code typed against non-nullable inputs (e.g. `null as unknown as number` to assert a hook's null fallback)
+- **Narrowing into a discriminated union variant** when the test only needs one variant's shape (e.g. OpenAI tool definitions, React Navigation linking config)
+- **Bridging Drizzle jsonb columns into domain types** that the schema does not hint with `$type<>()` (e.g. `extractedNutrition: makeNutrition() as unknown as Record<string, unknown>`)
+- **Constructing partial mocks of huge opaque types** that are impractical to build in full (e.g. `NodePgDatabase<typeof schema>` for retention scripts, `useRecipeForm` return for component tests)
+- **`vi.mocked(storage.fn).mockResolvedValue(undefined as unknown as Awaited<…>)` for not-found returns** — `vi.mocked()` infers the success-path return type and rejects the documented `null` / `undefined` branch; cast bridges back
+
+Each cast must carry a brief inline comment explaining which class above it falls into so reviewers can spot drift. When the cast is replacing a real type-bypass (e.g. wrong-shape mock data), prefer fixing the mock data — the cast is the smell.
+
+A blanket ESLint rule banning `as unknown as` in `__tests__/` was considered and rejected during the 2026-05-11 cleanup: there are ~30 cases across 18 files, several have no clean alternative (Drizzle jsonb, opaque DB types), and an allow-list comment per case is the same friction as the required justification comment without the lint noise.
+
+## Route-Level Auth/Rate-Limit Tests: `vi.doUnmock` Must Be `try/finally`-Wrapped
+
+Route tests mock `../../middleware/auth` and `express-rate-limit` globally at the file level so the default tests get a stubbed authenticated user and a pass-through rate limiter. To assert real 401 / 429 behavior we re-import the route module with the real implementations via `vi.doUnmock(...)` + dynamic `import("...")` + `vi.resetModules()` (see `server/routes/__tests__/recipe-catalog.test.ts`, `recipe-import.test.ts`, `recipe-search.test.ts`, `export.test.ts`).
+
+**Rule:** every `vi.doUnmock("../../middleware/auth")` (or any other globally-mocked module) inside an `it(...)` block must restore the mock in a `finally` clause — not at the end of the test body. If an assertion fails before the restore line runs, the unmock persists in the module registry and the next dynamic import in the same file loads the real module, cascading the failure.
+
+```ts
+it("GET ... returns 401 without a bearer token", async () => {
+  vi.doUnmock("../../middleware/auth");
+  try {
+    const { register: registerReal } = await import("../recipe-catalog");
+    const app = express();
+    app.use(express.json());
+    registerReal(app);
+    const res = await request(app).get("/api/meal-plan/catalog/search?query=x");
+    expect(res.status).toBe(401);
+  } finally {
+    // Restore even if the assertion failed — otherwise the unmock leaks to
+    // later dynamic imports in this file and breaks the 429 / rate-limit test.
+    vi.doMock("../../middleware/auth", async () => {
+      const actual = await vi.importActual<
+        typeof import("../../middleware/__mocks__/auth")
+      >("../../middleware/__mocks__/auth");
+      return actual;
+    });
+  }
+});
+```
+
+For 429 tests, use `vi.doUnmock("express-rate-limit")` in the same `vi.resetModules()` + dynamic-import pattern, but match `windowMs/max` from the actual `_rate-limiters.ts` entry (e.g. `urlImportRateLimit` is `5/min` — fire 6 requests). Don't wrap the 429 test in try/finally — `vi.resetModules()` in the parent `beforeEach` already isolates it from later tests.
+
+## IDOR Assertions: Lock to the Auth-Mock UserId, Not `expect.any(String)`
+
+`expect.objectContaining({ userId: expect.any(String) })` and `toHaveBeenCalledWith(expect.any(String), ...)` pass even if the route handler forwards a hardcoded constant, an attacker-supplied `req.query.userId`, or anything else that happens to be a string. To make the test catch IDOR regressions, assert the exact userId that the auth mock injects.
+
+The default `server/middleware/__mocks__/auth.ts` mock sets `req.userId = "1"` for every request. Use that literal:
+
+```ts
+// Not enough — passes even if the handler ignores req.userId:
+expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+  expect.objectContaining({ userId: expect.any(String) }),
+  expect.any(Array),
+);
+
+// Correct — fails if the handler doesn't propagate the authenticated userId:
+expect(storage.createMealPlanRecipe).toHaveBeenCalledWith(
+  expect.objectContaining({ userId: "1" }),
+  expect.any(Array),
+);
+expect(storage.findMealPlanRecipeByExternalId).toHaveBeenCalledWith(
+  "1",
+  "123", // external/route param
+);
+```
+
+Apply this to **every storage call that performs a userId-scoped read or write** (dedup lookup, create, update, including fire-and-forget background patches). If a test overrides the auth mock with a different userId via `vi.mocked(requireAuth).mockImplementationOnce(...)`, assert against that override value instead.
+
+### Local-Time `Date` Constructor for `vi.setSystemTime` Around Local-Time Accessors
+
+When a service reads **local-time** components from `new Date()` — `getHours()`, `getMinutes()`, `getDay()`, `getDate()` — the fake-system-time fixture must also be expressed in local time, or the test passes only in some timezones.
+
+**Why:** the ISO 8601 string forms parse differently:
+
+- `new Date("2026-05-15T08:00:00Z")` — explicit UTC.
+- `new Date("2026-05-15T08:00:00")` — per ECMA-262 it's **local time**, but the spec changed mid-stream and several engines have historically disagreed. Linters and reviewers commonly (and reasonably) flag this as "looks like UTC."
+- `new Date(2026, 4, 15, 8, 0, 0)` — unambiguously local time. Month is **0-indexed** (4 = May).
+
+Use the numeric-arg form for deterministic local-time fixtures:
+
+```typescript
+describe("buildCoachContext", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // 13:00 LOCAL — afternoon, neither breakfast (< 11) nor evening (>= 17).
+    // Month is 0-indexed in the Date constructor: 4 = May.
+    vi.setSystemTime(new Date(2026, 4, 15, 13, 0, 0));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("includes a breakfast suggestion before 11 AM", async () => {
+    vi.setSystemTime(new Date(2026, 4, 15, 8, 0, 0)); // 08:00 LOCAL
+    // ...
+  });
+});
+```
+
+**When to use:** any test whose subject calls `getHours`/`getMinutes`/`getDay`/`getDate` on a freshly-constructed `Date`.
+
+**When NOT to use:** code that reads from `getUTCHours`/`getUTCDay`/etc., or that compares `Date` objects directly. For those, `new Date("...Z")` (explicit UTC) is correct and clearer.
+
+**Reference:** `server/services/__tests__/coach-context-builder.test.ts` — the breakfast/recap-suggestion tests in `buildCoachContext`. The service's `new Date().getHours()` call drives time-of-day branching, so the timer fixture must be local-time.
 
 ## Adding New Patterns
 

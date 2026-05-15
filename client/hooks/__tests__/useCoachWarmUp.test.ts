@@ -30,9 +30,9 @@ describe("useCoachWarmUp", () => {
 
     it("fires warm-up after 20+ chars and 500ms debounce", async () => {
       vi.useFakeTimers();
-      mockApiRequest.mockResolvedValue({
-        json: async () => ({ warmUpId: "test-id" }),
-      } as unknown as Response);
+      mockApiRequest.mockResolvedValue(
+        new Response(JSON.stringify({ warmUpId: "test-id" })),
+      );
       const { result } = renderHook(() => useCoachWarmUp(42));
       act(() => {
         result.current.sendWarmUp(
@@ -67,9 +67,9 @@ describe("useCoachWarmUp", () => {
 
     it("fires warm-up after 3+ chars and 500ms debounce", async () => {
       vi.useFakeTimers();
-      mockApiRequest.mockResolvedValue({
-        json: async () => ({ warmUpId: "test-id" }),
-      } as unknown as Response);
+      mockApiRequest.mockResolvedValue(
+        new Response(JSON.stringify({ warmUpId: "test-id" })),
+      );
       const { result } = renderHook(() => useCoachWarmUp(42));
       act(() => {
         result.current.sendTextWarmUp("hel");
@@ -90,9 +90,9 @@ describe("useCoachWarmUp", () => {
   describe("getWarmUpId", () => {
     it("returns and clears the warmUpId", async () => {
       vi.useFakeTimers();
-      mockApiRequest.mockResolvedValue({
-        json: async () => ({ warmUpId: "test-123" }),
-      } as unknown as Response);
+      mockApiRequest.mockResolvedValue(
+        new Response(JSON.stringify({ warmUpId: "test-123" })),
+      );
       const { result } = renderHook(() => useCoachWarmUp(42));
 
       act(() => {

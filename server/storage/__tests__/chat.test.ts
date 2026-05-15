@@ -16,7 +16,7 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
-import { communityRecipes } from "@shared/schema";
+import { chatMessages, communityRecipes } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 vi.mock("../../db", () => ({
@@ -220,8 +220,32 @@ describe("chat storage", () => {
   describe("getChatMessages", () => {
     it("returns messages ordered by createdAt asc", async () => {
       const conv = await createChatConversation(testUser.id, "Chat");
-      await createChatMessage(conv.id, testUser.id, "user", "First");
-      await createChatMessage(conv.id, testUser.id, "assistant", "Second");
+      const first = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "user",
+        "First",
+      );
+      const second = await createChatMessage(
+        conv.id,
+        testUser.id,
+        "assistant",
+        "Second",
+      );
+      // Inside a single test transaction, CURRENT_TIMESTAMP is fixed — both
+      // inserts get identical createdAt and ORDER BY createdAt becomes
+      // non-deterministic. Backdate explicitly per database rule:
+      // "for tests that need distinct createdAt ordering within one
+      // transaction, pass explicit new Date(baseTime - N) values".
+      const base = new Date();
+      await tx
+        .update(chatMessages)
+        .set({ createdAt: new Date(base.getTime() - 1000) })
+        .where(eq(chatMessages.id, first.id));
+      await tx
+        .update(chatMessages)
+        .set({ createdAt: base })
+        .where(eq(chatMessages.id, second.id));
 
       const messages = await getChatMessages(conv.id, 100, testUser.id);
       expect(messages).toHaveLength(2);

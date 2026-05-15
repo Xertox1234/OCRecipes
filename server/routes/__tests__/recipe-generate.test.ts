@@ -171,6 +171,10 @@ describe("POST /api/meal-plan/recipes/generate", () => {
   });
 
   it("passes the user profile to generateRecipeContent (H2)", async () => {
+    // Cast: this test only exercises pass-through of the storage return into
+    // `generateRecipeContent.userProfile`; the partial shape is sufficient
+    // and the `expect.objectContaining({ userProfile: profile })` assertion
+    // below relies on reference equality of the same partial.
     const profile = { allergies: ["peanuts"], dietaryRestrictions: ["vegan"] };
     vi.mocked(storage.getUserProfile).mockResolvedValue(
       profile as unknown as Awaited<ReturnType<typeof storage.getUserProfile>>,

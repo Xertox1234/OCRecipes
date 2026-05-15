@@ -42,7 +42,9 @@ describe("useMealPlan", () => {
         predicate: expect.any(Function),
       });
 
-      // Verify the predicate function matches correctly
+      // Verify the predicate function matches correctly.
+      // Cast: `invalidateQueries` accepts a heterogeneous filter object; narrow
+      // to the `{ predicate }` variant for direct invocation in the test.
       const call = invalidateSpy.mock.calls[0][0] as unknown as {
         predicate: (query: { queryKey: unknown[] }) => boolean;
       };
