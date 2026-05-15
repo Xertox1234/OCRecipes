@@ -1018,6 +1018,8 @@ vi.mocked(storage.getUser).mockResolvedValue(null as never);
 
 **Adding a new factory:** When a new table is added to `shared/schema.ts`, add a factory to the appropriate domain file (or create a new file) and re-export from `index.ts`. Fill in all required fields with sensible defaults.
 
+**Format-flexible columns: align defaults with a real production insert site.** When a schema column has no DB-level format constraint (bare `text`, `jsonb`, etc.) and is consumed by parsing logic, the factory default must match a string produced by a real production writer — not a plausible-looking guess. Grep for the writer (`String(recipeId)` in `server/storage/carousel.ts`, etc.) and copy the shape. A mismatched default produces rows that read-side parsers silently drop (e.g. `parseInt("community:1", 10)` → `NaN`), so tests pass while exercising none of the real parsing path. If multiple writers produce different shapes, comment which one the default matches and instruct callers to override per scenario.
+
 ### Storage Return Types: `undefined` for "Not Found"
 
 Storage functions that look up a single record return `T | undefined` (not `T | null`) when the record doesn't exist. This is enforced by Drizzle's `result[0]` pattern which yields `undefined` for empty results.

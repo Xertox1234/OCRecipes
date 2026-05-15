@@ -186,7 +186,11 @@ export function createMockTastePick(
 const recipeDismissalDefaults: RecipeDismissal = {
   id: 1,
   userId: "1",
-  recipeIdentifier: "community:1",
+  // Plain numeric string matches production: `dismissRecipe` writes
+  // `String(recipeId)` and read sites use `parseInt(..., 10)` — see
+  // `server/storage/carousel.ts`. Override per scenario if a future source
+  // adopts a prefixed format (e.g., `mealPlan:N`).
+  recipeIdentifier: "1",
   source: "carousel",
   dismissedAt: new Date("2024-01-01"),
 };
