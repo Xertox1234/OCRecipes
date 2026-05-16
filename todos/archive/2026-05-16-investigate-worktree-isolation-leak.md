@@ -1,6 +1,6 @@
 ---
 title: "Investigate agent worktree isolation leaking edits into the main working tree"
-status: backlog
+status: done
 priority: high
 created: 2026-05-16
 updated: 2026-05-16
@@ -33,7 +33,7 @@ Related symptom from the same run: two executor agents stalled by self-pacing (`
 - [x] Root-cause fix applied — OR, if the cause is the Claude Code harness and not fixable in-repo, the workaround documented
 - [x] In-repo guardrail added so a future `/todo` run cannot silently re-leak (guardrail hook and/or todo-executor instruction hardening)
 - [x] Recurrence-prevention pattern codified in `docs/solutions/`
-- [ ] A follow-up agent run verified to keep all edits isolated to its worktree (`git status` on main stays clean)
+- [x] A follow-up agent run verified to keep all edits isolated to its worktree (`git status` on main stays clean)
 
 ## Implementation Notes
 
@@ -75,3 +75,7 @@ Related symptom from the same run: two executor agents stalled by self-pacing (`
 - **M2 workspace assertion:** `.claude/agents/todo-executor.md` gained a `Step 0 — Workspace assertion` — the executor reports `blocked` if not running in a worktree and keeps edit paths inside its worktree.
 - **Pattern codified:** `docs/solutions/best-practices/agent-worktree-isolation-2026-05-16.md`.
 - **Remaining:** the live follow-up agent run that confirms `git status` on `main` stays clean is deferred until after this branch merges to `origin/main` — agent worktrees are created from `origin/main`, so the guardrail must be there before a freshly dispatched agent's worktree will contain it.
+
+### 2026-05-16 — Verified (post-merge)
+
+- PR #191 merged to `origin/main` (squash `f009b230`). A verification agent dispatched with `isolation: "worktree"` confirmed the guardrail end-to-end: its worktree (created from `origin/main`) contained the registered hook, a relative in-worktree write succeeded, and a `Write` to an absolute main-checkout path was **denied** by `guard-worktree-isolation.sh`. `git status` on `main` stayed clean — no leak. Final acceptance criterion met; see `todos/archive/2026-05-16-post-merge-verify-worktree-isolation-guard.md`.

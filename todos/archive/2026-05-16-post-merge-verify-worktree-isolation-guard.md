@@ -1,6 +1,6 @@
 ---
 title: "Post-merge: verify the worktree isolation guardrail with a live agent run"
-status: backlog
+status: done
 priority: high
 created: 2026-05-16
 updated: 2026-05-16
@@ -23,10 +23,10 @@ Reason: agent worktrees are created from `origin/main`, not the orchestrator's l
 
 ## Acceptance Criteria
 
-- [ ] After the branch is merged to `origin/main`, dispatch an `isolation: "worktree"` agent and confirm via a `PreToolUse` status message / behavior that `guard-worktree-isolation.sh` runs for worktree-isolated agents
-- [ ] Confirm the hook denies an `Edit`/`Write`/`MultiEdit` whose absolute `file_path` targets the main checkout from inside the worktree
-- [ ] Confirm `git status` on the main checkout stays clean after the agent run (no leaked files)
-- [ ] Check off the final acceptance criterion in `todos/2026-05-16-investigate-worktree-isolation-leak.md` and archive that todo to `todos/archive/`
+- [x] After the branch is merged to `origin/main`, dispatch an `isolation: "worktree"` agent and confirm via a `PreToolUse` status message / behavior that `guard-worktree-isolation.sh` runs for worktree-isolated agents
+- [x] Confirm the hook denies an `Edit`/`Write`/`MultiEdit` whose absolute `file_path` targets the main checkout from inside the worktree
+- [x] Confirm `git status` on the main checkout stays clean after the agent run (no leaked files)
+- [x] Check off the final acceptance criterion in `todos/2026-05-16-investigate-worktree-isolation-leak.md` and archive that todo to `todos/archive/`
 
 ## Implementation Notes
 
@@ -48,3 +48,13 @@ Reason: agent worktrees are created from `origin/main`, not the orchestrator's l
 ### 2026-05-16
 
 - Initial creation. Split out from `todos/2026-05-16-investigate-worktree-isolation-leak.md` because the live verification cannot run until the guardrail is on `origin/main`. Flagged by the final code review of the `fix/worktree-isolation-leak` branch.
+
+### 2026-05-16 — Verified, PASS
+
+- PR #191 merged to `origin/main` (squash `f009b230`); the guardrail is live.
+- A verification agent dispatched with `isolation: "worktree"` confirmed all criteria:
+  - Its worktree (created from `origin/main`) contained `guard-worktree-isolation.sh`, executable, with 3 registrations in `.claude/settings.json`.
+  - A relative in-worktree `Write` succeeded (normal operation unaffected).
+  - A `Write` to the absolute main-checkout path `/Users/williamtower/projects/OCRecipes/verify-leak-marker.txt` was **denied** by the `PreToolUse` guardrail, with the expected actionable message.
+  - `git status` on the main checkout stayed clean — `verify-leak-marker.txt` was never created.
+- Probe worktree removed. Done — archiving this todo and the parent investigate todo.
