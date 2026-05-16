@@ -15,6 +15,17 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-16 — Testing Setup Audit (Round 2)
+
+- **Trigger:** User-requested complete audit of the testing setup. Second `testing`-scoped audit; strong dedup against 2026-05-11-testing.md — all 9 of its deferred todos are archived/resolved and the flagged storage/route/service test files now exist, so prior coverage gaps were excluded from scope.
+- **Manifest:** [docs/audits/2026-05-16-testing.md](2026-05-16-testing.md)
+- **Findings:** 0 critical, 0 high, 2 medium, 4 low (6 total — testing-specialist discovery + docs-researcher Phase 2.5)
+- **Resolved:** 5 verified, 1 deferred, 0 false-positive
+- **Commit(s):** _(see manifest Fix Commits)_
+- **Note:** Testing setup is healthy — no coverage gaps, no flaky-timer bugs, full factory coverage (46/46 schema tables), `as never` fully eliminated. All 6 findings are documentation drift or one latent mock-lifecycle risk. Key fixes: `testing-specialist.md` corrected — removed the false "pre-commit hooks block commits if tests fail" claim, added the `kimi-review` gate to the Pre-Commit Pipeline section, refreshed the stale test count (1,300→5,191 / 80+→352), and added `test/setup.ts` + the two missing factory files to the reference lists (M1/L1/L2/L3); `CLAUDE.md:15` corrected — `.husky/pre-commit` now runs `kimi-review` (commit `017b4812`, #180), so the "terminal commits bypass the Kimi gate" claim was stale (M2).
+- **Deferred:** L4 — `test/setup.ts` uses `vi.clearAllMocks()`, which clears call history but not `.mockImplementation()` overrides; the Vitest-doc-validated fix (`mockReset: true`) is a global test-infra change affecting all 5,191 tests → `todos/2026-05-16-vitest-mock-implementation-leak.md`.
+- **Process note:** The auto-mode classifier blocked edits to `.claude/agents/testing-specialist.md` (self-modification guard, stateless — does not see conversational authorization). Resolved by the user adding durable `permissions.allow` + `autoMode.allow` rules for `.claude/agents/**` to `~/.claude/settings.json`. `CLAUDE.md` is an untracked local file, so M2's fix is outside this audit commit.
+
 ## 2026-05-16 — Unfinished Features, Specs & Plans Audit
 
 - **Trigger:** Resumed a half-finished audit left in worktree `audit-2026-05-16b` (discovery done, fix phase never started). Custom scope: unfinished features, dead TODOs, stale specs/plans.
