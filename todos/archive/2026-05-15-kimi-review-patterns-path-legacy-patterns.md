@@ -1,9 +1,9 @@
 ---
 title: "kimi-review --patterns resolver still points at docs/patterns/ (now docs/legacy-patterns/)"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-15
-updated: 2026-05-15
+updated: 2026-05-16
 assignee:
 labels: [deferred, infrastructure, docs]
 github_issue:
@@ -52,3 +52,9 @@ The `kimi-review` CLI is global tooling (installed on PATH, not version-controll
 ### 2026-05-15
 
 - Initial creation. Deferred from Phase 2 Step 6 (`todos/archive/2026-05-12-phase-2-pattern-decomposition.md`).
+
+### 2026-05-16
+
+- Resolved. Patched `resolve_pattern_path` in the global `kimi-review` CLI (`~/.local/bin/kimi-review`) to fall back to `docs/legacy-patterns/<domain>.md` when `docs/patterns/<domain>.md` is absent. Purely additive — repos that still have `docs/patterns/` resolve unchanged; the hard-fail is retained when both dirs are missing.
+- AC#3 decided in favor of `docs/legacy-patterns/` (not `docs/rules/`): `docs/AI_WORKFLOW.md:177` already documents that target, and the pre-commit hook separately passes `--rules "$PATTERNS"` → `docs/rules/`, so Kimi already receives the current binding rules. `--patterns` supplies the frozen long-form catalog; the two are complementary.
+- Verified: all 13 hook-derived domains resolve to existing files under `docs/legacy-patterns/`. No repo change needed — `docs/AI_WORKFLOW.md` was already updated to reference `docs/legacy-patterns/`.
