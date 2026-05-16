@@ -2,6 +2,7 @@
 
 - IDOR: every resource lookup must scope by `userId` AND visibility (`eq(t.isPublic, true)` or `eq(t.authorId, userId)`) — this applies to reads, not just mutations
 - isPublic guard must appear on BOTH the read path AND the write path of storage functions that accept user-supplied IDs — a write path that inserts without filtering can associate private resources with a user, leaking their metadata (title, cuisine, imageUrl) via the subsequent read
+- Polymorphic-FK junction inserts (`(parent_id, target_id, target_type)`) must verify the _target_ resource's ownership/visibility with its own `EXISTS` guard — verifying only the junction's parent container is insufficient. A parent-only guard looks correct (there _is_ a `WHERE EXISTS`) but scopes the wrong row, letting a caller attach another user's private resource and leak its metadata via the resolve path. The resolve path must also hide non-visible-but-existing targets without orphan-deleting them
 - Storage update functions must accept an explicit field whitelist — never `Partial<User>` or spread of arbitrary input (enables mass-assignment)
 - Sanitize ALL prompt roles (`user`, `assistant`, `system`) before sending to OpenAI — never only `user` role
 - Rate-limit all AI/OpenAI endpoints — every new AI route needs a rate limiter from `server/middleware/rate-limiter.ts`
