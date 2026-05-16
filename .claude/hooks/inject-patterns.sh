@@ -113,11 +113,11 @@ EOF
 
 # Map a hook domain to the ERE fragment that matches it inside a `tags:` line.
 # Most domains are their own whole-word tag (`\bapi\b`). The ai-prompting domain
-# has no bare `ai` tag in the corpus — every AI solution uses an `ai-*` tag
-# (ai-safety, ai-prompting, ai-coaching, ...), so it matches the `ai-` prefix.
+# matches both the bare `ai` tag and every `ai-*` tag (ai-safety, ai-coaching,
+# ai-content, ai-integration, ai-prompting) — all are AI-domain solutions.
 domain_tag_pattern() {
   case "$1" in
-    ai-prompting) printf '\\bai-' ;;
+    ai-prompting) printf '\\bai(-[a-z]+)?\\b' ;;
     *) printf '\\b%s\\b' "$1" ;;
   esac
 }
