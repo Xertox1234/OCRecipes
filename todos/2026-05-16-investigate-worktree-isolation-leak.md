@@ -30,9 +30,9 @@ Related symptom from the same run: two executor agents stalled by self-pacing (`
 - [x] Root cause identified for why `isolation: worktree` agent edits reach the main working tree
 - [x] Determined whether the cause is the Claude Code harness, a hook, a `.claude/settings.json` misconfiguration, or agent tool-use behavior (e.g. absolute paths under the main repo root)
 - [x] Reproduced the leak, or conclusively ruled out each hypothesis
-- [ ] Root-cause fix applied — OR, if the cause is the Claude Code harness and not fixable in-repo, the workaround documented
-- [ ] In-repo guardrail added so a future `/todo` run cannot silently re-leak (guardrail hook and/or todo-executor instruction hardening)
-- [ ] Recurrence-prevention pattern codified in `docs/solutions/`
+- [x] Root-cause fix applied — OR, if the cause is the Claude Code harness and not fixable in-repo, the workaround documented
+- [x] In-repo guardrail added so a future `/todo` run cannot silently re-leak (guardrail hook and/or todo-executor instruction hardening)
+- [x] Recurrence-prevention pattern codified in `docs/solutions/`
 - [ ] A follow-up agent run verified to keep all edits isolated to its worktree (`git status` on main stays clean)
 
 ## Implementation Notes
@@ -68,3 +68,10 @@ Related symptom from the same run: two executor agents stalled by self-pacing (`
 - The hook hypothesis is ruled out: `inject-patterns.sh` resolves `PROJECT_ROOT` from `BASH_SOURCE` and never writes files.
 - New finding: agent worktrees are created from `origin/main`, not the orchestrator's local HEAD — this affects how the guardrail must be verified (see RCA "Plan adjustments").
 - Proceeding to the M1 guardrail hook + M2 workspace assertion.
+
+### 2026-05-16 — Mitigation shipped (Tasks 4–6)
+
+- **M1 guardrail hook:** `.claude/hooks/guard-worktree-isolation.sh`, a `PreToolUse` hook registered for `Edit`/`Write`/`MultiEdit` in `.claude/settings.json`. Denies an absolute-path edit targeting the main checkout when the session cwd is inside `.claude/worktrees/agent-*`.
+- **M2 workspace assertion:** `.claude/agents/todo-executor.md` gained a `Step 0 — Workspace assertion` — the executor reports `blocked` if not running in a worktree and keeps edit paths inside its worktree.
+- **Pattern codified:** `docs/solutions/best-practices/agent-worktree-isolation-2026-05-16.md`.
+- **Remaining:** the live follow-up agent run that confirms `git status` on `main` stays clean is deferred until after this branch merges to `origin/main` — agent worktrees are created from `origin/main`, so the guardrail must be there before a freshly dispatched agent's worktree will contain it.
