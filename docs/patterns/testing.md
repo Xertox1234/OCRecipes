@@ -2378,6 +2378,24 @@ describe("buildCoachContext", () => {
 
 **Reference:** `server/services/__tests__/coach-context-builder.test.ts` — the breakfast/recap-suggestion tests in `buildCoachContext`. The service's `new Date().getHours()` call drives time-of-day branching, so the timer fixture must be local-time.
 
+## Fork-Pool Starvation: Cap `maxForks` Below Core Count for Local Runs
+
+A local full-suite `npm run test:run` can nondeterministically fail a handful of DB-integration and timing-sensitive tests with `testTimeout` kills — **even though the code is correct**. The signature: the failing set changes between runs, every failing file passes when run in isolation, and CI stays green.
+
+**Why:** `vitest.config.ts` uses `pool: "forks"`, whose `maxForks` defaults to roughly one fork per core. On a 10-core machine that is ~10 forks competing for 10 cores, alongside the Postgres server and Node's own threads — zero CPU headroom. Under extra load (parallel agents, a concurrent build) the OS scheduler can't give every fork enough time slices; a fork blocked from running for >10s trips `testTimeout`. The deliberate-timeout test in `recipe-import.test.ts` is the clearest tell: ~10s budget, runs `10003ms` in isolation but `27000ms+` in a loaded full suite.
+
+**The fix** (`vitest.config.ts`): derive `maxForks` from `os.cpus().length` minus a fixed headroom rather than hardcoding a number, and leave CI uncapped — isolated CI runners don't hit the contention, and a static cap would oversubscribe smaller runners.
+
+```ts
+poolOptions: {
+  forks: {
+    maxForks: process.env.CI ? undefined : Math.max(1, os.cpus().length - 3),
+  },
+},
+```
+
+**Recognizing a false-red:** before chasing a failure from a full-suite run, check the three signals — failing set differs across runs, failing files pass in isolation (`npx vitest run <file>`), CI green. If all three hold, it is scheduling contention, not a regression. Do **not** "fix" it by raising `testTimeout` globally — that hides worker starvation.
+
 ## Adding New Patterns
 
 When you establish a new pattern:
