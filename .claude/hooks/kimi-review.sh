@@ -94,11 +94,23 @@ else
     --tiers CRITICAL,WARNING 2>&1)
 fi
 
-# 8) Detect CRITICAL findings. Fail-closed whole-word match (case-sensitive) so
-#    decorated variants (`[CRITICAL]`, `**CRITICAL**`, `## CRITICAL`, `- CRITICAL:`)
-#    all block. Word boundaries reject `CRITICALITY`, `CRITICAL_SECTION`, and the
-#    lowercase `critical` that appears in prose like "no critical issues found".
-if printf '%s' "$REVIEW" | grep -Eq '(^|[^[:alnum:]_])CRITICAL([^[:alnum:]_]|$)'; then
+# 8) Detect CRITICAL findings. kimi-review emits every real finding as
+#    `[TIER] path:line — description` (see the format block in the kimi-review
+#    script), so an actual CRITICAL finding carries the bracketed `[CRITICAL]`
+#    tag followed by a body. The discriminating signal is the *brackets*: the
+#    negative phrasing ("No CRITICAL or WARNING findings") and the clean-output
+#    message ("No findings in requested tiers: CRITICAL, WARNING") both contain
+#    the bare word CRITICAL but never the bracketed tag — so matching `[CRITICAL]`
+#    avoids the false blocks the old word-anywhere match tripped on.
+#    The match is deliberately NOT anchored to line start: an LLM may decorate a
+#    finding line ("- [CRITICAL] ...", "**[CRITICAL]** ..."), and a quality gate
+#    should fail closed on those rather than let them through. The trailing
+#    `.*[^[:space:]]` requires at least one non-space character after the tag,
+#    so a bare `[CRITICAL]` with no finding body does not block. The literal `[`
+#    and `]` use POSIX bracket-expression escaping (`[[]`, `[]]`) rather than
+#    backslash escaping, so the pattern is portable across GNU and BSD grep
+#    without a GNU ERE extension.
+if printf '%s\n' "$REVIEW" | grep -Eq '[[]CRITICAL[]].*[^[:space:]]'; then
   # Block the commit and feed the full review body back to the model so it
   # can decide whether to amend, abort, or override.
   REASON=$(printf 'kimi-review blocked the commit — CRITICAL finding present.\n\n%s\n\n%s' \
