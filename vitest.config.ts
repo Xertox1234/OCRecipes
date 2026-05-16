@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
+import os from "node:os";
 
 export default defineConfig({
   esbuild: {
@@ -44,6 +45,12 @@ export default defineConfig({
       },
     },
     pool: "forks",
+    // Locally, cap workers below the core count so they keep CPU headroom
+    // under machine load — without it, worker starvation makes timing-sensitive
+    // DB tests trip testTimeout nondeterministically. CI runs unconstrained:
+    // isolated runners don't hit the contention, and a static cap would
+    // oversubscribe smaller runners. See docs/patterns/testing.md.
+    maxWorkers: process.env.CI ? undefined : Math.max(1, os.cpus().length - 3),
     testTimeout: 10000,
     setupFiles: ["./test/setup.ts"],
     globalSetup: ["./test/global-teardown.ts"],
