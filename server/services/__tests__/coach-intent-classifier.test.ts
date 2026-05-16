@@ -269,9 +269,12 @@ describe("classifyIntent", () => {
       );
     });
 
-    it("does NOT match an injection keyword separated by >500 chars", () => {
+    it("matches an injection keyword across a long gap within the message cap", () => {
+      // Regression: a 500-char bound let a padded injection skip the keyword.
+      // The bound now equals the 2000-char message cap, so a 600-char gap is
+      // still detected.
       const longGap = "a".repeat(600);
-      expect(classifyIntent(`ignore ${longGap} the rules`).intent).not.toBe(
+      expect(classifyIntent(`ignore ${longGap} the rules`).intent).toBe(
         "safety_refusal",
       );
     });
