@@ -64,7 +64,7 @@ Before researching, clarify:
 
 Use these tools in priority order:
 
-1. **Context7 MCP** (`mcp__plugin_compound-engineering_context7__query-docs`) - Preferred for library docs. Query current documentation for any dependency.
+1. **Context7 MCP** - Preferred for library docs. Call `mcp__plugin_context7_context7__resolve-library-id` to resolve a package name to its Context7 library ID, then `mcp__plugin_context7_context7__query-docs` to fetch current documentation for that dependency.
 2. **WebFetch** - Fetch specific documentation URLs (official docs, GitHub READMEs)
 3. **WebSearch** - Search for best practices, blog posts, community solutions
 4. **Project files** - Check existing patterns in `docs/legacy-patterns/`, `docs/LEARNINGS.md`
