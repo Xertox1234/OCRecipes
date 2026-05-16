@@ -138,7 +138,7 @@ export async function addRecipeToCookbook(
     // Single-statement INSERT...SELECT guarded by a WHERE EXISTS on
     // `cookbooks.user_id` (cookbook ownership) AND the recipe-access guard
     // above (target visibility) — the row is inserted only when both hold.
-    // See docs/legacy-patterns/security.md → "Storage-Layer Defense-in-Depth".
+    // See docs/solutions/logic-errors/polymorphic-junction-unverified-target-idor-2026-05-16.md.
     // The ON CONFLICT clause preserves idempotent-add semantics: a duplicate
     // junction row yields no returned row, same as if a guard failed.
     const inserted = await tx.execute<CookbookRecipe>(sql`

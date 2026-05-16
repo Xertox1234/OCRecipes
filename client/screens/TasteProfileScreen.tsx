@@ -94,13 +94,13 @@ export default function TasteProfileScreen() {
     loadCandidates(1);
   }, [loadCandidates]);
 
-  // Announce selection-count changes to screen readers (skip the mount render).
-  const isFirstRender = React.useRef(true);
+  // Announce selection-count changes to screen readers — only for user
+  // toggles. `handleToggle` arms this ref; the programmatic load of existing
+  // picks (and the mount render) leave it false, so neither announces.
+  const announceCountChange = React.useRef(false);
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
+    if (!announceCountChange.current) return;
+    announceCountChange.current = false;
     AccessibilityInfo.announceForAccessibility(`${selectedIds.size} selected`);
   }, [selectedIds.size]);
 
@@ -115,6 +115,7 @@ export default function TasteProfileScreen() {
   }, [loadError]);
 
   const handleToggle = useCallback((recipeId: number) => {
+    announceCountChange.current = true;
     setIsDirty(true);
     setSelectedIds((prev) => {
       const next = new Set(prev);
