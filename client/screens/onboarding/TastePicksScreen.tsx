@@ -147,6 +147,16 @@ export default function TastePicksScreen() {
     AccessibilityInfo.announceForAccessibility(msg);
   }, [selectedIds.size]);
 
+  // Announce the load-failure state so a screen-reader user focused elsewhere
+  // learns the grid was replaced by the retry message.
+  useEffect(() => {
+    if (loadError) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load recipes. Retry available.",
+      );
+    }
+  }, [loadError]);
+
   const canContinue = selectedIds.size >= MIN_PICKS;
   const chipActive = selectedIds.size >= MIN_PICKS;
 

@@ -307,8 +307,7 @@ export function register(app: Express): void {
           );
         }
 
-        const barcodeRaw = req.body?.barcode as string;
-        const barcodeResult = barcodeField.safeParse(barcodeRaw);
+        const barcodeResult = barcodeField.safeParse(req.body?.barcode);
         if (!barcodeResult.success) {
           return sendError(
             res,

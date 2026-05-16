@@ -417,6 +417,63 @@ describe("cookbooks storage", () => {
       const rows = await getCookbookRecipes(cookbook.id, otherUser.id);
       expect(rows).toEqual([]);
     });
+
+    it("returns undefined when the target mealPlan recipe belongs to another user (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const cookbook = await createCookbook({
+        userId: testUser.id,
+        name: "Mine",
+      });
+      // A meal-plan recipe owned by someone else — must not be cookbook-able.
+      const foreignRecipe = await createTestMealPlanRecipe(otherUser.id);
+
+      const result = await addRecipeToCookbook(
+        cookbook.id,
+        foreignRecipe.id,
+        "mealPlan",
+        testUser.id,
+      );
+      expect(result).toBeUndefined();
+
+      const rows = await getCookbookRecipes(cookbook.id, testUser.id);
+      expect(rows).toEqual([]);
+    });
+
+    it("returns undefined when the target community recipe is private (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const cookbook = await createCookbook({
+        userId: testUser.id,
+        name: "Mine",
+      });
+      const privateRecipe = await createTestCommunityRecipe(otherUser.id, {
+        isPublic: false,
+      });
+
+      const result = await addRecipeToCookbook(
+        cookbook.id,
+        privateRecipe.id,
+        "community",
+        testUser.id,
+      );
+      expect(result).toBeUndefined();
+
+      const rows = await getCookbookRecipes(cookbook.id, testUser.id);
+      expect(rows).toEqual([]);
+    });
+
+    it("returns undefined when the target recipe does not exist", async () => {
+      const cookbook = await createCookbook({
+        userId: testUser.id,
+        name: "Mine",
+      });
+      const result = await addRecipeToCookbook(
+        cookbook.id,
+        999999,
+        "mealPlan",
+        testUser.id,
+      );
+      expect(result).toBeUndefined();
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -764,6 +821,65 @@ describe("cookbooks storage", () => {
 
       await getResolvedCookbookRecipes(cookbook.id, testUser.id);
       expect(lastFireAndForgetPromise).toBeNull();
+    });
+
+    it("does not resolve a mealPlan recipe owned by another user, and keeps the junction row (IDOR)", async () => {
+      const otherUser = await createTestUser(tx);
+      const cookbook = await createCookbook({
+        userId: testUser.id,
+        name: "C",
+      });
+      const foreignRecipe = await createTestMealPlanRecipe(otherUser.id, {
+        title: "Foreign Secret",
+      });
+      // Insert a junction row directly, simulating a row leaked before the
+      // add-path guard existed.
+      await tx.insert(cookbookRecipes).values({
+        cookbookId: cookbook.id,
+        recipeId: foreignRecipe.id,
+        recipeType: "mealPlan",
+      });
+
+      const result = await getResolvedCookbookRecipes(cookbook.id, testUser.id);
+      expect(result).toEqual([]);
+
+      // The recipe exists, so the junction row is NOT an orphan — it must be
+      // kept (no fire-and-forget cleanup), just hidden from the response.
+      expect(lastFireAndForgetPromise).toBeNull();
+      const rows = await getCookbookRecipes(cookbook.id, testUser.id);
+      expect(rows).toHaveLength(1);
+    });
+
+    it("does not resolve another author's community recipe that was made private, and keeps the junction row", async () => {
+      const otherUser = await createTestUser(tx);
+      const cookbook = await createCookbook({
+        userId: testUser.id,
+        name: "C",
+      });
+      // Authored by someone else — once private, the caller must not see it.
+      const recipe = await createTestCommunityRecipe(otherUser.id, {
+        title: "Public Then Private",
+      });
+      await tx.insert(cookbookRecipes).values({
+        cookbookId: cookbook.id,
+        recipeId: recipe.id,
+        recipeType: "community",
+      });
+      // Author later unpublishes the recipe.
+      const { eq } = await import("drizzle-orm");
+      await tx
+        .update(communityRecipes)
+        .set({ isPublic: false })
+        .where(eq(communityRecipes.id, recipe.id));
+
+      const result = await getResolvedCookbookRecipes(cookbook.id, testUser.id);
+      expect(result).toEqual([]);
+
+      // Recipe still exists — junction row preserved so it reappears if the
+      // recipe is re-published.
+      expect(lastFireAndForgetPromise).toBeNull();
+      const rows = await getCookbookRecipes(cookbook.id, testUser.id);
+      expect(rows).toHaveLength(1);
     });
   });
 

@@ -1906,6 +1906,10 @@ export const barcodeVerifications = pgTable(
     levelIdx: index("barcode_verifications_level_idx").on(
       table.verificationLevel,
     ),
+    countNonNeg: check(
+      "barcode_verifications_count_gte0",
+      sql`${table.verificationCount} >= 0`,
+    ),
   }),
 );
 

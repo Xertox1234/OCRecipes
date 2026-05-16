@@ -32,6 +32,7 @@ const SuggestionList = React.memo(function SuggestionList({
           }
           disabled={!item.action}
           accessibilityRole={item.action ? "button" : undefined}
+          accessibilityState={{ disabled: !item.action }}
           accessibilityLabel={`${item.title}. ${item.subtitle}`}
         >
           <View style={styles.itemContent}>

@@ -303,6 +303,7 @@ export default function SettingsScreen() {
                     name={item.icon}
                     size={20}
                     color={item.danger ? theme.error : theme.textSecondary}
+                    accessible={false}
                   />
                   <ThemedText
                     style={[
@@ -319,7 +320,7 @@ export default function SettingsScreen() {
                       name="lock"
                       size={14}
                       color={theme.textSecondary}
-                      importantForAccessibility="no-hide-descendants"
+                      accessible={false}
                     />
                   )}
                   {!item.danger && (
@@ -327,6 +328,7 @@ export default function SettingsScreen() {
                       name="chevron-right"
                       size={18}
                       color={theme.textSecondary}
+                      accessible={false}
                     />
                   )}
                 </View>

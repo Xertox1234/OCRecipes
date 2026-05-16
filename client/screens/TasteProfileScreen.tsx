@@ -1,6 +1,12 @@
 // client/screens/TasteProfileScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
-import { View, StyleSheet, Pressable, Alert } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  Alert,
+  AccessibilityInfo,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -37,10 +43,6 @@ export default function TasteProfileScreen() {
   const loadPicks = useCallback(async () => {
     try {
       const res = await apiRequest("GET", "/api/taste-picks");
-      if (!res.ok) {
-        setLoadError(true);
-        return;
-      }
       const json = await res.json();
       const parsed = tastePicksResponseSchema.safeParse(json);
       if (!parsed.success) {
@@ -91,6 +93,26 @@ export default function TasteProfileScreen() {
   useEffect(() => {
     loadCandidates(1);
   }, [loadCandidates]);
+
+  // Announce selection-count changes to screen readers (skip the mount render).
+  const isFirstRender = React.useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    AccessibilityInfo.announceForAccessibility(`${selectedIds.size} selected`);
+  }, [selectedIds.size]);
+
+  // Announce the load-failure state so a screen-reader user focused elsewhere
+  // learns the grid was replaced by the retry message.
+  useEffect(() => {
+    if (loadError) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load recipes. Retry available.",
+      );
+    }
+  }, [loadError]);
 
   const handleToggle = useCallback((recipeId: number) => {
     setIsDirty(true);
