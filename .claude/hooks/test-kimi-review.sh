@@ -17,7 +17,8 @@ PASS=0; FAIL=0
 #   warning           → a [WARNING] finding line
 #   noisy-prose       → lowercase "critical" in prose, no real finding
 #   negative-prose    → the model's "No CRITICAL or WARNING findings" phrasing
-#   clean             → kimi-review's real clean-output message
+#   clean             → kimi-review's clean-output message (prose phrasing)
+#   clean-tiered      → kimi-review's clean output as bracketed per-tier headers
 make_stub_path() {
   local mode="$1"
   local dir
@@ -34,6 +35,7 @@ case "$mode" in
   noisy-prose)      echo "no critical issues found in stub run";;
   negative-prose)   echo "No CRITICAL or WARNING findings";;
   clean)            echo "No findings in requested tiers: CRITICAL, WARNING";;
+  clean-tiered)     printf '[CRITICAL] — No findings.\n[WARNING] — No findings.\n';;
 esac
 EOF
   chmod +x "$dir/kimi-review"
@@ -186,6 +188,14 @@ assert_not_contains "clean-output message ('...tiers: CRITICAL, WARNING') does N
 
 OUT=$(run_hook negative-prose '{"tool_input":{"command":"git commit -m x"}}')
 assert_not_contains "negative phrasing ('No CRITICAL or WARNING findings') does NOT block" "$OUT" '"permissionDecision": "deny"'
+
+# Regression: kimi-review's real clean output prints a bracketed per-tier
+# section header for every requested tier (`[CRITICAL] — No findings.`). That
+# header carries the bracketed `[CRITICAL]` tag with a body, so the tag alone
+# cannot be the block signal — the "No findings" sentinel must NOT block.
+OUT=$(run_hook clean-tiered '{"tool_input":{"command":"git commit -m x"}}')
+assert_not_contains "bracketed '[CRITICAL] — No findings.' header does NOT block" "$OUT" '"permissionDecision": "deny"'
+assert_contains "clean-tiered emits additionalContext" "$OUT" "additionalContext"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
