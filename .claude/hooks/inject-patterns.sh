@@ -16,8 +16,13 @@ FILE_PATH=$(printf '%s' "$INPUT" | jq -re '.tool_input.file_path' 2>/dev/null) |
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-PATTERNS_DIR="$PROJECT_ROOT/docs/patterns"
+SOLUTIONS_DIR="$PROJECT_ROOT/docs/solutions"
 RULES_DIR="$PROJECT_ROOT/docs/rules"
+
+# Max solution files injected per domain (path + title only, newest-first).
+# Bounds total output: ~4 domains x 4 files x ~110B ≈ 1.8KB of solution refs,
+# leaving headroom for the full rules files under the 9000-byte spill threshold.
+SOLUTIONS_PER_DOMAIN=4
 
 # Map file path to domains
 DOMAINS=""
@@ -106,44 +111,52 @@ cat >> "$TMPFILE" <<'EOF'
 - Goal-driven execution. Turn vague instructions into verifiable targets before writing a line. "Add validation" becomes "write tests for invalid inputs, then make them pass."
 EOF
 
+# Map a hook domain to the ERE fragment that matches it inside a `tags:` line.
+# Most domains are their own whole-word tag (`\bapi\b`). The ai-prompting domain
+# matches both the bare `ai` tag and every `ai-*` tag (ai-safety, ai-coaching,
+# ai-content, ai-integration, ai-prompting) — all are AI-domain solutions.
+domain_tag_pattern() {
+  case "$1" in
+    ai-prompting) printf '\\bai(-[a-z]+)?\\b' ;;
+    *) printf '\\b%s\\b' "$1" ;;
+  esac
+}
+
 # Domain section (skipped if no domains matched — preamble still emitted above)
 if [ -n "$DOMAINS" ]; then
   IFS=',' read -ra DOMAIN_LIST <<< "$DOMAINS"
   for DOMAIN in "${DOMAIN_LIST[@]}"; do
     RULES_FILE="$RULES_DIR/${DOMAIN}.md"
-    PATTERNS_FILE="$PATTERNS_DIR/${DOMAIN}.md"
-    # Use repo-relative paths in printed headers — saves ~100 bytes per header in
-    # worktrees where PROJECT_ROOT is a deep absolute path, and matches how files
-    # are referenced elsewhere (CLAUDE.md, docs).
-    PATTERNS_REL="docs/patterns/${DOMAIN}.md"
 
-    # Inject full rules file (short by design)
+    # Inject full rules file (short by design) — docs/rules/ is NOT being retired.
     if [ -f "$RULES_FILE" ]; then
       printf '\n[RULES — %s]\n' "$DOMAIN" >> "$TMPFILE"
       cat "$RULES_FILE" >> "$TMPFILE"
     fi
 
-    # Inject subsection TOC for this domain's pattern doc.
-    # Line-numbered headings let Claude jump straight to a relevant subsection with Read
-    # instead of forcing a fixed-position excerpt. First 4 + last 4 entries keeps
-    # foundational primitives (top of file) AND recent codifications (bottom of file)
-    # while staying small enough that the 4-domain stack (e.g. database+security+
-    # architecture + accessibility for storage files) fits under the 9000-byte spill
-    # threshold. Original 12+13 layout consistently overflowed for routes/storage paths.
-    if [ -f "$PATTERNS_FILE" ]; then
-      printf '\n[PATTERNS — %s (table of contents — Read %s:<line> for the body)]\n' \
-        "$DOMAIN" "$PATTERNS_REL" >> "$TMPFILE"
-      ALL_HEADINGS=$(grep -nE '^(### |#### )' "$PATTERNS_FILE" 2>/dev/null || true)
-      if [ -n "$ALL_HEADINGS" ]; then
-        HEADING_COUNT=$(printf '%s\n' "$ALL_HEADINGS" | wc -l | tr -d ' ')
-        if [ "$HEADING_COUNT" -le 8 ]; then
-          printf '%s\n' "$ALL_HEADINGS" >> "$TMPFILE"
-        else
-          printf '%s\n' "$ALL_HEADINGS" | head -n 4 >> "$TMPFILE"
-          printf '... (%d middle subsections omitted — Read %s for the full TOC)\n' \
-            "$((HEADING_COUNT - 8))" "$PATTERNS_REL" >> "$TMPFILE"
-          printf '%s\n' "$ALL_HEADINGS" | tail -n 4 >> "$TMPFILE"
-        fi
+    # Inject the most relevant docs/solutions/ files for this domain.
+    # Matching rule: a solution file matches a domain if the domain's tag appears
+    # in its YAML `tags:` frontmatter line (whole-word match). This is the simplest
+    # concrete rule the schema supports — `tags` is required on every solution file.
+    # Newest-first (filenames carry a YYYY-MM-DD suffix, so reverse-lex = recent),
+    # capped at SOLUTIONS_PER_DOMAIN to bound output. Path + title only — Read the
+    # file for the body, mirroring the previous TOC-not-excerpt philosophy.
+    if [ -d "$SOLUTIONS_DIR" ]; then
+      TAG_PATTERN=$(domain_tag_pattern "$DOMAIN")
+      # Match the domain's tag on each file's `tags:` frontmatter line. The pattern
+      # carries its own word boundaries (see domain_tag_pattern), so no grep -w.
+      # _manifests/ files have no `tags:` line and are filtered out anyway.
+      MATCHES=$(grep -rl --include='*.md' -E "^tags:.*${TAG_PATTERN}" \
+        "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' | sort -r | head -n "$SOLUTIONS_PER_DOMAIN" || true)
+      if [ -n "$MATCHES" ]; then
+        printf '\n[SOLUTIONS — %s (Read the file for the full body)]\n' "$DOMAIN" >> "$TMPFILE"
+        while IFS= read -r SOL_FILE; do
+          [ -n "$SOL_FILE" ] || continue
+          SOL_REL="${SOL_FILE#"$PROJECT_ROOT"/}"
+          SOL_TITLE=$(grep -m1 -E '^title:' "$SOL_FILE" 2>/dev/null \
+            | sed -E 's/^title:[[:space:]]*//; s/^"//; s/"$//' || true)
+          printf -- '- %s — %s\n' "$SOL_REL" "${SOL_TITLE:-untitled}" >> "$TMPFILE"
+        done <<< "$MATCHES"
       fi
     fi
   done
