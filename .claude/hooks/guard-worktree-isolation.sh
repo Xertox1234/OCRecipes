@@ -5,6 +5,9 @@
 # is the isolation-leak signature — deny it. Relative paths resolve against the
 # (in-worktree) cwd and are always allowed. Fails open on parse failure, matching
 # the other hooks in this directory.
+# Scope: registered for Edit/Write/MultiEdit (see settings.json). NotebookEdit is
+# intentionally not covered — its tool_input uses notebook_path, not file_path.
+# Tests: .claude/hooks/test-guard-worktree-isolation.sh
 set -uo pipefail
 
 command -v jq >/dev/null 2>&1 || exit 0
