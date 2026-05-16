@@ -33,7 +33,7 @@ export default defineConfig({
       // Hard floor — set below current measured baseline (as of 2026-05-15:
       // lines 83.92%, statements 83.14%, functions 81.54%, branches 74.02%)
       // to leave room for normal variance. Ratchet up over time;
-      // see docs/patterns/testing.md → "Coverage Threshold Ratcheting".
+      // see docs/legacy-patterns/testing.md → "Coverage Threshold Ratcheting".
       thresholds: {
         // autoUpdate must stay false — never let CI rewrite this config.
         // Set in config (not CLI) so it cannot be parsed as the truthy string "false".
@@ -49,7 +49,7 @@ export default defineConfig({
     // under machine load — without it, worker starvation makes timing-sensitive
     // DB tests trip testTimeout nondeterministically. CI runs unconstrained:
     // isolated runners don't hit the contention, and a static cap would
-    // oversubscribe smaller runners. See docs/patterns/testing.md.
+    // oversubscribe smaller runners. See docs/legacy-patterns/testing.md.
     maxWorkers: process.env.CI ? undefined : Math.max(1, os.cpus().length - 3),
     testTimeout: 10000,
     setupFiles: ["./test/setup.ts"],

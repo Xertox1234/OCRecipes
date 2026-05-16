@@ -165,7 +165,7 @@ export async function deleteUser(id: string): Promise<boolean> {
   // Collect recipe IDs before the transaction so we can evict from the
   // in-memory search index AFTER commit — side effects inside the callback
   // fire before the transaction commits and can't be rolled back if the
-  // subsequent tx.delete(users) throws. (See docs/patterns/database.md
+  // subsequent tx.delete(users) throws. (See docs/legacy-patterns/database.md
   // "Side-Effect Ordering Around db.transaction".)
   const orphanedRecipes = await db
     .select({ id: communityRecipes.id })

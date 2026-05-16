@@ -65,7 +65,7 @@ For status indicators that are visually checkbox-like but not independently acti
 ## Related Files
 
 - `client/components/coach/CommitmentCard.tsx`
-- `docs/patterns/react-native.md` — "Parent Label Prefix for Decorative Child Elements"
+- `docs/legacy-patterns/react-native.md` — "Parent Label Prefix for Decorative Child Elements"
 
 ## See Also
 

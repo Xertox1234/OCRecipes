@@ -341,8 +341,8 @@ The script checks all `TextInput`s for `accessibilityLabel` but does not verify 
 
 ## Pattern Reference
 
-- `docs/patterns/react-native.md` (lines 1180–1481) — accessibility props patterns
-- `docs/patterns/design-system.md` (lines 150–168) — WCAG re-verification after rebrand
+- `docs/legacy-patterns/react-native.md` (lines 1180–1481) — accessibility props patterns
+- `docs/legacy-patterns/design-system.md` (lines 150–168) — WCAG re-verification after rebrand
 - `client/components/InlineError.tsx` — canonical error announcement component (`accessibilityRole="alert"`, `accessibilityLiveRegion="assertive"`, iOS `AccessibilityInfo.announceForAccessibility`)
 - `client/constants/theme.ts` — WCAG contrast ratio comments to update after palette changes
 - `scripts/check-accessibility.js` — pre-commit script (with documented gaps above)

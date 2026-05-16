@@ -363,7 +363,7 @@ When auditing a route file or service, check every item:
 
 ## Key Reference Files
 
-- `docs/patterns/security.md` - Full security pattern documentation
+- `docs/legacy-patterns/security.md` - Full security pattern documentation
 - `server/lib/ai-safety.ts` - Sanitization, validation, dietary safety functions
 - `server/lib/image-mime.ts` - Image magic-byte detection
 - `server/lib/audio-mime.ts` - Audio magic-byte detection

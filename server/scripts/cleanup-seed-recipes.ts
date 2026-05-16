@@ -19,7 +19,7 @@
  *   - Defaults to DRY-RUN. Pass `--commit` to actually delete.
  *   - Scoped to orphan (authorId IS NULL) or the demo user only — never
  *     touches real user recipes. See
- *     `docs/patterns/security.md` → "Seed / Cleanup Scripts Must Scope by
+ *     `docs/legacy-patterns/security.md` → "Seed / Cleanup Scripts Must Scope by
  *     `authorId`, Not Just Name" for rationale.
  *
  * Usage:

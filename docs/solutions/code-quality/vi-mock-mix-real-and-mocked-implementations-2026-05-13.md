@@ -65,7 +65,7 @@ Clear in-memory state in `beforeEach` (including `clearTimeout` on any timer `Ma
 
 - `server/routes/__tests__/photos.test.ts` — analysis session mock wiring
 - `server/routes/__tests__/verification.test.ts` — label session mock wiring
-- `docs/patterns/testing.md` — "Test Internals Export Pattern"
+- `docs/legacy-patterns/testing.md` — "Test Internals Export Pattern"
 
 ## See Also
 

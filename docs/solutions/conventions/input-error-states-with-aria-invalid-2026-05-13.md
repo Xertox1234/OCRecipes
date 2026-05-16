@@ -37,7 +37,7 @@ const { accessibilityHint, error, errorMessage, ...props } = componentProps;
 
 **Hint preservation:** When an error occurs, append the error message to the caller-supplied `accessibilityHint` rather than replacing it. Replacing it silently discards the caller's hint (e.g., "Enter a valid email address"). Appending with `. ` preserves both: VoiceOver/TalkBack reads the original hint then the error detail.
 
-**Spread override gotcha:** In JSX, if the same prop key appears twice, the last occurrence wins. A `{...props}` spread that comes after an explicit `accessibilityHint={computed}` will silently override the computed value with the caller's original. Destructuring `accessibilityHint` out of the rest spread prevents this — it removes the key from `props` so the spread cannot clobber the computed value. See also `docs/patterns/typescript.md` "Prop Shielding in Wrapper Components".
+**Spread override gotcha:** In JSX, if the same prop key appears twice, the last occurrence wins. A `{...props}` spread that comes after an explicit `accessibilityHint={computed}` will silently override the computed value with the caller's original. Destructuring `accessibilityHint` out of the rest spread prevents this — it removes the key from `props` so the spread cannot clobber the computed value. See also `docs/legacy-patterns/typescript.md` "Prop Shielding in Wrapper Components".
 
 ## Related Files
 

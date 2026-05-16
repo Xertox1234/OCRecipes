@@ -84,7 +84,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 **Category:** Gotcha — Pattern documentation drift / Drizzle ORM
 
-`docs/patterns/database.md` → "Drizzle `sql` Template Treats `${column}` as Bound Parameters" (line 555) cited `server/storage/cookbooks.ts` → `getUserCookbooks()` as the canonical example of the **safe** form ("uses LEFT JOIN + `count()` for recipe counts"). The code had regressed to the **buggy** form — a correlated subquery interpolating `${cookbooks.id}`, `${mealPlanRecipes.id}`, and `${communityRecipes.id}` inside the `sql` template. Drizzle parameterized those interpolations as `$N` bound values, so the correlated subquery silently returned `0` for every cookbook. `recipeCount` was therefore always 0 in production for ~weeks before audit-2026-05-11 spawned the storage-test todo that uncovered it.
+`docs/legacy-patterns/database.md` → "Drizzle `sql` Template Treats `${column}` as Bound Parameters" (line 555) cited `server/storage/cookbooks.ts` → `getUserCookbooks()` as the canonical example of the **safe** form ("uses LEFT JOIN + `count()` for recipe counts"). The code had regressed to the **buggy** form — a correlated subquery interpolating `${cookbooks.id}`, `${mealPlanRecipes.id}`, and `${communityRecipes.id}` inside the `sql` template. Drizzle parameterized those interpolations as `$N` bound values, so the correlated subquery silently returned `0` for every cookbook. `recipeCount` was therefore always 0 in production for ~weeks before audit-2026-05-11 spawned the storage-test todo that uncovered it.
 
 **Root cause:**
 
@@ -142,7 +142,7 @@ After ignoring, regenerate (`npm run build:copilot-instructions`) and commit. Th
 - `.prettierignore` (the fix)
 - `scripts/build-copilot-instructions.ts` (the generator + `--check` mode)
 - `.github/workflows/ci.yml` "Verify .github/copilot-instructions.md is current" step (the CI gate that would have failed)
-- `docs/patterns/architecture.md` "CI Drift-Check for Generated Tracked Artifacts" (the pattern this gotcha refines)
+- `docs/legacy-patterns/architecture.md` "CI Drift-Check for Generated Tracked Artifacts" (the pattern this gotcha refines)
 
 ---
 
@@ -358,7 +358,7 @@ await Promise.all(toPromote.map((r) => storage.markCanonical(r.id)));
 
 **Takeaway:** For polite status updates (selection counts, progress indicators), use **only** `announceForAccessibility`. For errors, `accessibilityRole="alert"` handles the announcement without needing `accessibilityLiveRegion`. Only use `accessibilityLiveRegion` when you are NOT also calling `announceForAccessibility` for the same content.
 
-**Note:** The pattern docs at `docs/patterns/react-native.md` previously recommended the pairing — this was incorrect and has been updated.
+**Note:** The pattern docs at `docs/legacy-patterns/react-native.md` previously recommended the pairing — this was incorrect and has been updated.
 
 ---
 
@@ -783,7 +783,7 @@ Two-part fix:
 
 ### Related Patterns
 
-- "Parent Label Prefix for Decorative Child Elements" in `docs/patterns/react-native.md`
+- "Parent Label Prefix for Decorative Child Elements" in `docs/legacy-patterns/react-native.md`
 - Code reviewer check: "Decorative badges must set `accessible={false}`"
 
 ### References
@@ -881,7 +881,7 @@ Protocol Handler, Grep All Consumers" — same shape, different domain.
 **References:**
 
 - `server/storage/meal-plans.ts:420-429` — fixed
-- `docs/patterns/database.md` — consider adding "Parallel Query Path Audit" checklist
+- `docs/legacy-patterns/database.md` — consider adding "Parallel Query Path Audit" checklist
 
 ---
 
@@ -912,7 +912,7 @@ needs a gate.
 **References:**
 
 - `server/routes/recipe-catalog.ts:66-147` — GET /search + GET /:id fixed
-- `docs/patterns/security.md` — "Premium-Gate Parity" pattern updated with reads
+- `docs/legacy-patterns/security.md` — "Premium-Gate Parity" pattern updated with reads
 
 ---
 
@@ -949,14 +949,14 @@ This is a general rule for TanStack Query mutations that consume
 freshly-set state in the same handler.
 
 **Discovered by:** 2026-04-18 audit H12. Pattern codified in
-`docs/patterns/hooks.md` → "Mutation Parameter Over Hook Parameter for
+`docs/legacy-patterns/hooks.md` → "Mutation Parameter Over Hook Parameter for
 Fresh State".
 
 **References:**
 
 - `client/hooks/useCookSession.ts:42-87` — `useAddCookPhoto` refactored
 - `client/screens/CookSessionCaptureScreen.tsx:86-114` — thread `sid` through `mutateAsync`
-- `docs/patterns/hooks.md` — "Mutation Parameter Over Hook Parameter"
+- `docs/legacy-patterns/hooks.md` — "Mutation Parameter Over Hook Parameter"
 
 ---
 
@@ -1007,7 +1007,7 @@ return deleted;
 
 - `server/storage/meal-plans.ts` — `deleteMealPlanRecipe` (fixed)
 - `server/storage/community.ts` — `deleteCommunityRecipe` (fixed)
-- `docs/patterns/database.md` — "Side-Effect Ordering Around `db.transaction`"
+- `docs/legacy-patterns/database.md` — "Side-Effect Ordering Around `db.transaction`"
 
 ---
 
@@ -1093,7 +1093,7 @@ if (currentStep === 1) {
 
 - `client/components/recipe-wizard/WizardShell.tsx` — removed duplicate Alert
 - `client/screens/meal-plan/RecipeCreateScreen.tsx` — sole owner via `beforeRemove`
-- `docs/patterns/react-native.md` — "Single Owner of Unsaved-Changes Prompt"
+- `docs/legacy-patterns/react-native.md` — "Single Owner of Unsaved-Changes Prompt"
 
 ---
 
@@ -1246,7 +1246,7 @@ useEffect(() => {
 
 **Fix:** Added `sanitizeUserInput(question)` before prompt interpolation.
 
-**Rule:** When auditing AI services, do not rely on parameter names or call-site context to determine if a value is user-controlled. Trace every string variable in the prompt template back to its ultimate origin (request body, query param, DB column populated by user input). If the chain touches user input at any point, sanitize it. The audit checklist in `docs/patterns/security.md` already says this — the lesson is that it's easy to miss in practice when the variable has a "safe-looking" name.
+**Rule:** When auditing AI services, do not rely on parameter names or call-site context to determine if a value is user-controlled. Trace every string variable in the prompt template back to its ultimate origin (request body, query param, DB column populated by user input). If the chain touches user input at any point, sanitize it. The audit checklist in `docs/legacy-patterns/security.md` already says this — the lesson is that it's easy to miss in practice when the variable has a "safe-looking" name.
 
 **Audit ref:** 2026-04-02-full M1
 
@@ -1286,7 +1286,7 @@ Prefer `onprogress` over `onreadystatechange + readyState >= 3` — `onprogress`
 
 **Rule:** For SSE streaming in React Native, always use XHR. `fetch + ReadableStream` is web-only.
 
-**See also:** "SSE Client-Side Consumption via XMLHttpRequest" in `docs/patterns/hooks.md`
+**See also:** "SSE Client-Side Consumption via XMLHttpRequest" in `docs/legacy-patterns/hooks.md`
 
 ---
 
@@ -1326,7 +1326,7 @@ Used `Pick<>` (allowlist) instead of `Omit<>` (denylist) so that new columns add
 ### References
 
 - Fixed in: `server/storage/users.ts` — `UpdatableUserFields` type, `updateUser()`
-- Related pattern: "Mass-Assignment Protection: Whitelist Updatable Fields" in `docs/patterns/security.md`
+- Related pattern: "Mass-Assignment Protection: Whitelist Updatable Fields" in `docs/legacy-patterns/security.md`
 - OWASP reference: [Mass Assignment](https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/)
 
 ---
@@ -1373,14 +1373,14 @@ No code changes needed. The finding validated that the existing mitigations are 
 
 - **Polymorphic FKs with a discriminator column are a valid pattern when the alternative (separate nullable FK columns or shared parent table) adds disproportionate complexity.** Document the decision so future auditors don't re-flag it.
 - **Mitigations for missing FK constraints:** (1) transactional cleanup on parent delete, (2) query-time orphan filtering via LEFT JOIN + NULL check, (3) unique constraints to prevent duplicates.
-- **The existing "CHECK Constraint for Mutually-Optional FK Pairs" pattern** (in `docs/patterns/database.md`) covers the _two nullable FK columns_ variant. The discriminator column variant is a separate approach suited for 3+ parent tables or when the discriminator serves additional purposes.
+- **The existing "CHECK Constraint for Mutually-Optional FK Pairs" pattern** (in `docs/legacy-patterns/database.md`) covers the _two nullable FK columns_ variant. The discriminator column variant is a separate approach suited for 3+ parent tables or when the discriminator serves additional purposes.
 - **When an audit flags a known trade-off, document the rationale once** rather than deferring. Future audits will check LEARNINGS.md before re-flagging.
 
 ### References
 
 - Schema: `shared/schema.ts` — `cookbookRecipes` table
 - Cleanup: `server/storage/cookbooks.ts` — transactional delete on recipe removal
-- Related: `docs/patterns/database.md` — "CHECK Constraint for Mutually-Optional FK Pairs" (alternative approach)
+- Related: `docs/legacy-patterns/database.md` — "CHECK Constraint for Mutually-Optional FK Pairs" (alternative approach)
 - Plan doc: `docs/plans/archived/2026-03-08-feat-cookbook-feature-homepage-redesign-plan.md`
 
 ---
@@ -1551,22 +1551,22 @@ The original `bcrypt.hash(password, 10)` used a cost factor of 10 (the minimum a
 `createTransaction()` followed by `updateSubscription()` meant a crash between the two calls would record a payment but never upgrade the user. Merged into `createTransactionAndUpgrade()` wrapping both in `db.transaction()` with a null guard on the user update.
 
 **`createSavedItem()` had a TOCTOU race:**
-The count check and insert were separate DB calls. Two concurrent requests could both pass the count check and both insert, exceeding the tier limit. Wrapped in `db.transaction()` so the second request sees the first's insert. See the new pattern in `docs/patterns/database.md`.
+The count check and insert were separate DB calls. Two concurrent requests could both pass the count check and both insert, exceeding the tier limit. Wrapped in `db.transaction()` so the second request sees the first's insert. See the new pattern in `docs/legacy-patterns/database.md`.
 
 **Reorder endpoint used N sequential UPDATEs:**
-`reorderMealPlanItems()` ran one `UPDATE` per item inside a transaction — O(N) round-trips. Replaced with a single `UPDATE ... SET sortOrder = CASE WHEN ...` expression. See the new pattern in `docs/patterns/database.md`.
+`reorderMealPlanItems()` ran one `UPDATE` per item inside a transaction — O(N) round-trips. Replaced with a single `UPDATE ... SET sortOrder = CASE WHEN ...` expression. See the new pattern in `docs/legacy-patterns/database.md`.
 
 **Chat message + conversation timestamp were not atomic:**
 `createChatMessage()` inserted the message then updated `chatConversations.updatedAt` in a separate query. A failure between the two would leave the conversation timestamp stale. Wrapped in `db.transaction()`.
 
 **Rate limiter failed open on DB error:**
-The API key rate limiter caught DB errors and called `next()`, letting the request through. Changed to return 503. See the new pattern in `docs/patterns/security.md`.
+The API key rate limiter caught DB errors and called `next()`, letting the request through. Changed to return 503. See the new pattern in `docs/legacy-patterns/security.md`.
 
 **No health check endpoint:**
 Added `GET /api/health` with a DB ping (`SELECT 1`). Returns `{ status: "ok" }` or 503 with `{ status: "unhealthy" }`. Registered before routes for fast response without auth middleware.
 
 **No graceful shutdown:**
-`SIGTERM` from Docker/Kubernetes would kill in-flight requests. Added shutdown handler: clear intervals -> server.close -> pool.end -> exit. See the new pattern in `docs/patterns/api.md`.
+`SIGTERM` from Docker/Kubernetes would kill in-flight requests. Added shutdown handler: clear intervals -> server.close -> pool.end -> exit. See the new pattern in `docs/legacy-patterns/api.md`.
 
 **Response logs included tokens and medical data:**
 The request logger captured and logged full response JSON, including JWT tokens from login/register and medication names from health endpoints. Added `SENSITIVE_PATHS` exclusion list.
@@ -1585,7 +1585,7 @@ The global error handler returned the raw error message for all status codes, in
 ### References
 
 - Commits: `cb1fc6a` through `03f0485` (6 commits)
-- New patterns added: `docs/patterns/database.md` (TOCTOU, CASE/WHEN batch, CHECK constraint), `docs/patterns/api.md` (env validation, AI guard, graceful shutdown), `docs/patterns/security.md` (fail-closed, sensitive logging, generic 5xx), `docs/patterns/client-state.md` (smart retry)
+- New patterns added: `docs/legacy-patterns/database.md` (TOCTOU, CASE/WHEN batch, CHECK constraint), `docs/legacy-patterns/api.md` (env validation, AI guard, graceful shutdown), `docs/legacy-patterns/security.md` (fail-closed, sensitive logging, generic 5xx), `docs/legacy-patterns/client-state.md` (smart retry)
 
 ---
 
@@ -1635,7 +1635,7 @@ vi.mock("../../storage", async () => {
 
 - `server/routes/__tests__/photos.test.ts` — analysis session mock wiring
 - `server/routes/__tests__/verification.test.ts` — label session mock wiring
-- Related pattern: `docs/patterns/testing.md` "Test Internals Export Pattern"
+- Related pattern: `docs/legacy-patterns/testing.md` "Test Internals Export Pattern"
 
 ---
 
@@ -1679,7 +1679,7 @@ function ConfirmationModalInner({ optionsRef, sheetRef, revision }) {
 ### References
 
 - `client/hooks/useConfirmationModal.ts`
-- Related pattern: "Hook-Returned Component Pattern for BottomSheetModal" in `docs/patterns/hooks.md`
+- Related pattern: "Hook-Returned Component Pattern for BottomSheetModal" in `docs/legacy-patterns/hooks.md`
 
 ---
 
@@ -1717,12 +1717,12 @@ Place the `<ConfirmationModal />` component **inside** the `accessibilityViewIsM
 
 - Portal-rendered components still respect their React tree position for accessibility purposes.
 - Always test VoiceOver after adding `accessibilityViewIsModal` — it can silently hide portaled content.
-- The "Modal Focus Trapping" pattern in `docs/patterns/react-native.md` has been updated with this portal caveat.
+- The "Modal Focus Trapping" pattern in `docs/legacy-patterns/react-native.md` has been updated with this portal caveat.
 
 ### References
 
 - `client/hooks/useConfirmationModal.ts`
-- Updated pattern: "Modal Focus Trapping" in `docs/patterns/react-native.md`
+- Updated pattern: "Modal Focus Trapping" in `docs/legacy-patterns/react-native.md`
 
 ---
 
@@ -1766,7 +1766,7 @@ const ConfirmationModal = useMemo(
 ### References
 
 - `client/hooks/useConfirmationModal.ts`
-- Related pattern: "Hook-Returned Component Pattern for BottomSheetModal" in `docs/patterns/hooks.md`
+- Related pattern: "Hook-Returned Component Pattern for BottomSheetModal" in `docs/legacy-patterns/hooks.md`
 
 ---
 
@@ -1995,7 +1995,7 @@ Added Previous Items, Camera Shortcut, and Tip Cards to the Quick Log modal. Mul
 
 Used `sql<Date>\`max(${dailyLogs.loggedAt})\``in a Drizzle select, then called`.toISOString()`on the result. This compiles fine but crashes at runtime because node-postgres returns timestamp values as ISO strings, not Date objects.`sql<T>` is a compile-time type assertion only — it does not coerce values.
 
-**Fix:** Use `sql<string>` for timestamp aggregations. See `docs/patterns/database.md` for the full reference table.
+**Fix:** Use `sql<string>` for timestamp aggregations. See `docs/legacy-patterns/database.md` for the full reference table.
 
 **Severity:** Critical — silent compile, runtime crash on first real request.
 
@@ -2003,7 +2003,7 @@ Used `sql<Date>\`max(${dailyLogs.loggedAt})\``in a Drizzle select, then called`.
 
 Calling `goBack()` to dismiss a modal then immediately calling `navigate("Scan")` fires the second navigation against a stale navigator state. The modal dismissal animation hasn't completed, so React Navigation may not process the navigate correctly.
 
-**Fix:** Use `InteractionManager.runAfterInteractions()` between the two calls. See `docs/patterns/react-native.md` for the "Dismiss-then-Navigate" pattern.
+**Fix:** Use `InteractionManager.runAfterInteractions()` between the two calls. See `docs/legacy-patterns/react-native.md` for the "Dismiss-then-Navigate" pattern.
 
 #### 3. `navigation.replace()` in modals is fragile
 

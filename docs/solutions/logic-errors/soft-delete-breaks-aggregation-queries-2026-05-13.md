@@ -75,4 +75,4 @@ const summary = await db
 ## See Also
 
 - [optimistic-total-target-correct-page-2026-05-13.md](optimistic-total-target-correct-page-2026-05-13.md) — Client-side companion: discarding an item also corrupts paginated totals if the optimistic update targets the wrong page.
-- `docs/patterns/database.md` — "Soft Delete with Aggregation Guard" (compound `WHERE` template)
+- `docs/legacy-patterns/database.md` — "Soft Delete with Aggregation Guard" (compound `WHERE` template)

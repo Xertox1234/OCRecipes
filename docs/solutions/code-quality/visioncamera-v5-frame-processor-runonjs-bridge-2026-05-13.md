@@ -86,4 +86,4 @@ When integrating any third-party VisionCamera plugin in V5, verify the plugin ex
 
 - `client/camera/CameraView.tsx`
 - `client/camera/hooks/useCamera.ts`
-- `docs/patterns/react-native.md` — VisionCamera V5 patterns
+- `docs/legacy-patterns/react-native.md` — VisionCamera V5 patterns

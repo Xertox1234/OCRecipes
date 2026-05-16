@@ -51,7 +51,7 @@ const prompt = buildRefinementPrompt({
 
 - `server/services/photo-analysis.ts` — `refineAnalysis()` now sanitizes `question`
 - Audit: 2026-04-02-full M1
-- `docs/patterns/security.md` — sanitize-all-user-fields-in-AI-prompts pattern
+- `docs/legacy-patterns/security.md` — sanitize-all-user-fields-in-AI-prompts pattern
 
 ## See Also
 

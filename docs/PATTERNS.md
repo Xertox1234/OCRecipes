@@ -1,26 +1,62 @@
 # Development Patterns
 
-This document captures established patterns for the OCRecipes codebase. Follow these patterns for consistency across features.
+This document is the entry point for OCRecipes' codified knowledge. Follow these patterns and conventions for consistency across features.
 
-Patterns are organized into domain-specific files under `docs/patterns/`:
+As of the Phase 2 pattern-codification refactor (2026-05), the monolithic `docs/patterns/*.md` files have been decomposed into one-file-per-solution under `docs/solutions/`. Knowledge now lives as small, frontmatter-indexed files the write-time hook can grep and inject selectively.
 
-| Domain        | File                                          | Description                                                                                                                                                                                                          |
-| ------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Security      | [security.md](patterns/security.md)           | IDOR protection, SSRF, token versioning, AI input sanitization, rate limiting, fail-closed, sensitive logging                                                                                                        |
-| TypeScript    | [typescript.md](patterns/typescript.md)       | Type guards, Zod schemas, shared types, discriminated unions                                                                                                                                                         |
-| API           | [api.md](patterns/api.md)                     | Error responses, auth, env validation, service availability guards, graceful shutdown, rate limiters, external API handling, AsyncLocalStorage                                                                       |
-| Database      | [database.md](patterns/database.md)           | Drizzle ORM, caching, soft delete, transactions, TOCTOU prevention, two-phase limit checks, batch CASE/WHEN, CHECK constraints, JSONB safety                                                                         |
-| Client State  | [client-state.md](patterns/client-state.md)   | In-memory caching, auth headers, TanStack Query, optimistic mutations, smart retry                                                                                                                                   |
-| React Native  | [react-native.md](patterns/react-native.md)   | Navigation, safe areas, accessibility, forms, progressive disclosure, skeleton loaders, OCR race+swap state machine, advisory-only local rendering                                                                   |
-| Animation     | [animation.md](patterns/animation.md)         | Reanimated configs, SVG arcs, volume-reactive, layout animations, gestures                                                                                                                                           |
-| Performance   | [performance.md](patterns/performance.md)     | React.memo, FlatList optimization, FlatList defaults, useMemo, TTL caches, promise memo, serial queue                                                                                                                |
-| Design System | [design-system.md](patterns/design-system.md) | Color opacity, semantic theme values, border radius naming                                                                                                                                                           |
-| Architecture  | [architecture.md](patterns/architecture.md)   | Storage module decomposition, route registration, service patterns, storage layer purity, structured logging conventions                                                                                             |
-| Hooks         | [hooks.md](patterns/hooks.md)                 | TanStack Query CRUD modules, FormData uploads, SSE streaming, action-driven callbacks outside setState, round-trip snapshots for lossy strings, hardware resource cleanup in reset()                                 |
-| AI Prompting  | [ai-prompting.md](patterns/ai-prompting.md)   | Pre-compute context, few-shot examples, safety refusals, completion budget, markdown restrictions                                                                                                                    |
-| Agents        | [agents.md](patterns/agents.md)               | Two-turn parallel MCP strategy, section-header detection for agent-to-agent protocol                                                                                                                                 |
-| Testing       | [testing.md](patterns/testing.md)             | Pure function extraction, vi.resetModules, pre-commit hooks, ESLint rules, LLM evals, exhaustive-partition locks on shared-type enums, eval schema extraction, dataset validation tests, dimension drift smoke tests |
-| Documentation | [documentation.md](patterns/documentation.md) | Todo structure, design decisions, form state hooks, bottom-sheet lifecycle                                                                                                                                           |
+## Where knowledge lives
 
-**Before implementing:** Check if a pattern exists in the relevant file above.
-**After implementing:** Consider if your solution should become a pattern.
+| Source                      | What it holds                                                                                                                                                        |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/solutions/`           | One file per solution — bug post-mortems and reusable knowledge. **Primary source. Start here.**                                                                     |
+| `docs/rules/<domain>.md`    | Binding, short "always do X / never do Y" rules per domain. Auto-injected at write time.                                                                             |
+| `docs/legacy-patterns/*.md` | The 16 retired monolithic pattern files. Frozen archive — kept because audits and specialist agents deep-link to specific named sections. Not a codification target. |
+
+## Solution categories (`docs/solutions/`)
+
+Solutions are split into two tracks via the `track:` frontmatter field. See `docs/solutions/README.md` for the full schema and finding-aids.
+
+### Bug track (`track: bug`)
+
+| Category                                               | What it holds                                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------------------- |
+| [`logic-errors/`](solutions/logic-errors/)             | Code runs but produces incorrect behavior (off-by-one, race, stale state). |
+| [`runtime-errors/`](solutions/runtime-errors/)         | Crashes or uncaught exceptions at runtime.                                 |
+| [`code-quality/`](solutions/code-quality/)             | Type-safety / DX / maintainability smells (no behavior bug).               |
+| [`performance-issues/`](solutions/performance-issues/) | Speed, memory, N+1, wasted work.                                           |
+
+### Knowledge track (`track: knowledge`)
+
+| Category                                         | What it holds                                                           |
+| ------------------------------------------------ | ----------------------------------------------------------------------- |
+| [`conventions/`](solutions/conventions/)         | Project rules: "always do X / never do Y."                              |
+| [`design-patterns/`](solutions/design-patterns/) | Reusable structural patterns — composable code shapes.                  |
+| [`best-practices/`](solutions/best-practices/)   | Procedural checklists triggered by an event (migration, rebrand, etc.). |
+
+Decomposition manifests (extracted / merged / pruned outcomes) live under [`solutions/_manifests/`](solutions/_manifests/).
+
+## Domain → rules / archive mapping
+
+Each retired `docs/patterns/<domain>.md` monolith maps to the binding `docs/rules/<domain>.md` rules file plus solution files spread across the categories above. Use the domain to locate the rules file; use the symptom to locate solution files. The frozen monolith is kept for deep-linked named sections (audits, specialist-agent `(Ref: ...)` citations).
+
+| Domain        | Rules file                              | Frozen archive                                                       |
+| ------------- | --------------------------------------- | -------------------------------------------------------------------- |
+| Security      | [security](rules/security.md)           | [legacy-patterns/security.md](legacy-patterns/security.md)           |
+| TypeScript    | [typescript](rules/typescript.md)       | [legacy-patterns/typescript.md](legacy-patterns/typescript.md)       |
+| API           | [api](rules/api.md)                     | [legacy-patterns/api.md](legacy-patterns/api.md)                     |
+| Database      | [database](rules/database.md)           | [legacy-patterns/database.md](legacy-patterns/database.md)           |
+| Client State  | [client-state](rules/client-state.md)   | [legacy-patterns/client-state.md](legacy-patterns/client-state.md)   |
+| React Native  | [react-native](rules/react-native.md)   | [legacy-patterns/react-native.md](legacy-patterns/react-native.md)   |
+| Accessibility | [accessibility](rules/accessibility.md) | [legacy-patterns/accessibility.md](legacy-patterns/accessibility.md) |
+| Performance   | [performance](rules/performance.md)     | [legacy-patterns/performance.md](legacy-patterns/performance.md)     |
+| Design System | [design-system](rules/design-system.md) | [legacy-patterns/design-system.md](legacy-patterns/design-system.md) |
+| Architecture  | [architecture](rules/architecture.md)   | [legacy-patterns/architecture.md](legacy-patterns/architecture.md)   |
+| Hooks         | [hooks](rules/hooks.md)                 | [legacy-patterns/hooks.md](legacy-patterns/hooks.md)                 |
+| AI Prompting  | [ai-prompting](rules/ai-prompting.md)   | [legacy-patterns/ai-prompting.md](legacy-patterns/ai-prompting.md)   |
+| Testing       | [testing](rules/testing.md)             | [legacy-patterns/testing.md](legacy-patterns/testing.md)             |
+| Animation     | _(covered by `react-native` rules)_     | [legacy-patterns/animation.md](legacy-patterns/animation.md)         |
+| Agents        | _(no rules file — see solutions)_       | [legacy-patterns/agents.md](legacy-patterns/agents.md)               |
+| Documentation | _(no rules file — see solutions)_       | [legacy-patterns/documentation.md](legacy-patterns/documentation.md) |
+
+**Before implementing:** Check `docs/solutions/` (by symptom or category) and the relevant `docs/rules/<domain>.md`.
+**After implementing:** Codify new reusable knowledge as a solution file — see `.claude/skills/codify/SKILL.md`.

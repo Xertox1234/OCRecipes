@@ -364,6 +364,6 @@ When reviewing or writing AI service code, verify:
 - `server/lib/ai-safety.ts` - Sanitization, validation, dietary safety
 - `server/lib/dietary-context.ts` - Profile context builder
 - `server/routes/_helpers.ts` - `checkAiConfigured()`, `checkPremiumFeature()`
-- `docs/patterns/security.md` - AI prompt sanitization requirements
-- `docs/patterns/database.md` - Cache-first pattern, fire-and-forget
-- `docs/patterns/architecture.md` - Service/storage layer boundaries
+- `docs/legacy-patterns/security.md` - AI prompt sanitization requirements
+- `docs/legacy-patterns/database.md` - Cache-first pattern, fire-and-forget
+- `docs/legacy-patterns/architecture.md` - Service/storage layer boundaries

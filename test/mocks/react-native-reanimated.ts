@@ -25,7 +25,7 @@ export const interpolate = (val: number) => val;
 // requires React's render context (useRef can only be called inside a component).
 // Tests that need ref-backed shared values (e.g. useScrollLinkedHeader,
 // useCollapsibleHeight) must inline-mock with React.useRef. See
-// docs/patterns/testing.md → "Stateful Animation Mock Pattern".
+// docs/legacy-patterns/testing.md → "Stateful Animation Mock Pattern".
 export const useReducedMotion = vi.fn((): boolean => false);
 export const runOnJS = (fn: (...args: unknown[]) => unknown) => fn;
 export const runOnUI = (fn: (...args: unknown[]) => unknown) => fn;

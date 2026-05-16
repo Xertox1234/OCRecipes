@@ -59,7 +59,7 @@ This is the general rule for any TanStack Query mutation that consumes freshly-s
 
 - `client/hooks/useCookSession.ts:42-87` — `useAddCookPhoto` refactored
 - `client/screens/CookSessionCaptureScreen.tsx:86-114` — thread `sid` through `mutateAsync`
-- `docs/patterns/hooks.md` — "Mutation Parameter Over Hook Parameter"
+- `docs/legacy-patterns/hooks.md` — "Mutation Parameter Over Hook Parameter"
 
 ## See Also
 

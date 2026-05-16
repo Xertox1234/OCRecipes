@@ -66,7 +66,7 @@ Sensitive columns are only modifiable through dedicated storage functions: `incr
 ## Related Files
 
 - `server/storage/users.ts` — `UpdatableUserFields` type, `updateUser()`
-- `docs/patterns/security.md` — "Mass-Assignment Protection: Whitelist Updatable Fields"
+- `docs/legacy-patterns/security.md` — "Mass-Assignment Protection: Whitelist Updatable Fields"
 - OWASP: [Mass Assignment](https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/)
 
 ## See Also

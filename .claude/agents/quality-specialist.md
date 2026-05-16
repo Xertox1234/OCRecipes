@@ -259,7 +259,7 @@ When a script produces a tracked file (e.g., `.github/copilot-instructions.md` f
 2. CI invokes the `--check` step on every push (before tests, so drift is caught fast).
 3. The file is in `.prettierignore` (and any other formatter ignore lists), so the pre-commit hook can't silently mutate it.
 
-If you see a generated file change in a PR diff without a matching change in the source the generator reads from, that's a smell — either the generator is non-deterministic or someone hand-edited the artifact. Flag it. See `docs/patterns/architecture.md` "CI Drift-Check for Generated Tracked Artifacts."
+If you see a generated file change in a PR diff without a matching change in the source the generator reads from, that's a smell — either the generator is non-deterministic or someone hand-edited the artifact. Flag it. See `docs/legacy-patterns/architecture.md` "CI Drift-Check for Generated Tracked Artifacts."
 
 ---
 
@@ -284,7 +284,7 @@ Three similar lines is better than a premature abstraction. Don't refactor adjac
 
 ## Pattern Reference
 
-- `docs/patterns/documentation.md` — todo structure, design decisions, form state
+- `docs/legacy-patterns/documentation.md` — todo structure, design decisions, form state
 - `docs/LEARNINGS.md` — reverse-chronological gotchas + post-mortems
 - `todos/TEMPLATE.md` — todo file template
 - `eslint.config.js` — lint configuration

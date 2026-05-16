@@ -228,15 +228,15 @@ if (state.status === "success") {
 6. **Zod schema mirrors hand-written type with no alignment guard** — When `shared/schemas/foo.ts` infers a shape that should match `shared/types/foo.ts`, require either `satisfies z.ZodType<T>` (one-direction) or an `Equals<>` assertion (bidirectional). No guard means silent drift on either side.
 7. **`.nullable()` on response-validator fields the server emits as `null`** — Prefer `.nullish()` so missing/`undefined` fields don't flip the client into an error state. Pair with `cuisineOrigin?: string | null` in the matching TS interface so `Equals<>` still holds.
 8. **`Object.freeze` on hoisted constants without per-call spread** — If the frozen array is passed to an SDK typed as mutable (`T[]`, not `readonly T[]`), the call site needs `[...FROZEN]`. Freezing without the spread fails type-checking; hoisting without freezing leaks mutation across requests.
-9. **`if (!res.ok)` after `await apiRequest(...)`** — `apiRequest` throws on non-2xx via `throwIfResNotOk`, so the guard is unreachable dead code. Wrap the call in `try/catch` instead. (See `docs/patterns/client-state.md` § "apiRequest Throws on Non-2xx".)
-10. **`indexOf("## Heading")` for markdown anchor matching** — Matches mid-sentence prose mentions, not just real headings. Use a line-anchored matcher (`startsWith(heading + "\n")` or `\n${heading}\n`) or a multiline regex (`/^## Heading$/m`). See `docs/patterns/typescript.md` "Line-Anchored Heading Matching in Markdown Manipulation."
-11. **Bypass / exemption Set keyed off display strings** — When code in two places agrees on "the same item" via human-readable text (reason messages, labels), the bypass silently breaks the next time someone edits the wording. Promote the identifier to a stable union/enum key and look up via that key. See `docs/patterns/typescript.md` "Stable Identifier Keys for Bypass / Exemption Sets."
+9. **`if (!res.ok)` after `await apiRequest(...)`** — `apiRequest` throws on non-2xx via `throwIfResNotOk`, so the guard is unreachable dead code. Wrap the call in `try/catch` instead. (See `docs/legacy-patterns/client-state.md` § "apiRequest Throws on Non-2xx".)
+10. **`indexOf("## Heading")` for markdown anchor matching** — Matches mid-sentence prose mentions, not just real headings. Use a line-anchored matcher (`startsWith(heading + "\n")` or `\n${heading}\n`) or a multiline regex (`/^## Heading$/m`). See `docs/legacy-patterns/typescript.md` "Line-Anchored Heading Matching in Markdown Manipulation."
+11. **Bypass / exemption Set keyed off display strings** — When code in two places agrees on "the same item" via human-readable text (reason messages, labels), the bypass silently breaks the next time someone edits the wording. Promote the identifier to a stable union/enum key and look up via that key. See `docs/legacy-patterns/typescript.md` "Stable Identifier Keys for Bypass / Exemption Sets."
 
 ---
 
 ## Pattern Reference
 
-- `docs/patterns/typescript.md` — full pattern catalog
+- `docs/legacy-patterns/typescript.md` — full pattern catalog
 - `shared/schemas/` — Zod request/response schemas
 - `shared/types/` — shared TypeScript types
 - `server/types/express.d.ts` — Express augmentations

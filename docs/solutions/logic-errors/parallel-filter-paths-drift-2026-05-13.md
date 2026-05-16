@@ -42,7 +42,7 @@ Wire the filter into every query that touches the same table. Update or remove s
 ## Related Files
 
 - `server/storage/meal-plans.ts:420-429` — fixed
-- `docs/patterns/database.md` — "Parallel Query Path Audit" checklist candidate
+- `docs/legacy-patterns/database.md` — "Parallel Query Path Audit" checklist candidate
 
 ## See Also
 

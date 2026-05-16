@@ -58,7 +58,7 @@ Place the `<ConfirmationModal />` **inside** the `accessibilityViewIsModal` cont
 ## Related Files
 
 - `client/hooks/useConfirmationModal.ts`
-- `docs/patterns/react-native.md` — "Modal Focus Trapping" pattern (portal caveat documented)
+- `docs/legacy-patterns/react-native.md` — "Modal Focus Trapping" pattern (portal caveat documented)
 
 ## See Also
 

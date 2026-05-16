@@ -219,8 +219,8 @@ When reviewing or writing camera code, verify:
 
 ## Key References
 
-- `docs/patterns/react-native.md` - Safe areas, navigation, platform handling
-- `docs/patterns/performance.md` - Memoization, FlatList, animation performance
-- `docs/patterns/hooks.md` - TanStack Query patterns for upload mutations
-- `docs/patterns/security.md` - File upload magic-byte validation on server
+- `docs/legacy-patterns/react-native.md` - Safe areas, navigation, platform handling
+- `docs/legacy-patterns/performance.md` - Memoization, FlatList, animation performance
+- `docs/legacy-patterns/hooks.md` - TanStack Query patterns for upload mutations
+- `docs/legacy-patterns/security.md` - File upload magic-byte validation on server
 - Project memory: camera audit confirmed VisionCamera v4 is optimal choice

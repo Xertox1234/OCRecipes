@@ -51,12 +51,12 @@ For errors, `accessibilityRole="alert"` handles the announcement without needing
 
 ## Prevention
 
-Audit any component that uses both APIs. The pattern docs at `docs/patterns/react-native.md` previously recommended the pairing — this was incorrect and has been updated. Note that an `isFirstRender` ref still needs to skip the mount announce when using `announceForAccessibility` alone.
+Audit any component that uses both APIs. The pattern docs at `docs/legacy-patterns/react-native.md` previously recommended the pairing — this was incorrect and has been updated. Note that an `isFirstRender` ref still needs to skip the mount announce when using `announceForAccessibility` alone.
 
 ## Related Files
 
 - `client/screens/TastePicksScreen.tsx` — selection-count chip
-- `docs/patterns/react-native.md` — updated to remove the pairing recommendation
+- `docs/legacy-patterns/react-native.md` — updated to remove the pairing recommendation
 
 ## See Also
 

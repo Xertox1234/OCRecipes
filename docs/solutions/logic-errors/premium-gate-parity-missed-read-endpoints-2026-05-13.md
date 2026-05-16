@@ -42,7 +42,7 @@ Add `checkPremiumFeature()` to every endpoint in the same route file that hits t
 ## Related Files
 
 - `server/routes/recipe-catalog.ts:66-147` — GET /search + GET /:id fixed
-- `docs/patterns/security.md` — "Premium-Gate Parity" pattern updated with reads
+- `docs/legacy-patterns/security.md` — "Premium-Gate Parity" pattern updated with reads
 
 ## See Also
 

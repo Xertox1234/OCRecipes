@@ -82,7 +82,7 @@ When NOT to use:
 
 - `client/components/coach/CoachChat.tsx` — `handleBlockAction` switch dispatch
 - `shared/schemas/coach-blocks.ts` — `NAVIGABLE_SCREENS` Zod enum + `navigateActionSchema`
-- "Whitelist AI-Generated Navigation Targets" pattern in `docs/patterns/security.md` — the validation side of this pattern
+- "Whitelist AI-Generated Navigation Targets" pattern in `docs/legacy-patterns/security.md` — the validation side of this pattern
 
 Origin: Coach Pro code review (2026-04-10) — navigation type cast flagged as Important finding
 

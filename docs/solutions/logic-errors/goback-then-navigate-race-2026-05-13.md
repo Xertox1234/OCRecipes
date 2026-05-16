@@ -57,7 +57,7 @@ InteractionManager.runAfterInteractions(() => {
 ## Related Files
 
 - `client/screens/QuickLogScreen.tsx`
-- `docs/patterns/react-native.md` — "Dismiss-then-Navigate" pattern
+- `docs/legacy-patterns/react-native.md` — "Dismiss-then-Navigate" pattern
 
 ## See Also
 

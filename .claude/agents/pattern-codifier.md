@@ -14,4 +14,4 @@ This agent has been retired. Codification is now handled inline in `.claude/agen
 - `.claude/agents/code-reviewer.md` — add checklist items and `Common Mistakes to Catch` entries for recurring review gaps
 - Specialist agent checklists under `.claude/agents/*.md` — domain-specific review rules
 
-The legacy monoliths `docs/patterns/*.md` and `docs/LEARNINGS.md` are no longer codification targets — do not append to them from this flow.
+The legacy monoliths `docs/legacy-patterns/*.md` and `docs/LEARNINGS.md` are no longer codification targets — do not append to them from this flow.

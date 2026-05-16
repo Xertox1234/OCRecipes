@@ -1,9 +1,9 @@
 ---
 title: "Phase 2: decompose docs/patterns/*.md into docs/solutions/<category>/"
-status: in-progress
+status: done
 priority: medium
 created: 2026-05-12
-updated: 2026-05-12
+updated: 2026-05-15
 assignee:
 labels: [deferred, hooks, infrastructure, docs, codification]
 github_issue:
@@ -40,11 +40,11 @@ The five fattest files account for ~14,300 of the ~22,400 lines:
 - [x] Each pattern subsection has a documented outcome — extracted / merged / pruned — captured in a per-file manifest — `docs/solutions/_manifests/2026-05-12-design-system.md`
 - [x] Manifest captures rationale for any prune — 0 prunes on design-system.md; rubric documented in manifest for use by Step 2 subagents
 - [x] Top-5 fattest files (react-native, database, api, testing, security) decomposed via parallel subagents (one file per agent) after proof-of-concept passes — commits `88c16a6e`, `d855b10f`, `8a75631d`, `6359875b`, `667e81ab` (2026-05-13). 289 extracted, 0 merged, 3 pruned.
-- [ ] LEARNINGS.md migrated section-by-section to bug-track categories (`logic-errors/`, `runtime-errors/`, `code-quality/`)
-- [ ] `codify` skill rewritten to write to `docs/solutions/<category>/` with overlap-check before create
-- [ ] Hook (`inject-patterns.sh`) rewritten to grep frontmatter instead of head/tail of pattern files
-- [ ] Monolithic `docs/patterns/*.md` files removed or moved to `docs/legacy-patterns/` (decide based on link breakage scan)
-- [ ] `docs/PATTERNS.md` index updated to reference the new structure
+- [x] LEARNINGS.md migrated section-by-section to bug-track categories (`logic-errors/`, `runtime-errors/`, `code-quality/`) — manifest `docs/solutions/_manifests/2026-05-13-learnings.md`, commits `247eacd9` / `74dce342`
+- [x] `codify` skill rewritten to write to `docs/solutions/<category>/` with overlap-check before create — commit `bd52d53f`
+- [x] Hook (`inject-patterns.sh`) rewritten to grep frontmatter instead of head/tail of pattern files — PR #189 (`todo/phase-2-step-5-hook-rewrite`)
+- [x] Monolithic `docs/patterns/*.md` files removed or moved to `docs/legacy-patterns/` (decide based on link breakage scan) — moved to `docs/legacy-patterns/` (deep section-anchored refs in `code-reviewer.md` + specialist agents made move safer than delete-and-repoint)
+- [x] `docs/PATTERNS.md` index updated to reference the new structure
 
 ## Implementation Notes
 
@@ -129,3 +129,10 @@ Be honest and direct in your analysis — I'm not looking to have my ass kissed.
 - **Step 1 complete** (commit `07f4d787`, pushed). `docs/patterns/design-system.md` decomposed 7 extracted / 0 merged / 0 pruned into `docs/solutions/` knowledge-track. Schema extended (`track: bug | knowledge`, 3 new dirs, optional `applies_to` glob, conditional-required fields). 4 pre-existing bug-track files backfilled with `track: bug`. Manifest at `docs/solutions/_manifests/2026-05-12-design-system.md`.
 - **kimi-review caught one inherited WARNING** during Step 1 (WCAG example `4.48:1 ✓` — actually fails AA). Fixed in extraction; source `design-system.md` left as-is until Step 6 retirement.
 - **Step 2 starting**: parallel decomposition of top-5 fattest files. Sequencing: launch ONE subagent on `security.md` (smallest of the 5 at 1,881 lines) to validate the subagent prompt template before fanning out 4-in-parallel for the rest. Mirrors the Step-1-then-Step-2 staging logic at the subagent layer.
+
+### 2026-05-15
+
+- **Corrected stale state**: Steps 1-4 were already complete from prior multi-session work but their Acceptance Criteria boxes had not been checked. Marked all done — Step 3 (LEARNINGS.md migration, manifest `docs/solutions/_manifests/2026-05-13-learnings.md`, commits `247eacd9` / `74dce342`); Step 4 (codify-skill rewrite, commit `bd52d53f`). ~397 solution files now exist under `docs/solutions/`.
+- **Step 5 shipped as PR #189** (`todo/phase-2-step-5-hook-rewrite`): `.claude/hooks/inject-patterns.sh` rewritten to grep `docs/solutions/` frontmatter; no longer references `docs/patterns/`.
+- **Step 6 + PATTERNS.md index shipped in this PR** (`todo/phase-2-step-6-retire-monoliths`, PR 2 of 2): 16 `docs/patterns/*.md` monoliths moved to `docs/legacy-patterns/` via `git mv` (move chosen over delete — `code-reviewer.md` and specialist agents deep-link ~50 named sections; path-only rewrite preserves those anchors). All active inbound references repointed: 16 agent files, 2 skills, 3 scripts, 9 source/test files, `docs/PATTERNS.md` (rewritten as a `docs/solutions/` index), `docs/AI_WORKFLOW.md`, `docs/AI_DRIFT_CHECKLIST.md`, and `.github/copilot-instructions.md` (regenerated from the updated `build-copilot-instructions.ts`). Dated historical records (audits, superpowers plans/specs, `_manifests/`, archived todos, `pattern-codification-alternatives.md`, `LEARNINGS.md`) left as-is — rewriting dated records misrepresents history. Untracked local `CLAUDE.md` (gitignored) still references `docs/patterns/` shallowly — must be updated manually by the maintainer.
+- **This todo is now COMPLETE.** Merge PR #189 before this PR — merging Step 6 first would point the old hook at deleted `docs/patterns/` files.

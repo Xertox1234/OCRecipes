@@ -5,7 +5,7 @@
  * Prefer this over `await new Promise(r => setTimeout(r, N))` wall-clock waits
  * between an action and an assertion — those are flaky on slow CI runners.
  *
- * See docs/patterns/testing.md → "`setTimeout` in Test Fixtures vs. Real Async Waits"
+ * See docs/legacy-patterns/testing.md → "`setTimeout` in Test Fixtures vs. Real Async Waits"
  * for the rationale and audit reference (H1, 2026-05-11).
  */
 

@@ -325,7 +325,7 @@ Audit #6 H3.
 
 ## Pattern Reference
 
-- `docs/patterns/api.md` — full pattern catalog
+- `docs/legacy-patterns/api.md` — full pattern catalog
 - `server/routes/_helpers.ts` — shared helpers (`handleRouteError`, `sendError`, `createImageUpload`, `numericStringField`)
 - `server/lib/fire-and-forget.ts` — structured background work
 - `shared/constants/error-codes.ts` — error code constants

@@ -80,4 +80,4 @@ This keeps `total` consistent across pages: every page should always agree on th
 
 - [soft-delete-breaks-aggregation-queries-2026-05-13.md](soft-delete-breaks-aggregation-queries-2026-05-13.md) — Server-side companion: the same discard operation breaks daily summary aggregation if SQL doesn't filter discarded rows.
 - [toggle-favourite-race-condition-2026-05-13.md](toggle-favourite-race-condition-2026-05-13.md) — Another mutation on the same history-item flow.
-- `docs/patterns/client-state.md` — "Optimistic Mutation on Infinite Query Pages"
+- `docs/legacy-patterns/client-state.md` — "Optimistic Mutation on Infinite Query Pages"
