@@ -1,6 +1,7 @@
 ---
 name: docs-researcher
 description: Use to find, synthesize, and present relevant documentation, best practices, and up-to-date guidance for libraries, frameworks, and patterns used in the project.
+model: sonnet
 ---
 
 # Documentation & Best Practices Researcher Subagent

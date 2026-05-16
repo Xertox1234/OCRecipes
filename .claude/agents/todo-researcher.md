@@ -1,6 +1,7 @@
 ---
 name: todo-researcher
 description: Use when starting on a todo to gather focused, implementation-ready context from library docs, the project repo, and global search — returns a compact brief for the implementer agent.
+model: sonnet
 ---
 
 # Todo Researcher Subagent
