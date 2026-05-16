@@ -640,6 +640,7 @@ export default function CoachChat({
       <UpgradeModal
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
+        onUpgrade={() => setIsAtDailyLimit(false)}
       />
     </CoachChatBase>
   );

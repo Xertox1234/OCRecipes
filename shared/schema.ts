@@ -362,7 +362,7 @@ export const savedItems = pgTable(
 
     // Metadata — withTimezone intentionally kept to preserve existing timestamptz column.
     // TODO: Migrate all timestamp columns to withTimezone for consistency.
-    //   Tracked: todos/timestamp-timezone-consistency.md
+    //   Tracked: todos/2026-03-27-timestamp-timezone-consistency.md
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
