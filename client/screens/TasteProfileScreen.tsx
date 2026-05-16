@@ -1,6 +1,12 @@
 // client/screens/TasteProfileScreen.tsx
 import React, { useState, useCallback, useEffect } from "react";
-import { View, StyleSheet, Pressable, Alert } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  Alert,
+  AccessibilityInfo,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -37,10 +43,6 @@ export default function TasteProfileScreen() {
   const loadPicks = useCallback(async () => {
     try {
       const res = await apiRequest("GET", "/api/taste-picks");
-      if (!res.ok) {
-        setLoadError(true);
-        return;
-      }
       const json = await res.json();
       const parsed = tastePicksResponseSchema.safeParse(json);
       if (!parsed.success) {
@@ -92,7 +94,28 @@ export default function TasteProfileScreen() {
     loadCandidates(1);
   }, [loadCandidates]);
 
+  // Announce selection-count changes to screen readers — only for user
+  // toggles. `handleToggle` arms this ref; the programmatic load of existing
+  // picks (and the mount render) leave it false, so neither announces.
+  const announceCountChange = React.useRef(false);
+  useEffect(() => {
+    if (!announceCountChange.current) return;
+    announceCountChange.current = false;
+    AccessibilityInfo.announceForAccessibility(`${selectedIds.size} selected`);
+  }, [selectedIds.size]);
+
+  // Announce the load-failure state so a screen-reader user focused elsewhere
+  // learns the grid was replaced by the retry message.
+  useEffect(() => {
+    if (loadError) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load recipes. Retry available.",
+      );
+    }
+  }, [loadError]);
+
   const handleToggle = useCallback((recipeId: number) => {
+    announceCountChange.current = true;
     setIsDirty(true);
     setSelectedIds((prev) => {
       const next = new Set(prev);

@@ -114,12 +114,33 @@ export async function addRecipeToCookbook(
   userId: string,
 ): Promise<CookbookRecipe | undefined> {
   return db.transaction(async (tx) => {
+    // The target recipe must also be visible to `userId` — a mealPlan recipe
+    // they own, or a community recipe that is public or authored by them.
+    // Without this guard, a caller could add a junction row pointing at
+    // another user's private recipe and read its metadata back via
+    // getResolvedCookbookRecipes (IDOR).
+    const recipeAccessGuard =
+      recipeType === "mealPlan"
+        ? sql`AND EXISTS (
+            SELECT 1 FROM ${mealPlanRecipes}
+            WHERE ${mealPlanRecipes.id} = ${recipeId}
+              AND ${mealPlanRecipes.userId} = ${userId}
+          )`
+        : sql`AND EXISTS (
+            SELECT 1 FROM ${communityRecipes}
+            WHERE ${communityRecipes.id} = ${recipeId}
+              AND (
+                ${communityRecipes.isPublic} = true
+                OR ${communityRecipes.authorId} = ${userId}
+              )
+          )`;
+
     // Single-statement INSERT...SELECT guarded by a WHERE EXISTS on
-    // `cookbooks.user_id` — the row is only inserted when the cookbook is
-    // owned by `userId`. See docs/legacy-patterns/security.md →
-    // "Storage-Layer Defense-in-Depth". The ON CONFLICT clause preserves
-    // idempotent-add semantics: a duplicate junction row yields no returned
-    // row, same as if the ownership check failed.
+    // `cookbooks.user_id` (cookbook ownership) AND the recipe-access guard
+    // above (target visibility) — the row is inserted only when both hold.
+    // See docs/solutions/logic-errors/polymorphic-junction-unverified-target-idor-2026-05-16.md.
+    // The ON CONFLICT clause preserves idempotent-add semantics: a duplicate
+    // junction row yields no returned row, same as if a guard failed.
     const inserted = await tx.execute<CookbookRecipe>(sql`
       INSERT INTO ${cookbookRecipes} (cookbook_id, recipe_id, recipe_type)
       SELECT ${cookbookId}, ${recipeId}, ${recipeType}
@@ -128,6 +149,7 @@ export async function addRecipeToCookbook(
         WHERE ${cookbooks.id} = ${cookbookId}
           AND ${cookbooks.userId} = ${userId}
       )
+      ${recipeAccessGuard}
       ON CONFLICT DO NOTHING
       RETURNING id, cookbook_id AS "cookbookId", recipe_id AS "recipeId",
                 recipe_type AS "recipeType", added_at AS "addedAt"
@@ -242,7 +264,9 @@ export async function getResolvedCookbookRecipes(
   for (const row of junctionRows) {
     if (row.recipeType === "mealPlan") {
       const recipe = mealPlanMap.get(row.recipeId);
-      if (recipe) {
+      if (!recipe) {
+        orphanIds.push(row.id);
+      } else if (recipe.userId === userId) {
         resolved.push({
           recipeId: recipe.id,
           recipeType: "mealPlan",
@@ -253,12 +277,14 @@ export async function getResolvedCookbookRecipes(
           difficulty: recipe.difficulty ?? null,
           addedAt: row.addedAt.toISOString(),
         });
-      } else {
-        orphanIds.push(row.id);
       }
+      // recipe exists but is owned by another user → hidden, junction row
+      // kept (not an orphan) — defense-in-depth against any pre-guard leak row.
     } else if (row.recipeType === "community") {
       const recipe = communityMap.get(row.recipeId);
-      if (recipe) {
+      if (!recipe) {
+        orphanIds.push(row.id);
+      } else if (recipe.isPublic || recipe.authorId === userId) {
         resolved.push({
           recipeId: recipe.id,
           recipeType: "community",
@@ -269,9 +295,9 @@ export async function getResolvedCookbookRecipes(
           difficulty: recipe.difficulty ?? null,
           addedAt: row.addedAt.toISOString(),
         });
-      } else {
-        orphanIds.push(row.id);
       }
+      // recipe exists but is private and not authored by the caller → hidden,
+      // junction row kept so it reappears if the recipe is re-published.
     }
   }
 

@@ -15,6 +15,17 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-16 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit, scoped to code changed since the 2026-05-11 testing audit. 7 specialist domains (security, performance, data-integrity, architecture, code-quality, camera, accessibility) — performance and camera reported 0 findings.
+- **Manifest:** [docs/audits/2026-05-16-full.md](2026-05-16-full.md)
+- **Findings:** 0 critical, 1 high, 2 medium, 7 low (10 total)
+- **Resolved:** 10 verified, 0 deferred, 0 false-positive
+- **Commit(s):** _(see manifest Fix Commits)_
+- **Key fix:** H1 — cookbook-recipe target IDOR: `addRecipeToCookbook` verified cookbook ownership but not the target recipe, and `getResolvedCookbookRecipes` fetched recipes with no visibility filter — letting a user add another user's private recipe (by enumerated id) to their own cookbook and read its metadata. Closed with an add-path recipe-access SQL guard (mealPlan → owner; community → `isPublic OR authorId`) + a resolve-path JS visibility filter that hides non-visible recipes without orphaning the junction row. 5 IDOR regression tests added (all confirmed failing pre-fix).
+- **Other fixes:** M1/M2 screen-reader announcements for taste-picks selection-count + load-error; L1 `barcode_verifications.verification_count >= 0` CHECK constraint (needs `db:push`); L2 `profile.ts` GET uses `handleRouteError`; L3 dead unreachable `res.ok` guard removed; L4 export envelope-key shadowing (spread order); L5 pointless `as string` cast removed; L6 `SuggestionList` disabled `accessibilityState`; L7 `SettingsScreen` decorative icons `accessible={false}`.
+- **kimi-review notes:** per-fix kimi-review surfaced several CRITICAL/WARNING findings that were verified false-positive — kimi sees only the diff, not full files/schema (e.g., "`handleRouteError` not imported", "`recipeAccessGuard` may be undefined", soft-delete columns that don't exist). Documented per-finding in the manifest. One real WARNING fixed inline: H1 community guard extended with an `authorId` clause to preserve a user's access to their own unpublished community recipes.
+
 ## 2026-05-11 — Testing Setup Audit
 
 - **Trigger:** First targeted testing-scope audit (previously testing was a sub-domain of code-quality). Discovery agent connection failed at tool 132; remaining discovery + all fixes done inline.

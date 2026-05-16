@@ -46,10 +46,12 @@ export function register(app: Express): void {
         );
         // Disable any intermediate caches — this is per-user PII.
         res.setHeader("Cache-Control", "private, no-store");
+        // Spread `...data` first so the server-controlled envelope fields
+        // always win if the export payload ever gains a colliding key.
         res.json({
+          ...data,
           exportedAt: now.toISOString(),
           appVersion: APP_VERSION,
-          ...data,
         });
       } catch (error) {
         handleRouteError(res, error, "export user data");

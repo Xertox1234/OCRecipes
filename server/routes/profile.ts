@@ -2,7 +2,6 @@ import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
-import { logger, toError } from "../lib/logger";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { crudRateLimit } from "./_rate-limiters";
@@ -29,13 +28,7 @@ export function register(app: Express): void {
         const profile = await storage.getUserProfile(req.userId);
         res.json(profile || null);
       } catch (error) {
-        logger.error({ err: toError(error) }, "error fetching dietary profile");
-        sendError(
-          res,
-          500,
-          "Failed to fetch dietary profile",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch dietary profile");
       }
     },
   );
