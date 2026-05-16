@@ -44,6 +44,14 @@ export default defineConfig({
       },
     },
     pool: "forks",
+    // Cap below core count so workers keep CPU headroom under machine load.
+    // Without this, fork starvation makes timing-sensitive DB tests trip
+    // testTimeout nondeterministically (see docs/patterns/testing.md).
+    poolOptions: {
+      forks: {
+        maxForks: 7,
+      },
+    },
     testTimeout: 10000,
     setupFiles: ["./test/setup.ts"],
     globalSetup: ["./test/global-teardown.ts"],
