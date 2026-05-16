@@ -19,7 +19,7 @@ The one area that genuinely **lags best practice is permission hygiene**: a spra
 
 | Area                       | Grade      | One-line                                                                                                                                              |
 | -------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Secrets & security         | D → B      | Live secrets in plaintext (D); revoked + relocated in-session (B); still no `deny` safety net                                                         |
+| Secrets & security         | D → A-     | Live secrets in plaintext (D); revoked + relocated, `deny` safety net now added (A-)                                                                  |
 | Permissions                | C+         | Garbage entries, over-broad rules, no deny-list, allowlist rot                                                                                        |
 | Hooks                      | A          | Submit-time review gate + bounded injection + guards — exemplary                                                                                      |
 | Subagents & skills         | B          | Comprehensive specialists, but no model/tool scoping; one dead agent                                                                                  |
@@ -40,7 +40,7 @@ The one area that genuinely **lags best practice is permission hygiene**: a spra
 
 **Remediated during review (CRIT-1):** Both credentials revoked at source; new OpenRouter key and a new dedicated fine-grained GitHub PAT created; both relocated to `~/.zshenv` (already the correct home — sourced by non-interactive shells — and now `chmod 600`). Old GitHub token confirmed dead (`401`).
 
-**Still open:** No `deny` list exists anywhere (see Permissions). `defaultMode: acceptEdits` + `skipAutoPermissionPrompt: true` is a deliberately permissive posture; acceptable for a solo auto-mode workflow, but it makes a destructive-command `deny` list more important, not less.
+**Resolved post-review (HIGH-3):** A `deny` list now guards `rm -rf`, `sudo`, `git reset --hard`, and `git push --force` / `--force-with-lease`. This matters because `defaultMode: acceptEdits` + `skipAutoPermissionPrompt: true` is a deliberately permissive posture — acceptable for a solo auto-mode workflow, but it made a destructive-command `deny` list important, not optional.
 
 ### 2. Permissions
 
@@ -115,18 +115,18 @@ Tiered. `CRIT` done during the review; the rest are the implementation worklist.
 
 ### High
 
-- [ ] **HIGH-1** — Remove the (now dead/redundant) `env` block from `~/.claude/settings.json`. _(handed to user — self-modification gate)_
-- [ ] **HIGH-2** — Change `~/.claude.json` github MCP server `env` to `"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"` (edit with Claude Code quit). _(handed to user)_
-- [ ] **HIGH-3** — Add a `deny` list for destructive commands: `rm -rf`, `git reset --hard`, `git push --force` / `--force-with-lease`, `sudo`, `curl … | sh`.
-- [ ] **HIGH-4** — Delete the garbage permission entries: `Bash(do git:*)`, `Bash(do echo:*)`, `Bash(do if:*)`, `Bash(for branch:*)`, `Bash(for file:*)`.
-- [ ] **HIGH-5** — Delete the 5 stale `~/.claude/backups/.claude.json.backup.*` files.
+- [x] **HIGH-1** — Remove the (now dead/redundant) `env` block from `~/.claude/settings.json`. _Done: `env` block deleted; verified absent._
+- [x] **HIGH-2** — Change `~/.claude.json` github MCP server `env` to `"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"`. _Done. The user's manual edit corrupted `~/.claude.json` (bare value, no key → invalid JSON); Claude Code's crash-recovery then rebuilt a stripped 21 KB file. Recovered by repairing the single syntax error in the quarantined `.corrupted` file — this restored the full 57 KB config (21 project histories, mcpServers) and applied HIGH-2 correctly in one step. Verified: env is `${GITHUB_PERSONAL_ACCESS_TOKEN}`._
+- [x] **HIGH-3** — Add a `deny` list for destructive commands. _Done: `rm -rf`, `sudo`, `git reset --hard`, `git push --force` / `--force-with-lease`. `curl … | sh` deliberately omitted — a shell pipeline is not expressible as a single permission rule, and `Bash(curl:*)` would over-block; consistent with this report's own "argument-constrained Bash rules are fragile" finding._
+- [x] **HIGH-4** — Delete the garbage permission entries: `Bash(do git:*)`, `Bash(do echo:*)`, `Bash(do if:*)`, `Bash(for branch:*)`, `Bash(for file:*)`. _Done; verified absent._
+- [x] **HIGH-5** — Delete the stale `~/.claude/backups/` files holding the dead token. _Done. (Claude Code writes a fresh startup backup of the now-good config — expected, contains no credential.)_
 
 ### Medium
 
 - [ ] **MED-1** — Reconcile `Bash(git:*)`: it covers `git reset --hard`/`git push --force` and makes 5 sibling `git X:*` rules redundant. Keep it only with HIGH-3's deny-list as the safety net, or replace with explicit subcommands.
 - [ ] **MED-2** — Prune `settings.local.json` one-off cruft (`sed -n`, `cp /tmp`, `head -198`, `cat /tmp`, `echo ""`). Run the `/fewer-permission-prompts` skill.
-- [ ] **MED-3** — Disable the duplicate `frontend-design` plugin (one of the two marketplace installs).
-- [ ] **MED-4** — Replace the two `mcp__plugin_compound-engineering_context7__*` allow entries (disabled plugin's namespace) with the live `mcp__plugin_context7_context7__*` names, so context7 stays pre-allowed.
+- [x] **MED-3** — Disable the duplicate `frontend-design` plugin. _Done: `frontend-design@claude-code-plugins` set to `false`; `@claude-plugins-official` kept._
+- [x] **MED-4** — Replace the two `mcp__plugin_compound-engineering_context7__*` allow entries (disabled plugin's namespace) with the live `mcp__plugin_context7_context7__*` names. _Done; verified._
 - [x] **MED-5** — Fix doc drift: `CLAUDE.md` (4 references) and `MEMORY.md` updated to describe the real `docs/rules/` + `docs/solutions/` + `docs/legacy-patterns/` structure. _(Done during this review.)_
 - [x] **MED-6** — Pin `model: sonnet` on the read-only research agents (`docs-researcher`, `todo-researcher`). _(Done. The tool-restriction half is folded into LOW-2.)_
 
