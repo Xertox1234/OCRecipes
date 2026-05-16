@@ -123,8 +123,8 @@ Tiered. `CRIT` done during the review; the rest are the implementation worklist.
 
 ### Medium
 
-- [ ] **MED-1** — Reconcile `Bash(git:*)`: it covers `git reset --hard`/`git push --force` and makes 5 sibling `git X:*` rules redundant. Keep it only with HIGH-3's deny-list as the safety net, or replace with explicit subcommands.
-- [ ] **MED-2** — Prune `settings.local.json` one-off cruft (`sed -n`, `cp /tmp`, `head -198`, `cat /tmp`, `echo ""`). Run the `/fewer-permission-prompts` skill.
+- [x] **MED-1** — Reconcile `Bash(git:*)`. _Done: kept `Bash(git:*)` (HIGH-3's deny list is now the safety net) and deleted the 5 redundant siblings (`git add/commit/status/push/stash:*`). Also removed the analogous `Bash(gh pr merge *)` redundancy — subsumed by `Bash(gh pr:*)`._
+- [x] **MED-2** — Prune `settings.local.json` one-off cruft. _Done. Extended beyond the named patterns (`sed -n`, `cp /tmp`, `head`, `cat /tmp`, `echo ""`) to also remove the 5 `do/for` parser-artifact entries (same garbage HIGH-4 removed from global, duplicated here) and a stale `superpowers/5.0.7/...` plugin-version path (5.1.0 is current)._
 - [x] **MED-3** — Disable the duplicate `frontend-design` plugin. _Done: `frontend-design@claude-code-plugins` set to `false`; `@claude-plugins-official` kept._
 - [x] **MED-4** — Replace the two `mcp__plugin_compound-engineering_context7__*` allow entries (disabled plugin's namespace) with the live `mcp__plugin_context7_context7__*` names. _Done; verified._
 - [x] **MED-5** — Fix doc drift: `CLAUDE.md` (4 references) and `MEMORY.md` updated to describe the real `docs/rules/` + `docs/solutions/` + `docs/legacy-patterns/` structure. _(Done during this review.)_
@@ -135,7 +135,7 @@ Tiered. `CRIT` done during the review; the rest are the implementation worklist.
 - [x] **LOW-1** — Delete the deprecated `pattern-codifier` agent file. _(Done during this review.)_
 - [ ] **LOW-2** — _Recommended: skip._ Scoping `tools:` on research/review agents removes only `Write`/`Edit` they would not call anyway, and risks silently dropping MCP tool access (e.g. context7 for `docs-researcher`) unless every MCP tool is re-listed. Marginal benefit, real fumble risk — left undone deliberately.
 - [ ] **LOW-3** — _Recommended: skip._ Trimming the `inject-patterns.sh` discipline preamble saves ~600 bytes/edit but modifies a tested hook (`test-inject-patterns.sh`). Not worth the churn — left undone deliberately.
-- [ ] **LOW-4** — De-duplicate permission rules shared between `~/.claude/settings.json` and project `settings.local.json`.
+- [x] **LOW-4** — De-duplicate permission rules shared between `~/.claude/settings.json` and project `settings.local.json`. _Done: `settings.local.json` allow list trimmed 63 → 8 — removed ~34 entries already covered by global `settings.json`, keeping only genuinely project-local rules (`psql`, `prettier`, `npm run *`, `curl`, `xcrun`, `npx expo`, `npx tsx -e`, the commit skill)._
 
 ---
 
