@@ -201,11 +201,17 @@ Process the code review findings. The project convention (see `CLAUDE.md` and `d
 
 Once implementation passes verification and code review:
 
-1. **Move the todo file** to the archive:
+1. **Mark the todo `done`, then archive it.** First update the todo's YAML
+   frontmatter `status` from `in-progress` (set in Step 4.0) to `done`. Then
+   move the file:
 
 ```bash
 mv todos/<filename>.md todos/archive/<filename>.md
 ```
+
+Do the `status: done` edit _before_ the `mv` — an archived todo left at
+`in-progress` is indistinguishable from a crashed-executor run and corrupts
+triage if the file is ever re-examined.
 
 2. **Stage all changes** (implementation files + archived todo):
 
