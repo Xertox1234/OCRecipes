@@ -299,6 +299,7 @@ if (cacheId) {
 - [ ] Consistent formatting (Prettier)
 - [ ] ESLint rules followed
 - [ ] TypeScript strict mode compliance
+- [ ] No service/builder return field hardcoded to a dead placeholder (`null`, `[]`, `0`) when its declared type allows real values — `tsc` accepts `field: null` against `field: T | null`, so grep the client consumer(s): if a consumer renders the field, the placeholder is a permanently-dead UI branch. Especially likely for context-builder services whose response type is duplicated inline on the client (no shared contract). See `docs/solutions/logic-errors/dead-ui-branch-from-duplicated-context-types-2026-05-16.md`
 
 ### 13. Documentation & Todos
 

@@ -71,9 +71,9 @@ Items marked `deferred` must have a linked todo and rationale.
 
 ## Fix Commits
 
-| Commit | Description |
-| ------ | ----------- |
-| —      | —           |
+| Commit     | Description                                                              |
+| ---------- | ------------------------------------------------------------------------ |
+| `f322dae9` | fix: resolve unfinished-features audit findings (4 verified, 4 deferred) |
 
 ## Codification (Phase 8)
 
@@ -81,29 +81,29 @@ Completed after fixes are committed.
 
 ### Patterns Extracted
 
-| Finding | Pattern | Added To |
-| ------- | ------- | -------- |
-| —       | —       | —        |
+| Finding | Pattern                                                                                                                                                                                                                                                                          | Added To                                                                                       |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| M2      | Dead UI branch from a context-builder hardcoding a placeholder field — inline/duplicated response types let a server-side `null` literal drift from a client consumer that renders the field, invisible to `tsc`. Includes the "verify the prescribed fix's premise" sub-lesson. | `docs/solutions/logic-errors/dead-ui-branch-from-duplicated-context-types-2026-05-16.md` (new) |
 
 ### Learnings Extracted
 
-| Finding | Learning Title | Category |
-| ------- | -------------- | -------- |
-| —       | —              | —        |
+| Finding | Learning Title                                                                            | Category        |
+| ------- | ----------------------------------------------------------------------------------------- | --------------- |
+| M2      | Folded into the solution doc above (Root Cause + Prevention) — no separate learning file. | Bug Post-Mortem |
 
 ### Code Reviewer Updates
 
-| Finding | New Check Added |
-| ------- | --------------- |
-| —       | —               |
+| Finding | New Check Added                                                                                                                                                                                                 |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M2      | `code-reviewer.md` §12 Code Quality — flag any service/builder return field hardcoded to a dead placeholder (`null`/`[]`/`0`) when its type allows real values; grep client consumers for a dead render branch. |
 
 ### Specialist Agent Updates
 
-| Finding | Agent Updated | New Check Added |
-| ------- | ------------- | --------------- |
-| —       | —             | —               |
+| Finding | Agent Updated | New Check Added                                                                                                               |
+| ------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| —       | —             | None — the code-reviewer §12 check covers the Phase 6 gate; no specialist-agent update warranted for a single Medium finding. |
 
-**Codification commit:** `[SHA]`
+**Codification commit:** the `docs: codify patterns and learnings from unfinished-features audit` commit, immediately following fix commit `f322dae9`.
 
 ## Post-Audit Notes
 
