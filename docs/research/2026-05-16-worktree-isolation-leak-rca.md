@@ -75,7 +75,59 @@ Sampled May-15-evening sessions around the incident (`2a2075ca`, `96d35ca0`,
 
 ## Phase 2 — Controlled reproduction
 
-(filled in by Task 2)
+### Baseline
+
+`git status --short` on the main checkout: clean apart from the expected
+untracked `todos/2026-05-16-investigate-worktree-isolation-leak.md`.
+
+### Probe 1 — relative-path write (cwd semantics)
+
+A worktree-isolated agent reported:
+
+- `pwd` = `…/OCRecipes/.claude/worktrees/agent-a74b80abaa5eb2f12`
+- `git rev-parse --show-toplevel` = the same worktree path
+- `git rev-parse --absolute-git-dir` = `…/OCRecipes/.git/worktrees/agent-a74b80abaa5eb2f12`
+- A `Write` with the **relative** path `repro-marker-relative.txt` landed **inside
+  the worktree**; the file did not appear in the main checkout.
+
+**Conclusion:** the harness sets a worktree-isolated agent's cwd to its worktree,
+and relative paths resolve into the worktree. Isolation works for the normal flow.
+
+### Probe 2 & 3 — absolute main-path write (agent behavior)
+
+Two separate worktree agents were asked to `Write` to the absolute main-checkout
+path `/Users/williamtower/projects/OCRecipes/probe-absolute-marker.txt`. Both
+**refused**, correctly identifying the path as outside their worktree and the
+write as an isolation-boundary violation. No leak — but this is _agent caution_,
+not a harness guarantee.
+
+### Probe 4 — absolute-path reachability (harness behavior)
+
+A worktree agent:
+
+- **`Read` of the absolute path `/Users/.../OCRecipes/CLAUDE.md` (main checkout,
+  no worktree segment) SUCCEEDED.** The harness does **not** sandbox absolute
+  paths — they are resolved literally by the filesystem.
+- `Read` of the relative path `CLAUDE.md` failed: `CLAUDE.md` is `.gitignore`d
+  and untracked, so it is absent from the worktree checkout (a red herring for
+  the leak, but it cleanly demonstrated the absolute-path reach above).
+- A `Write` to an absolute path **inside** the worktree landed in the worktree.
+
+### Other findings
+
+- **Agent worktrees are created from `origin/main`** (`7324bac3`), not the
+  orchestrator's local branch/HEAD. Confirmed: every probe worktree's HEAD equals
+  `origin/main`. Material for Task 6 — a guardrail must be on `origin/main` before
+  a freshly dispatched agent's worktree will contain it.
+- The worktree checkout is otherwise complete (2259 tracked files present);
+  `.claude/settings.json` and `.claude/hooks/` are present, so hooks defined in
+  settings apply to worktree agents.
+- Hooks fire for worktree agents — empirical confirmation deferred to Task 6's
+  end-to-end run with the real M1 hook.
+
+## Phase 3 — Root cause
+
+(filled in by Task 3)
 
 ## Phase 3 — Root cause
 
