@@ -94,11 +94,18 @@ else
     --tiers CRITICAL,WARNING 2>&1)
 fi
 
-# 8) Detect CRITICAL findings. Fail-closed whole-word match (case-sensitive) so
-#    decorated variants (`[CRITICAL]`, `**CRITICAL**`, `## CRITICAL`, `- CRITICAL:`)
-#    all block. Word boundaries reject `CRITICALITY`, `CRITICAL_SECTION`, and the
-#    lowercase `critical` that appears in prose like "no critical issues found".
-if printf '%s' "$REVIEW" | grep -Eq '(^|[^[:alnum:]_])CRITICAL([^[:alnum:]_]|$)'; then
+# 8) Detect CRITICAL findings. kimi-review emits every real finding as a line
+#    that starts with `[TIER] path:line — description` (see the format block in
+#    the kimi-review script), so an actual CRITICAL finding is a line beginning
+#    with `[CRITICAL]` after optional leading whitespace. Anchoring at line start
+#    on that literal tag avoids false blocks on the negative phrasing
+#    ("No CRITICAL or WARNING findings") and on the clean-output message
+#    ("No findings in requested tiers: CRITICAL, WARNING") — both of which the
+#    word-anywhere match used to trip on, blocking every clean review.
+#    The literal `[` and `]` use POSIX bracket-expression escaping (`[[]`, `[]]`)
+#    rather than backslash escaping, so the pattern is portable across GNU and
+#    BSD grep without relying on a GNU ERE extension.
+if printf '%s\n' "$REVIEW" | grep -Eq '^[[:space:]]*[[]CRITICAL[]]'; then
   # Block the commit and feed the full review body back to the model so it
   # can decide whether to amend, abort, or override.
   REASON=$(printf 'kimi-review blocked the commit — CRITICAL finding present.\n\n%s\n\n%s' \
