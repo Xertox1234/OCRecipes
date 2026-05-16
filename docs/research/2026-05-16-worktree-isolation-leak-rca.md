@@ -128,7 +128,3 @@ A worktree agent:
 ## Phase 3 — Root cause
 
 (filled in by Task 3)
-
-## Phase 3 — Root cause
-
-(filled in by Task 3)
