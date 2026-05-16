@@ -3,7 +3,12 @@ import type { PremiumFeatures } from "@shared/types/premium";
 import type { CoachNotebookEntry } from "@shared/schema";
 
 export interface CoachContextData {
-  goals: null;
+  goals: {
+    calories: number;
+    protein: number;
+    carbs: number;
+    fat: number;
+  } | null;
   todayIntake: {
     totalCalories: number;
     totalProtein: number;
@@ -71,7 +76,14 @@ export async function buildCoachContext(
   }
 
   return {
-    goals: null, // TODO: integrate with calculateGoals when profile has physical data
+    goals: user?.dailyCalorieGoal
+      ? {
+          calories: user.dailyCalorieGoal,
+          protein: user.dailyProteinGoal || 0,
+          carbs: user.dailyCarbsGoal || 0,
+          fat: user.dailyFatGoal || 0,
+        }
+      : null,
     todayIntake,
     dietaryProfile: profile
       ? {

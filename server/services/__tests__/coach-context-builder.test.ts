@@ -142,6 +142,45 @@ describe("buildCoachContext", () => {
     expect(result.suggestions).toContain("What should I eat next?");
   });
 
+  it("populates goals from the user's persisted daily goal columns", async () => {
+    mockStorage.getUserProfile.mockResolvedValue(undefined);
+    mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
+    mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
+    mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([]);
+    mockStorage.getUser.mockResolvedValue(makeUser());
+
+    const result = await buildCoachContext("user-1", TIER_FEATURES.free);
+
+    expect(result.goals).toEqual({
+      calories: 2000,
+      protein: 150,
+      carbs: 250,
+      fat: 67,
+    });
+  });
+
+  it("coerces a null macro goal to 0 when the user has a calorie goal", async () => {
+    mockStorage.getUserProfile.mockResolvedValue(undefined);
+    mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
+    mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
+    mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([]);
+    // `dailyProteinGoal` has no DB default — a user who never ran goal
+    // calculation has a defaulted calorie goal but null macro goals.
+    mockStorage.getUser.mockResolvedValue({
+      ...makeUser(),
+      dailyProteinGoal: null,
+    });
+
+    const result = await buildCoachContext("user-1", TIER_FEATURES.free);
+
+    expect(result.goals).toEqual({
+      calories: 2000,
+      protein: 0,
+      carbs: 250,
+      fat: 67,
+    });
+  });
+
   it("builds a full dietaryProfile and includes allergen-aware data", async () => {
     mockStorage.getUserProfile.mockResolvedValue(
       makeProfile({
