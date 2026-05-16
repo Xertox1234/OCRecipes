@@ -81,7 +81,60 @@ Focus on genuinely new issues, not style preferences.
    - Grep for the pattern the agent flagged
    - If the code doesn't match the finding, mark `false-positive` with evidence
 4. Write all verified findings to the manifest with status `open`, including which agent reported each finding
-5. **Show the user the complete findings table** and ask: "Which findings should I fix now, and which should be deferred?"
+
+## Phase 2.5: Research
+
+Validate the Phase 2 findings against current documentation before the user triages them. The orchestrator's training knowledge lags real-world docs by months; this phase catches stale false positives (a finding the docs contradict) and stale knowledge gaps (a current best practice no agent knew to flag).
+
+1. **Launch `docs-researcher` agents in parallel** — one per audit domain that has at least one finding:
+   - `full` or `pre-launch`: launch one `docs-researcher` per domain with findings, batched the same way Phase 2 batches its specialist agents (first 4 domains, then the rest)
+   - Named scope: launch one `docs-researcher` for that domain
+   - **Skip rule:** a domain with zero findings gets no researcher
+   - Each agent runs as a subagent via the Agent tool with the `docs-researcher` agent type
+2. Use this dispatch prompt for each `docs-researcher` (fill in `[DOMAIN]` and the findings list):
+
+   ```
+   You are validating audit findings for the [DOMAIN] domain against current library documentation.
+
+   Findings to validate:
+   [paste this domain's findings — for each: ID, description, file:line, the pattern/rule cited]
+
+   For EACH finding, you MUST check current documentation: call
+   `mcp__plugin_context7_context7__resolve-library-id` to resolve the relevant
+   library, then `mcp__plugin_context7_context7__query-docs` to fetch its current
+   docs. A verdict with no doc citation is invalid — do not rely on training knowledge.
+
+   Return exactly one verdict per finding:
+   - `confirmed` — current docs agree the finding is valid
+   - `better-fix` — the finding is real, but current docs show a cleaner or different
+     fix than the discovering agent assumed; describe the doc-informed approach
+   - `contradicted` — current docs say the flagged pattern is fine, or the
+     "deprecated" API is not deprecated; cite the doc
+   - `not-applicable` — the finding does not hinge on external library/framework
+     behavior (e.g. IDOR, missing userId check, N+1 query, dead code); skip it,
+     no doc call needed
+
+   Every non-`not-applicable` verdict MUST cite the specific doc retrieved (library + section).
+
+   Additionally: if, while validating, you notice a current-doc best practice clearly
+   unmet in code you ALREADY viewed, report it as a NEW finding candidate with
+   file:line and the doc citation. Do not perform a broad code audit — only report
+   gaps noticed incidentally.
+
+   Do NOT fix anything. Report verdicts and any new finding candidates only.
+   ```
+
+3. As each `docs-researcher` completes, update the manifest `Research` column for each finding:
+   - `confirmed` → `Research` = `confirmed`; finding stays `open`
+   - `better-fix` → `Research` = `better-fix`; finding stays `open`; record the doc-informed approach in the Verification column so Phase 3 uses it
+   - `contradicted` → `Research` = `contradicted ⚠`; finding stays `open` — do **not** auto-mark `false-positive`, the user decides at triage
+   - `not-applicable` → `Research` = `—`
+4. For each **new finding candidate** a researcher surfaced, verify it exists in the current code before adding it — same discipline as Phase 2 step 3:
+   - Read the file at the reported line
+   - Grep for the pattern
+   - If confirmed, add it to the manifest with status `open`, `Agent` = `docs-researcher`, `Research` = `confirmed`
+   - If not confirmed, discard it (do not add it to the manifest)
+5. **Show the user the complete findings table** (with the `Research` column populated) and ask: "Which findings should I fix now, and which should be deferred? Note the research verdicts — `contradicted ⚠` findings may be false positives."
 
 ## Phase 3: Fix (one at a time)
 
