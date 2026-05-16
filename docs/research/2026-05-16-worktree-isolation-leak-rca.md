@@ -122,8 +122,10 @@ A worktree agent:
 - The worktree checkout is otherwise complete (2259 tracked files present);
   `.claude/settings.json` and `.claude/hooks/` are present, so hooks defined in
   settings apply to worktree agents.
-- Hooks fire for worktree agents — empirical confirmation deferred to Task 6's
-  end-to-end run with the real M1 hook.
+- Hooks fire for worktree agents — confirmed post-merge (2026-05-16): a
+  verification agent's worktree, created from `origin/main`, contained the
+  registered guardrail hook, which fired and denied an absolute main-checkout
+  write while allowing an in-worktree write. `git status` on `main` stayed clean.
 
 ## Phase 3 — Root cause
 
