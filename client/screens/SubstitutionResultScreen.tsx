@@ -142,7 +142,7 @@ export default function SubstitutionResultScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} accessibilityViewIsModal>
       <FlatList
         {...FLATLIST_DEFAULTS}
         data={suggestions}

@@ -333,6 +333,7 @@ export default function MenuScanResultScreen() {
           styles.centered,
           { backgroundColor: theme.backgroundDefault },
         ]}
+        accessibilityViewIsModal
       >
         <ActivityIndicator
           size="large"
@@ -356,6 +357,7 @@ export default function MenuScanResultScreen() {
           styles.centered,
           { backgroundColor: theme.backgroundDefault },
         ]}
+        accessibilityViewIsModal
       >
         <ThemedText style={[styles.errorText, { color: theme.error }]}>
           {error}
@@ -367,6 +369,7 @@ export default function MenuScanResultScreen() {
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
+      accessibilityViewIsModal
     >
       {showUpdatedToast ? (
         <Animated.View

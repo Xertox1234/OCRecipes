@@ -195,6 +195,7 @@ export default function CookSessionCaptureScreen() {
     return (
       <View
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+        accessibilityViewIsModal
       >
         <ActivityIndicator size="large" color={theme.success} />
         <Pressable
@@ -213,6 +214,7 @@ export default function CookSessionCaptureScreen() {
     return (
       <View
         style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+        accessibilityViewIsModal
       >
         <View style={styles.permissionContent}>
           <Feather name="camera-off" size={48} color={theme.textSecondary} />
@@ -265,6 +267,7 @@ export default function CookSessionCaptureScreen() {
   return (
     <View
       style={[styles.container, { backgroundColor: CameraColors.background }]}
+      accessibilityViewIsModal
     >
       {/* Camera */}
       <CameraView

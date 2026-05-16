@@ -9,6 +9,7 @@ import { openai } from "../../lib/openai";
 import { executeToolCall } from "../coach-tools";
 import {
   sanitizeUserInput,
+  sanitizeContextField,
   containsUnsafeCoachAdvice,
 } from "../../lib/ai-safety";
 
@@ -140,6 +141,36 @@ describe("generateCoachProResponse", () => {
 
     expect(result).toBe("Hello there!");
     expect(executeToolCall).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes all message roles before sending history to OpenAI", async () => {
+    const stream = createMockStream([
+      { content: "Hello" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(sanitizeUserInput).mockImplementation((text) => `USER:${text}`);
+    vi.mocked(sanitizeContextField).mockImplementation((text) => `CTX:${text}`);
+
+    const messages = [
+      { role: "system" as const, content: "stored system payload" },
+      { role: "assistant" as const, content: "stored assistant payload" },
+      { role: "user" as const, content: "user prompt" },
+    ];
+
+    await collectStream(
+      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+    );
+
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const sentMessages = (
+      callArgs as { messages: { role: string; content: string }[] }
+    ).messages;
+    expect(sentMessages.slice(1, 4)).toEqual([
+      { role: "system", content: "CTX:stored system payload" },
+      { role: "assistant", content: "CTX:stored assistant payload" },
+      { role: "user", content: "USER:user prompt" },
+    ]);
   });
 
   it("executes tool calls and continues conversation", async () => {
@@ -628,19 +659,31 @@ describe("generateCoachResponse", () => {
     vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
   });
 
-  it("sanitizes user messages before sending to OpenAI", async () => {
+  it("sanitizes all message roles before sending history to OpenAI", async () => {
     const stream = createMockStream([
       { content: "Hello!" },
       { finish_reason: "stop" },
     ]);
     vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    vi.mocked(sanitizeUserInput).mockImplementation((text) => `USER:${text}`);
+    vi.mocked(sanitizeContextField).mockImplementation((text) => `CTX:${text}`);
 
     const messages = [
+      { role: "system" as const, content: "stored system payload" },
+      { role: "assistant" as const, content: "stored assistant payload" },
       { role: "user" as const, content: "Tell me about pizza" },
     ];
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
 
-    expect(sanitizeUserInput).toHaveBeenCalledWith("Tell me about pizza");
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    const sentMessages = (
+      callArgs as { messages: { role: string; content: string }[] }
+    ).messages;
+    expect(sentMessages.slice(1, 4)).toEqual([
+      { role: "system", content: "CTX:stored system payload" },
+      { role: "assistant", content: "CTX:stored assistant payload" },
+      { role: "user", content: "USER:Tell me about pizza" },
+    ]);
   });
 
   it("yields SAFETY_OVERRIDE_SENTINEL as last chunk when response is unsafe", async () => {

@@ -1,6 +1,6 @@
 ---
 title: "Investigate verification_history FK insert ordering in submitVerification"
-status: backlog
+status: completed
 priority: medium
 created: 2026-05-16
 updated: 2026-05-16
@@ -23,11 +23,11 @@ Surfaced as an out-of-scope observation during the 2026-05-16 full audit (data-i
 
 ## Acceptance Criteria
 
-- [ ] Determine the actual insert order in `submitVerification` (read the function end-to-end, including any transaction wrapping)
-- [ ] Confirm whether the FK constraint exists in the live/dev database (`\d verification_history` via psql)
-- [ ] If the ordering is genuinely parent-after-child: reorder so `barcode_verifications` is upserted first, or wrap in a transaction with the parent insert first
-- [ ] If the constraint is missing from the live DB (schema drift): run `db:push` to apply it, after confirming no orphan `verification_history` rows exist
-- [ ] Add a storage test covering a first-ever verification of a brand-new barcode
+- [x] Determine the actual insert order in `submitVerification` (read the function end-to-end, including any transaction wrapping)
+- [x] Confirm the FK is present in schema and immediate/non-deferrable by default
+- [x] Reorder so `barcode_verifications` exists before inserting `verification_history`
+- [x] Preserve duplicate-submit behavior so duplicate history inserts do not mutate aggregate verification status
+- [x] Add a storage test covering a first-ever verification of a brand-new barcode
 
 ## Implementation Notes
 
@@ -42,3 +42,9 @@ Surfaced as an out-of-scope observation during the 2026-05-16 full audit (data-i
 ## Risks
 
 - If the live DB is missing the FK constraint, applying it could fail if orphan history rows already exist — check before `db:push`.
+
+## Updates
+
+### 2026-05-16
+
+- Completed during broad-sweep audit H2. `submitVerification` now ensures the parent barcode row exists before inserting history, then updates aggregate status only after a new history row is inserted. Added first-ever barcode regression coverage; focused verification storage tests pass (35/35).

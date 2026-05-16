@@ -93,6 +93,9 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
   const isUploadingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  const isAbortError = (err: unknown) =>
+    err instanceof Error && err.name === "AbortError";
+
   // Memory cleanup on unmount (from institutional learning: useeffect-cleanup-memory-leak)
   useFocusEffect(
     useCallback(() => {
@@ -129,13 +132,20 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
 
   // Upload and analyze photo
   useEffect(() => {
+    const abortController = new AbortController();
+
     const analyzePhoto = async () => {
       if (isUploadingRef.current) return;
+      abortControllerRef.current = abortController;
       isUploadingRef.current = true;
 
       try {
-        abortControllerRef.current = new AbortController();
-        const result = await uploadPhotoForAnalysis(imageUri, intent);
+        const result = await uploadPhotoForAnalysis(
+          imageUri,
+          intent,
+          abortController.signal,
+        );
+        if (abortController.signal.aborted) return;
 
         setAnalysisResult(result);
         setFoods(result.foods);
@@ -151,16 +161,29 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
 
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       } catch (err) {
+        if (abortController.signal.aborted || isAbortError(err)) return;
         const message = err instanceof Error ? err.message : "Analysis failed";
         setError(message);
         haptics.notification(Haptics.NotificationFeedbackType.Error);
       } finally {
-        isUploadingRef.current = false;
-        setIsAnalyzing(false);
+        if (abortControllerRef.current === abortController) {
+          isUploadingRef.current = false;
+          abortControllerRef.current = null;
+        }
+        if (!abortController.signal.aborted) {
+          setIsAnalyzing(false);
+        }
       }
     };
 
     analyzePhoto();
+    return () => {
+      abortController.abort();
+      if (abortControllerRef.current === abortController) {
+        isUploadingRef.current = false;
+        abortControllerRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot analysis on mount; haptics object is unstable (new ref each render), intentConfig derived from intent
   }, [imageUri, intent]);
 

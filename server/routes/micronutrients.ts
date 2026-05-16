@@ -142,6 +142,7 @@ export function register(app: Express): void {
   app.get(
     "/api/micronutrients/reference",
     requireAuth,
+    micronutrientRateLimit,
     (_req: AuthenticatedRequest, res: Response) => {
       res.json(getDailyValueReference());
     },

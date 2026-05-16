@@ -187,6 +187,18 @@ describe("uploadPhotoForAnalysis", () => {
     );
   });
 
+  it("honors an aborted signal before starting upload work", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      uploadPhotoForAnalysis("file:///photo.jpg", "log", controller.signal),
+    ).rejects.toThrow("Upload aborted");
+    expect(tokenStorage.get).not.toHaveBeenCalled();
+    expect(compressImage).not.toHaveBeenCalled();
+    expect(uploadAsync).not.toHaveBeenCalled();
+  });
+
   it("compresses, uploads, and returns parsed response on success", async () => {
     vi.mocked(tokenStorage.get).mockResolvedValue("test-token");
     vi.mocked(compressImage).mockResolvedValue({

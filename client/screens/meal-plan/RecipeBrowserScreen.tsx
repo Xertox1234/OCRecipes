@@ -490,7 +490,10 @@ export default function RecipeBrowserScreen() {
   const keyExtractor = useCallback((item: SearchableRecipe) => item.id, []);
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+    <View
+      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      accessibilityViewIsModal
+    >
       <View
         style={[
           styles.headerAreaOuter,

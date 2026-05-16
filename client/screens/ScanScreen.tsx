@@ -501,7 +501,7 @@ export default function ScanScreen() {
   const coachMessage = getCoachMessage(scanPhase, elapsedSeconds);
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} accessibilityViewIsModal>
       <CameraView
         ref={cameraRef}
         barcodeTypes={

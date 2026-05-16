@@ -206,6 +206,8 @@ export async function getResolvedFavouriteRecipes(
       ? db
           .select({
             id: communityRecipes.id,
+            authorId: communityRecipes.authorId,
+            isPublic: communityRecipes.isPublic,
             title: communityRecipes.title,
             description: communityRecipes.description,
             imageUrl: communityRecipes.imageUrl,
@@ -213,15 +215,9 @@ export async function getResolvedFavouriteRecipes(
             difficulty: communityRecipes.difficulty,
           })
           .from(communityRecipes)
-          .where(
-            and(
-              inArray(communityRecipes.id, communityIds),
-              or(
-                eq(communityRecipes.isPublic, true),
-                eq(communityRecipes.authorId, userId),
-              ),
-            ),
-          )
+          // Fetch by ID first so hidden-but-existing recipes are not mistaken
+          // for orphans and deleted from the user's favourites.
+          .where(inArray(communityRecipes.id, communityIds))
       : [],
   ]);
 
@@ -249,16 +245,18 @@ export async function getResolvedFavouriteRecipes(
     } else if (row.recipeType === "community") {
       const recipe = communityMap.get(row.recipeId);
       if (recipe) {
-        resolved.push({
-          recipeId: recipe.id,
-          recipeType: "community",
-          title: recipe.title,
-          description: recipe.description ?? null,
-          imageUrl: recipe.imageUrl ?? null,
-          servings: recipe.servings ?? null,
-          difficulty: recipe.difficulty ?? null,
-          favouritedAt: row.createdAt.toISOString(),
-        });
+        if (recipe.isPublic || recipe.authorId === userId) {
+          resolved.push({
+            recipeId: recipe.id,
+            recipeType: "community",
+            title: recipe.title,
+            description: recipe.description ?? null,
+            imageUrl: recipe.imageUrl ?? null,
+            servings: recipe.servings ?? null,
+            difficulty: recipe.difficulty ?? null,
+            favouritedAt: row.createdAt.toISOString(),
+          });
+        }
       } else orphanIds.push(row.id);
     }
   }

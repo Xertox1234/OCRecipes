@@ -269,17 +269,21 @@ export async function getDailyLogs(
 ): Promise<DailyLog[]> {
   const { startOfDay, endOfDay } = getDayBounds(date);
 
-  return db
-    .select()
+  const rows = await db
+    .select({ dailyLog: dailyLogs })
     .from(dailyLogs)
+    .leftJoin(scannedItems, eq(dailyLogs.scannedItemId, scannedItems.id))
     .where(
       and(
         eq(dailyLogs.userId, userId),
         gte(dailyLogs.loggedAt, startOfDay),
         lt(dailyLogs.loggedAt, endOfDay),
+        sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`,
       ),
     )
     .orderBy(desc(dailyLogs.loggedAt));
+
+  return rows.map((row) => row.dailyLog);
 }
 
 /**

@@ -225,7 +225,7 @@ export default function NutritionDetailScreen() {
 
   if (isLoading) {
     return (
-      <ThemedView style={styles.container}>
+      <ThemedView style={styles.container} accessibilityViewIsModal>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={[
@@ -243,7 +243,7 @@ export default function NutritionDetailScreen() {
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} accessibilityViewIsModal>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[

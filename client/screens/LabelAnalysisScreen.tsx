@@ -224,7 +224,7 @@ export default function LabelAnalysisScreen() {
 
   if (isAnalyzing) {
     return (
-      <ThemedView style={styles.container}>
+      <ThemedView style={styles.container} accessibilityViewIsModal>
         <View style={styles.loadingContainer}>
           <ActivityIndicator
             size="large"
@@ -244,7 +244,7 @@ export default function LabelAnalysisScreen() {
 
   if (error && !labelData) {
     return (
-      <ThemedView style={styles.container}>
+      <ThemedView style={styles.container} accessibilityViewIsModal>
         <View style={styles.loadingContainer}>
           <Feather name="alert-circle" size={48} color={theme.error} />
           <ThemedText
@@ -265,7 +265,7 @@ export default function LabelAnalysisScreen() {
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} accessibilityViewIsModal>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[

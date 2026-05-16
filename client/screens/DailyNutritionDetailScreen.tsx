@@ -165,6 +165,7 @@ export default function DailyNutritionDetailScreen() {
           styles.loadingContainer,
           { backgroundColor: theme.backgroundRoot },
         ]}
+        accessibilityViewIsModal
       >
         <ActivityIndicator
           size="large"
@@ -181,6 +182,7 @@ export default function DailyNutritionDetailScreen() {
     <ScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       contentContainerStyle={contentContainerStyle}
+      accessibilityViewIsModal
     >
       {/* CalorieRing hero section */}
       <View style={styles.ringSection}>

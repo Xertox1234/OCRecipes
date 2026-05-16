@@ -193,6 +193,7 @@ export default function PantryScreen() {
             backgroundColor: theme.backgroundRoot,
           },
         ]}
+        accessibilityViewIsModal
       >
         <View style={styles.emptyState}>
           <Feather name="lock" size={48} color={withOpacity(theme.text, 0.2)} />
@@ -236,6 +237,7 @@ export default function PantryScreen() {
             backgroundColor: theme.backgroundRoot,
           },
         ]}
+        accessibilityViewIsModal
       >
         <SkeletonProvider>
           <View style={styles.skeletons}>
@@ -255,7 +257,10 @@ export default function PantryScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+    <View
+      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      accessibilityViewIsModal
+    >
       <SectionList
         {...FLATLIST_DEFAULTS}
         sections={sections}

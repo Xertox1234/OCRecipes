@@ -168,6 +168,13 @@ export async function submitVerification(
   consensusData: ConsensusNutritionData | null,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // Ensure the parent row exists before inserting verificationHistory; the
+    // FK is immediate, so child-before-parent fails for first-ever barcodes.
+    await tx
+      .insert(barcodeVerifications)
+      .values({ barcode })
+      .onConflictDoNothing({ target: barcodeVerifications.barcode });
+
     // Insert verification history entry
     const [inserted] = await tx
       .insert(verificationHistory)
@@ -189,30 +196,20 @@ export async function submitVerification(
     // Concurrent duplicate — another request already verified this barcode for this user
     if (!inserted) return;
 
-    // Upsert barcode verification status
+    // Update barcode verification status only after a new history row exists;
+    // duplicate submissions must not mutate the aggregate row.
     await tx
-      .insert(barcodeVerifications)
-      .values({
-        barcode,
+      .update(barcodeVerifications)
+      .set({
         verificationLevel: newLevel,
         verificationCount: newCount,
         consensusNutritionData: consensusData as unknown as Record<
           string,
           unknown
         > | null,
+        updatedAt: new Date(),
       })
-      .onConflictDoUpdate({
-        target: barcodeVerifications.barcode,
-        set: {
-          verificationLevel: newLevel,
-          verificationCount: newCount,
-          consensusNutritionData: consensusData as unknown as Record<
-            string,
-            unknown
-          > | null,
-          updatedAt: new Date(),
-        },
-      });
+      .where(eq(barcodeVerifications.barcode, barcode));
   });
 }
 

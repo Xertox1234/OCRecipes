@@ -211,7 +211,10 @@ export default function EditDietaryProfileScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+    <View
+      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      accessibilityViewIsModal
+    >
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[

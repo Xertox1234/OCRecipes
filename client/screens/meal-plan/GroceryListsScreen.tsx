@@ -122,6 +122,7 @@ export default function GroceryListsScreen() {
             backgroundColor: theme.backgroundRoot,
           },
         ]}
+        accessibilityViewIsModal
       >
         <SkeletonProvider>
           <View style={styles.skeletons}>
@@ -141,7 +142,10 @@ export default function GroceryListsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+    <View
+      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      accessibilityViewIsModal
+    >
       <FlatList
         {...FLATLIST_DEFAULTS}
         data={lists || []}

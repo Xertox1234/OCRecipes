@@ -30,6 +30,7 @@ import { stripAuthorId, stripAuthorIdOne } from "./_recipe-helpers";
 import { recipeGenerationSchema } from "@shared/schemas/recipe";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { resolveSubscriptionTierFeatures } from "../services/subscription-tier-cache";
+import { fireAndForget } from "../lib/fire-and-forget";
 
 const recipeShareSchema = z.object({
   isPublic: z.boolean(),
@@ -247,10 +248,13 @@ export function register(app: Express): void {
 
         // Kick off image generation after responding — adds 5-30s if awaited here.
         // generateAndPatchRecipeImage updates the DB row when the image is ready.
-        void generateAndPatchRecipeImage(
-          recipe.id,
-          generatedRecipe.title,
-          productName,
+        fireAndForget(
+          "generate recipe image",
+          generateAndPatchRecipeImage(
+            recipe.id,
+            generatedRecipe.title,
+            productName,
+          ),
         );
       } catch (error) {
         handleRouteError(res, error, "generate recipe");

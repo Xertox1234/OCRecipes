@@ -87,6 +87,59 @@ const SUGGESTION_CHIPS = [
   },
 ];
 
+const stripStreamingRecipeJson = (content: string) =>
+  content.replace(/\n*```json[\s\S]*$/, "").trimEnd();
+
+const RecipeStreamingFooter = React.memo(function RecipeStreamingFooter({
+  content,
+  recipe,
+}: {
+  content: string;
+  recipe: StreamingRecipe | null;
+}) {
+  const { theme } = useTheme();
+
+  return (
+    <View>
+      {content ? (
+        <View
+          style={[
+            styles.messageBubble,
+            styles.assistantBubble,
+            { backgroundColor: withOpacity(theme.text, 0.06) },
+          ]}
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel={`RecipeChef: ${content}`}
+        >
+          <ThemedText>{content}</ThemedText>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.messageBubble,
+            styles.assistantBubble,
+            { backgroundColor: withOpacity(theme.text, 0.06) },
+          ]}
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel="RecipeChef is thinking"
+        >
+          <ActivityIndicator size="small" color={theme.textSecondary} />
+        </View>
+      )}
+      {recipe && (
+        <RecipeCard
+          recipe={recipe}
+          isImageLoading={recipe.imageUrl === undefined}
+          isSaved={false}
+          isSaving={false}
+        />
+      )}
+    </View>
+  );
+});
+
 export default function RecipeChatScreen() {
   const route = useRoute<RecipeChatRouteProp>();
   const navigation = useNavigation<RecipeChatScreenNavigationProp>();
@@ -107,6 +160,10 @@ export default function RecipeChatScreen() {
   const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
     null,
   );
+  const [pendingAssistantMessage, setPendingAssistantMessage] = useState<{
+    content: string;
+    recipe: StreamingRecipe | null;
+  } | null>(null);
 
   const createConversation = useCreateConversation();
 
@@ -155,12 +212,66 @@ export default function RecipeChatScreen() {
   } = useSendMessage(conversationId);
   const saveRecipeMutation = useSaveRecipeFromChat();
   const savedMessageIdsRef = useRef(new Set<number>());
+  const wasStreamingRef = useRef(false);
+  const lastStreamingContentRef = useRef("");
+  const lastStreamingRecipeRef = useRef<StreamingRecipe | null>(null);
   const [, forceRender] = useState(0);
 
   // Clear optimistic user message once streaming completes
   useEffect(() => {
     if (!isStreaming) setPendingUserMessage(null);
   }, [isStreaming]);
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    if (streamingContent) {
+      lastStreamingContentRef.current =
+        stripStreamingRecipeJson(streamingContent);
+    }
+    if (streamingRecipe) {
+      lastStreamingRecipeRef.current = streamingRecipe;
+    }
+  }, [isStreaming, streamingContent, streamingRecipe]);
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    });
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (wasStreamingRef.current && !isStreaming) {
+      const content = lastStreamingContentRef.current;
+      const recipe = lastStreamingRecipeRef.current;
+      if (content || recipe) {
+        setPendingAssistantMessage({ content, recipe });
+      }
+      lastStreamingContentRef.current = "";
+      lastStreamingRecipeRef.current = null;
+    }
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming]);
+
+  useEffect(() => {
+    if (!pendingAssistantMessage) return;
+    const pendingRecipeTitle = pendingAssistantMessage.recipe?.title;
+    const pendingContent = pendingAssistantMessage.content.trim();
+    const persisted = messages.some((message) => {
+      if (message.role !== "assistant") return false;
+      const metadata = message.metadata as Record<string, unknown> | null;
+      const recipe = metadata?.recipe as StreamingRecipe | undefined;
+      const messageContent = message.content.trim();
+      return (
+        (pendingContent !== "" && messageContent === pendingContent) ||
+        (pendingRecipeTitle !== undefined &&
+          recipe?.title === pendingRecipeTitle)
+      );
+    });
+    if (persisted) {
+      setPendingAssistantMessage(null);
+    }
+  }, [messages, pendingAssistantMessage]);
 
   const handleSaveRecipe = useCallback(
     async (messageId: number) => {
@@ -229,7 +340,14 @@ export default function RecipeChatScreen() {
     [handleSend],
   );
 
-  // Build display messages from fetched messages + streaming state
+  const streamingDisplayContent = useMemo(
+    () => stripStreamingRecipeJson(streamingContent),
+    [streamingContent],
+  );
+
+  // Build display messages from fetched messages + low-frequency optimistic/error state.
+  // Streaming assistant content renders in ListFooterComponent so token updates
+  // do not invalidate visible FlatList rows.
   const displayMessages = React.useMemo(() => {
     // System messages are internal AI context — never show in the chat UI
     const msgs = messages.filter((m) => m.role !== "system");
@@ -251,22 +369,15 @@ export default function RecipeChatScreen() {
       }
     }
 
-    // Add streaming message if active — always push so typing indicator shows immediately.
-    // Strip JSON fence from streaming display — recipe card shows the structured data.
-    // Intentionally greedy-to-EOF (no closing fence anchor): the stream is mid-flight so
-    // the closing ``` hasn't arrived yet. The server strips the full closed fence before
-    // persisting, so the saved message and the streaming display are consistent.
-    if (isStreaming) {
-      const streamingDisplayContent = streamingContent
-        .replace(/\n*```json[\s\S]*$/, "")
-        .trimEnd();
-
+    if (pendingAssistantMessage) {
       msgs.push({
-        id: -1,
+        id: -5,
         conversationId: conversationId ?? 0,
         role: "assistant",
-        content: streamingDisplayContent,
-        metadata: streamingRecipe ? { recipe: streamingRecipe } : null,
+        content: pendingAssistantMessage.content,
+        metadata: pendingAssistantMessage.recipe
+          ? { recipe: pendingAssistantMessage.recipe }
+          : null,
         createdAt: new Date().toISOString(),
       });
     }
@@ -299,12 +410,11 @@ export default function RecipeChatScreen() {
   }, [
     messages,
     isStreaming,
-    streamingContent,
-    streamingRecipe,
     conversationId,
     requestError,
     streamError,
     pendingUserMessage,
+    pendingAssistantMessage,
   ]);
 
   const renderMessage = useCallback(
@@ -314,8 +424,8 @@ export default function RecipeChatScreen() {
       const recipe = metadata?.recipe as StreamingRecipe | undefined;
       const allergenWarning = metadata?.allergenWarning as string | undefined;
       const isError = !!metadata?.isError;
+      const isPendingAssistant = item.id === -5;
       const isAlreadySaved = savedMessageIdsRef.current.has(item.id);
-      const isStreaming_ = item.id === -1;
 
       return (
         <View>
@@ -355,19 +465,6 @@ export default function RecipeChatScreen() {
                 {item.content}
               </ThemedText>
             </View>
-          ) : isStreaming_ ? (
-            <View
-              style={[
-                styles.messageBubble,
-                styles.assistantBubble,
-                { backgroundColor: withOpacity(theme.text, 0.06) },
-              ]}
-              accessible
-              accessibilityRole="text"
-              accessibilityLabel="RecipeChef is thinking"
-            >
-              <ActivityIndicator size="small" color={theme.textSecondary} />
-            </View>
           ) : null}
 
           {/* Recipe card (if present in metadata) */}
@@ -375,13 +472,17 @@ export default function RecipeChatScreen() {
             <RecipeCard
               recipe={recipe}
               allergenWarning={allergenWarning}
-              isImageLoading={isStreaming_ && recipe.imageUrl === undefined}
-              isSaved={isAlreadySaved}
+              isImageLoading={
+                isPendingAssistant && recipe.imageUrl === undefined
+              }
+              isSaved={isPendingAssistant ? false : isAlreadySaved}
               isSaving={
-                saveRecipeMutation.isPending && !isAlreadySaved && !isStreaming_
+                !isPendingAssistant &&
+                saveRecipeMutation.isPending &&
+                !isAlreadySaved
               }
               onSave={
-                isStreaming_ ? undefined : () => handleSaveRecipe(item.id)
+                isPendingAssistant ? undefined : () => handleSaveRecipe(item.id)
               }
             />
           )}
@@ -391,11 +492,19 @@ export default function RecipeChatScreen() {
     [theme, saveRecipeMutation.isPending, handleSaveRecipe],
   );
 
+  const streamingFooter = isStreaming ? (
+    <RecipeStreamingFooter
+      content={streamingDisplayContent}
+      recipe={streamingRecipe}
+    />
+  ) : null;
+
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={0}
+      accessibilityViewIsModal
     >
       {/* Header */}
       <View
@@ -540,10 +649,10 @@ export default function RecipeChatScreen() {
           data={displayMessages}
           renderItem={renderMessage}
           keyExtractor={(item) => {
-            if (item.id === -1) return "streaming";
             if (item.id === -2) return "error";
             if (item.id === -3) return "pending-user";
             if (item.id === -4) return "stream-error";
+            if (item.id === -5) return "pending-assistant";
             return item.id.toString();
           }}
           contentContainerStyle={[
@@ -556,6 +665,7 @@ export default function RecipeChatScreen() {
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
           keyboardDismissMode="interactive"
           {...FLATLIST_DEFAULTS}
+          ListFooterComponent={streamingFooter}
         />
       )}
 
