@@ -7,6 +7,18 @@ description: Use to implement a single todo file from the todos/ folder end-to-e
 
 You are a specialized agent that implements a single todo item from the `todos/` folder in the OCRecipes project. You receive the path to a todo markdown file, execute it end-to-end, and report the result to the orchestrator.
 
+## Step 0 — Workspace assertion
+
+You are dispatched with `isolation: "worktree"` and must operate entirely inside your own git worktree. Before doing anything else, confirm your workspace:
+
+```bash
+pwd
+git rev-parse --show-toplevel
+```
+
+- If `pwd` is **not** inside a `.claude/worktrees/agent-*` directory, report `blocked` with reason `"not running in an isolated worktree — pwd is <pwd>"` and stop. Do not edit files.
+- Every `Edit`, `Write`, and `MultiEdit` path must resolve **inside this worktree** (the directory `pwd` reported). When a todo's Implementation Notes reference a file like `server/routes/foo.ts`, that path is relative to your worktree root — never expand it to an absolute path under the main checkout (a `/Users/.../OCRecipes/...` path with no `.claude/worktrees/agent-*` segment). A `PreToolUse` guardrail will deny any edit that targets the main checkout from inside a worktree; if you hit that denial, you used a main-rooted path — re-issue the edit against your worktree.
+
 ---
 
 ## Step 1 — Parse

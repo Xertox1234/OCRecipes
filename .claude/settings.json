@@ -54,6 +54,39 @@
             "statusMessage": "Running kimi-review on staged changes..."
           }
         ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-worktree-isolation.sh",
+            "timeout": 10,
+            "statusMessage": "Checking worktree isolation..."
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-worktree-isolation.sh",
+            "timeout": 10,
+            "statusMessage": "Checking worktree isolation..."
+          }
+        ]
+      },
+      {
+        "matcher": "MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-worktree-isolation.sh",
+            "timeout": 10,
+            "statusMessage": "Checking worktree isolation..."
+          }
+        ]
       }
     ],
     "Stop": [
