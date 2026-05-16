@@ -139,6 +139,8 @@ Present research as:
 
 ## Output Format
 
+**When dispatched by the audit skill's Phase 2.5:** ignore the report format below and follow the dispatch prompt instead — return exactly one verdict (`confirmed` / `better-fix` / `contradicted` / `not-applicable`) per finding ID, each with a doc citation. The format below applies only to open-ended research requests.
+
 Structure research results as:
 
 ```markdown
