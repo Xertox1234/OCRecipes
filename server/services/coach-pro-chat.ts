@@ -197,6 +197,13 @@ function getUtcDayBucket(d: Date = new Date()): string {
  *  - dayBucket — keeps universal first-turn answers from crossing UTC days
  *  - contextHash — captures goals, intake, weight trend, dietary profile, and
  *    hour bucket so same-day context changes invalidate cached answers
+ *  - intent — the deterministic intent classification; different intents pick
+ *    different prompt bundles, so cached answers must not cross intents
+ *
+ * The `intent` parameter defaults to `"personalized_advice"` purely as a
+ * backward-compat fallback for callers that predate intent-aware caching — it
+ * is NOT a meaningful routing decision. Real callers (`handleCoachChat`) always
+ * pass the classified intent explicitly.
  */
 export function hashCoachCacheKey(
   userId: string,
@@ -553,6 +560,9 @@ export async function* handleCoachChat(
         }
       },
       profile,
+      // Reuse the intent classified once at the top of the turn — skips a
+      // redundant classifyIntent call inside the generator.
+      intent,
     )) {
       for (const label of pendingStatusLabels.splice(0)) {
         if (!isAborted()) yield { type: "status", label };
@@ -566,6 +576,9 @@ export async function* handleCoachChat(
       messageHistory,
       context,
       abortSignal,
+      // Reuse the intent classified once at the top of the turn — skips a
+      // redundant classifyIntent call inside the generator.
+      intent,
     )) {
       if (isAborted()) break;
       if (chunk === SAFETY_OVERRIDE_SENTINEL) {

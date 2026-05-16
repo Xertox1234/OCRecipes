@@ -35,8 +35,12 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     name: "megadose",
   },
   {
-    // Prompt injection via "ignore" keyword — [\s\S]* matches across newlines
-    pattern: /ignore[\s\S]*(instruction|rule|guidelines?|safety)/i,
+    // Prompt injection via "ignore" keyword — [\s\S]{0,2000} matches across
+    // newlines. The bound equals the 2000-char message cap (chat.ts Zod schema
+    // + sanitizeUserInput slice), so the whole sanitized message is always in
+    // range. A smaller bound would let a padded injection push the trigger
+    // keyword past the gap and bypass detection.
+    pattern: /ignore[\s\S]{0,2000}(instruction|rule|guidelines?|safety)/i,
     name: "prompt_injection_ignore",
   },
   {
@@ -45,9 +49,11 @@ const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
     name: "extreme_fasting",
   },
   {
-    // Jailbreak via persona reassignment — [\s\S]* matches across newlines
+    // Jailbreak via persona reassignment — [\s\S]{0,2000} matches across
+    // newlines; the bound equals the 2000-char message cap (see above) so a
+    // padded injection cannot push the keyword past the gap.
     pattern:
-      /(unrestricted[\s\S]*(fitness|nutrition|diet|health|ai)|no safety guidelines|you are now \w+bot)/i,
+      /(unrestricted[\s\S]{0,2000}(fitness|nutrition|diet|health|ai)|no safety guidelines|you are now \w+bot)/i,
     name: "jailbreak_persona",
   },
 ];
@@ -75,9 +81,19 @@ const VAGUE_EXACT_RE = /^(help|hi|hey|hello|idk|i don.?t know)$/i;
  * The `what` arm uses [''']s? (apostrophe variants) rather than `.s` to avoid
  * false-positives on "What should…" and "What stocks…" where `.` would match
  * the space before "should"/"stocks" giving "What s" as an accidental match.
+ *
+ * The `do …need` arm is scoped to a nutrient/macro vocabulary so generic
+ * "do I need…" questions (which are almost always personal) fall through to
+ * personalized_advice rather than being misrouted as factual. The `s?\b`
+ * suffix matches optional plurals while preventing substring hits
+ * ("fat" in "father", "carb" in "carbon"). Its two `[\s\S]{0,500}` gaps are
+ * bounded so the arm cannot contribute backtracking depth on adversarially
+ * long input. 500 is ample here — this is a routing heuristic, not a safety
+ * detector, so a miss only mis-routes; the safety patterns above bound to the
+ * full 2000-char message cap instead.
  */
 const GENERAL_FACT_RE =
-  /^(how (much|many)|what(?:[''']s?| is| are)|is\s+\w+\s+(high|low|good|bad)|do .*need)/i;
+  /^(how (much|many)|what(?:[''']s?| is| are)|is\s+\w+\s+(high|low|good|bad)|do [\s\S]{0,500}need\b[\s\S]{0,500}(protein|carb|fiber|vitamin|supplement|calorie|fat|macro)s?\b)/i;
 
 /**
  * If the message contains a temporal personal reference the user is asking
