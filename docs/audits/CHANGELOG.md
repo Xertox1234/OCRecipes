@@ -15,6 +15,18 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-16 — Unfinished Features, Specs & Plans Audit
+
+- **Trigger:** Resumed a half-finished audit left in worktree `audit-2026-05-16b` (discovery done, fix phase never started). Custom scope: unfinished features, dead TODOs, stale specs/plans.
+- **Manifest:** [docs/audits/2026-05-16-unfinished-features.md](2026-05-16-unfinished-features.md)
+- **Findings:** 0 critical, 1 high, 4 medium, 4 low (9 total)
+- **Resolved:** 4 verified, 4 deferred, 1 false-positive
+- **Commit(s):** _(see manifest Fix Commits)_
+- **Key fix:** H1 — the "Upgrade to Coach Pro" CTA in the daily-limit banner was dead static text; wired to `UpgradeModal` via local state (conversion blocker). M2 — `buildCoachContext` hardcoded `goals: null`, leaving `CoachDashboard`'s remaining-calories display permanently dead; populated from persisted `users.daily*Goal` columns. The manifest's original M2 prescribed fix (`calculateGoals`) was wrong — verified false and corrected in-manifest.
+- **Other fixes:** L2 created a tracking todo for the ROADMAP "verification streak premium unlocks" item; L3 fixed a stale schema comment and relocated a `status: backlog` todo that had been mis-filed in `todos/archive/`.
+- **Deferred (4):** M1 receipt-OCR confidence fallback (design task — no correspondence key between local/AI item shapes); M3 "Safe for me" allergen filter (no allergen filtering in `recipe-search.ts`); M4 Spoonacular source filter (no inline external-API search path); L1 measurement-unit preference (needs schema + UI + migration). Todos created for all four.
+- **Notes:** L4 (stale `phase-4-continuation-prompt.md`) was a false-positive — file already removed at current `main`. Per-fix kimi-review hit a `401` auth outage after H1; remaining fixes covered by the Phase 6 code-reviewer pass.
+
 ## 2026-05-16 — Full Codebase Audit
 
 - **Trigger:** Periodic full audit, scoped to code changed since the 2026-05-11 testing audit. 7 specialist domains (security, performance, data-integrity, architecture, code-quality, camera, accessibility) — performance and camera reported 0 findings.

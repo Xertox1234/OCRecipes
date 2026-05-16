@@ -24,6 +24,7 @@ import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useChatMessages,
@@ -82,6 +83,7 @@ export default function CoachChat({
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
   const [streamingError, setStreamingError] = useState<string | null>(null);
   const [isAtDailyLimit, setIsAtDailyLimit] = useState(false);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
     null,
   );
@@ -596,10 +598,16 @@ export default function CoachChat({
           <Text style={[styles.limitText, { color: theme.textSecondary }]}>
             {"You’ve reached today’s coaching limit."}
           </Text>
-          {/* TODO: wire up when subscription screen added */}
-          <Text style={[styles.limitCta, { color: theme.link }]}>
-            Upgrade to Coach Pro
-          </Text>
+          <Pressable
+            onPress={() => setShowUpgrade(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Upgrade to Coach Pro"
+            hitSlop={16}
+          >
+            <Text style={[styles.limitCta, { color: theme.link }]}>
+              Upgrade to Coach Pro
+            </Text>
+          </Pressable>
         </View>
       ) : null,
     [isAtDailyLimit, theme.textSecondary, theme.link],
@@ -628,6 +636,10 @@ export default function CoachChat({
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"
         onContentSizeChange={handleContentSizeChange}
+      />
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
       />
     </CoachChatBase>
   );
