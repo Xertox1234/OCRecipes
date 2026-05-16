@@ -127,4 +127,50 @@ A worktree agent:
 
 ## Phase 3 — Root cause
 
-(filled in by Task 3)
+### Verdict on each hypothesis
+
+- **(a) Harness fails to set the agent's cwd to the worktree — RULED OUT.**
+  Probe 1: a worktree agent's cwd, `show-toplevel`, and `absolute-git-dir` all
+  point at its worktree, and relative-path writes land in the worktree.
+- **(b) Agent issues absolute paths under the main checkout — CONFIRMED as a
+  viable leak vector.** Probe 4: the harness does not sandbox absolute paths; a
+  worktree agent can reach the main checkout via any absolute path. An
+  absolute-main `file_path` passed to `Edit`/`Write` writes into `main`. Whether
+  the specific incident agents did this is unproven, but Phase 1's dual-path
+  signature (same file under both a worktree path and the main path) shows the
+  pattern occurs in practice.
+- **(c) `2.1.136`-specific, fixed upstream — PARTIALLY.** The normal flow
+  (relative paths, cwd-isolated) is clean on `2.1.142`; the leak did not
+  reproduce there. But the absolute-path vector in (b) remains open on `2.1.142`,
+  so the issue is not "fully fixed".
+
+### Root cause
+
+The isolation leak does **not** reproduce on `2.1.142` through normal agent
+operation — worktree isolation (cwd, relative-path resolution) works correctly.
+The residual risk is that **the harness resolves absolute paths literally with no
+worktree sandbox**: any `Edit`/`Write` carrying an absolute `file_path` under the
+main checkout writes into `main`, regardless of the agent's worktree. Today only
+the agent's own judgment prevents this (two probe agents correctly refused). The
+`2026-05-15/16` incident on `2.1.136` is best explained by executor agents
+issuing main-rooted absolute paths (or a `2.1.136` harness quirk); it cannot be
+deterministically reproduced from here.
+
+**Classification:** not reproduced on `2.1.142`; the absolute-path leak vector is
+real and open. The M1 guardrail hook is therefore a genuine fix for that vector,
+not merely defense-in-depth.
+
+### Plan adjustments arising from the investigation
+
+1. **Task 6 verification ordering.** Agent worktrees are created from
+   `origin/main`. The M1 hook lives on the `fix/worktree-isolation-leak` branch
+   and will not reach a freshly dispatched agent's worktree until it is on
+   `origin/main`. Task 6's live-agent verification must either run after the
+   branch is merged and pushed, or verify M1 by other means (manual worktree +
+   hook-input fixtures). Requires a user decision.
+2. **M2 reframing.** The plan's M2 told executors to "use worktree-relative
+   paths". Agents always emit absolute paths (Phase 1) and already refuse
+   absolute-main writes (Probes 2 & 3), so that instruction is unactionable and
+   redundant. M2 is reduced to the `Step 0` workspace assertion (fail fast if not
+   in a worktree) plus a note that absolute paths must stay under the worktree
+   root — no "use relative paths" prescription.
