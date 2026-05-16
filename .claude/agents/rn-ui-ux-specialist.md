@@ -294,11 +294,11 @@ When reviewing or writing UI code, verify:
 - `client/constants/performance.ts` - FLATLIST_DEFAULTS
 - `client/types/navigation.ts` - Navigation type definitions
 - `client/components/InlineError.tsx` - Form validation component
-- `docs/patterns/react-native.md` - Navigation, safe areas, forms
-- `docs/patterns/animation.md` - Reanimated configs, gestures
-- `docs/patterns/performance.md` - Memoization, FlatList, delay capping
-- `docs/patterns/design-system.md` - Colors, opacity, semantic values
-- `docs/patterns/hooks.md` - TanStack Query patterns
+- `docs/legacy-patterns/react-native.md` - Navigation, safe areas, forms
+- `docs/legacy-patterns/animation.md` - Reanimated configs, gestures
+- `docs/legacy-patterns/performance.md` - Memoization, FlatList, delay capping
+- `docs/legacy-patterns/design-system.md` - Colors, opacity, semantic values
+- `docs/legacy-patterns/hooks.md` - TanStack Query patterns
 
 ### Decorative Badges and Status Indicators
 
@@ -306,4 +306,4 @@ When reviewing or writing UI code, verify:
 - [ ] Parent interactive component (Pressable, button) includes badge status in `accessibilityLabel`
 - [ ] Badge text/icon not duplicated in parent label (e.g., "Remixed recipe." not "Remix badge remixed recipe")
 - [ ] Pattern applied to: remix badge, lock icon, allergen indicator, premium status
-- [ ] Reference: "Parent Label Prefix for Decorative Child Elements" in `docs/patterns/react-native.md`
+- [ ] Reference: "Parent Label Prefix for Decorative Child Elements" in `docs/legacy-patterns/react-native.md`

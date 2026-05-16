@@ -64,7 +64,7 @@ return deleted;
 
 - `server/storage/meal-plans.ts` — `deleteMealPlanRecipe` (fixed)
 - `server/storage/community.ts` — `deleteCommunityRecipe` (fixed)
-- `docs/patterns/database.md` — "Side-Effect Ordering Around `db.transaction`"
+- `docs/legacy-patterns/database.md` — "Side-Effect Ordering Around `db.transaction`"
 
 ## See Also
 

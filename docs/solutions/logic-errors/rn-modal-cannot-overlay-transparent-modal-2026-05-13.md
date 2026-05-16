@@ -60,7 +60,7 @@ Where `CoachChat` is registered in the root stack as a `transparentModal` or `fu
 ## Related Files
 
 - Root stack navigator — register overlay as a screen
-- `docs/patterns/react-native.md` — "Modals on top of React Navigation modals" pattern
+- `docs/legacy-patterns/react-native.md` — "Modals on top of React Navigation modals" pattern
 
 ## See Also
 

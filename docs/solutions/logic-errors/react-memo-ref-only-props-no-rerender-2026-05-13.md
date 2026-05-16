@@ -57,7 +57,7 @@ function ConfirmationModalInner({ optionsRef, sheetRef, revision }) {
 ## Related Files
 
 - `client/hooks/useConfirmationModal.ts` — removed `React.memo`, added `revision` counter
-- `docs/patterns/hooks.md` — "Hook-Returned Component Pattern for BottomSheetModal"
+- `docs/legacy-patterns/hooks.md` — "Hook-Returned Component Pattern for BottomSheetModal"
 
 ## See Also
 

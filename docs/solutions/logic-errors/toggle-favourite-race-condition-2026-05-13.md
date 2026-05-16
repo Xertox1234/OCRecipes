@@ -90,4 +90,4 @@ Postgres' default isolation level (`READ COMMITTED`) is sufficient here because 
 
 - [optimistic-total-target-correct-page-2026-05-13.md](optimistic-total-target-correct-page-2026-05-13.md) — Client-side companion: the same toggle UI corrupts paginated totals on the optimistic path.
 - [../conventions/inline-db-transaction-over-helper-2026-05-13.md](../conventions/inline-db-transaction-over-helper-2026-05-13.md) — How to inline `db.transaction()` rather than wrapping it.
-- `docs/patterns/database.md` — "Toggle via Transaction to Prevent Duplicate Inserts"
+- `docs/legacy-patterns/database.md` — "Toggle via Transaction to Prevent Duplicate Inserts"

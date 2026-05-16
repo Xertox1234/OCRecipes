@@ -100,4 +100,4 @@ Now the row's prop references are stable; memo compares them as equal across ren
 
 ## See Also
 
-- `docs/patterns/react-native.md` — "Parameterized ID Callbacks for Memoized List Items"
+- `docs/legacy-patterns/react-native.md` — "Parameterized ID Callbacks for Memoized List Items"

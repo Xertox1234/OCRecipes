@@ -18,7 +18,7 @@ vi.mock("../../storage", () => ({
 
 // Capture floating fire-and-forget promises so tests can deterministically
 // await them rather than relying on microtask timing. See
-// docs/patterns/testing.md → "fireAndForget in tests".
+// docs/legacy-patterns/testing.md → "fireAndForget in tests".
 let lastFireAndForgetPromise: Promise<unknown> | null = null;
 vi.mock("../../lib/fire-and-forget", () => ({
   fireAndForget: (_label: string, promise: Promise<unknown>) => {

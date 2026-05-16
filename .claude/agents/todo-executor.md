@@ -56,19 +56,19 @@ Read the research brief the agent returns. Keep it in context for Step 4 — it 
 
 **If the Agent() call throws an error, the subagent is unreachable, or the returned text contains none of the section headers (`## Library Notes`, `## Project Context`, `## Global Patterns`)**, log "researcher unavailable" and fall back to reading local pattern docs directly using this label mapping:
 
-| Label                         | Pattern docs to read                                                                            |
-| ----------------------------- | ----------------------------------------------------------------------------------------------- |
-| `security`                    | `docs/patterns/security.md`                                                                     |
-| `architecture`, `duplication` | `docs/patterns/architecture.md`                                                                 |
-| `ui`                          | `docs/patterns/react-native.md`, `docs/patterns/design-system.md`, `docs/patterns/animation.md` |
-| `performance`                 | `docs/patterns/performance.md`                                                                  |
-| `testing`                     | `docs/patterns/testing.md`                                                                      |
-| `database`                    | `docs/patterns/database.md`                                                                     |
-| `api`                         | `docs/patterns/api.md`                                                                          |
-| `hooks`                       | `docs/patterns/hooks.md`                                                                        |
-| `typescript`, `types`         | `docs/patterns/typescript.md`                                                                   |
-| `client-state`                | `docs/patterns/client-state.md`                                                                 |
-| `remix`                       | `docs/patterns/react-native.md`, `docs/patterns/design-system.md`                               |
+| Label                         | Pattern docs to read                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `security`                    | `docs/legacy-patterns/security.md`                                                                                   |
+| `architecture`, `duplication` | `docs/legacy-patterns/architecture.md`                                                                               |
+| `ui`                          | `docs/legacy-patterns/react-native.md`, `docs/legacy-patterns/design-system.md`, `docs/legacy-patterns/animation.md` |
+| `performance`                 | `docs/legacy-patterns/performance.md`                                                                                |
+| `testing`                     | `docs/legacy-patterns/testing.md`                                                                                    |
+| `database`                    | `docs/legacy-patterns/database.md`                                                                                   |
+| `api`                         | `docs/legacy-patterns/api.md`                                                                                        |
+| `hooks`                       | `docs/legacy-patterns/hooks.md`                                                                                      |
+| `typescript`, `types`         | `docs/legacy-patterns/typescript.md`                                                                                 |
+| `client-state`                | `docs/legacy-patterns/client-state.md`                                                                               |
+| `remix`                       | `docs/legacy-patterns/react-native.md`, `docs/legacy-patterns/design-system.md`                                      |
 
 If the researcher failed and no label matches the table above, read `CLAUDE.md` for general project guidance.
 
@@ -80,7 +80,7 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 ---
 
-**3b — File-path pattern + rules supplement:** After the researcher returns (or fallback completes), apply the domain mapping below to the source file paths extracted above. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
+**3b — File-path pattern + rules supplement:** After the researcher returns (or fallback completes), apply the domain mapping below to the source file paths extracted above. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/legacy-patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
 
 | File path pattern                                                                                                                                              | Additional domains to load                 |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -276,7 +276,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
    | Reusable structural pattern (composable code shape)                   | `knowledge` | `design-patterns/`    |
    | Procedural checklist triggered by an event (migration, rebrand, etc.) | `knowledge` | `best-practices/`     |
 
-   Do **not** append to `docs/patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are slated for Step 6 retirement in the Phase 2 pattern-codification refactor. The codify skill (`.claude/skills/codify/SKILL.md`) is the single source of truth for routing.
+   Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor). The codify skill (`.claude/skills/codify/SKILL.md`) is the single source of truth for routing.
 
 3. Route specialist-agent updates using this table when a finding reveals a reusable domain-specific check:
 
@@ -474,7 +474,7 @@ EOF
 
 - `todos/TEMPLATE.md` — Todo frontmatter and section structure
 - `todos/archive/` — Completed todos (move here on success)
-- `docs/patterns/*.md` — Pattern documentation (read during research)
+- `docs/legacy-patterns/*.md` — Pattern documentation (read during research)
 - `docs/LEARNINGS.md` — Bug post-mortems and gotchas (grep during research)
 - `.claude/agents/todo-researcher.md` — Research subagent (invoked in Step 3)
 - `CLAUDE.md` — Project overview, commands, architecture reference

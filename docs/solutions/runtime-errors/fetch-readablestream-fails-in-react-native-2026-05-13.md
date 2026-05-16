@@ -54,7 +54,7 @@ Prefer `onprogress` over `onreadystatechange + readyState >= 3` — `onprogress`
 ## Related Files
 
 - `client/hooks/` — SSE consumer hooks
-- `docs/patterns/hooks.md` — "SSE Client-Side Consumption via XMLHttpRequest"
+- `docs/legacy-patterns/hooks.md` — "SSE Client-Side Consumption via XMLHttpRequest"
 
 ## See Also
 

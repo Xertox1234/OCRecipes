@@ -300,7 +300,7 @@ export function detectedDomains(
 // Copilot Issue bodies. Update if the repo is renamed or forked, otherwise
 // the rendered URLs will 404 on the new home.
 const PATTERNS_URL_BASE =
-  "https://github.com/Xertox1234/OCRecipes/blob/main/docs/patterns";
+  "https://github.com/Xertox1234/OCRecipes/blob/main/docs/legacy-patterns";
 
 const PROJECT_RULES_PREAMBLE = `The rules below are binding. If any rule conflicts with the acceptance criteria, raise it in a PR comment rather than silently violating it. Open the linked pattern file for full context if a rule isn't clear.`;
 

@@ -12,7 +12,7 @@ import { PATH_TO_DOMAINS } from "./delegate-copilot-issue";
 
 const STACK_ORIENTATION = `OCRecipes is an Expo + React Native mobile app (Expo SDK 54, React 19, React Native 0.81) with an Express 5 + TypeScript backend. Database is PostgreSQL via Drizzle ORM. Authentication uses JWT bearer tokens (\`Authorization: Bearer ...\`, never cookies). Server state is managed with TanStack Query v5 on the client. AI features (coach chat, recipe generation, photo analysis, etc.) use OpenAI via a shared service layer.`;
 
-const MANDATORY_WORKFLOW = `When the Issue body contains a \`## Project Rules\` section, every rule in it is binding. If a rule conflicts with an acceptance criterion, raise the conflict in a PR comment rather than silently violating the rule. If a rule isn't clear, open the corresponding \`docs/patterns/<domain>.md\` for full context.`;
+const MANDATORY_WORKFLOW = `When the Issue body contains a \`## Project Rules\` section, every rule in it is binding. If a rule conflicts with an acceptance criterion, raise the conflict in a PR comment rather than silently violating the rule. If a rule isn't clear, open the corresponding \`docs/legacy-patterns/<domain>.md\` for full context.`;
 
 const HARD_EXCLUSIONS = `## Hard Exclusions (never modify without a human-approved plan)
 
@@ -48,7 +48,7 @@ ${MANDATORY_WORKFLOW}
 
 ## Path → domain mapping
 
-When editing a file, identify its domain(s) using the table below. The corresponding \`docs/rules/<domain>.md\` rules are binding for that file. Use \`docs/patterns/<domain>.md\` for full context if a rule isn't clear.
+When editing a file, identify its domain(s) using the table below. The corresponding \`docs/rules/<domain>.md\` rules are binding for that file. Use \`docs/legacy-patterns/<domain>.md\` for full context if a rule isn't clear.
 
 ${tableHeader}
 ${tableBody}

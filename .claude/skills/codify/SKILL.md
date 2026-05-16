@@ -62,7 +62,7 @@ Also check the current conversation for any kimi-review output from earlier in t
 
 **Codify if any one is true:**
 
-- The diff contains a workaround or constraint not currently documented in `docs/patterns/`
+- The diff contains a workaround or constraint not currently documented in `docs/legacy-patterns/`
 - The diff reveals a library gotcha or platform-specific behavior
 - `review_output` contains a CRITICAL or WARNING finding — even if the fix is already in the diff (a finding that required a repair is exactly the kind of rule worth preserving)
 
@@ -110,7 +110,7 @@ For each codification candidate, classify by **nature of the finding**, not by k
 
 ## Step 6 — Overlap-check, then write one file per finding
 
-Write one file per finding at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Do **not** append to `docs/patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are retained until Step 6 of the Phase 2 refactor (`docs/research/pattern-codification-alternatives.md`) but are no longer codification targets.
+Write one file per finding at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor, `docs/research/pattern-codification-alternatives.md`) and are no longer codification targets.
 
 ### 6a. Compute the slug
 

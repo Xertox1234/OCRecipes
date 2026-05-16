@@ -66,7 +66,7 @@ const ConfirmationModal = useMemo(
 ## Related Files
 
 - `client/hooks/useConfirmationModal.ts`
-- `docs/patterns/hooks.md` — "Hook-Returned Component Pattern for BottomSheetModal"
+- `docs/legacy-patterns/hooks.md` — "Hook-Returned Component Pattern for BottomSheetModal"
 
 ## See Also
 

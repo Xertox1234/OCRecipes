@@ -701,7 +701,7 @@ Pull production data snapshot from cold storage for the test fixture.
     it("appends pattern URLs as further-reading pointers", () => {
       const section = buildProjectRulesSection(["typescript"]);
       expect(section).toContain(
-        "https://github.com/Xertox1234/OCRecipes/blob/main/docs/patterns/typescript.md",
+        "https://github.com/Xertox1234/OCRecipes/blob/main/docs/legacy-patterns/typescript.md",
       );
     });
 

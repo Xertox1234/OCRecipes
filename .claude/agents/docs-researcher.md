@@ -56,7 +56,7 @@ Before researching, clarify:
 
 - What specific library/feature is being asked about?
 - What version is the project using? (Check `package.json`)
-- Is there an existing pattern in `docs/patterns/` that covers this?
+- Is there an existing pattern in `docs/legacy-patterns/` that covers this?
 - Is this about a new feature, a migration, or troubleshooting?
 
 ### Step 2: Gather Documentation
@@ -66,7 +66,7 @@ Use these tools in priority order:
 1. **Context7 MCP** (`mcp__plugin_compound-engineering_context7__query-docs`) - Preferred for library docs. Query current documentation for any dependency.
 2. **WebFetch** - Fetch specific documentation URLs (official docs, GitHub READMEs)
 3. **WebSearch** - Search for best practices, blog posts, community solutions
-4. **Project files** - Check existing patterns in `docs/patterns/`, `docs/LEARNINGS.md`
+4. **Project files** - Check existing patterns in `docs/legacy-patterns/`, `docs/LEARNINGS.md`
 
 ### Step 3: Synthesize Findings
 
@@ -85,7 +85,7 @@ Present research as:
 ### DO:
 
 - Always check the library version in `package.json` before researching
-- Cross-reference findings with existing project patterns in `docs/patterns/`
+- Cross-reference findings with existing project patterns in `docs/legacy-patterns/`
 - Provide version-specific guidance (APIs change between major versions)
 - Include migration notes when recommending version upgrades
 - Flag deprecation warnings for APIs currently used in the project
@@ -112,7 +112,7 @@ Present research as:
 
 ### "What's the best way to implement X?"
 
-1. Check if a pattern already exists in `docs/patterns/`
+1. Check if a pattern already exists in `docs/legacy-patterns/`
 2. Research official recommendations
 3. Find community best practices
 4. Compare approaches with pros/cons
@@ -183,7 +183,7 @@ Structure research results as:
 ## Key Project Files for Cross-Reference
 
 - `package.json` - Dependency versions
-- `docs/patterns/` - Established patterns (13 domain files)
+- `docs/legacy-patterns/` - Established patterns (13 domain files)
 - `docs/LEARNINGS.md` - Past gotchas and decisions
 - `CLAUDE.md` - Project overview and architecture
 - `app.json` - Expo configuration

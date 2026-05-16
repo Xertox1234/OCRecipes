@@ -57,7 +57,7 @@ const frontLabelUpload = createImageUpload(5 * 1024 * 1024);
 
 const frontLabelStore = storage.frontLabelSessionStore;
 
-// Exported for testing (grouped per docs/patterns/security.md Test Internals Export Pattern)
+// Exported for testing (grouped per docs/legacy-patterns/security.md Test Internals Export Pattern)
 export const _testInternals = {
   frontLabelSessionStore: frontLabelStore._internals.store,
   userFrontLabelSessionCount: frontLabelStore._internals.userCount,

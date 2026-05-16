@@ -33,7 +33,7 @@ export async function getUserCookbooks(
   // etc. — Drizzle's `sql` template parameterizes every `${}` interpolation, so
   // `${cookbooks.id}` would emit `$N` (a bound value) and the correlation
   // would silently always return 0. See
-  // `docs/patterns/database.md` → "Drizzle `sql` Template Treats `${column}`
+  // `docs/legacy-patterns/database.md` → "Drizzle `sql` Template Treats `${column}`
   // as Bound Parameters". Table interpolations (`${cookbookRecipes}`, etc.)
   // are safe — they emit qualified table names, not parameters.
   const recipeCountSql = sql<number>`(
@@ -116,7 +116,7 @@ export async function addRecipeToCookbook(
   return db.transaction(async (tx) => {
     // Single-statement INSERT...SELECT guarded by a WHERE EXISTS on
     // `cookbooks.user_id` — the row is only inserted when the cookbook is
-    // owned by `userId`. See docs/patterns/security.md →
+    // owned by `userId`. See docs/legacy-patterns/security.md →
     // "Storage-Layer Defense-in-Depth". The ON CONFLICT clause preserves
     // idempotent-add semantics: a duplicate junction row yields no returned
     // row, same as if the ownership check failed.

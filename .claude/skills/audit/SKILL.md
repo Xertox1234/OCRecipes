@@ -36,7 +36,7 @@ For each finding, report:
 - A concise description of the issue
 - The exact file path and line number(s)
 - Severity: Critical / High / Medium / Low
-- The specific pattern or rule being violated (reference docs/solutions/, docs/rules/, or docs/patterns/ where applicable)
+- The specific pattern or rule being violated (reference docs/solutions/, docs/rules/, or docs/legacy-patterns/ where applicable)
 
 Do NOT fix anything — only report findings. Do NOT report issues that are already handled correctly.
 Focus on genuinely new issues, not style preferences.
@@ -191,7 +191,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    - **Code reviewer updates** — New checks the code-reviewer agent should enforce going forward
    - **Specialist agent updates** — New domain-specific checks that a specialist agent should catch in future audits
 2. For each candidate, apply this decision matrix:
-   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are slated for Step 6 retirement.
+   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor).
    - New check needed → **Code reviewer update** → add to `.claude/agents/code-reviewer.md`
    - Domain-specific check → **Specialist agent update** → add to the relevant `.claude/agents/*.md` checklist
 3. **Specialist agent update routing:** When a finding reveals a new domain-specific check, add it to the appropriate specialist agent's review checklist:

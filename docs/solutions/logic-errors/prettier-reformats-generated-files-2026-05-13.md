@@ -56,7 +56,7 @@ To detect at PR time, run `npm run build:foo:check` AFTER the commit lands (not 
 - `.prettierignore`
 - `scripts/build-copilot-instructions.ts`
 - `.github/workflows/ci.yml` — "Verify .github/copilot-instructions.md is current" step
-- `docs/patterns/architecture.md` — "CI Drift-Check for Generated Tracked Artifacts"
+- `docs/legacy-patterns/architecture.md` — "CI Drift-Check for Generated Tracked Artifacts"
 
 ## See Also
 

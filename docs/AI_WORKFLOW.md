@@ -122,7 +122,7 @@ Copilot output must be PR-based and human-reviewed. Never auto-merge Copilot wor
 **When:** Reading 3+ files for analysis — pattern lookups, summarization, cross-file questions.
 
 ```bash
-ask-kimi --paths docs/patterns/api.md server/routes/carousel.ts --question "Does this route follow the error-response pattern?"
+ask-kimi --paths docs/legacy-patterns/api.md server/routes/carousel.ts --question "Does this route follow the error-response pattern?"
 ```
 
 ### `kimi-write`
@@ -174,7 +174,7 @@ The staged-commit hook auto-derives this pattern list from changed file paths. F
 
 If you cannot name a clean pattern set because the change spans several unrelated concerns, that is usually a signal to escalate to `kimi-multi-review` or a deep subagent instead of forcing a single overloaded `kimi-review` pass.
 
-`--patterns security,api` expands to `docs/patterns/security.md` and `docs/patterns/api.md`. Keep the list narrow so Kimi gets the relevant conventions without turning every review into a large context dump.
+`--patterns security,api` expands to `docs/legacy-patterns/security.md` and `docs/legacy-patterns/api.md`. Keep the list narrow so Kimi gets the relevant conventions without turning every review into a large context dump.
 
 Pattern docs are capped at 12,000 characters each by default and include an explicit `[TRUNCATED]` marker when clipped. If a review truly needs the full file, pass `--pattern-max-chars 0`, but prefer a narrower pattern list first.
 
@@ -233,7 +233,7 @@ This keeps historical session context lean before it re-enters Claude's context 
 
 | Convention                                                             | Reason                                                                               |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Pattern lookups via `ask-kimi --paths docs/patterns/X.md`              | Avoids Claude re-reading pattern files each session                                  |
+| Pattern lookups via `ask-kimi --paths docs/legacy-patterns/X.md`       | Avoids Claude re-reading pattern files each session                                  |
 | `kimi-review` for repetitive review loops                              | Diffs changed lines only; cheaper than repeated deep-review subagent passes          |
 | code-reviewer + specialist subagents for audits                        | Higher token cost, but better for deep cross-file reasoning and audit-style reviews  |
 | iOS/device setup in `docs/DEV_SETUP.md`                                | Keeps CLAUDE.md short; agents reference the doc, not inline instructions             |

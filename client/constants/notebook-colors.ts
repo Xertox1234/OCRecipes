@@ -4,7 +4,7 @@
  * Colors are fixed-palette values independent of dark/light mode — they serve
  * as category identifiers (semantic hue), not as foreground text on
  * white/cream. Contrast has been verified against both themes via
- * `docs/patterns/design-system.md` WCAG guidelines.
+ * `docs/legacy-patterns/design-system.md` WCAG guidelines.
  */
 export const TYPE_COLORS: Record<string, string> = {
   commitment: "#f59e0b",

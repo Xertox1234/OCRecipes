@@ -194,7 +194,7 @@ export { escapeLike, getDayBounds } from "./helpers";
 - `import { storage } from "../storage"` works unchanged for all 40+ consumers
 - Domain modules export plain named functions — not classes or singletons
 - Utilities used by 2+ domain modules live in `helpers.ts` and are re-exported from the facade
-- **Sub-modules must NEVER import from the barrel/facade** — importing `meal-plan-analytics.ts` from `"./meal-plans"` (the barrel) creates a cycle: barrel → analytics → barrel. Sub-modules that need sibling functionality must import directly from the sibling (e.g., `import { getConfirmedMealPlanItemIds } from "./meal-plan-items"`). Grep for barrel self-imports after any split: `grep -n "from \"./meal-plans\"" server/storage/meal-plan-*.ts` should return zero hits. (Ref: `docs/patterns/architecture.md` "Barrel Circular-Import Hazard", audit 2026-05-09 H3)
+- **Sub-modules must NEVER import from the barrel/facade** — importing `meal-plan-analytics.ts` from `"./meal-plans"` (the barrel) creates a cycle: barrel → analytics → barrel. Sub-modules that need sibling functionality must import directly from the sibling (e.g., `import { getConfirmedMealPlanItemIds } from "./meal-plan-items"`). Grep for barrel self-imports after any split: `grep -n "from \"./meal-plans\"" server/storage/meal-plan-*.ts` should return zero hits. (Ref: `docs/legacy-patterns/architecture.md` "Barrel Circular-Import Hazard", audit 2026-05-09 H3)
 
 ---
 
@@ -452,7 +452,7 @@ Audit M10 2026-04-26.
 
 ## Pattern Reference
 
-- `docs/patterns/architecture.md` — full pattern catalog
+- `docs/legacy-patterns/architecture.md` — full pattern catalog
 - `server/storage/index.ts` — facade composition
 - `server/storage/sessions.ts` — `createSessionStore<T>()` instances
 - `server/lib/` — cross-cutting primitives (search-index, fire-and-forget, logger, runware)

@@ -4,11 +4,11 @@ OCRecipes is an Expo + React Native mobile app (Expo SDK 54, React 19, React Nat
 
 ## Mandatory workflow
 
-When the Issue body contains a `## Project Rules` section, every rule in it is binding. If a rule conflicts with an acceptance criterion, raise the conflict in a PR comment rather than silently violating the rule. If a rule isn't clear, open the corresponding `docs/patterns/<domain>.md` for full context.
+When the Issue body contains a `## Project Rules` section, every rule in it is binding. If a rule conflicts with an acceptance criterion, raise the conflict in a PR comment rather than silently violating the rule. If a rule isn't clear, open the corresponding `docs/legacy-patterns/<domain>.md` for full context.
 
 ## Path → domain mapping
 
-When editing a file, identify its domain(s) using the table below. The corresponding `docs/rules/<domain>.md` rules are binding for that file. Use `docs/patterns/<domain>.md` for full context if a rule isn't clear.
+When editing a file, identify its domain(s) using the table below. The corresponding `docs/rules/<domain>.md` rules are binding for that file. Use `docs/legacy-patterns/<domain>.md` for full context if a rule isn't clear.
 
 | Path pattern | Domains |
 | --- | --- |

@@ -113,4 +113,4 @@ const response = await apiRequest("GET", "/api/auth/me");
 ## See Also
 
 - [../performance-issues/asyncstorage-in-memory-token-cache-2026-05-13.md](../performance-issues/asyncstorage-in-memory-token-cache-2026-05-13.md) — Why the token storage caches in memory.
-- `docs/patterns/security.md` — "Token Versioning for JWT Revocation" (server-side revocation pattern)
+- `docs/legacy-patterns/security.md` — "Token Versioning for JWT Revocation" (server-side revocation pattern)

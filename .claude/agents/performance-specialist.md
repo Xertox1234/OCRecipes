@@ -362,7 +362,7 @@ const streamingFooter = useMemo(
 - `ListFooterComponent` must be `useMemo`-ed (not inline) or a `React.memo` component.
 - Scroll-to-bottom: trigger on `onContentSizeChange`, not on each `streamingContent` update.
 
-Reference: `client/components/coach/CoachChat.tsx` (audit 2026-05-09 H2), `docs/patterns/performance.md` "Streaming FlatList Footer".
+Reference: `client/components/coach/CoachChat.tsx` (audit 2026-05-09 H2), `docs/legacy-patterns/performance.md` "Streaming FlatList Footer".
 
 ---
 
@@ -461,7 +461,7 @@ Reference: `shared/constants/allergens.ts` — `keywordPatternCache`.
 
 ## Pattern Reference
 
-- `docs/patterns/performance.md` — full pattern catalog
+- `docs/legacy-patterns/performance.md` — full pattern catalog
 - `client/constants/performance.ts` — `FLATLIST_DEFAULTS`
 - `client/lib/promise-memo.ts` — `createPromiseMemo<T>()` for concurrent call deduplication
 - `client/lib/serial-queue.ts` — `createSerialQueue()` for sequential async processing

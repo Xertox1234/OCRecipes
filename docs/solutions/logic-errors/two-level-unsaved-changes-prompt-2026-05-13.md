@@ -62,7 +62,7 @@ if (currentStep === 1) {
 
 - `client/components/recipe-wizard/WizardShell.tsx` — removed duplicate Alert
 - `client/screens/meal-plan/RecipeCreateScreen.tsx` — sole owner via `beforeRemove`
-- `docs/patterns/react-native.md` — "Single Owner of Unsaved-Changes Prompt"
+- `docs/legacy-patterns/react-native.md` — "Single Owner of Unsaved-Changes Prompt"
 
 ## See Also
 
