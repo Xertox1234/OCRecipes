@@ -17,29 +17,36 @@ Each finding has a lifecycle: `open` → `fixing` → `verified` or `deferred` o
 - `deferred` — Intentionally postponed (must link to todo)
 - `false-positive` — Agent was wrong or issue was already fixed
 
+**Research key** (Phase 2.5 verdict, recorded in the `Research` column):
+
+- `confirmed` — current documentation agrees the finding is valid
+- `better-fix` — finding is real, but current docs show a cleaner fix (described in the `Verification` column for Phase 3 to use)
+- `contradicted ⚠` — current docs say the flagged pattern is fine; may be a false positive — decide at triage
+- `—` — research not applicable (finding does not hinge on library behavior), or finding predates Phase 2.5
+
 ### Critical
 
-| ID  | Finding       | Domain | Agent                 | File(s)     | Status | Verification |
-| --- | ------------- | ------ | --------------------- | ----------- | ------ | ------------ |
-| C1  | [description] | —      | [agent that found it] | `path:line` | open   | —            |
+| ID  | Finding       | Domain | Agent                 | File(s)     | Research | Status | Verification |
+| --- | ------------- | ------ | --------------------- | ----------- | -------- | ------ | ------------ |
+| C1  | [description] | —      | [agent that found it] | `path:line` | —        | open   | —            |
 
 ### High
 
-| ID  | Finding       | Domain | Agent                 | File(s)     | Status | Verification |
-| --- | ------------- | ------ | --------------------- | ----------- | ------ | ------------ |
-| H1  | [description] | —      | [agent that found it] | `path:line` | open   | —            |
+| ID  | Finding       | Domain | Agent                 | File(s)     | Research | Status | Verification |
+| --- | ------------- | ------ | --------------------- | ----------- | -------- | ------ | ------------ |
+| H1  | [description] | —      | [agent that found it] | `path:line` | —        | open   | —            |
 
 ### Medium
 
-| ID  | Finding       | Domain | Agent                 | File(s)     | Status | Verification |
-| --- | ------------- | ------ | --------------------- | ----------- | ------ | ------------ |
-| M1  | [description] | —      | [agent that found it] | `path:line` | open   | —            |
+| ID  | Finding       | Domain | Agent                 | File(s)     | Research | Status | Verification |
+| --- | ------------- | ------ | --------------------- | ----------- | -------- | ------ | ------------ |
+| M1  | [description] | —      | [agent that found it] | `path:line` | —        | open   | —            |
 
 ### Low
 
-| ID  | Finding       | Domain | Agent                 | File(s)     | Status | Verification |
-| --- | ------------- | ------ | --------------------- | ----------- | ------ | ------------ |
-| L1  | [description] | —      | [agent that found it] | `path:line` | open   | —            |
+| ID  | Finding       | Domain | Agent                 | File(s)     | Research | Status | Verification |
+| --- | ------------- | ------ | --------------------- | ----------- | -------- | ------ | ------------ |
+| L1  | [description] | —      | [agent that found it] | `path:line` | —        | open   | —            |
 
 ## Deferred Items
 
@@ -65,7 +72,7 @@ Items marked `deferred` must have a linked todo and rationale.
 | ------ | ----------- |
 | —      | —           |
 
-## Codification (Phase 7)
+## Codification (Phase 8)
 
 Completed after fixes are committed. Each row links to the docs change.
 

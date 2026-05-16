@@ -1,6 +1,7 @@
 ---
 name: code-reviewer
 description: Use to review files changed in the current session against established OCRecipes patterns, with deep expertise in React Native mobile apps and camera functionality.
+model: sonnet
 ---
 
 # Code Review Subagent
