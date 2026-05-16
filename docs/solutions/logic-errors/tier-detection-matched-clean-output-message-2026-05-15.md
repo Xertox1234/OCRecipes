@@ -54,16 +54,26 @@ cannot distinguish a finding from the tool announcing which tiers it searched.
 
 ## Solution
 
-Anchor on the actual finding format — a line starting with the literal
-`[CRITICAL]` tag after optional leading whitespace:
+Match the bracketed `[CRITICAL]` tag the tool uses for real findings, followed
+by a non-empty body. The brackets are the discriminating signal — the clean
+message and the negative phrasing contain the bare word `CRITICAL` but never the
+bracketed tag:
 
 ```bash
 # Before — matches the word anywhere, including "No findings in tiers: CRITICAL, WARNING"
 grep -Eq '(^|[^[:alnum:]_])CRITICAL([^[:alnum:]_]|$)'
 
-# After — matches only an actual finding line
-grep -Eq '^[[:space:]]*[[]CRITICAL[]]'
+# After — the [CRITICAL] tag plus a non-space char (a finding body) after it
+grep -Eq '[[]CRITICAL[]].*[^[:space:]]'
 ```
+
+Two deliberate choices:
+
+- **Not anchored to line start.** An LLM may decorate a finding line
+  (`- [CRITICAL] ...`, `**[CRITICAL]** ...`); a block/allow gate should fail
+  closed on those rather than let them through, so the tag is matched anywhere.
+- **`.*[^[:space:]]` requires a body.** A bare `[CRITICAL]` tag with nothing
+  after it is not a real finding and does not block.
 
 Use POSIX bracket-expression escaping (`[[]`, `[]]`) for the literal brackets
 rather than backslash escaping (`\[`, `\]`) — backslash-escaped brackets in an

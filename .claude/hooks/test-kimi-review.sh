@@ -7,10 +7,17 @@ set -uo pipefail
 HOOK="$(cd "$(dirname "$0")" && pwd)/kimi-review.sh"
 PASS=0; FAIL=0
 
-# Make a sandbox PATH with stub binaries. KIMI_STUB_MODE controls the stub's output:
-#   critical → emit a CRITICAL finding line
-#   warning  → emit a WARNING finding line
-#   clean    → emit "no findings"
+# Make a sandbox PATH with stub binaries. The stub mirrors kimi-review's real
+# output: findings are `[TIER] path:line — description` lines, a clean run prints
+# `No findings in requested tiers: CRITICAL, WARNING`. KIMI_STUB_MODE controls it:
+#   critical          → a plain [CRITICAL] finding line
+#   critical-bracket  → a bullet+indent decorated [CRITICAL] finding line
+#   critical-bold     → a markdown-bold-wrapped [CRITICAL] finding line
+#   critical-nobody   → a bare [CRITICAL] tag with no finding body
+#   warning           → a [WARNING] finding line
+#   noisy-prose       → lowercase "critical" in prose, no real finding
+#   negative-prose    → the model's "No CRITICAL or WARNING findings" phrasing
+#   clean             → kimi-review's real clean-output message
 make_stub_path() {
   local mode="$1"
   local dir
@@ -19,12 +26,14 @@ make_stub_path() {
 #!/usr/bin/env bash
 cat >/dev/null  # consume stdin so the pipe doesn't SIGPIPE
 case "$mode" in
-  critical)         echo "CRITICAL: stub finding for tests";;
-  critical-bracket) echo "[CRITICAL] stub finding (decorated form)";;
-  critical-bold)    echo "**CRITICAL** stub finding (markdown bold form)";;
-  warning)          echo "WARNING: stub finding for tests";;
+  critical)         echo "[CRITICAL] server/routes/foo.ts:42 — stub finding for tests";;
+  critical-bracket) echo "  - [CRITICAL] server/routes/foo.ts:10 — bullet+indent decorated finding";;
+  critical-bold)    echo "**[CRITICAL]** server/routes/foo.ts:10 — markdown-bold form";;
+  critical-nobody)  echo "[CRITICAL]";;
+  warning)          echo "[WARNING] server/routes/foo.ts:5 — stub finding for tests";;
   noisy-prose)      echo "no critical issues found in stub run";;
-  clean)            echo "no findings";;
+  negative-prose)   echo "No CRITICAL or WARNING findings";;
+  clean)            echo "No findings in requested tiers: CRITICAL, WARNING";;
 esac
 EOF
   chmod +x "$dir/kimi-review"
@@ -153,17 +162,30 @@ OUT=$(run_hook critical '{"tool_input":{"command":"git commit -m x"}}')
 assert_contains "CRITICAL emits permissionDecision deny" "$OUT" '"permissionDecision": "deny"'
 assert_contains "CRITICAL emits permissionDecisionReason" "$OUT" "permissionDecisionReason"
 
-# Decorated CRITICAL markers must also block — fail-closed whole-word match.
+# Decorated [CRITICAL] finding lines must still block — the matcher is not
+# anchored to line start, so leading bullets/indent and bold-wrapping fail closed.
 OUT=$(run_hook critical-bracket '{"tool_input":{"command":"git commit -m x"}}')
-assert_contains "[CRITICAL] decorated form blocks" "$OUT" '"permissionDecision": "deny"'
+assert_contains "bullet+indent decorated [CRITICAL] blocks" "$OUT" '"permissionDecision": "deny"'
 
 OUT=$(run_hook critical-bold '{"tool_input":{"command":"git commit -m x"}}')
-assert_contains "**CRITICAL** markdown-bold form blocks" "$OUT" '"permissionDecision": "deny"'
+assert_contains "**[CRITICAL]** markdown-bold form blocks" "$OUT" '"permissionDecision": "deny"'
+
+# A bare [CRITICAL] tag with no finding body must NOT block — require a body.
+OUT=$(run_hook critical-nobody '{"tool_input":{"command":"git commit -m x"}}')
+assert_not_contains "bare [CRITICAL] with no body does NOT block" "$OUT" '"permissionDecision": "deny"'
 
 # Lowercase "critical" in prose must NOT trip the matcher.
 OUT=$(run_hook noisy-prose '{"tool_input":{"command":"git commit -m x"}}')
 assert_not_contains "lowercase 'critical' in prose does NOT block" "$OUT" '"permissionDecision": "deny"'
 assert_contains "noisy-prose still emits additionalContext" "$OUT" "additionalContext"
+
+# Regression: the word CRITICAL in kimi-review's own clean-output message and in
+# the model's negative phrasing must NOT block — this is the phantom-CRITICAL bug.
+OUT=$(run_hook clean '{"tool_input":{"command":"git commit -m x"}}')
+assert_not_contains "clean-output message ('...tiers: CRITICAL, WARNING') does NOT block" "$OUT" '"permissionDecision": "deny"'
+
+OUT=$(run_hook negative-prose '{"tool_input":{"command":"git commit -m x"}}')
+assert_not_contains "negative phrasing ('No CRITICAL or WARNING findings') does NOT block" "$OUT" '"permissionDecision": "deny"'
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
