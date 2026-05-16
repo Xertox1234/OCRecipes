@@ -23,6 +23,9 @@ esac
 WT_ROOT=$(printf '%s' "$CWD" | sed -E 's#(.*/\.claude/worktrees/agent-[^/]+).*#\1#')
 # Main repo root = everything before /.claude/worktrees/.
 MAIN_ROOT="${WT_ROOT%/.claude/worktrees/agent-*}"
+# An empty MAIN_ROOT would make the deny pattern below collapse to /* and block
+# every edit. Unreachable unless the repo lives at filesystem root — fail open.
+[ -n "$MAIN_ROOT" ] || exit 0
 
 # Relative file_path resolves against cwd (inside the worktree) — always safe.
 case "$FILE_PATH" in
@@ -40,7 +43,7 @@ esac
 REASON=$(printf '%s\n  %s\n%s' \
   "Worktree isolation guard: this session is running inside the agent worktree" \
   "$WT_ROOT" \
-  "but the edit targets the absolute path $FILE_PATH under the main checkout. Re-issue the edit with a path inside the worktree (a relative path resolves correctly).")
+  "but the edit targets the absolute path $FILE_PATH under the main checkout. Re-issue the edit with a worktree-rooted path (under the worktree directory above).")
 
 jq -n --arg r "$REASON" \
   '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":$r}}'
