@@ -68,6 +68,14 @@ Extract and freeze into the RCA doc:
 - The locked worktree's reflog / `logs/HEAD` and branch state.
 - PR #189 / #190 commit and file lists.
 - The observed 53-file `git status` set (reconstruct from the merged PRs).
+- The incident agents' tool-call history. Claude Code transcripts live in
+  `~/.claude/projects/-Users-williamtower-projects-OCRecipes*/*.jsonl`, keyed by
+  working-directory path — a worktree-isolated session gets its own entry keyed
+  by the worktree path. Scan the run's `Edit`/`Write`/`Bash` calls for any
+  absolute path under `/Users/williamtower/projects/OCRecipes/` that is not
+  under a worktree root — that is the smoking gun for the path-based hypothesis.
+  Note: transcripts are not in `.claude/worktrees/agent-*/` (that holds only a
+  repo checkout).
 
 The locked worktree `agent-a22fa743e844965e6` is **not removed** until Phase 4.
 
@@ -78,6 +86,11 @@ Dispatch one minimal test agent with `isolation: "worktree"` that:
 - Reports `pwd`, `git rev-parse --show-toplevel`, and the `cwd` field it
   observes in a `PreToolUse` hook event.
 - Makes one trivial file edit.
+- Confirms which copy of `.claude/hooks/` the harness executes for a
+  worktree-isolated agent (the main checkout's copy vs. the worktree's own
+  copy) and how that hook resolves the worktree root. This does not bear on the
+  leak cause (hooks are read-only) but is load-bearing for M1's design — M1 is
+  itself a hook and must anchor on a signal that is reliable in this context.
 
 Then check `git status` on `main`. This simultaneously tests the leak **and**
 establishes whether the harness sets the agent's CWD / hook-event `cwd` to the
@@ -117,7 +130,11 @@ explicitly scopes itself to the isolation leak only.
 ## Done when
 
 - RCA recorded with supporting evidence.
+- Root-cause fix applied, or — if the cause is the Claude Code harness and not
+  fixable in-repo — the workaround documented.
 - Guardrail (M1) + instruction hardening (M2) merged.
+- Recurrence-prevention pattern codified in `docs/solutions/` (the active
+  codification target; `docs/patterns/` was retired by PR #190).
 - A fresh `isolation: "worktree"` agent run verified to leave `main`'s
   `git status` clean.
 
@@ -127,4 +144,5 @@ explicitly scopes itself to the isolation leak only.
 - `.claude/hooks/` — new guardrail hook script.
 - `.claude/agents/todo-executor.md` — M2 instruction hardening.
 - `.claude/skills/todo/SKILL.md` — M2 instruction hardening (if dispatch-side).
+- `docs/solutions/` — new entry codifying the recurrence-prevention pattern.
 - `todos/2026-05-16-investigate-worktree-isolation-leak.md` — RCA record.
