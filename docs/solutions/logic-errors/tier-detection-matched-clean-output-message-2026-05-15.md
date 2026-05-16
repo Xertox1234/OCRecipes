@@ -99,3 +99,6 @@ known-bad sample.
 
 - `docs/solutions/logic-errors/calorie-restriction-regex-missed-4-digit-targets-2026-05-13.md`
   — another case of a regex validated only against representative samples
+- `docs/solutions/best-practices/test-fixture-must-match-real-dependency-output-2026-05-15.md`
+  — why the hook's existing test never caught this bug (its `clean` stub
+  paraphrased the dependency's output)
