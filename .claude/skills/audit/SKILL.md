@@ -60,7 +60,7 @@ Focus on genuinely new issues, not style preferences.
    ```bash
    git worktree add .worktrees/audit-$(date +%Y-%m-%d) HEAD
    ```
-   Or use `EnterWorktree` if available. All Phases 2–6 run from this worktree. After the Phase 6 commit, remove it with:
+   Or use `EnterWorktree` if available. All Phases 2–6 (Phase 2.5 included) run from this worktree. After the Phase 6 commit, remove it with:
    ```bash
    git worktree remove .worktrees/audit-YYYY-MM-DD
    ```
@@ -89,7 +89,7 @@ Validate the Phase 2 findings against current documentation before the user tria
 1. **Launch `docs-researcher` agents in parallel** — one per audit domain that has at least one finding:
    - `full` or `pre-launch`: launch one `docs-researcher` per domain with findings, batched the same way Phase 2 batches its specialist agents (first 4 domains, then the rest)
    - Named scope: launch one `docs-researcher` for that domain
-   - **Skip rule:** a domain with zero findings gets no researcher
+   - **Skip rule:** a domain with zero findings gets no researcher; if Phase 2 produced no findings at all, skip Phase 2.5 entirely
    - Each agent runs as a subagent via the Agent tool with the `docs-researcher` agent type
 2. Use this dispatch prompt for each `docs-researcher` (fill in `[DOMAIN]` and the findings list):
 
@@ -112,7 +112,8 @@ Validate the Phase 2 findings against current documentation before the user tria
      "deprecated" API is not deprecated; cite the doc
    - `not-applicable` — the finding does not hinge on external library/framework
      behavior (e.g. IDOR, missing userId check, N+1 query, dead code); skip it,
-     no doc call needed
+     no doc call needed. Also use `not-applicable` when a finding concerns custom
+     project code with no resolvable Context7 library.
 
    Every non-`not-applicable` verdict MUST cite the specific doc retrieved (library + section).
 
