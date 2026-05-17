@@ -107,14 +107,21 @@ fi
 #    should fail closed on those rather than let them through. The literal `[`
 #    and `]` use POSIX bracket-expression escaping (`[[]`, `[]]`) rather than
 #    backslash escaping, so the pattern is portable across GNU and BSD grep
-#    without a GNU ERE extension. The second grep (`-iv`) drops the per-tier
-#    "No findings" header so it cannot be mistaken for a finding body. The
-#    result is captured (not piped into `grep -q`) so neither grep exits early
-#    — under `set -o pipefail` an early `-q` exit can SIGPIPE the upstream grep
-#    and surface a non-zero pipeline status that would silently skip the block.
+#    without a GNU ERE extension. The second grep drops ONLY the tool-emitted
+#    per-tier sentinel header (`[CRITICAL] — No findings.`): it matches the
+#    bracketed tag followed by non-alphanumeric separators only, then "no
+#    findings". A real finding always carries an alphanumeric `path:line`
+#    between the tag and its description, so a finding whose description merely
+#    contains the phrase "no findings" still blocks (fail closed). A bare
+#    `grep -iv 'no findings'` would drop such a finding too. The exclude pattern
+#    stays pure-ASCII — the em-dash is consumed by `[^[:alnum:]]*`, not matched
+#    literally — so it too is portable across GNU and BSD grep.
+#    The result is captured (not piped into `grep -q`) so neither grep exits
+#    early — under `set -o pipefail` an early `-q` exit can SIGPIPE the upstream
+#    grep and surface a non-zero pipeline status that would silently skip the block.
 CRITICAL_FINDINGS=$(printf '%s\n' "$REVIEW" \
   | grep -E '[[]CRITICAL[]].*[^[:space:]]' \
-  | grep -iv 'no findings')
+  | grep -ivE '[[]CRITICAL[]][^[:alnum:]]*no findings')
 if [ -n "$CRITICAL_FINDINGS" ]; then
   # Block the commit and feed the full review body back to the model so it
   # can decide whether to amend, abort, or override.
