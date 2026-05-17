@@ -40,6 +40,8 @@ describe("Premium Types", () => {
       expect(freeFeatures.aiCoach).toBe(true);
       expect(freeFeatures.dailyCoachMessages).toBe(3);
       expect(freeFeatures.maxFavouriteRecipes).toBe(20);
+      expect(freeFeatures.textFoodParsing).toBe(false);
+      expect(freeFeatures.itemSuggestions).toBe(false);
     });
 
     it("should have features for premium tier", () => {
@@ -52,6 +54,8 @@ describe("Premium Types", () => {
       expect(premiumFeatures.extendedPlanRange).toBe(true);
       expect(premiumFeatures.dailyAiSuggestions).toBe(10);
       expect(premiumFeatures.maxFavouriteRecipes).toBe(UNLIMITED_SCANS);
+      expect(premiumFeatures.textFoodParsing).toBe(true);
+      expect(premiumFeatures.itemSuggestions).toBe(true);
     });
 
     it("should have all tiers covered", () => {

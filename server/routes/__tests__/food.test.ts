@@ -70,11 +70,30 @@ describe("Food Routes", () => {
   let app: express.Express;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     app = createApp();
+    // Default to premium so existing assertions exercise the happy path;
+    // tests that need the free tier override this explicitly.
+    vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+      tier: "premium",
+      expiresAt: null,
+    });
   });
 
   describe("POST /api/food/parse-text", () => {
-    it("parses natural language food text", async () => {
+    it("returns 403 for non-premium users", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/food/parse-text")
+        .set("Authorization", "Bearer token")
+        .send({ text: "chicken breast" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("PREMIUM_REQUIRED");
+    });
+
+    it("parses natural language food text for premium users", async () => {
       vi.mocked(parseNaturalLanguageFood).mockResolvedValue(mockParsedItems);
 
       const res = await request(app)

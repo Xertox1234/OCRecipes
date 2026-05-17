@@ -25,6 +25,7 @@ vi.mock("../../storage", () => ({
     getInstructionCache: vi.fn(),
     incrementInstructionCacheHit: vi.fn(),
     createInstructionCache: vi.fn(),
+    getSubscriptionStatus: vi.fn(),
   },
 }));
 
@@ -65,9 +66,29 @@ describe("Suggestions Routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     app = createApp();
+    // Default to premium so existing assertions exercise the happy path;
+    // tests that need the free tier override this explicitly.
+    vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+      tier: "premium",
+      expiresAt: null,
+    });
   });
 
   describe("POST /api/items/:id/suggestions", () => {
+    it("returns 403 for non-premium users", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/items/1/suggestions")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("PREMIUM_REQUIRED");
+      // Gate runs before item/cache lookup — no existence leak.
+      expect(storage.getScannedItem).not.toHaveBeenCalled();
+      expect(storage.getSuggestionCache).not.toHaveBeenCalled();
+    });
+
     it("returns cached suggestions on cache hit", async () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
@@ -147,6 +168,25 @@ describe("Suggestions Routes", () => {
   });
 
   describe("POST /api/items/:itemId/suggestions/:suggestionIndex/instructions", () => {
+    it("returns 403 for non-premium users", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/items/1/suggestions/0/instructions")
+        .set("Authorization", "Bearer token")
+        .send({
+          suggestionTitle: "Yogurt Bowl",
+          suggestionType: "recipe",
+          cacheId: 10,
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("PREMIUM_REQUIRED");
+      // Gate runs before item/cache lookup — no existence leak.
+      expect(storage.getScannedItem).not.toHaveBeenCalled();
+      expect(storage.getInstructionCache).not.toHaveBeenCalled();
+    });
+
     it("returns cached instructions on cache hit", async () => {
       vi.mocked(storage.getScannedItem).mockResolvedValue(mockItem);
       vi.mocked(storage.getInstructionCache).mockResolvedValue(

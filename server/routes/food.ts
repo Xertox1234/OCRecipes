@@ -48,6 +48,15 @@ export function register(app: Express): void {
     foodParseRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Gate AI text parsing behind premium (incurs paid OpenAI calls)
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "textFoodParsing",
+          "Text food parsing",
+        );
+        if (!features) return;
+
         if (!checkAiConfigured(res)) return;
         const validated = parseTextSchema.parse(req.body);
         const items = await parseNaturalLanguageFood(validated.text);

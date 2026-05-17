@@ -10,6 +10,7 @@ import { instructionsRateLimit, suggestionsRateLimit } from "./_rate-limiters";
 import {
   parsePositiveIntParam,
   checkAiConfigured,
+  checkPremiumFeature,
   handleRouteError,
 } from "./_helpers";
 import {
@@ -32,6 +33,17 @@ export function register(app: Express): void {
     suggestionsRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Gate AI item suggestions behind premium (incurs paid OpenAI calls).
+        // Checked before item/cache lookup so free users get a consistent 403
+        // without leaking item existence.
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "itemSuggestions",
+          "Item suggestions",
+        );
+        if (!features) return;
+
         const itemId = parsePositiveIntParam(req.params.id);
         if (!itemId) {
           return sendError(
@@ -106,6 +118,17 @@ export function register(app: Express): void {
     instructionsRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Gate AI suggestion instructions behind premium (incurs paid OpenAI
+        // calls). Checked before item/cache lookup so free users get a
+        // consistent 403 without leaking item existence.
+        const features = await checkPremiumFeature(
+          req,
+          res,
+          "itemSuggestions",
+          "Item suggestions",
+        );
+        if (!features) return;
+
         const itemId = parsePositiveIntParam(req.params.itemId);
         const rawIndex = req.params.suggestionIndex;
         const suggestionIndex = parseInt(
