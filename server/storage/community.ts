@@ -17,6 +17,7 @@ import {
   getDocumentStore,
   type SearchIndexableCommunityRecipe,
 } from "../lib/search-index";
+import { deriveRecipeAllergens } from "@shared/constants/allergens";
 
 // ============================================================================
 // COMMUNITY RECIPES
@@ -122,7 +123,15 @@ export async function getCommunityRecipes(
 export async function createCommunityRecipe(
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
 ): Promise<CommunityRecipe> {
-  const [recipe] = await db.insert(communityRecipes).values(data).returning();
+  // Derive the `allergens` cache from the JSONB ingredient names so new
+  // recipes are searchable by the "Safe for me" filter without a backfill.
+  const allergens = deriveRecipeAllergens(
+    (data.ingredients ?? []).map((i) => i.name),
+  );
+  const [recipe] = await db
+    .insert(communityRecipes)
+    .values({ ...data, allergens })
+    .returning();
   if (recipe.isPublic) {
     addToIndex(communityToSearchable(recipe));
   }
@@ -158,10 +167,15 @@ export async function createRecipeWithLimitCheck(
       return null;
     }
 
-    // Create recipe — callers must supply pre-computed mealTypes (storage-layer purity)
+    // Create recipe — callers must supply pre-computed mealTypes (storage-layer
+    // purity). `allergens` is derived inline from ingredient names via the
+    // pure `deriveRecipeAllergens` shared function (no service deps).
+    const allergens = deriveRecipeAllergens(
+      (data.ingredients ?? []).map((i) => i.name),
+    );
     const [created] = await tx
       .insert(communityRecipes)
-      .values(data)
+      .values({ ...data, allergens })
       .returning();
 
     // Log the generation
@@ -242,6 +256,7 @@ export const FEATURED_COLUMNS = {
   servings: communityRecipes.servings,
   dietTags: communityRecipes.dietTags,
   mealTypes: communityRecipes.mealTypes,
+  allergens: communityRecipes.allergens,
   ingredients: communityRecipes.ingredients,
   caloriesPerServing: communityRecipes.caloriesPerServing,
   proteinPerServing: communityRecipes.proteinPerServing,
@@ -310,6 +325,7 @@ export async function getAllPublicCommunityRecipes(): Promise<
       ingredients: communityRecipes.ingredients,
       dietTags: communityRecipes.dietTags,
       mealTypes: communityRecipes.mealTypes,
+      allergens: communityRecipes.allergens,
       difficulty: communityRecipes.difficulty,
       servings: communityRecipes.servings,
       caloriesPerServing: communityRecipes.caloriesPerServing,

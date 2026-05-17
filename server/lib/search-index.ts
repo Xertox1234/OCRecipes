@@ -22,6 +22,7 @@ export type SearchIndexableMealPlanRecipe = Pick<
   | "cuisine"
   | "dietTags"
   | "mealTypes"
+  | "allergens"
   | "difficulty"
   | "prepTimeMinutes"
   | "cookTimeMinutes"
@@ -47,6 +48,7 @@ export type SearchIndexableCommunityRecipe = Pick<
   | "ingredients"
   | "dietTags"
   | "mealTypes"
+  | "allergens"
   | "difficulty"
   | "servings"
   | "caloriesPerServing"
@@ -93,6 +95,7 @@ export function mealPlanToSearchable(
     cuisine: recipe.cuisine ?? null,
     dietTags: recipe.dietTags ?? [],
     mealTypes: recipe.mealTypes ?? [],
+    allergens: recipe.allergens ?? [],
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: prep,
     cookTimeMinutes: cook,
@@ -123,6 +126,7 @@ export function communityToSearchable(
     cuisine: null,
     dietTags: recipe.dietTags ?? [],
     mealTypes: recipe.mealTypes ?? [],
+    allergens: recipe.allergens ?? [],
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: null,
     cookTimeMinutes: null,

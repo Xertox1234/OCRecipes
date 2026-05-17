@@ -12,6 +12,7 @@ import {
   removeFromIndex,
 } from "../recipe-search";
 import { storage } from "../../storage";
+import { createMockUserProfile } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -19,6 +20,7 @@ vi.mock("../../storage", () => ({
     getAllPublicCommunityRecipes: vi.fn().mockResolvedValue([]),
     getAllRecipeIngredients: vi.fn().mockResolvedValue(new Map()),
     getPantryItems: vi.fn().mockResolvedValue([]),
+    getUserProfile: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -50,6 +52,7 @@ const baseMealPlanRecipe: MealPlanRecipe = {
   instructions: ["Bread the chicken", "Bake with sauce"],
   dietTags: ["gluten free"],
   mealTypes: ["dinner"],
+  allergens: [],
   caloriesPerServing: "450",
   proteinPerServing: "35",
   carbsPerServing: "20",
@@ -73,6 +76,7 @@ const baseCommunityRecipe: CommunityRecipe = {
   servings: 2,
   dietTags: ["vegetarian"],
   mealTypes: ["lunch"],
+  allergens: [],
   instructions: ["Grill chicken", "Toss salad"],
   ingredients: [
     { name: "Chicken breast", quantity: "2", unit: "pieces" },
@@ -859,5 +863,139 @@ describe("addToIndex / removeFromIndex", () => {
     const result = await searchRecipes({ q: "Chicken Parmesan" }, "user1");
     const ids = result.results.map((r) => r.id);
     expect(ids).not.toContain("personal:1");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// searchRecipes: "Safe for me" allergen filter
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("searchRecipes — safeForMe allergen filter", () => {
+  const mockedStorage = vi.mocked(storage);
+
+  // A recipe whose ingredients directly contain peanuts.
+  const peanutRecipe: MealPlanRecipe = {
+    ...baseMealPlanRecipe,
+    id: 100,
+    title: "Peanut Noodle Bowl",
+    allergens: [{ id: "peanuts", viaDerived: false }],
+  };
+  // A recipe with only a derived-tier milk hit.
+  const caseinRecipe: CommunityRecipe = {
+    ...baseCommunityRecipe,
+    id: 200,
+    title: "Casein Protein Bar",
+    allergens: [{ id: "milk", viaDerived: true }],
+  };
+  // A recipe with no derivable allergen data (empty ingredients).
+  const unknownRecipe: CommunityRecipe = {
+    ...baseCommunityRecipe,
+    id: 300,
+    title: "Mystery Casserole",
+    ingredients: [],
+    allergens: [],
+  };
+
+  beforeEach(() => {
+    resetSearchIndex();
+    mockedStorage.getAllMealPlanRecipes.mockResolvedValue([peanutRecipe]);
+    mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
+      caseinRecipe,
+      unknownRecipe,
+    ]);
+    mockedStorage.getAllRecipeIngredients.mockResolvedValue(
+      new Map([
+        [
+          100,
+          [
+            {
+              id: 1,
+              recipeId: 100,
+              name: "peanuts",
+              quantity: "1",
+              unit: "cup",
+              category: "protein",
+              displayOrder: 0,
+            },
+          ],
+        ],
+      ]),
+    );
+    mockedStorage.getUserProfile.mockResolvedValue(undefined);
+  });
+
+  it("is a no-op when the user has no declared allergies", async () => {
+    mockedStorage.getUserProfile.mockResolvedValue(
+      createMockUserProfile({ allergies: [] }),
+    );
+    await initSearchIndex();
+    const result = await searchRecipes({ safeForMe: true }, "user1");
+    // All three recipes returned — including the unknown-ingredient one,
+    // because a user with no allergies has nothing to be unsafe from.
+    expect(result.results).toHaveLength(3);
+  });
+
+  it("excludes a direct-tier allergen match for a mild allergy", async () => {
+    mockedStorage.getUserProfile.mockResolvedValue(
+      createMockUserProfile({
+        allergies: [{ name: "peanuts", severity: "mild" }],
+      }),
+    );
+    await initSearchIndex();
+    const result = await searchRecipes({ safeForMe: true }, "user1");
+    const ids = result.results.map((r) => r.id);
+    // Direct peanut hit excluded even at mild severity.
+    expect(ids).not.toContain("personal:100");
+  });
+
+  it("keeps a derived-only allergen match for a mild allergy", async () => {
+    mockedStorage.getUserProfile.mockResolvedValue(
+      createMockUserProfile({
+        allergies: [{ name: "milk", severity: "mild" }],
+      }),
+    );
+    await initSearchIndex();
+    const result = await searchRecipes({ safeForMe: true }, "user1");
+    const ids = result.results.map((r) => r.id);
+    // Derived-only (casein) hit tolerated at mild severity.
+    expect(ids).toContain("community:200");
+  });
+
+  it("excludes a derived-tier allergen match for a moderate allergy", async () => {
+    mockedStorage.getUserProfile.mockResolvedValue(
+      createMockUserProfile({
+        allergies: [{ name: "milk", severity: "moderate" }],
+      }),
+    );
+    await initSearchIndex();
+    const result = await searchRecipes({ safeForMe: true }, "user1");
+    const ids = result.results.map((r) => r.id);
+    // Derived (casein) hit excluded at moderate severity.
+    expect(ids).not.toContain("community:200");
+  });
+
+  it("conservatively excludes recipes with unknown ingredient data", async () => {
+    mockedStorage.getUserProfile.mockResolvedValue(
+      createMockUserProfile({
+        allergies: [{ name: "peanuts", severity: "mild" }],
+      }),
+    );
+    await initSearchIndex();
+    const result = await searchRecipes({ safeForMe: true }, "user1");
+    const ids = result.results.map((r) => r.id);
+    // Empty-ingredient recipe hidden — never shown as "safe" on a guess.
+    expect(ids).not.toContain("community:300");
+  });
+
+  it("does not filter when safeForMe is absent", async () => {
+    mockedStorage.getUserProfile.mockResolvedValue(
+      createMockUserProfile({
+        allergies: [{ name: "peanuts", severity: "severe" }],
+      }),
+    );
+    await initSearchIndex();
+    const result = await searchRecipes({}, "user1");
+    // All recipes returned — filter only applies when safeForMe is true.
+    expect(result.results).toHaveLength(3);
   });
 });

@@ -81,6 +81,10 @@ export const searchQuerySchema = z.object({
     .enum(["true", "false"])
     .transform((v) => v === "true")
     .optional(),
+  safeForMe: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
   cuisine: z.string().max(50).optional(),
   diet: z.string().max(50).optional(),
   mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),

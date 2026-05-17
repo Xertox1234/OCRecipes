@@ -173,6 +173,7 @@ describe("Coach Tools Service", () => {
           instructions: ["large", "instruction", "payload"],
           dietTags: [],
           mealTypes: [],
+          allergens: [],
           createdAt: new Date(),
           updatedAt: new Date(),
         },

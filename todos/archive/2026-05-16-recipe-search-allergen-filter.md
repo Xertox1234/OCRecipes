@@ -1,6 +1,6 @@
 ---
 title: "Re-add 'Safe for me' allergen filter to recipe search"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-16
 updated: 2026-05-16

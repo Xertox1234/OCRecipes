@@ -452,6 +452,112 @@ export function detectAllergens(
   return matches;
 }
 
+/**
+ * A single derived allergen entry for a recipe.
+ *
+ * `viaDerived` is `false` when at least one *direct-tier* keyword matched, and
+ * `true` when only *derived-tier* (hidden/processed) keywords matched. Direct
+ * wins if both tiers match — a recipe with whole peanuts is `viaDerived: false`
+ * even if it also contains "peanut extract".
+ */
+export interface DerivedRecipeAllergen {
+  id: AllergenId;
+  viaDerived: boolean;
+}
+
+/**
+ * Recipe-side complement to `detectAllergens`. Scans an ingredient list against
+ * ALL allergens (both tiers, severity-independent) and returns which allergens
+ * the recipe carries. The result is the denormalized `allergens` column cache.
+ *
+ * Unlike `detectAllergens` (which takes a user's allergies + severity), this
+ * derives the recipe's full allergen profile so the search predicate can apply
+ * any user's severity matrix at query time.
+ */
+export function deriveRecipeAllergens(
+  ingredientNames: string[],
+): DerivedRecipeAllergen[] {
+  if (ingredientNames.length === 0) return [];
+
+  const lowerIngredients = ingredientNames.map((n) => n.toLowerCase());
+  const result: DerivedRecipeAllergen[] = [];
+
+  for (const definition of Object.values(ALLERGEN_INGREDIENT_MAP)) {
+    let directHit = false;
+    let derivedHit = false;
+
+    for (const lower of lowerIngredients) {
+      if (!directHit) {
+        for (const keyword of definition.directIngredients) {
+          if (ingredientContainsKeyword(lower, keyword)) {
+            directHit = true;
+            break;
+          }
+        }
+      }
+      if (!derivedHit) {
+        for (const keyword of definition.derivedIngredients) {
+          if (ingredientContainsKeyword(lower, keyword)) {
+            derivedHit = true;
+            break;
+          }
+        }
+      }
+      if (directHit && derivedHit) break;
+    }
+
+    if (directHit || derivedHit) {
+      // Direct wins: a direct-tier hit means viaDerived is false.
+      result.push({ id: definition.id, viaDerived: !directHit });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Recipe-side safety gate for the "Safe for me" search filter.
+ *
+ * Given a recipe's derived allergen cache and a user's declared allergies,
+ * returns `false` if the recipe is unsafe for that user. A recipe is unsafe
+ * when, for ANY of the user's allergies, the recipe carries that allergen AND:
+ *
+ * - the user's severity is `moderate` or `severe` (hidden derivatives matter), OR
+ * - the recipe's entry is a *direct-tier* hit (`viaDerived: false`) — an obvious
+ *   ingredient is unsafe even at `mild` severity.
+ *
+ * A `mild` allergy is therefore tolerant of derived-only hits but not direct
+ * hits — mirroring `detectAllergens`'s severity tiering from the recipe side.
+ *
+ * NOTE: this does NOT handle the unknown-ingredient case (a recipe with no
+ * derivable ingredient data). Conservative exclusion of such recipes is the
+ * caller's responsibility — see `searchRecipes`'s `safeForMe` predicate.
+ */
+export function isRecipeSafeForAllergies(
+  recipeAllergens: readonly DerivedRecipeAllergen[],
+  userAllergies: readonly { name: string; severity: AllergySeverity }[],
+): boolean {
+  if (userAllergies.length === 0) return true;
+  if (recipeAllergens.length === 0) return true;
+
+  for (const allergy of userAllergies) {
+    const allergenId = normalizeAllergenId(allergy.name);
+    if (!allergenId) continue;
+
+    const entry = recipeAllergens.find((a) => a.id === allergenId);
+    if (!entry) continue;
+
+    const includeDerived =
+      allergy.severity === "moderate" || allergy.severity === "severe";
+
+    // Direct-tier hits are always unsafe. Derived-tier hits are unsafe only
+    // for moderate/severe severity.
+    if (!entry.viaDerived || includeDerived) return false;
+  }
+
+  return true;
+}
+
 // ============================================================================
 // HELPERS
 // ============================================================================

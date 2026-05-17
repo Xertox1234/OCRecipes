@@ -1,3 +1,5 @@
+import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
+
 export interface SearchableRecipe {
   id: string; // "personal:42", "community:17", "spoonacular:654321"
   source: "personal" | "community" | "spoonacular";
@@ -21,6 +23,8 @@ export interface SearchableRecipe {
   sourceUrl: string | null;
   createdAt: string | null;
   isCanonical: boolean;
+  /** Denormalized allergen cache derived from ingredient names. */
+  allergens: DerivedRecipeAllergen[];
 }
 
 export interface RecipeSearchParams {
@@ -35,6 +39,8 @@ export interface RecipeSearchParams {
   maxCalories?: number;
   minProtein?: number;
   curatedOnly?: boolean;
+  /** Exclude recipes unsafe for the user's declared allergies. */
+  safeForMe?: boolean;
   sort?: "relevance" | "newest" | "quickest" | "calories_asc" | "popular";
   source?: "all" | "personal" | "community" | "spoonacular";
   limit?: number;

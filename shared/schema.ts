@@ -19,6 +19,7 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
+import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { MealSuggestion } from "./types/meal-suggestions";
 import type { CarouselRecipeCard } from "./types/carousel";
 import type { ReminderMutes, ReminderType } from "./types/reminders";
@@ -544,6 +545,13 @@ export const communityRecipes = pgTable(
     servings: integer("servings").default(2),
     dietTags: jsonb("diet_tags").$type<string[]>().default([]),
     mealTypes: jsonb("meal_types").$type<string[]>().default([]),
+    // Denormalized allergen cache derived from ingredient names via
+    // `deriveRecipeAllergens` (shared/constants/allergens.ts). Type-only import
+    // — erased at compile time, so no schema↔allergens runtime import cycle.
+    allergens: jsonb("allergens")
+      .$type<DerivedRecipeAllergen[]>()
+      .notNull()
+      .default([]),
     instructions: jsonb("instructions").$type<string[]>().notNull(),
     ingredients: jsonb("ingredients")
       .$type<{ name: string; quantity: string; unit: string }[]>()
@@ -762,6 +770,13 @@ export const mealPlanRecipes = pgTable(
       .default(sql`'[]'::jsonb`),
     dietTags: jsonb("diet_tags").$type<string[]>().default([]),
     mealTypes: jsonb("meal_types").$type<string[]>().default([]),
+    // Denormalized allergen cache derived from ingredient names via
+    // `deriveRecipeAllergens` (shared/constants/allergens.ts). Type-only import
+    // — erased at compile time, so no schema↔allergens runtime import cycle.
+    allergens: jsonb("allergens")
+      .$type<DerivedRecipeAllergen[]>()
+      .notNull()
+      .default([]),
     caloriesPerServing: decimal("calories_per_serving", {
       precision: 10,
       scale: 2,

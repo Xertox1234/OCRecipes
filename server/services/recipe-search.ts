@@ -14,6 +14,10 @@ import {
   mealPlanToSearchable,
   resetSearchIndex as resetSearchIndexPrimitive,
 } from "../lib/search-index";
+import {
+  parseUserAllergies,
+  isRecipeSafeForAllergies,
+} from "@shared/constants/allergens";
 
 // Re-export normalizers/mutations for tests and callers that imported these
 // from this service historically.
@@ -121,6 +125,7 @@ export async function searchRecipes(
     ingredients: ingredientParam,
     pantry,
     curatedOnly,
+    safeForMe,
     source,
     cuisine,
     diet,
@@ -139,6 +144,15 @@ export async function searchRecipes(
   if (pantry) {
     const pantryItems = await storage.getPantryItems(userId);
     pantryIngredients = pantryItems.map((item) => item.name);
+  }
+
+  // ── "Safe for me": resolve the user's declared allergies ─────────────────
+  // Only fetched when the filter is on. An empty list makes the filter a
+  // no-op below — a user with no allergies has nothing to be unsafe from.
+  let userAllergies: ReturnType<typeof parseUserAllergies> = [];
+  if (safeForMe) {
+    const profile = await storage.getUserProfile(userId);
+    userAllergies = parseUserAllergies(profile?.allergies);
   }
 
   // ── Resolve ingredient query terms ──────────────────────────────────────
@@ -279,6 +293,19 @@ export async function searchRecipes(
   if (curatedOnly) {
     filters.curatedOnly = true;
     predicates.push((r) => r.isCanonical === true);
+  }
+
+  // "Safe for me": exclude recipes unsafe for the user's declared allergies.
+  // No-op when the user has no allergies (an empty list — nothing to be unsafe
+  // from). Conservative exclusion: a recipe whose allergen profile cannot be
+  // derived (no ingredient data) is hidden — never shown as "safe" on a guess.
+  if (safeForMe && userAllergies.length > 0) {
+    filters.safeForMe = true;
+    predicates.push(
+      (r) =>
+        r.ingredients.length > 0 &&
+        isRecipeSafeForAllergies(r.allergens, userAllergies),
+    );
   }
 
   // Single O(N) traversal — short-circuits on first failing predicate per doc.
