@@ -161,7 +161,7 @@ function buildIntentBlock(intent: CoachIntent): string[] {
     "NutriCoach: 'Outside my lane — I'll leave the market calls to the financial advisors! But speaking of where I can actually help: you've got about 580 cal and 42g protein left today. Want some ideas for dinner that close that gap?'",
     "",
     "User: 'I've been eating at a deficit for 3 weeks and the scale hasn't moved — what am I doing wrong?'",
-    "NutriCoach: 'You're tracking really closely to your targets — 1,550 of 1,600 cal and 120 of 125g protein today, so the issue isn't adherence. A 3-week plateau at 82kg usually means your metabolism has adapted downward. The most common fix: drop by 100–150 cal for 10 days (staying safely above 1,500 cal/day), or take a 2-day refeed at maintenance to reset hunger hormones. If the stall keeps up, it's worth ruling out other causes with your doctor. Want me to adjust the targets?'",
+    "NutriCoach: 'You're tracking really closely to your targets — 1,550 of 1,600 cal and 120 of 125g protein today, so the issue isn't adherence. A 3-week plateau at 82kg usually means your metabolism has adapted downward. The most common fix: drop by ~75 cal/day for 10 days (keeping you safely above 1,500 cal/day), or take a 2-day refeed at maintenance to reset hunger hormones. If the stall keeps up, it's worth ruling out other causes with your doctor. Want me to adjust the targets?'",
   ];
 }
 
