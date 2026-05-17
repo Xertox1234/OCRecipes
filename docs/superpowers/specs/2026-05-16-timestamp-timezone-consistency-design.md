@@ -6,7 +6,7 @@
 
 ## Problem
 
-`shared/schema.ts` has 79 timestamp columns. 78 use `timestamp("col")` (PostgreSQL
+`shared/schema.ts` has 78 timestamp columns. 77 use `timestamp("col")` (PostgreSQL
 `timestamp without time zone`); only `savedItems.createdAt` uses
 `timestamp("col", { withTimezone: true })` (`timestamptz`). This single outlier is
 an inconsistency flagged by the 2026-03-27 full audit (M4).
@@ -67,7 +67,7 @@ preserves the existing "one row per UTC calendar day" semantics exactly.
 ### 1. Schema (`shared/schema.ts`)
 
 Every `timestamp("col_name")` becomes `timestamp("col_name", { withTimezone: true })`
-(78 columns). Applied via a one-off regex transform that matches only the 1-argument
+(77 columns). Applied via a one-off regex transform that matches only the 1-argument
 form, so the already-2-argument `savedItems.createdAt` is left untouched. `.notNull()`
 and `.default(...)` chains are unaffected (the option object is the second argument to
 `timestamp()`, before any chained calls).
@@ -116,7 +116,7 @@ DROP INDEX IF EXISTS pending_reminders_user_type_day_idx;
 DROP INDEX IF EXISTS weight_logs_user_date_idx;
 
 ALTER TABLE users ALTER COLUMN created_at TYPE timestamptz;
--- … one bare ALTER per timestamp column (78 total; savedItems.created_at already
+-- … one bare ALTER per timestamp column (77 total; savedItems.created_at already
 --    timestamptz — re-applying is a harmless no-op, so it may be included or skipped) …
 
 -- Recreate the expression indexes with the immutable, UTC-zoned expression.
@@ -187,7 +187,7 @@ The PR description documents step 1 as a required manual step before deploy.
   un-pinned `ALTER`. _Mitigation:_ a loud header comment in the SQL file and an
   explicit note in the PR description. Local dev DBs hold throwaway data, so blast
   radius is low; production is protected by the documented procedure.
-- **Lock duration:** ~78 `ACCESS EXCLUSIVE` locks held until `COMMIT`. With the
+- **Lock duration:** ~77 `ACCESS EXCLUSIVE` locks held until `COMMIT`. With the
   no-rewrite fast path each `ALTER` is sub-second, so the total transaction is short.
   Acceptable in a brief maintenance window. If a zero-maintenance-window deploy is
   later required, the transaction can be split per-table — out of scope here.
@@ -204,7 +204,7 @@ The PR description documents step 1 as a required manual step before deploy.
 
 ## Acceptance criteria
 
-- [ ] All 79 timestamp columns in `shared/schema.ts` use `{ withTimezone: true }`.
+- [ ] All 78 timestamp columns in `shared/schema.ts` use `{ withTimezone: true }`.
 - [ ] Both `DATE()` expression indexes in `schema.ts` use the
       `DATE(col AT TIME ZONE 'UTC')` immutable form.
 - [ ] `health.ts` `ON CONFLICT` clauses (lines 52, 77) and the comment at line 40 use
