@@ -1,3 +1,5 @@
+import { ApiError } from "../api-error";
+
 // Test the getApiUrl function logic
 describe("getApiUrl", () => {
   const originalEnv = process.env;
@@ -93,13 +95,49 @@ describe("throwIfResNotOk", () => {
   async function throwIfResNotOk(res: Response) {
     if (!res.ok) {
       const text = (await res.text()) || res.statusText;
-      throw new Error(`${res.status}: ${text}`);
+      let code: string | undefined;
+      try {
+        const parsed: unknown = JSON.parse(text);
+        if (
+          parsed !== null &&
+          typeof parsed === "object" &&
+          typeof (parsed as { code?: unknown }).code === "string"
+        ) {
+          code = (parsed as { code: string }).code;
+        }
+      } catch {
+        // Non-JSON error body — no machine-readable code to extract.
+      }
+      throw new ApiError(`${res.status}: ${text}`, code);
     }
   }
 
   it("does not throw for successful responses", async () => {
     const response = new Response("OK", { status: 200 });
     await expect(throwIfResNotOk(response)).resolves.not.toThrow();
+  });
+
+  it("throws an ApiError instance for non-ok responses", async () => {
+    const response = new Response('{"error":"Bad request"}', { status: 400 });
+    await expect(throwIfResNotOk(response)).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it("attaches the code from a standard JSON error body", async () => {
+    const response = new Response(
+      '{"error":"Premium feature","code":"PREMIUM_REQUIRED"}',
+      { status: 403 },
+    );
+    await expect(throwIfResNotOk(response)).rejects.toMatchObject({
+      code: "PREMIUM_REQUIRED",
+      message: '403: {"error":"Premium feature","code":"PREMIUM_REQUIRED"}',
+    });
+  });
+
+  it("leaves code undefined for a non-JSON error body", async () => {
+    const response = new Response("Not Found", { status: 404 });
+    await expect(throwIfResNotOk(response)).rejects.toMatchObject({
+      code: undefined,
+    });
   });
 
   it("throws for 400 Bad Request", async () => {

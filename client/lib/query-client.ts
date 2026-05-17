@@ -1,5 +1,6 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { tokenStorage } from "./token-storage";
+import { ApiError } from "./api-error";
 
 /**
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
@@ -29,7 +30,24 @@ export function getApiUrl(): string {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    // Preserve the machine-readable `code` from the standard error body
+    // ({ error, code? }) so callers can branch on it (e.g. PREMIUM_REQUIRED).
+    let code: string | undefined;
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (
+        parsed !== null &&
+        typeof parsed === "object" &&
+        typeof (parsed as { code?: unknown }).code === "string"
+      ) {
+        code = (parsed as { code: string }).code;
+      }
+    } catch {
+      // Non-JSON error body — no machine-readable code to extract.
+    }
+    // Message keeps the `${status}: ${text}` shape so the 4xx retry guard
+    // and existing message-based callers stay valid.
+    throw new ApiError(`${res.status}: ${text}`, code);
   }
 }
 
