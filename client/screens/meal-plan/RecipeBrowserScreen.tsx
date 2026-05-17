@@ -153,6 +153,7 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
         { backgroundColor: withOpacity(theme.text, 0.04) },
       ]}
       accessibilityRole="button"
+      accessibilityState={{ disabled: adding }}
       accessibilityLabel={
         isCommunity || isOnline || browseOnly
           ? `View ${item.title}`
