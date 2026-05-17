@@ -22,6 +22,7 @@ ALTER TABLE users ALTER COLUMN goals_calculated_at TYPE timestamptz;
 ALTER TABLE users ALTER COLUMN last_goal_adjustment_at TYPE timestamptz;
 ALTER TABLE users ALTER COLUMN subscription_expires_at TYPE timestamptz;
 ALTER TABLE users ALTER COLUMN created_at TYPE timestamptz;
+ALTER TABLE user_profiles ALTER COLUMN glp1_start_date TYPE timestamptz;
 ALTER TABLE user_profiles ALTER COLUMN health_data_consent_at TYPE timestamptz;
 ALTER TABLE user_profiles ALTER COLUMN created_at TYPE timestamptz;
 ALTER TABLE user_profiles ALTER COLUMN updated_at TYPE timestamptz;
