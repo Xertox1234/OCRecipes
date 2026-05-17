@@ -1,6 +1,6 @@
 ---
 title: "Destructure mutation members in GroceryListPickerModal"
-status: backlog
+status: done
 priority: low
 created: 2026-05-17
 updated: 2026-05-17
