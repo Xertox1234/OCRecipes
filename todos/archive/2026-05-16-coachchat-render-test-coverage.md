@@ -1,6 +1,6 @@
 ---
 title: "Add render-test coverage for CoachChat (daily-limit banner / upgrade CTA)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-16
 updated: 2026-05-16
