@@ -949,7 +949,7 @@ export const weightLogs = pgTable(
       .notNull(),
   },
   (table) => ({
-    // One entry per user per calendar day — keyed on DATE(logged_at) so that
+    // One entry per user per calendar day — keyed on DATE(logged_at AT TIME ZONE 'UTC') so that
     // multiple entries at different times on the same day collapse to one row.
     userDateIdx: uniqueIndex("weight_logs_user_date_idx").on(
       table.userId,

@@ -1,7 +1,7 @@
 /**
  * Weight log dedup tests (M9 fix).
  *
- * The unique index on (user_id, DATE(logged_at)) enforces one entry per user
+ * The unique index on (user_id, DATE(logged_at AT TIME ZONE 'UTC')) enforces one entry per user
  * per calendar day. These tests verify that createWeightLog emits the correct
  * ON CONFLICT clause and that the upsert semantics are correctly expressed.
  *
