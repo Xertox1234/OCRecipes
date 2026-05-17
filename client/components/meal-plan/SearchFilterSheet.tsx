@@ -44,11 +44,11 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "popular", label: "Most Popular" },
 ];
 
-// TODO: Add { value: "spoonacular", label: "Online" } when Spoonacular inline integration lands
 const SOURCE_OPTIONS: { value: SourceOption; label: string }[] = [
   { value: "all", label: "All" },
   { value: "personal", label: "My Recipes" },
   { value: "community", label: "Community" },
+  { value: "spoonacular", label: "Online" },
 ];
 
 export function SearchFilterSheet({
