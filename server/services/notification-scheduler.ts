@@ -19,16 +19,40 @@
  * Usage: call startNotificationScheduler() once at server startup.
  */
 import cron from "node-cron";
+import pLimit from "p-limit";
 import { logger } from "../lib/logger";
 import { storage } from "../storage";
 import { sendPushToUser } from "./push-notifications";
 import type { ReminderMutes } from "@shared/types/reminders";
+
+/**
+ * Max number of per-user reminder tasks processed concurrently. Bounds DB
+ * round-trips so a 500-user page runs in ~50 rounds of 10 rather than 500
+ * serial awaits, without unbounded `Promise.all` overwhelming the connection
+ * pool. Idempotency is enforced by the `pending_reminders_user_type_day_idx`
+ * unique index (createPendingReminder uses onConflictDoNothing), so parallel
+ * execution cannot create duplicate reminders.
+ */
+const REMINDER_CONCURRENCY = 10;
 
 function isMuted(
   mutes: ReminderMutes | null | undefined,
   type: keyof ReminderMutes,
 ): boolean {
   return !!mutes?.[type];
+}
+
+/**
+ * Run `task` for each item with at most `REMINDER_CONCURRENCY` in flight.
+ * Each task is awaited via Promise.all; callers must keep their own try/catch
+ * inside `task` so one user's failure never rejects the whole batch.
+ */
+async function runBounded<T>(
+  items: readonly T[],
+  task: (item: T) => Promise<void>,
+): Promise<void> {
+  const limit = pLimit(REMINDER_CONCURRENCY);
+  await Promise.all(items.map((item) => limit(() => task(item))));
 }
 
 /** Fire the reminder batch for all due commitments. Exported for testing. */
@@ -74,10 +98,10 @@ export async function sendDueCommitmentReminders(): Promise<void> {
     return;
   }
 
-  for (const entry of entries) {
+  await runBounded(entries, async (entry) => {
     try {
       const profile = profileMap.get(entry.userId);
-      if (isMuted(profile?.reminderMutes, "commitment")) continue;
+      if (isMuted(profile?.reminderMutes, "commitment")) return;
 
       // Write pending reminder (regardless of push success)
       const alreadyPending = await storage.hasPendingReminderToday(
@@ -119,7 +143,7 @@ export async function sendDueCommitmentReminders(): Promise<void> {
         "notification-scheduler: failed to process commitment entry",
       );
     }
-  }
+  });
 }
 
 /**
@@ -171,16 +195,16 @@ export async function sendDailyCheckinReminders(): Promise<void> {
         return;
       }
 
-      for (const userId of userIds) {
+      await runBounded(userIds, async (userId) => {
         try {
           const profile = profileMap.get(userId);
-          if (isMuted(profile?.reminderMutes, "daily-checkin")) continue;
+          if (isMuted(profile?.reminderMutes, "daily-checkin")) return;
 
           const alreadyPending = await storage.hasPendingReminderToday(
             userId,
             "daily-checkin",
           );
-          if (alreadyPending) continue;
+          if (alreadyPending) return;
 
           const summary = await storage.getDailySummary(userId, new Date());
 
@@ -196,7 +220,7 @@ export async function sendDailyCheckinReminders(): Promise<void> {
             "notification-scheduler: failed daily-checkin reminder for user",
           );
         }
-      }
+      });
     });
   } catch (err) {
     logger.error(
@@ -231,19 +255,19 @@ export async function sendMealLogReminders(): Promise<void> {
         return;
       }
 
-      for (const userId of userIds) {
+      await runBounded(userIds, async (userId) => {
         try {
           const profile = profileMap.get(userId);
-          if (isMuted(profile?.reminderMutes, "meal-log")) continue;
+          if (isMuted(profile?.reminderMutes, "meal-log")) return;
 
           const logs = await storage.getDailyLogs(userId, new Date());
-          if (logs.length > 0) continue;
+          if (logs.length > 0) return;
 
           const alreadyPending = await storage.hasPendingReminderToday(
             userId,
             "meal-log",
           );
-          if (alreadyPending) continue;
+          if (alreadyPending) return;
 
           await storage.createPendingReminder({
             userId,
@@ -257,7 +281,7 @@ export async function sendMealLogReminders(): Promise<void> {
             "notification-scheduler: failed meal-log reminder for user",
           );
         }
-      }
+      });
     });
   } catch (err) {
     logger.error(
