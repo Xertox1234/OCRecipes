@@ -100,8 +100,9 @@ export default function ChatListScreen() {
     refetch,
     isRefetching,
   } = useChatConversations(activeSegment);
-  const createConversation = useCreateConversation();
-  const deleteConversation = useDeleteConversation();
+  const { mutateAsync: createConversationAsync, isPending: isCreatingChat } =
+    useCreateConversation();
+  const { mutate: deleteConversationMutate } = useDeleteConversation();
 
   const handleNewChat = useCallback(async () => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -113,7 +114,7 @@ export default function ChatListScreen() {
     }
 
     try {
-      const conversation = await createConversation.mutateAsync(undefined);
+      const conversation = await createConversationAsync(undefined);
       navigation.navigate("Chat", { conversationId: conversation.id });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
@@ -130,7 +131,7 @@ export default function ChatListScreen() {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error(userMessage);
     }
-  }, [haptics, toast, createConversation, navigation, isRecipeMode]);
+  }, [haptics, toast, createConversationAsync, navigation, isRecipeMode]);
 
   const handleOpenChat = useCallback(
     (conversationId: number) => {
@@ -151,10 +152,10 @@ export default function ChatListScreen() {
         message: `Delete "${title}"?`,
         confirmLabel: "Delete",
         destructive: true,
-        onConfirm: () => deleteConversation.mutate(id),
+        onConfirm: () => deleteConversationMutate(id),
       });
     },
-    [confirm, deleteConversation],
+    [confirm, deleteConversationMutate],
   );
 
   const renderItem = useCallback(
@@ -257,7 +258,7 @@ export default function ChatListScreen() {
           style={[styles.newChatButton, { backgroundColor: theme.link }]}
           accessibilityRole="button"
           accessibilityLabel="Start new chat"
-          disabled={createConversation.isPending}
+          disabled={isCreatingChat}
         >
           <Feather name="plus" size={20} color={theme.buttonText} />
         </Pressable>
@@ -352,7 +353,7 @@ export default function ChatListScreen() {
                 style={[styles.emptyButton, { backgroundColor: theme.link }]}
                 accessibilityRole="button"
                 accessibilityLabel="Start your first chat"
-                disabled={createConversation.isPending}
+                disabled={isCreatingChat}
               >
                 <Feather name="plus" size={18} color={theme.buttonText} />
                 <ThemedText
