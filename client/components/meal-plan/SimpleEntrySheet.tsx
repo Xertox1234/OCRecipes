@@ -14,6 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
 import { InlineMicButton } from "@/components/InlineMicButton";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useParseFoodText } from "@/hooks/useFoodParse";
@@ -24,6 +25,7 @@ import {
 } from "@/hooks/useMealPlan";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { ApiError } from "@/lib/api-error";
 import {
   Spacing,
   BorderRadius,
@@ -58,6 +60,7 @@ function SimpleEntrySheetInner({
   const [servings, setServings] = useState(1);
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showUpgrade, setShowUpgrade] = useState(false);
   const isAddingRef = useRef(false);
 
   const parseFoodText = useParseFoodText();
@@ -90,6 +93,7 @@ function SimpleEntrySheetInner({
       setServings(1);
       setError(null);
       setIsAdding(false);
+      setShowUpgrade(false);
       isAddingRef.current = false;
     } else {
       sheetRef.current?.dismiss();
@@ -202,8 +206,12 @@ function SimpleEntrySheetInner({
       invalidateMealPlanItems(queryClient);
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       onDismiss();
-    } catch {
-      showError("Couldn't estimate nutrition. Try a simpler description.");
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "PREMIUM_REQUIRED") {
+        setShowUpgrade(true);
+      } else {
+        showError("Couldn't estimate nutrition. Try a simpler description.");
+      }
     } finally {
       isAddingRef.current = false;
       setIsAdding(false);
@@ -398,6 +406,11 @@ function SimpleEntrySheetInner({
             </ThemedText>
           )}
         </Pressable>
+
+        <UpgradeModal
+          visible={showUpgrade}
+          onClose={() => setShowUpgrade(false)}
+        />
       </View>
     </BottomSheetModal>
   );

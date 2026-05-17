@@ -3,6 +3,7 @@ import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { SimpleEntrySheet } from "../SimpleEntrySheet";
+import { ApiError } from "@/lib/api-error";
 
 const mockParseFoodText = vi.fn();
 const mockCreateRecipe = vi.fn();
@@ -58,6 +59,11 @@ vi.mock("@/hooks/useSpeechToText", () => ({
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: () => mockHasVoiceLogging,
+}));
+
+vi.mock("@/components/UpgradeModal", () => ({
+  UpgradeModal: ({ visible }: { visible: boolean }) =>
+    visible ? "UPGRADE_MODAL_SHOWN" : null,
 }));
 
 describe("SimpleEntrySheet", () => {
@@ -213,6 +219,28 @@ describe("SimpleEntrySheet", () => {
         ),
       ).toBeDefined();
     });
+  });
+
+  it("shows the upgrade modal when parsing is blocked by PREMIUM_REQUIRED", async () => {
+    mockParseFoodText.mockRejectedValue(
+      new ApiError("403: Premium required", "PREMIUM_REQUIRED"),
+    );
+
+    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+
+    const input = screen.getByLabelText("Dish name");
+    fireEvent.change(input, { target: { value: "something" } });
+    fireEvent.click(screen.getByText("Add"));
+
+    await waitFor(() => {
+      expect(screen.getByText("UPGRADE_MODAL_SHOWN")).toBeDefined();
+    });
+    // The generic parse-failure message must not appear for a premium block.
+    expect(
+      screen.queryByText(
+        "Couldn't estimate nutrition. Try a simpler description.",
+      ),
+    ).toBeNull();
   });
 
   it("sums nutrition across multiple parsed items", async () => {
