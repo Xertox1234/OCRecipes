@@ -3,10 +3,11 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { logger, toError } from "../lib/logger";
+import { logger } from "../lib/logger";
 import { z } from "zod";
 import { API_TIERS } from "@shared/constants/api-tiers";
 import { crudRateLimit } from "./_rate-limiters";
+import { handleRouteError } from "./_helpers";
 import { isAdmin } from "./_admin";
 import { clearApiKeyCache } from "../middleware/api-key-auth";
 
@@ -59,8 +60,7 @@ export function register(app: Express): void {
           message: "Store this key securely. It will not be shown again.",
         });
       } catch (err) {
-        logger.error({ err: toError(err) }, "admin create API key error");
-        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, err, "create API key");
       }
     },
   );
@@ -96,8 +96,7 @@ export function register(app: Express): void {
 
         res.json({ data: keysWithUsage });
       } catch (err) {
-        logger.error({ err: toError(err) }, "admin list API keys error");
-        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, err, "list API keys");
       }
     },
   );
@@ -134,8 +133,7 @@ export function register(app: Express): void {
         );
         res.json({ message: "API key revoked" });
       } catch (err) {
-        logger.error({ err: toError(err) }, "admin revoke API key error");
-        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, err, "revoke API key");
       }
     },
   );
@@ -188,8 +186,7 @@ export function register(app: Express): void {
         );
         res.json({ message: "API key tier updated", tier: parsed.data.tier });
       } catch (err) {
-        logger.error({ err: toError(err) }, "admin update API key tier error");
-        sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, err, "update API key tier");
       }
     },
   );

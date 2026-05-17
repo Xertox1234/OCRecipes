@@ -18,9 +18,12 @@ import type {
   PaidProductResponse,
   CuratedRecipeResponse,
 } from "@shared/types/public-api";
-import { parseQueryInt, parsePositiveIntParam } from "./_helpers";
+import {
+  parseQueryInt,
+  parsePositiveIntParam,
+  handleRouteError,
+} from "./_helpers";
 import type { FrontLabelData } from "@shared/types/front-label";
-import { logger, toError } from "../lib/logger";
 
 const BARCODE_PATTERN = /^\d{8,14}$/;
 
@@ -183,8 +186,7 @@ export function register(app: Express): void {
 
       sendError(res, 404, "Product not found", ErrorCode.NOT_FOUND);
     } catch (err) {
-      logger.error({ err: toError(err) }, "public API error");
-      sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
+      handleRouteError(res, err, "look up product");
     }
   });
 
@@ -207,8 +209,7 @@ export function register(app: Express): void {
       const recipes = await storage.getCuratedRecipes({ limit, offset });
       res.json({ data: recipes.map(serializeCuratedRecipe) });
     } catch (err) {
-      logger.error({ err: toError(err) }, "public API recipes list error");
-      sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
+      handleRouteError(res, err, "list recipes");
     }
   });
 
@@ -227,8 +228,7 @@ export function register(app: Express): void {
       }
       res.json({ data: serializeCuratedRecipe(recipe) });
     } catch (err) {
-      logger.error({ err: toError(err) }, "public API recipe detail error");
-      sendError(res, 500, "Internal server error", ErrorCode.INTERNAL_ERROR);
+      handleRouteError(res, err, "fetch recipe");
     }
   });
 
