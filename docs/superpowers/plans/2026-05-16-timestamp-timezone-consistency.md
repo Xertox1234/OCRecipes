@@ -353,6 +353,7 @@ Not a code task — done at deploy time, documented in the PR description.
    psql "$DATABASE_URL" -f migrations/0002_timestamps_to_timestamptz.sql
    ```
 2. **Then** run `npm run db:push` — it must report **zero drift**, confirming `shared/schema.ts` matches the database.
+   - _Known quirk:_ drizzle-kit's diffing of **expression** indexes is textual and can be twitchy — `db:push` may still propose a DROP/CREATE of `pending_reminders_user_type_day_idx` / `weight_logs_user_date_idx` even when they are already correct (the round-tripped `pg_get_indexdef` text may not byte-match the `sql\`…\`` template output). If drift is reported **only** on those two indexes and they are functionally identical, it is benign — accept or ignore it; do not treat it as a column-conversion failure.
 3. **Verification query** — must return `0`:
    ```sql
    SELECT count(*) FROM information_schema.columns
@@ -381,3 +382,10 @@ The PR description must call out step 1 as a required manual step before deploy.
 **Placeholder scan:** No TBD/TODO; the full 77-line `ALTER` list and every edit's before/after text are inline. ✓
 
 **Type consistency:** `{ withTimezone: true }`, `AT TIME ZONE 'UTC'`, and `DATE(logged_at AT TIME ZONE 'UTC')` are used identically across the schema, migration, `health.ts`, and the test. ✓
+
+**Codebase-wide raw-SQL date check (done during planning):**
+`grep -rnE 'DATE\(|date_trunc\(|EXTRACT\(|::date' server/ client/ shared/ --include='*.ts'`
+(excluding tests) found no `DATE(naked_column)` raw SQL beyond what this plan
+already covers. The only other hit — `server/storage/verification.ts:93,96` — already
+wraps its columns as `DATE(col AT TIME ZONE 'UTC')`, which yields the correct UTC
+calendar date for both `timestamp` and `timestamptz`, so it needs **no change**. ✓
