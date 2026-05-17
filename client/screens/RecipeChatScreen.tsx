@@ -215,6 +215,7 @@ export default function RecipeChatScreen() {
   const wasStreamingRef = useRef(false);
   const lastStreamingContentRef = useRef("");
   const lastStreamingRecipeRef = useRef<StreamingRecipe | null>(null);
+  const pendingBaselineAssistantCountRef = useRef(0);
   const [, forceRender] = useState(0);
 
   // Clear optimistic user message once streaming completes
@@ -244,31 +245,31 @@ export default function RecipeChatScreen() {
     if (wasStreamingRef.current && !isStreaming) {
       const content = lastStreamingContentRef.current;
       const recipe = lastStreamingRecipeRef.current;
-      if (content || recipe) {
+      // Bridge the stream-end → message-refetch gap, but only for responses
+      // that will actually persist. On stream/request error the server keeps
+      // no message, so a pending bubble would never clear.
+      if ((content || recipe) && !streamError && !requestError) {
+        pendingBaselineAssistantCountRef.current = messages.filter(
+          (m) => m.role === "assistant",
+        ).length;
         setPendingAssistantMessage({ content, recipe });
       }
       lastStreamingContentRef.current = "";
       lastStreamingRecipeRef.current = null;
     }
     wasStreamingRef.current = isStreaming;
-  }, [isStreaming]);
+  }, [isStreaming, streamError, requestError, messages]);
 
   useEffect(() => {
     if (!pendingAssistantMessage) return;
-    const pendingRecipeTitle = pendingAssistantMessage.recipe?.title;
-    const pendingContent = pendingAssistantMessage.content.trim();
-    const persisted = messages.some((message) => {
-      if (message.role !== "assistant") return false;
-      const metadata = message.metadata as Record<string, unknown> | null;
-      const recipe = metadata?.recipe as StreamingRecipe | undefined;
-      const messageContent = message.content.trim();
-      return (
-        (pendingContent !== "" && messageContent === pendingContent) ||
-        (pendingRecipeTitle !== undefined &&
-          recipe?.title === pendingRecipeTitle)
-      );
-    });
-    if (persisted) {
+    // Clear once a new assistant message has been persisted (count grew past
+    // the pre-completion baseline). Count, not content/title equality — a
+    // server-side trim or JSON-fence strip can make the persisted recipe
+    // message diverge, which would otherwise strand the bubble forever.
+    const assistantCount = messages.filter(
+      (m) => m.role === "assistant",
+    ).length;
+    if (assistantCount > pendingBaselineAssistantCountRef.current) {
       setPendingAssistantMessage(null);
     }
   }, [messages, pendingAssistantMessage]);

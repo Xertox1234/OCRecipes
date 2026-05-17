@@ -286,6 +286,7 @@ export default function ChatScreen() {
   const inputRef = useRef<TextInput>(null);
   const prevStreamingRef = useRef(false);
   const lastStreamingContentRef = useRef("");
+  const pendingBaselineAssistantCountRef = useRef(0);
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
@@ -295,22 +296,30 @@ export default function ChatScreen() {
     }
     if (prevStreamingRef.current && !isStreaming) {
       AccessibilityInfo.announceForAccessibility("Coach response received");
-      if (lastStreamingContentRef.current) {
+      // Bridge the stream-end → message-refetch gap, but only for responses
+      // that will actually persist. On stream/request error the server keeps
+      // no message, so a pending bubble would never clear.
+      if (lastStreamingContentRef.current && !streamError && !requestError) {
+        pendingBaselineAssistantCountRef.current = (messages || []).filter(
+          (m) => m.role === "assistant",
+        ).length;
         setPendingAssistantContent(lastStreamingContentRef.current);
       }
       lastStreamingContentRef.current = "";
     }
     prevStreamingRef.current = isStreaming;
-  }, [isStreaming, streamingContent]);
+  }, [isStreaming, streamingContent, streamError, requestError, messages]);
 
   useEffect(() => {
     if (!pendingAssistantContent) return;
-    const persisted = (messages || []).some(
-      (message) =>
-        message.role === "assistant" &&
-        message.content.trim() === pendingAssistantContent.trim(),
-    );
-    if (persisted) {
+    // Clear once a new assistant message has been persisted (count grew past
+    // the pre-completion baseline). Count, not content equality — a safety
+    // override or server-side trim can make the persisted text diverge from
+    // the streamed text, which would otherwise strand the bubble forever.
+    const assistantCount = (messages || []).filter(
+      (m) => m.role === "assistant",
+    ).length;
+    if (assistantCount > pendingBaselineAssistantCountRef.current) {
       setPendingAssistantContent(null);
     }
   }, [messages, pendingAssistantContent]);
