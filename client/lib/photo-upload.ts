@@ -72,6 +72,13 @@ export interface PhotoConfirmRequest {
   analysisIntent?: PhotoIntent;
 }
 
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const error = new Error("Upload aborted");
+  error.name = "AbortError";
+  throw error;
+}
+
 /**
  * Upload a photo for AI analysis
  *
@@ -81,19 +88,27 @@ export interface PhotoConfirmRequest {
 export async function uploadPhotoForAnalysis(
   uri: string,
   intent: PhotoIntentOrAuto = "log",
+  signal?: AbortSignal,
 ): Promise<PhotoAnalysisResponse> {
+  throwIfAborted(signal);
   const token = await tokenStorage.get();
   if (!token) {
     throw new Error("Not authenticated");
   }
+  throwIfAborted(signal);
 
-  // Compress image before upload
-  const compressed = await compressImage(uri);
+  let compressedUri: string | null = null;
 
   try {
+    // Compress image before upload
+    const compressed = await compressImage(uri);
+    compressedUri = compressed.uri;
+    throwIfAborted(signal);
+    // Expo uploadAsync does not accept AbortSignal; this helper uses
+    // cooperative checks before and after the native upload call.
     const uploadResult = await uploadAsync(
       `${getApiUrl()}/api/photos/analyze`,
-      compressed.uri,
+      compressedUri,
       {
         httpMethod: "POST",
         uploadType: FileSystemUploadType.MULTIPART,
@@ -104,6 +119,7 @@ export async function uploadPhotoForAnalysis(
         },
       },
     );
+    throwIfAborted(signal);
 
     if (uploadResult.status !== 200) {
       // Try to parse error message from response
@@ -118,13 +134,16 @@ export async function uploadPhotoForAnalysis(
     }
 
     try {
+      throwIfAborted(signal);
       return JSON.parse(uploadResult.body) as PhotoAnalysisResponse;
     } catch {
       throw new Error("Invalid response from server");
     }
   } finally {
     // Clean up compressed image
-    await cleanupImage(compressed.uri);
+    if (compressedUri) {
+      await cleanupImage(compressedUri);
+    }
   }
 }
 

@@ -240,6 +240,7 @@ export default function BatchSummaryScreen() {
             paddingBottom: insets.bottom,
           },
         ]}
+        accessibilityViewIsModal
       >
         <Text
           style={[styles.emptyText, { color: theme.textSecondary }]}
@@ -257,6 +258,7 @@ export default function BatchSummaryScreen() {
         styles.container,
         { backgroundColor: theme.backgroundRoot, paddingBottom: insets.bottom },
       ]}
+      accessibilityViewIsModal
     >
       {/* Header info */}
       {unverifiedCount > 0 && (

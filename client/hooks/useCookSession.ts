@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
-import { compressImage } from "@/lib/image-compression";
+import { cleanupImage, compressImage } from "@/lib/image-compression";
 import type {
   CookingSessionResponse,
   CookSessionNutritionSummary,
@@ -72,23 +72,27 @@ export function useAddCookPhoto() {
         name: "ingredient.jpg",
       } as unknown as Blob);
 
-      const token = await tokenStorage.get();
-      const response = await fetch(
-        `${getApiUrl()}/api/cooking/sessions/${sessionId}/photos`,
-        {
-          method: "POST",
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      try {
+        const token = await tokenStorage.get();
+        const response = await fetch(
+          `${getApiUrl()}/api/cooking/sessions/${sessionId}/photos`,
+          {
+            method: "POST",
+            headers: {
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: formData,
           },
-          body: formData,
-        },
-      );
+        );
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`${response.status}: ${text}`);
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(`${response.status}: ${text}`);
+        }
+        return response.json();
+      } finally {
+        await cleanupImage(compressed.uri);
       }
-      return response.json();
     },
     onSuccess: (_data, { sessionId }) => {
       queryClient.invalidateQueries({

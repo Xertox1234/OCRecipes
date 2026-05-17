@@ -126,7 +126,7 @@ export default function PhotoIntentScreen() {
   const isRecipeAvailable = features.recipeGeneration && canGenerateRecipe;
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} accessibilityViewIsModal>
       <View style={headerPaddingStyle}>
         <ScanFlowStepIndicator currentStep={2} totalSteps={3} />
       </View>

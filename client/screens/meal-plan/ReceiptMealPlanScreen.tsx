@@ -157,6 +157,7 @@ export default function ReceiptMealPlanScreen() {
     return (
       <View
         style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
+        accessibilityViewIsModal
       >
         <ScrollView
           contentContainerStyle={[
@@ -274,6 +275,7 @@ export default function ReceiptMealPlanScreen() {
     return (
       <View
         style={[styles.centered, { backgroundColor: theme.backgroundDefault }]}
+        accessibilityViewIsModal
       >
         <ActivityIndicator size="large" color={theme.link} />
         <ThemedText
@@ -294,6 +296,7 @@ export default function ReceiptMealPlanScreen() {
   return (
     <View
       style={[styles.container, { backgroundColor: theme.backgroundDefault }]}
+      accessibilityViewIsModal
     >
       <ScrollView
         contentContainerStyle={[

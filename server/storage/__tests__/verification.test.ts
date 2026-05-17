@@ -79,9 +79,9 @@ function makeBarcode(): string {
 }
 
 /**
- * Seed a barcodeVerifications row. The verification_history.barcode FK is NOT
- * deferrable (confirmed via pg_constraint), so the parent row must exist
- * before any submitVerification or direct verificationHistory insert.
+ * Seed a barcodeVerifications row. Direct verificationHistory inserts still
+ * need the parent row because the FK is immediate; submitVerification creates
+ * the parent itself for first-ever barcodes.
  */
 async function seedBarcodeVerification(
   barcode: string,
@@ -335,6 +335,30 @@ describe("verification storage", () => {
   // ==========================================================================
 
   describe("submitVerification", () => {
+    it("creates the parent barcode row before history for first-ever barcodes", async () => {
+      const barcode = makeBarcode();
+
+      await submitVerification(
+        barcode,
+        testUser.id,
+        makeNutrition(),
+        0.95,
+        true,
+        "single_verified",
+        1,
+        null,
+      );
+
+      const history = await getVerificationHistory(barcode);
+      expect(history.length).toBe(1);
+      expect(history[0].barcode).toBe(barcode);
+
+      const verification = await getVerification(barcode);
+      expect(verification).not.toBeNull();
+      expect(verification!.verificationLevel).toBe("single_verified");
+      expect(verification!.verificationCount).toBe(1);
+    });
+
     it("creates a history row and updates the verification status", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);

@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
@@ -10,6 +11,10 @@ import {
 } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
 import { computeAdaptiveGoals } from "../services/adaptive-goals";
+
+const adaptiveGoalSettingsSchema = z.object({
+  enabled: z.boolean(),
+});
 
 export function register(app: Express): void {
   // Get adaptive goals status + pending recommendation
@@ -161,8 +166,8 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const { enabled } = req.body;
-        if (typeof enabled !== "boolean") {
+        const parsed = adaptiveGoalSettingsSchema.safeParse(req.body);
+        if (!parsed.success) {
           return sendError(
             res,
             400,
@@ -170,6 +175,8 @@ export function register(app: Express): void {
             ErrorCode.VALIDATION_ERROR,
           );
         }
+
+        const { enabled } = parsed.data;
 
         await storage.updateUser(req.userId, {
           adaptiveGoalsEnabled: enabled,

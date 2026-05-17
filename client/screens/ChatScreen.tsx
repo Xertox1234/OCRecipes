@@ -71,6 +71,32 @@ const SUGGESTED_PROMPTS = [
   "Suggest a healthy snack",
 ];
 
+const CoachStreamingFooter = React.memo(function CoachStreamingFooter({
+  content,
+}: {
+  content: string;
+}) {
+  const { theme } = useTheme();
+
+  if (content) {
+    return <ChatBubble role="assistant" content={content} isStreaming />;
+  }
+
+  return (
+    <View
+      style={styles.typingRow}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel="NutriCoach is thinking"
+    >
+      <View style={[styles.typingAvatarDot, { backgroundColor: theme.link }]} />
+      <View style={styles.typingIndicator}>
+        <ActivityIndicator size="small" color={theme.textSecondary} />
+      </View>
+    </View>
+  );
+});
+
 const SuggestedPrompts = React.memo(function SuggestedPrompts({
   onSelect,
 }: {
@@ -253,18 +279,50 @@ export default function ChatScreen() {
   const createConversation = useCreateConversation();
 
   const [inputText, setInputText] = useState("");
+  const [pendingAssistantContent, setPendingAssistantContent] = useState<
+    string | null
+  >(null);
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const prevStreamingRef = useRef(false);
+  const lastStreamingContentRef = useRef("");
+  const pendingBaselineAssistantCountRef = useRef(0);
   const shownStreamErrorRef = useRef(false);
   const shownRequestErrorRef = useRef(false);
 
   useEffect(() => {
+    if (isStreaming && streamingContent) {
+      lastStreamingContentRef.current = streamingContent;
+    }
     if (prevStreamingRef.current && !isStreaming) {
       AccessibilityInfo.announceForAccessibility("Coach response received");
+      // Bridge the stream-end → message-refetch gap, but only for responses
+      // that will actually persist. On stream/request error the server keeps
+      // no message, so a pending bubble would never clear.
+      if (lastStreamingContentRef.current && !streamError && !requestError) {
+        pendingBaselineAssistantCountRef.current = (messages || []).filter(
+          (m) => m.role === "assistant",
+        ).length;
+        setPendingAssistantContent(lastStreamingContentRef.current);
+      }
+      lastStreamingContentRef.current = "";
     }
     prevStreamingRef.current = isStreaming;
-  }, [isStreaming]);
+  }, [isStreaming, streamingContent, streamError, requestError, messages]);
+
+  useEffect(() => {
+    if (!pendingAssistantContent) return;
+    // Clear once a new assistant message has been persisted (count grew past
+    // the pre-completion baseline). Count, not content equality — a safety
+    // override or server-side trim can make the persisted text diverge from
+    // the streamed text, which would otherwise strand the bubble forever.
+    const assistantCount = (messages || []).filter(
+      (m) => m.role === "assistant",
+    ).length;
+    if (assistantCount > pendingBaselineAssistantCountRef.current) {
+      setPendingAssistantContent(null);
+    }
+  }, [messages, pendingAssistantContent]);
 
   useEffect(() => {
     if (streamError && !shownStreamErrorRef.current) {
@@ -293,6 +351,13 @@ export default function ChatScreen() {
     }
   }, [requestError, toast, haptics]);
 
+  useEffect(() => {
+    if (!isStreaming) return;
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    });
+  }, [isStreaming]);
+
   // Auto-send initial message from cross-tab navigation (e.g. Ask Coach)
   const didSendInitialRef = useRef(false);
   useEffect(() => {
@@ -303,34 +368,25 @@ export default function ChatScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage]);
 
-  // Build display messages: fetched messages + optimistic user message + streaming assistant
+  // Build display messages from fetched messages only; streaming renders in
+  // ListFooterComponent so token updates do not invalidate visible rows.
   const displayMessages = useMemo(() => {
-    const result: DisplayMessage[] = (messages || []).map((m) => ({
+    const mappedMessages = (messages || []).map((m) => ({
       id: m.id.toString(),
       role: m.role as "user" | "assistant" | "system",
       content: m.content,
       createdAt: m.createdAt,
     }));
-
-    if (isStreaming && streamingContent) {
-      result.push({
-        id: "streaming",
+    if (pendingAssistantContent) {
+      mappedMessages.push({
+        id: "pending-assistant",
         role: "assistant",
-        content: streamingContent,
-        createdAt: new Date().toISOString(),
-      });
-    } else if (isStreaming && !streamingContent) {
-      // Typing indicator
-      result.push({
-        id: "typing",
-        role: "assistant",
-        content: "",
+        content: pendingAssistantContent,
         createdAt: new Date().toISOString(),
       });
     }
-
-    return result;
-  }, [messages, isStreaming, streamingContent]);
+    return mappedMessages;
+  }, [messages, pendingAssistantContent]);
 
   const handleSend = useCallback(
     async (text?: string) => {
@@ -389,13 +445,13 @@ export default function ChatScreen() {
 
   const renderItem = useCallback(({ item }: { item: DisplayMessage }) => {
     return (
-      <ChatBubble
-        role={item.role}
-        content={item.content}
-        isStreaming={item.id === "typing" || item.id === "streaming"}
-      />
+      <ChatBubble role={item.role} content={item.content} isStreaming={false} />
     );
   }, []);
+
+  const streamingFooter = isStreaming ? (
+    <CoachStreamingFooter content={streamingContent} />
+  ) : null;
 
   const isEmpty =
     !isLoading && (!messages || messages.length === 0) && !isStreaming;
@@ -425,6 +481,7 @@ export default function ChatScreen() {
           data={displayMessages}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
+          ListFooterComponent={streamingFooter}
           contentContainerStyle={styles.messagesContent}
           keyboardDismissMode="interactive"
           {...FLATLIST_DEFAULTS}
@@ -518,6 +575,22 @@ const styles = StyleSheet.create({
   },
   emptyContent: {
     flexGrow: 1,
+    justifyContent: "center",
+  },
+  typingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+  },
+  typingAvatarDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
+  typingIndicator: {
+    minHeight: 25,
     justifyContent: "center",
   },
   suggestionsContainer: {

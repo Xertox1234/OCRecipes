@@ -306,7 +306,7 @@ export default function GoalSetupScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={styles.container} accessibilityViewIsModal>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[

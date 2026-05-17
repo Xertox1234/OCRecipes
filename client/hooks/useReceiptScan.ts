@@ -42,44 +42,43 @@ export function useReceiptScan() {
 
       // Compress and add each photo
       const compressedUris: string[] = [];
-      for (const uri of photoUris) {
-        const compressed = await compressImage(uri, {
-          maxWidth: 1536,
-          maxHeight: 1536,
-          quality: 0.85,
-          targetSizeKB: 4500,
+      try {
+        for (const uri of photoUris) {
+          const compressed = await compressImage(uri, {
+            maxWidth: 1536,
+            maxHeight: 1536,
+            quality: 0.85,
+            targetSizeKB: 4500,
+          });
+          compressedUris.push(compressed.uri);
+          // React Native FormData accepts object with uri/type/name (differs from web Blob API)
+          formData.append("photos", {
+            uri: compressed.uri,
+            type: "image/jpeg",
+            name: `receipt_${compressedUris.length}.jpg`,
+          } as unknown as Blob);
+        }
+
+        const token = await tokenStorage.get();
+        const response = await fetch(`${getApiUrl()}/api/receipt/scan`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          body: formData,
         });
-        compressedUris.push(compressed.uri);
-        // React Native FormData accepts object with uri/type/name (differs from web Blob API)
-        formData.append("photos", {
-          uri: compressed.uri,
-          type: "image/jpeg",
-          name: `receipt_${compressedUris.length}.jpg`,
-        } as unknown as Blob);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            errorData.error || `Receipt scan failed: ${response.status}`,
+          );
+        }
+
+        return response.json();
+      } finally {
+        await Promise.all(compressedUris.map((uri) => cleanupImage(uri)));
       }
-
-      const token = await tokenStorage.get();
-      const response = await fetch(`${getApiUrl()}/api/receipt/scan`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      // Cleanup compressed images
-      for (const uri of compressedUris) {
-        cleanupImage(uri);
-      }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.error || `Receipt scan failed: ${response.status}`,
-        );
-      }
-
-      return response.json();
     },
   });
 }

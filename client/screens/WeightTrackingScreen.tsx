@@ -118,6 +118,7 @@ export default function WeightTrackingScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
+        accessibilityViewIsModal
       >
         <ScrollView
           style={[styles.container, { backgroundColor: theme.backgroundRoot }]}

@@ -549,6 +549,22 @@ describe("nutrition storage", () => {
       const logs = await getDailyLogs(testUser.id, new Date());
       expect(logs).toHaveLength(0);
     });
+
+    it("excludes logs for discarded scanned items", async () => {
+      const activeItem = await insertScannedItem(testUser.id, {
+        productName: "Visible Food",
+      });
+      const discardedItem = await insertScannedItem(testUser.id, {
+        productName: "Discarded Food",
+        discardedAt: new Date(),
+      });
+      await insertDailyLog(testUser.id, { scannedItemId: activeItem.id });
+      await insertDailyLog(testUser.id, { scannedItemId: discardedItem.id });
+
+      const logs = await getDailyLogs(testUser.id, new Date());
+      expect(logs).toHaveLength(1);
+      expect(logs[0].scannedItemId).toBe(activeItem.id);
+    });
   });
 
   describe("getDailySummary", () => {

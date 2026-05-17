@@ -104,6 +104,7 @@ export default function FastingScreen() {
         paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
       }}
       scrollIndicatorInsets={{ bottom: insets.bottom }}
+      accessibilityViewIsModal
       refreshControl={
         <RefreshControl
           refreshing={false}

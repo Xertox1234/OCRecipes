@@ -338,6 +338,27 @@ describe("favourite-recipes storage", () => {
       expect(count).toBe(0);
     });
 
+    it("hides private community favourites without deleting the favourite", async () => {
+      const otherUser = await createTestUser(tx);
+      const recipe = await createTestCommunityRecipe(otherUser.id, {
+        isPublic: true,
+        title: "Temporarily Public Recipe",
+      });
+      await toggleFavouriteRecipe(testUser.id, recipe.id, "community");
+      lastFireAndForgetPromise = null;
+
+      const { eq } = await import("drizzle-orm");
+      await tx
+        .update(communityRecipes)
+        .set({ isPublic: false })
+        .where(eq(communityRecipes.id, recipe.id));
+
+      const result = await getResolvedFavouriteRecipes(testUser.id);
+      expect(result).toEqual([]);
+      expect(lastFireAndForgetPromise).toBeNull();
+      expect(await getFavouriteRecipeCount(testUser.id)).toBe(1);
+    });
+
     it("respects limit parameter", async () => {
       // Create 3 recipes and favourite all
       for (let i = 0; i < 3; i++) {

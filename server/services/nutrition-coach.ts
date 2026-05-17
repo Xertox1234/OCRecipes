@@ -330,10 +330,13 @@ export async function* generateCoachResponse(
   const resolvedIntent = intent ?? classifyIntent(lastUserMessage).intent;
   const systemPrompt = buildSystemPrompt(context, resolvedIntent);
 
-  // Sanitize user messages before including in conversation history
+  // Sanitize all persisted roles before including conversation history.
   const sanitizedMessages = messages.map((m) => ({
     role: m.role,
-    content: m.role === "user" ? sanitizeUserInput(m.content) : m.content,
+    content:
+      m.role === "user"
+        ? sanitizeUserInput(m.content)
+        : sanitizeContextField(m.content),
   }));
 
   let stream;
@@ -412,7 +415,10 @@ export async function* generateCoachProResponse(
 
   const sanitizedMessages = messages.map((m) => ({
     role: m.role,
-    content: m.role === "user" ? sanitizeUserInput(m.content) : m.content,
+    content:
+      m.role === "user"
+        ? sanitizeUserInput(m.content)
+        : sanitizeContextField(m.content),
   }));
 
   // Build the conversation with system prompt
