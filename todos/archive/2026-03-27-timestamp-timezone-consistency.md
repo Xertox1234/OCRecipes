@@ -1,9 +1,9 @@
 ---
 title: "Fix inconsistent timestamp timezone handling"
-status: backlog
+status: completed
 priority: medium
 created: 2026-03-27
-updated: 2026-05-16
+updated: 2026-05-17
 assignee:
 labels: [data-integrity, database, audit-2026-03-27-full]
 audit_id: M4
@@ -46,3 +46,7 @@ audit_id: M4
 
 - Relocated from `todos/archive/` (it was a `status: backlog` item mis-filed in archive, so `/todo` never picked it up) and renamed to the current `YYYY-MM-DD-slug` convention. Surfaced by the 2026-05-16 unfinished-features audit (finding L3).
 - Refreshed the stale `schema.ts` line reference (`305` → `366`). `withTimezone: true` is still on `savedItems.createdAt` only — the finding remains accurate.
+
+### 2026-05-17
+
+- Implemented. All 78 naked `timestamp` columns converted to `timestamptz`; the 2 `DATE()` expression indexes and matching `health.ts` `ON CONFLICT` clauses moved to the immutable `DATE(col AT TIME ZONE 'UTC')` form; hand-written migration `migrations/0002_timestamps_to_timestamptz.sql` added. Shipped in PR #206. Archived as completed.
