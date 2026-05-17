@@ -350,18 +350,14 @@ export function register(app: Express): void {
         const { question, answer } = parsed.data;
 
         const session = storage.getAnalysisSession(sessionId);
-        if (!session) {
+        // Treat a cross-user session as not found to avoid disclosing existence
+        if (!session || session.userId !== req.userId) {
           return sendError(
             res,
             404,
             "Session not found or expired",
             ErrorCode.NOT_FOUND,
           );
-        }
-
-        // Verify session ownership
-        if (session.userId !== req.userId) {
-          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
         // Refine analysis based on follow-up
@@ -427,15 +423,16 @@ export function register(app: Express): void {
           { calories: 0, protein: 0, carbs: 0, fat: 0 },
         );
 
-        // Get confidence from session if available
-        const session = storage.getAnalysisSession(validated.sessionId);
+        // Get confidence from session if available. A cross-user session is
+        // treated as if it did not exist — its data is ignored rather than
+        // surfaced via a distinguishable error, hiding session existence.
+        const fetchedSession = storage.getAnalysisSession(validated.sessionId);
+        const ownedSession =
+          fetchedSession && fetchedSession.userId === req.userId
+            ? fetchedSession
+            : undefined;
 
-        // Verify session ownership if session exists
-        if (session && session.userId !== req.userId) {
-          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
-        }
-
-        const confidence = session?.result?.overallConfidence;
+        const confidence = ownedSession?.result?.overallConfidence;
 
         // Create scanned item with photo source
         const scannedItem = await storage.createScannedItemWithLog(
@@ -632,17 +629,14 @@ export function register(app: Express): void {
         const validated = confirmLabelSchema.parse(req.body);
 
         const session = storage.getLabelSession(validated.sessionId);
-        if (!session) {
+        // Treat a cross-user session as not found to avoid disclosing existence
+        if (!session || session.userId !== req.userId) {
           return sendError(
             res,
             404,
             "Session not found or expired",
             ErrorCode.NOT_FOUND,
           );
-        }
-
-        if (session.userId !== req.userId) {
-          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
         const { labelData, barcode } = session;

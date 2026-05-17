@@ -4,8 +4,31 @@ import { openai, OPENAI_TIMEOUT_HEAVY_MS, MODEL_HEAVY } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { createServiceLogger, toError } from "../lib/logger";
+import { storage } from "../storage";
 
 const log = createServiceLogger("pantry-meal-plan");
+
+/**
+ * Thrown by `buildPantryMealPlanForUser` when the user has no pantry items.
+ * The route layer maps this to a 400 response.
+ */
+export class EmptyPantryError extends Error {
+  constructor() {
+    super("No pantry items available. Add items to your pantry first.");
+    this.name = "EmptyPantryError";
+  }
+}
+
+// Default daily nutrition targets used when the user has not set goals.
+const DEFAULT_DAILY_TARGETS = {
+  calories: 2000,
+  protein: 150,
+  carbs: 250,
+  fat: 67,
+} as const;
+
+// Default household size used when the user profile has none set.
+const DEFAULT_HOUSEHOLD_SIZE = 1;
 
 // ============================================================================
 // TYPES
@@ -226,4 +249,48 @@ Each meal needs: mealType, title, description, servings, prepTimeMinutes, cookTi
 
   const validated = aiResponseSchema.parse(parsed);
   return validated;
+}
+
+// ============================================================================
+// ORCHESTRATION
+// ============================================================================
+
+/**
+ * Gather a user's pantry items, dietary profile, and nutrition goals, then
+ * generate a meal plan. This is the service boundary for the
+ * `POST /api/meal-plan/generate-from-pantry` route — the route only validates
+ * input and maps errors to responses.
+ *
+ * Throws `EmptyPantryError` when the user has no pantry items (route → 400).
+ */
+export async function buildPantryMealPlanForUser(
+  userId: string,
+  days: number,
+): Promise<GeneratedMealPlan> {
+  const pantryItems = await storage.getPantryItems(userId);
+  if (pantryItems.length === 0) {
+    throw new EmptyPantryError();
+  }
+
+  const [userProfile, user] = await Promise.all([
+    storage.getUserProfile(userId),
+    storage.getUser(userId),
+  ]);
+
+  const dailyTargets = {
+    calories: user?.dailyCalorieGoal ?? DEFAULT_DAILY_TARGETS.calories,
+    protein: user?.dailyProteinGoal ?? DEFAULT_DAILY_TARGETS.protein,
+    carbs: user?.dailyCarbsGoal ?? DEFAULT_DAILY_TARGETS.carbs,
+    fat: user?.dailyFatGoal ?? DEFAULT_DAILY_TARGETS.fat,
+  };
+
+  const householdSize = userProfile?.householdSize ?? DEFAULT_HOUSEHOLD_SIZE;
+
+  return generateMealPlanFromPantry({
+    pantryItems,
+    userProfile: userProfile ?? null,
+    dailyTargets,
+    days,
+    householdSize,
+  });
 }

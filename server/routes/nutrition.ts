@@ -75,13 +75,7 @@ export function register(app: Express): void {
         }
         res.json(result);
       } catch (error) {
-        logger.error({ err: toError(error) }, "nutrition lookup failed");
-        sendError(
-          res,
-          500,
-          "Nutrition lookup failed",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "look up nutrition");
       }
     },
   );
@@ -117,8 +111,7 @@ export function register(app: Express): void {
           verificationCount: verification?.verificationCount ?? 0,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "barcode lookup failed");
-        sendError(res, 500, "Barcode lookup failed", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "look up barcode");
       }
     },
   );
@@ -139,13 +132,7 @@ export function register(app: Express): void {
         const items = await storage.getFrequentItems(req.userId, limit);
         res.json({ items });
       } catch (error) {
-        logger.error({ err: toError(error) }, "fetch frequent items failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch frequent items",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch frequent items");
       }
     },
   );
@@ -166,8 +153,7 @@ export function register(app: Express): void {
         const result = await storage.getScannedItems(req.userId, limit, offset);
         res.json(result);
       } catch (error) {
-        logger.error({ err: toError(error) }, "fetch scanned items failed");
-        sendError(res, 500, "Failed to fetch items", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "fetch items");
       }
     },
   );
@@ -196,8 +182,7 @@ export function register(app: Express): void {
 
         res.json(item);
       } catch (error) {
-        logger.error({ err: toError(error) }, "fetch scanned item failed");
-        sendError(res, 500, "Failed to fetch item", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "fetch item");
       }
     },
   );
@@ -302,8 +287,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        logger.error({ err: toError(error) }, "discard scanned item failed");
-        sendError(res, 500, "Failed to discard item", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "discard item");
       }
     },
   );
@@ -331,13 +315,7 @@ export function register(app: Express): void {
           confirmedMealPlanItemIds: confirmedIds,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "fetch daily summary failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch summary",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch summary");
       }
     },
   );

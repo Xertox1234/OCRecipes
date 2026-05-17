@@ -30,6 +30,7 @@ import {
   useCreateGroceryList,
   useAddManualGroceryItem,
 } from "@/hooks/useGroceryList";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { GroceryList } from "@shared/schema";
 
 interface GroceryListPickerModalProps {
@@ -208,6 +209,7 @@ export function GroceryListPickerModal({
           </View>
         ) : (
           <FlatList
+            {...FLATLIST_DEFAULTS}
             data={lists || []}
             keyExtractor={(item) => String(item.id)}
             renderItem={renderListItem}

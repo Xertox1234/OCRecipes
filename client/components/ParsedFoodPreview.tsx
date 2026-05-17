@@ -66,6 +66,7 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
         disabled={isLogging}
         accessibilityLabel="Log all parsed items"
         accessibilityRole="button"
+        accessibilityState={{ disabled: isLogging }}
         style={({ pressed }) => [
           styles.logAllButton,
           {

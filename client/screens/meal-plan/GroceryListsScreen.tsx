@@ -35,8 +35,9 @@ export default function GroceryListsScreen() {
   const haptics = useHaptics();
   const { confirm, ConfirmationModal } = useConfirmationModal();
   const { data: lists, isLoading } = useGroceryLists();
-  const createMutation = useCreateGroceryList();
-  const deleteMutation = useDeleteGroceryList();
+  const { mutate: createListMutate, isPending: isCreatingList } =
+    useCreateGroceryList();
+  const { mutate: deleteListMutate } = useDeleteGroceryList();
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [startDate, setStartDate] = useState(() => {
@@ -51,7 +52,7 @@ export default function GroceryListsScreen() {
 
   const handleGenerate = useCallback(() => {
     haptics.impact();
-    createMutation.mutate(
+    createListMutate(
       { startDate, endDate },
       {
         onSuccess: (list) => {
@@ -60,7 +61,7 @@ export default function GroceryListsScreen() {
         },
       },
     );
-  }, [haptics, createMutation, startDate, endDate, navigation]);
+  }, [haptics, createListMutate, startDate, endDate, navigation]);
 
   const handleDelete = useCallback(
     (id: number) => {
@@ -69,10 +70,10 @@ export default function GroceryListsScreen() {
         message: "Are you sure you want to delete this list?",
         confirmLabel: "Delete",
         destructive: true,
-        onConfirm: () => deleteMutation.mutate(id),
+        onConfirm: () => deleteListMutate(id),
       });
     },
-    [confirm, deleteMutation],
+    [confirm, deleteListMutate],
   );
 
   const renderItem = useCallback(
@@ -230,19 +231,19 @@ export default function GroceryListsScreen() {
                 </Pressable>
                 <Pressable
                   onPress={handleGenerate}
-                  disabled={createMutation.isPending}
+                  disabled={isCreatingList}
                   style={[
                     styles.generateButton,
                     {
                       backgroundColor: theme.link,
-                      opacity: createMutation.isPending ? 0.6 : 1,
+                      opacity: isCreatingList ? 0.6 : 1,
                     },
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel="Generate grocery list"
                 >
                   <ThemedText style={{ color: theme.buttonText }}>
-                    {createMutation.isPending ? "Generating..." : "Generate"}
+                    {isCreatingList ? "Generating..." : "Generate"}
                   </ThemedText>
                 </Pressable>
               </View>

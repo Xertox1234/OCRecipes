@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   generateMealPlanFromPantry,
+  buildPantryMealPlanForUser,
+  EmptyPantryError,
   generatedMealSchema,
   aiResponseSchema,
 } from "../pantry-meal-plan";
 import type { PantryMealPlanInput } from "../pantry-meal-plan";
 
 import { openai } from "../../lib/openai";
+import { storage } from "../../storage";
 import {
   createMockPantryItem,
+  createMockUser,
   createMockUserProfile,
   createMockChatCompletion,
 } from "../../__tests__/factories";
@@ -24,6 +28,14 @@ vi.mock("../../lib/openai", () => ({
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
   MODEL_FAST: "gpt-4o-mini",
   MODEL_HEAVY: "gpt-4o",
+}));
+
+vi.mock("../../storage", () => ({
+  storage: {
+    getPantryItems: vi.fn(),
+    getUserProfile: vi.fn(),
+    getUser: vi.fn(),
+  },
 }));
 
 const BASE_INPUT: PantryMealPlanInput = {
@@ -327,6 +339,76 @@ describe("pantry-meal-plan", () => {
         }
       ).messages[1].content;
       expect(userMessage).toContain("EXPIRES");
+    });
+  });
+
+  describe("buildPantryMealPlanForUser", () => {
+    it("should throw EmptyPantryError when the user has no pantry items", async () => {
+      vi.mocked(storage.getPantryItems).mockResolvedValue([]);
+
+      await expect(
+        buildPantryMealPlanForUser("user1", 3),
+      ).rejects.toBeInstanceOf(EmptyPantryError);
+
+      expect(storage.getUserProfile).not.toHaveBeenCalled();
+      expect(openai.chat.completions.create).not.toHaveBeenCalled();
+    });
+
+    it("should generate a plan from the user's pantry, profile, and goals", async () => {
+      vi.mocked(storage.getPantryItems).mockResolvedValue(
+        BASE_INPUT.pantryItems,
+      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({ userId: "user1", householdSize: 2 }),
+      );
+      vi.mocked(storage.getUser).mockResolvedValue(
+        createMockUser({
+          id: "user1",
+          dailyCalorieGoal: 1800,
+          dailyProteinGoal: 120,
+          dailyCarbsGoal: 200,
+          dailyFatGoal: 60,
+        }),
+      );
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
+      );
+
+      const result = await buildPantryMealPlanForUser("user1", 3);
+
+      expect(result.days).toHaveLength(1);
+      const userMessage = (
+        vi.mocked(openai.chat.completions.create).mock.calls[0][0] as {
+          messages: { content: string }[];
+        }
+      ).messages[1].content;
+      expect(userMessage).toContain("1800 cal");
+      expect(userMessage).toContain("HOUSEHOLD SIZE: 2");
+      expect(userMessage).toContain("3-day");
+    });
+
+    it("should apply default targets and household size when user and profile are null", async () => {
+      vi.mocked(storage.getPantryItems).mockResolvedValue(
+        BASE_INPUT.pantryItems,
+      );
+      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
+      vi.mocked(storage.getUser).mockResolvedValue(undefined);
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(JSON.stringify(VALID_AI_RESPONSE)),
+      );
+
+      await buildPantryMealPlanForUser("user1", 3);
+
+      const userMessage = (
+        vi.mocked(openai.chat.completions.create).mock.calls[0][0] as {
+          messages: { content: string }[];
+        }
+      ).messages[1].content;
+      expect(userMessage).toContain("2000 cal");
+      expect(userMessage).toContain("150g");
+      expect(userMessage).toContain("250g");
+      expect(userMessage).toContain("67g");
+      expect(userMessage).toContain("HOUSEHOLD SIZE: 1");
     });
   });
 });
