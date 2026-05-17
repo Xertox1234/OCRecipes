@@ -29,6 +29,7 @@ import {
   useCreateCookbook,
   useAddRecipeToCookbook,
 } from "@/hooks/useCookbooks";
+import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { CookbookWithCount } from "@shared/schema";
 
 interface CookbookPickerModalProps {
@@ -206,6 +207,7 @@ export function CookbookPickerModal({
           </View>
         ) : (
           <FlatList
+            {...FLATLIST_DEFAULTS}
             data={cookbooks || []}
             keyExtractor={(item) => String(item.id)}
             renderItem={renderItem}

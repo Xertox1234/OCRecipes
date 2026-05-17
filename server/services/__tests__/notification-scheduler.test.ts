@@ -40,7 +40,16 @@ vi.mock("node-cron", () => ({
 }));
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  // resetAllMocks (not clearAllMocks) so leftover mockResolvedValueOnce queue
+  // entries from a prior test cannot leak forward — paged loops break early
+  // when a page is shorter than PAGE_SIZE, leaving the trailing []-page mock
+  // unconsumed. Every test sets its own implementations, so a full reset is safe.
+  vi.resetAllMocks();
+  // resetAllMocks wipes the cron.schedule return value set in vi.mock above;
+  // re-establish it so startNotificationScheduler() gets a stoppable task.
+  vi.mocked(cron.schedule).mockReturnValue({
+    stop: vi.fn(),
+  } as unknown as ReturnType<typeof cron.schedule>);
   stopNotificationScheduler();
 });
 
@@ -145,6 +154,59 @@ describe("sendDueCommitmentReminders", () => {
 
     await expect(sendDueCommitmentReminders()).resolves.toBeUndefined();
     expect(sendPushToUser).not.toHaveBeenCalled();
+  });
+
+  it("processes a mixed batch under bounded concurrency — muted skipped, already-pending skipped, needing-reminder sent", async () => {
+    const mutedEntry = createMockCoachNotebookEntry({
+      id: 20,
+      userId: "muted-user",
+      content: "muted commitment",
+      type: "commitment",
+    });
+    const pendingEntry = createMockCoachNotebookEntry({
+      id: 21,
+      userId: "pending-user",
+      content: "pending commitment",
+      type: "commitment",
+    });
+    const needsEntry = createMockCoachNotebookEntry({
+      id: 22,
+      userId: "needs-user",
+      content: "needs commitment",
+      type: "commitment",
+    });
+    vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([
+      mutedEntry,
+      pendingEntry,
+      needsEntry,
+    ]);
+    // Key profile lookup by userId — parallel execution breaks call-order mocks.
+    vi.mocked(storage.getUserProfile).mockImplementation(async (userId) =>
+      createMockUserProfile({
+        userId,
+        reminderMutes: userId === "muted-user" ? { commitment: true } : {},
+      }),
+    );
+    vi.mocked(storage.hasPendingReminderToday).mockImplementation(
+      async (userId) => userId === "pending-user",
+    );
+    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
+    vi.mocked(sendPushToUser).mockResolvedValue(true);
+    vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
+
+    await sendDueCommitmentReminders();
+
+    // Only the needs-user gets a fresh pending reminder created.
+    expect(storage.createPendingReminder).toHaveBeenCalledTimes(1);
+    expect(storage.createPendingReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "needs-user", type: "commitment" }),
+    );
+    // Muted user gets no push; pending + needs users do.
+    const pushedUserIds = vi
+      .mocked(sendPushToUser)
+      .mock.calls.map((c) => c[0])
+      .sort();
+    expect(pushedUserIds).toEqual(["needs-user", "pending-user"]);
   });
 
   it("skips creating pending reminder when commitment is muted", async () => {
@@ -282,6 +344,67 @@ describe("sendDailyCheckinReminders", () => {
     await expect(sendDailyCheckinReminders()).resolves.toBeUndefined();
     expect(storage.createPendingReminder).not.toHaveBeenCalled();
   });
+
+  it("processes a mixed page under bounded concurrency — only the needing-reminder user gets one", async () => {
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["muted-user", "pending-user", "needs-user"])
+      .mockResolvedValueOnce([]);
+    // Key all per-user mocks by userId — concurrency breaks call-order mocks.
+    vi.mocked(storage.getUserProfile).mockImplementation(async (userId) =>
+      createMockUserProfile({
+        userId,
+        reminderMutes: userId === "muted-user" ? { "daily-checkin": true } : {},
+      }),
+    );
+    vi.mocked(storage.hasPendingReminderToday).mockImplementation(
+      async (userId) => userId === "pending-user",
+    );
+    vi.mocked(storage.getDailySummary).mockResolvedValue({
+      totalCalories: 720,
+      totalProtein: 30,
+      totalCarbs: 80,
+      totalFat: 25,
+      itemCount: 2,
+    });
+    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
+
+    await sendDailyCheckinReminders();
+
+    expect(storage.createPendingReminder).toHaveBeenCalledTimes(1);
+    expect(storage.createPendingReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "needs-user", type: "daily-checkin" }),
+    );
+  });
+
+  it("isolates a per-user failure — one user throwing does not block the rest", async () => {
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["bad-user", "good-user"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getUserProfile).mockImplementation(async (userId) =>
+      createMockUserProfile({ userId, reminderMutes: {} }),
+    );
+    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
+    // The summary fetch (inside the per-user loop body) throws for bad-user;
+    // the per-user try/catch must isolate it so good-user still gets a reminder.
+    vi.mocked(storage.getDailySummary).mockImplementation(async (userId) => {
+      if (userId === "bad-user") throw new Error("summary fetch failed");
+      return {
+        totalCalories: 500,
+        totalProtein: 20,
+        totalCarbs: 60,
+        totalFat: 15,
+        itemCount: 1,
+      };
+    });
+    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
+
+    await expect(sendDailyCheckinReminders()).resolves.toBeUndefined();
+
+    expect(storage.createPendingReminder).toHaveBeenCalledTimes(1);
+    expect(storage.createPendingReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "good-user", type: "daily-checkin" }),
+    );
+  });
 });
 
 describe("sendMealLogReminders", () => {
@@ -346,5 +469,37 @@ describe("sendMealLogReminders", () => {
 
     await expect(sendMealLogReminders()).resolves.toBeUndefined();
     expect(storage.createPendingReminder).not.toHaveBeenCalled();
+  });
+
+  it("processes a mixed page under bounded concurrency — muted, has-logs, and already-pending users skipped", async () => {
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce([
+        "muted-user",
+        "logged-user",
+        "pending-user",
+        "needs-user",
+      ])
+      .mockResolvedValueOnce([]);
+    // Key all per-user mocks by userId — concurrency breaks call-order mocks.
+    vi.mocked(storage.getUserProfile).mockImplementation(async (userId) =>
+      createMockUserProfile({
+        userId,
+        reminderMutes: userId === "muted-user" ? { "meal-log": true } : {},
+      }),
+    );
+    vi.mocked(storage.getDailyLogs).mockImplementation(async (userId) =>
+      userId === "logged-user" ? [createMockDailyLog({ id: 1, userId })] : [],
+    );
+    vi.mocked(storage.hasPendingReminderToday).mockImplementation(
+      async (userId) => userId === "pending-user",
+    );
+    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
+
+    await sendMealLogReminders();
+
+    expect(storage.createPendingReminder).toHaveBeenCalledTimes(1);
+    expect(storage.createPendingReminder).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "needs-user", type: "meal-log" }),
+    );
   });
 });

@@ -495,6 +495,7 @@ export function BeveragePickerSheet({
                         key={size}
                         onPress={() => handleSizeSelect(size)}
                         accessibilityRole="radio"
+                        accessibilityState={{ selected: false }}
                         accessibilityLabel={`${sizeData.label}, ${sizeData.oz} ounces`}
                         style={[
                           styles.sizeCard,

@@ -395,7 +395,11 @@ export default function EditDietaryProfileScreen() {
           <ThemedText type="h4" style={styles.sectionTitle}>
             Diet Type
           </ThemedText>
-          <View style={styles.optionsGrid}>
+          <View
+            style={styles.optionsGrid}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Diet type"
+          >
             {DIET_TYPES.map((diet) => {
               const selected = dietType === diet.id;
               return (
@@ -478,7 +482,11 @@ export default function EditDietaryProfileScreen() {
           <ThemedText type="h4" style={styles.sectionTitle}>
             Primary Goal
           </ThemedText>
-          <View style={styles.goalsGrid}>
+          <View
+            style={styles.goalsGrid}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Primary goal"
+          >
             {GOALS.map((goal) => {
               const selected = primaryGoal === goal.id;
               return (
@@ -529,7 +537,11 @@ export default function EditDietaryProfileScreen() {
           <ThemedText type="h4" style={styles.sectionTitle}>
             Activity Level
           </ThemedText>
-          <View style={styles.optionsList}>
+          <View
+            style={styles.optionsList}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Activity level"
+          >
             {ACTIVITY_LEVELS.map((level) => {
               const selected = activityLevel === level.id;
               return (
@@ -630,7 +642,11 @@ export default function EditDietaryProfileScreen() {
           <ThemedText type="h4" style={styles.sectionTitle}>
             Cooking Skill
           </ThemedText>
-          <View style={styles.optionsList}>
+          <View
+            style={styles.optionsList}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Cooking skill"
+          >
             {SKILL_LEVELS.map((level) => {
               const selected = cookingSkillLevel === level.id;
               return (
@@ -691,7 +707,11 @@ export default function EditDietaryProfileScreen() {
           <ThemedText type="h4" style={styles.sectionTitle}>
             Time for Cooking
           </ThemedText>
-          <View style={styles.optionsList}>
+          <View
+            style={styles.optionsList}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Time for cooking"
+          >
             {COOKING_TIMES.map((time) => {
               const selected = cookingTimeAvailable === time.id;
               return (

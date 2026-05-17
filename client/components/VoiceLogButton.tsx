@@ -74,6 +74,7 @@ export const VoiceLogButton = React.memo(function VoiceLogButton({
           isListening ? "Listening, tap to stop" : "Start voice input"
         }
         accessibilityRole="button"
+        accessibilityState={{ disabled: !!disabled }}
         style={({ pressed }) => [
           styles.button,
           isListening

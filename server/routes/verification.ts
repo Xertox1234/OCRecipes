@@ -80,17 +80,14 @@ export function register(app: Express): void {
 
         // Get label data from existing session
         const session = storage.getLabelSession(sessionId);
-        if (!session) {
+        // Treat a cross-user session as not found to avoid disclosing existence
+        if (!session || session.userId !== req.userId) {
           return sendError(
             res,
             404,
             "Label session not found or expired",
             ErrorCode.NOT_FOUND,
           );
-        }
-
-        if (session.userId !== req.userId) {
-          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
         // Gate on OCR confidence
@@ -369,17 +366,14 @@ export function register(app: Express): void {
 
         // Get front-label session
         const session = frontLabelStore.get(sessionId);
-        if (!session) {
+        // Treat a cross-user session as not found to avoid disclosing existence
+        if (!session || session.userId !== req.userId) {
           return sendError(
             res,
             404,
             "Front-label session not found or expired",
             ErrorCode.NOT_FOUND,
           );
-        }
-
-        if (session.userId !== req.userId) {
-          return sendError(res, 403, "Not authorized", ErrorCode.UNAUTHORIZED);
         }
 
         if (session.barcode !== barcode) {

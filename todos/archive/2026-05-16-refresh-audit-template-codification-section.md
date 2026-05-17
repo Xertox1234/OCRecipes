@@ -1,6 +1,6 @@
 ---
 title: "Refresh stale paths in the audit manifest Codification section"
-status: backlog
+status: done
 priority: low
 created: 2026-05-16
 updated: 2026-05-16

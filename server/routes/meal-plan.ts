@@ -23,7 +23,10 @@ import {
   parseQueryString,
 } from "./_helpers";
 import { logger, toError } from "../lib/logger";
-import { generateMealPlanFromPantry } from "../services/pantry-meal-plan";
+import {
+  buildPantryMealPlanForUser,
+  EmptyPantryError,
+} from "../services/pantry-meal-plan";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { validateRecipeQuality } from "../lib/recipe-validation";
 import {
@@ -642,45 +645,21 @@ export function register(app: Express): void {
           return;
         }
 
-        // Fetch pantry items
-        const pantryItems = await storage.getPantryItems(req.userId);
-        if (pantryItems.length === 0) {
-          sendError(
-            res,
-            400,
-            "No pantry items available. Add items to your pantry first.",
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-
-        // Fetch user profile and goals
-        const [userProfile, user] = await Promise.all([
-          storage.getUserProfile(req.userId),
-          storage.getUser(req.userId),
-        ]);
-
-        const dailyTargets = {
-          calories: user?.dailyCalorieGoal ?? 2000,
-          protein: user?.dailyProteinGoal ?? 150,
-          carbs: user?.dailyCarbsGoal ?? 250,
-          fat: user?.dailyFatGoal ?? 67,
-        };
-
-        const householdSize =
-          (userProfile as { householdSize?: number } | null)?.householdSize ??
-          1;
-
-        const plan = await generateMealPlanFromPantry({
-          pantryItems,
-          userProfile: userProfile ?? null,
-          dailyTargets,
-          days: parsed.data.days,
-          householdSize,
-        });
+        const plan = await buildPantryMealPlanForUser(
+          req.userId,
+          parsed.data.days,
+        );
 
         res.json(plan);
       } catch (error) {
+        // Explicit catch: maps EmptyPantryError → 400 before the generic 500
+        // path. Not using handleRouteError here because aiResponseSchema
+        // parse failures inside the service must stay 500 (server-side AI
+        // failure), not be re-mapped to 400 by handleRouteError's ZodError arm.
+        if (error instanceof EmptyPantryError) {
+          sendError(res, 400, error.message, ErrorCode.VALIDATION_ERROR);
+          return;
+        }
         logger.error(
           { err: toError(error) },
           "generate meal plan from pantry failed",

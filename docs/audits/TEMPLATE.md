@@ -76,17 +76,24 @@ Items marked `deferred` must have a linked todo and rationale.
 
 Completed after fixes are committed. Each row links to the docs change.
 
-### Patterns Extracted
+### Solutions Extracted
 
-| Finding | Pattern | Added To             |
-| ------- | ------- | -------------------- |
-| —       | —       | `docs/patterns/?.md` |
+One new file per finding under `docs/solutions/<category>/`. Category is chosen by
+the nature of the finding — see the 7-way routing table in `.claude/skills/codify/SKILL.md`
+Step 5 (`runtime-errors`, `logic-errors`, `code-quality`, `performance-issues`,
+`conventions`, `design-patterns`, `best-practices`).
 
-### Learnings Extracted
+| Finding | Category | Added To                                         |
+| ------- | -------- | ------------------------------------------------ |
+| —       | —        | `docs/solutions/<category>/<slug>-YYYY-MM-DD.md` |
 
-| Finding | Learning Title | Category                                                     |
-| ------- | -------------- | ------------------------------------------------------------ |
-| —       | —              | Bug Post-Mortem / Gotcha / Security / Performance / Decision |
+### Rules Updates
+
+For CRITICAL/HIGH "never do X" findings that fit one bullet (Phase 8 step 5b).
+
+| Finding | Rules File               | New Rule Added |
+| ------- | ------------------------ | -------------- |
+| —       | `docs/rules/<domain>.md` | —              |
 
 ### Code Reviewer Updates
 
