@@ -94,23 +94,35 @@ else
     --tiers CRITICAL,WARNING 2>&1)
 fi
 
-# 8) Detect CRITICAL findings. kimi-review emits every real finding as
-#    `[TIER] path:line — description` (see the format block in the kimi-review
-#    script), so an actual CRITICAL finding carries the bracketed `[CRITICAL]`
-#    tag followed by a body. The discriminating signal is the *brackets*: the
-#    negative phrasing ("No CRITICAL or WARNING findings") and the clean-output
-#    message ("No findings in requested tiers: CRITICAL, WARNING") both contain
-#    the bare word CRITICAL but never the bracketed tag — so matching `[CRITICAL]`
-#    avoids the false blocks the old word-anywhere match tripped on.
+# 8) Detect CRITICAL findings. kimi-review prints a per-tier section header for
+#    EVERY requested tier — a clean run still emits the bracketed line
+#    `[CRITICAL] — No findings.`, whereas a real finding is
+#    `[CRITICAL] path:line — description`. So the bracketed `[CRITICAL]` tag is
+#    not a sufficient block signal on its own (that is the phantom-CRITICAL bug);
+#    we must also exclude the "No findings" sentinel. The commit is blocked when
+#    a `[CRITICAL]`-tagged line (a) has a non-space body — so a bare `[CRITICAL]`
+#    tag does not block — AND (b) is not a "no findings" line.
 #    The match is deliberately NOT anchored to line start: an LLM may decorate a
 #    finding line ("- [CRITICAL] ...", "**[CRITICAL]** ..."), and a quality gate
-#    should fail closed on those rather than let them through. The trailing
-#    `.*[^[:space:]]` requires at least one non-space character after the tag,
-#    so a bare `[CRITICAL]` with no finding body does not block. The literal `[`
+#    should fail closed on those rather than let them through. The literal `[`
 #    and `]` use POSIX bracket-expression escaping (`[[]`, `[]]`) rather than
 #    backslash escaping, so the pattern is portable across GNU and BSD grep
-#    without a GNU ERE extension.
-if printf '%s\n' "$REVIEW" | grep -Eq '[[]CRITICAL[]].*[^[:space:]]'; then
+#    without a GNU ERE extension. The second grep drops ONLY the tool-emitted
+#    per-tier sentinel header (`[CRITICAL] — No findings.`): it matches the
+#    bracketed tag followed by non-alphanumeric separators only, then "no
+#    findings". A real finding always carries an alphanumeric `path:line`
+#    between the tag and its description, so a finding whose description merely
+#    contains the phrase "no findings" still blocks (fail closed). A bare
+#    `grep -iv 'no findings'` would drop such a finding too. The exclude pattern
+#    stays pure-ASCII — the em-dash is consumed by `[^[:alnum:]]*`, not matched
+#    literally — so it too is portable across GNU and BSD grep.
+#    The result is captured (not piped into `grep -q`) so neither grep exits
+#    early — under `set -o pipefail` an early `-q` exit can SIGPIPE the upstream
+#    grep and surface a non-zero pipeline status that would silently skip the block.
+CRITICAL_FINDINGS=$(printf '%s\n' "$REVIEW" \
+  | grep -E '[[]CRITICAL[]].*[^[:space:]]' \
+  | grep -ivE '[[]CRITICAL[]][^[:alnum:]]*no findings')
+if [ -n "$CRITICAL_FINDINGS" ]; then
   # Block the commit and feed the full review body back to the model so it
   # can decide whether to amend, abort, or override.
   REASON=$(printf 'kimi-review blocked the commit — CRITICAL finding present.\n\n%s\n\n%s' \

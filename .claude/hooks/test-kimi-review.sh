@@ -17,7 +17,9 @@ PASS=0; FAIL=0
 #   warning           → a [WARNING] finding line
 #   noisy-prose       → lowercase "critical" in prose, no real finding
 #   negative-prose    → the model's "No CRITICAL or WARNING findings" phrasing
-#   clean             → kimi-review's real clean-output message
+#   clean             → kimi-review's clean-output message (prose phrasing)
+#   clean-tiered      → kimi-review's clean output as bracketed per-tier headers
+#   critical-no-findings-desc → a real [CRITICAL] finding whose description says "no findings"
 make_stub_path() {
   local mode="$1"
   local dir
@@ -34,6 +36,9 @@ case "$mode" in
   noisy-prose)      echo "no critical issues found in stub run";;
   negative-prose)   echo "No CRITICAL or WARNING findings";;
   clean)            echo "No findings in requested tiers: CRITICAL, WARNING";;
+  clean-tiered)     printf '[CRITICAL] — No findings.\n[WARNING] — No findings.\n';;
+  critical-no-findings-desc)
+                    echo "[CRITICAL] server/routes/foo.ts:42 — error handler swallows the error and returns no findings to the caller";;
 esac
 EOF
   chmod +x "$dir/kimi-review"
@@ -186,6 +191,21 @@ assert_not_contains "clean-output message ('...tiers: CRITICAL, WARNING') does N
 
 OUT=$(run_hook negative-prose '{"tool_input":{"command":"git commit -m x"}}')
 assert_not_contains "negative phrasing ('No CRITICAL or WARNING findings') does NOT block" "$OUT" '"permissionDecision": "deny"'
+
+# Regression: kimi-review's real clean output prints a bracketed per-tier
+# section header for every requested tier (`[CRITICAL] — No findings.`). That
+# header carries the bracketed `[CRITICAL]` tag with a body, so the tag alone
+# cannot be the block signal — the "No findings" sentinel must NOT block.
+OUT=$(run_hook clean-tiered '{"tool_input":{"command":"git commit -m x"}}')
+assert_not_contains "bracketed '[CRITICAL] — No findings.' header does NOT block" "$OUT" '"permissionDecision": "deny"'
+assert_contains "clean-tiered emits additionalContext" "$OUT" "additionalContext"
+
+# Regression: a real [CRITICAL] finding whose description happens to contain the
+# phrase "no findings" MUST still block. The sentinel filter has to key on the
+# sentinel's shape ([CRITICAL] followed only by non-alphanumeric separators),
+# not a bare "no findings" substring — otherwise it fails open on such findings.
+OUT=$(run_hook critical-no-findings-desc '{"tool_input":{"command":"git commit -m x"}}')
+assert_contains "[CRITICAL] finding with 'no findings' in its description still blocks" "$OUT" '"permissionDecision": "deny"'
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
