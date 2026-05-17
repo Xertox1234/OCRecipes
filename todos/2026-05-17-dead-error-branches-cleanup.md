@@ -21,9 +21,10 @@ that hide the divergence.
 ## Background
 
 `client/lib/query-client.ts` `apiRequest()` calls `throwIfResNotOk(res)` before
-returning, so it never returns a non-ok `Response`. Yet `useMealSuggestions.ts`
-and `useFavouriteRecipes.ts` both branch on `if (!res.ok)` / `res.status === 403`
-_after_ `await apiRequest(...)` — branches that can never execute in production.
+returning, so it never returns a non-ok `Response`. Yet `useMealSuggestions.ts`,
+`useFavouriteRecipes.ts`, and `useFoodParse.ts` all branch on `if (!res.ok)` /
+`res.status === 403` _after_ `await apiRequest(...)` — branches that can never
+execute in production.
 
 This was masked because the hook tests mock `apiRequest` to _resolve_ with an
 `{ ok: false, status }` object instead of throwing — a mock/prod divergence (see
@@ -37,7 +38,7 @@ This todo is the follow-up cleanup; it is not required for correctness.
 ## Acceptance Criteria
 
 - [ ] Remove the unreachable `if (!res.ok)` / `res.status === 403` blocks from
-      `useMealSuggestions.ts` and `useFavouriteRecipes.ts`.
+      `useMealSuggestions.ts`, `useFavouriteRecipes.ts`, and `useFoodParse.ts`.
 - [ ] Update `useMealSuggestions.test.ts` (and any sibling) so the `apiRequest`
       mock _rejects_ with an `ApiError` (matching production), not resolves with
       a non-ok object.
@@ -52,13 +53,19 @@ Relevant files:
 
 - `client/hooks/useMealSuggestions.ts`
 - `client/hooks/useFavouriteRecipes.ts`
+- `client/hooks/useFoodParse.ts`
 - `client/hooks/__tests__/useMealSuggestions.test.ts`
 - `client/hooks/__tests__/useFavouriteRecipes.test.ts` (if it asserts the limit path)
 
 `useFavouriteRecipes` currently re-throws a plain `Error("LIMIT_REACHED")` from
 its dead branch — verify whether any consumer matches on `error.message` before
 removing it. If a consumer relies on the message, migrate it to `error.code`
-first.
+first. `useFoodParse` re-throws a plain `Error(`${status}: ${body}`)`, which the
+`ApiError` from `apiRequest` already supersedes.
+
+Optional related cleanup: `client/lib/__tests__/query-client.test.ts` re-declares
+a private copy of `throwIfResNotOk` instead of exercising the real function —
+consider exporting the real one (env-deps permitting) to remove the divergence.
 
 ## Dependencies
 
