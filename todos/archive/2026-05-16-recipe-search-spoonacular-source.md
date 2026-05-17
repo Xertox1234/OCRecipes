@@ -1,9 +1,9 @@
 ---
 title: "Expose 'Online (Spoonacular)' source option in recipe search filter"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-16
-updated: 2026-05-16
+updated: 2026-05-17
 assignee:
 labels: [deferred, api]
 github_issue:

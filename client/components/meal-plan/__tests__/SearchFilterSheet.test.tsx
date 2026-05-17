@@ -69,6 +69,23 @@ describe("SearchFilterSheet", () => {
     expect(screen.getByText("All")).toBeDefined();
     expect(screen.getByText("My Recipes")).toBeDefined();
     expect(screen.getByText("Community")).toBeDefined();
+    expect(screen.getByText("Online")).toBeDefined();
+  });
+
+  it("calls onFiltersChange with spoonacular source when Online is selected", () => {
+    const onFiltersChange = vi.fn();
+    renderComponent(
+      <SearchFilterSheet
+        filters={defaultFilters}
+        onFiltersChange={onFiltersChange}
+        onReset={vi.fn()}
+        activeFilterCount={0}
+      />,
+    );
+    fireEvent.click(screen.getByText("Online"));
+    expect(onFiltersChange).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "spoonacular" }),
+    );
   });
 
   it("calls onReset when reset button is pressed", () => {
