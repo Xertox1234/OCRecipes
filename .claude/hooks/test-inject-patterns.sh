@@ -66,9 +66,9 @@ check "server/routes → security rules" \
   '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}' \
   "RULES — security"
 
-check "server/routes → pattern excerpt" \
+check "server/routes → solution references" \
   '{"tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}' \
-  "PATTERNS — api"
+  "SOLUTIONS — api"
 
 # typescript domain is suppressed when any more-specific domain matched (option (a)
 # from todos/archive/2026-05-12-pattern-injection-spill-on-multi-domain-edits.md).
