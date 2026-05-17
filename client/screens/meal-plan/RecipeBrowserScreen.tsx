@@ -361,9 +361,13 @@ export default function RecipeBrowserScreen() {
     loadMore,
     isFetchingNextPage,
     error: searchError,
+    refetch: refetchSearch,
   } = isOnlineSource ? catalogSearch : localSearch;
 
   const isQuotaExceeded = isOnlineSource && isQuotaExceededError(searchError);
+  // Any other catalog failure (server 500, network) — distinct from quota so
+  // the user gets a descriptive error + retry rather than a blank list.
+  const isOnlineError = isOnlineSource && !!searchError && !isQuotaExceeded;
 
   const addItemMutation = useAddMealPlanItem();
   const { data: favouriteData } = useFavouriteRecipeIds();
@@ -776,6 +780,19 @@ export default function RecipeBrowserScreen() {
             icon="cloud-off"
             title="Online search is temporarily unavailable"
             description="The recipe catalog has hit its usage limit. Please try again later or switch to a different source."
+          />
+        </View>
+      ) : isOnlineError ? (
+        <View style={styles.emptyContainer}>
+          <EmptyState
+            variant="noResults"
+            icon="alert-circle"
+            title="Couldn't load online recipes"
+            description="Something went wrong searching the online catalog. Check your connection and try again."
+            actionLabel="Retry"
+            onAction={() => {
+              refetchSearch();
+            }}
           />
         </View>
       ) : isOnlineSource && debouncedQuery.length === 0 ? (
