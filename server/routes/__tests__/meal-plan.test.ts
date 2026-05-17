@@ -9,12 +9,11 @@ import {
   createMockMealPlanItem,
   createMockScannedItem,
   createMockDailyLog,
-  createMockUser,
-  createMockPantryItem,
 } from "../../__tests__/factories";
 
 import {
-  generateMealPlanFromPantry,
+  buildPantryMealPlanForUser,
+  EmptyPantryError,
   type GeneratedMealPlan,
 } from "../../services/pantry-meal-plan";
 
@@ -50,9 +49,15 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
-vi.mock("../../services/pantry-meal-plan", () => ({
-  generateMealPlanFromPantry: vi.fn(),
-}));
+vi.mock("../../services/pantry-meal-plan", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../services/pantry-meal-plan")
+  >("../../services/pantry-meal-plan");
+  return {
+    buildPantryMealPlanForUser: vi.fn(),
+    EmptyPantryError: actual.EmptyPantryError,
+  };
+});
 
 vi.mock("../../storage/canonical-recipes", () => ({
   incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
@@ -716,11 +721,6 @@ describe("Meal Plan Routes", () => {
   // ============================================================================
 
   describe("POST /api/meal-plan/generate-from-pantry", () => {
-    const mockPantryItems = [
-      createMockPantryItem({ id: 1, name: "Chicken", category: "meat" }),
-      createMockPantryItem({ id: 2, name: "Rice", category: "grains" }),
-    ];
-
     const mockPlan: GeneratedMealPlan = {
       days: [
         {
@@ -774,7 +774,9 @@ describe("Meal Plan Routes", () => {
 
     it("returns 400 when pantry is empty", async () => {
       mockPremium();
-      vi.mocked(storage.getPantryItems).mockResolvedValue([]);
+      vi.mocked(buildPantryMealPlanForUser).mockRejectedValue(
+        new EmptyPantryError(),
+      );
 
       const res = await request(app)
         .post("/api/meal-plan/generate-from-pantry")
@@ -787,17 +789,7 @@ describe("Meal Plan Routes", () => {
 
     it("generates meal plan successfully", async () => {
       mockPremium();
-      vi.mocked(storage.getPantryItems).mockResolvedValue(mockPantryItems);
-      vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
-      vi.mocked(storage.getUser).mockResolvedValue(
-        createMockUser({
-          dailyCalorieGoal: 2000,
-          dailyProteinGoal: 150,
-          dailyCarbsGoal: 250,
-          dailyFatGoal: 67,
-        }),
-      );
-      vi.mocked(generateMealPlanFromPantry).mockResolvedValue(mockPlan);
+      vi.mocked(buildPantryMealPlanForUser).mockResolvedValue(mockPlan);
 
       const res = await request(app)
         .post("/api/meal-plan/generate-from-pantry")
@@ -806,7 +798,26 @@ describe("Meal Plan Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.days).toHaveLength(1);
-      expect(generateMealPlanFromPantry).toHaveBeenCalledTimes(1);
+      expect(buildPantryMealPlanForUser).toHaveBeenCalledTimes(1);
+      expect(buildPantryMealPlanForUser).toHaveBeenCalledWith(
+        expect.any(String),
+        3,
+      );
+    });
+
+    it("returns 500 when plan generation fails", async () => {
+      mockPremium();
+      vi.mocked(buildPantryMealPlanForUser).mockRejectedValue(
+        new Error("AI unavailable"),
+      );
+
+      const res = await request(app)
+        .post("/api/meal-plan/generate-from-pantry")
+        .set("Authorization", "Bearer token")
+        .send({ days: 3, startDate: "2026-03-15" });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toBe("Failed to generate meal plan");
     });
 
     it("returns 400 for invalid date format", async () => {
