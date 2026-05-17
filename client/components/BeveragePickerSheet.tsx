@@ -485,7 +485,7 @@ export function BeveragePickerSheet({
               ) : (
                 <View
                   style={styles.sizeRow}
-                  accessibilityRole="radiogroup"
+                  role="group"
                   accessibilityLabel="Size options"
                 >
                   {SIZE_KEYS.map((size) => {
@@ -494,8 +494,7 @@ export function BeveragePickerSheet({
                       <Pressable
                         key={size}
                         onPress={() => handleSizeSelect(size)}
-                        accessibilityRole="radio"
-                        accessibilityState={{ selected: false }}
+                        accessibilityRole="button"
                         accessibilityLabel={`${sizeData.label}, ${sizeData.oz} ounces`}
                         style={[
                           styles.sizeCard,
@@ -560,6 +559,7 @@ export function BeveragePickerSheet({
                 onPress={handleCustomSubmit}
                 disabled={!customInput.trim()}
                 accessibilityRole="button"
+                accessibilityState={{ disabled: !customInput.trim() }}
                 accessibilityLabel="Continue to size selection"
                 style={[
                   styles.customSubmit,

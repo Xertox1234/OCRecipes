@@ -21,13 +21,13 @@ The broad sweep found several smaller but user-visible accessibility gaps: a bot
 
 ## Acceptance Criteria
 
-- [ ] Add focus trapping semantics to the `RecipeBrowserScreen` filter bottom sheet.
-- [ ] Update `SimpleEntrySheet` validation to use invalid state and the project error announcement pattern.
-- [ ] Change `BatchSummaryScreen` radio state from `checked` to `selected`.
-- [ ] Add missing parent `radiogroup` semantics for verified radio groups.
-- [ ] Add selected state to beverage size radio options.
-- [ ] Add disabled accessibility state to verified disabled Pressables.
-- [ ] Run focused accessibility checks or targeted component tests for touched files.
+- [x] Add focus trapping semantics to the `RecipeBrowserScreen` filter bottom sheet.
+- [x] Update `SimpleEntrySheet` validation to use invalid state and the project error announcement pattern.
+- [x] Change `BatchSummaryScreen` radio state from `checked` to `selected`.
+- [x] Add missing parent `radiogroup` semantics for verified radio groups.
+- [x] Add selected state to beverage size radio options.
+- [x] Add disabled accessibility state to verified disabled Pressables.
+- [x] Run focused accessibility checks or targeted component tests for touched files.
 
 ## Implementation Notes
 
@@ -61,3 +61,17 @@ Keep this separate from H4, which tracks root modal `accessibilityViewIsModal` o
 ### 2026-05-16
 
 - Created from broad-sweep audit findings M11, M12, M13, M14, M15, and L6.
+
+### 2026-05-17
+
+- Most criteria were already resolved by PR #198 (`48e0eb81 fix: resolve
+accessibility followups from broad sweep`): RecipeBrowserScreen sheet
+  `accessibilityViewIsModal`, SimpleEntrySheet `InlineError` + `aria-invalid`,
+  BatchSummaryScreen `{ selected }` radio state, and parent `radiogroup`
+  wrappers on all verified radio groups.
+- This run closed the remaining gaps: BeveragePickerSheet size options
+  switched from misleading static `accessibilityState={{ selected: false }}`
+  radios to plain `button` role (size selection is fire-and-forget — there is
+  no persistent selected state); SimpleEntrySheet servings stepper, the
+  BeveragePickerSheet custom-input submit, and the RecipeBrowserScreen recipe
+  card now set `accessibilityState.disabled` alongside the `disabled` prop.

@@ -323,6 +323,7 @@ function SimpleEntrySheetInner({
               hitSlop={4}
               disabled={servings <= 1}
               accessibilityRole="button"
+              accessibilityState={{ disabled: servings <= 1 }}
               accessibilityLabel="Decrease servings"
             >
               <Feather
@@ -354,6 +355,7 @@ function SimpleEntrySheetInner({
               hitSlop={4}
               disabled={servings >= 99}
               accessibilityRole="button"
+              accessibilityState={{ disabled: servings >= 99 }}
               accessibilityLabel="Increase servings"
             >
               <Feather
