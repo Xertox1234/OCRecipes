@@ -48,14 +48,14 @@ export function GroceryListPickerModal({
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
   const { data: lists, isLoading } = useGroceryLists();
-  const createList = useCreateGroceryList();
-  const addItem = useAddManualGroceryItem();
+  const { mutate: createListMutate, isPending: isCreating } =
+    useCreateGroceryList();
+  const { mutate: addItemMutate, isPending: isAdding } =
+    useAddManualGroceryItem();
 
   const [showNewListInput, setShowNewListInput] = useState(false);
   const [newListTitle, setNewListTitle] = useState("");
   const [addingToListId, setAddingToListId] = useState<number | null>(null);
-
-  const isAdding = addItem.isPending;
 
   // Reset local state when modal is dismissed
   useEffect(() => {
@@ -70,7 +70,7 @@ export function GroceryListPickerModal({
     (listId: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setAddingToListId(listId);
-      addItem.mutate(
+      addItemMutate(
         { listId, name: itemName, category: "food" },
         {
           onSuccess: () => {
@@ -89,7 +89,7 @@ export function GroceryListPickerModal({
         },
       );
     },
-    [haptics, addItem, itemName, onClose],
+    [haptics, addItemMutate, itemName, onClose],
   );
 
   const handleCreateAndAdd = useCallback(() => {
@@ -100,7 +100,7 @@ export function GroceryListPickerModal({
     );
 
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    createList.mutate(
+    createListMutate(
       { startDate: today, endDate: nextWeek, title },
       {
         onSuccess: (list) => {
@@ -114,7 +114,7 @@ export function GroceryListPickerModal({
         },
       },
     );
-  }, [haptics, createList, newListTitle, handleAddToList]);
+  }, [haptics, createListMutate, newListTitle, handleAddToList]);
 
   const handleClose = useCallback(() => {
     setShowNewListInput(false);
@@ -256,18 +256,18 @@ export function GroceryListPickerModal({
             />
             <Pressable
               onPress={handleCreateAndAdd}
-              disabled={createList.isPending}
+              disabled={isCreating}
               style={[
                 styles.createButton,
                 {
                   backgroundColor: theme.success,
-                  opacity: createList.isPending ? 0.6 : 1,
+                  opacity: isCreating ? 0.6 : 1,
                 },
               ]}
               accessibilityRole="button"
               accessibilityLabel="Create list and add item"
             >
-              {createList.isPending ? (
+              {isCreating ? (
                 <ActivityIndicator size="small" color={theme.buttonText} />
               ) : (
                 <ThemedText style={{ color: theme.buttonText }}>
