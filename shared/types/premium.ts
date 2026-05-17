@@ -50,6 +50,10 @@ export interface PremiumFeatures {
   catalogSave: boolean;
   /** Import a recipe from an arbitrary URL (triggers AI image generation). */
   urlImport: boolean;
+  /** Parse natural-language text into food items via AI (`/api/food/parse-text`). */
+  textFoodParsing: boolean;
+  /** AI-generated item suggestions and their step-by-step instructions. */
+  itemSuggestions: boolean;
 }
 
 /** Represents effectively unlimited scans (JSON-safe alternative to Infinity). */
@@ -92,6 +96,8 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     maxFavouriteRecipes: 20,
     catalogSave: false,
     urlImport: false,
+    textFoodParsing: false,
+    itemSuggestions: false,
   },
   premium: {
     maxDailyScans: UNLIMITED_SCANS,
@@ -129,6 +135,8 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     maxFavouriteRecipes: UNLIMITED_SCANS,
     catalogSave: true,
     urlImport: true,
+    textFoodParsing: true,
+    itemSuggestions: true,
   },
 };
 
