@@ -263,6 +263,29 @@ describe("Photos Routes", () => {
       expect(res.status).toBe(404);
     });
 
+    it("returns 404 (not 403) for another user's session to hide existence", async () => {
+      // Seed a session owned by a different user. The auth mock sets req.userId
+      // to "1", so this session is cross-user.
+      _testInternals.analysisSessionStore.set("other-user-followup", {
+        userId: "other-user",
+        result: { foods: [], overallConfidence: 0.9, followUpQuestions: [] },
+        createdAt: Date.now(),
+      });
+
+      const res = await request(app)
+        .post("/api/photos/analyze/other-user-followup/followup")
+        .set("Authorization", "Bearer token")
+        .send({ question: "What type?", answer: "Granny Smith" });
+
+      // Response must be byte-for-byte identical to a missing session so an
+      // attacker cannot distinguish "exists, not yours" from "does not exist".
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({
+        error: "Session not found or expired",
+        code: "NOT_FOUND",
+      });
+    });
+
     it("returns 400 for missing fields", async () => {
       const res = await request(app)
         .post("/api/photos/analyze/some-id/followup")
@@ -395,6 +418,107 @@ describe("Photos Routes", () => {
         });
 
       expect(res.status).toBe(500);
+    });
+
+    it("ignores another user's session instead of leaking its existence", async () => {
+      // A cross-user session must be treated as if it did not exist: the
+      // request proceeds (same as a missing session) without surfacing the
+      // session's confidence — never a distinguishable 403.
+      _testInternals.analysisSessionStore.set("other-user-confirm", {
+        userId: "other-user",
+        result: { foods: [], overallConfidence: 0.95, followUpQuestions: [] },
+        createdAt: Date.now(),
+      });
+
+      const mockItem = createMockScannedItem({
+        id: 99,
+        userId: "1",
+        productName: "Apple",
+        sourceType: "photo",
+      });
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(mockItem);
+
+      const res = await request(app)
+        .post("/api/photos/confirm")
+        .set("Authorization", "Bearer token")
+        .send({
+          sessionId: "other-user-confirm",
+          foods: [
+            {
+              name: "Apple",
+              quantity: "1",
+              calories: 95,
+              protein: 0,
+              carbs: 25,
+              fat: 0,
+            },
+          ],
+        });
+
+      expect(res.status).toBe(201);
+      // The cross-user session's confidence must NOT be applied. The top-level
+      // beforeEach clears the in-memory analysis store between tests.
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({ aiConfidence: undefined }),
+        expect.anything(),
+      );
+    });
+  });
+
+  describe("POST /api/photos/confirm-label", () => {
+    it("returns 404 for a missing label session", async () => {
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId: "nonexistent", servingsConsumed: 1 });
+
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({
+        error: "Session not found or expired",
+        code: "NOT_FOUND",
+      });
+    });
+
+    it("returns 404 (not 403) for another user's label session", async () => {
+      // Seed via the real store with a session owned by a different user.
+      // Capture the generated id directly rather than scanning the store.
+      const otherSessionId = storage.createLabelSession(
+        "other-user",
+        {
+          servingSize: "1 cup",
+          servingsPerContainer: 2,
+          calories: 100,
+          totalFat: 2,
+          saturatedFat: 0,
+          transFat: 0,
+          cholesterol: 0,
+          sodium: 50,
+          totalCarbs: 10,
+          dietaryFiber: 1,
+          totalSugars: 3,
+          addedSugars: 0,
+          protein: 5,
+          vitaminD: 0,
+          calcium: 0,
+          iron: 0,
+          potassium: 0,
+          confidence: 0.9,
+          productName: "Other User Snack",
+        },
+        "1234567890",
+      );
+
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId: otherSessionId, servingsConsumed: 1 });
+
+      // Identical to the missing-session response — existence stays hidden.
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({
+        error: "Session not found or expired",
+        code: "NOT_FOUND",
+      });
     });
   });
 

@@ -173,6 +173,33 @@ describe("Verification Routes", () => {
       expect(res.status).toBe(404);
     });
 
+    it("returns 404 (not 403) for another user's front-label session", async () => {
+      // Auth mock sets req.userId to "1"; this session is owned by another user.
+      _testInternals.frontLabelSessionStore.set("other-user-session", {
+        userId: "other-user",
+        data: {
+          brand: "Test",
+          productName: "Product",
+          netWeight: "100g",
+          claims: [],
+          confidence: 0.9,
+        },
+        barcode: "1234567890",
+        createdAt: Date.now(),
+      });
+
+      const res = await request(app)
+        .post("/api/verification/front-label/confirm")
+        .send({ barcode: "1234567890", sessionId: "other-user-session" });
+
+      // Must be indistinguishable from a missing session.
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({
+        error: "Front-label session not found or expired",
+        code: "NOT_FOUND",
+      });
+    });
+
     it("returns 400 when barcode does not match session", async () => {
       // Manually create a session
       _testInternals.frontLabelSessionStore.set("test-session", {
@@ -333,6 +360,16 @@ describe("Verification Routes", () => {
   });
 
   describe("POST /api/verification/submit", () => {
+    afterEach(async () => {
+      // Guarantee the shared label-session store is emptied even if an
+      // assertion throws mid-test, so seeded sessions never leak forward.
+      const { _testInternals: sessionInternals } = await import(
+        "../../storage/sessions"
+      );
+      sessionInternals.labelSessionStore.clear();
+      sessionInternals.userLabelSessionCount.clear();
+    });
+
     it("includes canScanFrontLabel in response", async () => {
       const { _testInternals: sessionInternals } = await import(
         "../../storage/sessions"
@@ -375,6 +412,50 @@ describe("Verification Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.canScanFrontLabel).toBe(true);
+    });
+
+    it("returns 404 (not 403) for another user's label session", async () => {
+      const { _testInternals: sessionInternals } = await import(
+        "../../storage/sessions"
+      );
+      // Auth mock sets req.userId to "1"; this session is owned by another user.
+      sessionInternals.labelSessionStore.set("other-user-label", {
+        userId: "other-user",
+        labelData: {
+          servingSize: "1 cup",
+          servingsPerContainer: 1,
+          calories: 200,
+          totalFat: 8,
+          saturatedFat: 2,
+          transFat: 0,
+          cholesterol: null,
+          sodium: null,
+          totalCarbs: 25,
+          dietaryFiber: null,
+          totalSugars: null,
+          addedSugars: null,
+          protein: 10,
+          vitaminD: null,
+          calcium: null,
+          iron: null,
+          potassium: null,
+          confidence: 0.9,
+          productName: "Other User Product",
+        },
+        barcode: "1234567890",
+        createdAt: Date.now(),
+      });
+
+      const res = await request(app)
+        .post("/api/verification/submit")
+        .send({ barcode: "1234567890", sessionId: "other-user-label" });
+
+      // Must be indistinguishable from a missing session.
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({
+        error: "Label session not found or expired",
+        code: "NOT_FOUND",
+      });
     });
   });
 
