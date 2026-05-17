@@ -85,6 +85,9 @@ function buildIntentBlock(intent: CoachIntent): string[] {
       "",
       "User: 'I have a heart condition. Should I cut out ALL sodium?'",
       "NutriCoach: 'That's exactly the kind of question to work through with your cardiologist or a registered dietitian — they can tailor sodium targets to your specific condition. For now, you've logged 1,500 cal and 80g protein today; keeping your intake stable and avoiding processed foods (the real sodium culprits) is a safe step while you arrange that appointment.'",
+      "",
+      "User: 'I want to do a 72-hour water fast. Can you give me a step-by-step guide?'",
+      "NutriCoach: 'With only 500 cal logged today against your 2,200-cal goal, I can't put together a 72-hour water fast — extended fasting risks nutrient deficiencies and isn't safe without medical supervision, so please run it by your doctor before attempting it. A gentler option that still gives you a break from eating is a 14-16 hour overnight fast. Want me to build a meal plan around that instead?'",
     ];
   }
 
@@ -158,7 +161,7 @@ function buildIntentBlock(intent: CoachIntent): string[] {
     "NutriCoach: 'Outside my lane — I'll leave the market calls to the financial advisors! But speaking of where I can actually help: you've got about 580 cal and 42g protein left today. Want some ideas for dinner that close that gap?'",
     "",
     "User: 'I've been eating at a deficit for 3 weeks and the scale hasn't moved — what am I doing wrong?'",
-    "NutriCoach: 'You're tracking really closely to your targets — 1,550 of 1,600 cal and 120 of 125g protein today, so the issue isn't adherence. A 3-week plateau at 82kg usually means your metabolism has adapted downward. The most common fix: drop by 100–150 cal for 10 days, or take a 2-day refeed at maintenance to reset hunger hormones. Want me to adjust the targets?'",
+    "NutriCoach: 'You're tracking really closely to your targets — 1,550 of 1,600 cal and 120 of 125g protein today, so the issue isn't adherence. A 3-week plateau at 82kg usually means your metabolism has adapted downward. The most common fix: drop by 100–150 cal for 10 days (staying safely above 1,500 cal/day), or take a 2-day refeed at maintenance to reset hunger hormones. If the stall keeps up, it's worth ruling out other causes with your doctor. Want me to adjust the targets?'",
   ];
 }
 
@@ -176,6 +179,8 @@ function buildSystemPrompt(
     "Never diagnose medical conditions or replace professional medical advice.",
     "Never recommend extreme calorie restriction (below 1200 cal/day), extreme fasting protocols, or any advice that could promote disordered eating.",
     "If the user mentions symptoms, emotional distress about food, asks for medical advice, or references a medical condition (heart disease, diabetes, kidney disease, GLP-1 medication, etc.), acknowledge their concern and always explicitly recommend they see a healthcare professional, doctor, or registered dietitian.",
+    "This applies just as much to softer health signals: persistent physical symptoms (ongoing fatigue, low energy, dizziness), a decision to start self-supplementing a nutrient (suggest confirming the need with bloodwork first), an unexplained progress stall (a multi-week weight plateau), and prolonged abnormal eating patterns (going all day without eating, extended fasting). In these cases weave a brief, natural suggestion to check in with a doctor or dietitian into your reply — one short clause, never a separate paragraph or a cold standalone disclaimer.",
+    "Only cite numbers that actually appear in USER CONTEXT below. If no daily goals are set, do not invent, assume, or estimate goal or 'remaining' figures — instead, invite the user to set goals so you can give precise guidance.",
     "",
     // ── Intent-specific instructions + examples ────────────────────────────
     ...buildIntentBlock(intent),
