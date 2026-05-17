@@ -37,7 +37,7 @@ export async function getWeightLogs(
 export async function createWeightLog(
   log: InsertWeightLog,
 ): Promise<WeightLog> {
-  // The unique index keys on (user_id, DATE(logged_at)) -- a functional index
+  // The unique index keys on (user_id, DATE(logged_at AT TIME ZONE 'UTC')) -- a functional index
   // that Drizzle's typed `target:` array cannot reference directly.
   // Use raw SQL so PostgreSQL resolves the conflict against the expression index.
   const result = await db.execute<WeightLog>(
@@ -49,7 +49,7 @@ export async function createWeightLog(
           ${log.source ?? "manual"},
           ${log.note ?? null}
         )
-        ON CONFLICT (user_id, DATE(logged_at))
+        ON CONFLICT (user_id, DATE(logged_at AT TIME ZONE 'UTC'))
         DO UPDATE SET
           weight = EXCLUDED.weight,
           unit   = EXCLUDED.unit,
@@ -74,7 +74,7 @@ export async function createWeightLogAndUpdateUser(
             ${log.source ?? "manual"},
             ${log.note ?? null}
           )
-          ON CONFLICT (user_id, DATE(logged_at))
+          ON CONFLICT (user_id, DATE(logged_at AT TIME ZONE 'UTC'))
           DO UPDATE SET
             weight = EXCLUDED.weight,
             unit   = EXCLUDED.unit,
