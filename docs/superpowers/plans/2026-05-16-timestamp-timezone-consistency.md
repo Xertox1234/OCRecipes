@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Convert all 77 naked `timestamp` columns in `shared/schema.ts` to `timestamptz` (`{ withTimezone: true }`) so the whole schema uses one timezone-aware strategy.
+**Goal:** Convert all 78 naked `timestamp` columns in `shared/schema.ts` to `timestamptz` (`{ withTimezone: true }`) so the whole schema uses one timezone-aware strategy.
 
 **Architecture:** A hand-written SQL migration (`migrations/0002_*.sql`) does the column type changes under a `SET LOCAL timezone='UTC'` transaction — correct and rewrite-free on PG12+. The two `DATE()` expression indexes are rewritten to an immutable `DATE(col AT TIME ZONE 'UTC')` form (because `DATE(timestamptz)` is not `IMMUTABLE`), and the matching `ON CONFLICT` clauses in `server/storage/health.ts` move in lockstep. The Drizzle schema is updated so fresh `db:push` produces the same result.
 
@@ -15,7 +15,7 @@
 ## File Structure
 
 - **Create** `migrations/0002_timestamps_to_timestamptz.sql` — the manual migration for existing populated databases.
-- **Modify** `shared/schema.ts` — 77 columns gain `{ withTimezone: true }`; 2 expression indexes gain `AT TIME ZONE 'UTC'`; remove the resolved tracking comment.
+- **Modify** `shared/schema.ts` — 78 columns gain `{ withTimezone: true }`; 2 expression indexes gain `AT TIME ZONE 'UTC'`; remove the resolved tracking comment.
 - **Modify** `server/storage/health.ts` — 2 raw-SQL `ON CONFLICT` clauses + 1 comment.
 - **Modify** `server/storage/__tests__/weight-log-dedup.test.ts` — 2 assertions (the TDD anchor).
 - **Modify** `server/db.ts` — reword the pool-options comment (cosmetic).
@@ -59,6 +59,7 @@ ALTER TABLE users ALTER COLUMN goals_calculated_at TYPE timestamptz;
 ALTER TABLE users ALTER COLUMN last_goal_adjustment_at TYPE timestamptz;
 ALTER TABLE users ALTER COLUMN subscription_expires_at TYPE timestamptz;
 ALTER TABLE users ALTER COLUMN created_at TYPE timestamptz;
+ALTER TABLE user_profiles ALTER COLUMN glp1_start_date TYPE timestamptz;
 ALTER TABLE user_profiles ALTER COLUMN health_data_consent_at TYPE timestamptz;
 ALTER TABLE user_profiles ALTER COLUMN created_at TYPE timestamptz;
 ALTER TABLE user_profiles ALTER COLUMN updated_at TYPE timestamptz;
@@ -146,7 +147,7 @@ COMMIT;
 - [ ] **Step 2: Sanity-check the file**
 
 Run: `grep -c '^ALTER TABLE' migrations/0002_timestamps_to_timestamptz.sql`
-Expected: `77`
+Expected: `78`
 
 Run: `grep -c 'CREATE UNIQUE INDEX' migrations/0002_timestamps_to_timestamptz.sql`
 Expected: `2`
@@ -162,13 +163,13 @@ git commit -m "feat(db): add migration to convert timestamp columns to timestamp
 
 ## Task 2: Migrate schema + storage to timestamptz
 
-This is the atomic change. The 77 column conversions, the 2 index-expression fixes, and the 2 `ON CONFLICT` clause changes in `health.ts` **must ship in one commit** — any partial state either breaks a fresh `db:push` or breaks weight-log upserts at runtime. Start with the test (TDD), since `weight-log-dedup.test.ts` already asserts the old `ON CONFLICT` expression.
+This is the atomic change. The 78 column conversions, the 2 index-expression fixes, and the 2 `ON CONFLICT` clause changes in `health.ts` **must ship in one commit** — any partial state either breaks a fresh `db:push` or breaks weight-log upserts at runtime. Start with the test (TDD), since `weight-log-dedup.test.ts` already asserts the old `ON CONFLICT` expression.
 
 **Files:**
 
 - Modify: `server/storage/__tests__/weight-log-dedup.test.ts`
 - Modify: `server/storage/health.ts:40,52,77`
-- Modify: `shared/schema.ts` (77 columns + indexes at `123` and `946` + comment at `363-365`)
+- Modify: `shared/schema.ts` (78 columns + indexes at `123` and `946` + comment at `363-365`)
 
 - [ ] **Step 1: Update the failing test assertions**
 
@@ -216,7 +217,7 @@ becomes:
 Run: `npx vitest run server/storage/__tests__/weight-log-dedup.test.ts`
 Expected: PASS — all tests green.
 
-- [ ] **Step 5: Convert the 77 timestamp columns in `shared/schema.ts`**
+- [ ] **Step 5: Convert the 78 timestamp columns in `shared/schema.ts`**
 
 Run this in-place regex transform. It matches only the **1-argument** form `timestamp("name")`, so the already-2-argument `savedItems.createdAt` (`timestamp("created_at", { withTimezone: true })`) is left untouched:
 
@@ -227,7 +228,7 @@ perl -i -pe 's/timestamp\("([a-z0-9_]+)"\)/timestamp("$1", { withTimezone: true 
 - [ ] **Step 6: Verify the transform**
 
 Run: `grep -oE 'withTimezone: true' shared/schema.ts | wc -l`
-Expected: `78` (77 newly converted + the 1 pre-existing `savedItems.createdAt`).
+Expected: `79` (78 newly converted + the 1 pre-existing `savedItems.createdAt`).
 
 Run: `grep -cE 'timestamp\("[a-z0-9_]+"\)' shared/schema.ts`
 Expected: `0` (no 1-argument `timestamp()` calls remain).
@@ -370,7 +371,7 @@ The PR description must call out step 1 as a required manual step before deploy.
 
 **Spec coverage:**
 
-- "All timestamp columns use the same strategy" → Task 2 Steps 5-6 (77 columns) + Task 1 (migration). ✓
+- "All timestamp columns use the same strategy" → Task 2 Steps 5-6 (78 columns) + Task 1 (migration). ✓
 - "Migration handles existing data correctly" → Task 1 (`SET LOCAL timezone='UTC'`, no-rewrite fast path). ✓
 - "Existing tests pass" → Task 2 Step 10. ✓
 - Expression index immutability → Task 2 Step 7 + Task 1 (DROP/CREATE INDEX). ✓
@@ -379,7 +380,7 @@ The PR description must call out step 1 as a required manual step before deploy.
 - Tracking comment removed → Task 2 Step 8. ✓
 - Verification query returns 0 → Post-implementation step 3. ✓
 
-**Placeholder scan:** No TBD/TODO; the full 77-line `ALTER` list and every edit's before/after text are inline. ✓
+**Placeholder scan:** No TBD/TODO; the full 78-line `ALTER` list and every edit's before/after text are inline. ✓
 
 **Type consistency:** `{ withTimezone: true }`, `AT TIME ZONE 'UTC'`, and `DATE(logged_at AT TIME ZONE 'UTC')` are used identically across the schema, migration, `health.ts`, and the test. ✓
 
