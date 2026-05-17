@@ -483,7 +483,11 @@ export function BeveragePickerSheet({
                   </ThemedText>
                 </View>
               ) : (
-                <View style={styles.sizeRow} accessibilityLabel="Size options">
+                <View
+                  style={styles.sizeRow}
+                  role="group"
+                  accessibilityLabel="Size options"
+                >
                   {SIZE_KEYS.map((size) => {
                     const sizeData = BEVERAGE_SIZES[size];
                     return (
