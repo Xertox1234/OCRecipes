@@ -66,7 +66,7 @@ describe("createWeightLog (M9 — date-based dedup)", () => {
       ? calledSql.toSQL()
       : { text: JSON.stringify(calledSql) };
     expect(text).toContain("ON CONFLICT");
-    expect(text).toContain("DATE(logged_at)");
+    expect(text).toContain("DATE(logged_at AT TIME ZONE 'UTC')");
     expect(text).toContain("DO UPDATE SET");
   });
 
@@ -109,6 +109,6 @@ describe("createWeightLogAndUpdateUser (M9 — transactional dedup)", () => {
       ? calledSql.toSQL()
       : { text: JSON.stringify(calledSql) };
     expect(text).toContain("ON CONFLICT");
-    expect(text).toContain("DATE(logged_at)");
+    expect(text).toContain("DATE(logged_at AT TIME ZONE 'UTC')");
   });
 });

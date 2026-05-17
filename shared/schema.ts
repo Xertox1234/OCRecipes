@@ -42,14 +42,18 @@ export const users = pgTable("users", {
   age: integer("age"),
   gender: text("gender"),
   goalWeight: decimal("goal_weight", { precision: 6, scale: 2 }),
-  goalsCalculatedAt: timestamp("goals_calculated_at"),
+  goalsCalculatedAt: timestamp("goals_calculated_at", { withTimezone: true }),
   adaptiveGoalsEnabled: boolean("adaptive_goals_enabled").default(false),
-  lastGoalAdjustmentAt: timestamp("last_goal_adjustment_at"),
+  lastGoalAdjustmentAt: timestamp("last_goal_adjustment_at", {
+    withTimezone: true,
+  }),
   onboardingCompleted: boolean("onboarding_completed").default(false),
   tokenVersion: integer("token_version").default(0).notNull(),
   subscriptionTier: text("subscription_tier").default("free"),
-  subscriptionExpiresAt: timestamp("subscription_expires_at"),
-  createdAt: timestamp("created_at")
+  subscriptionExpiresAt: timestamp("subscription_expires_at", {
+    withTimezone: true,
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
 });
@@ -81,16 +85,18 @@ export const userProfiles = pgTable("user_profiles", {
   cookingTimeAvailable: text("cooking_time_available"),
   glp1Mode: boolean("glp1_mode").default(false),
   glp1Medication: text("glp1_medication"),
-  glp1StartDate: timestamp("glp1_start_date"),
-  healthDataConsentAt: timestamp("health_data_consent_at"),
+  glp1StartDate: timestamp("glp1_start_date", { withTimezone: true }),
+  healthDataConsentAt: timestamp("health_data_consent_at", {
+    withTimezone: true,
+  }),
   reminderMutes: jsonb("reminder_mutes")
     .$type<ReminderMutes>()
     .default(sql`'{}'::jsonb`)
     .notNull(),
-  createdAt: timestamp("created_at")
+  createdAt: timestamp("created_at", { withTimezone: true })
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
-  updatedAt: timestamp("updated_at")
+  updatedAt: timestamp("updated_at", { withTimezone: true })
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
 });
@@ -107,9 +113,9 @@ export const pendingReminders = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default(sql`'{}'::jsonb`),
-    scheduledFor: timestamp("scheduled_for").notNull(),
-    acknowledgedAt: timestamp("acknowledged_at"),
-    createdAt: timestamp("created_at")
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -120,7 +126,11 @@ export const pendingReminders = pgTable(
     ),
     // Partial index mirrors hasPendingReminderToday() semantics: one unacknowledged reminder per user+type per calendar day.
     userTypeDay: uniqueIndex("pending_reminders_user_type_day_idx")
-      .on(table.userId, table.type, sql`DATE(${table.scheduledFor})`)
+      .on(
+        table.userId,
+        table.type,
+        sql`DATE(${table.scheduledFor} AT TIME ZONE 'UTC')`,
+      )
       .where(sql`${table.acknowledgedAt} IS NULL`),
   }),
 );
@@ -156,10 +166,10 @@ export const scannedItems = pgTable(
       { name: string; method: string }[]
     >(),
     analysisIntent: text("analysis_intent"),
-    scannedAt: timestamp("scanned_at")
+    scannedAt: timestamp("scanned_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    discardedAt: timestamp("discarded_at"),
+    discardedAt: timestamp("discarded_at", { withTimezone: true }),
   },
   (table) => ({
     userActiveIdx: index("scanned_items_user_active_idx")
@@ -202,7 +212,7 @@ export const dailyLogs = pgTable(
     source: text("source").notNull().default("scan"),
     servings: decimal("servings", { precision: 5, scale: 2 }).default("1"),
     mealType: text("meal_type"),
-    loggedAt: timestamp("logged_at")
+    loggedAt: timestamp("logged_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -240,10 +250,10 @@ export const nutritionCache = pgTable(
     source: varchar("source", { length: 50 }).notNull(),
     data: jsonb("data").notNull(),
     hitCount: integer("hit_count").default(0),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => ({
     queryKeyIdx: index("nutrition_cache_query_key_idx").on(table.queryKey),
@@ -258,10 +268,10 @@ export const micronutrientCache = pgTable(
     queryKey: varchar("query_key", { length: 255 }).notNull().unique(),
     data: jsonb("data").notNull(),
     hitCount: integer("hit_count").default(0),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => ({
     queryKeyIdx: index("micronutrient_cache_query_key_idx").on(table.queryKey),
@@ -294,10 +304,10 @@ export const suggestionCache = pgTable(
     profileHash: varchar("profile_hash", { length: 64 }).notNull(),
     suggestions: jsonb("suggestions").$type<SuggestionData[]>().notNull(),
     hitCount: integer("hit_count").default(0),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => ({
     itemUserProfileIdx: uniqueIndex(
@@ -320,7 +330,7 @@ export const instructionCache = pgTable(
     suggestionType: text("suggestion_type").notNull(),
     instructions: text("instructions").notNull(),
     hitCount: integer("hit_count").default(0),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -360,9 +370,7 @@ export const savedItems = pgTable(
     }),
     sourceProductName: text("source_product_name"),
 
-    // Metadata — withTimezone intentionally kept to preserve existing timestamptz column.
-    // TODO: Migrate all timestamp columns to withTimezone for consistency.
-    //   Tracked: todos/2026-03-27-timestamp-timezone-consistency.md
+    // Metadata
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -459,7 +467,7 @@ export const favouriteScannedItems = pgTable(
     scannedItemId: integer("scanned_item_id")
       .references(() => scannedItems.id, { onDelete: "cascade" })
       .notNull(),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -495,7 +503,7 @@ export const favouriteRecipes = pgTable(
       .notNull(),
     recipeId: integer("recipe_id").notNull(),
     recipeType: text("recipe_type").notNull(), // "mealPlan" | "community"
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -557,10 +565,10 @@ export const communityRecipes = pgTable(
       { onDelete: "set null" },
     ),
     remixedFromTitle: text("remixed_from_title"),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
     sourceMessageId: integer("source_message_id"),
@@ -575,8 +583,10 @@ export const communityRecipes = pgTable(
 
     // Promotion state
     isCanonical: boolean("is_canonical").default(false).notNull(),
-    canonicalizedAt: timestamp("canonicalized_at"),
-    canonicalEnrichedAt: timestamp("canonical_enriched_at"),
+    canonicalizedAt: timestamp("canonicalized_at", { withTimezone: true }),
+    canonicalEnrichedAt: timestamp("canonical_enriched_at", {
+      withTimezone: true,
+    }),
 
     // Canonical content (only populated after enrichment)
     canonicalImages: jsonb("canonical_images").$type<string[]>().default([]),
@@ -648,7 +658,7 @@ export const recipeGenerationLog = pgTable(
     recipeId: integer("recipe_id").references(() => communityRecipes.id, {
       onDelete: "set null",
     }),
-    generatedAt: timestamp("generated_at")
+    generatedAt: timestamp("generated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -681,7 +691,7 @@ export const tastePicks = pgTable(
     recipeId: integer("recipe_id")
       .notNull()
       .references(() => communityRecipes.id, { onDelete: "cascade" }),
-    pickedAt: timestamp("picked_at")
+    pickedAt: timestamp("picked_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -777,10 +787,10 @@ export const mealPlanRecipes = pgTable(
       precision: 10,
       scale: 2,
     }),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -856,7 +866,7 @@ export const mealPlanItems = pgTable(
     mealType: text("meal_type").notNull(),
     servings: decimal("servings", { precision: 5, scale: 2 }).default("1"),
     sortOrder: integer("sort_order").default(0),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -934,7 +944,7 @@ export const weightLogs = pgTable(
     unit: text("unit").default("lb").notNull(),
     source: text("source").default("manual"),
     note: text("note"),
-    loggedAt: timestamp("logged_at")
+    loggedAt: timestamp("logged_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -943,7 +953,7 @@ export const weightLogs = pgTable(
     // multiple entries at different times on the same day collapse to one row.
     userDateIdx: uniqueIndex("weight_logs_user_date_idx").on(
       table.userId,
-      sql`DATE(${table.loggedAt})`,
+      sql`DATE(${table.loggedAt} AT TIME ZONE 'UTC')`,
     ),
   }),
 );
@@ -968,7 +978,7 @@ export const healthKitSync = pgTable(
       .notNull(),
     dataType: text("data_type").notNull(),
     enabled: boolean("enabled").default(false),
-    lastSyncAt: timestamp("last_sync_at"),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
     syncDirection: text("sync_direction").default("read"),
   },
   (table) => ({
@@ -1001,11 +1011,11 @@ export const chatConversations = pgTable(
     type: text("type").notNull().default("coach"), // 'coach' | 'recipe' | 'remix'
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     isPinned: boolean("is_pinned").default(false).notNull(),
-    pinnedAt: timestamp("pinned_at"),
-    createdAt: timestamp("created_at")
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1039,7 +1049,7 @@ export const chatMessages = pgTable(
     content: text("content").notNull(),
     metadata: jsonb("metadata"),
     turnKey: text("turn_key"),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1109,10 +1119,10 @@ export const fastingLogs = pgTable(
     userId: varchar("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
-    startedAt: timestamp("started_at")
+    startedAt: timestamp("started_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    endedAt: timestamp("ended_at"),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
     targetDurationHours: integer("target_duration_hours").notNull(),
     actualDurationMinutes: integer("actual_duration_minutes"),
     completed: boolean("completed"),
@@ -1160,7 +1170,7 @@ export const medicationLogs = pgTable(
     medicationName: text("medication_name").notNull(), // e.g., "semaglutide"
     brandName: text("brand_name"), // e.g., "Ozempic", "Wegovy"
     dosage: text("dosage").notNull(), // e.g., "0.25mg", "0.5mg"
-    takenAt: timestamp("taken_at")
+    takenAt: timestamp("taken_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
     sideEffects: jsonb("side_effects").$type<string[]>().default([]),
@@ -1213,7 +1223,7 @@ export const menuScans = pgTable(
       >()
       .default([]),
     imageUrl: text("image_url"),
-    scannedAt: timestamp("scanned_at")
+    scannedAt: timestamp("scanned_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1249,7 +1259,7 @@ export const receiptScans = pgTable(
     itemCount: integer("item_count").default(0),
     photoCount: integer("photo_count").default(1),
     status: text("status").notNull().default("completed"),
-    scannedAt: timestamp("scanned_at")
+    scannedAt: timestamp("scanned_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1290,7 +1300,7 @@ export const goalAdjustmentLogs = pgTable(
     newFat: integer("new_fat").notNull(),
     reason: text("reason").notNull(),
     weightTrendRate: decimal("weight_trend_rate", { precision: 5, scale: 2 }),
-    appliedAt: timestamp("applied_at")
+    appliedAt: timestamp("applied_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
     acceptedByUser: boolean("accepted_by_user").default(false),
@@ -1394,10 +1404,10 @@ export const transactions = pgTable(
     platform: text("platform").notNull(),
     productId: text("product_id").notNull(),
     status: text("status").default("pending").notNull(),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1431,10 +1441,10 @@ export const groceryLists = pgTable(
     title: text("title").notNull(),
     dateRangeStart: date("date_range_start").notNull(),
     dateRangeEnd: date("date_range_end").notNull(),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1460,7 +1470,7 @@ export const groceryListItems = pgTable(
     isChecked: boolean("is_checked").default(false),
     isManual: boolean("is_manual").default(false),
     addedToPantry: boolean("added_to_pantry").default(false),
-    checkedAt: timestamp("checked_at"),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
   },
   (table) => ({
     groceryListIdIdx: index("grocery_list_items_list_id_idx").on(
@@ -1505,11 +1515,11 @@ export const pantryItems = pgTable(
     quantity: decimal("quantity", { precision: 10, scale: 2 }),
     unit: text("unit"),
     category: text("category").default("other"),
-    expiresAt: timestamp("expires_at"),
-    addedAt: timestamp("added_at")
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    addedAt: timestamp("added_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1543,10 +1553,10 @@ export const mealSuggestionCache = pgTable(
     cacheKey: varchar("cache_key", { length: 255 }).notNull().unique(),
     suggestions: jsonb("suggestions").$type<MealSuggestion[]>().notNull(),
     hitCount: integer("hit_count").default(0),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => ({
     cacheKeyIdx: index("meal_suggestion_cache_key_idx").on(table.cacheKey),
@@ -1579,10 +1589,10 @@ export const coachResponseCache = pgTable(
     question: text("question").notNull(),
     response: text("response").notNull(),
     hitCount: integer("hit_count").default(0),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => ({
     // Composite unique index matching semantic intent: one cache entry per
@@ -1621,7 +1631,7 @@ export const coachNotebook = pgTable(
     type: text("type").notNull(), // "insight" | "commitment" | "preference" | "goal" | "motivation" | "emotional_context" | "conversation_summary" | "coaching_strategy"
     content: text("content").notNull(),
     status: text("status").default("active").notNull(), // "active" | "completed" | "expired" | "archived"
-    followUpDate: timestamp("follow_up_date"),
+    followUpDate: timestamp("follow_up_date", { withTimezone: true }),
     sourceConversationId: integer("source_conversation_id").references(
       () => chatConversations.id,
       { onDelete: "set null" },
@@ -1637,10 +1647,10 @@ export const coachNotebook = pgTable(
      * Mapped to the pre-existing `turn_fingerprint` column in Postgres.
      */
     dedupeKey: text("turn_fingerprint"),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1790,10 +1800,10 @@ export const cookbooks = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     coverImageUrl: text("cover_image_url"),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1811,7 +1821,7 @@ export const cookbookRecipes = pgTable(
       .notNull(),
     recipeId: integer("recipe_id").notNull(),
     recipeType: text("recipe_type").notNull().default("mealPlan"), // 'mealPlan' | 'community'
-    addedAt: timestamp("added_at")
+    addedAt: timestamp("added_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1896,10 +1906,10 @@ export const barcodeVerifications = pgTable(
     consensusNutritionData: jsonb("consensus_nutrition_data"),
     verificationCount: integer("verification_count").default(0).notNull(),
     frontLabelData: jsonb("front_label_data"),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1931,8 +1941,10 @@ export const verificationHistory = pgTable(
     }).notNull(),
     isMatch: boolean("is_match"),
     frontLabelScanned: boolean("front_label_scanned").default(false).notNull(),
-    frontLabelScannedAt: timestamp("front_label_scanned_at"),
-    createdAt: timestamp("created_at")
+    frontLabelScannedAt: timestamp("front_label_scanned_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -1966,10 +1978,10 @@ export const reformulationFlags = pgTable(
     previousConsensus: jsonb("previous_consensus"), // snapshot of old consensus for audit
     previousVerificationLevel: text("previous_verification_level"),
     previousVerificationCount: integer("previous_verification_count"),
-    detectedAt: timestamp("detected_at")
+    detectedAt: timestamp("detected_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    resolvedAt: timestamp("resolved_at"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
   (table) => ({
     barcodeIdx: index("reformulation_flags_barcode_idx").on(table.barcode),
@@ -1997,10 +2009,10 @@ export const apiKeys = pgTable(
     ownerId: varchar("owner_id").references(() => users.id, {
       onDelete: "cascade",
     }),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    revokedAt: timestamp("revoked_at"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (table) => ({
     prefixIdx: uniqueIndex("api_keys_prefix_idx").on(table.keyPrefix),
@@ -2017,7 +2029,7 @@ export const apiKeyUsage = pgTable(
       .notNull(),
     yearMonth: varchar("year_month", { length: 7 }).notNull(),
     requestCount: integer("request_count").default(0).notNull(),
-    lastRequestAt: timestamp("last_request_at"),
+    lastRequestAt: timestamp("last_request_at", { withTimezone: true }),
   },
   (table) => ({
     usageUniqueIdx: uniqueIndex("api_key_usage_unique_idx").on(
@@ -2040,10 +2052,10 @@ export const barcodeNutrition = pgTable(
     carbs: decimal("carbs", { precision: 10, scale: 2 }),
     fat: decimal("fat", { precision: 10, scale: 2 }),
     source: text("source").notNull(),
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -2066,7 +2078,7 @@ export const recipeDismissals = pgTable(
       .notNull(),
     recipeIdentifier: text("recipe_identifier").notNull(),
     source: text("source").notNull(),
-    dismissedAt: timestamp("dismissed_at")
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -2088,8 +2100,8 @@ export const carouselSuggestionCache = pgTable(
     profileHash: text("profile_hash").notNull(),
     mealType: text("meal_type").notNull(),
     suggestions: jsonb("suggestions").$type<CarouselRecipeCard[]>().notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
-    createdAt: timestamp("created_at")
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
@@ -2138,10 +2150,10 @@ export const pushTokens = pgTable(
       .notNull(),
     token: text("token").notNull(),
     platform: text("platform").notNull(), // "ios" | "android"
-    createdAt: timestamp("created_at")
+    createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    updatedAt: timestamp("updated_at")
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
