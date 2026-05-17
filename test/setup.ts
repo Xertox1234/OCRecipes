@@ -1,6 +1,13 @@
 // Load .env so integration tests can connect to the real dev database
 import "dotenv/config";
 
+import {
+  impactAsync,
+  notificationAsync,
+  selectionAsync,
+} from "./mocks/expo-haptics";
+import { useReducedMotion } from "./mocks/react-native-reanimated";
+
 // Guard against accidentally running tests on a production database
 const dbUrl = process.env.DATABASE_URL;
 if (
@@ -30,4 +37,20 @@ process.env.JWT_SECRET =
 // Reset mocks between tests
 beforeEach(() => {
   vi.clearAllMocks();
+
+  // The mocks under test/mocks/ are module singletons — imported once per
+  // worker and shared by every test in that worker. `vi.clearAllMocks()`
+  // clears call history only, so a test that overrides one of these
+  // singletons with `.mockImplementation()` / `.mockReturnValue()` /
+  // `.mockResolvedValueOnce()` would leak that override into later tests in
+  // the same worker file. `.mockReset()` additionally restores each mock's
+  // `vi.fn(impl)` constructor-arg default (no-op resolved promise for the
+  // haptics fns, `() => false` for useReducedMotion). This is scoped to the
+  // test/mocks/ singletons on purpose — a global `mockReset: true` would also
+  // wipe the `vi.fn().mockResolvedValue(...)` defaults set inside per-file
+  // `vi.mock()` factory bodies, which those tests rely on.
+  impactAsync.mockReset();
+  notificationAsync.mockReset();
+  selectionAsync.mockReset();
+  useReducedMotion.mockReset();
 });

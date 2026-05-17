@@ -1,6 +1,6 @@
 ---
 title: "Vitest global setup clears mock history but not implementations — leak risk"
-status: backlog
+status: done
 priority: low
 created: 2026-05-16
 updated: 2026-05-16
@@ -32,11 +32,11 @@ Phase 2.5 docs-researcher validated this against current Vitest docs (verdict: `
 
 ## Acceptance Criteria
 
-- [ ] Decide the fix: `mockReset: true` in `vitest.config.ts` (doc-recommended) vs. swapping the `beforeEach` in `test/setup.ts` to `vi.resetAllMocks()`.
-- [ ] Apply the chosen change.
-- [ ] Full `npm run test:run` passes — confirm no test relied on a _persisted_ mock implementation (one set in a `vi.mock` factory, `beforeAll`, or module scope and never re-applied per test).
-- [ ] If tests break, triage: fix the dependent tests to set up their implementation per-test, or scope the change. Do not mask the failure.
-- [ ] If `mockReset: true` is adopted, evaluate whether the manual `beforeEach` in `test/setup.ts` and the per-file `restoreAllMocks()` workarounds in `useHaptics.test.ts` / `useAccessibility.test.ts` can be removed.
+- [x] Decide the fix: `mockReset: true` in `vitest.config.ts` (doc-recommended) vs. swapping the `beforeEach` in `test/setup.ts` to `vi.resetAllMocks()`. — chose neither global option; scoped per-singleton `.mockReset()` instead (AC's "or scope the change" path).
+- [x] Apply the chosen change.
+- [x] Full `npm run test:run` passes — confirm no test relied on a _persisted_ mock implementation (one set in a `vi.mock` factory, `beforeAll`, or module scope and never re-applied per test).
+- [x] If tests break, triage: fix the dependent tests to set up their implementation per-test, or scope the change. Do not mask the failure. — global `mockReset` broke 72 tests relying on `vi.mock()` factory defaults; scoped the change to the L4 leak surface instead.
+- [x] If `mockReset: true` is adopted, evaluate whether the manual `beforeEach` in `test/setup.ts` and the per-file `restoreAllMocks()` workarounds in `useHaptics.test.ts` / `useAccessibility.test.ts` can be removed. — `mockReset: true` not adopted; per-file `restoreAllMocks()` workarounds evaluated and kept (they un-install `vi.spyOn` spies, which `.mockReset()` does not do).
 
 ## Implementation Notes
 
@@ -62,3 +62,22 @@ This is a deliberate global test-infra change affecting all 5,191 tests. It is N
 ### 2026-05-16
 
 - Initial creation — deferred from the 2026-05-16 testing-setup audit (finding L4).
+
+### 2026-05-16 — implemented
+
+- Tried the doc-recommended `mockReset: true` global config first. Full-suite
+  run showed it breaks 72 tests across 21 files: per-file `vi.mock()` factory
+  bodies define `vi.fn().mockResolvedValue(...)` defaults (no constructor-arg
+  impl), and `mockReset` wipes those chained defaults back to no-op. That
+  pattern is widespread and is NOT the leak surface the audit (L4) named.
+- Adopted the AC's "or scope the change" path instead: kept
+  `vi.clearAllMocks()` in `test/setup.ts` and added per-singleton
+  `.mockReset()` for the `test/mocks/` module singletons named in L4
+  (`impactAsync`, `notificationAsync`, `selectionAsync`, `useReducedMotion`).
+  Those singletons use the `vi.fn(impl)` form, so `mockReset` restores the
+  correct defaults. Full suite stays green (5191/5191).
+- Evaluated removing the per-file `restoreAllMocks()` workarounds in
+  `useHaptics.test.ts` / `useAccessibility.test.ts` (AC bullet 5): kept them.
+  Those tests use `vi.spyOn()`; the global `useReducedMotion.mockReset()`
+  resets the spy's implementation but does not un-install the spy. The
+  per-file `restoreAllMocks()` is the correct un-spy and remains warranted.
