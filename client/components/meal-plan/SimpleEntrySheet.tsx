@@ -1,12 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  AccessibilityInfo,
-  Platform,
-  StyleSheet,
-  View,
-  Pressable,
-  ActivityIndicator,
-} from "react-native";
+import { StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
 import {
   BottomSheetModal,
@@ -19,6 +12,7 @@ import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
+import { InlineError } from "@/components/InlineError";
 import { InlineMicButton } from "@/components/InlineMicButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -81,11 +75,11 @@ function SimpleEntrySheetInner({
     stopListening,
   } = useSpeechToText();
 
+  // InlineError announces the message on iOS via its own effect, so this
+  // setter only needs to update state — adding an announce here would
+  // double-announce on iOS.
   const showError = useCallback((msg: string) => {
     setError(msg);
-    if (Platform.OS === "ios") {
-      AccessibilityInfo.announceForAccessibility(msg);
-    }
   }, []);
 
   // Reset state when sheet opens/closes
@@ -296,6 +290,7 @@ function SimpleEntrySheetInner({
               }}
               returnKeyType="done"
               accessibilityLabel="Dish name"
+              aria-invalid={!!error}
             />
             {hasVoiceLogging && (
               <InlineMicButton
@@ -309,14 +304,7 @@ function SimpleEntrySheetInner({
         </View>
 
         {/* Error text */}
-        {error && (
-          <ThemedText
-            style={[styles.errorText, { color: theme.error }]}
-            accessibilityLiveRegion="polite"
-          >
-            {error}
-          </ThemedText>
-        )}
+        <InlineError message={error} style={styles.errorBox} />
 
         {/* Servings stepper */}
         <View style={styles.servingsRow}>
@@ -462,10 +450,9 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
     paddingVertical: Spacing.sm,
   },
-  errorText: {
-    fontSize: 13,
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
+  errorBox: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
   },
   servingsRow: {
     flexDirection: "row",
