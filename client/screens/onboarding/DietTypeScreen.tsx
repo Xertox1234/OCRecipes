@@ -114,7 +114,11 @@ export default function DietTypeScreen() {
           </ThemedText>
         </View>
 
-        <View style={styles.dietsGrid}>
+        <View
+          style={styles.dietsGrid}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Diet type"
+        >
           {DIET_TYPES.map((diet) => {
             const selected = data.dietType === diet.id;
             return (

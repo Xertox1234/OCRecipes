@@ -339,7 +339,7 @@ export default function BatchSummaryScreen() {
               },
             ]}
             accessibilityRole="radio"
-            accessibilityState={{ checked: destination === dest.key }}
+            accessibilityState={{ selected: destination === dest.key }}
             accessibilityLabel={dest.label}
           >
             <Feather
@@ -470,6 +470,7 @@ const BatchItemRow = React.memo(function BatchItemRow({
                 onPress={() => onQuantityChange(item.id, item.quantity - 1)}
                 disabled={item.quantity <= 1}
                 accessibilityRole="button"
+                accessibilityState={{ disabled: item.quantity <= 1 }}
                 accessibilityLabel={`Decrease quantity, currently ${item.quantity}`}
                 hitSlop={8}
                 style={[
@@ -492,6 +493,7 @@ const BatchItemRow = React.memo(function BatchItemRow({
                 onPress={() => onQuantityChange(item.id, item.quantity + 1)}
                 disabled={item.quantity >= 99}
                 accessibilityRole="button"
+                accessibilityState={{ disabled: item.quantity >= 99 }}
                 accessibilityLabel={`Increase quantity, currently ${item.quantity}`}
                 hitSlop={8}
                 style={[

@@ -72,6 +72,7 @@ export const InlineMicButton = React.memo(function InlineMicButton({
         hitSlop={12}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
+        accessibilityState={{ disabled: !!disabled }}
         style={({ pressed }) => ({
           opacity: pressed || disabled ? 0.5 : 1,
         })}

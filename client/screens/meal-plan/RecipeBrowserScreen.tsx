@@ -806,7 +806,7 @@ export default function RecipeBrowserScreen() {
         backgroundStyle={{ backgroundColor: theme.backgroundRoot }}
         handleIndicatorStyle={{ backgroundColor: withOpacity(theme.text, 0.3) }}
       >
-        <BottomSheetView>
+        <BottomSheetView accessibilityViewIsModal>
           <SearchFilterSheet
             filters={advancedFilters}
             onFiltersChange={setAdvancedFilters}

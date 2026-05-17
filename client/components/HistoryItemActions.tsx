@@ -35,6 +35,7 @@ function ActionButton({
       disabled={isLoading}
       accessibilityLabel={isLocked ? `${label} (premium feature)` : label}
       accessibilityRole="button"
+      accessibilityState={{ disabled: !!isLoading }}
       accessibilityHint={accessibilityHint}
       hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
       style={({ pressed }) => [

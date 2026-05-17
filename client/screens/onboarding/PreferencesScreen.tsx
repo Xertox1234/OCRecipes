@@ -189,7 +189,11 @@ export default function PreferencesScreen() {
           <ThemedText type="body" style={styles.sectionTitle}>
             Cooking Skill Level
           </ThemedText>
-          <View style={styles.optionsList}>
+          <View
+            style={styles.optionsList}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Cooking skill level"
+          >
             {SKILL_LEVELS.map((level) => {
               const selected = data.cookingSkillLevel === level.id;
               return (
@@ -244,7 +248,11 @@ export default function PreferencesScreen() {
           <ThemedText type="body" style={styles.sectionTitle}>
             Time for Cooking
           </ThemedText>
-          <View style={styles.optionsList}>
+          <View
+            style={styles.optionsList}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="Time for cooking"
+          >
             {COOKING_TIMES.map((time) => {
               const selected = data.cookingTimeAvailable === time.id;
               return (
