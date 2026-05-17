@@ -13,10 +13,9 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // Drizzle ORM interprets timestamp (without timezone) columns as UTC
-  // (appends +0000 on read, sends toISOString() on write). We must ensure
-  // PostgreSQL's session timezone matches so that CURRENT_TIMESTAMP defaults
-  // also produce UTC values, preventing day-boundary mismatches.
+  // Pin the session timezone to UTC. All timestamp columns are timestamptz, so
+  // values round-trip in UTC regardless; this pin keeps CURRENT_TIMESTAMP
+  // column defaults consistent and guards any future naked `timestamp` column.
   options: "-c timezone=UTC",
 });
 
