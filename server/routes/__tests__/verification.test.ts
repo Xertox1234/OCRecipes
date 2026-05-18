@@ -50,14 +50,12 @@ vi.mock("../../services/verification-comparison", () => ({
   compareWithVerifications: vi
     .fn()
     .mockReturnValue({ isMatch: true, matchCount: 1 }),
-  computeConsensus: vi.fn().mockReturnValue(null),
   extractVerificationNutrition: vi.fn().mockReturnValue({
     calories: 200,
     protein: 10,
     totalCarbs: 25,
     totalFat: 8,
   }),
-  CONSENSUS_THRESHOLD: 3,
 }));
 
 vi.mock("../../db", () => ({
@@ -403,7 +401,11 @@ describe("Verification Routes", () => {
 
       vi.mocked(storage.hasUserVerified).mockResolvedValue(false);
       vi.mocked(storage.getVerificationHistory).mockResolvedValue([]);
-      vi.mocked(storage.submitVerification).mockResolvedValue();
+      vi.mocked(storage.submitVerification).mockResolvedValue({
+        verificationLevel: "single_verified",
+        verificationCount: 1,
+        consensusNutritionData: null,
+      });
       vi.mocked(storage.hasUserFrontLabelScanned).mockResolvedValue(false);
 
       const res = await request(app)
@@ -412,6 +414,8 @@ describe("Verification Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.canScanFrontLabel).toBe(true);
+      expect(res.body.verificationLevel).toBe("single_verified");
+      expect(res.body.verificationCount).toBe(1);
     });
 
     it("returns 404 (not 403) for another user's label session", async () => {

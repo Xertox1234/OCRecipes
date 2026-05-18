@@ -1,11 +1,15 @@
-import type {
-  ConsensusNutritionData,
-  VerificationNutrition,
-} from "@shared/types/verification";
-import { roundToOneDecimal } from "../lib/math";
+import type { VerificationNutrition } from "@shared/types/verification";
 
 // Re-export so existing consumers continue to work
 export type { VerificationNutrition } from "@shared/types/verification";
+
+// `computeConsensus` and `CONSENSUS_THRESHOLD` moved to `server/lib/` so the
+// storage layer can import them without violating the service→storage
+// dependency direction. Re-exported here for existing consumers.
+export {
+  computeConsensus,
+  CONSENSUS_THRESHOLD,
+} from "../lib/verification-consensus";
 
 /** Core macro fields compared for verification (5% tolerance) */
 const COMPARISON_FIELDS = [
@@ -79,45 +83,6 @@ export function nutritionMatches(
 }
 
 /**
- * Compute consensus nutrition values from matching verifications.
- * Averages all non-null values across verifications.
- */
-export function computeConsensus(
-  verifications: VerificationNutrition[],
-): ConsensusNutritionData {
-  const sums = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-  const counts = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-
-  for (const v of verifications) {
-    if (v.calories != null) {
-      sums.calories += v.calories;
-      counts.calories++;
-    }
-    if (v.protein != null) {
-      sums.protein += v.protein;
-      counts.protein++;
-    }
-    if (v.totalCarbs != null) {
-      sums.carbs += v.totalCarbs;
-      counts.carbs++;
-    }
-    if (v.totalFat != null) {
-      sums.fat += v.totalFat;
-      counts.fat++;
-    }
-  }
-
-  return {
-    calories:
-      counts.calories > 0 ? Math.round(sums.calories / counts.calories) : 0,
-    protein:
-      counts.protein > 0 ? roundToOneDecimal(sums.protein / counts.protein) : 0,
-    carbs: counts.carbs > 0 ? roundToOneDecimal(sums.carbs / counts.carbs) : 0,
-    fat: counts.fat > 0 ? roundToOneDecimal(sums.fat / counts.fat) : 0,
-  };
-}
-
-/**
  * Extract the core 4 macro fields from a LabelExtractionResult for verification.
  */
 export function extractVerificationNutrition(labelData: {
@@ -133,6 +98,3 @@ export function extractVerificationNutrition(labelData: {
     totalFat: labelData.totalFat ?? null,
   };
 }
-
-/** Consensus threshold — number of matching verifications needed */
-export const CONSENSUS_THRESHOLD = 3;

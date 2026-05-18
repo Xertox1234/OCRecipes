@@ -1,6 +1,6 @@
 ---
 title: "Make verification aggregate updates concurrency-safe"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-16
 updated: 2026-05-16

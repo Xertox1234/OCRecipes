@@ -8,9 +8,7 @@ import { logger } from "../lib/logger";
 import { detectImageMimeType } from "../lib/image-mime";
 import {
   compareWithVerifications,
-  computeConsensus,
   extractVerificationNutrition,
-  CONSENSUS_THRESHOLD,
   type VerificationNutrition,
 } from "../services/verification-comparison";
 import { detectReformulation } from "../services/reformulation-detection";
@@ -140,32 +138,14 @@ export function register(app: Express): void {
             };
           });
 
-        // Compare against existing verifications
+        // Compare against existing verifications. `comparison.isMatch` is
+        // per-row data (does THIS scan match prior ones) — it is stored on the
+        // history row. The aggregate level/count/consensus are recomputed
+        // authoritatively inside submitVerification under a per-barcode lock.
         const comparison = compareWithVerifications(
           extracted,
           existingNutrition,
         );
-
-        // Determine new verification level
-        const matchingCount = comparison.isMatch
-          ? existingNutrition.length + 1
-          : existingNutrition.length;
-
-        let newLevel: string;
-        if (matchingCount >= CONSENSUS_THRESHOLD) {
-          newLevel = "verified";
-        } else if (matchingCount >= 1) {
-          newLevel = "single_verified";
-        } else {
-          newLevel = "unverified";
-        }
-
-        // Compute consensus from all matching verifications
-        let consensusData = null;
-        if (comparison.isMatch && matchingCount >= CONSENSUS_THRESHOLD) {
-          const allMatching = [...existingNutrition, extracted];
-          consensusData = computeConsensus(allMatching);
-        }
 
         // ── Snapshot pre-submit state for reformulation detection ─────
         // Must read BEFORE submitVerification() mutates the row, otherwise
@@ -177,16 +157,14 @@ export function register(app: Express): void {
           preSubmitVerification = await storage.getVerification(barcode);
         }
 
-        // Record verification (transactional)
-        await storage.submitVerification(
+        // Record verification (transactional). Returns the authoritative
+        // aggregate state recomputed from verification_history under a lock.
+        const aggregate = await storage.submitVerification(
           barcode,
           req.userId,
           extracted,
           session.labelData.confidence,
           comparison.isMatch,
-          newLevel,
-          matchingCount,
-          consensusData,
         );
 
         // ── Reformulation detection ──────────────────────────────────
@@ -265,8 +243,8 @@ export function register(app: Express): void {
 
         res.json({
           isMatch: comparison.isMatch,
-          verificationLevel: newLevel,
-          verificationCount: matchingCount,
+          verificationLevel: aggregate.verificationLevel,
+          verificationCount: aggregate.verificationCount,
           canScanFrontLabel,
         });
       } catch (error) {

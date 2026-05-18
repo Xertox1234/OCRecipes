@@ -51,6 +51,15 @@ export async function flagReformulation(
   previousCount: number,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // Serialize against concurrent submitVerification for the same barcode:
+    // both mutate barcode_verifications aggregate fields and
+    // verification_history.isMatch. Same lock key as submitVerification,
+    // acquired first, so a reformulation reset is not raced by an in-flight
+    // submit recompute (and vice versa).
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${barcode}, 0))`,
+    );
+
     // Insert reformulation flag with audit snapshot
     await tx.insert(reformulationFlags).values({
       barcode,

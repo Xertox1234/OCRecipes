@@ -6,6 +6,10 @@ import type {
   VerificationNutrition,
 } from "@shared/types/verification";
 import type { FrontLabelData } from "@shared/types/front-label";
+import {
+  computeConsensus,
+  CONSENSUS_THRESHOLD,
+} from "../lib/verification-consensus";
 
 /** Get the verification status for a barcode */
 export async function getVerification(barcode: string) {
@@ -153,9 +157,40 @@ export async function getUserVerificationStats(userId: string): Promise<{
   return { count, frontLabelCount, compositeScore, streak };
 }
 
+/** Result of a verification submission — the authoritative aggregate state. */
+export interface SubmitVerificationResult {
+  verificationLevel: string;
+  verificationCount: number;
+  consensusNutritionData: ConsensusNutritionData | null;
+}
+
 /**
- * Submit a verification: record history entry and update barcode status.
- * All writes wrapped in a single transaction for atomicity.
+ * Narrow a raw `verification_history.extractedNutrition` JSONB blob into the
+ * domain `VerificationNutrition` shape. Mirrors the route's parsing.
+ */
+function parseHistoryNutrition(raw: unknown): VerificationNutrition {
+  const n = (raw ?? {}) as Record<string, unknown>;
+  return {
+    calories: typeof n.calories === "number" ? n.calories : null,
+    protein: typeof n.protein === "number" ? n.protein : null,
+    totalCarbs: typeof n.totalCarbs === "number" ? n.totalCarbs : null,
+    totalFat: typeof n.totalFat === "number" ? n.totalFat : null,
+  };
+}
+
+/**
+ * Submit a verification: record a history entry and recompute the barcode's
+ * aggregate status. All writes wrapped in a single transaction for atomicity.
+ *
+ * Concurrency: a transaction-scoped advisory lock on the barcode serializes
+ * concurrent submissions for the SAME barcode. The aggregate
+ * (`verificationLevel` / `verificationCount` / `consensusNutritionData`) is
+ * recomputed from `verification_history` AFTER the insert — never trusted from
+ * a caller-supplied pre-submit snapshot — so two users verifying the same
+ * barcode concurrently cannot lose-update each other's aggregate writes.
+ *
+ * The post-insert history re-query is the correctness mechanism (not an
+ * avoidable round-trip): it reads the authoritative row set under the lock.
  */
 export async function submitVerification(
   barcode: string,
@@ -163,11 +198,15 @@ export async function submitVerification(
   extractedNutrition: VerificationNutrition,
   ocrConfidence: number,
   isMatch: boolean,
-  newLevel: string,
-  newCount: number,
-  consensusData: ConsensusNutritionData | null,
-): Promise<void> {
-  await db.transaction(async (tx) => {
+): Promise<SubmitVerificationResult> {
+  return db.transaction(async (tx) => {
+    // Serialize concurrent submissions for this barcode. Acquired first so it
+    // also covers the first-ever-barcode parent-row race below. Mirrors the
+    // advisory-lock pattern in server/storage/chat.ts.
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${barcode}, 0))`,
+    );
+
     // Ensure the parent row exists before inserting verificationHistory; the
     // FK is immediate, so child-before-parent fails for first-ever barcodes.
     await tx
@@ -193,16 +232,67 @@ export async function submitVerification(
       })
       .returning({ id: verificationHistory.id });
 
-    // Concurrent duplicate — another request already verified this barcode for this user
-    if (!inserted) return;
+    // Concurrent/duplicate submission — this user already verified this
+    // barcode. Return the current aggregate WITHOUT mutating it: duplicate
+    // submissions must not change the aggregate status.
+    if (!inserted) {
+      const [current] = await tx
+        .select({
+          verificationLevel: barcodeVerifications.verificationLevel,
+          verificationCount: barcodeVerifications.verificationCount,
+          consensusNutritionData: barcodeVerifications.consensusNutritionData,
+        })
+        .from(barcodeVerifications)
+        .where(eq(barcodeVerifications.barcode, barcode));
+      return {
+        verificationLevel: current?.verificationLevel ?? "unverified",
+        verificationCount: current?.verificationCount ?? 0,
+        consensusNutritionData:
+          (current?.consensusNutritionData as ConsensusNutritionData | null) ??
+          null,
+      };
+    }
 
-    // Update barcode verification status only after a new history row exists;
-    // duplicate submissions must not mutate the aggregate row.
+    // Recompute the aggregate from the authoritative post-insert history. Only
+    // matching entries (isMatch IS NOT FALSE) count toward the consensus — this
+    // mirrors the route's pre-submit `existingNutrition` filter, now including
+    // the row just inserted.
+    const matchingRows = await tx
+      .select({ extractedNutrition: verificationHistory.extractedNutrition })
+      .from(verificationHistory)
+      .where(
+        and(
+          eq(verificationHistory.barcode, barcode),
+          sql`${verificationHistory.isMatch} IS NOT FALSE`,
+        ),
+      );
+
+    const matchingNutrition = matchingRows.map((r) =>
+      parseHistoryNutrition(r.extractedNutrition),
+    );
+    const matchingCount = matchingNutrition.length;
+
+    let newLevel: string;
+    if (matchingCount >= CONSENSUS_THRESHOLD) {
+      newLevel = "verified";
+    } else if (matchingCount >= 1) {
+      newLevel = "single_verified";
+    } else {
+      newLevel = "unverified";
+    }
+
+    const consensusData =
+      matchingCount >= CONSENSUS_THRESHOLD
+        ? computeConsensus(matchingNutrition)
+        : null;
+
+    // Write the recomputed aggregate. Runs only after a new history row
+    // exists; duplicate submissions return early above and never reach here.
     await tx
       .update(barcodeVerifications)
       .set({
         verificationLevel: newLevel,
-        verificationCount: newCount,
+        verificationCount: matchingCount,
         consensusNutritionData: consensusData as unknown as Record<
           string,
           unknown
@@ -210,6 +300,12 @@ export async function submitVerification(
         updatedAt: new Date(),
       })
       .where(eq(barcodeVerifications.barcode, barcode));
+
+    return {
+      verificationLevel: newLevel,
+      verificationCount: matchingCount,
+      consensusNutritionData: consensusData,
+    };
   });
 }
 
