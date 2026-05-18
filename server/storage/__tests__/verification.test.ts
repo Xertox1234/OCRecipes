@@ -19,10 +19,7 @@ import { eq, and } from "drizzle-orm";
 import crypto from "node:crypto";
 import type * as schema from "@shared/schema";
 import { barcodeVerifications, verificationHistory } from "@shared/schema";
-import type {
-  ConsensusNutritionData,
-  VerificationNutrition,
-} from "@shared/types/verification";
+import type { VerificationNutrition } from "@shared/types/verification";
 import type { FrontLabelData } from "@shared/types/front-label";
 
 vi.mock("../../db", () => ({
@@ -107,18 +104,6 @@ function makeNutrition(
     protein: 10,
     totalCarbs: 25,
     totalFat: 8,
-    ...overrides,
-  };
-}
-
-function makeConsensus(
-  overrides: Partial<ConsensusNutritionData> = {},
-): ConsensusNutritionData {
-  return {
-    calories: 200,
-    protein: 10,
-    carbs: 25,
-    fat: 8,
     ...overrides,
   };
 }
@@ -303,9 +288,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       const result = await hasUserVerified(barcode, testUser.id);
       expect(result).toBe(true);
@@ -320,9 +302,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       const otherUser = await createTestUser(tx);
       const result = await hasUserVerified(barcode, otherUser.id);
@@ -338,15 +317,12 @@ describe("verification storage", () => {
     it("creates the parent barcode row before history for first-ever barcodes", async () => {
       const barcode = makeBarcode();
 
-      await submitVerification(
+      const result = await submitVerification(
         barcode,
         testUser.id,
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
 
       const history = await getVerificationHistory(barcode);
@@ -357,6 +333,9 @@ describe("verification storage", () => {
       expect(verification).not.toBeNull();
       expect(verification!.verificationLevel).toBe("single_verified");
       expect(verification!.verificationCount).toBe(1);
+      // Returned aggregate matches the persisted row.
+      expect(result.verificationLevel).toBe("single_verified");
+      expect(result.verificationCount).toBe(1);
     });
 
     it("creates a history row and updates the verification status", async () => {
@@ -369,9 +348,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
 
       const history = await getVerificationHistory(barcode);
@@ -385,22 +361,61 @@ describe("verification storage", () => {
       expect(verification!.verificationCount).toBe(1);
     });
 
-    it("persists consensus data when provided", async () => {
+    it("recomputes the aggregate count from matching history rows", async () => {
+      // The aggregate is recomputed from verification_history inside the
+      // transaction — the caller no longer supplies level/count. One matching
+      // submission yields count=1, single_verified.
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      const consensus = makeConsensus({ calories: 250 });
+
+      const result = await submitVerification(
+        barcode,
+        testUser.id,
+        makeNutrition(),
+        0.95,
+        true,
+      );
+
+      expect(result.verificationLevel).toBe("single_verified");
+      expect(result.verificationCount).toBe(1);
+      // Below the consensus threshold — no consensus data yet.
+      expect(result.consensusNutritionData).toBeNull();
+    });
+
+    it("computes consensus once the matching count reaches the threshold", async () => {
+      // Three matching different-user submissions reach CONSENSUS_THRESHOLD,
+      // promoting the barcode to "verified" with computed consensus data.
+      const barcode = makeBarcode();
+      await seedBarcodeVerification(barcode);
+      const userB = await createTestUser(tx);
+      const userC = await createTestUser(tx);
+
       await submitVerification(
         barcode,
         testUser.id,
         makeNutrition(),
         0.95,
         true,
-        "verified",
-        3,
-        consensus,
       );
+      await submitVerification(barcode, userB.id, makeNutrition(), 0.92, true);
+      const result = await submitVerification(
+        barcode,
+        userC.id,
+        makeNutrition(),
+        0.94,
+        true,
+      );
+
+      expect(result.verificationLevel).toBe("verified");
+      expect(result.verificationCount).toBe(3);
+      expect(result.consensusNutritionData).not.toBeNull();
+
       const verification = await getVerification(barcode);
-      expect(verification!.consensusNutritionData).toEqual(consensus);
+      expect(verification!.verificationLevel).toBe("verified");
+      expect(verification!.verificationCount).toBe(3);
+      expect(verification!.consensusNutritionData).toEqual(
+        result.consensusNutritionData,
+      );
     });
 
     it("does NOT double-count when the same user submits twice for the same barcode (idempotency via unique constraint)", async () => {
@@ -409,34 +424,14 @@ describe("verification storage", () => {
       // exercise true multi-connection race conditions. The behavioral
       // guarantee under test is that the unique(barcode, userId) constraint +
       // onConflictDoNothing produces "exactly one row per (user, barcode)"
-      // regardless of submission order. A real multi-connection race would
-      // also be safe because the unique index is enforced at the row level,
-      // but proving that requires a different test harness (multiple pool
-      // clients, parallel transactions) and is intentionally out of scope.
+      // regardless of submission order. True multi-connection concurrency is
+      // exercised by the "concurrent different-user submissions" suite below.
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
 
       await Promise.all([
-        submitVerification(
-          barcode,
-          testUser.id,
-          makeNutrition(),
-          0.95,
-          true,
-          "single_verified",
-          1,
-          null,
-        ),
-        submitVerification(
-          barcode,
-          testUser.id,
-          makeNutrition(),
-          0.93,
-          true,
-          "single_verified",
-          1,
-          null,
-        ),
+        submitVerification(barcode, testUser.id, makeNutrition(), 0.95, true),
+        submitVerification(barcode, testUser.id, makeNutrition(), 0.93, true),
       ]);
 
       const history = await getVerificationHistory(barcode);
@@ -454,63 +449,73 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
-      await submitVerification(
-        barcode,
-        userB.id,
-        makeNutrition(),
-        0.92,
-        true,
-        "verified",
-        2,
-        makeConsensus(),
-      );
+      await submitVerification(barcode, userB.id, makeNutrition(), 0.92, true);
 
       const history = await getVerificationHistory(barcode);
       expect(history.length).toBe(2);
       const verification = await getVerification(barcode);
-      expect(verification!.verificationLevel).toBe("verified");
+      // Two matching rows is below CONSENSUS_THRESHOLD (3) — single_verified.
+      expect(verification!.verificationLevel).toBe("single_verified");
       expect(verification!.verificationCount).toBe(2);
     });
 
-    it("skips status update when history insert is a no-op (duplicate)", async () => {
+    it("excludes isMatch=false rows from the recomputed aggregate", async () => {
+      // A non-matching submission stores isMatch=false; it must not count
+      // toward the matching aggregate.
       const barcode = makeBarcode();
-      await seedBarcodeVerification(barcode, {
-        verificationLevel: "single_verified",
-        verificationCount: 1,
-      });
-      // First submission: succeeds, would update to "verified" if level/count argued.
+      await seedBarcodeVerification(barcode);
+      const userB = await createTestUser(tx);
+
       await submitVerification(
         barcode,
         testUser.id,
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
-      // Second submission from same user — history insert is a no-op.
-      // The status update inside the transaction should be skipped (guard
-      // on `if (!inserted) return;`).
+      const disputed = await submitVerification(
+        barcode,
+        userB.id,
+        makeNutrition({ calories: 999 }),
+        0.9,
+        false,
+      );
+
+      // History has 2 rows but only 1 matching — count stays 1.
+      expect((await getVerificationHistory(barcode)).length).toBe(2);
+      expect(disputed.verificationLevel).toBe("single_verified");
+      expect(disputed.verificationCount).toBe(1);
+    });
+
+    it("skips status update when history insert is a no-op (duplicate)", async () => {
+      const barcode = makeBarcode();
+      await seedBarcodeVerification(barcode);
+      // First submission: succeeds, recomputes aggregate to single_verified/1.
       await submitVerification(
         barcode,
         testUser.id,
         makeNutrition(),
+        0.95,
+        true,
+      );
+      // Second submission from same user — history insert is a no-op.
+      // The status update inside the transaction is skipped (guard on
+      // `if (!inserted)`); the duplicate path returns the unchanged aggregate.
+      const dup = await submitVerification(
+        barcode,
+        testUser.id,
+        makeNutrition({ calories: 999 }),
         0.99,
         true,
-        "verified",
-        99,
-        makeConsensus(),
       );
 
       const verification = await getVerification(barcode);
-      // Status should still reflect the first call, not the second's args
+      // Status still reflects the first call — the duplicate did not mutate it.
       expect(verification!.verificationLevel).toBe("single_verified");
       expect(verification!.verificationCount).toBe(1);
+      expect(dup.verificationLevel).toBe("single_verified");
+      expect(dup.verificationCount).toBe(1);
     });
   });
 
@@ -533,9 +538,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       const result = await hasUserFrontLabelScanned(barcode, testUser.id);
       expect(result).toBe(false);
@@ -550,9 +552,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       await confirmFrontLabelData(
         barcode,
@@ -578,9 +577,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       const data = makeFrontLabel(testUser.id, {
         brand: "Acme",
@@ -618,20 +614,8 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
-      await submitVerification(
-        barcode,
-        userB.id,
-        makeNutrition(),
-        0.92,
-        true,
-        "verified",
-        2,
-        null,
-      );
+      await submitVerification(barcode, userB.id, makeNutrition(), 0.92, true);
 
       // Only testUser confirms front-label
       await confirmFrontLabelData(
@@ -654,9 +638,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       const first = makeFrontLabel(testUser.id, { brand: "First" });
       const second = makeFrontLabel(testUser.id, { brand: "Second" });
@@ -693,9 +674,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       const result = await getUserCompositeScore(testUser.id);
       expect(result.verificationCount).toBe(1);
@@ -713,9 +691,6 @@ describe("verification storage", () => {
           makeNutrition(),
           0.95,
           true,
-          "single_verified",
-          1,
-          null,
         );
       }
       // 2 of the 3 also get front-label confirmation
@@ -751,9 +726,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       await submitVerification(
         disputedBarcode,
@@ -761,9 +733,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.9,
         false,
-        "unverified",
-        0,
-        null,
       );
 
       const result = await getUserCompositeScore(testUser.id);
@@ -777,16 +746,7 @@ describe("verification storage", () => {
       await seedBarcodeVerification(barcode);
       const userB = await createTestUser(tx);
 
-      await submitVerification(
-        barcode,
-        userB.id,
-        makeNutrition(),
-        0.95,
-        true,
-        "single_verified",
-        1,
-        null,
-      );
+      await submitVerification(barcode, userB.id, makeNutrition(), 0.95, true);
       const result = await getUserCompositeScore(testUser.id);
       expect(result.verificationCount).toBe(0);
       expect(result.compositeScore).toBeCloseTo(0, 2);
@@ -815,9 +775,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       const result = await getUserVerificationStats(testUser.id);
       expect(result.count).toBe(1);
@@ -834,9 +791,6 @@ describe("verification storage", () => {
         makeNutrition(),
         0.95,
         true,
-        "single_verified",
-        1,
-        null,
       );
       await confirmFrontLabelData(
         barcode,
