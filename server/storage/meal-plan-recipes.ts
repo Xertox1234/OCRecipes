@@ -22,6 +22,7 @@ import {
   getDocumentStore,
   type SearchIndexableMealPlanRecipe,
 } from "../lib/search-index";
+import { deriveRecipeAllergens } from "@shared/constants/allergens";
 
 // ============================================================================
 // MEAL PLAN RECIPES
@@ -48,6 +49,7 @@ const UNIFIED_PERSONAL_COLUMNS = {
   imageUrl: mealPlanRecipes.imageUrl,
   dietTags: mealPlanRecipes.dietTags,
   mealTypes: mealPlanRecipes.mealTypes,
+  allergens: mealPlanRecipes.allergens,
   caloriesPerServing: mealPlanRecipes.caloriesPerServing,
   proteinPerServing: mealPlanRecipes.proteinPerServing,
   carbsPerServing: mealPlanRecipes.carbsPerServing,
@@ -134,10 +136,19 @@ export async function createMealPlanRecipe(
 ): Promise<MealPlanRecipe> {
   // mealTypes should be set by the caller (route/service layer).
   // Storage is a pure data-access layer and should not call service functions.
+  // `allergens` is the exception: `deriveRecipeAllergens` is a pure shared
+  // function (no service deps), so the denormalized cache is computed inline
+  // here from the ingredient names — new/edited recipes stay current without
+  // a backfill re-run.
 
   if (ingredients && ingredients.length > 0) {
+    const ingredientNames = ingredients.map((i) => i.name);
+    const allergens = deriveRecipeAllergens(ingredientNames);
     const created = await db.transaction(async (tx) => {
-      const [row] = await tx.insert(mealPlanRecipes).values(recipe).returning();
+      const [row] = await tx
+        .insert(mealPlanRecipes)
+        .values({ ...recipe, allergens })
+        .returning();
       await tx.insert(recipeIngredients).values(
         ingredients.map((ing, idx) => ({
           ...ing,
@@ -148,16 +159,14 @@ export async function createMealPlanRecipe(
       return row;
     });
     // Update search index after transaction commits
-    addToIndex(
-      mealPlanToSearchable(
-        created,
-        ingredients.map((i) => i.name),
-      ),
-    );
+    addToIndex(mealPlanToSearchable(created, ingredientNames));
     return created;
   }
 
-  const [created] = await db.insert(mealPlanRecipes).values(recipe).returning();
+  const [created] = await db
+    .insert(mealPlanRecipes)
+    .values({ ...recipe, allergens: [] })
+    .returning();
   addToIndex(mealPlanToSearchable(created, []));
   return created;
 }
@@ -178,10 +187,16 @@ export async function createMealPlanFromSuggestions(
   if (meals.length === 0) return [];
 
   const result = await db.transaction(async (tx) => {
-    // Batch-insert all recipes at once
+    // Batch-insert all recipes at once, deriving each recipe's allergen cache
+    // from its ingredient names (pure shared function — no service deps).
     const recipes = await tx
       .insert(mealPlanRecipes)
-      .values(meals.map((m) => m.recipe))
+      .values(
+        meals.map((m) => ({
+          ...m.recipe,
+          allergens: deriveRecipeAllergens(m.ingredients.map((i) => i.name)),
+        })),
+      )
       .returning();
 
     // Batch-insert all ingredients at once (with correct recipeIds)
@@ -242,22 +257,26 @@ export async function updateMealPlanRecipe(
   userId: string,
   updates: Partial<UpdatableMealPlanRecipeFields>,
 ): Promise<MealPlanRecipe | undefined> {
+  // Fetch the recipe's ingredient names first so we can recompute the
+  // `allergens` cache in the same UPDATE — keeps the denormalized column
+  // self-healing without a backfill re-run. `UpdatableMealPlanRecipeFields`
+  // intentionally omits `ingredients`: meal-plan ingredients are immutable
+  // after creation, so the freshly-fetched names are authoritative here. If
+  // that type ever gains `ingredients`, move this derivation after the write.
+  const ings = await db
+    .select({ name: recipeIngredients.name })
+    .from(recipeIngredients)
+    .where(eq(recipeIngredients.recipeId, id));
+  const ingredientNames = ings.map((i) => i.name);
+  const allergens = deriveRecipeAllergens(ingredientNames);
+
   const [recipe] = await db
     .update(mealPlanRecipes)
-    .set({ ...updates, updatedAt: new Date() })
+    .set({ ...updates, allergens, updatedAt: new Date() })
     .where(and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)))
     .returning();
   if (recipe) {
-    const ings = await db
-      .select({ name: recipeIngredients.name })
-      .from(recipeIngredients)
-      .where(eq(recipeIngredients.recipeId, id));
-    addToIndex(
-      mealPlanToSearchable(
-        recipe,
-        ings.map((i) => i.name),
-      ),
-    );
+    addToIndex(mealPlanToSearchable(recipe, ingredientNames));
   }
   return recipe || undefined;
 }
@@ -321,6 +340,7 @@ export async function getAllMealPlanRecipes(): Promise<
       cuisine: mealPlanRecipes.cuisine,
       dietTags: mealPlanRecipes.dietTags,
       mealTypes: mealPlanRecipes.mealTypes,
+      allergens: mealPlanRecipes.allergens,
       difficulty: mealPlanRecipes.difficulty,
       prepTimeMinutes: mealPlanRecipes.prepTimeMinutes,
       cookTimeMinutes: mealPlanRecipes.cookTimeMinutes,

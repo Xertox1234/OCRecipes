@@ -35,6 +35,7 @@ const baseRecipe = {
   authorId: "1",
   dietTags: ["high-protein"],
   mealTypes: [],
+  allergens: [],
   createdAt: new Date(),
   updatedAt: new Date(),
   instructions: ["Grill chicken", "Toss salad"],

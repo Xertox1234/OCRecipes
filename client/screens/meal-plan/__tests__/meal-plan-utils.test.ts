@@ -45,6 +45,7 @@ function makeRecipe(overrides: Record<string, unknown> = {}): MealPlanRecipe {
     instructions: [],
     dietTags: [],
     mealTypes: [],
+    allergens: [],
     caloriesPerServing: null,
     proteinPerServing: null,
     carbsPerServing: null,

@@ -136,6 +136,7 @@ describe("Recipes Routes", () => {
             cuisine: "Italian",
             dietTags: [],
             mealTypes: [],
+            allergens: [],
             difficulty: null,
             prepTimeMinutes: null,
             cookTimeMinutes: null,

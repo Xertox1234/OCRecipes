@@ -4,6 +4,8 @@ import {
   allergySeveritySchema,
   ALLERGEN_INGREDIENT_MAP,
   detectAllergens,
+  deriveRecipeAllergens,
+  isRecipeSafeForAllergies,
   _testInternals,
   type AllergySeverity,
 } from "../allergens";
@@ -267,5 +269,117 @@ describe("detectAllergens", () => {
     // (word-boundary match finds "wheat" inside the phrase), which is correct
     // — the ingredient IS flagged regardless of which keyword matched.
     expect(matches[0].ingredientName).toBe("vital wheat gluten");
+  });
+});
+
+// ============================================================================
+// deriveRecipeAllergens — recipe-side allergen derivation
+// ============================================================================
+
+describe("deriveRecipeAllergens", () => {
+  it("returns an empty array for no ingredients", () => {
+    expect(deriveRecipeAllergens([])).toEqual([]);
+  });
+
+  it("flags a direct-tier hit as viaDerived: false", () => {
+    const result = deriveRecipeAllergens(["peanut butter", "bread"]);
+    const peanuts = result.find((a) => a.id === "peanuts");
+    expect(peanuts).toEqual({ id: "peanuts", viaDerived: false });
+  });
+
+  it("flags a derived-only hit as viaDerived: true", () => {
+    // "casein" is a derived-tier milk keyword; no direct milk keyword present.
+    const result = deriveRecipeAllergens(["casein", "sugar"]);
+    const milk = result.find((a) => a.id === "milk");
+    expect(milk).toEqual({ id: "milk", viaDerived: true });
+  });
+
+  it("direct wins when both tiers match the same allergen", () => {
+    // "cheese" is direct-tier milk; "whey" is derived-tier milk.
+    const result = deriveRecipeAllergens(["cheese", "whey"]);
+    const milk = result.find((a) => a.id === "milk");
+    expect(milk).toEqual({ id: "milk", viaDerived: false });
+  });
+
+  it("derives multiple distinct allergens", () => {
+    const result = deriveRecipeAllergens(["cashew", "egg", "shrimp"]);
+    const ids = result.map((a) => a.id).sort();
+    expect(ids).toEqual(["eggs", "shellfish", "tree_nuts"]);
+  });
+
+  it("returns an empty array when no allergen keywords match", () => {
+    expect(deriveRecipeAllergens(["broccoli", "olive oil"])).toEqual([]);
+  });
+});
+
+// ============================================================================
+// isRecipeSafeForAllergies — recipe-side safety gate
+// ============================================================================
+
+describe("isRecipeSafeForAllergies", () => {
+  it("is safe when the user has no allergies", () => {
+    expect(
+      isRecipeSafeForAllergies([{ id: "peanuts", viaDerived: false }], []),
+    ).toBe(true);
+  });
+
+  it("is safe when the recipe carries no allergens", () => {
+    expect(
+      isRecipeSafeForAllergies([], [{ name: "peanuts", severity: "severe" }]),
+    ).toBe(true);
+  });
+
+  it("is unsafe for a direct-tier hit even at mild severity", () => {
+    expect(
+      isRecipeSafeForAllergies(
+        [{ id: "peanuts", viaDerived: false }],
+        [{ name: "peanuts", severity: "mild" }],
+      ),
+    ).toBe(false);
+  });
+
+  it("is safe for a derived-only hit at mild severity", () => {
+    expect(
+      isRecipeSafeForAllergies(
+        [{ id: "milk", viaDerived: true }],
+        [{ name: "milk", severity: "mild" }],
+      ),
+    ).toBe(true);
+  });
+
+  it("is unsafe for a derived-only hit at moderate severity", () => {
+    expect(
+      isRecipeSafeForAllergies(
+        [{ id: "milk", viaDerived: true }],
+        [{ name: "milk", severity: "moderate" }],
+      ),
+    ).toBe(false);
+  });
+
+  it("is unsafe for a derived-only hit at severe severity", () => {
+    expect(
+      isRecipeSafeForAllergies(
+        [{ id: "milk", viaDerived: true }],
+        [{ name: "milk", severity: "severe" }],
+      ),
+    ).toBe(false);
+  });
+
+  it("is safe when the recipe's allergen is not one the user has", () => {
+    expect(
+      isRecipeSafeForAllergies(
+        [{ id: "soy", viaDerived: false }],
+        [{ name: "peanuts", severity: "severe" }],
+      ),
+    ).toBe(true);
+  });
+
+  it("resolves profile-style allergy names (Dairy/Milk)", () => {
+    expect(
+      isRecipeSafeForAllergies(
+        [{ id: "milk", viaDerived: false }],
+        [{ name: "Dairy/Milk", severity: "mild" }],
+      ),
+    ).toBe(false);
   });
 });

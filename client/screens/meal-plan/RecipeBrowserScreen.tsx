@@ -273,7 +273,7 @@ export default function RecipeBrowserScreen() {
   const [activeCuisine, setActiveCuisine] = useState<string | undefined>();
   const [activeDiet, setActiveDiet] = useState<string | undefined>();
   const [curatedOnly, setCuratedOnly] = useState(false);
-  // TODO: Re-add "Safe for me" allergen filter once search service supports it
+  const [safeForMe, setSafeForMe] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [advancedFilters, setAdvancedFilters] = useState<SearchFilters>({
     sort: "relevance",
@@ -314,6 +314,7 @@ export default function RecipeBrowserScreen() {
       cuisine: activeCuisine,
       diet: activeDiet,
       curatedOnly: curatedOnly || undefined,
+      safeForMe: safeForMe || undefined,
       mealType: mealType || undefined,
       difficulty: activeDifficulty,
       pantry: pantryMode || undefined,
@@ -328,6 +329,7 @@ export default function RecipeBrowserScreen() {
       activeCuisine,
       activeDiet,
       curatedOnly,
+      safeForMe,
       mealType,
       activeDifficulty,
       pantryMode,
@@ -369,8 +371,9 @@ export default function RecipeBrowserScreen() {
     if (advancedFilters.minProtein !== undefined) count++;
     if (advancedFilters.source !== "all") count++;
     if (curatedOnly) count++;
+    if (safeForMe) count++;
     return count;
-  }, [advancedFilters, curatedOnly]);
+  }, [advancedFilters, curatedOnly, safeForMe]);
 
   const handleRecipePress = useCallback(
     async (item: SearchableRecipe) => {
@@ -450,6 +453,7 @@ export default function RecipeBrowserScreen() {
     setActiveDiet(undefined);
     setActiveDifficulty(undefined);
     setCuratedOnly(false);
+    setSafeForMe(false);
     setPantryMode(false);
     setAdvancedFilters({
       sort: "relevance",
@@ -585,6 +589,16 @@ export default function RecipeBrowserScreen() {
               setCuratedOnly((prev) => !prev);
             }}
             accessibilityLabel="Filter curated recipes only"
+          />
+          <Chip
+            label="Safe for me"
+            variant="filter"
+            selected={safeForMe}
+            onPress={() => {
+              haptics.selection();
+              setSafeForMe((prev) => !prev);
+            }}
+            accessibilityLabel="Filter recipes safe for my allergies"
           />
           <View
             style={[
@@ -752,6 +766,7 @@ export default function RecipeBrowserScreen() {
           activeDiet ||
           activeDifficulty ||
           curatedOnly ||
+          safeForMe ||
           pantryMode ||
           activeFilterCount > 0 ? (
             <EmptyState
