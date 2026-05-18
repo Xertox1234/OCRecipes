@@ -548,10 +548,11 @@ export const communityRecipes = pgTable(
     // Denormalized allergen cache derived from ingredient names via
     // `deriveRecipeAllergens` (shared/constants/allergens.ts). Type-only import
     // — erased at compile time, so no schema↔allergens runtime import cycle.
-    allergens: jsonb("allergens")
-      .$type<DerivedRecipeAllergen[]>()
-      .notNull()
-      .default([]),
+    // Nullable: `null` means "not yet derived" and is conservatively treated as
+    // unsafe by `isRecipeSafeForAllergies`; `[]` means "derived, genuinely no
+    // allergens" = safe. Write paths always store a concrete array — `null`
+    // only ever appears for rows predating the backfill.
+    allergens: jsonb("allergens").$type<DerivedRecipeAllergen[] | null>(),
     instructions: jsonb("instructions").$type<string[]>().notNull(),
     ingredients: jsonb("ingredients")
       .$type<{ name: string; quantity: string; unit: string }[]>()
@@ -773,10 +774,11 @@ export const mealPlanRecipes = pgTable(
     // Denormalized allergen cache derived from ingredient names via
     // `deriveRecipeAllergens` (shared/constants/allergens.ts). Type-only import
     // — erased at compile time, so no schema↔allergens runtime import cycle.
-    allergens: jsonb("allergens")
-      .$type<DerivedRecipeAllergen[]>()
-      .notNull()
-      .default([]),
+    // Nullable: `null` means "not yet derived" and is conservatively treated as
+    // unsafe by `isRecipeSafeForAllergies`; `[]` means "derived, genuinely no
+    // allergens" = safe. Write paths always store a concrete array — `null`
+    // only ever appears for rows predating the backfill.
+    allergens: jsonb("allergens").$type<DerivedRecipeAllergen[] | null>(),
     caloriesPerServing: decimal("calories_per_serving", {
       precision: 10,
       scale: 2,
@@ -1755,7 +1757,11 @@ export const insertMealPlanItemSchema = createInsertSchema(mealPlanItems).omit({
 });
 
 export type MealPlanRecipe = typeof mealPlanRecipes.$inferSelect;
-export type InsertMealPlanRecipe = z.infer<typeof insertMealPlanRecipeSchema>;
+// Use Drizzle's native insert inference (mirrors `InsertCommunityRecipe`) so
+// the `.$type<DerivedRecipeAllergen[] | null>()` hint on the nullable
+// `allergens` jsonb column is preserved — `createInsertSchema` (drizzle-zod
+// 0.7.x) loosens a nullable typed jsonb column to a generic `Json` union.
+export type InsertMealPlanRecipe = typeof mealPlanRecipes.$inferInsert;
 export type RecipeIngredient = typeof recipeIngredients.$inferSelect;
 export type InsertRecipeIngredient = z.infer<
   typeof insertRecipeIngredientSchema

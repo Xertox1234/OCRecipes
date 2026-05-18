@@ -95,7 +95,9 @@ export function mealPlanToSearchable(
     cuisine: recipe.cuisine ?? null,
     dietTags: recipe.dietTags ?? [],
     mealTypes: recipe.mealTypes ?? [],
-    allergens: recipe.allergens ?? [],
+    // Pass `null` ("not yet derived") through unchanged — coercing to `[]`
+    // here would mask un-analyzed recipes as safe in the search predicate.
+    allergens: recipe.allergens ?? null,
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: prep,
     cookTimeMinutes: cook,
@@ -126,7 +128,9 @@ export function communityToSearchable(
     cuisine: null,
     dietTags: recipe.dietTags ?? [],
     mealTypes: recipe.mealTypes ?? [],
-    allergens: recipe.allergens ?? [],
+    // Pass `null` ("not yet derived") through unchanged — coercing to `[]`
+    // here would mask un-analyzed recipes as safe in the search predicate.
+    allergens: recipe.allergens ?? null,
     difficulty: recipe.difficulty ?? null,
     prepTimeMinutes: null,
     cookTimeMinutes: null,

@@ -529,15 +529,23 @@ export function deriveRecipeAllergens(
  * A `mild` allergy is therefore tolerant of derived-only hits but not direct
  * hits — mirroring `detectAllergens`'s severity tiering from the recipe side.
  *
- * NOTE: this does NOT handle the unknown-ingredient case (a recipe with no
- * derivable ingredient data). Conservative exclusion of such recipes is the
- * caller's responsibility — see `searchRecipes`'s `safeForMe` predicate.
+ * Fail-closed on un-derived recipes: a `null` allergen cache means the recipe
+ * has not been analyzed yet, so it is treated as UNSAFE — never presented as
+ * safe on a guess. `[]` is distinct: it means "analyzed, genuinely carries no
+ * allergens" = safe.
+ *
+ * NOTE: this does NOT handle the empty-ingredient case (a recipe analyzed with
+ * zero ingredient data — `deriveRecipeAllergens([])` yields `[]`, which reads
+ * as safe here). Conservative exclusion of such recipes is the caller's
+ * responsibility — see `searchRecipes`'s `safeForMe` predicate.
  */
 export function isRecipeSafeForAllergies(
-  recipeAllergens: readonly DerivedRecipeAllergen[],
+  recipeAllergens: readonly DerivedRecipeAllergen[] | null,
   userAllergies: readonly { name: string; severity: AllergySeverity }[],
 ): boolean {
   if (userAllergies.length === 0) return true;
+  // `null` = not yet derived — fail closed: never shown as safe on a guess.
+  if (recipeAllergens === null) return false;
   if (recipeAllergens.length === 0) return true;
 
   for (const allergy of userAllergies) {

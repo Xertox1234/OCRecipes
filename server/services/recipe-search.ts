@@ -297,8 +297,14 @@ export async function searchRecipes(
 
   // "Safe for me": exclude recipes unsafe for the user's declared allergies.
   // No-op when the user has no allergies (an empty list — nothing to be unsafe
-  // from). Conservative exclusion: a recipe whose allergen profile cannot be
-  // derived (no ingredient data) is hidden — never shown as "safe" on a guess.
+  // from). Two conservative guards cover two distinct fail-open windows:
+  //   1. `r.ingredients.length > 0` — a recipe with zero ingredient data was
+  //      never meaningfully analyzed; `deriveRecipeAllergens([])` returns `[]`
+  //      ("genuinely no allergens" = safe), so the empty array alone would
+  //      falsely include it. Exclude it on the missing-ingredients signal.
+  //   2. `isRecipeSafeForAllergies` rejects `r.allergens === null` — a `null`
+  //      cache means the row predates the backfill and was never derived.
+  // Both must hold for a recipe to be considered safe.
   if (safeForMe && userAllergies.length > 0) {
     filters.safeForMe = true;
     predicates.push(
