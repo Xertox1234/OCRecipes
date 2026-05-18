@@ -123,7 +123,7 @@ describe("profile-hub routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.latestWeight).toEqual({
         value: 158.5,
-        unit: "lbs",
+        unit: "kg",
         date: "2026-04-01T10:00:00.000Z",
       });
     });

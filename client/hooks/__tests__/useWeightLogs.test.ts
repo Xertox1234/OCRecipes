@@ -47,6 +47,7 @@ describe("useWeightLogs", () => {
         weight: 75.5,
         source: "manual",
         note: "Morning",
+        unit: "kg",
       });
     });
 

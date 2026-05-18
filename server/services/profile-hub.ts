@@ -51,7 +51,7 @@ export async function getProfileWidgets(
     latestWeight: latestWeight
       ? {
           value: Number(latestWeight.weight),
-          unit: "lbs", // TODO: read from user preference once unit system is added
+          unit: "kg",
           date: new Date(latestWeight.loggedAt).toISOString(),
         }
       : null,
