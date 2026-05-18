@@ -39,7 +39,10 @@ jobs:
 
       - name: Fetch pull request head
         if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
-        run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.head.sha }}
+        # No --depth limit: a shallow head has no ancestry, so `git merge-base`
+        # in ci-kimi-review.sh cannot connect it to the base. The base checkout
+        # already has full history, so fetching the head's ancestors is cheap.
+        run: git fetch --no-tags origin ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/setup-python@v5
         if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
