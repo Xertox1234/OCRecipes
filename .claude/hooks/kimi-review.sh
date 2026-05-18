@@ -86,6 +86,7 @@ if [ -n "$PATTERNS" ]; then
     --profile ocrecipes \
     --patterns "$PATTERNS" \
     --rules "$PATTERNS" \
+    --pattern-max-chars 12000 \
     --tiers CRITICAL,WARNING 2>&1)
 else
   REVIEW=$(git diff --cached | kimi-review \

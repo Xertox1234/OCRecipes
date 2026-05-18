@@ -50,7 +50,7 @@ def parse_args():
     parser.add_argument(
         "--pattern-max-chars",
         type=int,
-        default=0,
+        default=12000,
         help="Maximum characters to include from each pattern file; 0 for full files",
     )
     parser.add_argument("--max-tokens", type=int, default=131072)

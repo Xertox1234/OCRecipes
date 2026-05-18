@@ -51,7 +51,13 @@ Combine values for multiple matches, e.g. `--patterns react-native,security`.
 ## Step 3 — Run kimi-review on the branch diff
 
 ```bash
-git diff main...HEAD | kimi-review --scope "session: $(git branch --show-current)" --patterns <mapped-patterns>
+git diff main...HEAD | kimi-review \
+        --scope "session: $(git branch --show-current)" \
+        --patterns <mapped-patterns> \
+        --rules <mapped-patterns> \
+        --pattern-max-chars 12000 \
+        --profile ocrecipes \
+        --tiers CRITICAL,WARNING
 ```
 
 **Store the full output in working context as `review_output`.** Shell variables do not persist between Bash invocations — keep this in your context.

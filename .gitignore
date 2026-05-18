@@ -94,3 +94,6 @@ docs/plans/
 # Evaluation results (contain API responses, timestamped per run)
 evals/results/
 .worktrees/
+
+# Python bytecode cache (from scripts/kimi-review.py)
+__pycache__/

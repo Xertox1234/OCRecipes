@@ -17,9 +17,11 @@ if ! command -v kimi-review >/dev/null 2>&1; then
   exit 0
 fi
 
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
 # Skip review when no .ts/.tsx changes are staged — kimi-review on docs/config
 # only commits is wasted tokens.
-if ! git diff --cached --name-only --diff-filter=ACM | grep -qE '\.(ts|tsx)$'; then
+if ! printf '%s\n' "$STAGED_FILES" | grep -qE '\.(ts|tsx)$'; then
   exit 0
 fi
 
@@ -27,6 +29,52 @@ REVIEW_DIFF=$(git diff --cached -- '*.ts' '*.tsx')
 if [ -z "$REVIEW_DIFF" ]; then
   exit 0
 fi
+
+PATTERNS=''
+add_pattern() {
+  case ",$PATTERNS," in
+    *,$1,*) ;;
+    *) PATTERNS="${PATTERNS:+$PATTERNS,}$1" ;;
+  esac
+}
+
+while IFS= read -r file; do
+  case "$file" in
+    server/routes/*)
+      add_pattern api; add_pattern security; add_pattern architecture ;;
+    server/storage/*|shared/schema.ts|migrations/*)
+      add_pattern database; add_pattern security; add_pattern architecture ;;
+    server/middleware/*)
+      add_pattern security; add_pattern api ;;
+    server/services/photo-analysis.ts|server/services/nutrition-coach.ts|server/services/recipe-chat.ts|server/services/recipe-generation.ts)
+      add_pattern ai-prompting; add_pattern architecture ;;
+    evals/*)
+      add_pattern ai-prompting; add_pattern testing ;;
+    server/services/*)
+      add_pattern architecture ;;
+    client/screens/*|client/navigation/*)
+      add_pattern react-native; add_pattern design-system; add_pattern accessibility ;;
+    client/components/*)
+      add_pattern react-native; add_pattern design-system; add_pattern accessibility; add_pattern performance ;;
+    client/hooks/*)
+      add_pattern hooks; add_pattern client-state; add_pattern react-native; add_pattern accessibility ;;
+    client/context/*)
+      add_pattern client-state ;;
+    client/lib/*)
+      add_pattern client-state ;;
+    client/constants/theme.ts|design_guidelines.md)
+      add_pattern design-system ;;
+    .github/workflows/*)
+      add_pattern architecture; add_pattern testing ;;
+    vitest.config.*|eslint.config.*)
+      add_pattern testing; add_pattern typescript ;;
+    *.test.ts|*.test.tsx|*.spec.ts|*.spec.tsx|*/__tests__/*)
+      add_pattern testing ;;
+  esac
+  case "$file" in
+    *.ts|*.tsx) add_pattern typescript ;;
+  esac
+done <<< "$STAGED_FILES"
 
 # Wrap kimi-review with `timeout` when available (GNU coreutils, Linux/CI; on
 # macOS install via `brew install coreutils` for `gtimeout`). If neither is
@@ -39,10 +87,16 @@ else
   TIMEOUT_CMD=""
 fi
 
-REVIEW_RAW=$(printf '%s' "$REVIEW_DIFF" | NO_COLOR=1 $TIMEOUT_CMD kimi-review \
+REVIEW_COMMAND=(kimi-review
   --scope "pre-commit staged diff" \
   --tiers CRITICAL,WARNING \
-  --profile ocrecipes 2>&1)
+  --profile ocrecipes)
+
+if [ -n "$PATTERNS" ]; then
+  REVIEW_COMMAND+=(--patterns "$PATTERNS" --rules "$PATTERNS" --pattern-max-chars 12000)
+fi
+
+REVIEW_RAW=$(printf '%s' "$REVIEW_DIFF" | NO_COLOR=1 $TIMEOUT_CMD "${REVIEW_COMMAND[@]}" 2>&1)
 REVIEW_STATUS=$?
 # Strip ANSI escape codes so the CRITICAL gate isn't bypassed by colored output.
 REVIEW_OUTPUT=$(printf '%s' "$REVIEW_RAW" | sed $'s/\x1b\\[[0-9;]*m//g')
@@ -51,8 +105,14 @@ printf '%s\n' "$REVIEW_OUTPUT"
 
 # Check for CRITICAL findings FIRST, before any tool-failure short-circuit —
 # kimi-review may print findings and still exit non-zero, and we don't want
-# a crash-after-detection to silently let CRITICAL findings land.
-if printf '%s' "$REVIEW_OUTPUT" | grep -qE '^\[?CRITICAL\]?[[:space:]]'; then
+# a crash-after-detection to silently let CRITICAL findings land. A clean review
+# can include `[CRITICAL] — No findings.`, so require a non-empty CRITICAL body
+# and exclude only that sentinel shape.
+CRITICAL_FINDINGS=$(printf '%s\n' "$REVIEW_OUTPUT" \
+  | grep -E '[[]CRITICAL[]].*[^[:space:]]' \
+  | grep -ivE '[[]CRITICAL[]][^[:alnum:]]*no findings')
+
+if [ -n "$CRITICAL_FINDINGS" ]; then
   echo "" >&2
   echo "Commit blocked: kimi-review reported CRITICAL findings above." >&2
   echo "Fix the issues or set SKIP_KIMI_REVIEW=1 to bypass." >&2

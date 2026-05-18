@@ -180,12 +180,15 @@ else
   REVIEW_OUTPUT=$(echo "$DIFF" | kimi-review \
     --scope "<todo title>" \
     --patterns <mapped-patterns> \
+      --rules <mapped-patterns> \
+      --pattern-max-chars 12000 \
+      --profile ocrecipes \
     --tiers CRITICAL,WARNING,SUGGESTION)
   echo "$REVIEW_OUTPUT"
 fi
 ```
 
-If no labels matched the table, omit `--patterns`.
+If no labels matched the table, omit `--patterns`, `--rules`, and `--pattern-max-chars`, but keep `--profile ocrecipes`.
 
 **Store the full text of `REVIEW_OUTPUT` in your working context now** — shell variables do not persist between Bash tool invocations, and Step 9 needs this text. Treat it as an in-context note labeled `review_output`.
 
