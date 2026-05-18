@@ -20,17 +20,17 @@ export function shouldReplaceWithAIReceipt(
 }
 
 /**
- * Merges local OCR skeleton with AI-expanded items.
- * Currently returns AI items directly — AI always has superior names
- * (abbreviations expanded, categories assigned).
+ * Returns the AI-classified receipt items.
  *
- * TODO: Use `_local` to fall back to locally-parsed items for any AI items
- * whose confidence is below a threshold, preserving raw OCR data when the
- * AI result is uncertain.
+ * A confidence-based per-item fallback to locally-parsed OCR items was
+ * considered and deliberately dropped: `LocalReceiptItem` and `ReceiptItem`
+ * share no id/index correspondence key, and AI name expansion (e.g.
+ * "ORG BNS CKEN" → "Organic Boneless Chicken") makes fuzzy `rawName` matching
+ * unreliable. This function only runs after `shouldReplaceWithAIReceipt` has
+ * already decided the AI result wins at the whole-result level, so a per-item
+ * fallback would also contradict that decision. The local OCR data still
+ * powers the instant skeleton preview before the AI scan resolves.
  */
-export function mergeReceiptItems(
-  _local: LocalReceiptItem[],
-  aiItems: ReceiptItem[],
-): ReceiptItem[] {
+export function mergeReceiptItems(aiItems: ReceiptItem[]): ReceiptItem[] {
   return aiItems;
 }

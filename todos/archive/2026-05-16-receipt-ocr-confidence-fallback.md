@@ -1,6 +1,6 @@
 ---
 title: "Implement confidence-based OCR fallback in mergeReceiptItems"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-16
 updated: 2026-05-16
@@ -49,3 +49,14 @@ Surfaced by the 2026-05-16 unfinished-features audit (finding M2, code-quality).
 ### 2026-05-16
 
 - Initial creation (audit 2026-05-16-unfinished-features, finding M1)
+
+### 2026-05-17
+
+- Resolved via the "drop it" path authorized by acceptance criterion #4.
+  No clean correspondence key exists between `LocalReceiptItem` and
+  `ReceiptItem`, and AI name expansion makes fuzzy `rawName` matching
+  unreliable. `mergeReceiptItems` also only runs after
+  `shouldReplaceWithAIReceipt` has already decided the AI result wins, so a
+  per-item fallback would contradict that whole-result decision.
+- Dropped the unused `_local` parameter, replaced the misleading TODO
+  docstring with a rationale comment, updated the caller and tests.

@@ -133,7 +133,7 @@ export default function ReceiptReviewScreen() {
             : true;
 
         if (replace) {
-          const merged = mergeReceiptItems(localItemsRef.current, result.items);
+          const merged = mergeReceiptItems(result.items);
           setItems(
             merged.map((item, i) => ({ ...item, id: `${i}-${item.name}` })),
           );

@@ -73,19 +73,15 @@ describe("shouldReplaceWithAIReceipt", () => {
 });
 
 describe("mergeReceiptItems", () => {
-  it("returns AI items directly when no local edits match", () => {
-    const local: LocalReceiptItem[] = [
-      { rawName: "ORG BNS CKEN", price: "12.99", quantity: 1 },
-    ];
+  it("returns the AI items unchanged", () => {
     const aiItems = [makeAIItem("Organic Boneless Chicken", "ORG BNS CKEN")];
-    const result = mergeReceiptItems(local, aiItems);
+    const result = mergeReceiptItems(aiItems);
     expect(result).toHaveLength(1);
     expect(result[0]).toBe(aiItems[0]);
   });
 
-  it("returns all AI items even when local had none", () => {
-    const aiItems = [makeAIItem("Milk"), makeAIItem("Eggs")];
-    const result = mergeReceiptItems([], aiItems);
-    expect(result).toHaveLength(2);
+  it("returns an empty array when there are no AI items", () => {
+    const result = mergeReceiptItems([]);
+    expect(result).toHaveLength(0);
   });
 });
