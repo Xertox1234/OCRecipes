@@ -4,6 +4,7 @@ This document captures key learnings, gotchas, and architectural decisions disco
 
 ## Table of Contents
 
+- [Load-Induced vitest `vi.mock` Application Flake — `verification.test.ts:454` False-Red `expected 401 to be 404` (2026-05-17)](#load-induced-vitest-vimock-application-flake--verificationtestts454-false-red-expected-401-to-be-404-2026-05-17)
 - [Pattern Doc Reference Drifted From Code — `getUserCookbooks` recipeCount Always 0 in Prod (2026-05-15)](#pattern-doc-reference-drifted-from-code--getusercookbooks-recipecount-always-0-in-prod-2026-05-15)
 - [Prettier Reformats Generated Files After Commit, Breaking Byte-Equality Drift Checks (2026-05-11)](#prettier-reformats-generated-files-after-commit-breaking-byte-equality-drift-checks-2026-05-11)
 - [kimi-review on Cumulative Working-Tree Diff Re-Flags Earlier Audit Fixes (2026-05-11)](#kimi-review-on-cumulative-working-tree-diff-re-flags-earlier-audit-fixes-2026-05-11)
@@ -79,6 +80,32 @@ This document captures key learnings, gotchas, and architectural decisions disco
 - [Testing & Tooling Learnings](#testing--tooling-learnings)
 - [Database Migration Gotchas](#database-migration-gotchas)
 - [TypeScript Safety Learnings](#typescript-safety-learnings)
+
+## Load-Induced vitest `vi.mock` Application Flake — `verification.test.ts:454` False-Red `expected 401 to be 404` (2026-05-17)
+
+**Category:** Gotcha — vitest mock application / Test flakes
+
+`server/routes/__tests__/verification.test.ts` → `POST /api/verification/submit` → "returns 404 (not 403) for another user's label session" (assertion at `verification.test.ts:454`, `expect(res.status).toBe(404)`) intermittently fails the **full local suite** with `expected 401 to be 404`. Observed once in 27 full-suite runs; not reproduced since across 26 subsequent runs, a full-suite run under 9-core CPU contention, or CI (consistently green on `main`).
+
+**This is a false-red, not a security regression.** The cross-user-to-404 behavior (PR #204) is correct and verified.
+
+**Failure fingerprint — recognize it, do not chase it:**
+
+- A `401` at `verification.test.ts:454` (or any assertion in this file) is the unmistakable signature of the **real** `requireAuth` middleware running — `server/middleware/auth.ts` → `sendError(res, 401, "No token provided", "NO_TOKEN")`. No code path in the mocked test can emit `401`.
+- The test relies on `vi.mock("../../middleware/auth")` resolving the manual mock at `server/middleware/__mocks__/auth.ts`, whose `requireAuth` is a passthrough that sets `req.userId = "1"` and calls `next()` — it never touches `res`. `vi.mock("express-rate-limit")` is likewise a clean passthrough. The `/submit` handler only emits `404 / 400 / 409 / 200`, or `500` via `handleRouteError`.
+- A `401` therefore means `vi.mock("../../middleware/auth")` did **not** apply the manual mock and the real `auth.ts` ran instead.
+
+**Root cause:** A load-induced vitest module-mock-application flake. The single observed failure was the first run of a session, immediately after the SessionStart hook provisioned PostgreSQL (PR #205) — peak machine load. It is the same class of flake as the fork-pool-starvation issue (`todos/archive/2026-05-15-flaky-full-suite-fork-pool-starvation.md`), which manifested as `testTimeout` kills rather than a wrong status code. The same flake class has also been observed once on `recipe-catalog.test.ts` ("returns 402 when Spoonacular quota is exhausted") under contention — a `vi.mock` of `getCatalogRecipeDetail` failing to apply.
+
+**Practical takeaways:**
+
+1. **A wrong-status assertion failure in a fully-mocked route test is a mock-application flake, not a regression** — when the file passes in isolation and CI is green. Re-run the file in isolation (`npx vitest run server/routes/__tests__/verification.test.ts`) to confirm before investigating the route code.
+2. **Do not add a defensive retry or a symptom-level guard to the test.** A passing test that masks a mock-application race is worse than a documented flake. Only a reproduced root cause justifies a code change here.
+3. CI is the source of truth. A local full-suite false-red right after parallel-agent batches or PostgreSQL provisioning is expected machine-load noise.
+
+**Related:** "Local full-suite test runs flake under machine load (fork-pool starvation)" — `todos/archive/2026-05-15-flaky-full-suite-fork-pool-starvation.md`. Same load-induced-flake family, different symptom.
+
+---
 
 ## Pattern Doc Reference Drifted From Code — `getUserCookbooks` recipeCount Always 0 in Prod (2026-05-15)
 

@@ -1,6 +1,6 @@
 ---
 title: "Flaky 401 in verification.test.ts cross-user submit test (auth mock intermittently not applied)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-16
 updated: 2026-05-16
@@ -58,13 +58,15 @@ This is **not** a real security regression — the cross-user-to-404 behavior
 
 ## Acceptance Criteria
 
-- [ ] Reproduce the failure deterministically (e.g. force CPU contention with
+- [x] Reproduce the failure deterministically (e.g. force CPU contention with
       `yes >/dev/null` across all cores while running the full suite, or run
       with `--poolOptions.forks.singleFork`), OR conclude it is purely
-      environmental and not reproducible.
-- [ ] If reproduced: identify why `vi.mock("../../middleware/auth")` fails to
+      environmental and not reproducible. _(Concluded environmental — not
+      reproduced; see Updates 2026-05-17.)_
+- [x] If reproduced: identify why `vi.mock("../../middleware/auth")` fails to
       apply the manual mock under load, and fix the root cause (not the symptom).
-- [ ] If not reproducible after a bounded effort: document the flake in
+      _(N/A — not reproduced.)_
+- [x] If not reproducible after a bounded effort: document the flake in
       `docs/LEARNINGS.md` so a future false-red `verification.test.ts:454` run
       is recognized, not chased.
 
@@ -103,3 +105,17 @@ This is **not** a real security regression — the cross-user-to-404 behavior
   status to the real `requireAuth` middleware, confirmed non-reproducible
   across 26 subsequent runs. Diagnosed as a load-induced vitest
   mock-application flake; baseline declared green to unblock `/todo`.
+
+### 2026-05-17
+
+- Bounded reproduction attempt: ran the verification file in isolation and the
+  full suite under 9-core CPU contention (`yes >/dev/null` on 9 of 10 cores).
+  `verification.test.ts` passed 26/26 (and the storage variant 35/35) in both;
+  the `:454` flake did not reproduce. One unrelated load-induced false-red
+  surfaced on `recipe-catalog.test.ts` — the same mock-application flake class
+  on a different file, not a regression.
+- Concluded the flake is environmental and not reproducible after a bounded
+  effort. Documented it in `docs/LEARNINGS.md` ("Load-Induced vitest `vi.mock`
+  Application Flake") so a future false-red `verification.test.ts:454` run is
+  recognized, not chased. No test or source code changed — per the todo's
+  explicit constraint, no symptom-level guard was added.
