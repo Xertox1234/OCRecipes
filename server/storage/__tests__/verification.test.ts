@@ -282,13 +282,7 @@ describe("verification storage", () => {
     it("returns true after the user submits a verification", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       const result = await hasUserVerified(barcode, testUser.id);
       expect(result).toBe(true);
     });
@@ -296,13 +290,7 @@ describe("verification storage", () => {
     it("returns false for a different user (IDOR scoping)", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       const otherUser = await createTestUser(tx);
       const result = await hasUserVerified(barcode, otherUser.id);
       expect(result).toBe(false);
@@ -322,7 +310,6 @@ describe("verification storage", () => {
         testUser.id,
         makeNutrition(),
         0.95,
-        true,
       );
 
       const history = await getVerificationHistory(barcode);
@@ -342,13 +329,7 @@ describe("verification storage", () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
 
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
 
       const history = await getVerificationHistory(barcode);
       expect(history.length).toBe(1);
@@ -373,7 +354,6 @@ describe("verification storage", () => {
         testUser.id,
         makeNutrition(),
         0.95,
-        true,
       );
 
       expect(result.verificationLevel).toBe("single_verified");
@@ -390,20 +370,13 @@ describe("verification storage", () => {
       const userB = await createTestUser(tx);
       const userC = await createTestUser(tx);
 
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
-      await submitVerification(barcode, userB.id, makeNutrition(), 0.92, true);
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
+      await submitVerification(barcode, userB.id, makeNutrition(), 0.92);
       const result = await submitVerification(
         barcode,
         userC.id,
         makeNutrition(),
         0.94,
-        true,
       );
 
       expect(result.verificationLevel).toBe("verified");
@@ -430,8 +403,8 @@ describe("verification storage", () => {
       await seedBarcodeVerification(barcode);
 
       await Promise.all([
-        submitVerification(barcode, testUser.id, makeNutrition(), 0.95, true),
-        submitVerification(barcode, testUser.id, makeNutrition(), 0.93, true),
+        submitVerification(barcode, testUser.id, makeNutrition(), 0.95),
+        submitVerification(barcode, testUser.id, makeNutrition(), 0.93),
       ]);
 
       const history = await getVerificationHistory(barcode);
@@ -443,14 +416,8 @@ describe("verification storage", () => {
       await seedBarcodeVerification(barcode);
       const userB = await createTestUser(tx);
 
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
-      await submitVerification(barcode, userB.id, makeNutrition(), 0.92, true);
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
+      await submitVerification(barcode, userB.id, makeNutrition(), 0.92);
 
       const history = await getVerificationHistory(barcode);
       expect(history.length).toBe(2);
@@ -461,27 +428,23 @@ describe("verification storage", () => {
     });
 
     it("excludes isMatch=false rows from the recomputed aggregate", async () => {
-      // A non-matching submission stores isMatch=false; it must not count
-      // toward the matching aggregate.
+      // A submission whose nutrition diverges from the committed matching
+      // history is computed (under the lock) as isMatch=false; it must not
+      // count toward the matching aggregate.
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
       const userB = await createTestUser(tx);
 
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       const disputed = await submitVerification(
         barcode,
         userB.id,
         makeNutrition({ calories: 999 }),
         0.9,
-        false,
       );
 
+      // The divergent second submission is computed as a non-match.
+      expect(disputed.isMatch).toBe(false);
       // History has 2 rows but only 1 matching — count stays 1.
       expect((await getVerificationHistory(barcode)).length).toBe(2);
       expect(disputed.verificationLevel).toBe("single_verified");
@@ -492,13 +455,7 @@ describe("verification storage", () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
       // First submission: succeeds, recomputes aggregate to single_verified/1.
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       // Second submission from same user — history insert is a no-op.
       // The status update inside the transaction is skipped (guard on
       // `if (!inserted)`); the duplicate path returns the unchanged aggregate.
@@ -507,7 +464,6 @@ describe("verification storage", () => {
         testUser.id,
         makeNutrition({ calories: 999 }),
         0.99,
-        true,
       );
 
       const verification = await getVerification(barcode);
@@ -532,13 +488,7 @@ describe("verification storage", () => {
     it("returns false when user has history but no front-label scan", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       const result = await hasUserFrontLabelScanned(barcode, testUser.id);
       expect(result).toBe(false);
     });
@@ -546,13 +496,7 @@ describe("verification storage", () => {
     it("returns true after confirmFrontLabelData", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       await confirmFrontLabelData(
         barcode,
         testUser.id,
@@ -571,13 +515,7 @@ describe("verification storage", () => {
     it("stores front-label data on the barcode row and stamps history", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       const data = makeFrontLabel(testUser.id, {
         brand: "Acme",
         productName: "Granola",
@@ -608,14 +546,8 @@ describe("verification storage", () => {
       const userB = await createTestUser(tx);
 
       // Both users verify
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
-      await submitVerification(barcode, userB.id, makeNutrition(), 0.92, true);
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
+      await submitVerification(barcode, userB.id, makeNutrition(), 0.92);
 
       // Only testUser confirms front-label
       await confirmFrontLabelData(
@@ -632,13 +564,7 @@ describe("verification storage", () => {
     it("overwrites previous front-label data on subsequent confirm", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       const first = makeFrontLabel(testUser.id, { brand: "First" });
       const second = makeFrontLabel(testUser.id, { brand: "Second" });
       await confirmFrontLabelData(barcode, testUser.id, first);
@@ -668,13 +594,7 @@ describe("verification storage", () => {
     it("returns 1.0 for a single verification with no front-label", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       const result = await getUserCompositeScore(testUser.id);
       expect(result.verificationCount).toBe(1);
       expect(result.frontLabelCount).toBe(0);
@@ -685,13 +605,7 @@ describe("verification storage", () => {
       const barcodes = [makeBarcode(), makeBarcode(), makeBarcode()];
       for (const barcode of barcodes) {
         await seedBarcodeVerification(barcode);
-        await submitVerification(
-          barcode,
-          testUser.id,
-          makeNutrition(),
-          0.95,
-          true,
-        );
+        await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       }
       // 2 of the 3 also get front-label confirmation
       await confirmFrontLabelData(
@@ -719,21 +633,30 @@ describe("verification storage", () => {
       const disputedBarcode = makeBarcode();
       await seedBarcodeVerification(matchBarcode);
       await seedBarcodeVerification(disputedBarcode);
+      const userB = await createTestUser(tx);
 
+      // testUser's matching submission.
       await submitVerification(
         matchBarcode,
         testUser.id,
         makeNutrition(),
         0.95,
-        true,
       );
+      // userB seeds the disputed barcode; testUser's divergent submission is
+      // computed (under the lock) as isMatch=false.
       await submitVerification(
         disputedBarcode,
-        testUser.id,
+        userB.id,
         makeNutrition(),
-        0.9,
-        false,
+        0.95,
       );
+      const disputed = await submitVerification(
+        disputedBarcode,
+        testUser.id,
+        makeNutrition({ calories: 999 }),
+        0.9,
+      );
+      expect(disputed.isMatch).toBe(false);
 
       const result = await getUserCompositeScore(testUser.id);
       expect(result.verificationCount).toBe(2);
@@ -746,7 +669,7 @@ describe("verification storage", () => {
       await seedBarcodeVerification(barcode);
       const userB = await createTestUser(tx);
 
-      await submitVerification(barcode, userB.id, makeNutrition(), 0.95, true);
+      await submitVerification(barcode, userB.id, makeNutrition(), 0.95);
       const result = await getUserCompositeScore(testUser.id);
       expect(result.verificationCount).toBe(0);
       expect(result.compositeScore).toBeCloseTo(0, 2);
@@ -769,13 +692,7 @@ describe("verification storage", () => {
     it("returns count=1, streak=1 for a verification today", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       const result = await getUserVerificationStats(testUser.id);
       expect(result.count).toBe(1);
       // Streak is 1 because today's verification counts.
@@ -785,13 +702,7 @@ describe("verification storage", () => {
     it("includes front-label count and composite score", async () => {
       const barcode = makeBarcode();
       await seedBarcodeVerification(barcode);
-      await submitVerification(
-        barcode,
-        testUser.id,
-        makeNutrition(),
-        0.95,
-        true,
-      );
+      await submitVerification(barcode, testUser.id, makeNutrition(), 0.95);
       await confirmFrontLabelData(
         barcode,
         testUser.id,

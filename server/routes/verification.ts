@@ -6,11 +6,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { logger } from "../lib/logger";
 import { detectImageMimeType } from "../lib/image-mime";
-import {
-  compareWithVerifications,
-  extractVerificationNutrition,
-  type VerificationNutrition,
-} from "../services/verification-comparison";
+import { extractVerificationNutrition } from "../services/verification-comparison";
 import { detectReformulation } from "../services/reformulation-detection";
 import { analyzeFrontLabel } from "../services/front-label-analysis";
 import { consensusNutritionSchema } from "@shared/types/verification";
@@ -114,64 +110,40 @@ export function register(app: Express): void {
 
         // Extract core nutrition from label data
         const extracted = extractVerificationNutrition(session.labelData);
-        const existingNutrition: VerificationNutrition[] = existingHistory
-          .filter((h) => h.isMatch !== false) // Only compare against matching entries
-          .map((h) => {
-            const nutrition = h.extractedNutrition as Record<string, unknown>;
-            return {
-              calories:
-                typeof nutrition.calories === "number"
-                  ? nutrition.calories
-                  : null,
-              protein:
-                typeof nutrition.protein === "number"
-                  ? nutrition.protein
-                  : null,
-              totalCarbs:
-                typeof nutrition.totalCarbs === "number"
-                  ? nutrition.totalCarbs
-                  : null,
-              totalFat:
-                typeof nutrition.totalFat === "number"
-                  ? nutrition.totalFat
-                  : null,
-            };
-          });
 
-        // Compare against existing verifications. `comparison.isMatch` is
-        // per-row data (does THIS scan match prior ones) — it is stored on the
-        // history row. The aggregate level/count/consensus are recomputed
-        // authoritatively inside submitVerification under a per-barcode lock.
-        const comparison = compareWithVerifications(
-          extracted,
-          existingNutrition,
-        );
-
-        // ── Snapshot pre-submit state for reformulation detection ─────
-        // Must read BEFORE submitVerification() mutates the row, otherwise
-        // we'd compare against post-mutation state (race condition).
-        let preSubmitVerification: Awaited<
-          ReturnType<typeof storage.getVerification>
-        > | null = null;
-        if (!comparison.isMatch) {
-          preSubmitVerification = await storage.getVerification(barcode);
-        }
-
-        // Record verification (transactional). Returns the authoritative
-        // aggregate state recomputed from verification_history under a lock.
+        // Record verification (transactional). Both the per-row `isMatch`
+        // decision and the aggregate (level/count/consensus) are computed
+        // inside submitVerification under a per-barcode advisory lock — the
+        // route no longer derives `isMatch` from a pre-transaction read, so a
+        // concurrent first-N burst on a brand-new barcode cannot store
+        // divergent rows all as `isMatch = true`.
         const aggregate = await storage.submitVerification(
           barcode,
           req.userId,
           extracted,
           session.labelData.confidence,
-          comparison.isMatch,
         );
 
         // ── Reformulation detection ──────────────────────────────────
         // When a scan doesn't match on a previously-verified product,
         // check if enough divergent scans have accumulated to flag it.
+        //
+        // This `getVerification` read is intentionally outside the
+        // submitVerification lock. Our own `isMatch = false` row does not
+        // change the matching aggregate, but a *concurrent* matching
+        // submission could advance it between our commit and this read —
+        // reformulation detection is advisory (best-effort flagging), not a
+        // hard consistency constraint, so that small race is acceptable. The
+        // original code had the same property (it read pre-submit state
+        // outside any lock).
+        let preSubmitVerification: Awaited<
+          ReturnType<typeof storage.getVerification>
+        > | null = null;
+        if (!aggregate.isMatch) {
+          preSubmitVerification = await storage.getVerification(barcode);
+        }
         if (
-          !comparison.isMatch &&
+          !aggregate.isMatch &&
           preSubmitVerification &&
           preSubmitVerification.verificationLevel === "verified" &&
           preSubmitVerification.consensusNutritionData
@@ -205,7 +177,7 @@ export function register(app: Express): void {
               mapHistoryEntry({
                 extractedNutrition: extracted,
                 userId: req.userId,
-                isMatch: comparison.isMatch,
+                isMatch: aggregate.isMatch,
               }),
               ...existingHistory.map(mapHistoryEntry),
             ];
@@ -242,7 +214,7 @@ export function register(app: Express): void {
         ));
 
         res.json({
-          isMatch: comparison.isMatch,
+          isMatch: aggregate.isMatch,
           verificationLevel: aggregate.verificationLevel,
           verificationCount: aggregate.verificationCount,
           canScanFrontLabel,

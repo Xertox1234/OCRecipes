@@ -9,6 +9,7 @@ import type { FrontLabelData } from "@shared/types/front-label";
 import {
   computeConsensus,
   CONSENSUS_THRESHOLD,
+  compareWithVerifications,
 } from "../lib/verification-consensus";
 
 /** Get the verification status for a barcode */
@@ -162,6 +163,13 @@ export interface SubmitVerificationResult {
   verificationLevel: string;
   verificationCount: number;
   consensusNutritionData: ConsensusNutritionData | null;
+  /**
+   * Whether this submission matched the committed history under the lock.
+   * Computed authoritatively inside the transaction — not caller-supplied —
+   * so a concurrent first-N burst on a brand-new barcode cannot store
+   * divergent rows all as `isMatch = true`.
+   */
+  isMatch: boolean;
 }
 
 /**
@@ -183,21 +191,28 @@ function parseHistoryNutrition(raw: unknown): VerificationNutrition {
  * aggregate status. All writes wrapped in a single transaction for atomicity.
  *
  * Concurrency: a transaction-scoped advisory lock on the barcode serializes
- * concurrent submissions for the SAME barcode. The aggregate
- * (`verificationLevel` / `verificationCount` / `consensusNutritionData`) is
- * recomputed from `verification_history` AFTER the insert — never trusted from
- * a caller-supplied pre-submit snapshot — so two users verifying the same
- * barcode concurrently cannot lose-update each other's aggregate writes.
+ * concurrent submissions for the SAME barcode. Both the per-row `isMatch`
+ * decision and the aggregate (`verificationLevel` / `verificationCount` /
+ * `consensusNutritionData`) are computed from `verification_history` read
+ * UNDER the lock — never trusted from a caller-supplied pre-submit snapshot.
  *
- * The post-insert history re-query is the correctness mechanism (not an
- * avoidable round-trip): it reads the authoritative row set under the lock.
+ * `isMatch` in particular must be computed inside the lock: a route-level
+ * pre-transaction read sees `existing = []` for every request in a concurrent
+ * first-N burst on a brand-new barcode, so all N rows would be stored as
+ * `isMatch = true` even when their nutrition diverges. Reading the matching
+ * history rows under the lock serializes the comparison, so each row is
+ * compared against the rows committed before it.
+ *
+ * The under-lock history read is the correctness mechanism (not an avoidable
+ * round-trip): it reads the authoritative row set under the lock, and because
+ * the lock prevents any concurrent insert for this barcode, the post-insert
+ * matching set is exactly those rows plus this submission's own row.
  */
 export async function submitVerification(
   barcode: string,
   userId: string,
   extractedNutrition: VerificationNutrition,
   ocrConfidence: number,
-  isMatch: boolean,
 ): Promise<SubmitVerificationResult> {
   return db.transaction(async (tx) => {
     // Serialize concurrent submissions for this barcode. Acquired first so it
@@ -214,7 +229,33 @@ export async function submitVerification(
       .values({ barcode })
       .onConflictDoNothing({ target: barcodeVerifications.barcode });
 
-    // Insert verification history entry
+    // Read the committed matching history UNDER the lock, BEFORE the insert.
+    // Only matching entries (isMatch IS NOT FALSE) are comparison candidates —
+    // this mirrors the consensus filter. The lock guarantees no concurrent
+    // submission for this barcode commits between this read and our insert, so
+    // this set is authoritative for both the `isMatch` comparison and the
+    // post-insert aggregate recompute.
+    const existingMatchingRows = await tx
+      .select({ extractedNutrition: verificationHistory.extractedNutrition })
+      .from(verificationHistory)
+      .where(
+        and(
+          eq(verificationHistory.barcode, barcode),
+          sql`${verificationHistory.isMatch} IS NOT FALSE`,
+        ),
+      );
+    const existingMatchingNutrition = existingMatchingRows.map((r) =>
+      parseHistoryNutrition(r.extractedNutrition),
+    );
+
+    // Compare this submission against the committed matching history. First
+    // submission (empty history) always matches — nothing to compare against.
+    const isMatch = compareWithVerifications(
+      extractedNutrition,
+      existingMatchingNutrition,
+    ).isMatch;
+
+    // Insert verification history entry with the under-lock `isMatch`.
     const [inserted] = await tx
       .insert(verificationHistory)
       .values({
@@ -250,26 +291,17 @@ export async function submitVerification(
         consensusNutritionData:
           (current?.consensusNutritionData as ConsensusNutritionData | null) ??
           null,
+        isMatch,
       };
     }
 
-    // Recompute the aggregate from the authoritative post-insert history. Only
-    // matching entries (isMatch IS NOT FALSE) count toward the consensus — this
-    // mirrors the route's pre-submit `existingNutrition` filter, now including
-    // the row just inserted.
-    const matchingRows = await tx
-      .select({ extractedNutrition: verificationHistory.extractedNutrition })
-      .from(verificationHistory)
-      .where(
-        and(
-          eq(verificationHistory.barcode, barcode),
-          sql`${verificationHistory.isMatch} IS NOT FALSE`,
-        ),
-      );
-
-    const matchingNutrition = matchingRows.map((r) =>
-      parseHistoryNutrition(r.extractedNutrition),
-    );
+    // Recompute the aggregate from the authoritative matching row set. Because
+    // the lock serializes submissions for this barcode, the post-insert
+    // matching set is exactly the pre-insert matching rows plus our own row
+    // when it matches — no re-query needed.
+    const matchingNutrition = isMatch
+      ? [...existingMatchingNutrition, extractedNutrition]
+      : existingMatchingNutrition;
     const matchingCount = matchingNutrition.length;
 
     let newLevel: string;
@@ -305,6 +337,7 @@ export async function submitVerification(
       verificationLevel: newLevel,
       verificationCount: matchingCount,
       consensusNutritionData: consensusData,
+      isMatch,
     };
   });
 }

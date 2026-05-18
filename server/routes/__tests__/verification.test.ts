@@ -47,9 +47,6 @@ vi.mock("../../services/front-label-analysis", () => ({
 }));
 
 vi.mock("../../services/verification-comparison", () => ({
-  compareWithVerifications: vi
-    .fn()
-    .mockReturnValue({ isMatch: true, matchCount: 1 }),
   extractVerificationNutrition: vi.fn().mockReturnValue({
     calories: 200,
     protein: 10,
@@ -405,6 +402,7 @@ describe("Verification Routes", () => {
         verificationLevel: "single_verified",
         verificationCount: 1,
         consensusNutritionData: null,
+        isMatch: true,
       });
       vi.mocked(storage.hasUserFrontLabelScanned).mockResolvedValue(false);
 

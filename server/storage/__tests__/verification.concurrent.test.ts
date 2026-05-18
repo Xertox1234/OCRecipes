@@ -85,7 +85,7 @@ describe("submitVerification — concurrent multi-connection safety", () => {
 
     const results = await Promise.all(
       userIds.map((userId) =>
-        submitVerification(barcode, userId, NUTRITION, 0.95, true),
+        submitVerification(barcode, userId, NUTRITION, 0.95),
       ),
     );
 
@@ -112,5 +112,54 @@ describe("submitVerification — concurrent multi-connection safety", () => {
       ...results.map((r) => r.verificationCount),
     );
     expect(maxReturnedCount).toBe(5);
+  });
+
+  it("computes per-row isMatch under the lock for a concurrent divergent first-N burst", async () => {
+    // Regression target for the per-row isMatch race: when isMatch was
+    // derived from a route-level pre-transaction read, every request in a
+    // concurrent first-N burst on a brand-new barcode saw `existing = []`
+    // and stored its row as `isMatch = true` — even divergent scans. With
+    // the comparison moved inside the advisory lock, exactly one submission
+    // (the first to commit) matches against empty history, and every
+    // divergent later submission is compared against that committed row and
+    // stored as `isMatch = false`.
+    const barcode = makeBarcode();
+    createdBarcodes.push(barcode);
+
+    const userIds = await Promise.all([
+      createCommittedUser(),
+      createCommittedUser(),
+      createCommittedUser(),
+    ]);
+
+    // Each user submits genuinely divergent nutrition (calories far apart).
+    const nutritions: VerificationNutrition[] = [
+      { calories: 100, protein: 5, totalCarbs: 10, totalFat: 2 },
+      { calories: 500, protein: 30, totalCarbs: 60, totalFat: 20 },
+      { calories: 900, protein: 50, totalCarbs: 90, totalFat: 40 },
+    ];
+
+    const results = await Promise.all(
+      userIds.map((userId, i) =>
+        submitVerification(barcode, userId, nutritions[i], 0.95),
+      ),
+    );
+
+    // Exactly one submission matched (the first to acquire the lock with
+    // empty history); the other two diverged and were marked non-matching.
+    const matchCount = results.filter((r) => r.isMatch).length;
+    expect(matchCount).toBe(1);
+
+    // The persisted aggregate counts only the single matching row.
+    const [agg] = await db
+      .select({
+        verificationLevel: barcodeVerifications.verificationLevel,
+        verificationCount: barcodeVerifications.verificationCount,
+      })
+      .from(barcodeVerifications)
+      .where(eq(barcodeVerifications.barcode, barcode));
+
+    expect(agg.verificationCount).toBe(1);
+    expect(agg.verificationLevel).toBe("single_verified");
   });
 });
