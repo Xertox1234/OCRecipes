@@ -1,30 +1,18 @@
 import { useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
 import type {
   SearchableRecipe,
   RecipeSearchParams,
 } from "@shared/types/recipe-search";
+import {
+  catalogSearchResponseSchema,
+  type CatalogSearchResult,
+} from "@shared/types/recipe-catalog";
 
 // Spoonacular's `number` param caps at 50 (see catalogSearchSchema).
 const PAGE_SIZE = 20;
-
-/** Raw item shape from GET /api/meal-plan/catalog/search. */
-interface CatalogSearchResult {
-  id: number;
-  title: string;
-  image?: string;
-  imageType?: string;
-  readyInMinutes?: number;
-}
-
-/** Raw response shape from GET /api/meal-plan/catalog/search. */
-interface CatalogSearchResponse {
-  results: CatalogSearchResult[];
-  offset: number;
-  number: number;
-  totalResults: number;
-}
 
 /**
  * Translates the unified recipe-search params into the catalog endpoint's
@@ -93,7 +81,7 @@ export function useCatalogSearch(
   params: RecipeSearchParams | null,
   enabled: boolean,
 ) {
-  const query = useInfiniteQuery<CatalogSearchResponse>({
+  const query = useInfiniteQuery({
     queryKey: ["/api/meal-plan/catalog/search", params ?? {}],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) => {
@@ -102,7 +90,17 @@ export function useCatalogSearch(
         "GET",
         `/api/meal-plan/catalog/search?${qs}`,
       );
-      return res.json();
+      const json = await res.json();
+      const parsed = catalogSearchResponseSchema.safeParse(json);
+      if (!parsed.success) {
+        throw new ApiError(
+          `Unexpected /api/meal-plan/catalog/search response shape: ${JSON.stringify(
+            parsed.error.flatten(),
+          )}`,
+          "INVALID_RESPONSE_SHAPE",
+        );
+      }
+      return parsed.data;
     },
     getNextPageParam: (lastPage) => {
       const loadedCount = lastPage.offset + lastPage.results.length;

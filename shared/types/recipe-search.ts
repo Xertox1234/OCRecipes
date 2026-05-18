@@ -1,4 +1,8 @@
-import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
+import { z } from "zod";
+import {
+  allergenIdSchema,
+  type DerivedRecipeAllergen,
+} from "@shared/constants/allergens";
 
 export interface SearchableRecipe {
   id: string; // "personal:42", "community:17", "spoonacular:654321"
@@ -62,3 +66,54 @@ export interface RecipeSearchResponse {
     sort: string;
   };
 }
+
+/**
+ * Runtime schema for the GET /api/recipes/search response. Validated at the
+ * network boundary in `useRecipeSearch` so server contract drift surfaces as a
+ * structured error instead of a silent `undefined` downstream.
+ */
+const derivedRecipeAllergenSchema = z.object({
+  id: allergenIdSchema,
+  viaDerived: z.boolean(),
+});
+
+const searchableRecipeSchema = z.object({
+  id: z.string(),
+  source: z.enum(["personal", "community", "spoonacular"]),
+  userId: z.string().nullable(),
+  title: z.string(),
+  description: z.string().nullable(),
+  ingredients: z.array(z.string()),
+  cuisine: z.string().nullable(),
+  dietTags: z.array(z.string()),
+  mealTypes: z.array(z.string()),
+  difficulty: z.string().nullable(),
+  prepTimeMinutes: z.number().nullable(),
+  cookTimeMinutes: z.number().nullable(),
+  totalTimeMinutes: z.number().nullable(),
+  caloriesPerServing: z.number().nullable(),
+  proteinPerServing: z.number().nullable(),
+  carbsPerServing: z.number().nullable(),
+  fatPerServing: z.number().nullable(),
+  servings: z.number().nullable(),
+  imageUrl: z.string().nullable(),
+  sourceUrl: z.string().nullable(),
+  createdAt: z.string().nullable(),
+  isCanonical: z.boolean(),
+  allergens: z.array(derivedRecipeAllergenSchema).nullable(),
+});
+
+export const recipeSearchResponseSchema = z.object({
+  results: z.array(searchableRecipeSchema),
+  total: z.number(),
+  offset: z.number(),
+  limit: z.number(),
+  query: z.object({
+    q: z.string().nullable(),
+    filters: z.record(
+      z.string(),
+      z.union([z.string(), z.number(), z.boolean()]),
+    ),
+    sort: z.string(),
+  }),
+});

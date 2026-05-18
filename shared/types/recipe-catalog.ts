@@ -1,16 +1,29 @@
-export type CatalogSearchResult = {
-  id: number;
-  title: string;
-  image?: string;
-  readyInMinutes?: number;
-};
+import { z } from "zod";
 
-export type CatalogSearchResponse = {
-  results: CatalogSearchResult[];
-  offset: number;
-  number: number;
-  totalResults: number;
-};
+/**
+ * Runtime schemas for the Spoonacular catalog search response. Shared between
+ * the server (`server/services/recipe-catalog.ts`, which validates the raw
+ * Spoonacular payload) and the client hook `useCatalogSearch`, which validates
+ * the GET /api/meal-plan/catalog/search response at the network boundary.
+ */
+export const catalogSearchResultSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  image: z.string().optional(),
+  imageType: z.string().optional(),
+  readyInMinutes: z.number().optional(),
+});
+
+export const catalogSearchResponseSchema = z.object({
+  results: z.array(catalogSearchResultSchema),
+  offset: z.number(),
+  number: z.number(),
+  totalResults: z.number(),
+});
+
+export type CatalogSearchResult = z.infer<typeof catalogSearchResultSchema>;
+
+export type CatalogSearchResponse = z.infer<typeof catalogSearchResponseSchema>;
 
 export interface CatalogSearchParams {
   query: string;

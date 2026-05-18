@@ -3,6 +3,11 @@ import type {
   InsertMealPlanRecipe,
   InsertRecipeIngredient,
 } from "@shared/schema";
+import {
+  catalogSearchResponseSchema,
+  type CatalogSearchResult,
+  type CatalogSearchResponse,
+} from "@shared/types/recipe-catalog";
 import { createServiceLogger } from "../lib/logger";
 
 const log = createServiceLogger("recipe-catalog");
@@ -18,21 +23,9 @@ if (!SPOONACULAR_API_KEY && process.env.NODE_ENV !== "test") {
 }
 
 // ── Zod Schemas for Spoonacular responses ────────────────────────────
-
-const catalogSearchResultSchema = z.object({
-  id: z.number(),
-  title: z.string(),
-  image: z.string().optional(),
-  imageType: z.string().optional(),
-  readyInMinutes: z.number().optional(),
-});
-
-const catalogSearchResponseSchema = z.object({
-  results: z.array(catalogSearchResultSchema),
-  offset: z.number(),
-  number: z.number(),
-  totalResults: z.number(),
-});
+// `catalogSearchResponseSchema` is imported from `@shared/types/recipe-catalog`
+// so the server and the client hook `useCatalogSearch` validate against one
+// shared contract.
 
 const nutrientSchema = z.object({
   name: z.string(),
@@ -71,14 +64,7 @@ const recipeDetailSchema = z.object({
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export type CatalogSearchResult = z.infer<typeof catalogSearchResultSchema>;
-
-export type CatalogSearchResponse = {
-  results: CatalogSearchResult[];
-  offset: number;
-  number: number;
-  totalResults: number;
-};
+export type { CatalogSearchResult, CatalogSearchResponse };
 
 export interface CatalogSearchParams {
   query: string;

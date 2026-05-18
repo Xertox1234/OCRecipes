@@ -135,6 +135,27 @@ describe("useCatalogSearch", () => {
     expect(result.current.hasNextPage).toBe(true);
   });
 
+  it("surfaces a structured error when the response shape is invalid", async () => {
+    // Server contract drift: `results` renamed to `items`.
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ items: [], offset: 0, number: 20, totalResults: 0 }),
+    });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useCatalogSearch({ q: "pasta" }, true),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(ApiError);
+    expect((result.current.error as ApiError).code).toBe(
+      "INVALID_RESPONSE_SHAPE",
+    );
+    expect(result.current.data).toBeUndefined();
+  });
+
   it("surfaces the quota-exceeded error with its machine-readable code", async () => {
     mockApiRequest.mockRejectedValue(
       new ApiError("402: quota exceeded", "CATALOG_QUOTA_EXCEEDED"),
