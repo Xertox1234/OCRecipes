@@ -1,6 +1,6 @@
 ---
 title: "Validate recipe-search hook responses with Zod schemas"
-status: backlog
+status: done
 priority: low
 created: 2026-05-17
 updated: 2026-05-17

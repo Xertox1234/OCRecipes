@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
-import type {
-  SearchableRecipe,
-  RecipeSearchParams,
-  RecipeSearchResponse,
+import { ApiError } from "@/lib/api-error";
+import {
+  recipeSearchResponseSchema,
+  type SearchableRecipe,
+  type RecipeSearchParams,
+  type RecipeSearchResponse,
 } from "@shared/types/recipe-search";
 
 const PAGE_SIZE = 20;
@@ -24,7 +26,17 @@ export function useRecipeSearch(params: RecipeSearchParams | null) {
       const qs = buildQueryString(params!, pageParam as number);
       const res = await apiRequest("GET", `/api/recipes/search?${qs}`);
       if (!res.ok) throw new Error(`${res.status}`);
-      return res.json();
+      const json = await res.json();
+      const parsed = recipeSearchResponseSchema.safeParse(json);
+      if (!parsed.success) {
+        throw new ApiError(
+          `Unexpected /api/recipes/search response shape: ${JSON.stringify(
+            parsed.error.flatten(),
+          )}`,
+          "INVALID_RESPONSE_SHAPE",
+        );
+      }
+      return parsed.data;
     },
     getNextPageParam: (lastPage, allPages) => {
       const loadedCount = allPages.reduce(

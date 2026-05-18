@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { useRecipeSearch } from "../useRecipeSearch";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { ApiError } from "../../lib/api-error";
 
 const { mockApiRequest } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
@@ -36,6 +37,8 @@ const mockResponse = {
       imageUrl: null,
       sourceUrl: null,
       createdAt: null,
+      isCanonical: false,
+      allergens: null,
     },
   ],
   total: 1,
@@ -95,5 +98,24 @@ describe("useRecipeSearch", () => {
 
     expect(result.current.fetchStatus).toBe("idle");
     expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a structured error when the response shape is invalid", async () => {
+    // Server contract drift: `results` renamed to `items`.
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ items: [], total: 0 }),
+    });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(() => useRecipeSearch({ q: "test" }), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(ApiError);
+    expect((result.current.error as ApiError).code).toBe(
+      "INVALID_RESPONSE_SHAPE",
+    );
+    expect(result.current.data).toBeUndefined();
   });
 });
