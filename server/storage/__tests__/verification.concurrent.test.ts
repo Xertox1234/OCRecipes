@@ -20,7 +20,7 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
-import { db } from "../../db";
+import { db, pool } from "../../db";
 import { barcodeVerifications, users } from "@shared/schema";
 import { submitVerification } from "../verification";
 import type { VerificationNutrition } from "@shared/types/verification";
@@ -65,6 +65,9 @@ describe("submitVerification — concurrent multi-connection safety", () => {
     for (const userId of createdUserIds) {
       await db.delete(users).where(eq(users.id, userId));
     }
+    // Close the real pool this file opened. Vitest isolates modules per file
+    // (forks pool), so this ends only this file's pool, not sibling files'.
+    await pool.end();
   });
 
   it("does not lose-update verification_count under concurrent different-user submits", async () => {
