@@ -21,10 +21,10 @@ The route layer should validate/authenticate, call services/storage, and return 
 
 ## Acceptance Criteria
 
-- [ ] Move pantry meal-plan orchestration behind an appropriate service boundary.
-- [ ] Keep route behavior and response shape unchanged.
-- [ ] Migrate non-excluded manual catch blocks to `handleRouteError` where appropriate.
-- [ ] Add or update focused route/service tests for the moved pantry flow.
+- [x] Move pantry meal-plan orchestration behind an appropriate service boundary.
+- [x] Keep route behavior and response shape unchanged.
+- [x] Migrate non-excluded manual catch blocks to `handleRouteError` where appropriate.
+- [x] Add or update focused route/service tests for the moved pantry flow.
 
 ## Implementation Notes
 
@@ -50,3 +50,9 @@ Do not touch auth or HealthKit hard-exclusion routes as part of this cleanup.
 ### 2026-05-16
 
 - Created from broad-sweep audit findings M7 and L5.
+
+### 2026-05-17
+
+- M7 (pantry orchestration) was already resolved before this run: `buildPantryMealPlanForUser` in `server/services/pantry-meal-plan.ts` is the service boundary and `POST /api/meal-plan/generate-from-pantry` only validates input and maps errors. `server/services/__tests__/pantry-meal-plan.test.ts` already covers it (EmptyPantry, custom targets/household, default targets/household).
+- L5: migrated the 5 generic catch blocks in `server/routes/meal-plan.ts` (fetch recipes, fetch recipe, delete recipe, fetch meal plan, remove item) from manual `logger.error` + `sendError(500, INTERNAL_ERROR)` to `handleRouteError`. Output is identical for non-Zod errors; ZodError handling is now correct.
+- Left intentionally: the meal-confirmation catch (special 23505 unique-violation → 409 mapping) and the pantry catch (`EmptyPantryError` → 400; AI parse failures must stay 500). The `nutrition.ts` toggle-favourite catch uses a distinct `ErrorCode.TOGGLE_FAILED`; migrating it would change the response error code, so it was left to preserve response shape. `admin-api-keys.ts` and `public-api.ts` already use `handleRouteError` throughout.
