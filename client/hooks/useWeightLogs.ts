@@ -34,7 +34,12 @@ export function useLogWeight() {
       source?: string;
       note?: string;
     }) => {
-      const res = await apiRequest("POST", "/api/weight", data);
+      // The WeightTracking UI collects weight in kg; without an explicit unit
+      // the route defaults to "lb" and divides the value by ~2.2 on storage.
+      const res = await apiRequest("POST", "/api/weight", {
+        ...data,
+        unit: "kg",
+      });
       return res.json();
     },
     onSuccess: () => {

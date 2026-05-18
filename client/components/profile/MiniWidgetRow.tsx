@@ -116,7 +116,7 @@ export const MiniWidgetRow = React.memo(function MiniWidgetRow({
           <ThemedText
             style={[styles.widgetLabel, { color: theme.textSecondary }]}
           >
-            {weightUnlocked && latestWeight ? latestWeight.unit : "lbs"}
+            {weightUnlocked && latestWeight ? latestWeight.unit : "kg"}
           </ThemedText>
         </View>
       </Pressable>

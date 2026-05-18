@@ -149,7 +149,7 @@ describe("getProfileWidgets", () => {
       },
       latestWeight: {
         value: 175.5,
-        unit: "lbs",
+        unit: "kg",
         date: loggedAt.toISOString(),
       },
     });
@@ -272,7 +272,7 @@ describe("getProfileWidgets", () => {
 
     expect(result?.latestWeight).toEqual({
       value: 180.25,
-      unit: "lbs",
+      unit: "kg",
       date: loggedAt.toISOString(),
     });
   });
