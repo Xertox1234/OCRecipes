@@ -3,6 +3,8 @@
 - Never use `onConflictDoNothing({ target })` with partial unique indexes — omit the target arg entirely (PG rejects at runtime; causes live test failures)
 - Use `onConflictDoUpdate` for cache tables, not `onConflictDoNothing` — the latter silently skips expired-entry updates, causing `!`-assertion crashes on the stale row
 - Always pair `.default([])` with `.notNull()` on array columns — `.default([])` alone keeps the TS type `T[] | null` and crashes on legacy NULLs
+- EXCEPTION — safety/correctness-critical derived columns must be NULLABLE with no default (not `NOT NULL DEFAULT []`): `[]` cannot distinguish "derived, genuinely empty" from "not yet derived", so a `[]` default fails OPEN between migration and backfill. Use `null` = "not derived" (predicate treats it as conservatively unsafe); `[]` = "derived, empty" = safe. Write paths must always store a concrete array. See `docs/solutions/conventions/nullable-not-empty-for-derived-safety-columns-2026-05-17.md`
+- Derive the `Insert` type for a table with a NULLABLE typed `jsonb` column from `typeof table.$inferInsert` — NOT `z.infer<typeof createInsertSchema(table)>`: drizzle-zod 0.7.x loosens a nullable `.$type<>()` jsonb column to a generic `Json` union, breaking `.values()` insert type-safety
 - Polymorphic FK always requires a discriminator column (e.g., `recipeType`) alongside the FK — never a bare `recipeId` without type context
 - Never store large blobs (images, receipts > 1 KB) in DB columns — use file/object storage (Cloudflare R2)
 - Multi-phase background jobs: design the eligibility query to catch phase-1-complete + phase-2-incomplete as a retriable state, not a dead end
