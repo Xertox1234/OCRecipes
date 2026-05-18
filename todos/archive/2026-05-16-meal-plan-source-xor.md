@@ -1,6 +1,6 @@
 ---
 title: "Require exactly one meal-plan nutrition source"
-status: backlog
+status: done
 priority: high
 created: 2026-05-16
 updated: 2026-05-16
@@ -21,10 +21,10 @@ The route and DB constraint currently reject zero-source meal-plan items, but th
 
 ## Acceptance Criteria
 
-- [ ] Add API validation rejecting requests with both `recipeId` and `scannedItemId`.
-- [ ] Add tests for zero-source, recipe-only, scanned-item-only, and two-source requests.
-- [ ] Prepare a human-approved schema/migration plan for a DB-level XOR constraint.
-- [ ] After plan approval, add the DB constraint and migration/backfill check.
+- [x] Add API validation rejecting requests with both `recipeId` and `scannedItemId`.
+- [x] Add tests for zero-source, recipe-only, scanned-item-only, and two-source requests.
+- [ ] Prepare a human-approved schema/migration plan for a DB-level XOR constraint. _(moved to `todos/2026-05-17-meal-plan-source-xor-db-constraint.md`)_
+- [ ] After plan approval, add the DB constraint and migration/backfill check. _(moved to `todos/2026-05-17-meal-plan-source-xor-db-constraint.md`)_
 
 ## Implementation Notes
 
@@ -50,3 +50,11 @@ Schema and migrations are hard exclusions. Do not edit `shared/schema.ts` or `mi
 ### 2026-05-16
 
 - Created from broad-sweep audit finding M6.
+
+### 2026-05-17
+
+- Completed the autonomous slice: API XOR validation rejecting requests with both
+  `recipeId` and `scannedItemId` (`server/routes/meal-plan.ts`) plus route tests
+  for all four source combinations (`server/routes/__tests__/meal-plan.test.ts`).
+- The remaining human-gated DB-level XOR constraint work (ACs 3-4) was split into
+  `todos/2026-05-17-meal-plan-source-xor-db-constraint.md`.

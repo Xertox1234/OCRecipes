@@ -400,6 +400,24 @@ describe("Meal Plan Routes", () => {
       expect(res.status).toBe(400);
     });
 
+    it("returns 400 with both recipeId and scannedItemId", async () => {
+      const res = await request(app)
+        .post("/api/meal-plan/items")
+        .set("Authorization", "Bearer token")
+        .send({
+          recipeId: 1,
+          scannedItemId: 1,
+          plannedDate: "2025-01-01",
+          mealType: "dinner",
+        });
+
+      expect(res.status).toBe(400);
+      // Guard must short-circuit before any storage ownership lookup
+      expect(vi.mocked(storage.getMealPlanRecipe)).not.toHaveBeenCalled();
+      expect(vi.mocked(storage.getScannedItem)).not.toHaveBeenCalled();
+      expect(vi.mocked(storage.addMealPlanItem)).not.toHaveBeenCalled();
+    });
+
     it("returns 404 for recipe not owned by user", async () => {
       // Storage now enforces userId — returns undefined when recipe not owned
       vi.mocked(storage.getMealPlanRecipe).mockResolvedValue(undefined);
