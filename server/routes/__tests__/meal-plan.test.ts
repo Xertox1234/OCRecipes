@@ -63,6 +63,17 @@ vi.mock("../../storage/canonical-recipes", () => ({
   incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
 }));
 
+// POST /api/meal-plan/recipes fires `generateRecipeImage` as a fire-and-forget
+// background promise whenever the created recipe has no imageUrl (the factory
+// default). Without this mock the *real* service runs after the test finishes —
+// it pulls in lib/openai + lib/runware, may make network calls, and resolves
+// onto the microtask queue, polluting the shared `storage.updateMealPlanRecipe`
+// mock for whatever route test runs next in the same Vitest worker. That is the
+// source of the non-deterministic cross-file flakiness.
+vi.mock("../../services/recipe-generation", () => ({
+  generateRecipeImage: vi.fn().mockResolvedValue(null),
+}));
+
 function createApp() {
   const app = express();
   app.use(express.json());
