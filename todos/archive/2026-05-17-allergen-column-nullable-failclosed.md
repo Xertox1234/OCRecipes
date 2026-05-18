@@ -1,6 +1,6 @@
 ---
 title: "Make recipe allergens column nullable so the 'Safe for me' filter is fail-closed"
-status: backlog
+status: done
 priority: high
 created: 2026-05-17
 updated: 2026-05-17

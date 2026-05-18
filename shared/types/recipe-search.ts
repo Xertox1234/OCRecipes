@@ -23,8 +23,12 @@ export interface SearchableRecipe {
   sourceUrl: string | null;
   createdAt: string | null;
   isCanonical: boolean;
-  /** Denormalized allergen cache derived from ingredient names. */
-  allergens: DerivedRecipeAllergen[];
+  /**
+   * Denormalized allergen cache derived from ingredient names. `null` means the
+   * recipe has not been analyzed yet — `isRecipeSafeForAllergies` treats `null`
+   * as unsafe (fail-closed). `[]` means "derived, genuinely no allergens" = safe.
+   */
+  allergens: DerivedRecipeAllergen[] | null;
 }
 
 export interface RecipeSearchParams {

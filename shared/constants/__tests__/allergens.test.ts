@@ -329,6 +329,16 @@ describe("isRecipeSafeForAllergies", () => {
     ).toBe(true);
   });
 
+  it("is unsafe when the recipe's allergens are null (not yet derived)", () => {
+    expect(
+      isRecipeSafeForAllergies(null, [{ name: "peanuts", severity: "mild" }]),
+    ).toBe(false);
+  });
+
+  it("is safe for a null-allergen recipe when the user has no allergies", () => {
+    expect(isRecipeSafeForAllergies(null, [])).toBe(true);
+  });
+
   it("is unsafe for a direct-tier hit even at mild severity", () => {
     expect(
       isRecipeSafeForAllergies(

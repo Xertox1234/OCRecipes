@@ -895,6 +895,14 @@ describe("searchRecipes — safeForMe allergen filter", () => {
     ingredients: [],
     allergens: [],
   };
+  // A recipe that has ingredients but whose allergen cache was never derived
+  // (`allergens = null` — a pre-backfill row). Must fail closed.
+  const notDerivedRecipe: CommunityRecipe = {
+    ...baseCommunityRecipe,
+    id: 400,
+    title: "Un-analyzed Stew",
+    allergens: null,
+  };
 
   beforeEach(() => {
     resetSearchIndex();
@@ -902,6 +910,7 @@ describe("searchRecipes — safeForMe allergen filter", () => {
     mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
       caseinRecipe,
       unknownRecipe,
+      notDerivedRecipe,
     ]);
     mockedStorage.getAllRecipeIngredients.mockResolvedValue(
       new Map([
@@ -930,9 +939,10 @@ describe("searchRecipes — safeForMe allergen filter", () => {
     );
     await initSearchIndex();
     const result = await searchRecipes({ safeForMe: true }, "user1");
-    // All three recipes returned — including the unknown-ingredient one,
-    // because a user with no allergies has nothing to be unsafe from.
-    expect(result.results).toHaveLength(3);
+    // All four recipes returned — including the unknown-ingredient and
+    // un-derived ones, because a user with no allergies has nothing to be
+    // unsafe from.
+    expect(result.results).toHaveLength(4);
   });
 
   it("excludes a direct-tier allergen match for a mild allergy", async () => {
@@ -987,6 +997,19 @@ describe("searchRecipes — safeForMe allergen filter", () => {
     expect(ids).not.toContain("community:300");
   });
 
+  it("conservatively excludes recipes whose allergen cache is not yet derived", async () => {
+    mockedStorage.getUserProfile.mockResolvedValue(
+      createMockUserProfile({
+        allergies: [{ name: "peanuts", severity: "mild" }],
+      }),
+    );
+    await initSearchIndex();
+    const result = await searchRecipes({ safeForMe: true }, "user1");
+    const ids = result.results.map((r) => r.id);
+    // `allergens = null` (pre-backfill row) is fail-closed — never shown as safe.
+    expect(ids).not.toContain("community:400");
+  });
+
   it("does not filter when safeForMe is absent", async () => {
     mockedStorage.getUserProfile.mockResolvedValue(
       createMockUserProfile({
@@ -996,6 +1019,6 @@ describe("searchRecipes — safeForMe allergen filter", () => {
     await initSearchIndex();
     const result = await searchRecipes({}, "user1");
     // All recipes returned — filter only applies when safeForMe is true.
-    expect(result.results).toHaveLength(3);
+    expect(result.results).toHaveLength(4);
   });
 });
