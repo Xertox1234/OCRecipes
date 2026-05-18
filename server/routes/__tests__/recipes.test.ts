@@ -39,6 +39,7 @@ vi.mock("../../storage", () => ({
     createMealPlanRecipe: vi.fn(),
     getFrequentRecipesForMealType: vi.fn(),
     getRecipeSharePayload: vi.fn(),
+    getUserVerificationStats: vi.fn(),
   },
 }));
 
@@ -105,6 +106,14 @@ describe("Recipes Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // resolveSubscriptionTierFeatures (via the recipe-generation gate) reads
+    // the verification streak — default to no streak unless a test overrides it.
+    vi.mocked(storage.getUserVerificationStats).mockResolvedValue({
+      count: 0,
+      frontLabelCount: 0,
+      compositeScore: 0,
+      streak: 0,
+    });
     app = createApp();
   });
 

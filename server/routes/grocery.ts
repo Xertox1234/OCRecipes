@@ -4,7 +4,12 @@ import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
+import {
+  TIER_FEATURES,
+  isValidSubscriptionTier,
+  applyStreakUnlocks,
+} from "@shared/types/premium";
+import { resolveVerificationStreak } from "../services/verification-streak-cache";
 import { isValidCalendarDate } from "../utils/date-validation";
 import {
   generateGroceryItems,
@@ -94,11 +99,17 @@ export function register(app: Express): void {
           return;
         }
 
-        // Enforce date range limit based on subscription tier
-        const subscription = await storage.getSubscriptionStatus(req.userId);
+        // Enforce date range limit based on subscription tier. A verification
+        // streak can unlock extendedPlanRange for free-tier users, so the
+        // feature set is resolved through applyStreakUnlocks.
+        const [subscription, streak] = await Promise.all([
+          storage.getSubscriptionStatus(req.userId),
+          resolveVerificationStreak(req.userId),
+        ]);
         const tierValue = subscription?.tier || "free";
         const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
-        const maxDays = TIER_FEATURES[tier].extendedPlanRange ? 90 : 7;
+        const features = applyStreakUnlocks(TIER_FEATURES[tier], streak);
+        const maxDays = features.extendedPlanRange ? 90 : 7;
         const start = new Date(parsed.data.startDate);
         const end = new Date(parsed.data.endDate);
         const daysDiff = Math.ceil(

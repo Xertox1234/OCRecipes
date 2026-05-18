@@ -11,6 +11,7 @@ import {
   type SubscriptionTier,
   type SubscriptionStatus,
   type PremiumFeatures,
+  type PremiumFeatureKey,
 } from "@shared/types/premium";
 import { useAuthContext } from "./AuthContext";
 
@@ -29,6 +30,8 @@ interface ReceiptScanStatus {
 interface PremiumContextType {
   tier: SubscriptionTier;
   features: PremiumFeatures;
+  /** Feature keys currently granted by the verification-streak unlock. */
+  streakUnlocks: PremiumFeatureKey[];
   isPremium: boolean;
   isLoading: boolean;
   isError: boolean;
@@ -50,6 +53,8 @@ interface PremiumContextType {
 const PremiumContext = createContext<PremiumContextType | null>(null);
 
 const DEFAULT_FEATURES = TIER_FEATURES.free;
+/** Stable empty-array reference so a missing `streakUnlocks` does not churn renders. */
+const EMPTY_STREAK_UNLOCKS: PremiumFeatureKey[] = [];
 
 export function PremiumProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuthContext();
@@ -104,6 +109,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
 
   const tier = subscriptionData?.tier ?? "free";
   const features = subscriptionData?.features ?? DEFAULT_FEATURES;
+  const streakUnlocks = subscriptionData?.streakUnlocks ?? EMPTY_STREAK_UNLOCKS;
   const isPremium = tier === "premium" && (subscriptionData?.isActive ?? false);
   const dailyScanCount = scanCountData?.count ?? 0;
   const canScanToday = isPremium || dailyScanCount < features.maxDailyScans;
@@ -153,6 +159,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     () => ({
       tier,
       features,
+      streakUnlocks,
       isPremium,
       isLoading:
         isSubscriptionLoading || isScanCountLoading || isRecipeGenLoading,
@@ -174,6 +181,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
     [
       tier,
       features,
+      streakUnlocks,
       isPremium,
       isSubscriptionLoading,
       isScanCountLoading,

@@ -8,19 +8,32 @@ import { storage } from "../../storage";
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getUserVerificationStats: vi.fn(),
   },
 }));
 
 const mockGetSubscriptionStatus = vi.mocked(storage.getSubscriptionStatus);
+const mockGetUserVerificationStats = vi.mocked(
+  storage.getUserVerificationStats,
+);
 
 /** Minimal subscription status for tests. */
 const premiumStatus = { tier: "premium" as const, expiresAt: null };
 const freeStatus = { tier: "free" as const, expiresAt: null };
 
+/** Verification stats with no streak — overridden per-test when a streak matters. */
+const noStreakStats = {
+  count: 0,
+  frontLabelCount: 0,
+  compositeScore: 0,
+  streak: 0,
+};
+
 describe("subscription-tier-cache", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _testInternals.tierCache.clear();
+    mockGetUserVerificationStats.mockResolvedValue(noStreakStats);
   });
 
   it("fetches subscription status on cache miss and returns features", async () => {
@@ -73,5 +86,33 @@ describe("subscription-tier-cache", () => {
     const features = await resolveSubscriptionTierFeatures("u5");
 
     expect(features.recipeGeneration).toBe(false);
+  });
+
+  it("unlocks extendedPlanRange for a free user with a 7-day streak", async () => {
+    mockGetSubscriptionStatus.mockResolvedValue(freeStatus);
+    mockGetUserVerificationStats.mockResolvedValue({
+      ...noStreakStats,
+      count: 7,
+      compositeScore: 7,
+      streak: 7,
+    });
+
+    const features = await resolveSubscriptionTierFeatures("u6");
+
+    expect(features.extendedPlanRange).toBe(true);
+  });
+
+  it("does not unlock extendedPlanRange for a free user below the streak threshold", async () => {
+    mockGetSubscriptionStatus.mockResolvedValue(freeStatus);
+    mockGetUserVerificationStats.mockResolvedValue({
+      ...noStreakStats,
+      count: 6,
+      compositeScore: 6,
+      streak: 6,
+    });
+
+    const features = await resolveSubscriptionTierFeatures("u7");
+
+    expect(features.extendedPlanRange).toBe(false);
   });
 });

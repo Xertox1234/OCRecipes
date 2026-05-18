@@ -6,6 +6,10 @@
  * the database on every request. The cache invalidates naturally after 60 s;
  * tier changes take effect on the next IAP confirmation cycle.
  *
+ * Resolved features include verification-streak unlocks (see
+ * `applyStreakUnlocks`) — a streak crossing the threshold takes effect on the
+ * next cache-miss, within one TTL window.
+ *
  * Extracted from server/routes/recipes.ts (M6 — 2026-04-28 audit).
  */
 
@@ -13,6 +17,7 @@ import { storage } from "../storage";
 import {
   TIER_FEATURES,
   isValidSubscriptionTier,
+  applyStreakUnlocks,
   type PremiumFeatures,
 } from "@shared/types/premium";
 
@@ -38,9 +43,14 @@ export async function resolveSubscriptionTierFeatures(
 ): Promise<PremiumFeatures> {
   const cached = getCached(userId);
   if (cached) return cached;
-  const subscription = await storage.getSubscriptionStatus(userId);
+  const [subscription, stats] = await Promise.all([
+    storage.getSubscriptionStatus(userId),
+    storage.getUserVerificationStats(userId),
+  ]);
   const tier = subscription?.tier ?? "free";
-  const features = TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
+  const baseFeatures =
+    TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
+  const features = applyStreakUnlocks(baseFeatures, stats.streak);
   tierCache.set(userId, { features, expiresAt: Date.now() + TTL_MS });
   return features;
 }

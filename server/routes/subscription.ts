@@ -5,9 +5,12 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import {
   TIER_FEATURES,
   isValidSubscriptionTier,
+  applyStreakUnlocks,
   type SubscriptionTier,
   type SubscriptionStatus,
+  type PremiumFeatureKey,
 } from "@shared/types/premium";
+import { resolveVerificationStreak } from "../services/verification-streak-cache";
 import { validateReceipt } from "../services/receipt-validation";
 import {
   UpgradeRequestSchema,
@@ -53,11 +56,22 @@ export function register(app: Express): void {
 
         const effectiveTier: SubscriptionTier = isActive ? tier : "free";
 
+        // Derive verification-streak unlocks on top of the base tier features.
+        const streak = await resolveVerificationStreak(req.userId);
+        const baseFeatures = TIER_FEATURES[effectiveTier];
+        const features = applyStreakUnlocks(baseFeatures, streak);
+        // Features that the streak unlock granted on top of the base tier —
+        // computed by diffing so it stays correct if applyStreakUnlocks grows.
+        const streakUnlocks = (
+          Object.keys(features) as PremiumFeatureKey[]
+        ).filter((key) => features[key] !== baseFeatures[key]);
+
         const response: SubscriptionStatus = {
           tier: effectiveTier,
           expiresAt: expiresAt?.toISOString() || null,
-          features: TIER_FEATURES[effectiveTier],
+          features,
           isActive,
+          streakUnlocks,
         };
 
         res.json(response);

@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { validateReceipt } from "../../services/receipt-validation";
 import { register } from "../subscription";
+import { _testInternals as streakCacheInternals } from "../../services/verification-streak-cache";
 import {
   createMockTransaction,
   createMockUser,
@@ -18,8 +19,17 @@ vi.mock("../../storage", () => ({
     createTransaction: vi.fn(),
     updateSubscription: vi.fn(),
     createTransactionAndUpgrade: vi.fn(),
+    getUserVerificationStats: vi.fn(),
   },
 }));
+
+/** Default verification stats — no streak unless a test overrides it. */
+const noStreakStats = {
+  count: 0,
+  frontLabelCount: 0,
+  compositeScore: 0,
+  streak: 0,
+};
 
 vi.mock("../../services/receipt-validation", () => ({
   validateReceipt: vi.fn(),
@@ -41,6 +51,10 @@ describe("Subscription Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    streakCacheInternals.streakCache.clear();
+    vi.mocked(storage.getUserVerificationStats).mockResolvedValue(
+      noStreakStats,
+    );
     app = createApp();
   });
 
@@ -100,6 +114,50 @@ describe("Subscription Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(404);
+    });
+
+    it("grants extendedPlanRange to a free user with a 7-day streak", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getUserVerificationStats).mockResolvedValue({
+        ...noStreakStats,
+        count: 7,
+        compositeScore: 7,
+        streak: 7,
+      });
+
+      const res = await request(app)
+        .get("/api/subscription/status")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.tier).toBe("free");
+      expect(res.body.features.extendedPlanRange).toBe(true);
+      expect(res.body.streakUnlocks).toEqual(["extendedPlanRange"]);
+    });
+
+    it("does not grant extendedPlanRange to a free user below the streak threshold", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getUserVerificationStats).mockResolvedValue({
+        ...noStreakStats,
+        count: 6,
+        compositeScore: 6,
+        streak: 6,
+      });
+
+      const res = await request(app)
+        .get("/api/subscription/status")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.tier).toBe("free");
+      expect(res.body.features.extendedPlanRange).toBe(false);
+      expect(res.body.streakUnlocks).toEqual([]);
     });
   });
 

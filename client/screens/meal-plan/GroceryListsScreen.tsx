@@ -23,6 +23,8 @@ import {
   useCreateGroceryList,
   useDeleteGroceryList,
 } from "@/hooks/useGroceryList";
+import { usePremiumContext } from "@/context/PremiumContext";
+import { VERIFICATION_STREAK_UNLOCK_THRESHOLD } from "@shared/types/premium";
 import type { GroceryListsScreenNavigationProp } from "@/types/navigation";
 import type { GroceryList } from "@shared/schema";
 import { formatDateRange } from "@/lib/format";
@@ -35,9 +37,13 @@ export default function GroceryListsScreen() {
   const haptics = useHaptics();
   const { confirm, ConfirmationModal } = useConfirmationModal();
   const { data: lists, isLoading } = useGroceryLists();
+  const { streakUnlocks } = usePremiumContext();
   const { mutate: createListMutate, isPending: isCreatingList } =
     useCreateGroceryList();
   const { mutate: deleteListMutate } = useDeleteGroceryList();
+
+  const extendedRangeUnlockedByStreak =
+    streakUnlocks.includes("extendedPlanRange");
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [startDate, setStartDate] = useState(() => {
@@ -183,6 +189,13 @@ export default function GroceryListsScreen() {
               ]}
             >
               <ThemedText style={styles.datePickerLabel}>Date Range</ThemedText>
+              {extendedRangeUnlockedByStreak ? (
+                <ThemedText
+                  style={[styles.streakUnlockNote, { color: theme.success }]}
+                >
+                  {`Extended meal planning unlocked by your ${VERIFICATION_STREAK_UNLOCK_THRESHOLD}-day verification streak`}
+                </ThemedText>
+              ) : null}
               <View style={styles.dateInputRow}>
                 <TextInput
                   style={[
@@ -329,6 +342,11 @@ const styles = StyleSheet.create({
   datePickerLabel: {
     fontSize: 15,
     fontFamily: FontFamily.semiBold,
+    marginBottom: Spacing.md,
+  },
+  streakUnlockNote: {
+    fontSize: 13,
+    marginTop: -Spacing.sm,
     marginBottom: Spacing.md,
   },
   dateInputRow: {
