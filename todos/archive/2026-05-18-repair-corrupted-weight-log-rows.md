@@ -1,6 +1,6 @@
 ---
 title: "Repair weight_logs rows corrupted by missing-unit lb conversion"
-status: blocked
+status: done
 priority: high
 created: 2026-05-18
 updated: 2026-05-18
@@ -103,3 +103,14 @@ This todo covers the **existing corrupted rows only**.
   one-off): `--audit-file` path is not sandboxed (arbitrary write if an attacker
   already controls the CLI); candidate read is outside the transaction (write
   skew — mitigated by the "run during idle time" doc note).
+
+### 2026-05-18 — closed `done`: no production data, repair is a no-op
+
+- OCRecipes has not launched: there is no production database with real users,
+  so no `weight_logs` rows were ever corrupted. The dev database the script can
+  reach holds zero weight entries.
+- The repair is therefore a no-op. The operational acceptance criteria (dry-run
+  / execute / verify against prod) are moot — there is nothing to repair.
+- `server/scripts/repair-weight-log-units.ts` is retained as a safety net: if
+  pre-fix real-user rows ever turn up, it can still be run per the operator
+  steps above. Delete it later if confirmed permanently unnecessary.
