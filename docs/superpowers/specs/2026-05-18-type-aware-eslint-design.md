@@ -198,8 +198,25 @@ is tracked technical debt, not a resolution. Burndown priority, highest first:
 3. `client/**` — RN screens, components, hooks.
 4. Tests — lowest risk; many entries will be `require-await` noise.
 
-Burndown cadence and ownership are set by the team outside this spec; the spec's
-commitment is the prioritized order above and the `void` policy that governs each fix.
+#### Cadence and ownership
+
+- **Ownership:** solo — this is a single-developer project; burndown is the project
+  owner's, no team hand-off.
+- **Tracking:** when the adoption PR merges, each of the four tiers above becomes a
+  backlog todo in `todos/` (`labels: [deferred, code-quality]`), with the spike's
+  measured per-tier violation count recorded in the todo's Background section.
+- **Cadence:**
+  - Tier 1 (`server/routes/**`) — burned down within **2 weeks** of the adoption PR
+    merging. A dropped promise in a request handler is the highest silent-failure risk
+    and should not sit suppressed.
+  - Tiers 2–4 — **one tier per calendar month** thereafter, in priority order.
+  - After each tier, run `lint:suppress:prune` and commit the updated
+    `eslint-suppressions.json` so the CI staleness gate re-tightens at the lower count.
+- **Target:** `eslint-suppressions.json` reaches zero entries (file deleted) within
+  **~4 months** of the adoption PR merging.
+- These intervals are calibrated to a not-yet-measured backlog; if the spike (section 5)
+  reveals a count far outside the expected range, the cadence is adjusted at todo-filing
+  time and this section updated to match.
 
 ## Out of scope
 
@@ -207,7 +224,6 @@ commitment is the prioritized order above and the `void` policy that governs eac
   noisy backlog).
 - Refactoring the existing `eslint-plugin-ocrecipes` rules.
 - Merging the `lint` and `check:types` CI steps into one TS program build.
-- A scheduled burndown plan with named owners and dates.
 
 ## Risks
 
