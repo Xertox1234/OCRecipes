@@ -428,6 +428,16 @@ export function register(app: Express): void {
           return;
         }
 
+        if (parsed.data.recipeId && parsed.data.scannedItemId) {
+          sendError(
+            res,
+            400,
+            "Provide either recipeId or scannedItemId, not both",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+
         // IDOR: verify recipe or scanned item belongs to user
         if (parsed.data.recipeId) {
           const recipe = await storage.getMealPlanRecipe(
