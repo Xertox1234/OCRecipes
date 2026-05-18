@@ -140,11 +140,41 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
   },
 };
 
+export type PremiumFeatureKey = keyof PremiumFeatures;
+
+/**
+ * Minimum verification streak (consecutive UTC days with >=1 verification)
+ * required to unlock `extendedPlanRange` for free-tier users.
+ */
+export const VERIFICATION_STREAK_UNLOCK_THRESHOLD = 7;
+
+/**
+ * Apply verification-streak-based feature unlocks to a feature set.
+ *
+ * When `streak >= VERIFICATION_STREAK_UNLOCK_THRESHOLD`, returns a copy of
+ * `features` with `extendedPlanRange: true`. Below the threshold, returns the
+ * original `features` reference unchanged. The unlock is purely derived from
+ * the current streak — it only ever flips `extendedPlanRange` to `true` and
+ * never downgrades a feature the user already has.
+ */
+export function applyStreakUnlocks(
+  features: PremiumFeatures,
+  streak: number,
+): PremiumFeatures {
+  if (streak < VERIFICATION_STREAK_UNLOCK_THRESHOLD) return features;
+  if (features.extendedPlanRange) return features;
+  return { ...features, extendedPlanRange: true };
+}
+
 export interface SubscriptionStatus {
   tier: SubscriptionTier;
   expiresAt: string | null;
   features: PremiumFeatures;
   isActive: boolean;
+  /**
+   * Feature keys currently granted by the verification-streak unlock (not the
+   * base tier). `["extendedPlanRange"]` when the streak unlock is active, `[]`
+   * otherwise.
+   */
+  streakUnlocks: PremiumFeatureKey[];
 }
-
-export type PremiumFeatureKey = keyof PremiumFeatures;

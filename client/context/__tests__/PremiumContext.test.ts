@@ -56,6 +56,7 @@ describe("PremiumContext", () => {
         ).toISOString(),
         features: TIER_FEATURES.premium,
         isActive: true,
+        streakUnlocks: [],
       };
       const tier = subscriptionData?.tier ?? "free";
 
@@ -70,6 +71,7 @@ describe("PremiumContext", () => {
         ).toISOString(),
         features: TIER_FEATURES.premium,
         isActive: true,
+        streakUnlocks: [],
       };
       const features = subscriptionData?.features ?? TIER_FEATURES.free;
 
@@ -88,6 +90,7 @@ describe("PremiumContext", () => {
         ).toISOString(),
         features: TIER_FEATURES.premium,
         isActive: true,
+        streakUnlocks: [],
       };
       const isPremiumActive =
         activeSubscription.tier === "premium" && activeSubscription.isActive;
@@ -100,6 +103,7 @@ describe("PremiumContext", () => {
         expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
         features: TIER_FEATURES.premium,
         isActive: false,
+        streakUnlocks: [],
       };
       const isPremiumExpired =
         expiredSubscription.tier === "premium" && expiredSubscription.isActive;
@@ -216,6 +220,7 @@ describe("Subscription expiry edge cases", () => {
       expiresAt: null,
       features: TIER_FEATURES.free,
       isActive: true,
+      streakUnlocks: [],
     };
 
     expect(subscriptionData.tier).toBe("free");
@@ -229,6 +234,7 @@ describe("Subscription expiry edge cases", () => {
       expiresAt: expiredDate.toISOString(),
       features: TIER_FEATURES.premium,
       isActive: false,
+      streakUnlocks: [],
     };
 
     // Even with premium tier, isActive is false so isPremium should be false
@@ -244,6 +250,7 @@ describe("Subscription expiry edge cases", () => {
       expiresAt: futureDate.toISOString(),
       features: TIER_FEATURES.premium,
       isActive: true,
+      streakUnlocks: [],
     };
 
     const isPremium =

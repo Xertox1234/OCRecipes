@@ -1,6 +1,6 @@
 ---
 title: "Verification streak premium unlocks (actual feature unlocks, not just display)"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-16
 updated: 2026-05-18

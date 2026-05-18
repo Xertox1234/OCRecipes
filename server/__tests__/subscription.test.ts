@@ -178,6 +178,7 @@ describe("Subscription status logic", () => {
       expiresAt: expiresAt?.toISOString() || null,
       features: TIER_FEATURES[effectiveTier],
       isActive,
+      streakUnlocks: [],
     };
   }
 

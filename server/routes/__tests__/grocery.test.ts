@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { generateGroceryItems } from "../../services/grocery-generation";
 import { register } from "../grocery";
+import { _testInternals as streakCacheInternals } from "../../services/verification-streak-cache";
 import {
   createMockUser,
   createMockUserProfile,
@@ -33,8 +34,17 @@ vi.mock("../../storage", () => ({
     getPantryItems: vi.fn(),
     createPantryItem: vi.fn(),
     addGroceryItemToPantryAtomically: vi.fn(),
+    getUserVerificationStats: vi.fn(),
   },
 }));
+
+/** Default verification stats — no streak unless a test overrides it. */
+const noStreakStats = {
+  count: 0,
+  frontLabelCount: 0,
+  compositeScore: 0,
+  streak: 0,
+};
 
 vi.mock("../../services/grocery-generation", async (importOriginal) => {
   const actual =
@@ -71,6 +81,10 @@ describe("Grocery Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    streakCacheInternals.streakCache.clear();
+    vi.mocked(storage.getUserVerificationStats).mockResolvedValue(
+      noStreakStats,
+    );
     app = createApp();
   });
 
@@ -495,6 +509,55 @@ describe("Grocery Routes", () => {
         expiresAt: null,
       });
       vi.mocked(storage.getGroceryLists).mockResolvedValue([]);
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists")
+        .set("Authorization", "Bearer token")
+        .send({ startDate: "2025-01-01", endDate: "2025-01-15" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("DATE_RANGE_LIMIT");
+    });
+
+    it("POST /api/meal-plan/grocery-lists allows extended range for a free user with a 7-day streak", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getUserVerificationStats).mockResolvedValue({
+        ...noStreakStats,
+        count: 7,
+        compositeScore: 7,
+        streak: 7,
+      });
+      vi.mocked(storage.getMealPlanIngredientsForDateRange).mockResolvedValue(
+        [],
+      );
+      vi.mocked(generateGroceryItems).mockReturnValue([]);
+      vi.mocked(storage.createGroceryListWithLimitCheck).mockResolvedValue({
+        list: mockList,
+        items: [],
+      });
+
+      const res = await request(app)
+        .post("/api/meal-plan/grocery-lists")
+        .set("Authorization", "Bearer token")
+        .send({ startDate: "2025-01-01", endDate: "2025-01-15" });
+
+      expect(res.status).toBe(201);
+    });
+
+    it("POST /api/meal-plan/grocery-lists still limits a free user below the streak threshold", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getUserVerificationStats).mockResolvedValue({
+        ...noStreakStats,
+        count: 6,
+        compositeScore: 6,
+        streak: 6,
+      });
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists")
