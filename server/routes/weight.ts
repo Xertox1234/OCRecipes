@@ -16,7 +16,9 @@ import { calculateWeightTrend } from "../services/weight-trend";
 
 const createWeightLogSchema = z.object({
   weight: z.number().positive().max(999),
-  unit: z.enum(["lb", "kg"]).default("lb"),
+  // `unit` is required, not defaulted: a missing unit previously defaulted to
+  // "lb" and silently converted kg input by ~2.2. Fail closed instead.
+  unit: z.enum(["lb", "kg"]),
   source: z.enum(["manual", "healthkit", "scale"]).default("manual"),
   note: z.string().max(500).optional(),
   loggedAt: z.string().datetime().optional(),

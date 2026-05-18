@@ -130,7 +130,7 @@ describe("Weight Routes", () => {
   });
 
   describe("POST /api/weight", () => {
-    it("creates a weight log and updates user weight", async () => {
+    it("stores a kg entry verbatim without conversion", async () => {
       vi.mocked(storage.createWeightLogAndUpdateUser).mockResolvedValue(
         mockWeightLog,
       );
@@ -138,10 +138,31 @@ describe("Weight Routes", () => {
       const res = await request(app)
         .post("/api/weight")
         .set("Authorization", "Bearer token")
-        .send({ weight: 75.5 });
+        .send({ weight: 75.5, unit: "kg" });
 
       expect(res.status).toBe(201);
-      // 75.5 lb → kg: 75.5 * 0.453592 ≈ 34.25 kg (stored in kg)
+      // unit: "kg" → stored as-is, no conversion applied
+      expect(storage.createWeightLogAndUpdateUser).toHaveBeenCalledWith({
+        userId: "1",
+        weight: "75.50",
+        unit: "kg",
+        source: "manual",
+        note: undefined,
+      });
+    });
+
+    it("converts an lb entry to kg before storage", async () => {
+      vi.mocked(storage.createWeightLogAndUpdateUser).mockResolvedValue(
+        mockWeightLog,
+      );
+
+      const res = await request(app)
+        .post("/api/weight")
+        .set("Authorization", "Bearer token")
+        .send({ weight: 75.5, unit: "lb" });
+
+      expect(res.status).toBe(201);
+      // 75.5 lb → kg: 75.5 * 0.453592 ≈ 34.25
       expect(storage.createWeightLogAndUpdateUser).toHaveBeenCalledWith({
         userId: "1",
         weight: "34.25",
@@ -151,11 +172,22 @@ describe("Weight Routes", () => {
       });
     });
 
+    it("returns 400 when unit is missing", async () => {
+      // A missing unit must fail closed — it previously defaulted to "lb"
+      // and silently converted kg input by ~2.2.
+      const res = await request(app)
+        .post("/api/weight")
+        .set("Authorization", "Bearer token")
+        .send({ weight: 75.5 });
+
+      expect(res.status).toBe(400);
+    });
+
     it("returns 400 for negative weight", async () => {
       const res = await request(app)
         .post("/api/weight")
         .set("Authorization", "Bearer token")
-        .send({ weight: -5 });
+        .send({ weight: -5, unit: "kg" });
 
       expect(res.status).toBe(400);
     });
@@ -164,7 +196,7 @@ describe("Weight Routes", () => {
       const res = await request(app)
         .post("/api/weight")
         .set("Authorization", "Bearer token")
-        .send({ weight: 1000 });
+        .send({ weight: 1000, unit: "kg" });
 
       expect(res.status).toBe(400);
     });
@@ -177,7 +209,12 @@ describe("Weight Routes", () => {
       const res = await request(app)
         .post("/api/weight")
         .set("Authorization", "Bearer token")
-        .send({ weight: 80, source: "healthkit", note: "Morning weigh-in" });
+        .send({
+          weight: 80,
+          unit: "kg",
+          source: "healthkit",
+          note: "Morning weigh-in",
+        });
 
       expect(res.status).toBe(201);
     });

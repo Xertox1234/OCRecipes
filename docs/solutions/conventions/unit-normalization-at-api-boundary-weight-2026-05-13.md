@@ -24,7 +24,7 @@ The `weight_logs` table stores weights as decimal strings. If the client sends `
 // server/routes/weight.ts
 const createWeightLogSchema = z.object({
   weight: z.number().positive().max(999),
-  unit: z.enum(["lb", "kg"]).default("lb"),
+  unit: z.enum(["lb", "kg"]), // required — never defaulted
   // ...
 });
 
@@ -41,8 +41,8 @@ await storage.createWeightLog({
 ## Rules
 
 - The `unit` column in `weight_logs` is always `"kg"` after this normalization (external sources like HealthKit already send kg)
-- The `unit` field in the request schema lets mobile clients send `lb` (the common user-facing unit in North America) without needing to convert client-side
-- DB default `"lb"` exists only to classify rows created before this normalization was introduced — treat those rows as ambiguous-unit data
+- The request-schema `unit` field is **required — never `.default(...)`**. A defaulted unit silently mis-converts whenever the client's real unit differs from the default: a `.default("lb")` here once divided every kg-entered value by ~2.2 because the client sent no unit. Fail closed — reject a request with no `unit`.
+- The `weight_logs.unit` DB _column_ still defaults to `"lb"`; that default only classifies rows created before this normalization — treat those rows as ambiguous-unit data
 - Always store with `.toFixed(2)` to preserve two decimal places of precision
 
 ## Related Files
