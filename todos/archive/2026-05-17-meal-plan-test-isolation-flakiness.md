@@ -1,6 +1,6 @@
 ---
 title: "Investigate test-isolation flakiness in meal-plan.test.ts"
-status: backlog
+status: done
 priority: low
 created: 2026-05-17
 updated: 2026-05-17
@@ -44,3 +44,9 @@ Observed 2026-05-17. The Spoonacular-source executor reported 3 failures in `mea
 ### 2026-05-17
 
 - Created during the `/todo` run for the Spoonacular search todo (PR #212). The 3 failures were confirmed non-reproducible (flaky), not a regression.
+
+### 2026-05-17 (resolution)
+
+- The original 3 `meal-plan.test.ts` failures did not reproduce across 10+ full-suite and route-suite runs, consistent with the todo's own observation.
+- Identified one concrete cross-test interference mechanism in `meal-plan.test.ts` and fixed it: `POST /api/meal-plan/recipes` fires `generateRecipeImage` as a `fireAndForget` background promise whenever the created recipe has no `imageUrl` (the factory default). `generateRecipeImage` was NOT mocked, so the real service ran after the test finished — pulling in `lib/openai`/`lib/runware`, potentially making network calls, and resolving onto the microtask queue where it calls the shared `storage.updateMealPlanRecipe` mock. That leaks mock state into whatever route test runs next in the same Vitest worker. Fix: added `vi.mock("../../services/recipe-generation")` returning `generateRecipeImage: vi.fn().mockResolvedValue(null)`.
+- Suite-wide flakiness in _other_ route test files (`profile-hub.test.ts`, `recipe-catalog.test.ts`, `recipes.test.ts`, `cooking.test.ts`) was observed during investigation — different files fail each run, none reproduce in isolation. These have separate root causes (e.g. timing-sensitive `vi.doUnmock`-based real-rate-limiter tests) and are out of scope for this todo, which is scoped to `meal-plan.test.ts`.
