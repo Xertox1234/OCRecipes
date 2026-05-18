@@ -75,6 +75,7 @@ function toSearchableRecipe(item: CatalogSearchResult): SearchableRecipe {
     sourceUrl: null,
     createdAt: null,
     isCanonical: false,
+    allergens: [],
   };
 }
 
