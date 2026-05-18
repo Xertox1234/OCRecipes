@@ -32,6 +32,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-python@v5
+        if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          python-version: "3.12"
+
+      - name: Install kimi-review dependencies
+        if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        run: python -m pip install "openai>=1.0.0,<2"
+
       - name: Run kimi-review
         if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
         env:
@@ -39,5 +48,4 @@ jobs:
           KIMI_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           KIMI_REVIEW_SCOPE: "CI PR diff"
           WORKER_API_KEY: ${{ secrets['WORKER_API_KEY'] }}
-          MOONSHOT_API_KEY: ${{ secrets['MOONSHOT_API_KEY'] }}
         run: bash scripts/ci-kimi-review.sh

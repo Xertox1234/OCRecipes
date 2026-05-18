@@ -39,13 +39,17 @@ if [[ -z "${WORKER_API_KEY:-}" && -z "${MOONSHOT_API_KEY:-}" ]]; then
   exit 1
 fi
 
-if ! command -v kimi-review >/dev/null 2>&1; then
-  echo "::error title=kimi-review missing::Provision the kimi-review CLI on this runner before enabling KIMI_REVIEW_CI_ENABLED."
+if command -v kimi-review >/dev/null 2>&1; then
+  reviewer_command=(kimi-review)
+elif [[ -f scripts/kimi-review.py ]]; then
+  reviewer_command=(python3 scripts/kimi-review.py)
+else
+  echo "::error title=kimi-review missing::Provision the kimi-review CLI or keep scripts/kimi-review.py available."
   exit 1
 fi
 
 review_command=(
-  kimi-review
+  "${reviewer_command[@]}"
   --scope "$review_scope"
   --tiers CRITICAL,WARNING
   --profile ocrecipes

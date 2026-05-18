@@ -92,7 +92,7 @@ Do not paste full workflow logs into Claude. Failed-step logs are the useful sig
 
 When enabled for same-repo PRs, the workflow runs `scripts/ci-kimi-review.sh` over the PR base/head diff. CRITICAL findings fail the job; WARNING findings print but do not fail. Fork PRs are skipped because repository secrets are unavailable to untrusted forks.
 
-To enable the gate, provision `kimi-review` on the GitHub runner, set either `WORKER_API_KEY` or `MOONSHOT_API_KEY` as a repository secret, then set repository variable `KIMI_REVIEW_CI_ENABLED=true`. If the variable is enabled but the CLI or secret is missing, the job fails with an explicit setup error.
+To enable the gate, set `WORKER_API_KEY` as a repository secret, then set repository variable `KIMI_REVIEW_CI_ENABLED=true`. The workflow installs the Python `openai` dependency and uses `scripts/kimi-review.py` as a bundled fallback when a global `kimi-review` CLI is not already on the runner. If the variable is enabled but the secret is missing, the job fails with an explicit setup error.
 
 ### Pre-commit Hook (Husky / lint-staged / kimi-review)
 
