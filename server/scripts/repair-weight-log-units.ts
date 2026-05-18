@@ -101,8 +101,9 @@ async function printBlastRadius(): Promise<void> {
   const nonKg = rows.filter((r) => r.unit !== "kg");
   if (nonKg.length > 0) {
     console.log(
-      "  WARNING: rows with unit != 'kg' exist — the route always stores 'kg'. " +
-        "Investigate before assuming all pre-cutoff manual rows are corrupted.",
+      "  WARNING: rows with unit != 'kg' exist — the buggy route always stored " +
+        "'kg', so these were NOT corrupted by this bug. They are skipped by the " +
+        "repair; investigate them separately.",
     );
   }
 }
@@ -127,10 +128,11 @@ async function main(): Promise<void> {
     id: number;
     user_id: string;
     weight: string;
+    unit: string | null;
     source: string | null;
     logged_at: string | Date;
   }>(sql`
-    SELECT id, user_id, weight, source, logged_at
+    SELECT id, user_id, weight, unit, source, logged_at
     FROM weight_logs
     WHERE (source = 'manual' OR source IS NULL)
       AND logged_at < ${args.cutoff}
@@ -141,6 +143,7 @@ async function main(): Promise<void> {
     id: r.id,
     userId: r.user_id,
     weight: Number(r.weight),
+    unit: r.unit,
     source: r.source,
     loggedAt: new Date(r.logged_at),
   }));

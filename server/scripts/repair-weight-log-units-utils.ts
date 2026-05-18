@@ -20,6 +20,8 @@ export type WeightRow = {
   userId: string;
   /** Current stored value, in kg (the route always writes unit `"kg"`). */
   weight: number;
+  /** The row's `unit` column. The buggy route always wrote `"kg"`. */
+  unit: string | null;
   source: string | null;
   loggedAt: Date;
 };
@@ -46,14 +48,18 @@ export function isImplausibleWeight(kg: number): boolean {
 /**
  * Classify a single weight_logs row.
  *
+ * - `unit !== "kg"` — the buggy route always re-labelled rows to `"kg"`, so a
+ *   non-kg row was never touched by this bug. Leave it (`healthy`); reversing it
+ *   would corrupt a legitimately-stored value.
  * - `source !== "manual"` (HealthKit / scale) legitimately sent kg — never touch.
  *   `source IS NULL` is treated as manual: the column default is `"manual"`, so a
  *   null is an app/manual row whose source was simply not written explicitly.
  * - A row logged at/after `cutoff` used the fixed client — already correct kg.
- * - A manual, pre-cutoff row is corrupted; but if reversing it yields an
+ * - A manual, pre-cutoff, kg row is corrupted; but if reversing it yields an
  *   implausible weight, flag `needs-review` instead of writing a bad value.
  */
 export function classifyRow(row: WeightRow, cutoff: Date): RowClass {
+  if (row.unit !== "kg") return "healthy";
   const isManual = row.source === null || row.source === "manual";
   if (!isManual) return "healthy";
   if (row.loggedAt.getTime() >= cutoff.getTime()) return "healthy";

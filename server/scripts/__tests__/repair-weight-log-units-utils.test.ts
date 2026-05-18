@@ -16,6 +16,7 @@ function row(overrides: Partial<WeightRow> = {}): WeightRow {
     id: 1,
     userId: "user-1",
     weight: 30,
+    unit: "kg",
     source: "manual",
     loggedAt: new Date("2026-05-10T00:00:00Z"),
     ...overrides,
@@ -62,6 +63,11 @@ describe("classifyRow", () => {
   it("leaves non-manual sources untouched even when pre-cutoff", () => {
     expect(classifyRow(row({ source: "healthkit" }), CUTOFF)).toBe("healthy");
     expect(classifyRow(row({ source: "scale" }), CUTOFF)).toBe("healthy");
+  });
+
+  it("leaves non-kg rows untouched (the bug always stored 'kg')", () => {
+    expect(classifyRow(row({ unit: "lb" }), CUTOFF)).toBe("healthy");
+    expect(classifyRow(row({ unit: null }), CUTOFF)).toBe("healthy");
   });
 
   it("leaves rows logged at/after the cutoff untouched", () => {
