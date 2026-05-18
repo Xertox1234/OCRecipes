@@ -1,6 +1,6 @@
 ---
 title: "Parallelize the two storage reads in GET /api/subscription/status"
-status: backlog
+status: done
 priority: low
 created: 2026-05-18
 updated: 2026-05-18

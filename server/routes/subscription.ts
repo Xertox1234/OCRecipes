@@ -35,9 +35,12 @@ export function register(app: Express): void {
     subscriptionRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const subscriptionData = await storage.getSubscriptionStatus(
-          req.userId,
-        );
+        // The subscription record and verification streak are independent
+        // reads — fetch them concurrently to avoid a serial round-trip.
+        const [subscriptionData, streak] = await Promise.all([
+          storage.getSubscriptionStatus(req.userId),
+          resolveVerificationStreak(req.userId),
+        ]);
 
         if (!subscriptionData) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
@@ -55,7 +58,6 @@ export function register(app: Express): void {
         );
 
         // Derive verification-streak unlocks on top of the base tier features.
-        const streak = await resolveVerificationStreak(req.userId);
         const baseFeatures = TIER_FEATURES[effectiveTier];
         const features = applyStreakUnlocks(baseFeatures, streak);
         // Features that the streak unlock granted on top of the base tier —
