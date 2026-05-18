@@ -44,10 +44,17 @@ import {
   useToggleFavouriteRecipe,
 } from "@/hooks/useFavouriteRecipes";
 import { useRecipeSearch } from "@/hooks/useRecipeSearch";
+import { useCatalogSearch } from "@/hooks/useCatalogSearch";
 import {
   SearchFilterSheet,
   type SearchFilters,
 } from "@/components/meal-plan/SearchFilterSheet";
+import { UpgradeModal } from "@/components/UpgradeModal";
+import { usePremiumContext } from "@/context/PremiumContext";
+import {
+  shouldGatePremiumSource,
+  isQuotaExceededError,
+} from "@/screens/meal-plan/recipe-browser-utils";
 import type {
   SearchableRecipe,
   RecipeSearchParams,
@@ -286,7 +293,10 @@ export default function RecipeBrowserScreen() {
     string | undefined
   >();
   const [pantryMode, setPantryMode] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const filterSheetRef = React.useRef<BottomSheetModal>(null);
+
+  const { isPremium } = usePremiumContext();
 
   // Debounce search
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery || "");
@@ -337,12 +347,29 @@ export default function RecipeBrowserScreen() {
     ],
   );
 
+  // When source is "Online", route to the Spoonacular catalog endpoint
+  // instead of local search. The catalog endpoint requires a non-empty query
+  // and is premium-only, so it stays disabled for free users / blank queries.
+  const isOnlineSource = advancedFilters.source === "spoonacular";
+  const catalogEnabled =
+    isOnlineSource && isPremium && debouncedQuery.length > 0;
+
+  const localSearch = useRecipeSearch(isOnlineSource ? null : searchParams);
+  const catalogSearch = useCatalogSearch(searchParams, catalogEnabled);
+
   const {
     data: searchData,
     isLoading,
     loadMore,
     isFetchingNextPage,
-  } = useRecipeSearch(searchParams);
+    error: searchError,
+    refetch: refetchSearch,
+  } = isOnlineSource ? catalogSearch : localSearch;
+
+  const isQuotaExceeded = isOnlineSource && isQuotaExceededError(searchError);
+  // Any other catalog failure (server 500, network) — distinct from quota so
+  // the user gets a descriptive error + retry rather than a blank list.
+  const isOnlineError = isOnlineSource && !!searchError && !isQuotaExceeded;
 
   const addItemMutation = useAddMealPlanItem();
   const { data: favouriteData } = useFavouriteRecipeIds();
@@ -427,6 +454,21 @@ export default function RecipeBrowserScreen() {
       toggleFavourite({ recipeId, recipeType });
     },
     [toggleFavourite],
+  );
+
+  // Gate the "Online" (Spoonacular) source behind premium. When a free user
+  // selects it, surface the upgrade prompt and keep the source unchanged so
+  // the filter state stays honest. Premium users proceed normally.
+  const handleFiltersChange = useCallback(
+    (next: SearchFilters) => {
+      if (shouldGatePremiumSource(next.source, isPremium)) {
+        haptics.selection();
+        setShowUpgradeModal(true);
+        return;
+      }
+      setAdvancedFilters(next);
+    },
+    [isPremium, haptics],
   );
 
   const handleToggleCuisine = useCallback(
@@ -745,7 +787,38 @@ export default function RecipeBrowserScreen() {
       )}
 
       {/* Results */}
-      {isLoading ? (
+      {isQuotaExceeded ? (
+        <View style={styles.emptyContainer}>
+          <EmptyState
+            variant="noResults"
+            icon="cloud-off"
+            title="Online search is temporarily unavailable"
+            description="The recipe catalog has hit its usage limit. Please try again later or switch to a different source."
+          />
+        </View>
+      ) : isOnlineError ? (
+        <View style={styles.emptyContainer}>
+          <EmptyState
+            variant="noResults"
+            icon="alert-circle"
+            title="Couldn't load online recipes"
+            description="Something went wrong searching the online catalog. Check your connection and try again."
+            actionLabel="Retry"
+            onAction={() => {
+              refetchSearch();
+            }}
+          />
+        </View>
+      ) : isOnlineSource && debouncedQuery.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <EmptyState
+            variant="firstTime"
+            icon="search"
+            title="Search the online catalog"
+            description="Enter a search term to find recipes from the online catalog."
+          />
+        </View>
+      ) : isLoading ? (
         <SkeletonProvider>
           <View
             style={styles.loadingContainer}
@@ -828,7 +901,7 @@ export default function RecipeBrowserScreen() {
         <BottomSheetView accessibilityViewIsModal>
           <SearchFilterSheet
             filters={advancedFilters}
-            onFiltersChange={setAdvancedFilters}
+            onFiltersChange={handleFiltersChange}
             onReset={() => {
               setAdvancedFilters({
                 sort: "relevance",
@@ -842,6 +915,11 @@ export default function RecipeBrowserScreen() {
           />
         </BottomSheetView>
       </BottomSheetModal>
+
+      <UpgradeModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </View>
   );
 }
