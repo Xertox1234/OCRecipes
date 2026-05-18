@@ -32,12 +32,14 @@ weight in pounds. This is not a one-line fix — it needs a schema column, a
 settings UI control, a migration, and display-time conversion. Re-specced from
 `priority: low` to `priority: medium` accordingly.
 
-## Open product decision
+## Product decision (resolved 2026-05-18)
 
-- **Default unit for existing + new users.** Current behaviour is metric (kg),
-  so the migration default should be `metric` to preserve behaviour — but the
-  product may want locale-based defaulting for new signups. Decide before
-  implementing.
+- **Default unit = `metric` for all users, existing and new.** Existing rows are
+  already stored/displayed in kg, so `metric` preserves behaviour with zero data
+  risk. New users also default to `metric`.
+- **No locale-based auto-detection in v1.** Users switch to imperial via the
+  settings toggle. Locale defaulting is a purely additive enhancement (no
+  migration needed) and is explicitly out of scope here.
 
 ## Acceptance Criteria
 
