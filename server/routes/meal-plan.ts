@@ -98,13 +98,7 @@ export function register(app: Express): void {
         const recipes = await storage.getUserMealPlanRecipes(req.userId);
         res.json(recipes);
       } catch (error) {
-        logger.error({ err: toError(error) }, "get meal plan recipes failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch recipes",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch recipes");
       }
     },
   );
@@ -133,8 +127,7 @@ export function register(app: Express): void {
 
         res.json(recipe);
       } catch (error) {
-        logger.error({ err: toError(error) }, "get meal plan recipe failed");
-        sendError(res, 500, "Failed to fetch recipe", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "fetch recipe");
       }
     },
   );
@@ -315,13 +308,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        logger.error({ err: toError(error) }, "delete meal plan recipe failed");
-        sendError(
-          res,
-          500,
-          "Failed to delete recipe",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "delete recipe");
       }
     },
   );
@@ -389,13 +376,7 @@ export function register(app: Express): void {
         const items = await storage.getMealPlanItems(req.userId, start, end);
         res.json(items);
       } catch (error) {
-        logger.error({ err: toError(error) }, "get meal plan failed");
-        sendError(
-          res,
-          500,
-          "Failed to fetch meal plan",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "fetch meal plan");
       }
     },
   );
@@ -493,8 +474,7 @@ export function register(app: Express): void {
 
         res.status(204).send();
       } catch (error) {
-        logger.error({ err: toError(error) }, "remove meal plan item failed");
-        sendError(res, 500, "Failed to remove item", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "remove item");
       }
     },
   );
