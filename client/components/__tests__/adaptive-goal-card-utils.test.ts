@@ -40,7 +40,7 @@ describe("formatDiffLabel", () => {
 });
 
 describe("formatWeightTrend", () => {
-  it("formats positive rate with plus sign", () => {
+  it("formats positive rate with plus sign (metric by default)", () => {
     expect(formatWeightTrend(0.5)).toBe("+0.5 kg/week");
   });
 
@@ -49,6 +49,11 @@ describe("formatWeightTrend", () => {
   });
 
   it("formats zero rate", () => {
-    expect(formatWeightTrend(0)).toBe("0 kg/week");
+    expect(formatWeightTrend(0)).toBe("0.0 kg/week");
+  });
+
+  it("converts the kg rate to lbs when unit is imperial", () => {
+    // 0.5 kg/week → ~1.1 lbs/week
+    expect(formatWeightTrend(0.5, "imperial")).toBe("+1.1 lbs/week");
   });
 });

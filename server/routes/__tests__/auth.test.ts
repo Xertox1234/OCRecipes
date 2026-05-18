@@ -370,6 +370,31 @@ describe("Auth Routes", () => {
       });
     });
 
+    it("updates measurementUnit field", async () => {
+      const updated = createMockUser({ measurementUnit: "imperial" });
+      vi.mocked(storage.updateUser).mockResolvedValue(updated);
+
+      const res = await request(app)
+        .put("/api/auth/profile")
+        .set("Authorization", "Bearer mock-token")
+        .send({ measurementUnit: "imperial" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.measurementUnit).toBe("imperial");
+      expect(storage.updateUser).toHaveBeenCalledWith("1", {
+        measurementUnit: "imperial",
+      });
+    });
+
+    it("rejects an invalid measurementUnit value", async () => {
+      const res = await request(app)
+        .put("/api/auth/profile")
+        .set("Authorization", "Bearer mock-token")
+        .send({ measurementUnit: "stones" });
+
+      expect(res.status).toBe(400);
+    });
+
     it("returns 500 when storage throws", async () => {
       vi.mocked(storage.updateUser).mockRejectedValue(new Error("DB error"));
 

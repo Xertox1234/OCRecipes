@@ -23,10 +23,17 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
-import { Spacing } from "@/constants/theme";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
+import type { MeasurementUnit } from "@shared/lib/units";
 import type { ProfileScreenNavigationProp } from "@/types/navigation";
+
+const MEASUREMENT_UNIT_OPTIONS: { value: MeasurementUnit; label: string }[] = [
+  { value: "metric", label: "Metric (kg)" },
+  { value: "imperial", label: "Imperial (lbs)" },
+];
 
 type FeatherIconName = ComponentProps<typeof Feather>["name"];
 
@@ -78,8 +85,9 @@ export default function SettingsScreen() {
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { logout, deleteAccount, user } = useAuthContext();
+  const { logout, deleteAccount, user, updateUser } = useAuthContext();
   const { isPremium } = usePremiumContext();
+  const measurementUnit = useMeasurementUnit();
 
   const healthKitUnlocked = usePremiumFeature("healthKitSync");
   const glp1Unlocked = usePremiumFeature("glp1Companion");
@@ -139,6 +147,21 @@ export default function SettingsScreen() {
       ],
     );
   }, [performExport]);
+
+  const handleSelectMeasurementUnit = useCallback(
+    (next: MeasurementUnit) => {
+      if (next === measurementUnit) return;
+      haptics.selection();
+      // measurementUnit lives on the user record — persist via /api/auth/profile.
+      updateUser({ measurementUnit: next }).catch(() => {
+        Alert.alert(
+          "Could not save",
+          "Failed to update your measurement unit. Please try again.",
+        );
+      });
+    },
+    [measurementUnit, haptics, updateUser],
+  );
 
   const isUnlocked = useCallback(
     (key?: string) => {
@@ -339,6 +362,54 @@ export default function SettingsScreen() {
       </Card>
 
       <Card elevation={1} style={styles.card}>
+        <View style={styles.unitSectionHeader}>
+          <Feather
+            name="sliders"
+            size={20}
+            color={theme.textSecondary}
+            accessible={false}
+          />
+          <ThemedText style={styles.settingsLabel}>Units</ThemedText>
+        </View>
+        <View
+          style={styles.unitOptionRow}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Measurement unit for body weight"
+        >
+          {MEASUREMENT_UNIT_OPTIONS.map((option) => {
+            const selected = measurementUnit === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => handleSelectMeasurementUnit(option.value)}
+                accessibilityRole="radio"
+                accessibilityLabel={option.label}
+                accessibilityState={{ selected }}
+                style={[
+                  styles.unitOption,
+                  {
+                    backgroundColor: selected
+                      ? withOpacity(theme.success, 0.12)
+                      : theme.backgroundSecondary,
+                    borderColor: selected ? theme.success : "transparent",
+                  },
+                ]}
+              >
+                <ThemedText
+                  style={[
+                    styles.unitOptionLabel,
+                    { color: selected ? theme.success : theme.text },
+                  ]}
+                >
+                  {option.label}
+                </ThemedText>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Card>
+
+      <Card elevation={1} style={styles.card}>
         <Pressable
           onPress={() => openLegalUrl(PRIVACY_POLICY_URL, "our Privacy Policy")}
           accessibilityLabel="Privacy Policy"
@@ -450,6 +521,33 @@ const styles = StyleSheet.create({
   },
   settingsLabel: {
     fontSize: 15,
+  },
+  unitSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  unitOptionRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+  },
+  unitOption: {
+    flex: 1,
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: BorderRadius.md,
+    borderWidth: 2,
+    paddingHorizontal: Spacing.md,
+  },
+  unitOptionLabel: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   divider: {
     height: StyleSheet.hairlineWidth,

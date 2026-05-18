@@ -31,11 +31,18 @@ import {
   type ApiWeightLog,
 } from "@/hooks/useWeightLogs";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import { formatDateMedium as formatDate } from "@/lib/format";
+import {
+  weightFromKg,
+  weightToKg,
+  weightUnitLabel,
+  type MeasurementUnit,
+} from "@shared/lib/units";
 
-function formatWeight(weight: string): string {
-  return `${parseFloat(weight).toFixed(1)} kg`;
+function formatWeight(weightKg: string, unit: MeasurementUnit): string {
+  return `${weightFromKg(parseFloat(weightKg), unit).toFixed(1)} ${weightUnitLabel(unit)}`;
 }
 
 export default function WeightTrackingScreen() {
@@ -45,6 +52,8 @@ export default function WeightTrackingScreen() {
   const haptics = useHaptics();
   const { isPremium } = usePremiumContext();
   const { confirm, ConfirmationModal } = useConfirmationModal();
+  const unit = useMeasurementUnit();
+  const unitLabel = weightUnitLabel(unit);
 
   const [weightInput, setWeightInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
@@ -61,9 +70,16 @@ export default function WeightTrackingScreen() {
   const setGoalWeight = useSetGoalWeight();
 
   const handleLogWeight = useCallback(() => {
-    const weight = parseFloat(weightInput);
-    if (isNaN(weight) || weight <= 0 || weight > 999) {
-      setWeightError("Please enter a valid weight in kg.");
+    const entered = parseFloat(weightInput);
+    if (isNaN(entered) || entered <= 0) {
+      setWeightError(`Please enter a valid weight in ${unitLabel}.`);
+      return;
+    }
+    // Storage is always kg — convert and validate against the kg storage cap
+    // (999) so imperial inputs are not rejected by a metric-only bound.
+    const weight = weightToKg(entered, unit);
+    if (weight > 999) {
+      setWeightError(`Please enter a valid weight in ${unitLabel}.`);
       return;
     }
     setWeightError(null);
@@ -81,37 +97,44 @@ export default function WeightTrackingScreen() {
         },
       },
     );
-  }, [weightInput, noteInput, haptics, logWeight]);
+  }, [weightInput, noteInput, haptics, logWeight, unit, unitLabel]);
 
   const handleDeleteLog = useCallback(
     (log: ApiWeightLog) => {
       confirm({
         title: "Delete Entry",
-        message: `Remove ${formatWeight(log.weight)} entry?`,
+        message: `Remove ${formatWeight(log.weight, unit)} entry?`,
         confirmLabel: "Delete",
         destructive: true,
         onConfirm: () => deleteLog.mutate(log.id),
       });
     },
-    [confirm, deleteLog],
+    [confirm, deleteLog, unit],
   );
 
   const handleSetGoal = useCallback(() => {
-    const goal = parseFloat(goalInput);
-    if (isNaN(goal) || goal <= 0 || goal > 999) {
+    const entered = parseFloat(goalInput);
+    if (isNaN(entered) || entered <= 0) {
+      setGoalError("Please enter a valid goal weight.");
+      return;
+    }
+    // Goal weight is stored in kg — convert and validate against the kg
+    // storage cap (999) so imperial inputs are not rejected by a metric bound.
+    const goalKg = weightToKg(entered, unit);
+    if (goalKg > 999) {
       setGoalError("Please enter a valid goal weight.");
       return;
     }
     setGoalError(null);
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    setGoalWeight.mutate(goal, {
+    setGoalWeight.mutate(goalKg, {
       onSuccess: () => {
         setGoalInput("");
         setShowGoalInput(false);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
     });
-  }, [goalInput, haptics, setGoalWeight]);
+  }, [goalInput, haptics, setGoalWeight, unit]);
 
   return (
     <>
@@ -144,7 +167,7 @@ export default function WeightTrackingScreen() {
                     borderColor: theme.border,
                   },
                 ]}
-                placeholder="Weight (kg)"
+                placeholder={`Weight (${unitLabel})`}
                 placeholderTextColor={theme.textSecondary}
                 keyboardType="decimal-pad"
                 value={weightInput}
@@ -152,7 +175,11 @@ export default function WeightTrackingScreen() {
                   setWeightInput(text);
                   if (weightError) setWeightError(null);
                 }}
-                accessibilityLabel="Weight in kilograms"
+                accessibilityLabel={
+                  unit === "imperial"
+                    ? "Weight in pounds"
+                    : "Weight in kilograms"
+                }
               />
               <Pressable
                 onPress={handleLogWeight}
@@ -205,13 +232,13 @@ export default function WeightTrackingScreen() {
               <View style={styles.trendRow}>
                 <View style={styles.trendItem}>
                   <ThemedText style={styles.trendValue}>
-                    {trend.currentWeight.toFixed(1)}
+                    {weightFromKg(trend.currentWeight, unit).toFixed(1)}
                   </ThemedText>
                   <ThemedText
                     type="caption"
                     style={{ color: theme.textSecondary }}
                   >
-                    Current (kg)
+                    Current ({unitLabel})
                   </ThemedText>
                 </View>
                 {trend.weeklyRateOfChange != null && (
@@ -230,20 +257,20 @@ export default function WeightTrackingScreen() {
                       ]}
                     >
                       {trend.weeklyRateOfChange > 0 ? "+" : ""}
-                      {trend.weeklyRateOfChange.toFixed(2)}
+                      {weightFromKg(trend.weeklyRateOfChange, unit).toFixed(2)}
                     </ThemedText>
                     <ThemedText
                       type="caption"
                       style={{ color: theme.textSecondary }}
                     >
-                      kg/week
+                      {unitLabel}/week
                     </ThemedText>
                   </View>
                 )}
                 {isPremium && trend.avg7Day != null && (
                   <View style={styles.trendItem}>
                     <ThemedText style={styles.trendValue}>
-                      {trend.avg7Day.toFixed(1)}
+                      {weightFromKg(trend.avg7Day, unit).toFixed(1)}
                     </ThemedText>
                     <ThemedText
                       type="caption"
@@ -294,7 +321,7 @@ export default function WeightTrackingScreen() {
             </View>
             {trend?.goalWeight ? (
               <ThemedText style={styles.goalValue}>
-                {trend.goalWeight.toFixed(1)} kg
+                {weightFromKg(trend.goalWeight, unit).toFixed(1)} {unitLabel}
               </ThemedText>
             ) : (
               <ThemedText type="caption" style={{ color: theme.textSecondary }}>
@@ -313,7 +340,7 @@ export default function WeightTrackingScreen() {
                       borderColor: theme.border,
                     },
                   ]}
-                  placeholder="Goal weight (kg)"
+                  placeholder={`Goal weight (${unitLabel})`}
                   placeholderTextColor={theme.textSecondary}
                   keyboardType="decimal-pad"
                   value={goalInput}
@@ -321,7 +348,11 @@ export default function WeightTrackingScreen() {
                     setGoalInput(text);
                     if (goalError) setGoalError(null);
                   }}
-                  accessibilityLabel="Goal weight in kilograms"
+                  accessibilityLabel={
+                    unit === "imperial"
+                      ? "Goal weight in pounds"
+                      : "Goal weight in kilograms"
+                  }
                 />
                 <Pressable
                   onPress={handleSetGoal}
@@ -365,7 +396,7 @@ export default function WeightTrackingScreen() {
                 <Pressable
                   key={log.id}
                   onLongPress={() => handleDeleteLog(log)}
-                  accessibilityLabel={`${formatWeight(log.weight)} on ${formatDate(log.loggedAt)}`}
+                  accessibilityLabel={`${formatWeight(log.weight, unit)} on ${formatDate(log.loggedAt)}`}
                   accessibilityHint="Long press to delete"
                   style={({ pressed }) => [
                     styles.historyItem,
@@ -377,7 +408,7 @@ export default function WeightTrackingScreen() {
                 >
                   <View>
                     <ThemedText style={styles.historyWeight}>
-                      {formatWeight(log.weight)}
+                      {formatWeight(log.weight, unit)}
                     </ThemedText>
                     {log.note ? (
                       <ThemedText

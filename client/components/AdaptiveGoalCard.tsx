@@ -8,6 +8,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import {
   useAcceptAdaptiveGoal,
   useDismissAdaptiveGoal,
@@ -86,6 +87,7 @@ export const AdaptiveGoalCard = React.memo(function AdaptiveGoalCard({
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
+  const unit = useMeasurementUnit();
   const acceptMutation = useAcceptAdaptiveGoal();
   const dismissMutation = useDismissAdaptiveGoal();
 
@@ -231,7 +233,7 @@ export const AdaptiveGoalCard = React.memo(function AdaptiveGoalCard({
             style={[styles.trendInfo, { color: theme.textSecondary }]}
           >
             Weekly weight trend:{" "}
-            {formatWeightTrend(recommendation.weightTrendRate!)}
+            {formatWeightTrend(recommendation.weightTrendRate!, unit)}
           </ThemedText>
         )}
 

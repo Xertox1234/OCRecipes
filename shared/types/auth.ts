@@ -1,6 +1,8 @@
 // JWT types (AccessTokenPayload, isAccessTokenPayload) are server-only.
 // Import from server/lib/jwt-types.ts instead to avoid pulling jsonwebtoken into client bundles.
 
+import type { MeasurementUnit } from "@shared/lib/units";
+
 // User type for client-side auth
 export interface User {
   id: string;
@@ -10,6 +12,7 @@ export interface User {
   dailyCalorieGoal?: number;
   onboardingCompleted?: boolean;
   subscriptionTier?: "free" | "premium";
+  measurementUnit?: MeasurementUnit;
 }
 
 // API response types

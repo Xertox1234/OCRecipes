@@ -1,31 +1,41 @@
 import type { ApiWeightLog, WeightTrend } from "@shared/types/weight";
+import {
+  weightFromKg,
+  weightUnitLabel,
+  DEFAULT_MEASUREMENT_UNIT,
+  type MeasurementUnit,
+} from "@shared/lib/units";
 
 export function formatWeightSubtitle(
   logs: ApiWeightLog[],
   trend: Pick<WeightTrend, "weeklyRateOfChange"> | null | undefined,
   justLogged: boolean,
   justLoggedWeight: number | undefined,
+  unit: MeasurementUnit = DEFAULT_MEASUREMENT_UNIT,
 ): string {
+  const label = weightUnitLabel(unit);
   if (justLogged && justLoggedWeight !== undefined) {
-    return `✓ Logged ${justLoggedWeight.toFixed(1)} kg`;
+    // justLoggedWeight is the user-entered value already in `unit`.
+    return `✓ Logged ${justLoggedWeight.toFixed(1)} ${label}`;
   }
   if (logs.length === 0) {
     return "Log your first weight";
   }
-  const last = parseFloat(logs[0].weight);
+  const last = weightFromKg(parseFloat(logs[0].weight), unit);
   const rate = trend?.weeklyRateOfChange;
   if (rate != null && rate !== 0) {
-    const delta = formatWeightDelta(rate);
-    return `${last.toFixed(1)} kg · ${delta} kg/wk`;
+    const delta = formatWeightDelta(rate, unit);
+    return `${last.toFixed(1)} ${label} · ${delta} ${label}/wk`;
   }
-  return `${last.toFixed(1)} kg`;
+  return `${last.toFixed(1)} ${label}`;
 }
 
 export function formatWeightDelta(
   weeklyRate: number | null | undefined,
+  unit: MeasurementUnit = DEFAULT_MEASUREMENT_UNIT,
 ): string {
   if (weeklyRate == null || weeklyRate === 0) return "—";
-  const abs = Math.abs(weeklyRate).toFixed(1);
+  const abs = Math.abs(weightFromKg(weeklyRate, unit)).toFixed(1);
   return weeklyRate < 0 ? `▼ ${abs}` : `▲ ${abs}`;
 }
 
@@ -46,8 +56,10 @@ export function computeGoalProgress(
 export function formatGoalLabel(
   currentWeight: number,
   goalWeight: number,
+  unit: MeasurementUnit = DEFAULT_MEASUREMENT_UNIT,
 ): string {
-  const remaining = Math.abs(currentWeight - goalWeight);
-  if (remaining < 0.05) return "Goal reached!";
-  return `${remaining.toFixed(1)} kg to goal`;
+  // currentWeight and goalWeight are kg; the difference is converted for display.
+  const remainingKg = Math.abs(currentWeight - goalWeight);
+  if (remainingKg < 0.05) return "Goal reached!";
+  return `${weightFromKg(remainingKg, unit).toFixed(1)} ${weightUnitLabel(unit)} to goal`;
 }

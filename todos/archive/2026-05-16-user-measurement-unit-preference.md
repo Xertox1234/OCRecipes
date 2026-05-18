@@ -1,6 +1,6 @@
 ---
 title: "Add user measurement-unit preference (kg/lbs toggle for body weight)"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-16
 updated: 2026-05-18

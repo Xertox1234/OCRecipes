@@ -23,6 +23,7 @@ import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { MealSuggestion } from "./types/meal-suggestions";
 import type { CarouselRecipeCard } from "./types/carousel";
 import type { ReminderMutes, ReminderType } from "./types/reminders";
+import type { MeasurementUnit } from "./lib/units";
 
 export const users = pgTable("users", {
   id: varchar("id")
@@ -49,6 +50,10 @@ export const users = pgTable("users", {
     withTimezone: true,
   }),
   onboardingCompleted: boolean("onboarding_completed").default(false),
+  measurementUnit: text("measurement_unit")
+    .$type<MeasurementUnit>()
+    .default("metric")
+    .notNull(),
   tokenVersion: integer("token_version").default(0).notNull(),
   subscriptionTier: text("subscription_tier").default("free"),
   subscriptionExpiresAt: timestamp("subscription_expires_at", {

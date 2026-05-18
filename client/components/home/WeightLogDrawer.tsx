@@ -23,11 +23,13 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useCollapsibleHeight } from "@/hooks/useCollapsibleHeight";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import {
   useWeightLogs,
   useWeightTrend,
   useLogWeight,
 } from "@/hooks/useWeightLogs";
+import { weightFromKg, weightToKg, weightUnitLabel } from "@shared/lib/units";
 import {
   Spacing,
   BorderRadius,
@@ -58,6 +60,8 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
   const haptics = useHaptics();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { reducedMotion } = useAccessibility();
+  const unit = useMeasurementUnit();
+  const unitLabel = weightUnitLabel(unit);
 
   const [isOpen, setIsOpen] = useState(false);
   const isOpenRef = useRef(false);
@@ -119,14 +123,20 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
   const handleLog = useCallback(() => {
     setInputError(null);
     const parsed = parseFloat(weightInput);
-    if (!weightInput || isNaN(parsed) || parsed <= 0 || parsed > 999) {
-      const msg = "Enter a weight between 0 and 999 kg";
-      setInputError(msg);
+    if (!weightInput || isNaN(parsed) || parsed <= 0) {
+      setInputError(`Enter a valid weight in ${unitLabel}`);
+      return;
+    }
+    // Storage is always kg — convert and validate against the kg storage cap
+    // (999) so imperial inputs are not rejected by a metric-only bound.
+    const weightKg = weightToKg(parsed, unit);
+    if (weightKg > 999) {
+      setInputError(`Enter a valid weight in ${unitLabel}`);
       return;
     }
 
     logWeight.mutate(
-      { weight: parsed },
+      { weight: weightKg },
       {
         onSuccess: () => {
           haptics.notification(Haptics.NotificationFeedbackType.Success);
@@ -134,6 +144,7 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
             "Weight logged successfully",
           );
           setWeightInput("");
+          // Keep the just-logged value in the user's display unit.
           setLastLoggedWeight(parsed);
           setJustLogged(true);
           if (justLoggedTimerRef.current)
@@ -149,7 +160,7 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
         },
       },
     );
-  }, [weightInput, logWeight, haptics]);
+  }, [weightInput, logWeight, haptics, unit, unitLabel]);
 
   const handleTapThrough = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
@@ -161,7 +172,10 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
     trend,
     justLogged,
     lastLoggedWeight,
+    unit,
   );
+  // Stored values are kg — keep kg for ratio math (computeGoalProgress is
+  // unit-agnostic), convert only at the display sites below.
   const lastWeight = logs[0] ? parseFloat(logs[0].weight) : null;
   const goalWeight = trend?.goalWeight ?? null;
   const startWeight =
@@ -233,8 +247,12 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
           {/* Stat chips */}
           <View style={styles.chipsRow}>
             <StatChip
-              value={lastWeight !== null ? `${lastWeight.toFixed(1)}` : "—"}
-              label="last (kg)"
+              value={
+                lastWeight !== null
+                  ? `${weightFromKg(lastWeight, unit).toFixed(1)}`
+                  : "—"
+              }
+              label={`last (${unitLabel})`}
               chipBg={chipBg}
               valueColor={theme.text}
               labelColor={theme.textSecondary}
@@ -243,7 +261,7 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
               value={
                 trend?.weeklyRateOfChange != null &&
                 trend.weeklyRateOfChange !== 0
-                  ? formatWeightDelta(trend.weeklyRateOfChange)
+                  ? formatWeightDelta(trend.weeklyRateOfChange, unit)
                   : "—"
               }
               label="this week"
@@ -259,8 +277,12 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
               labelColor={theme.textSecondary}
             />
             <StatChip
-              value={goalWeight !== null ? `${goalWeight.toFixed(1)}` : "—"}
-              label="goal (kg)"
+              value={
+                goalWeight !== null
+                  ? `${weightFromKg(goalWeight, unit).toFixed(1)}`
+                  : "—"
+              }
+              label={`goal (${unitLabel})`}
               chipBg={chipBg}
               valueColor={theme.text}
               labelColor={theme.textSecondary}
@@ -299,7 +321,7 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
               <ThemedText
                 style={[styles.goalLabel, { color: theme.textSecondary }]}
               >
-                {formatGoalLabel(lastWeight!, goalWeight!)}
+                {formatGoalLabel(lastWeight!, goalWeight!, unit)}
               </ThemedText>
             </View>
           )}
@@ -315,7 +337,11 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
                   borderColor: inputError ? theme.error : theme.border,
                 },
               ]}
-              placeholder={lastWeight !== null ? lastWeight.toFixed(1) : "0.0"}
+              placeholder={
+                lastWeight !== null
+                  ? weightFromKg(lastWeight, unit).toFixed(1)
+                  : "0.0"
+              }
               placeholderTextColor={theme.textSecondary}
               value={weightInput}
               onChangeText={(v) => {
@@ -326,7 +352,7 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
               returnKeyType="done"
               onSubmitEditing={handleLog}
               aria-invalid={inputError != null}
-              accessibilityLabel="Weight in kg"
+              accessibilityLabel={`Weight in ${unitLabel}`}
             />
             <View
               style={[
@@ -337,7 +363,7 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
               <ThemedText
                 style={[styles.unitText, { color: theme.textSecondary }]}
               >
-                kg
+                {unitLabel}
               </ThemedText>
             </View>
           </View>

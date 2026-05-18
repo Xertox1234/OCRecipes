@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 import type { FastingSchedule, FastingLog } from "@shared/schema";
+import { weightFromKg, weightUnitLabel } from "@shared/lib/units";
 
 export interface ProfileWidgetData {
   dailyBudget: {
@@ -50,8 +51,16 @@ export async function getProfileWidgets(
     },
     latestWeight: latestWeight
       ? {
-          value: Number(latestWeight.weight),
-          unit: "kg",
+          // Body weight is stored in kg; convert to the user's preferred unit
+          // for display. Round to 1 decimal at this leaf — the widget renders
+          // the value verbatim.
+          value: Number(
+            weightFromKg(
+              Number(latestWeight.weight),
+              user.measurementUnit,
+            ).toFixed(1),
+          ),
+          unit: weightUnitLabel(user.measurementUnit),
           date: new Date(latestWeight.loggedAt).toISOString(),
         }
       : null,
