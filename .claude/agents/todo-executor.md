@@ -198,14 +198,14 @@ Process the code review findings. The project convention (see `CLAUDE.md` and `d
 1. **CRITICAL** — mandatory. Fix every CRITICAL finding before continuing.
 2. **WARNING** — surface and address with judgment:
    - Fix it **inline** if the change is clearly inside this todo's scope and small (a few lines, same files you already touched, no new architectural decisions).
-   - Otherwise **defer**: create a follow-up todo in `todos/` per the "Deferred Item Todos" workflow in `CLAUDE.md` (frontmatter `status: backlog`, `labels: [deferred, <domain>]`, plus the affected file paths in Implementation Notes). Mention the new todo path in the final report so the orchestrator can see it. A surfaced-and-deferred WARNING is not a failure.
+   - Otherwise **do NOT create a follow-up todo.** Auto-filing follow-up todos is what buries the backlog — never do it. Record the WARNING verbatim (one line: description + file path) and return it in your Step 11 report under `DEFERRED_WARNINGS`. The orchestrator surfaces it in the Phase 5 summary; the user decides whether it becomes a todo. A surfaced WARNING is not a failure.
    - Also consider whether the WARNING reveals a reusable rule worth codifying — flag it for Step 9.
 3. **SUGGESTION** — informational only. Apply only if it lands in scope and is trivial; otherwise ignore.
 4. There is no tier below SUGGESTION — findings not marked CRITICAL, WARNING, or SUGGESTION can be ignored.
 5. After fixing, re-run Step 5 (verify) to ensure fixes did not break anything.
 6. If fixes were non-trivial, run Step 6 again (second review round).
 
-**Cap at 2 review rounds.** Only unresolved **CRITICAL** issues after 2 rounds count as failure (enter the Failure Path). Remaining WARNINGs at the round-2 boundary should be deferred via a follow-up todo, not treated as a blocker.
+**Cap at 2 review rounds.** Only unresolved **CRITICAL** issues after 2 rounds count as failure (enter the Failure Path). Remaining WARNINGs at the round-2 boundary go into the `DEFERRED_WARNINGS` report field — never into a todo — and are not a blocker.
 
 ---
 
@@ -350,13 +350,18 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 ---
 
-## Step 10 — Create PR
+## Step 10 — Push Branch (PR only for medium+ todos)
 
-This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both complete — the branch must contain the committed implementation before the PR is opened.
+This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both complete — the branch must contain the committed implementation before it is pushed.
 
 If this todo was delegated through a GitHub Issue assigned to `@copilot`, do not create direct commits or a replacement PR from this executor. The Copilot issue must produce a PR that receives human review.
 
-Rename the worktree branch to a meaningful slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
+**Priority gate.** Read the todo's frontmatter `priority`:
+
+- `low` — do **NOT** create a pull request. Low-priority todos skip the PR/review-round ceremony. Do steps 1–2 below (rename + push the branch), then in Step 11 report `BRANCH: todo/<todo-slug>` and `PR_URL: skipped-low-priority`. Skip step 3.
+- `medium`, `high`, or `critical` — do all steps below, including PR creation.
+
+Rename the worktree branch to a meaningful slug, push it, and (for medium+ only) open a GitHub PR targeting the base branch passed in your spawn prompt.
 
 1. **Determine the todo slug**: strip the `.md` extension from the todo filename. Example: `scan-confirm-null-calories-guard.md` → `scan-confirm-null-calories-guard`.
 
@@ -428,10 +433,12 @@ Return a structured result to the orchestrator.
 ```
 STATUS: success
 COMMIT: <commit hash>
-PR_URL: <GitHub PR URL, or "null" if PR creation failed>
+BRANCH: <todo/<todo-slug> branch name>
+PR_URL: <GitHub PR URL | "skipped-low-priority" | "null" if PR creation failed>
 CODIFICATION_COMMIT: <commit hash> | none
 FILES_CHANGED: <list of modified files>
 REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
+DEFERRED_WARNINGS: <one line per unaddressed kimi-review WARNING (description + file path), or "none">
 ```
 
 **On failure:**

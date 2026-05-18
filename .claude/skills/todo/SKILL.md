@@ -146,7 +146,7 @@ Agent({
 ### After Each Batch
 
 1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`.
-2. **Record PR URLs and commit hashes** from successful executions. Each successful executor reports `PR_URL` (may be `null` if PR creation failed) and `COMMIT`.
+2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, `skipped-low-priority`, or `null` if PR creation failed), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage.
 
 Proceed to the next batch in the execution plan.
 
@@ -166,10 +166,12 @@ After all batches have been executed (or after early termination):
 
 3. **Print the summary table:**
 
-   | #   | Todo                                  | Status  | PR                      | Review Rounds | Notes                               |
+   The **Branch / PR** column shows: the PR URL for medium+ todos; `branch: todo/<slug>` for low-priority todos (no PR was created — merge the branch directly); `pending manual creation` if PR creation failed.
+
+   | #   | Todo                                  | Status  | Branch / PR             | Review Rounds | Notes                               |
    | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |
    | 1   | Extract suggestion generation service | success | github.com/…/pull/42    | 1             | —                                   |
-   | 2   | Storage facade re-exports             | success | github.com/…/pull/43    | 2             | Medium review finding deferred      |
+   | 2   | Storage facade re-exports             | success | branch: todo/storage-…  | 2             | low priority — no PR, merge branch  |
    | 3   | Remix screen reader announcements     | blocked | —                       | 0             | Depends on remix-carousel-badge     |
    | 4   | Fix useCollapsible height test        | failed  | —                       | 1             | Type error in mock setup            |
    | 5   | Fix calorie rounding utility          | success | pending manual creation | 1             | PR creation failed — push succeeded |
@@ -177,7 +179,7 @@ After all batches have been executed (or after early termination):
 4. **Print tallies:**
 
    ```
-   Completed: N (list PR URLs; note "PR pending manual creation" for any where PR_URL is null)
+   Completed: N (list PR URLs for medium+; list "branch: todo/<slug>" for low-priority todos; note "PR pending manual creation" for any where PR_URL is null)
    Blocked:   M
    Skipped:   S
    Failed:    F
@@ -185,6 +187,8 @@ After all batches have been executed (or after early termination):
    Patterns codified: P
    Final test count: T (baseline was B)
    ```
+
+   Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
 
 5. **Print verification result:**
 

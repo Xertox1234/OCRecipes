@@ -1,7 +1,7 @@
 ---
 title: "Brief descriptive title"
 status: backlog
-priority: medium
+priority: low
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
 assignee:
@@ -43,6 +43,7 @@ Technical details, approach suggestions, or constraints to consider.
 ## Updates
 
 ### YYYY-MM-DD
+
 - Initial creation
 
 ## Copilot Delegation

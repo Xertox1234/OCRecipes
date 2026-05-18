@@ -169,7 +169,7 @@ For **each** finding the user wants fixed:
 
    Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
-   - **WARNING finding**: judgment call. **Fix inline** when the change is clearly in scope and small (a few lines, same files already touched, no new architectural decision) — then re-run steps 4–7. Otherwise **record in the manifest Verification column** as a surfaced WARNING, **create a follow-up todo** in `todos/` (frontmatter `status: backlog`, `labels: [deferred, <domain>]`, link from the manifest's Deferred Items table), and continue. WARNING is not a mandatory blocker.
+   - **WARNING finding**: judgment call. **Fix inline** when the change is clearly in scope and small (a few lines, same files already touched, no new architectural decision) — then re-run steps 4–7. Otherwise **record it in the manifest's Deferred Items table** as a surfaced WARNING and continue — do NOT auto-create a todo. The user reviews the manifest at close (Phase 5) and decides which deferred items become todos. WARNING is not a mandatory blocker.
    - **SUGGESTION**: proceed — note in manifest Verification column if worth tracking for codification.
 
 8. Update manifest:
@@ -218,8 +218,8 @@ This phase intentionally keeps the deeper subagent-based review path. Audit work
    - A one-line description of each fix (copy from the manifest)
    - The instruction: "Report CRITICAL / HIGH / MEDIUM / LOW / PASS per file. Focus on correctness, security, and pattern compliance. Do not flag style preferences."
 2. For each CRITICAL or HIGH finding: fix immediately (follow Phase 3 rules — read, fix, verify, update manifest)
-3. For MEDIUM findings: use judgment — fix if quick, defer with todo if non-trivial
-4. For LOW findings: defer unless trivial one-liners
+3. For MEDIUM findings: use judgment — fix if quick, otherwise record in the manifest's Deferred Items table (do not auto-create a todo)
+4. For LOW findings: fix if a trivial one-liner, otherwise record in the manifest's Deferred Items table
 5. Re-run `npm run test:run` and `npm run check:types` after any review fixes
 
 ## Phase 7: Commit Fixes
@@ -291,6 +291,6 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
 - **Zero open findings at close.** Everything is either verified, deferred (with todo), or false-positive.
 - **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns only after the fix commit in Phase 8.
 - **kimi-review is not optional.** Every fix in Phase 3 must pass kimi-review before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
-- **Deferred is not dropped.** Deferred items must have a todo with priority and rationale. "We'll get to it" is not a rationale.
+- **Deferred is not dropped.** Findings the user explicitly chose to defer at Phase 2.5 triage get a todo (Phase 4) with priority and rationale. Surfaced WARNING/MEDIUM/LOW findings from Phases 3 and 6 stay in the manifest's Deferred Items table — they are NOT auto-filed as todos. The manifest is their record; the user decides at close whether any warrant a todo. "We'll get to it" is not a rationale.
 - **The changelog is append-only.** Never edit previous entries.
 - **Codification is not optional.** Every audit must run Phase 8 to extract knowledge. Do not spawn `.claude/agents/pattern-codifier.md`; codify directly from the manifest after fixes are committed.
