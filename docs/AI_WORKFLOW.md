@@ -74,7 +74,7 @@ Documentation-only pushes to `main` (`*.md`, `docs/**`, `todos/**`) are ignored 
 - `tsc --noEmit` type check
 - Full Vitest suite (`npm run test:run`)
 
-**Why tests don't need to run locally before commits:** CI is the authoritative quality gate. The pre-commit hook runs only `lint-staged` (ESLint fix + Prettier on staged files). Running the full test suite in the hook added ~20s to every commit and produced no signal that CI didn't already catch. If CI fails, the PR is blocked.
+**Why tests don't need to run locally before commits:** CI is the authoritative quality gate. The pre-commit hook runs `lint-staged` plus a staged-diff `kimi-review` check for `.ts`/`.tsx` changes when the CLI is available. It does not run `tsc` or `npm test`. Running the full test suite in the hook added ~20s to every commit and produced no signal that CI didn't already catch. If CI fails, the PR is blocked.
 
 When CI fails, inspect only failed step logs:
 
@@ -86,9 +86,21 @@ npm run ci:failed-logs -- <run-id>
 
 Do not paste full workflow logs into Claude. Failed-step logs are the useful signal.
 
-### Pre-commit Hook (Husky / lint-staged)
+### Kimi Review CI
 
-`.husky/pre-commit` runs `lint-staged` only. Staged `.ts`/`.tsx` files get ESLint auto-fix + Prettier. The hook does **not** run `tsc` or `npm test` — CI owns those.
+`.github/workflows/kimi-review.yml` is an opt-in PR gate for TypeScript review. It runs only for `.ts`/`.tsx` pull request diffs and only when the repository variable `KIMI_REVIEW_CI_ENABLED` is set to `true`.
+
+When enabled for same-repo PRs, the workflow runs `scripts/ci-kimi-review.sh` over the PR base/head diff. CRITICAL findings fail the job; WARNING findings print but do not fail. Fork PRs are skipped because repository secrets are unavailable to untrusted forks.
+
+To enable the gate, provision `kimi-review` on the GitHub runner, set either `WORKER_API_KEY` or `MOONSHOT_API_KEY` as a repository secret, then set repository variable `KIMI_REVIEW_CI_ENABLED=true`. If the variable is enabled but the CLI or secret is missing, the job fails with an explicit setup error.
+
+### Pre-commit Hook (Husky / lint-staged / kimi-review)
+
+`.husky/pre-commit` always runs `lint-staged`. Staged `.ts`/`.tsx` files get ESLint auto-fix + Prettier, and then the hook runs `kimi-review` on the staged TypeScript diff with `--tiers CRITICAL,WARNING --profile ocrecipes`.
+
+CRITICAL Kimi findings block the commit. WARNING findings are printed but do not block. The Kimi gate is intentionally best-effort for local developer ergonomics: it skips when no `.ts`/`.tsx` files are staged, when `SKIP_KIMI_REVIEW=1` is set, or when `kimi-review` is not on `PATH`. Teammates without the Kimi CLI still get lint-staged locally and CI remains the authoritative shared gate.
+
+The hook does **not** run `tsc` or `npm test` — CI owns those.
 
 ### CLAUDE.md
 

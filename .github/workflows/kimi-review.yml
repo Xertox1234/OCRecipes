@@ -1,0 +1,43 @@
+name: Kimi Review
+
+on:
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "**/*.ts"
+      - "**/*.tsx"
+
+concurrency:
+  group: kimi-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Kimi Review
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Skip when not enabled
+        if: vars['KIMI_REVIEW_CI_ENABLED'] != 'true'
+        run: echo "Kimi Review CI is disabled. Set repository variable KIMI_REVIEW_CI_ENABLED=true to enable it."
+
+      - name: Skip fork pull requests
+        if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name != github.repository
+        run: echo "Kimi Review CI is skipped for fork pull requests because repository secrets are unavailable."
+
+      - uses: actions/checkout@v4
+        if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          fetch-depth: 0
+
+      - name: Run kimi-review
+        if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          KIMI_REVIEW_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          KIMI_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          KIMI_REVIEW_SCOPE: "CI PR diff"
+          WORKER_API_KEY: ${{ secrets['WORKER_API_KEY'] }}
+          MOONSHOT_API_KEY: ${{ secrets['MOONSHOT_API_KEY'] }}
+        run: bash scripts/ci-kimi-review.sh
