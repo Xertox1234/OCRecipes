@@ -105,12 +105,12 @@ printf '%s\n' "$REVIEW_OUTPUT"
 
 # Check for CRITICAL findings FIRST, before any tool-failure short-circuit —
 # kimi-review may print findings and still exit non-zero, and we don't want
-# a crash-after-detection to silently let CRITICAL findings land. A clean review
-# can include `[CRITICAL] — No findings.`, so require a non-empty CRITICAL body
-# and exclude only that sentinel shape.
+# a crash-after-detection to silently let CRITICAL findings land. Match the
+# mandated finding shape — a `[CRITICAL]` tag followed on the same line by a
+# `:<line-number>`. An empty-tier placeholder ("[CRITICAL] No critical issues
+# found.") has no `:line`, so it cannot match and never phantom-blocks.
 CRITICAL_FINDINGS=$(printf '%s\n' "$REVIEW_OUTPUT" \
-  | grep -E '[[]CRITICAL[]].*[^[:space:]]' \
-  | grep -ivE '[[]CRITICAL[]][^[:alnum:]]*no findings')
+  | grep -E '[[]CRITICAL[]][^:]*:[0-9]')
 
 if [ -n "$CRITICAL_FINDINGS" ]; then
   echo "" >&2
