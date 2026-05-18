@@ -21,7 +21,7 @@ Append-only history of all code audits performed on this project. Each entry lin
 - **Manifest:** [docs/audits/2026-05-18-kimi.md](2026-05-18-kimi.md)
 - **Findings:** 0 critical, 2 high, 5 medium, 1 low (8 total)
 - **Resolved:** 8 verified, 0 deferred, 0 false-positive
-- **Commit(s):** `b8758709`
+- **Commit(s):** `f88b3a12`
 - **Key fixes:** Kimi CI now runs from trusted base-branch code under `pull_request_target` while treating PR head as diff data only; PR diff scope now uses merge-base -> head; CI/Husky/Claude gates include deleted and renamed TypeScript files; Claude hook sends only TypeScript diffs to the external reviewer; credential aliases are unified across wrapper, Python fallback, docs, and AI workflows; domain mappings for evals/LLM services/routes/storage/client context are synced with the canonical mapping; Kimi shell/Python regression harness expanded to 34 tests.
 - **Verification:** `npm run test:run` passed 356/356 files and 5265/5265 tests; `npm run check:types` passed; `npm run lint` exited 0 with 9 unrelated warnings.
 
