@@ -111,6 +111,7 @@ This todo covers the **existing corrupted rows only**.
   reach holds zero weight entries.
 - The repair is therefore a no-op. The operational acceptance criteria (dry-run
   / execute / verify against prod) are moot — there is nothing to repair.
-- `server/scripts/repair-weight-log-units.ts` is retained as a safety net: if
-  pre-fix real-user rows ever turn up, it can still be run per the operator
-  steps above. Delete it later if confirmed permanently unnecessary.
+- `server/scripts/repair-weight-log-units.ts` and its `*-utils.ts` helper and
+  test were initially retained as a safety net, then **deleted** the same day:
+  with no production data they serve no purpose, and the forward fix (#220)
+  prevents future corruption. Recover from git history if ever needed.
