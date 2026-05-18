@@ -23,16 +23,21 @@ placeholder per tier:
 
 `kimi-review`'s output filter treats _any_ `[TIER]`-prefixed line as a finding,
 so it prints these placeholders verbatim. The hook then sees a `[CRITICAL]` line
-and blocks. Fixing only the hook leaves the tool emitting misleading output to
-every other consumer (`kimi-multi-review`, manual runs) and lets the next
-hook-regex guess collide with the next clean phrasing the model invents.
+and blocks. Fixing only one hook leaves other gates and consumers with the same
+misleading output, and lets the next hook-regex guess collide with the next clean
+phrasing the model invents.
 
 ## Goal
 
+The tracked `scripts/kimi-review.py` is the canonical implementation. The local
+`~/.local/bin/kimi-review` helper should either be generated from it or kept in
+lockstep with it, but the repo script is the source of truth because CI falls
+back to it and reviewers can audit it.
+
 `kimi-review` must distinguish a **real finding** from an **empty-tier
 placeholder** and never print a placeholder. A clean review prints only the
-existing `No findings in requested tiers: …` message. The hook is independently
-hardened as a defense-in-depth backstop.
+existing `No findings in requested tiers: …` message. Every gate that parses
+review stdout is independently hardened as a defense-in-depth backstop.
 
 ## Approaches considered
 
@@ -48,14 +53,16 @@ hardened as a defense-in-depth backstop.
 
 ## Design
 
-### Component 1 — Tool: `~/.local/bin/kimi-review`
+### Component 1 — Canonical tool: `scripts/kimi-review.py`
 
 **1a. Extract a pure `filter_review` function.** The current inline filter loop
-(after the API response) becomes a module-level function. A bracketed `[TIER]`
-line counts as a real finding only if its body references a file — contains a
-`/`, a `:<digits>` line number, or a `.<ext>`. A bracketed line referencing no
-file is a placeholder: it is dropped and does not count as a finding. When no
-real finding survives, the existing clean message prints.
+(after the API response) becomes a module-level function in
+`scripts/kimi-review.py`; the local `~/.local/bin/kimi-review` helper receives
+the same function after the canonical implementation is updated. A bracketed
+`[TIER]` line counts as a real finding only if its body references a file —
+contains a `/`, a `:<digits>` line number, or a `.<ext>`. A bracketed line
+referencing no file is a placeholder: it is dropped and does not count as a
+finding. When no real finding survives, the existing clean message prints.
 
 ```python
 import re
@@ -74,18 +81,16 @@ def filter_review(answer, requested_tiers):
     allowed_tiers = {t.upper() for t in requested_tiers}
     filtered_lines = []
     keep_current_finding = False
-    saw_finding = False
     for line in answer.splitlines():
         stripped = line.lstrip()
         if stripped.startswith("[") and "]" in stripped:
             tier = stripped[1:stripped.index("]")].strip().upper()
             body = stripped[stripped.index("]") + 1:]
             is_finding = bool(_FILE_REF_RE.search(body))
-            saw_finding = True
             keep_current_finding = is_finding and tier in allowed_tiers
             if keep_current_finding:
                 filtered_lines.append(line)
-        elif keep_current_finding or not saw_finding:
+        elif keep_current_finding:
             filtered_lines.append(line)
     filtered = "\n".join(filtered_lines).strip()
     return filtered or f"No findings in requested tiers: {', '.join(requested_tiers)}"
@@ -102,15 +107,18 @@ else:
     sys.exit(1)
 ```
 
-**1b. Make the module importable.** Wrap the script's executable body — from
-`p = argparse.ArgumentParser(...)` through the trailing usage-stats print — in a
-`def main():`, and add `if __name__ == "__main__": main()`. Module-level after
-the refactor: imports, the offline `OpenAI(...)` client object, `TIER_DEFINITIONS`,
-`PROJECT_PROFILES`, `_FILE_REF_RE`, and `filter_review`. Everything else — the
-argument parser, the git-diff and profile logic, and `resolve_pattern_path`
-(currently defined mid-flow) — moves inside `main()`; `resolve_pattern_path` is
-only called from there, so nesting it is fine. This lets the test import the
-module without parsing argv or calling the API.
+**1b. Make the module importable without optional dependencies.** Keep the
+canonical script's executable body under `main()`, and import `OpenAI` plus
+construct the client inside `main()` after credential validation. Module-level
+after the refactor: standard-library imports, `TIER_DEFINITIONS`,
+`PROJECT_PROFILES`, `DEFAULT_BASE_URL`, `_FILE_REF_RE`, `filter_review`, and the
+small pure helpers already used by the CI script tests. This lets the test import
+the module with plain `python3` without requiring the `openai` package, an API
+key, argv parsing, or network access.
+
+The local `~/.local/bin/kimi-review` helper currently imports `OpenAI` at module
+load. If it remains a separate file, mirror this import-inside-`main()` structure
+there too, so its local unit test is genuinely hermetic.
 
 **Why the broad file-reference test (not just `:line`):** the tool _drops_
 non-findings, and a drop is unrecoverable. Matching `/`, `:digit`, or `.ext`
@@ -119,10 +127,14 @@ placeholder ("No critical issues found.") references no file and is dropped. A
 rare false positive (e.g. a placeholder containing "i.e.") would survive into
 stdout but is harmless — the hook's `[CRITICAL]+:line` gate does not block it.
 
-### Component 2 — Tool test: new `~/.local/bin/test-kimi-review.py`
+### Component 2 — Tool test: tracked canonical test plus optional local test
 
-Loads `kimi-review` via `importlib.util` and calls `filter_review` directly
-(no API key, no network). Covers:
+Add a tracked test for `scripts/kimi-review.py` that loads the script via
+`importlib.util` and calls `filter_review` directly (no `openai` package, no API
+key, no network). The local `~/.local/bin/test-kimi-review.py` may remain as a
+smoke test for the helper, but it is not the canonical verification path.
+
+Covers:
 
 1. Placeholder lines only → returns the clean message.
 2. A real `[CRITICAL]` finding (`path:line`) → kept.
@@ -133,21 +145,24 @@ Loads `kimi-review` via `importlib.util` and calls `filter_review` directly
 7. A real finding whose description contains the words "no findings" → kept.
 8. A finding citing a bare filename with no line number (`schema.ts`) → kept.
 
-### Component 3 — Hook hardening: `.claude/hooks/kimi-review.sh` + `test-kimi-review.sh`
+### Component 3 — Gate hardening: Claude hook, Husky hook, and CI gate
 
 Defense-in-depth so a future tool regression that leaks a placeholder still
 cannot phantom-block.
 
-- Replace the word/exclude-grep pair with the shape match
+- Replace the word/exclude-grep pair in `.claude/hooks/kimi-review.sh`,
+  `.husky/pre-commit`, and `scripts/ci-kimi-review.sh` with the shape match
   `grep -E '[[]CRITICAL[]][^:]*:[0-9]'` — a `[CRITICAL]` tag followed on the
   same line by a `:<line-number>`. Placeholders have no `:line` and cannot match.
-- Rewrite the step-8 rationale comment to describe the shape match and the
+- Rewrite each gate's rationale comment to describe the shape match and the
   deliberate fail-open trade-off (a malformed real finding with no line number
-  does not block but still surfaces in `additionalContext`).
+  does not block but still surfaces in the gate output / `additionalContext`).
 - Add a `clean-model-prose` stub to `test-kimi-review.sh` emitting
   `[CRITICAL] No critical issues found.` / `[WARNING] No warning-level issues
 found.`, with assertions that it does not block and does emit
-  `additionalContext`.
+  `additionalContext` for the Claude hook.
+- Add matching `clean-model-prose` assertions for the Husky and CI gate helpers,
+  so a regression cannot survive outside the Claude-Code hook path.
 
 ### Component 4 — Solution doc
 
@@ -162,26 +177,33 @@ the hook shape-match as the backstop.
 review model output
   → filter_review()        drops empty-tier placeholder lines
   → kimi-review stdout     real findings, OR the clean message — never a placeholder
-  → hook greps stdout      [CRITICAL] + :line shape match
+  → gates grep stdout      [CRITICAL] + :line shape match
   → block / allow
 ```
 
 ## Error handling
 
 `filter_review` is pure and total — no exceptions, no I/O. An empty/None model
-response is still handled by the existing token-error branch. Tool-test and
-hook-test failures surface via each script's non-zero exit code.
+response is still handled by the existing token-error branch. A response that
+contains only prose or empty-tier placeholders returns the clean message. Tool,
+hook, Husky, and CI gate test failures surface via each script's non-zero exit
+code.
 
 ## Testing
 
-- `python3 ~/.local/bin/test-kimi-review.py` — `filter_review` unit cases.
-- `bash .claude/hooks/test-kimi-review.sh` — hook end-to-end, including the new
-  `clean-model-prose` regression.
+- Tracked canonical test for `scripts/kimi-review.py` — `filter_review` unit
+  cases, runnable with plain `python3` and no `openai` package installed.
+- Optional local smoke test for `~/.local/bin/kimi-review` — verifies the helper
+  remains in sync with the canonical filter.
+- `bash .claude/hooks/test-kimi-review.sh` — Claude hook, Husky hook, and CI gate
+  end-to-end cases, including the new `clean-model-prose` regression for all
+  three gates.
 
 ## Out of scope / follow-up
 
-`~/.local/bin/kimi-review` (and `kimi-challenge`, `kimi-multi-review`, and the
-new tool test) are bespoke local scripts, not tracked in the `claude-coworker`
+`~/.local/bin/kimi-review`, `kimi-challenge`, `kimi-multi-review`, and the local
+tool smoke test are bespoke local scripts, not tracked in the `claude-coworker`
 git repo (which versions only `ask-kimi`, `kimi-write`, `extract-chat`). Moving
 the `kimi-*` tools into that repo's `tools/` for version control is recommended
-but is a separate change.
+but is a separate change. Until then, `scripts/kimi-review.py` is canonical and
+local helpers must be treated as copies/adapters of the tracked implementation.
