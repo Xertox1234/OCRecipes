@@ -1,7 +1,7 @@
 # Design: kimi-review placeholder-line filter
 
 **Date:** 2026-05-18
-**Status:** Approved (design), pending implementation plan
+**Status:** Implemented (2026-05-18)
 **Topic:** Stop `kimi-review` from emitting empty-tier placeholder lines that phantom-block commits
 
 ## Problem

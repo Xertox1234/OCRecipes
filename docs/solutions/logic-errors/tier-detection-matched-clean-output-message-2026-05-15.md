@@ -101,11 +101,16 @@ is _not_ a finding" is unbounded — especially when the output is LLM prose,
 which has infinitely many ways to say "nothing here". Key on the positive
 shape.
 
-The deeper architectural fix lives in the tool, not the hook: `kimi-review`'s
-filter loop counts _any_ `[TIER]` line as a finding, so a placeholder line
-reaches the hook at all. Validating finding _shape_ (require a `path:line`)
-inside the tool before it prints a `[TIER]` line would stop the placeholder at
-the source. That is an out-of-repo change to `~/.local/bin/kimi-review`.
+The deeper architectural fix lives in the tool, not the hook — and is now in
+place. `~/.local/bin/kimi-review`'s `filter_review` classifies a bracketed
+`[TIER]` line as a real finding only when its body references a file location
+(`/`, `:<digit>`, or `.<ext>`); a placeholder that cites no file
+(`[CRITICAL] No critical issues found.`) is dropped and never printed. So a
+clean review now emits only the `No findings in requested tiers: …` message,
+and no consumer — the Claude hook, the Husky gate, `kimi-multi-review`, or a
+manual run — ever sees a phantom `[CRITICAL]` line. The hook's shape match is
+retained as a defense-in-depth backstop. `~/.local/bin/test-kimi-review.py`
+covers `filter_review`; the hook's `clean-model-prose` case covers the backstop.
 
 ## Related Files
 
