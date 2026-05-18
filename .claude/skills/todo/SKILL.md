@@ -3,7 +3,43 @@ name: todo
 description: Use when you have todos in todos/ with status backlog or planned and want to implement them autonomously in parallel
 ---
 
-You are running the todo orchestrator. This workflow triages the backlog, plans execution order, dispatches executor agents, and reports results. **Never skip phases.**
+You are running the todo orchestrator. This workflow cleans up prior runs, triages the backlog, plans execution order, dispatches executor agents, and reports results. **Never skip phases.**
+
+## Phase 0 — Cleanup Sweep
+
+Before anything else, clear leftovers from previous `/todo` runs. This phase **always runs** and **never aborts** the workflow — if a step fails (e.g. `gh` is unauthenticated), report it and continue to Phase 1.
+
+1. **Force-remove leftover executor worktrees.** Executor worktrees are created _locked_, so `git worktree prune` alone silently skips them and they accumulate forever. Force-remove every one:
+
+   ```bash
+   git worktree list --porcelain | awk '/^worktree / && /\.claude\/worktrees\/agent-/ {print $2}' | while read -r wt; do
+     git worktree unlock "$wt" 2>/dev/null
+     git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"
+   done
+   git worktree prune
+   ```
+
+2. **Delete stale remote branches.** Every `/todo` run pushes a `todo/<slug>` branch for its PR; nothing deletes it after the PR merges, so they pile up on `origin`. Delete every remote branch whose PRs are all `MERGED` or `CLOSED` — but never one with an open PR, and never `main` or the current branch:
+
+   ```bash
+   git fetch --prune --quiet
+   CURRENT=$(git branch --show-current)
+   gh pr list --state open --limit 400 --json headRefName --jq '.[].headRefName' | sort -u > /tmp/todo-open-prs.txt
+   gh pr list --state all  --limit 400 --json headRefName,state \
+     --jq '.[] | select(.state=="MERGED" or .state=="CLOSED") | .headRefName' | sort -u > /tmp/todo-stale-prs.txt
+   git branch -r --format='%(refname:short)' | sed 's#^origin/##' \
+     | grep -vxE "HEAD|main|${CURRENT:-main}" | sort -u > /tmp/todo-remote-branches.txt
+   comm -12 /tmp/todo-stale-prs.txt /tmp/todo-remote-branches.txt \
+     | comm -23 - /tmp/todo-open-prs.txt > /tmp/todo-delete-branches.txt
+   if [ -s /tmp/todo-delete-branches.txt ]; then
+     xargs git push origin --delete < /tmp/todo-delete-branches.txt
+     git fetch --prune --quiet
+   fi
+   ```
+
+   If `gh` is unavailable or unauthenticated, skip this step (worktree cleanup in step 1 still ran) and continue.
+
+3. **Report** what was cleaned: count of worktrees removed and the list of remote branches deleted (or "nothing to clean"). Then proceed to Phase 1.
 
 ## Phase 1 — Baseline
 
@@ -198,11 +234,17 @@ After all batches have been executed (or after early termination):
    Lint:  PASS | FAIL (N errors)
    ```
 
-6. **Clean up stale worktrees** left behind by crashed or cancelled executors:
+6. **Remove this run's executor worktrees.** Force-remove them — a bare `git worktree prune` cannot, because they are created _locked_:
 
    ```bash
+   git worktree list --porcelain | awk '/^worktree / && /\.claude\/worktrees\/agent-/ {print $2}' | while read -r wt; do
+     git worktree unlock "$wt" 2>/dev/null
+     git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"
+   done
    git worktree prune
    ```
+
+   This removes worktree directories only — branches and their open PRs are unaffected.
 
 ## Rules
 
@@ -213,3 +255,4 @@ After all batches have been executed (or after early termination):
 - **The executor agent does the work.** This orchestrator only triages, dispatches, and summarizes. Never implement todo changes directly.
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
+- **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes remote branches whose PRs are all merged or closed; Phase 5 removes this run's worktrees. The user must never have to clean up `todo/*` branches or `agent-*` worktrees by hand.
