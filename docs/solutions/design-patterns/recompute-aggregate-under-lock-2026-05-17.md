@@ -60,6 +60,29 @@ verifying the same barcode concurrently left `verification_count = 2`.
   does not apply to reading a _different_ row set (siblings) to derive an
   aggregate under a lock.
 
+### Per-row derived values have the same race
+
+The same race also affects per-row derived values — booleans or classifications
+written into the row being inserted. In `submitVerification`, the
+`isMatch` flag on each `verification_history` row is computed by comparing the
+new submission against existing matching rows. The original PR #219 moved only
+the aggregate computation inside the lock and left the per-row `isMatch`
+decision at the route level, computed from a pre-transaction read. Under a
+concurrent first-N burst on a brand-new barcode, every request sees an empty
+existing set, so all N rows store `isMatch = true` even when their nutrition
+data diverges. The post-insert aggregate recompute then averages those
+divergent values into the consensus, corrupting it.
+
+The fix: move the per-row comparison inside the same transaction, under the
+same advisory lock. Select the comparison-candidate rows (the matching history)
+**under the lock before the insert**, compute the per-row value from that
+authoritative snapshot, then insert with that value. Because the lock
+serializes submissions for that key, the pre-insert select plus the inserted
+row equals the full post-insert set — no separate post-insert re-query is
+needed for the aggregate either. The storage function drops the caller-supplied
+per-row parameter and returns the computed per-row value alongside the
+aggregate.
+
 ## Examples
 
 ```ts
@@ -105,6 +128,9 @@ aggregate without re-writing it — a duplicate must not mutate the aggregate.
   `CONSENSUS_THRESHOLD`, placed in `lib/` so storage can import them without
   violating the service→storage dependency direction
 - `server/storage/chat.ts` — prior `pg_advisory_xact_lock` precedent
+- `server/storage/verification.ts` — per-row `isMatch` computation moved inside
+  the locked transaction (extends the aggregate pattern)
+- `server/routes/verification.ts` — route no longer computes per-row `isMatch`
 
 ## See Also
 
