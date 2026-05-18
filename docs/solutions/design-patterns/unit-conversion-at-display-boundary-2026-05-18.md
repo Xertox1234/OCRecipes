@@ -21,148 +21,160 @@ created: 2026-05-18
 
 ## When this applies
 
-Any feature that stores physical quantities (weight in kg, height in cm, distance in km) and must display or accept input in a user-preferred unit system (imperial or metric). The pattern applies:
+Any feature that stores physical quantities (weight in kg, height in cm) and must display or accept input in a user-preferred unit system (imperial or metric). The pattern applies:
 
-- When a per-user measurement preference exists (e.g. `unitSystem: "imperial" | "metric"`).
-- When the canonical storage unit is metric (kg, cm, km) but the UI should show imperial equivalents (lb, ft/in, mi).
-- When input validation must accept values in the user’s unit system but enforce bounds in canonical units.
+- When a per-user measurement preference exists (`users.measurementUnit: "metric" | "imperial"`).
+- When the canonical storage unit is metric (kg, cm) but the UI should show imperial equivalents (lbs, in).
+- When input validation must accept values in the user's unit system but enforce bounds in canonical units.
 - When derived values (percentage, ratio, direction) do not need conversion.
 
-Do **not** apply when the stored unit is already the display unit (e.g. a country-specific app that only ever shows metric) or when conversion is needed for internal computation (e.g. adding two values in different units – always convert to canonical before arithmetic).
+Do **not** apply when the stored unit is already the display unit, or when conversion is needed for internal computation (e.g. adding two values in different units — always convert to canonical before arithmetic).
 
 ## Why
 
-Storing in a single, well-known canonical unit eliminates conversion complexity, prevents rounding drift, and makes every part of the system interpretable without context. Converting only at the display/input boundary (the “leaf” of the data flow) keeps business logic and storage unit-agnostic.
+Storing in a single, well-known canonical unit eliminates conversion complexity, prevents rounding drift, and makes every part of the system interpretable without context. Converting only at the display/input boundary (the "leaf" of the data flow) keeps business logic and storage unit-agnostic.
 
 Key rules enforced by the pattern:
 
 1. **Storage always canonical** — convert only at display/input edges.
-2. **Round (`.toFixed`) only at the leaf render site**, never before storage — re‑deriving rounded values on every render drifts the stored value.
-3. **Input validation must validate the _converted_ (storage‑unit) value** against storage‑unit bounds, not the raw entered value — otherwise imperial inputs get wrongly rejected by a metric‑only cap.
+2. **Round (`.toFixed`) only at the leaf render site**, never before storage — re-deriving rounded values on every render drifts the stored value.
+3. **Input validation must validate the _converted_ (storage-unit) value** against storage-unit bounds, not the raw entered value — otherwise imperial inputs get wrongly rejected by a metric-only cap.
 4. **Compute the converted value _after_ the NaN/empty guard**, not before — so a mutation never fires with `NaN`.
-5. **Ratio/sign‑only logic** (goal‑progress percentage, trend‑direction color) is unit‑agnostic and needs no conversion.
+5. **Ratio/sign-only logic** (goal-progress percentage, trend-direction color) is unit-agnostic and needs no conversion.
 
 ## Examples
 
-### Shared conversion factors – `shared/lib/units.ts`
+All snippets below are the actual implementation from the measurement-unit feature.
 
-All conversion factors live in a single file. No magic numbers like 0.453592 appear anywhere else.
+### Shared conversion helpers — `shared/lib/units.ts`
+
+Every conversion factor and helper lives in one file. No magic numbers like `0.453592` appear anywhere else.
 
 ```typescript
 // shared/lib/units.ts
-export const KG_TO_LB = 2.20462;
-export const LB_TO_KG = 1 / KG_TO_LB;
+import { z } from "zod";
 
-export const CM_TO_IN = 0.393701;
-export const IN_TO_CM = 1 / CM_TO_IN;
+export const measurementUnitSchema = z.enum(["metric", "imperial"]);
+export type MeasurementUnit = z.infer<typeof measurementUnitSchema>;
+export const DEFAULT_MEASUREMENT_UNIT: MeasurementUnit = "metric";
+
+export const KG_PER_LB = 0.45359237;
+export const LBS_PER_KG = 2.2046226218;
+
+/** Stored kg → user's display unit. Round only at the leaf, never here. */
+export function weightFromKg(kg: number, unit: MeasurementUnit): number {
+  return unit === "imperial" ? kg * LBS_PER_KG : kg;
+}
+
+/** User-entered value (in their unit) → kg for storage. Full precision. */
+export function weightToKg(value: number, unit: MeasurementUnit): number {
+  return unit === "imperial" ? value * KG_PER_LB : value;
+}
+
+export function weightUnitLabel(unit: MeasurementUnit): "kg" | "lbs" {
+  return unit === "imperial" ? "lbs" : "kg";
+}
 ```
 
-### Hook retrieving user preference – `client/hooks/useMeasurementUnit.ts`
+### Hook retrieving the user preference — `client/hooks/useMeasurementUnit.ts`
 
 ```typescript
 // client/hooks/useMeasurementUnit.ts
-import { useUser } from "./useUser";
+import { useAuthContext } from "@/context/AuthContext";
+import {
+  DEFAULT_MEASUREMENT_UNIT,
+  type MeasurementUnit,
+} from "@shared/lib/units";
 
-export type UnitSystem = "metric" | "imperial";
-
-export function useMeasurementUnit(): UnitSystem {
-  const user = useUser();
-  return user?.preferences?.unitSystem ?? "metric";
+export function useMeasurementUnit(): MeasurementUnit {
+  const { user } = useAuthContext();
+  return user?.measurementUnit ?? DEFAULT_MEASUREMENT_UNIT;
 }
 ```
 
-### Display conversion at the leaf – `client/screens/WeightTrackingScreen.tsx`
+### Display conversion at the leaf — `client/screens/WeightTrackingScreen.tsx`
 
-Rounds only when rendering, never before storing.
+The stored value is kg; convert and round only when rendering.
 
 ```typescript
 // client/screens/WeightTrackingScreen.tsx
-import { useMeasurementUnit } from "../hooks/useMeasurementUnit";
-import { KG_TO_LB } from "../../shared/lib/units";
+import {
+  weightFromKg,
+  weightUnitLabel,
+  type MeasurementUnit,
+} from "@shared/lib/units";
 
-function WeightDisplay({ weightKg }: { weightKg: number }) {
-  const unit = useMeasurementUnit();
-  const displayWeight =
-    unit === "imperial" ? weightKg * KG_TO_LB : weightKg;
-  return <Text>{displayWeight.toFixed(1)}</Text>;
+function formatWeight(weightKg: string, unit: MeasurementUnit): string {
+  return `${weightFromKg(parseFloat(weightKg), unit).toFixed(1)} ${weightUnitLabel(unit)}`;
 }
 ```
 
-### Input validation on _converted_ value – `client/screens/WeightTrackingScreen.tsx`
+### Input validation on the _converted_ value — `client/screens/WeightTrackingScreen.tsx`
 
-Always convert the entered value to canonical before checking min/max.
-
-```typescript
-// Within a weight input handler
-const handleWeightInput = (raw: string) => {
-  const parsed = parseFloat(raw);
-  if (isNaN(parsed) || raw.trim() === "") return; // guard before conversion
-
-  const unit = useMeasurementUnit();
-  const kg = unit === "imperial" ? parsed * LB_TO_KG : parsed;
-
-  // Validate against storage bounds (in kg)
-  if (kg < 20 || kg > 300) {
-    setError("Weight must be between 20 and 300 kg");
-    return;
-  }
-  // Store canonical value (rounded later only at render)
-  saveWeight(kg);
-};
-```
-
-### Unit-agnostic ratio – no conversion needed
+Guard for `NaN` first, then convert to kg, then validate against the kg storage cap.
 
 ```typescript
-// client/screens/WeightTrackingScreen.tsx
-const goalProgress = currentKg / goalKg; // ratio is unit‑agnostic
+// inside handleLogWeight — `unit` from useMeasurementUnit()
+const entered = parseFloat(weightInput);
+if (isNaN(entered) || entered <= 0) {
+  setWeightError(`Please enter a valid weight in ${unitLabel}.`);
+  return;
+}
+// Storage is always kg — convert and validate against the kg cap (999) so
+// imperial inputs are not rejected by a metric-only bound.
+const weight = weightToKg(entered, unit);
+if (weight > 999) {
+  setWeightError(`Please enter a valid weight in ${unitLabel}.`);
+  return;
+}
+logWeight.mutate({ weight }); // server receives kg
 ```
 
-### Server‑side validation – `server/routes/weight.ts`
+### Server-side display conversion — `server/services/profile-hub.ts`
 
-The API also validates in canonical units after receiving an already‑canonical value (the client always sends metric).
-
-```typescript
-// server/routes/weight.ts
-router.post("/weight", async (req, res) => {
-  const { weightKg } = req.body;
-  if (typeof weightKg !== "number" || weightKg < 20 || weightKg > 300) {
-    return res.status(400).json({ error: "Invalid weight" });
-  }
-  // store in DB (canonical)
-  await saveWeight(userId, weightKg);
-});
-```
-
-### User profile service – `server/services/profile-hub.ts`
-
-The profile service stores the user’s unit preference but never converts values itself; it only returns the preference to the client.
+The service reads the user's preference and converts stored kg for display — it never stores a converted value.
 
 ```typescript
 // server/services/profile-hub.ts
-export async function getUserPreferences(userId: string) {
-  const user = await db.users.findUnique(userId);
-  return {
-    unitSystem: user.preferences?.unitSystem ?? "metric",
-  };
-}
+import { weightFromKg, weightUnitLabel } from "@shared/lib/units";
+
+latestWeight: latestWeight
+  ? {
+      // Body weight is stored in kg; convert to the user's preferred unit
+      // and round to 1 decimal at this leaf.
+      value: Number(
+        weightFromKg(
+          Number(latestWeight.weight),
+          user.measurementUnit,
+        ).toFixed(1),
+      ),
+      unit: weightUnitLabel(user.measurementUnit),
+      date: new Date(latestWeight.loggedAt).toISOString(),
+    }
+  : null,
+```
+
+### Unit-agnostic ratio — no conversion needed
+
+```typescript
+// goal-progress is a ratio of two kg values — unit-agnostic, no conversion
+const progress = currentWeightKg / goalWeightKg;
 ```
 
 ## Exceptions
 
-- When internal arithmetic involves mixed units (e.g., adding kg + lb) — convert both to canonical _before_ arithmetic, not at the leaf.
-- When a component needs to display both metric and imperial simultaneously (e.g., a dual‑scale widget) — perform both conversions at the leaf but still round only at render.
-- When the user preference is unknown (e.g., before profile load) — default to metric, do not guess imperial.
+- When internal arithmetic involves mixed units — convert both to canonical _before_ arithmetic, not at the leaf.
+- When a component must display metric and imperial simultaneously — perform both conversions at the leaf but still round only at render.
+- When the user preference is unknown (before profile load) — default to `metric` via `DEFAULT_MEASUREMENT_UNIT`; do not guess imperial.
 
 ## Related Files
 
-- `shared/lib/units.ts` — single source of conversion constants
-- `client/hooks/useMeasurementUnit.ts` — hook to read user’s unit preference
-- `client/screens/WeightTrackingScreen.tsx` — example display & input leaf
-- `server/services/profile-hub.ts` — user preference service
-- `server/routes/weight.ts` — weight write endpoint
+- `shared/lib/units.ts` — conversion factors, helpers, and `measurementUnitSchema`
+- `client/hooks/useMeasurementUnit.ts` — reads the preference from auth context
+- `client/screens/WeightTrackingScreen.tsx` — display + input leaf example
+- `client/screens/SettingsScreen.tsx` — the metric/imperial toggle (persists via `/api/auth/profile`)
+- `server/services/profile-hub.ts` — server-side display conversion
 
 ## See Also
 
-- [Accessibility‑aware haptics pattern](accessibility-aware-haptics-pattern-2026-05-13.md)
-- [Reduced motion animation pattern](reduced-motion-animation-pattern-2026-05-13.md)
+- [Unit normalization at API boundary (weight)](../conventions/unit-normalization-at-api-boundary-weight-2026-05-13.md) — the complementary write-side pattern: normalize an inbound unit to canonical kg before storage
