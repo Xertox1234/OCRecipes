@@ -90,9 +90,11 @@ Do not paste full workflow logs into Claude. Failed-step logs are the useful sig
 
 `.github/workflows/kimi-review.yml` is an opt-in PR gate for TypeScript review. It runs only for `.ts`/`.tsx` pull request diffs and only when the repository variable `KIMI_REVIEW_CI_ENABLED` is set to `true`.
 
-When enabled for same-repo PRs, the workflow runs `scripts/ci-kimi-review.sh` over the PR base/head diff. CRITICAL findings fail the job; WARNING findings print but do not fail. Fork PRs are skipped because repository secrets are unavailable to untrusted forks.
+When enabled for same-repo PRs, the workflow runs the base-branch copy of `scripts/ci-kimi-review.sh` over the PR merge-base/head diff. CRITICAL findings fail the job; WARNING findings print but do not fail. Fork PRs are skipped because repository secrets are unavailable to untrusted forks.
 
-To enable the gate, set `WORKER_API_KEY` as a repository secret, then set repository variable `KIMI_REVIEW_CI_ENABLED=true`. The workflow installs the Python `openai` dependency and uses `scripts/kimi-review.py` as a bundled fallback when a global `kimi-review` CLI is not already on the runner. If the variable is enabled but the secret is missing, the job fails with an explicit setup error.
+Because this workflow uses `pull_request_target`, never change it to check out or execute PR-submitted scripts while repository secrets are in scope. The PR head is fetched only as diff data; the review runner must stay on trusted base-branch code.
+
+To enable the gate, set `WORKER_API_KEY` or `OPENROUTER_API_KEY` as a repository secret, then set repository variable `KIMI_REVIEW_CI_ENABLED=true`. Custom providers may use `MOONSHOT_API_KEY` only with `WORKER_BASE_URL`. The workflow installs the Python `openai` dependency and uses `scripts/kimi-review.py` as a bundled fallback when a global `kimi-review` CLI is not already on the runner. If the variable is enabled but the secret is missing, the job fails with an explicit setup error.
 
 ### Pre-commit Hook (Husky / lint-staged / kimi-review)
 

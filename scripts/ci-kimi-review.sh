@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # CI gate for kimi-review over pull request TypeScript diffs.
 #
+# Security invariant: in pull_request_target, the PR head commit is diff data
+# only. Never checkout, source, import, install from, or execute files from the
+# fetched PR head while repository secrets are in scope.
+#
 # Required env:
 #   KIMI_REVIEW_BASE_SHA - base commit SHA for the diff
 #   KIMI_REVIEW_HEAD_SHA - head commit SHA for the diff
-#   WORKER_API_KEY or MOONSHOT_API_KEY - API credential used by kimi-review
+#   WORKER_API_KEY or OPENROUTER_API_KEY - API credential used by kimi-review
+#   MOONSHOT_API_KEY + WORKER_BASE_URL - custom-provider fallback credential
 #
 # Optional env:
 #   KIMI_REVIEW_SCOPE - review scope label
@@ -27,13 +32,18 @@ if [[ -z "$base_sha" || -z "$head_sha" ]]; then
   exit 1
 fi
 
-if ! changed_files=$(git diff --name-only --diff-filter=ACM "$base_sha" "$head_sha"); then
-  echo "::error title=Unable to compute changed files::Could not diff $base_sha..$head_sha."
+if ! merge_base=$(git merge-base "$base_sha" "$head_sha"); then
+  echo "::error title=Unable to compute merge base::Could not find a merge base for $base_sha and $head_sha."
   exit 1
 fi
 
-if ! review_diff=$(git diff --diff-filter=ACM "$base_sha" "$head_sha" -- '*.ts' '*.tsx'); then
-  echo "::error title=Unable to compute diff::Could not diff $base_sha..$head_sha."
+if ! changed_files=$(git diff --name-only --diff-filter=ACMDR "$merge_base" "$head_sha"); then
+  echo "::error title=Unable to compute changed files::Could not diff $merge_base..$head_sha."
+  exit 1
+fi
+
+if ! review_diff=$(git diff --diff-filter=ACMDR "$merge_base" "$head_sha" -- '*.ts' '*.tsx'); then
+  echo "::error title=Unable to compute diff::Could not diff $merge_base..$head_sha."
   exit 1
 fi
 
@@ -42,8 +52,8 @@ if [[ -z "$review_diff" ]]; then
   exit 0
 fi
 
-if [[ -z "${WORKER_API_KEY:-}" && -z "${MOONSHOT_API_KEY:-}" ]]; then
-  echo "::error title=Missing Kimi credentials::Set WORKER_API_KEY or MOONSHOT_API_KEY as a repository secret."
+if [[ -z "${WORKER_API_KEY:-}" && -z "${OPENROUTER_API_KEY:-}" && ( -z "${MOONSHOT_API_KEY:-}" || -z "${WORKER_BASE_URL:-}" ) ]]; then
+  echo "::error title=Missing Kimi credentials::Set WORKER_API_KEY, OPENROUTER_API_KEY, or MOONSHOT_API_KEY with WORKER_BASE_URL as repository secrets."
   exit 1
 fi
 

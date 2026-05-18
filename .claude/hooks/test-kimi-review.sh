@@ -4,7 +4,10 @@
 # via a temp dir, so no real review is ever invoked and no API key is needed.
 set -uo pipefail
 
-HOOK="$(cd "$(dirname "$0")" && pwd)/kimi-review.sh"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+HOOK="$ROOT/.claude/hooks/kimi-review.sh"
+CI_SCRIPT="$ROOT/scripts/ci-kimi-review.sh"
+PRE_COMMIT="$ROOT/.husky/pre-commit"
 PASS=0; FAIL=0
 
 # Make a sandbox PATH with stub binaries. The stub mirrors kimi-review's real
@@ -18,15 +21,20 @@ PASS=0; FAIL=0
 #   noisy-prose       → lowercase "critical" in prose, no real finding
 #   negative-prose    → the model's "No CRITICAL or WARNING findings" phrasing
 #   clean             → kimi-review's clean-output message (prose phrasing)
-#   clean-tiered      → kimi-review's clean output as bracketed per-tier headers
+#   clean-tiered      → a clean review decorated as bracketed per-tier headers
+#   clean-model-prose → the real-world phantom case: the model emits a bracketed
+#                       [TIER] line per tier whose body is free-form "no issues"
+#                       prose ("No critical issues found.") instead of omitting
+#                       the empty tier — no path:line, so it is not a finding
 #   critical-no-findings-desc → a real [CRITICAL] finding whose description says "no findings"
+#   echo-input        → echoes stdin back to the caller
 make_stub_path() {
   local mode="$1"
   local dir
   dir=$(mktemp -d)
   cat > "$dir/kimi-review" <<EOF
 #!/usr/bin/env bash
-cat >/dev/null  # consume stdin so the pipe doesn't SIGPIPE
+  input=\$(cat)  # consume stdin so the pipe doesn't SIGPIPE
 case "$mode" in
   critical)         echo "[CRITICAL] server/routes/foo.ts:42 — stub finding for tests";;
   critical-bracket) echo "  - [CRITICAL] server/routes/foo.ts:10 — bullet+indent decorated finding";;
@@ -37,8 +45,10 @@ case "$mode" in
   negative-prose)   echo "No CRITICAL or WARNING findings";;
   clean)            echo "No findings in requested tiers: CRITICAL, WARNING";;
   clean-tiered)     printf '[CRITICAL] — No findings.\n[WARNING] — No findings.\n';;
+  clean-model-prose) printf '[CRITICAL] No critical issues found.\n[WARNING] No warning-level issues found.\n';;
   critical-no-findings-desc)
                     echo "[CRITICAL] server/routes/foo.ts:42 — error handler swallows the error and returns no findings to the caller";;
+  echo-input)       printf '%s' "\$input";;
 esac
 EOF
   chmod +x "$dir/kimi-review"
@@ -47,12 +57,20 @@ EOF
   cat > "$dir/git" <<'EOF'
 #!/usr/bin/env bash
 case "$* " in
-  "diff --cached --name-only "*) echo "server/routes/foo.ts";;
-  "diff --cached "*)              echo "diff --git a/x b/x";;
+  "merge-base "*)                 echo "merge-base-sha";;
+  "diff --cached --name-only"*)   printf '%s\n' "${KIMI_TEST_STAGED_FILES:-server/routes/foo.ts}";;
+  "diff --name-only"*)            printf '%s\n' "${KIMI_TEST_CHANGED_FILES:-server/routes/foo.ts}";;
+  "diff --cached"*)               printf '%s\n' "${KIMI_TEST_REVIEW_DIFF:-diff --git a/server/routes/foo.ts b/server/routes/foo.ts}";;
+  "diff --diff-filter="*)         printf '%s\n' "${KIMI_TEST_REVIEW_DIFF:-diff --git a/server/routes/foo.ts b/server/routes/foo.ts}";;
   *) exec /usr/bin/env -i PATH="/usr/bin:/bin" git "$@";;
 esac
 EOF
   chmod +x "$dir/git"
+  cat > "$dir/npx" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "$dir/npx"
   printf '%s' "$dir"
 }
 
@@ -78,9 +96,85 @@ run_capture() {
   printf '%s\n--RC--%d' "$output" "$rc"
 }
 
+run_ci_gate() {
+  local mode="$1"
+  local stubdir output rc
+  stubdir=$(make_stub_path "$mode")
+  output=$(PATH="$stubdir:$PATH" \
+    KIMI_REVIEW_BASE_SHA=base-sha \
+    KIMI_REVIEW_HEAD_SHA=head-sha \
+    WORKER_API_KEY=test-key \
+    bash "$CI_SCRIPT" 2>&1)
+  rc=$?
+  rm -rf "$stubdir"
+  printf '%s\n--RC--%d' "$output" "$rc"
+}
+
+run_husky_gate() {
+  local mode="$1"
+  local stubdir output rc
+  stubdir=$(make_stub_path "$mode")
+  output=$(PATH="$stubdir:$PATH" bash "$PRE_COMMIT" 2>&1)
+  rc=$?
+  rm -rf "$stubdir"
+  printf '%s\n--RC--%d' "$output" "$rc"
+}
+
+run_python_credential_tests() {
+  command -v python3 >/dev/null 2>&1 || {
+    echo "python3 not found"
+    return 1
+  }
+  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+import importlib.util
+import pathlib
+import sys
+
+module_path = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("kimi_review", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+cases = [
+    ({"WORKER_API_KEY": "worker", "OPENROUTER_API_KEY": "openrouter"}, ("worker", module.DEFAULT_BASE_URL)),
+    ({"WORKER_API_KEY": "", "OPENROUTER_API_KEY": "openrouter"}, ("openrouter", module.DEFAULT_BASE_URL)),
+    ({"MOONSHOT_API_KEY": "moonshot", "WORKER_BASE_URL": "https://api.moonshot.cn/v1"}, ("moonshot", "https://api.moonshot.cn/v1")),
+]
+
+for env, expected in cases:
+    actual = module.resolve_client_config(env)
+    if actual != expected:
+        raise AssertionError(f"{env!r}: expected {expected!r}, got {actual!r}")
+
+try:
+    module.resolve_client_config({"MOONSHOT_API_KEY": "moonshot"})
+except SystemExit as error:
+    if error.code not in (1, None):
+        raise AssertionError(f"unexpected SystemExit code: {error.code!r}")
+else:
+    raise AssertionError("MOONSHOT_API_KEY without WORKER_BASE_URL should exit")
+
+try:
+    module.resolve_client_config({})
+except SystemExit as error:
+    if error.code not in (1, None):
+        raise AssertionError(f"unexpected missing-credential SystemExit code: {error.code!r}")
+else:
+    raise AssertionError("missing credentials should exit")
+
+try:
+    module.resolve_client_config({"WORKER_API_KEY": ""})
+except SystemExit as error:
+    if error.code not in (1, None):
+        raise AssertionError(f"unexpected empty-credential SystemExit code: {error.code!r}")
+else:
+    raise AssertionError("empty WORKER_API_KEY without fallback credentials should exit")
+PY
+}
+
 assert_contains() {
   local name="$1" haystack="$2" needle="$3"
-  if echo "$haystack" | grep -q "$needle"; then
+  if echo "$haystack" | grep -q -- "$needle"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected to find: $needle)"
@@ -91,7 +185,7 @@ assert_contains() {
 
 assert_not_contains() {
   local name="$1" haystack="$2" needle="$3"
-  if echo "$haystack" | grep -q "$needle"; then
+  if echo "$haystack" | grep -q -- "$needle"; then
     echo "FAIL: $name (expected NOT to find: $needle)"
     echo "  got: $(echo "$haystack" | head -3)"
     FAIL=$((FAIL+1))
@@ -200,12 +294,57 @@ OUT=$(run_hook clean-tiered '{"tool_input":{"command":"git commit -m x"}}')
 assert_not_contains "bracketed '[CRITICAL] — No findings.' header does NOT block" "$OUT" '"permissionDecision": "deny"'
 assert_contains "clean-tiered emits additionalContext" "$OUT" "additionalContext"
 
+# Regression: the model sometimes ignores "omit empty tiers" and emits a bracketed
+# [CRITICAL] line whose body is free-form "no issues" prose ("No critical issues
+# found."). That body has no path:line, so it is not a finding and must NOT block.
+# This is the real-world phantom-CRITICAL case the prose-keyed exclude missed.
+OUT=$(run_hook clean-model-prose '{"tool_input":{"command":"git commit -m x"}}')
+assert_not_contains "bracketed '[CRITICAL] No critical issues found.' prose does NOT block" "$OUT" '"permissionDecision": "deny"'
+assert_contains "clean-model-prose emits additionalContext" "$OUT" "additionalContext"
+
 # Regression: a real [CRITICAL] finding whose description happens to contain the
 # phrase "no findings" MUST still block. The sentinel filter has to key on the
 # sentinel's shape ([CRITICAL] followed only by non-alphanumeric separators),
 # not a bare "no findings" substring — otherwise it fails open on such findings.
 OUT=$(run_hook critical-no-findings-desc '{"tool_input":{"command":"git commit -m x"}}')
 assert_contains "[CRITICAL] finding with 'no findings' in its description still blocks" "$OUT" '"permissionDecision": "deny"'
+
+# ---------- Diff scoping ----------
+
+OUT=$(KIMI_TEST_STAGED_FILES="docs/AI_WORKFLOW.md" \
+  run_hook clean '{"tool_input":{"command":"git commit -m x"}}')
+assert_empty "docs-only staged files skip Claude kimi-review" "$OUT"
+
+OUT=$(KIMI_TEST_STAGED_FILES=$'docs/AI_WORKFLOW.md\nserver/routes/foo.ts' \
+  KIMI_TEST_REVIEW_DIFF="diff --git a/server/routes/foo.ts b/server/routes/foo.ts" \
+  run_hook echo-input '{"tool_input":{"command":"git commit -m x"}}')
+assert_contains "mixed staged files send TypeScript diff" "$OUT" "server/routes/foo.ts"
+assert_not_contains "mixed staged files do not send docs diff" "$OUT" "docs/AI_WORKFLOW.md"
+
+# ---------- CI/Husky gate parsing ----------
+
+OUT=$(run_ci_gate clean-tiered)
+assert_contains "CI clean tiered output exits 0" "$OUT" "--RC--0"
+assert_contains "CI clean tiered output reaches completion" "$OUT" "kimi-review completed without CRITICAL findings"
+
+OUT=$(run_ci_gate critical)
+assert_contains "CI CRITICAL output exits 1" "$OUT" "--RC--1"
+assert_contains "CI CRITICAL output blocks" "$OUT" "Kimi review blocked this PR"
+
+OUT=$(run_husky_gate clean-tiered)
+assert_contains "Husky clean tiered output exits 0" "$OUT" "--RC--0"
+
+OUT=$(run_husky_gate critical)
+assert_contains "Husky CRITICAL output exits 1" "$OUT" "--RC--1"
+assert_contains "Husky CRITICAL output blocks" "$OUT" "Commit blocked"
+
+if run_python_credential_tests; then
+  echo "PASS: Python credential resolver handles aliases and provider base URL"
+  PASS=$((PASS+1))
+else
+  echo "FAIL: Python credential resolver handles aliases and provider base URL"
+  FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

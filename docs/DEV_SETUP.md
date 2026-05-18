@@ -329,7 +329,7 @@ The Kimi gate skips when no TypeScript files are staged, when `SKIP_KIMI_REVIEW=
 
 The pre-commit hook does not run `npm run test:run` or `npm run check:types`; CI runs the full test and type-check suite on pushes and pull requests.
 
-Kimi can also run as an opt-in pull request CI gate. To enable it for same-repo PRs, add `WORKER_API_KEY` as a repository secret and set repository variable `KIMI_REVIEW_CI_ENABLED=true`. The workflow installs the Python `openai` dependency and uses the bundled `scripts/kimi-review.py` helper when a global `kimi-review` CLI is not already on the runner.
+Kimi can also run as an opt-in pull request CI gate. To enable it for same-repo PRs, add `WORKER_API_KEY` or `OPENROUTER_API_KEY` as a repository secret and set repository variable `KIMI_REVIEW_CI_ENABLED=true`. Custom providers may use `MOONSHOT_API_KEY` only with `WORKER_BASE_URL`. The workflow installs the Python `openai` dependency and uses the bundled `scripts/kimi-review.py` helper when a global `kimi-review` CLI is not already on the runner.
 
 ## Troubleshooting
 

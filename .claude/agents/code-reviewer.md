@@ -19,6 +19,13 @@ You are a specialized code review agent for the OCRecipes mobile nutrition app. 
 
 ## Review Checklist
 
+### 0. CI, Hooks & Review Gates
+
+- [ ] Secret-backed `pull_request_target` workflows keep the checkout on trusted base-branch code; PR head commits are fetched only as diff data and no PR-head files are executed while secrets are in scope.
+- [ ] PR review gates compute changed files from `merge-base -> head`, not direct `base.sha -> head` endpoint diffs.
+- [ ] Kimi review gates include deleted and renamed TypeScript files (`--diff-filter=ACMDR`) and do not send docs/config/env staged files to external review unless that is explicitly intended.
+- [ ] Kimi CRITICAL/no-findings parsing has regression coverage for clean tier headers, decorated CRITICAL findings, and descriptions containing the phrase "no findings".
+
 ### 1. TypeScript & Type Safety
 
 - [ ] No `any` types used (unless in migration scenarios with clear todos)

@@ -12,14 +12,14 @@ import pathlib
 import subprocess
 import sys
 
-from openai import OpenAI
-
 
 TIER_DEFINITIONS = {
     "CRITICAL": "bugs, security holes, data loss risks, broken logic",
     "WARNING": "performance issues, bad patterns, missing error handling",
     "SUGGESTION": "style, readability, minor improvements",
 }
+
+DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 PROJECT_PROFILES = {
     "generic": "",
@@ -166,6 +166,23 @@ def context_blocks(args, root):
     return "\n\n" + "\n\n".join(blocks) if blocks else ""
 
 
+def resolve_client_config(env=os.environ):
+    base_url = env.get("WORKER_BASE_URL") or DEFAULT_BASE_URL
+    api_key = env.get("WORKER_API_KEY") or env.get("OPENROUTER_API_KEY") or ""
+    if not api_key and env.get("MOONSHOT_API_KEY"):
+        if not env.get("WORKER_BASE_URL"):
+            print("Error: MOONSHOT_API_KEY requires WORKER_BASE_URL.", file=sys.stderr)
+            sys.exit(1)
+        api_key = env.get("MOONSHOT_API_KEY", "")
+    if not api_key:
+        print(
+            "Error: set WORKER_API_KEY, OPENROUTER_API_KEY, or MOONSHOT_API_KEY with WORKER_BASE_URL.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return api_key, base_url
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)
@@ -180,9 +197,17 @@ def main():
     profile_guidance = PROJECT_PROFILES[profile]
     profile_block = f"\n\n{profile_guidance}" if profile_guidance else ""
 
+    try:
+        from openai import OpenAI
+    except ImportError:
+        print("Error: missing Python package 'openai'. Install with: python -m pip install 'openai>=1.0.0,<2'", file=sys.stderr)
+        sys.exit(1)
+
+    api_key, base_url = resolve_client_config()
+
     client = OpenAI(
-        api_key=os.environ.get("WORKER_API_KEY", os.environ.get("OPENROUTER_API_KEY", "")),
-        base_url=os.environ.get("WORKER_BASE_URL", "https://openrouter.ai/api/v1"),
+        api_key=api_key,
+        base_url=base_url,
         timeout=90.0,
     )
 
@@ -217,7 +242,11 @@ def main():
         print(f"[ERROR: kimi-review request failed: {error}]", file=sys.stderr)
         sys.exit(1)
 
+    finish_reason = response.choices[0].finish_reason
     answer = response.choices[0].message.content
+    if finish_reason == "length":
+        print("[ERROR: response truncated — raise --max-tokens]", file=sys.stderr)
+        sys.exit(1)
     if not answer:
         print("[ERROR: ran out of tokens — raise --max-tokens]", file=sys.stderr)
         sys.exit(1)
@@ -247,7 +276,7 @@ def main():
     cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0
     print(
         f"\n[kimi: {usage.prompt_tokens} in ({cached} cached) / "
-        f"{usage.completion_tokens} out | finish: {response.choices[0].finish_reason}]",
+            f"{usage.completion_tokens} out | finish: {finish_reason}]",
         file=sys.stderr,
     )
 

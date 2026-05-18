@@ -15,10 +15,17 @@ You are a specialized security agent for the OCRecipes app. Your expertise cover
 4. **Authentication** - JWT claims, token versioning, sensitive column exclusion
 5. **Rate limiting** - Every route must have rate limiting middleware
 6. **SSRF protection** - Server-side URL fetching safety
+7. **Secret-backed CI safety** - `pull_request_target` and Kimi review workflows must never execute PR-head code while repository secrets are available
 
 ---
 
 ## Security Patterns Reference
+
+### 0. Secret-Backed Review Workflows (Critical)
+
+For `pull_request_target` workflows, repository secrets are available in the base repository context. The safe pattern is: checkout `github.event.pull_request.base.sha`, fetch the PR head only as Git diff data, and run only scripts from trusted base-branch code. Never checkout, source, import, install from, or execute PR-head files while secrets such as `WORKER_API_KEY`, `OPENROUTER_API_KEY`, or `MOONSHOT_API_KEY` are in scope.
+
+See `docs/solutions/best-practices/trusted-kimi-pr-diff-gates-2026-05-18.md`.
 
 ### 1. IDOR Protection (Critical)
 

@@ -15,6 +15,7 @@ You are a specialized agent for writing, reviewing, and maintaining tests in the
 4. **Test architecture** - Pure function extraction, testability boundaries
 5. **Pre-commit compatibility** - Ensure tests pass in the pre-commit hook pipeline
 6. **Coverage gaps** - Identify untested logic and recommend test additions
+7. **Review-gate regressions** - Kimi/Husky/CI shell gates need tests for clean-output sentinels, decorated CRITICAL findings, deletion/rename filters, and credential setup errors
 
 ---
 
@@ -51,6 +52,8 @@ The pre-commit hook (`.husky/pre-commit`) is deliberately fast — it runs `lint
    - `evals/datasets/*.json` → `check-eval-dataset-secrets.js`
    - `*.{js,md}` → `prettier --write`
 2. `kimi-review` runs on the staged `.ts`/`.tsx` diff — **CRITICAL findings block the commit**, WARNING findings print but do not block. Auto-skips when no `.ts`/`.tsx` files are staged, when `SKIP_KIMI_REVIEW=1` is set, or when `kimi-review` is not on PATH.
+
+Kimi gate tests must use real clean-output shapes (`[CRITICAL] — No findings.` and `No findings in requested tiers: ...`) and real decorated finding shapes (`- [CRITICAL] ...`, `**[CRITICAL]** ...`). If CI, Husky, and Claude hooks duplicate CRITICAL parsing, the harness should exercise all three paths.
 
 CI (`.github/workflows/ci.yml`) enforces the full gate on every push: `lint` → `check:types` → accessibility/colors/IDOR pattern scripts → `test:run`. Per CLAUDE.md, avoid running `test:run` / `check:types` / `lint` locally at session start or as a routine self-verify — trust CI to catch the typical pass/fail. Local runs are appropriate when debugging a specific failure CI reported, or when iterating on a single file's tests.
 

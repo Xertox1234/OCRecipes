@@ -42,9 +42,9 @@ Check whether this todo is eligible for execution:
 3. **Copilot delegation gate**: If the todo has a `github_issue` frontmatter value, treat the GitHub Issue as the active Copilot work queue item and report `skipped` with reason `delegated to Copilot: <url>`. Do not implement locally unless the orchestrator explicitly tells you this is a manual takeover.
 4. **kimi-review availability gate**: Check that the required API key is set:
    ```bash
-   if [[ -z "${WORKER_API_KEY:-}" && -z "${MOONSHOT_API_KEY:-}" ]]; then echo "missing"; else echo "found"; fi
+   if [[ -z "${WORKER_API_KEY:-}" && -z "${OPENROUTER_API_KEY:-}" && ( -z "${MOONSHOT_API_KEY:-}" || -z "${WORKER_BASE_URL:-}" ) ]]; then echo "missing"; else echo "found"; fi
    ```
-   If `missing`, report `blocked` with reason "kimi-review requires WORKER_API_KEY or MOONSHOT_API_KEY — set one and retry."
+   If `missing`, report `blocked` with reason "kimi-review requires WORKER_API_KEY, OPENROUTER_API_KEY, or MOONSHOT_API_KEY with WORKER_BASE_URL — set one and retry."
 
 ---
 
@@ -94,20 +94,21 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 **3b — File-path pattern + rules supplement:** After the researcher returns (or fallback completes), apply the domain mapping below to the source file paths extracted above. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/legacy-patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
 
-| File path pattern                                                                                                                                              | Additional domains to load                 |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `server/routes/*`                                                                                                                                              | api, security, architecture                |
-| `server/storage/*`, `shared/schema.ts`, `migrations/*`                                                                                                         | database, security, architecture           |
-| `server/middleware/*`                                                                                                                                          | security, api                              |
-| `server/services/photo-analysis.ts`, `server/services/nutrition-coach.ts`, `server/services/recipe-chat.ts`, `server/services/recipe-generation.ts`, `evals/*` | ai-prompting, security                     |
-| `server/services/*`                                                                                                                                            | architecture                               |
-| `client/screens/*`, `client/components/*`                                                                                                                      | react-native, design-system, accessibility |
-| `client/navigation/*`                                                                                                                                          | react-native, accessibility                |
-| `client/hooks/*`                                                                                                                                               | hooks, client-state, react-native          |
-| `client/context/*`, `client/lib/*`                                                                                                                             | client-state                               |
-| `client/constants/theme.ts`, `design_guidelines.md`                                                                                                            | design-system                              |
-| `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`, `*/__tests__/*`                                                                                          | testing                                    |
-| `*.ts`, `*.tsx`                                                                                                                                                | typescript                                 |
+| File path pattern                                                                                                                                   | Additional domains to load                 |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `server/routes/*`                                                                                                                                   | api, security, architecture                |
+| `server/storage/*`, `shared/schema.ts`, `migrations/*`                                                                                              | database, security, architecture           |
+| `server/middleware/*`                                                                                                                               | security, api                              |
+| `server/services/photo-analysis.ts`, `server/services/nutrition-coach.ts`, `server/services/recipe-chat.ts`, `server/services/recipe-generation.ts` | architecture, ai-prompting                 |
+| `evals/*`                                                                                                                                           | ai-prompting, testing                      |
+| `server/services/*`                                                                                                                                 | architecture                               |
+| `client/screens/*`, `client/components/*`                                                                                                           | react-native, design-system, accessibility |
+| `client/navigation/*`                                                                                                                               | react-native, accessibility                |
+| `client/hooks/*`                                                                                                                                    | hooks, client-state, react-native          |
+| `client/context/*`, `client/lib/*`                                                                                                                  | client-state                               |
+| `client/constants/theme.ts`, `design_guidelines.md`                                                                                                 | design-system                              |
+| `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`, `*/__tests__/*`                                                                               | testing                                    |
+| `*.ts`, `*.tsx`                                                                                                                                     | typescript                                 |
 
 ## Step 4 — Implement
 

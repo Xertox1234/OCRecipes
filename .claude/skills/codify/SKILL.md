@@ -15,18 +15,20 @@ git diff main...HEAD --stat
 
 Build a list of changed file domains using this table (read top-to-bottom, first match per path wins):
 
-| Changed path matches                                 | Domain label(s)           |
-| ---------------------------------------------------- | ------------------------- |
-| `server/middleware/auth*`, `server/middleware/rate*` | `security`                |
-| `server/services/*`, `server/storage/*`              | `architecture`            |
-| `server/db/*`                                        | `performance`, `database` |
-| `**/*.test.*`, `**/*.spec.*`                         | `testing`                 |
-| `client/screens/Scan*`, `client/components/camera/*` | `camera`                  |
-| `client/hooks/*`                                     | `hooks`                   |
-| `client/stores/*`, `client/contexts/*`               | `client-state`            |
-| `server/routes/*`                                    | `api`                     |
-| `client/components/*`, `client/screens/*`            | `react-native`            |
-| `**/*.ts`, `**/*.tsx`                                | `typescript`              |
+| Changed path matches                                                                                                                                | Domain label(s)                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `server/middleware/auth*`, `server/middleware/rate*`                                                                                                | `security`                             |
+| `server/routes/*`                                                                                                                                   | `api`, `security`, `architecture`      |
+| `server/storage/*`, `shared/schema.ts`, `migrations/*`                                                                                              | `database`, `security`, `architecture` |
+| `server/services/photo-analysis.ts`, `server/services/nutrition-coach.ts`, `server/services/recipe-chat.ts`, `server/services/recipe-generation.ts` | `architecture`, `ai-prompting`         |
+| `server/services/*`                                                                                                                                 | `architecture`                         |
+| `server/db/*`                                                                                                                                       | `performance`, `database`              |
+| `**/*.test.*`, `**/*.spec.*`                                                                                                                        | `testing`                              |
+| `client/screens/Scan*`, `client/components/camera/*`                                                                                                | `camera`                               |
+| `client/hooks/*`                                                                                                                                    | `hooks`                                |
+| `client/stores/*`, `client/context/*`                                                                                                               | `client-state`                         |
+| `client/components/*`, `client/screens/*`                                                                                                           | `react-native`                         |
+| `**/*.ts`, `**/*.tsx`                                                                                                                               | `typescript`                           |
 
 Combine all matched labels. If the diff is empty, output "Nothing to codify — no changes on this branch." and stop.
 

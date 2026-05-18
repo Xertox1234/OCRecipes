@@ -79,10 +79,10 @@ Establish a green baseline before touching any code.
 5. **Verify kimi-review is available**: Check that the required API key is set:
 
    ```bash
-   if [[ -z "${WORKER_API_KEY:-}" && -z "${MOONSHOT_API_KEY:-}" ]]; then echo "missing"; else echo "found"; fi
+   if [[ -z "${WORKER_API_KEY:-}" && -z "${OPENROUTER_API_KEY:-}" && ( -z "${MOONSHOT_API_KEY:-}" || -z "${WORKER_BASE_URL:-}" ) ]]; then echo "missing"; else echo "found"; fi
    ```
 
-   If `missing`, stop immediately and report "Cannot run kimi-review — neither WORKER_API_KEY nor MOONSHOT_API_KEY is set. Export one and retry."
+   If `missing`, stop immediately and report "Cannot run kimi-review — set WORKER_API_KEY, OPENROUTER_API_KEY, or MOONSHOT_API_KEY with WORKER_BASE_URL and retry."
 
 6. **If ANY command fails or any check above returns missing, stop immediately.** Report the failure to the user and exit — do not proceed to Phase 2. The codebase must be green before batch processing begins.
 

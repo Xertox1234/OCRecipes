@@ -1,7 +1,7 @@
 name: Kimi Review
 
 on:
-  pull_request:
+  pull_request_target:
     branches: ["**"]
     paths:
       - "**/*.ts"
@@ -30,7 +30,14 @@ jobs:
       - uses: actions/checkout@v4
         if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
         with:
+          # pull_request_target has secrets; keep the working tree on trusted base
+          # code and fetch PR head only as diff data for scripts/ci-kimi-review.sh.
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 0
+
+      - name: Fetch pull request head
+        if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/setup-python@v5
         if: vars['KIMI_REVIEW_CI_ENABLED'] == 'true' && github.event.pull_request.head.repo.full_name == github.repository
@@ -48,4 +55,7 @@ jobs:
           KIMI_REVIEW_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           KIMI_REVIEW_SCOPE: "CI PR diff"
           WORKER_API_KEY: ${{ secrets['WORKER_API_KEY'] }}
+          OPENROUTER_API_KEY: ${{ secrets['OPENROUTER_API_KEY'] }}
+          MOONSHOT_API_KEY: ${{ secrets['MOONSHOT_API_KEY'] }}
+          WORKER_BASE_URL: ${{ secrets['WORKER_BASE_URL'] }}
         run: bash scripts/ci-kimi-review.sh

@@ -17,10 +17,17 @@ You are a specialized agent for server-side architecture, dependency layering, a
 6. **Service extraction threshold** — extract a service when a route calls 3+ storage domains or computes cross-domain derived values
 7. **Route module structure** — named `register(app)`, domain-scoped rate limiter, `requireAuth` → premium gate → Zod → logic → respond
 8. **SSE streaming** — typed event generators, byte guards at route layer, terminal `{ done: true }` events, `res.end()` always
+9. **Review-gate architecture** — CI review diffs use merge-base scoping and keep trusted runner code separate from untrusted PR data
 
 ---
 
 ## Dependency Direction (Critical)
+
+## Review-Gate Diff Scope
+
+PR review automation should diff from merge-base to PR head, not directly from `base.sha` to `head.sha`. Direct endpoint diffs can include unrelated upstream changes when the base branch advances, causing Kimi to review and block on code outside the PR. When secrets are involved, the runner code must also remain trusted base-branch code while PR head commits are treated as data only.
+
+See `docs/solutions/best-practices/trusted-kimi-pr-diff-gates-2026-05-18.md`.
 
 The project enforces a strict layering rule:
 

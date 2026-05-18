@@ -6,3 +6,4 @@
 - MiniSearch index mutations must be outside `db.transaction` — in-transaction index mutations desync state on rollback
 - Route exports must be named `register` for consistent grep — not `registerXRoutes`
 - `server/storage/chat.ts` and `server/storage/community.ts` are approaching the 500-line threshold — avoid adding new functions; prefer splitting
+- PR review automation must diff `merge-base -> head`, not `base.sha -> head`, so moved base branches do not cause unrelated upstream changes to be reviewed or blocked.

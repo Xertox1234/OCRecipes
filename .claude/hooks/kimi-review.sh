@@ -28,8 +28,10 @@ COMMAND=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || ex
 GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
 [[ "$COMMAND" =~ $GIT_COMMIT_RE ]] || exit 0
 
-# 5) No staged changes → nothing to review
-FILES=$(git diff --cached --name-only 2>/dev/null)
+# 5) No staged TypeScript changes → nothing to review. This hook deliberately
+# excludes docs/config/env diffs from the external reviewer so accidental
+# secret-bearing staged files are not transmitted as review input.
+FILES=$(git diff --cached --name-only --diff-filter=ACMDR 2>/dev/null | grep -E '\.(ts|tsx)$' || true)
 [ -n "$FILES" ] || exit 0
 
 # 6) Map staged files to review patterns
@@ -79,9 +81,12 @@ while IFS= read -r file; do
   esac
 done <<< "$FILES"
 
-# 7) Run review on the staged diff. Only CRITICAL + WARNING (project convention).
+# 7) Run review on the staged TypeScript diff. Only CRITICAL + WARNING (project convention).
+REVIEW_DIFF=$(git diff --cached --diff-filter=ACMDR -- '*.ts' '*.tsx')
+[ -n "$REVIEW_DIFF" ] || exit 0
+
 if [ -n "$PATTERNS" ]; then
-  REVIEW=$(git diff --cached | kimi-review \
+  REVIEW=$(printf '%s' "$REVIEW_DIFF" | kimi-review \
     --scope "staged for commit" \
     --profile ocrecipes \
     --patterns "$PATTERNS" \
@@ -89,40 +94,37 @@ if [ -n "$PATTERNS" ]; then
     --pattern-max-chars 12000 \
     --tiers CRITICAL,WARNING 2>&1)
 else
-  REVIEW=$(git diff --cached | kimi-review \
+  REVIEW=$(printf '%s' "$REVIEW_DIFF" | kimi-review \
     --scope "staged for commit" \
     --profile ocrecipes \
     --tiers CRITICAL,WARNING 2>&1)
 fi
 
-# 8) Detect CRITICAL findings. kimi-review prints a per-tier section header for
-#    EVERY requested tier — a clean run still emits the bracketed line
-#    `[CRITICAL] — No findings.`, whereas a real finding is
-#    `[CRITICAL] path:line — description`. So the bracketed `[CRITICAL]` tag is
-#    not a sufficient block signal on its own (that is the phantom-CRITICAL bug);
-#    we must also exclude the "No findings" sentinel. The commit is blocked when
-#    a `[CRITICAL]`-tagged line (a) has a non-space body — so a bare `[CRITICAL]`
-#    tag does not block — AND (b) is not a "no findings" line.
-#    The match is deliberately NOT anchored to line start: an LLM may decorate a
-#    finding line ("- [CRITICAL] ...", "**[CRITICAL]** ..."), and a quality gate
-#    should fail closed on those rather than let them through. The literal `[`
-#    and `]` use POSIX bracket-expression escaping (`[[]`, `[]]`) rather than
-#    backslash escaping, so the pattern is portable across GNU and BSD grep
-#    without a GNU ERE extension. The second grep drops ONLY the tool-emitted
-#    per-tier sentinel header (`[CRITICAL] — No findings.`): it matches the
-#    bracketed tag followed by non-alphanumeric separators only, then "no
-#    findings". A real finding always carries an alphanumeric `path:line`
-#    between the tag and its description, so a finding whose description merely
-#    contains the phrase "no findings" still blocks (fail closed). A bare
-#    `grep -iv 'no findings'` would drop such a finding too. The exclude pattern
-#    stays pure-ASCII — the em-dash is consumed by `[^[:alnum:]]*`, not matched
-#    literally — so it too is portable across GNU and BSD grep.
-#    The result is captured (not piped into `grep -q`) so neither grep exits
+# 8) Detect CRITICAL findings by matching the tool's MANDATED finding shape, not
+#    by keyword. kimi-review instructs the model to format every finding exactly
+#    as `[CRITICAL] path/to/file.ts:42 — description`, so a real finding always
+#    carries a `:<line-number>` after the tag. A clean review has no such line.
+#    Earlier fixes keyed detection on a guess about the tool's clean-output
+#    phrasing (first the bare word `CRITICAL`, then a `[CRITICAL]` tag minus a
+#    "no findings" substring). Both broke because an LLM phrases a clean tier
+#    freely — the model ignores "omit empty tiers" and emits a bracketed
+#    `[CRITICAL] No critical issues found.` placeholder, which the prose exclude
+#    ("no findings") never matched. Keying on the finding shape sidesteps every
+#    clean phrasing: a placeholder has no `path:line`, so it cannot match.
+#    The pattern: `[CRITICAL]` tag, then non-colon chars (the path), then `:` and
+#    a digit (the line number). It is deliberately NOT anchored to line start so
+#    an LLM-decorated finding ("- [CRITICAL] ...", "**[CRITICAL]** ...") still
+#    fails closed. Literal brackets use POSIX bracket-expression escaping
+#    (`[[]`, `[]]`), portable across GNU and BSD grep without a GNU ERE extension.
+#    Trade-off: a malformed real finding that omits the line number would fail
+#    OPEN (not block) — acceptable because it still surfaces in additionalContext
+#    below, and it matches the existing precedent that a bare `[CRITICAL]` tag
+#    does not block. Do not "fix" this back to prose matching.
+#    The result is captured (not piped into `grep -q`) so grep does not exit
 #    early — under `set -o pipefail` an early `-q` exit can SIGPIPE the upstream
-#    grep and surface a non-zero pipeline status that would silently skip the block.
+#    process and surface a non-zero pipeline status that would silently skip the block.
 CRITICAL_FINDINGS=$(printf '%s\n' "$REVIEW" \
-  | grep -E '[[]CRITICAL[]].*[^[:space:]]' \
-  | grep -ivE '[[]CRITICAL[]][^[:alnum:]]*no findings')
+  | grep -E '[[]CRITICAL[]][^:]*:[0-9]')
 if [ -n "$CRITICAL_FINDINGS" ]; then
   # Block the commit and feed the full review body back to the model so it
   # can decide whether to amend, abort, or override.
