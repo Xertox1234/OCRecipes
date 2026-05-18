@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Share, Platform } from "react-native";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
 import type { ResolvedFavouriteRecipe } from "@shared/schema";
 
 const FAVOURITES_KEY = ["/api/favourite-recipes"];
@@ -20,7 +21,6 @@ export function useFavouriteRecipes(limit?: number) {
         ? `/api/favourite-recipes?limit=${limit}`
         : "/api/favourite-recipes";
       const res = await apiRequest("GET", url);
-      if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
     refetchOnMount: "always",
@@ -32,7 +32,6 @@ export function useFavouriteRecipeIds() {
     queryKey: FAVOURITES_IDS_KEY,
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/favourite-recipes/ids");
-      if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
     staleTime: 30_000,
@@ -69,16 +68,6 @@ export function useToggleFavouriteRecipe() {
         recipeId,
         recipeType,
       });
-      if (res.status === 403) {
-        const body = await res.json();
-        throw new Error(
-          body.code === "LIMIT_REACHED" ? "LIMIT_REACHED" : body.error,
-        );
-      }
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json() as Promise<{ favourited: boolean }>;
     },
     onMutate: async ({ recipeId, recipeType }) => {
@@ -110,7 +99,7 @@ export function useToggleFavouriteRecipe() {
       if (context?.previous) {
         queryClient.setQueryData(FAVOURITES_IDS_KEY, context.previous);
       }
-      if (error.message === "LIMIT_REACHED") {
+      if (error instanceof ApiError && error.code === "LIMIT_REACHED") {
         Alert.alert(
           "Favourites Limit Reached",
           "Upgrade to premium for unlimited favourites.",
@@ -132,7 +121,6 @@ export function useShareRecipe() {
           "GET",
           `/api/recipes/${recipeType}/${recipeId}/share`,
         );
-        if (!res.ok) throw new Error(`${res.status}`);
         const payload: {
           title: string;
           description: string;

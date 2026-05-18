@@ -9,6 +9,7 @@ import {
   useToggleFavouriteRecipe,
   useShareRecipe,
 } from "../useFavouriteRecipes";
+import { ApiError } from "@/lib/api-error";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
 const { mockApiRequest } = vi.hoisted(() => ({
@@ -256,12 +257,9 @@ describe("useFavouriteRecipes", () => {
         ids: originalIds,
       });
 
-      mockApiRequest.mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({ error: "Internal error" }),
-        text: () => Promise.resolve("Internal error"),
-      });
+      mockApiRequest.mockRejectedValue(
+        new ApiError('500: {"error":"Internal error"}'),
+      );
 
       const { result } = renderHook(() => useToggleFavouriteRecipe(), {
         wrapper,
@@ -290,15 +288,12 @@ describe("useFavouriteRecipes", () => {
         ids: [],
       });
 
-      mockApiRequest.mockResolvedValue({
-        ok: false,
-        status: 403,
-        json: () =>
-          Promise.resolve({
-            error: "Limit reached",
-            code: "LIMIT_REACHED",
-          }),
-      });
+      mockApiRequest.mockRejectedValue(
+        new ApiError(
+          '403: {"error":"Limit reached","code":"LIMIT_REACHED"}',
+          "LIMIT_REACHED",
+        ),
+      );
 
       const { result } = renderHook(() => useToggleFavouriteRecipe(), {
         wrapper,
@@ -417,11 +412,7 @@ describe("useFavouriteRecipes", () => {
       RN.Platform.OS = "ios";
       const alertSpy = vi.spyOn(RN.Alert, "alert");
 
-      mockApiRequest.mockResolvedValue({
-        ok: false,
-        status: 500,
-        text: () => Promise.resolve("Server error"),
-      });
+      mockApiRequest.mockRejectedValue(new ApiError("500: Server error"));
 
       const { wrapper } = createQueryWrapper();
       const { result } = renderHook(() => useShareRecipe(), { wrapper });
