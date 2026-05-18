@@ -13,6 +13,7 @@ import { sendError } from "../lib/api-errors";
 import { logger, toError } from "../lib/logger";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { calculateWeightTrend } from "../services/weight-trend";
+import { lbsToKg } from "@shared/lib/units";
 
 const createWeightLogSchema = z.object({
   weight: z.number().positive().max(999),
@@ -117,9 +118,10 @@ export function register(app: Express): void {
 
         // Normalize to kg for storage consistency. HealthKit already sends kg;
         // manual entries from the UI default to lb. See M25 audit finding.
+        // Conversion factor is centralised in @shared/lib/units.
         const weightKg =
           validated.unit === "lb"
-            ? validated.weight * 0.453592
+            ? lbsToKg(validated.weight)
             : validated.weight;
 
         // Create weight log and update user's current weight atomically

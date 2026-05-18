@@ -24,7 +24,14 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
+import {
+  weightToKg,
+  heightToCm,
+  weightUnitLabel,
+  heightUnitLabel,
+} from "@shared/lib/units";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -218,6 +225,7 @@ export default function GoalSetupScreen() {
   const queryClient = useQueryClient();
   const { updateUser } = useAuthContext();
   const canSetMacros = usePremiumFeature("macroGoals");
+  const unit = useMeasurementUnit();
 
   // Form state - these will be entered by the user
   const [age, setAge] = useState("");
@@ -246,8 +254,9 @@ export default function GoalSetupScreen() {
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/goals/calculate", {
         age: parseInt(age),
-        weight: parseFloat(weight),
-        height: parseFloat(height),
+        // Inputs are in the user's preferred unit; the API expects kg/cm.
+        weight: weightToKg(parseFloat(weight), unit),
+        height: heightToCm(parseFloat(height), unit),
         gender,
         activityLevel,
         primaryGoal,
@@ -274,8 +283,9 @@ export default function GoalSetupScreen() {
         dailyProteinGoal: parseInt(manualProtein),
         dailyCarbsGoal: parseInt(manualCarbs),
         dailyFatGoal: parseInt(manualFat),
-        weight: parseFloat(weight),
-        height: parseFloat(height),
+        // Inputs are in the user's preferred unit; the API expects kg/cm.
+        weight: weightToKg(parseFloat(weight), unit),
+        height: heightToCm(parseFloat(height), unit),
         age: parseInt(age),
         gender,
       });
@@ -360,15 +370,15 @@ export default function GoalSetupScreen() {
                 label="Weight"
                 value={weight}
                 onChange={setWeight}
-                unit="kg"
-                placeholder="70"
+                unit={weightUnitLabel(unit)}
+                placeholder={unit === "imperial" ? "154" : "70"}
               />
               <NumberInput
                 label="Height"
                 value={height}
                 onChange={setHeight}
-                unit="cm"
-                placeholder="170"
+                unit={heightUnitLabel(unit)}
+                placeholder={unit === "imperial" ? "67" : "170"}
               />
             </View>
 

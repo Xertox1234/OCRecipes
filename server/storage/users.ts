@@ -91,6 +91,7 @@ export type UpdatableUserFields = Pick<
   | "adaptiveGoalsEnabled"
   | "lastGoalAdjustmentAt"
   | "onboardingCompleted"
+  | "measurementUnit"
 >;
 
 export async function updateUser(

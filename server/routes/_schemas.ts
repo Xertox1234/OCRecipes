@@ -3,6 +3,7 @@
  */
 import { z } from "zod";
 import { insertUserProfileSchema, allergySchema } from "@shared/schema";
+import { measurementUnitSchema } from "@shared/lib/units";
 
 /** Zod schema: accepts string or number, coerces to string. Returns undefined if absent. */
 export const numericStringField = z
@@ -60,6 +61,7 @@ export const profileUpdateSchema = z.object({
   displayName: z.string().max(100).optional(),
   dailyCalorieGoal: z.number().int().min(500).max(10000).optional(),
   onboardingCompleted: z.boolean().optional(),
+  measurementUnit: measurementUnitSchema.optional(),
 });
 
 // Enhanced user profile schema with proper validation for nested objects

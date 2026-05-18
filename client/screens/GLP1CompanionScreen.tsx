@@ -12,9 +12,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { weightFromKg, weightUnitLabel } from "@shared/lib/units";
 import {
   useMedicationLogs,
   useMedicationInsights,
@@ -51,6 +53,7 @@ export default function GLP1CompanionScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
+  const unit = useMeasurementUnit();
   const { data: logs, isLoading, refetch } = useMedicationLogs();
   const { data: insights } = useMedicationInsights();
   const logMedication = useLogMedication();
@@ -202,7 +205,10 @@ export default function GLP1CompanionScreen() {
               ]}
             >
               {insights.weightChangeSinceStart > 0 ? "+" : ""}
-              {insights.weightChangeSinceStart} kg
+              {weightFromKg(insights.weightChangeSinceStart, unit).toFixed(
+                1,
+              )}{" "}
+              {weightUnitLabel(unit)}
             </ThemedText>
             <ThemedText
               style={[styles.insightLabel, { color: theme.textSecondary }]}
@@ -213,7 +219,7 @@ export default function GLP1CompanionScreen() {
         )}
       </View>
     );
-  }, [insights, theme]);
+  }, [insights, theme, unit]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>

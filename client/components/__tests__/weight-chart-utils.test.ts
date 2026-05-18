@@ -128,4 +128,15 @@ describe("calculateChartData", () => {
     // Higher weight should have lower y value (SVG coordinates)
     expect(result!.points[1].y).toBeLessThan(result!.points[0].y);
   });
+
+  it("converts kg weights and goal to lbs when unit is imperial", () => {
+    const data = [makeEntry("80.0", "2024-01-15T10:00:00Z")];
+    const result = calculateChartData(data, 70, 200, "imperial");
+
+    // 80 kg → ~176.37 lbs; bounds are ±1 around min/max of points + goal.
+    expect(result!.points[0].weight).toBeCloseTo(176.37, 1);
+    // goal 70 kg → ~154.32 lbs, which is the min → minWeight = goal - 1
+    expect(result!.minWeight).toBeCloseTo(153.32, 1);
+    expect(result!.maxWeight).toBeCloseTo(177.37, 1);
+  });
 });

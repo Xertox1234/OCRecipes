@@ -19,6 +19,7 @@ const userDefaults: User = {
   adaptiveGoalsEnabled: false,
   lastGoalAdjustmentAt: null,
   onboardingCompleted: false,
+  measurementUnit: "metric",
   tokenVersion: 0,
   subscriptionTier: "free",
   subscriptionExpiresAt: null,

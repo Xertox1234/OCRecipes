@@ -3,6 +3,8 @@ import { View, StyleSheet } from "react-native";
 import Svg, { Path, Circle, Line, Text as SvgText } from "react-native-svg";
 import { useTheme } from "@/hooks/useTheme";
 import { ThemedText } from "@/components/ThemedText";
+import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
+import { weightUnitLabel } from "@shared/lib/units";
 import { calculateChartData, CHART_VIEW_WIDTH } from "./weight-chart-utils";
 
 interface WeightChartProps {
@@ -17,10 +19,11 @@ export const WeightChart = React.memo(function WeightChart({
   height = 200,
 }: WeightChartProps) {
   const { theme } = useTheme();
+  const unit = useMeasurementUnit();
 
   const chartData = useMemo(
-    () => calculateChartData(data, goalWeight, height),
-    [data, goalWeight, height],
+    () => calculateChartData(data, goalWeight, height, unit),
+    [data, goalWeight, height, unit],
   );
 
   if (!chartData || chartData.points.length === 0) {
@@ -35,14 +38,16 @@ export const WeightChart = React.memo(function WeightChart({
 
   const { points, pathData, goalY, minWeight, maxWeight, padding } = chartData;
 
-  const latestWeight = points.length > 0 ? data[data.length - 1]?.weight : null;
+  // points are already converted to the user's unit by calculateChartData.
+  const latestWeight =
+    points.length > 0 ? points[points.length - 1].weight : null;
 
   return (
     <View
       style={styles.container}
       accessible={true}
       accessibilityRole="image"
-      accessibilityLabel={`Weight chart showing ${points.length} entries${latestWeight ? `, latest: ${latestWeight} kg` : ""}`}
+      accessibilityLabel={`Weight chart showing ${points.length} entries${latestWeight != null ? `, latest: ${latestWeight.toFixed(1)} ${weightUnitLabel(unit)}` : ""}`}
     >
       <Svg
         width="100%"

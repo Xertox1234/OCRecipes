@@ -29,6 +29,7 @@ import {
 } from "./_schemas";
 import { upload } from "./_upload";
 import { logger, toError } from "../lib/logger";
+import type { MeasurementUnit } from "@shared/lib/units";
 
 const AVATAR_DIR = path.resolve(process.cwd(), "uploads/avatars");
 fs.mkdirSync(AVATAR_DIR, { recursive: true });
@@ -47,6 +48,7 @@ function serializeUser(user: {
   dailyCalorieGoal: number | null;
   onboardingCompleted: boolean | null;
   subscriptionTier: string | null;
+  measurementUnit: MeasurementUnit;
 }) {
   return {
     id: user.id,
@@ -56,6 +58,7 @@ function serializeUser(user: {
     dailyCalorieGoal: user.dailyCalorieGoal,
     onboardingCompleted: user.onboardingCompleted,
     subscriptionTier: user.subscriptionTier || "free",
+    measurementUnit: user.measurementUnit,
   };
 }
 
@@ -199,6 +202,8 @@ export function register(app: Express): void {
           updates.dailyCalorieGoal = validated.dailyCalorieGoal;
         if (validated.onboardingCompleted !== undefined)
           updates.onboardingCompleted = validated.onboardingCompleted;
+        if (validated.measurementUnit !== undefined)
+          updates.measurementUnit = validated.measurementUnit;
 
         if (Object.keys(updates).length === 0) {
           return sendError(

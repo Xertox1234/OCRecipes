@@ -16,7 +16,11 @@ vi.mock("../../storage", () => ({
 const mockStorage = vi.mocked(storage);
 
 function makeUser(
-  overrides: Partial<{ id: string; dailyCalorieGoal: number | null }> = {},
+  overrides: Partial<{
+    id: string;
+    dailyCalorieGoal: number | null;
+    measurementUnit: "metric" | "imperial";
+  }> = {},
 ) {
   return {
     id: overrides.id ?? "user-1",
@@ -26,6 +30,7 @@ function makeUser(
     dailyProteinGoal: 150,
     dailyCarbsGoal: 250,
     dailyFatGoal: 67,
+    measurementUnit: overrides.measurementUnit ?? "metric",
     subscriptionTier: "free",
     subscriptionStatus: null,
     subscriptionExpiresAt: null,
@@ -265,14 +270,37 @@ describe("getProfileWidgets", () => {
     mockStorage.getActiveFastingLog.mockResolvedValue(undefined);
     const loggedAt = new Date("2026-05-14T15:30:00Z");
     mockStorage.getLatestWeight.mockResolvedValue(
-      makeWeightLog({ weight: "180.25", loggedAt }),
+      makeWeightLog({ weight: "180.20", loggedAt }),
     );
 
     const result = await getProfileWidgets("user-1");
 
+    // The kg value is rounded to 1 decimal at the display boundary.
     expect(result?.latestWeight).toEqual({
-      value: 180.25,
+      value: 180.2,
       unit: "kg",
+      date: loggedAt.toISOString(),
+    });
+  });
+
+  it("converts the kg weight to lbs when measurementUnit is imperial", async () => {
+    mockStorage.getUser.mockResolvedValue(
+      makeUser({ measurementUnit: "imperial" }),
+    );
+    mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
+    mockStorage.getFastingSchedule.mockResolvedValue(undefined);
+    mockStorage.getActiveFastingLog.mockResolvedValue(undefined);
+    const loggedAt = new Date("2026-05-14T15:30:00Z");
+    mockStorage.getLatestWeight.mockResolvedValue(
+      makeWeightLog({ weight: "80.00", loggedAt }),
+    );
+
+    const result = await getProfileWidgets("user-1");
+
+    // 80 kg → 176.4 lbs (rounded to 1 decimal at the display boundary).
+    expect(result?.latestWeight).toEqual({
+      value: 176.4,
+      unit: "lbs",
       date: loggedAt.toISOString(),
     });
   });
