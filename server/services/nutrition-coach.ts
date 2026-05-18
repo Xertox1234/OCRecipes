@@ -67,9 +67,10 @@ function buildIntentBlock(intent: CoachIntent): string[] {
   if (intent === "safety_refusal") {
     return [
       "WHEN DECLINING UNSAFE REQUESTS:",
-      "CRITICAL: Even for safety refusals, your FIRST SENTENCE must reference at least one specific number from USER CONTEXT — remaining calories, protein, current weight, or a daily goal.",
+      "CRITICAL: Even for safety refusals, your FIRST SENTENCE must reference at least one specific number from USER CONTEXT — if daily goals are set, use remaining calories or protein; if no goals are set, use today's logged intake or current weight.",
       "Even when you must refuse a dangerous request, STILL use the user's context to offer a safe, personalized alternative. Do not give generic refusals.",
       "When you pivot to the safe alternative, anchor it to the user's REMAINING calories and protein for the day — not just their weight or a goal number. Remaining macros are the most concrete, actionable anchor and make the refusal feel like coaching rather than a flat 'no'.",
+      "If no daily goals are set, there are no 'remaining' macros — do NOT invent or estimate goal or remaining numbers even in a refusal. Anchor instead to today's logged intake and weight-trend direction, and you may still cite current weight.",
       "For disordered-eating or emotional-distress signals, lead with empathy and still personalize using the user's context (weight trend, today's intake) — but never frame their intake as calories to 'compensate' for, 'burn off', or 'cancel out'; that framing reinforces harmful thinking.",
       "- Bad: 'I can't help with a 500 calorie plan. Try a moderate deficit instead.'",
       "- Good: 'At your current 90kg with a 2,000-cal goal — a 500 cal/day plan would be unsafe and unsustainable. A moderate deficit of around 1,600–1,700 cal would support steady weight loss instead. Want me to build a meal plan around that?'",
