@@ -18,11 +18,17 @@
  * `barcode_verifications` removes the `verification_history` children).
  */
 import { describe, it, expect, afterAll } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db, pool } from "../../db";
-import { barcodeVerifications, users } from "@shared/schema";
+import {
+  barcodeVerifications,
+  reformulationFlags,
+  users,
+  verificationHistory,
+} from "@shared/schema";
 import { submitVerification } from "../verification";
+import { flagReformulation } from "../reformulation";
 import type { VerificationNutrition } from "@shared/types/verification";
 
 const NUTRITION: VerificationNutrition = {
@@ -54,22 +60,30 @@ async function createCommittedUser(): Promise<string> {
   return user.id;
 }
 
-describe("submitVerification — concurrent multi-connection safety", () => {
-  afterAll(async () => {
-    // Cascade from barcode_verifications removes verification_history rows.
-    for (const barcode of createdBarcodes) {
-      await db
-        .delete(barcodeVerifications)
-        .where(eq(barcodeVerifications.barcode, barcode));
-    }
-    for (const userId of createdUserIds) {
-      await db.delete(users).where(eq(users.id, userId));
-    }
-    // Close the real pool this file opened. Vitest isolates modules per file
-    // (forks pool), so this ends only this file's pool, not sibling files'.
-    await pool.end();
-  });
+// File-scoped cleanup: runs once after every describe block below, so the
+// shared real pool is closed exactly once and all test rows are removed.
+afterAll(async () => {
+  // Both verification_history and reformulation_flags FK-cascade from
+  // barcode_verifications on delete. reformulation_flags is still deleted
+  // explicitly first (children before parent) so cleanup is order-safe and
+  // self-documenting about which tables this file writes to.
+  for (const barcode of createdBarcodes) {
+    await db
+      .delete(reformulationFlags)
+      .where(eq(reformulationFlags.barcode, barcode));
+    await db
+      .delete(barcodeVerifications)
+      .where(eq(barcodeVerifications.barcode, barcode));
+  }
+  for (const userId of createdUserIds) {
+    await db.delete(users).where(eq(users.id, userId));
+  }
+  // Close the real pool this file opened. Vitest isolates modules per file
+  // (forks pool), so this ends only this file's pool, not sibling files'.
+  await pool.end();
+});
 
+describe("submitVerification — concurrent multi-connection safety", () => {
   it("does not lose-update verification_count under concurrent different-user submits", async () => {
     const barcode = makeBarcode();
     createdBarcodes.push(barcode);
@@ -161,5 +175,68 @@ describe("submitVerification — concurrent multi-connection safety", () => {
 
     expect(agg.verificationCount).toBe(1);
     expect(agg.verificationLevel).toBe("single_verified");
+  });
+});
+
+describe("submitVerification vs flagReformulation — concurrent multi-connection safety", () => {
+  it("keeps verificationCount consistent with matching history under a concurrent submit + reformulation", async () => {
+    // Both writers take the same per-barcode `pg_advisory_xact_lock`
+    // (`hashtextextended(barcode, 0)`), so they cannot interleave. The
+    // invariant the lock protects is:
+    //
+    //   barcode_verifications.verificationCount
+    //     === count(verification_history WHERE barcode = ? AND isMatch = true)
+    //
+    // Without the lock on flagReformulation, the lost-update race is: the
+    // concurrent submitVerification reads the matching history under ITS
+    // lock (sees the seed row, computes its own isMatch = true), then
+    // flagReformulation interleaves (marks the seed row isMatch = false and
+    // resets verificationCount = 0), and finally the submit's post-insert
+    // recompute writes verificationCount = 2 from its now-stale in-memory
+    // snapshot. The aggregate then claims 2 while only 1 matching row
+    // exists. With the lock, the two writers serialize and the invariant
+    // holds for BOTH orderings (submit-then-flag, flag-then-submit).
+    //
+    // The pair is looped so AC #2 ("fails when the flagReformulation lock is
+    // removed") is reliable — a single concurrent pair may not race.
+    const ITERATIONS = 20;
+
+    for (let i = 0; i < ITERATIONS; i++) {
+      const barcode = makeBarcode();
+      createdBarcodes.push(barcode);
+
+      // Seed one committed verification so there is an aggregate (count = 1)
+      // and a matching history row for the reformulation reset to touch.
+      const seedUserId = await createCommittedUser();
+      await submitVerification(barcode, seedUserId, NUTRITION, 0.95);
+
+      // Race a second submit (different user, matching nutrition) against a
+      // reformulation flag for the same barcode. Dispatch order is
+      // intentionally not controlled — the lock must serialize regardless.
+      const submitUserId = await createCommittedUser();
+      await Promise.all([
+        submitVerification(barcode, submitUserId, NUTRITION, 0.95),
+        flagReformulation(barcode, 3, null, "single_verified", 1),
+      ]);
+
+      // Assert on the final committed state only (timing-independent): the
+      // persisted aggregate count must equal the actual matching-row count.
+      const [agg] = await db
+        .select({ verificationCount: barcodeVerifications.verificationCount })
+        .from(barcodeVerifications)
+        .where(eq(barcodeVerifications.barcode, barcode));
+
+      const [{ matchingRows }] = await db
+        .select({ matchingRows: sql<number>`count(*)::int` })
+        .from(verificationHistory)
+        .where(
+          and(
+            eq(verificationHistory.barcode, barcode),
+            eq(verificationHistory.isMatch, true),
+          ),
+        );
+
+      expect(agg.verificationCount).toBe(matchingRows);
+    }
   });
 });

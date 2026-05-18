@@ -1,6 +1,6 @@
 ---
 title: "Add concurrent submit-vs-reformulation race regression test"
-status: backlog
+status: done
 priority: low
 created: 2026-05-18
 updated: 2026-05-18
