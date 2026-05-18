@@ -1,6 +1,6 @@
 ---
 title: "Repair weight_logs rows corrupted by missing-unit lb conversion"
-status: backlog
+status: blocked
 priority: high
 created: 2026-05-18
 updated: 2026-05-18
@@ -74,3 +74,32 @@ This todo covers the **existing corrupted rows only**.
 
 - Initial creation. Found while fixing the weight-unit mislabel todo; the
   forward fix shipped, this tracks the historical-data cleanup.
+
+### 2026-05-18 — repair script landed; status → blocked (operator action)
+
+- Repair script written and committed:
+  - `server/scripts/repair-weight-log-units.ts` — dry-run-by-default CLI; only
+    writes with `--execute`; refuses to re-run once its audit file exists
+    (override `--force`); rows that reverse to an implausible weight are flagged
+    `needs-review` and left untouched.
+  - `server/scripts/repair-weight-log-units-utils.ts` — pure classification /
+    reverse-conversion helpers (unit-tested).
+  - `server/scripts/__tests__/repair-weight-log-units-utils.test.ts` — 13 tests.
+- The forward-fix dependency is satisfied: commit `ac027cb7` (PR #220) is merged
+  to `main`, authored 2026-05-18 07:29:43 -0600 (= `2026-05-18T13:29:43Z`). Use
+  the actual **production deploy** time of that commit as `--cutoff`.
+- Finding: `users.goalWeight` is never synced from a weight log
+  (`createWeightLogAndUpdateUser` writes only `users.weight`), so no goalWeight
+  row was corrupted by this bug — the script does not touch it.
+- Status is `blocked` because the remaining acceptance criteria require live
+  production DB access and are intentionally not automated (user health data).
+  Operator steps to finish and then archive this todo:
+  1. Dry-run: `npx tsx server/scripts/repair-weight-log-units.ts --cutoff <prod-deploy-ISO>`
+     and review the blast-radius / corrupted / needs-review counts.
+  2. Execute: re-run with `--execute`. Inspect the written audit JSON.
+  3. Verify the weight trend / chart looks sane for an affected test account.
+  4. Manually triage any `needs-review` rows.
+- Deferred kimi-review WARNINGs (not fixed — low value for an operator-run
+  one-off): `--audit-file` path is not sandboxed (arbitrary write if an attacker
+  already controls the CLI); candidate read is outside the transaction (write
+  skew — mitigated by the "run during idle time" doc note).
