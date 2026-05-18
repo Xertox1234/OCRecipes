@@ -9,6 +9,7 @@ developer kimi-review helper.
 import argparse
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -183,6 +184,43 @@ def resolve_client_config(env=os.environ):
     return api_key, base_url
 
 
+# A real finding cites a file location, per the mandated format
+# `[TIER] path/to/file.ts:42 — description`. A bracketed line that cites no file
+# ("[CRITICAL] No critical issues found.") is the model decorating an empty tier
+# against instructions — a placeholder. We err toward keeping anything file-like:
+# dropping a real finding is unrecoverable, whereas a stray placeholder is caught
+# by the CI/Husky gate's stricter [CRITICAL]+:line grep.
+_FILE_REF_RE = re.compile(r"/|:\d|\.\w{1,6}\b")
+
+
+def filter_review(answer, requested_tiers):
+    """Return the review text to print: allowed-tier findings, else the clean message.
+
+    A bracketed `[TIER]` line counts as a real finding only when its body
+    references a file location. A bracketed line that references no file is an
+    empty-tier placeholder the model emitted against instructions — it is
+    dropped and does not count as a finding.
+    """
+    allowed_tiers = {t.upper() for t in requested_tiers}
+    filtered_lines = []
+    keep_current_finding = False
+    saw_finding = False
+    for line in answer.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("[") and "]" in stripped:
+            tier = stripped[1 : stripped.index("]")].strip().upper()
+            body = stripped[stripped.index("]") + 1 :]
+            is_finding = bool(_FILE_REF_RE.search(body))
+            saw_finding = True
+            keep_current_finding = is_finding and tier in allowed_tiers
+            if keep_current_finding:
+                filtered_lines.append(line)
+        elif keep_current_finding or not saw_finding:
+            filtered_lines.append(line)
+    filtered = "\n".join(filtered_lines).strip()
+    return filtered or f"No findings in requested tiers: {', '.join(requested_tiers)}"
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)
@@ -251,26 +289,7 @@ def main():
         print("[ERROR: ran out of tokens — raise --max-tokens]", file=sys.stderr)
         sys.exit(1)
 
-    allowed_tiers = set(requested_tiers)
-    filtered_lines = []
-    keep_current_finding = False
-    saw_finding = False
-    for line in answer.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("[") and "]" in stripped:
-            saw_finding = True
-            tier = stripped[1 : stripped.index("]")].strip().upper()
-            keep_current_finding = tier in allowed_tiers
-            if keep_current_finding:
-                filtered_lines.append(line)
-        elif keep_current_finding or not saw_finding:
-            filtered_lines.append(line)
-
-    filtered_answer = "\n".join(filtered_lines).strip()
-    if filtered_answer:
-        print(filtered_answer)
-    else:
-        print(f"No findings in requested tiers: {', '.join(requested_tiers)}")
+    print(filter_review(answer, requested_tiers))
 
     usage = response.usage
     cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0

@@ -120,6 +120,43 @@ run_husky_gate() {
   printf '%s\n--RC--%d' "$output" "$rc"
 }
 
+run_python_filter_tests() {
+  command -v python3 >/dev/null 2>&1 || {
+    echo "python3 not found"
+    return 1
+  }
+  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+import importlib.util
+import pathlib
+import sys
+
+module_path = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("kimi_review", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+CW = ["CRITICAL", "WARNING"]
+CLEAN = "No findings in requested tiers: CRITICAL, WARNING"
+REAL = "[CRITICAL] server/a.ts:10 — broken guard"
+
+cases = [
+    # empty-tier placeholder lines carry no path:line → dropped → clean message
+    ("[CRITICAL] No critical issues found.\n[WARNING] No warning-level issues found.", CW, CLEAN),
+    # a real finding (path:line) is kept
+    (REAL, CW, REAL),
+    # a finding in an unrequested tier is dropped
+    ("[SUGGESTION] client/x.ts:5 — rename var", CW, CLEAN),
+    # placeholder + real finding → only the real finding survives
+    ("[CRITICAL] No critical issues found.\n" + REAL, CW, REAL),
+]
+
+for answer, tiers, expected in cases:
+    actual = module.filter_review(answer, tiers)
+    if actual != expected:
+        raise AssertionError(f"filter_review({answer!r}): expected {expected!r}, got {actual!r}")
+PY
+}
+
 run_python_credential_tests() {
   command -v python3 >/dev/null 2>&1 || {
     echo "python3 not found"
@@ -237,8 +274,10 @@ assert_empty "git push does NOT match" "$OUT"
 
 # ---------- Skip semantics ----------
 
-# SKIP_KIMI_REVIEW=1 must skip even when the command matches
-OUT=$(SKIP_KIMI_REVIEW=1 echo '{"tool_input":{"command":"git commit -m x"}}' | bash "$HOOK" 2>/dev/null)
+# SKIP_KIMI_REVIEW=1 must skip even when the command matches. The env var must
+# prefix `bash "$HOOK"`, not the upstream `echo` — in `VAR=val cmd1 | cmd2` the
+# variable reaches cmd1 only, so prefixing `echo` would never set it for the hook.
+OUT=$(echo '{"tool_input":{"command":"git commit -m x"}}' | SKIP_KIMI_REVIEW=1 bash "$HOOK" 2>/dev/null)
 assert_empty "SKIP_KIMI_REVIEW=1 skips" "$OUT"
 
 # Missing kimi-review on PATH must skip. Use a sandbox PATH with no kimi-review
@@ -337,6 +376,24 @@ assert_contains "Husky clean tiered output exits 0" "$OUT" "--RC--0"
 OUT=$(run_husky_gate critical)
 assert_contains "Husky CRITICAL output exits 1" "$OUT" "--RC--1"
 assert_contains "Husky CRITICAL output blocks" "$OUT" "Commit blocked"
+
+# Regression: an empty-tier placeholder ([CRITICAL] No critical issues found.)
+# carries no path:line, so the CI and Husky CRITICAL gates must not block on it.
+OUT=$(run_ci_gate clean-model-prose)
+assert_contains "CI clean-model-prose exits 0" "$OUT" "--RC--0"
+assert_not_contains "CI clean-model-prose does not block" "$OUT" "Kimi review blocked this PR"
+
+OUT=$(run_husky_gate clean-model-prose)
+assert_contains "Husky clean-model-prose exits 0" "$OUT" "--RC--0"
+assert_not_contains "Husky clean-model-prose does not block" "$OUT" "Commit blocked"
+
+if run_python_filter_tests; then
+  echo "PASS: Python filter_review drops empty-tier placeholders"
+  PASS=$((PASS+1))
+else
+  echo "FAIL: Python filter_review drops empty-tier placeholders"
+  FAIL=$((FAIL+1))
+fi
 
 if run_python_credential_tests; then
   echo "PASS: Python credential resolver handles aliases and provider base URL"
