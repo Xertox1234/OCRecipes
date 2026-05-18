@@ -901,10 +901,10 @@ export const mealPlanItems = pgTable(
       table.mealType,
       table.createdAt,
     ),
-    // Prevent orphan items with no nutrition source
-    hasNutritionSource: check(
-      "meal_plan_items_has_source",
-      sql`recipe_id IS NOT NULL OR scanned_item_id IS NOT NULL`,
+    // Exactly one nutrition source — recipe XOR scanned item
+    sourceXor: check(
+      "meal_plan_items_source_xor",
+      sql`num_nonnulls(recipe_id, scanned_item_id) = 1`,
     ),
     servingsPositive: check(
       "meal_plan_items_servings_gt0",
