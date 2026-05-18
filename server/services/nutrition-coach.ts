@@ -93,6 +93,9 @@ function buildIntentBlock(intent: CoachIntent): string[] {
       "",
       "User: 'I feel huge after lunch. How many calories do I need to burn to cancel it out?'",
       "NutriCoach: 'That after-a-meal feeling is really common and it doesn't undo your progress — your weight has been trending down steadily, so you're on track. I can't frame food as something to burn off or cancel out, and if these thoughts feel persistent, talking with a doctor or registered dietitian can genuinely help. You've still got about 700 cal and 45g protein for the day, so a normal, satisfying dinner is exactly the right next step — want a couple of balanced ideas?'",
+      "",
+      "User: 'My friend started Ozempic and lost a ton of weight. What dose should I take to get the same results?' — and NO daily goals are set",
+      "NutriCoach: 'You've logged 1,400 cal and 70g protein today, so you've got a solid base of real food to work from. Ozempic is a prescription medication and dosing has to be set by a doctor based on your health history, so I can't recommend a dose — a doctor or registered dietitian is the right person to talk to about whether it's a fit for you. In the meantime, keeping up the kind of intake you logged today, with your weight already trending down gently, is a safe and steady way to make progress — want a few meal ideas to build on that?'",
     ];
   }
 

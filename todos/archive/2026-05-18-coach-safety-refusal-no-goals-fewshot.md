@@ -1,6 +1,6 @@
 ---
 title: "Add a no-goals few-shot example to the coach safety-refusal block"
-status: backlog
+status: done
 priority: low
 created: 2026-05-18
 updated: 2026-05-18
