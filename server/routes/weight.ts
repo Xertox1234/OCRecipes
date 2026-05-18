@@ -21,7 +21,6 @@ const createWeightLogSchema = z.object({
   unit: z.enum(["lb", "kg"]),
   source: z.enum(["manual", "healthkit", "scale"]).default("manual"),
   note: z.string().max(500).optional(),
-  loggedAt: z.string().datetime().optional(),
 });
 
 const weightGoalSchema = z.object({
