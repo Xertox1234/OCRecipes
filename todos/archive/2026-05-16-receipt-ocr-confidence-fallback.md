@@ -1,6 +1,6 @@
 ---
 title: "Implement confidence-based OCR fallback in mergeReceiptItems"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-16
 updated: 2026-05-16
