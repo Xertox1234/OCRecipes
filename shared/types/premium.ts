@@ -166,6 +166,26 @@ export function applyStreakUnlocks(
   return { ...features, extendedPlanRange: true };
 }
 
+/**
+ * Resolve the *effective* subscription tier, accounting for premium expiry.
+ *
+ * A stored `tier: "premium"` is only honoured while the subscription is still
+ * active: either it has no `expiresAt` (lifetime) or `expiresAt` is in the
+ * future. An expired-premium subscription resolves to `"free"`. The `"free"`
+ * tier is always active.
+ *
+ * Shared by `GET /api/subscription/status` and the server-side tier-cache
+ * resolver so the two cannot drift. Pure — no DB, no I/O.
+ */
+export function resolveEffectiveTier(
+  tier: SubscriptionTier,
+  expiresAt: Date | null,
+): { effectiveTier: SubscriptionTier; isActive: boolean } {
+  const isActive =
+    tier === "free" || !expiresAt || expiresAt.getTime() > Date.now();
+  return { effectiveTier: isActive ? tier : "free", isActive };
+}
+
 export interface SubscriptionStatus {
   tier: SubscriptionTier;
   expiresAt: string | null;

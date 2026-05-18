@@ -4,6 +4,7 @@ import {
   _testInternals,
 } from "../subscription-tier-cache";
 import { storage } from "../../storage";
+import { TIER_FEATURES } from "@shared/types/premium";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -114,5 +115,36 @@ describe("subscription-tier-cache", () => {
     const features = await resolveSubscriptionTierFeatures("u7");
 
     expect(features.extendedPlanRange).toBe(false);
+  });
+
+  it("resolves an expired-premium subscription to free-tier features", async () => {
+    mockGetSubscriptionStatus.mockResolvedValue({
+      tier: "premium" as const,
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+
+    const features = await resolveSubscriptionTierFeatures("u8");
+
+    expect(features.recipeGeneration).toBe(false);
+    expect(features.maxDailyScans).toBe(TIER_FEATURES.free.maxDailyScans);
+  });
+
+  it("keeps premium features for a premium subscription with a future expiry", async () => {
+    mockGetSubscriptionStatus.mockResolvedValue({
+      tier: "premium" as const,
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    const features = await resolveSubscriptionTierFeatures("u9");
+
+    expect(features.recipeGeneration).toBe(true);
+  });
+
+  it("keeps premium features for a premium subscription with no expiry (lifetime)", async () => {
+    mockGetSubscriptionStatus.mockResolvedValue(premiumStatus);
+
+    const features = await resolveSubscriptionTierFeatures("u10");
+
+    expect(features.recipeGeneration).toBe(true);
   });
 });

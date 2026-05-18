@@ -18,6 +18,7 @@ import {
   TIER_FEATURES,
   isValidSubscriptionTier,
   applyStreakUnlocks,
+  resolveEffectiveTier,
   type PremiumFeatures,
 } from "@shared/types/premium";
 
@@ -47,9 +48,15 @@ export async function resolveSubscriptionTierFeatures(
     storage.getSubscriptionStatus(userId),
     storage.getUserVerificationStats(userId),
   ]);
-  const tier = subscription?.tier ?? "free";
-  const baseFeatures =
-    TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
+  const storedTier = subscription?.tier ?? "free";
+  // Downgrade an expired-premium subscription to free before resolving
+  // features — the stored DB tier is never reset on expiry. Shared with
+  // GET /api/subscription/status so the two cannot drift.
+  const { effectiveTier } = resolveEffectiveTier(
+    isValidSubscriptionTier(storedTier) ? storedTier : "free",
+    subscription?.expiresAt ?? null,
+  );
+  const baseFeatures = TIER_FEATURES[effectiveTier];
   const features = applyStreakUnlocks(baseFeatures, stats.streak);
   tierCache.set(userId, { features, expiresAt: Date.now() + TTL_MS });
   return features;
