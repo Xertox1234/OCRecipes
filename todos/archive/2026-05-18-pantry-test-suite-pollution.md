@@ -1,6 +1,6 @@
 ---
 title: "Fix test pollution causing pantry.test.ts to fail in the full suite"
-status: blocked
+status: done
 priority: low
 created: 2026-05-18
 updated: 2026-05-18
@@ -137,3 +137,15 @@ ErrorCode.SESSION_NOT_FOUND)`, so a 404 with no `code` field cannot come
   `vi.mock`-application race" — e.g. evaluate `vi.mock` hoisting reliability
   under the forks pool, or further bound local fork concurrency — NOT as
   "find and fix a polluting test file," which has no answer.
+
+### 2026-05-18 — Closed as not-a-bug
+
+- Closed per user decision. The "test pollution" premise is invalid: the
+  intermittent full-suite failures are the documented load-induced vitest
+  `vi.mock`-application race (`docs/LEARNINGS.md` → "Load-Induced vitest
+  `vi.mock` Application Flake"), not state leaking from a polluting file. There
+  is no polluting file to fix, and CI is sharded and consistently green — the
+  flake is a local-only, machine-load artifact. No code change; archived.
+- If the local flake becomes painful, the productive follow-up is a new todo
+  scoped to "mitigate the `vi.mock`-application race under the forks pool" —
+  not a continuation of this one.
