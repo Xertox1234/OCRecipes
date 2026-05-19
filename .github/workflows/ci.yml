@@ -33,6 +33,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: ESLint suppressions are pruned
+        run: npm run lint:suppress:check
+
       - name: Type check
         run: npm run check:types
 
