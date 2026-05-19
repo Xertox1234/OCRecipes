@@ -17,6 +17,16 @@
             "statusMessage": "Setting up PostgreSQL and dependencies..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/worktree-deps.sh",
+            "timeout": 15,
+            "statusMessage": "Provisioning worktree dependencies..."
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -94,6 +104,19 @@
             "command": "bash .claude/hooks/guard-worktree-isolation.sh",
             "timeout": 10,
             "statusMessage": "Checking worktree isolation..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "EnterWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/worktree-deps.sh",
+            "timeout": 15,
+            "statusMessage": "Provisioning worktree dependencies..."
           }
         ]
       }
