@@ -155,6 +155,7 @@
     "sharp": "^0.34.5",
     "supertest": "^7.2.2",
     "typescript": "~5.9.2",
+    "typescript-eslint": "^8.59.4",
     "vitest": "^4.0.18"
   },
   "lint-staged": {
