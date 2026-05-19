@@ -125,20 +125,20 @@ export const pendingReminders = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userPendingIdx: index("pending_reminders_user_pending_idx").on(
+  (table) => [
+    index("pending_reminders_user_pending_idx").on(
       table.userId,
       table.acknowledgedAt,
     ),
     // Partial index mirrors hasPendingReminderToday() semantics: one unacknowledged reminder per user+type per calendar day.
-    userTypeDay: uniqueIndex("pending_reminders_user_type_day_idx")
+    uniqueIndex("pending_reminders_user_type_day_idx")
       .on(
         table.userId,
         table.type,
         sql`DATE(${table.scheduledFor} AT TIME ZONE 'UTC')`,
       )
       .where(sql`${table.acknowledgedAt} IS NULL`),
-  }),
+  ],
 );
 
 export type PendingReminder = typeof pendingReminders.$inferSelect;
@@ -177,22 +177,16 @@ export const scannedItems = pgTable(
       .notNull(),
     discardedAt: timestamp("discarded_at", { withTimezone: true }),
   },
-  (table) => ({
-    userActiveIdx: index("scanned_items_user_active_idx")
+  (table) => [
+    index("scanned_items_user_active_idx")
       .on(table.userId, table.scannedAt)
       .where(sql`discarded_at IS NULL`),
-    scannedAtIdx: index("scanned_items_scanned_at_idx").on(table.scannedAt),
-    caloriesNonNeg: check(
-      "scanned_items_calories_gte0",
-      sql`${table.calories} >= 0`,
-    ),
-    proteinNonNeg: check(
-      "scanned_items_protein_gte0",
-      sql`${table.protein} >= 0`,
-    ),
-    carbsNonNeg: check("scanned_items_carbs_gte0", sql`${table.carbs} >= 0`),
-    fatNonNeg: check("scanned_items_fat_gte0", sql`${table.fat} >= 0`),
-  }),
+    index("scanned_items_scanned_at_idx").on(table.scannedAt),
+    check("scanned_items_calories_gte0", sql`${table.calories} >= 0`),
+    check("scanned_items_protein_gte0", sql`${table.protein} >= 0`),
+    check("scanned_items_carbs_gte0", sql`${table.carbs} >= 0`),
+    check("scanned_items_fat_gte0", sql`${table.fat} >= 0`),
+  ],
 );
 
 export const dailyLogs = pgTable(
@@ -222,29 +216,21 @@ export const dailyLogs = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userLoggedAtIdx: index("daily_logs_user_logged_at_idx").on(
-      table.userId,
-      table.loggedAt,
-    ),
-    loggedAtIdx: index("daily_logs_logged_at_idx").on(table.loggedAt),
-    mealPlanItemIdIdx: index("daily_logs_meal_plan_item_id_idx").on(
-      table.mealPlanItemId,
-    ),
+  (table) => [
+    index("daily_logs_user_logged_at_idx").on(table.userId, table.loggedAt),
+    index("daily_logs_logged_at_idx").on(table.loggedAt),
+    index("daily_logs_meal_plan_item_id_idx").on(table.mealPlanItemId),
     // Prevent duplicate meal plan confirmations
-    uniqueMealPlanConfirm: uniqueIndex("daily_logs_unique_meal_plan_confirm")
+    uniqueIndex("daily_logs_unique_meal_plan_confirm")
       .on(table.userId, table.mealPlanItemId)
       .where(sql`meal_plan_item_id IS NOT NULL`),
     // Prevent ghost rows with no nutrition source
-    hasNutritionSource: check(
+    check(
       "daily_logs_has_source",
       sql`scanned_item_id IS NOT NULL OR recipe_id IS NOT NULL`,
     ),
-    servingsPositive: check(
-      "daily_logs_servings_gt0",
-      sql`${table.servings} > 0`,
-    ),
-  }),
+    check("daily_logs_servings_gt0", sql`${table.servings} > 0`),
+  ],
 );
 
 export const nutritionCache = pgTable(
@@ -261,10 +247,10 @@ export const nutritionCache = pgTable(
       .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
-  (table) => ({
-    queryKeyIdx: index("nutrition_cache_query_key_idx").on(table.queryKey),
-    expiresAtIdx: index("nutrition_cache_expires_at_idx").on(table.expiresAt),
-  }),
+  (table) => [
+    index("nutrition_cache_query_key_idx").on(table.queryKey),
+    index("nutrition_cache_expires_at_idx").on(table.expiresAt),
+  ],
 );
 
 export const micronutrientCache = pgTable(
@@ -279,12 +265,10 @@ export const micronutrientCache = pgTable(
       .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
-  (table) => ({
-    queryKeyIdx: index("micronutrient_cache_query_key_idx").on(table.queryKey),
-    expiresAtIdx: index("micronutrient_cache_expires_at_idx").on(
-      table.expiresAt,
-    ),
-  }),
+  (table) => [
+    index("micronutrient_cache_query_key_idx").on(table.queryKey),
+    index("micronutrient_cache_expires_at_idx").on(table.expiresAt),
+  ],
 );
 
 // Type for suggestions JSONB
@@ -315,12 +299,14 @@ export const suggestionCache = pgTable(
       .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
-  (table) => ({
-    itemUserProfileIdx: uniqueIndex(
-      "suggestion_cache_item_user_profile_idx",
-    ).on(table.scannedItemId, table.userId, table.profileHash),
-    expiresAtIdx: index("suggestion_cache_expires_at_idx").on(table.expiresAt),
-  }),
+  (table) => [
+    uniqueIndex("suggestion_cache_item_user_profile_idx").on(
+      table.scannedItemId,
+      table.userId,
+      table.profileHash,
+    ),
+    index("suggestion_cache_expires_at_idx").on(table.expiresAt),
+  ],
 );
 
 // Instruction cache - stores individual instruction per suggestion
@@ -340,12 +326,12 @@ export const instructionCache = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    cacheIndexIdx: uniqueIndex("instruction_cache_suggestion_idx").on(
+  (table) => [
+    uniqueIndex("instruction_cache_suggestion_idx").on(
       table.suggestionCacheId,
       table.suggestionIndex,
     ),
-  }),
+  ],
 );
 
 // Saved items types (recipes and activities from suggestions)
@@ -381,12 +367,12 @@ export const savedItems = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userIdCreatedAtIdx: index("saved_items_user_id_created_at_idx").on(
+  (table) => [
+    index("saved_items_user_id_created_at_idx").on(
       table.userId,
       table.createdAt,
     ),
-  }),
+  ],
 );
 
 export const usersRelations = relations(users, ({ one, many }) => ({
@@ -477,13 +463,13 @@ export const favouriteScannedItems = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    uniqueUserItem: unique().on(table.userId, table.scannedItemId),
-    userIdIdx: index("favourite_scanned_items_user_id_idx").on(table.userId),
-    scannedItemIdIdx: index("favourite_scanned_items_scanned_item_id_idx").on(
+  (table) => [
+    unique().on(table.userId, table.scannedItemId),
+    index("favourite_scanned_items_user_id_idx").on(table.userId),
+    index("favourite_scanned_items_scanned_item_id_idx").on(
       table.scannedItemId,
     ),
-  }),
+  ],
 );
 
 export const favouriteScannedItemsRelations = relations(
@@ -513,14 +499,10 @@ export const favouriteRecipes = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    uniqueUserRecipe: unique().on(
-      table.userId,
-      table.recipeId,
-      table.recipeType,
-    ),
-    userIdIdx: index("favourite_recipes_user_id_idx").on(table.userId),
-  }),
+  (table) => [
+    unique().on(table.userId, table.recipeId, table.recipeType),
+    index("favourite_recipes_user_id_idx").on(table.userId),
+  ],
 );
 
 export const favouriteRecipesRelations = relations(
@@ -614,51 +596,37 @@ export const communityRecipes = pgTable(
     cuisineOrigin: text("cuisine_origin"),
     videoUrl: text("video_url"),
   },
-  (table) => ({
-    barcodeIdx: index("community_recipes_barcode_idx").on(table.barcode),
-    normalizedNameTrgmIdx: index(
-      "community_recipes_normalized_name_trgm_idx",
-    ).using("gin", table.normalizedProductName.op("gin_trgm_ops")),
-    titleTrgmIdx: index("community_recipes_title_trgm_idx").using(
+  (table) => [
+    index("community_recipes_barcode_idx").on(table.barcode),
+    index("community_recipes_normalized_name_trgm_idx").using(
+      "gin",
+      table.normalizedProductName.op("gin_trgm_ops"),
+    ),
+    index("community_recipes_title_trgm_idx").using(
       "gin",
       table.title.op("gin_trgm_ops"),
     ),
-    descriptionTrgmIdx: index("community_recipes_description_trgm_idx").using(
+    index("community_recipes_description_trgm_idx").using(
       "gin",
       table.description.op("gin_trgm_ops"),
     ),
-    authorIdx: index("community_recipes_author_idx").on(table.authorId),
-    dietTagsGinIdx: index("community_recipes_diet_tags_gin_idx").using(
-      "gin",
-      table.dietTags,
+    index("community_recipes_author_idx").on(table.authorId),
+    index("community_recipes_diet_tags_gin_idx").using("gin", table.dietTags),
+    index("community_recipes_meal_types_gin_idx").using("gin", table.mealTypes),
+    index("community_recipes_is_public_created_at_idx").on(
+      table.isPublic,
+      table.createdAt,
     ),
-    mealTypesGinIdx: index("community_recipes_meal_types_gin_idx").using(
-      "gin",
-      table.mealTypes,
-    ),
-    isPublicCreatedAtIdx: index(
-      "community_recipes_is_public_created_at_idx",
-    ).on(table.isPublic, table.createdAt),
-    caloriesNonNeg: check(
-      "cr_calories_gte0",
-      sql`${table.caloriesPerServing} >= 0`,
-    ),
-    proteinNonNeg: check(
-      "cr_protein_gte0",
-      sql`${table.proteinPerServing} >= 0`,
-    ),
-    carbsNonNeg: check("cr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
-    fatNonNeg: check("cr_fat_gte0", sql`${table.fatPerServing} >= 0`),
-    sourceMessageIdUniqueIdx: uniqueIndex("community_recipes_source_msg_idx")
+    check("cr_calories_gte0", sql`${table.caloriesPerServing} >= 0`),
+    check("cr_protein_gte0", sql`${table.proteinPerServing} >= 0`),
+    check("cr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
+    check("cr_fat_gte0", sql`${table.fatPerServing} >= 0`),
+    uniqueIndex("community_recipes_source_msg_idx")
       .on(table.sourceMessageId)
       .where(sql`${table.sourceMessageId} IS NOT NULL`),
-    isCanonicalIdx: index("community_recipes_is_canonical_idx").on(
-      table.isCanonical,
-    ),
-    popularityScoreIdx: index("community_recipes_popularity_score_idx").on(
-      table.popularityScore,
-    ),
-  }),
+    index("community_recipes_is_canonical_idx").on(table.isCanonical),
+    index("community_recipes_popularity_score_idx").on(table.popularityScore),
+  ],
 );
 
 // Recipe generation log - tracks daily generation limits
@@ -676,12 +644,9 @@ export const recipeGenerationLog = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userGeneratedAtIdx: index("recipe_gen_log_user_date_idx").on(
-      table.userId,
-      table.generatedAt,
-    ),
-  }),
+  (table) => [
+    index("recipe_gen_log_user_date_idx").on(table.userId, table.generatedAt),
+  ],
 );
 
 export const communityRecipesRelations = relations(
@@ -709,13 +674,10 @@ export const tastePicks = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userRecipeUniq: unique("taste_picks_user_recipe_uniq").on(
-      table.userId,
-      table.recipeId,
-    ),
-    userIdx: index("taste_picks_user_idx").on(table.userId),
-  }),
+  (table) => [
+    unique("taste_picks_user_recipe_uniq").on(table.userId, table.recipeId),
+    index("taste_picks_user_idx").on(table.userId),
+  ],
 );
 
 export type TastePick = typeof tastePicks.$inferSelect;
@@ -816,40 +778,28 @@ export const mealPlanRecipes = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userIdIdx: index("meal_plan_recipes_user_id_idx").on(table.userId),
-    userExternalIdIdx: uniqueIndex("meal_plan_recipes_user_external_id_idx").on(
+  (table) => [
+    index("meal_plan_recipes_user_id_idx").on(table.userId),
+    uniqueIndex("meal_plan_recipes_user_external_id_idx").on(
       table.userId,
       table.externalId,
     ),
-    titleTrgmIdx: index("meal_plan_recipes_title_trgm_idx").using(
+    index("meal_plan_recipes_title_trgm_idx").using(
       "gin",
       table.title.op("gin_trgm_ops"),
     ),
-    descriptionTrgmIdx: index("meal_plan_recipes_description_trgm_idx").using(
+    index("meal_plan_recipes_description_trgm_idx").using(
       "gin",
       table.description.op("gin_trgm_ops"),
     ),
-    caloriesNonNeg: check(
-      "mpr_calories_gte0",
-      sql`${table.caloriesPerServing} >= 0`,
-    ),
-    proteinNonNeg: check(
-      "mpr_protein_gte0",
-      sql`${table.proteinPerServing} >= 0`,
-    ),
-    carbsNonNeg: check("mpr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
-    fatNonNeg: check("mpr_fat_gte0", sql`${table.fatPerServing} >= 0`),
-    servingsPositive: check("mpr_servings_gt0", sql`${table.servings} > 0`),
-    dietTagsGinIdx: index("meal_plan_recipes_diet_tags_gin_idx").using(
-      "gin",
-      table.dietTags,
-    ),
-    mealTypesGinIdx: index("meal_plan_recipes_meal_types_gin_idx").using(
-      "gin",
-      table.mealTypes,
-    ),
-  }),
+    check("mpr_calories_gte0", sql`${table.caloriesPerServing} >= 0`),
+    check("mpr_protein_gte0", sql`${table.proteinPerServing} >= 0`),
+    check("mpr_carbs_gte0", sql`${table.carbsPerServing} >= 0`),
+    check("mpr_fat_gte0", sql`${table.fatPerServing} >= 0`),
+    check("mpr_servings_gt0", sql`${table.servings} > 0`),
+    index("meal_plan_recipes_diet_tags_gin_idx").using("gin", table.dietTags),
+    index("meal_plan_recipes_meal_types_gin_idx").using("gin", table.mealTypes),
+  ],
 );
 
 export const recipeIngredients = pgTable(
@@ -865,9 +815,7 @@ export const recipeIngredients = pgTable(
     category: text("category").default("other"),
     displayOrder: integer("display_order").default(0),
   },
-  (table) => ({
-    recipeIdIdx: index("recipe_ingredients_recipe_id_idx").on(table.recipeId),
-  }),
+  (table) => [index("recipe_ingredients_recipe_id_idx").on(table.recipeId)],
 );
 
 export const mealPlanItems = pgTable(
@@ -892,25 +840,19 @@ export const mealPlanItems = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userDateIdx: index("meal_plan_items_user_date_idx").on(
-      table.userId,
-      table.plannedDate,
-    ),
-    mealTypeCreatedIdx: index("meal_plan_items_meal_type_created_idx").on(
+  (table) => [
+    index("meal_plan_items_user_date_idx").on(table.userId, table.plannedDate),
+    index("meal_plan_items_meal_type_created_idx").on(
       table.mealType,
       table.createdAt,
     ),
     // Exactly one nutrition source — recipe XOR scanned item
-    sourceXor: check(
+    check(
       "meal_plan_items_source_xor",
       sql`num_nonnulls(recipe_id, scanned_item_id) = 1`,
     ),
-    servingsPositive: check(
-      "meal_plan_items_servings_gt0",
-      sql`${table.servings} > 0`,
-    ),
-  }),
+    check("meal_plan_items_servings_gt0", sql`${table.servings} > 0`),
+  ],
 );
 
 // Meal planning relations
@@ -970,14 +912,14 @@ export const weightLogs = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
+  (table) => [
     // One entry per user per calendar day — keyed on DATE(logged_at AT TIME ZONE 'UTC') so that
     // multiple entries at different times on the same day collapse to one row.
-    userDateIdx: uniqueIndex("weight_logs_user_date_idx").on(
+    uniqueIndex("weight_logs_user_date_idx").on(
       table.userId,
       sql`DATE(${table.loggedAt} AT TIME ZONE 'UTC')`,
     ),
-  }),
+  ],
 );
 
 export const weightLogsRelations = relations(weightLogs, ({ one }) => ({
@@ -1003,12 +945,12 @@ export const healthKitSync = pgTable(
     lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
     syncDirection: text("sync_direction").default("read"),
   },
-  (table) => ({
-    userTypeIdx: uniqueIndex("healthkit_sync_user_type_idx").on(
+  (table) => [
+    uniqueIndex("healthkit_sync_user_type_idx").on(
       table.userId,
       table.dataType,
     ),
-  }),
+  ],
 );
 
 export const healthKitSyncRelations = relations(healthKitSync, ({ one }) => ({
@@ -1041,23 +983,20 @@ export const chatConversations = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userIdIdx: index("chat_conversations_user_id_idx").on(table.userId),
-    userTypeIdx: index("chat_conversations_user_type_idx").on(
-      table.userId,
-      table.type,
-    ),
+  (table) => [
+    index("chat_conversations_user_id_idx").on(table.userId),
+    index("chat_conversations_user_type_idx").on(table.userId, table.type),
     // M14 (2026-04-18): getChatConversations filters by userId and sorts by
     // updatedAt DESC — composite index eliminates the sort+filter scan.
-    userUpdatedAtIdx: index("chat_conversations_user_updated_at_idx").on(
+    index("chat_conversations_user_updated_at_idx").on(
       table.userId,
       table.updatedAt,
     ),
-    titleTrgmIdx: index("chat_conversations_title_trgm_idx").using(
+    index("chat_conversations_title_trgm_idx").using(
       "gin",
       table.title.op("gin_trgm_ops"),
     ),
-  }),
+  ],
 );
 
 export const chatMessages = pgTable(
@@ -1075,19 +1014,17 @@ export const chatMessages = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    conversationIdIdx: index("chat_messages_conversation_id_idx").on(
-      table.conversationId,
-    ),
-    convRoleCreatedIdx: index("chat_messages_conv_role_created_idx").on(
+  (table) => [
+    index("chat_messages_conversation_id_idx").on(table.conversationId),
+    index("chat_messages_conv_role_created_idx").on(
       table.conversationId,
       table.role,
       table.createdAt,
     ),
-    turnKeyUniqueIdx: uniqueIndex("chat_messages_turn_key_idx")
+    uniqueIndex("chat_messages_turn_key_idx")
       .on(table.conversationId, table.turnKey)
       .where(sql`${table.turnKey} IS NOT NULL`),
-  }),
+  ],
 );
 
 export const chatConversationsRelations = relations(
@@ -1129,9 +1066,7 @@ export const fastingSchedules = pgTable(
     notifyMilestones: boolean("notify_milestones").default(true).notNull(),
     notifyCheckIns: boolean("notify_check_ins").default(true).notNull(),
   },
-  (table) => ({
-    userIdx: uniqueIndex("fasting_schedules_user_idx").on(table.userId),
-  }),
+  (table) => [uniqueIndex("fasting_schedules_user_idx").on(table.userId)],
 );
 
 export const fastingLogs = pgTable(
@@ -1150,15 +1085,12 @@ export const fastingLogs = pgTable(
     completed: boolean("completed"),
     note: text("note"),
   },
-  (table) => ({
-    userDateIdx: index("fasting_logs_user_date_idx").on(
-      table.userId,
-      table.startedAt,
-    ),
-    uniqueActiveFast: uniqueIndex("fasting_logs_one_active_idx")
+  (table) => [
+    index("fasting_logs_user_date_idx").on(table.userId, table.startedAt),
+    uniqueIndex("fasting_logs_one_active_idx")
       .on(table.userId)
       .where(sql`ended_at IS NULL`),
-  }),
+  ],
 );
 
 export const fastingSchedulesRelations = relations(
@@ -1199,16 +1131,13 @@ export const medicationLogs = pgTable(
     appetiteLevel: integer("appetite_level"), // 1-5
     notes: text("notes"),
   },
-  (table) => ({
-    userDateIdx: index("medication_logs_user_date_idx").on(
-      table.userId,
-      table.takenAt,
-    ),
-    appetiteRange: check(
+  (table) => [
+    index("medication_logs_user_date_idx").on(table.userId, table.takenAt),
+    check(
       "medication_appetite_range",
       sql`${table.appetiteLevel} IS NULL OR (${table.appetiteLevel} >= 1 AND ${table.appetiteLevel} <= 5)`,
     ),
-  }),
+  ],
 );
 
 export const medicationLogsRelations = relations(medicationLogs, ({ one }) => ({
@@ -1249,12 +1178,9 @@ export const menuScans = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userScannedAtIdx: index("menu_scans_user_scanned_at_idx").on(
-      table.userId,
-      table.scannedAt,
-    ),
-  }),
+  (table) => [
+    index("menu_scans_user_scanned_at_idx").on(table.userId, table.scannedAt),
+  ],
 );
 
 export const menuScansRelations = relations(menuScans, ({ one }) => ({
@@ -1285,10 +1211,10 @@ export const receiptScans = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userIdIdx: index("receipt_scans_user_id_idx").on(table.userId),
-    scannedAtIdx: index("receipt_scans_scanned_at_idx").on(table.scannedAt),
-  }),
+  (table) => [
+    index("receipt_scans_user_id_idx").on(table.userId),
+    index("receipt_scans_scanned_at_idx").on(table.scannedAt),
+  ],
 );
 
 export const receiptScansRelations = relations(receiptScans, ({ one }) => ({
@@ -1327,38 +1253,17 @@ export const goalAdjustmentLogs = pgTable(
       .notNull(),
     acceptedByUser: boolean("accepted_by_user").default(false),
   },
-  (table) => ({
-    userIdx: index("goal_adj_user_idx").on(table.userId),
-    prevCalNonNeg: check(
-      "goal_adj_prev_cal_gte0",
-      sql`${table.previousCalories} >= 0`,
-    ),
-    newCalNonNeg: check(
-      "goal_adj_new_cal_gte0",
-      sql`${table.newCalories} >= 0`,
-    ),
-    prevProteinNonNeg: check(
-      "goal_adj_prev_protein_gte0",
-      sql`${table.previousProtein} >= 0`,
-    ),
-    newProteinNonNeg: check(
-      "goal_adj_new_protein_gte0",
-      sql`${table.newProtein} >= 0`,
-    ),
-    prevCarbsNonNeg: check(
-      "goal_adj_prev_carbs_gte0",
-      sql`${table.previousCarbs} >= 0`,
-    ),
-    newCarbsNonNeg: check(
-      "goal_adj_new_carbs_gte0",
-      sql`${table.newCarbs} >= 0`,
-    ),
-    prevFatNonNeg: check(
-      "goal_adj_prev_fat_gte0",
-      sql`${table.previousFat} >= 0`,
-    ),
-    newFatNonNeg: check("goal_adj_new_fat_gte0", sql`${table.newFat} >= 0`),
-  }),
+  (table) => [
+    index("goal_adj_user_idx").on(table.userId),
+    check("goal_adj_prev_cal_gte0", sql`${table.previousCalories} >= 0`),
+    check("goal_adj_new_cal_gte0", sql`${table.newCalories} >= 0`),
+    check("goal_adj_prev_protein_gte0", sql`${table.previousProtein} >= 0`),
+    check("goal_adj_new_protein_gte0", sql`${table.newProtein} >= 0`),
+    check("goal_adj_prev_carbs_gte0", sql`${table.previousCarbs} >= 0`),
+    check("goal_adj_new_carbs_gte0", sql`${table.newCarbs} >= 0`),
+    check("goal_adj_prev_fat_gte0", sql`${table.previousFat} >= 0`),
+    check("goal_adj_new_fat_gte0", sql`${table.newFat} >= 0`),
+  ],
 );
 
 export const goalAdjustmentLogsRelations = relations(
@@ -1433,10 +1338,10 @@ export const transactions = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userIdIdx: index("transactions_user_id_idx").on(table.userId),
-    statusIdx: index("transactions_status_idx").on(table.status),
-  }),
+  (table) => [
+    index("transactions_user_id_idx").on(table.userId),
+    index("transactions_status_idx").on(table.status),
+  ],
 );
 
 export const transactionsRelations = relations(transactions, ({ one }) => ({
@@ -1470,12 +1375,9 @@ export const groceryLists = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userDateIdx: index("grocery_lists_user_date_idx").on(
-      table.userId,
-      table.dateRangeStart,
-    ),
-  }),
+  (table) => [
+    index("grocery_lists_user_date_idx").on(table.userId, table.dateRangeStart),
+  ],
 );
 
 export const groceryListItems = pgTable(
@@ -1494,11 +1396,7 @@ export const groceryListItems = pgTable(
     addedToPantry: boolean("added_to_pantry").default(false),
     checkedAt: timestamp("checked_at", { withTimezone: true }),
   },
-  (table) => ({
-    groceryListIdIdx: index("grocery_list_items_list_id_idx").on(
-      table.groceryListId,
-    ),
-  }),
+  (table) => [index("grocery_list_items_list_id_idx").on(table.groceryListId)],
 );
 
 export const groceryListsRelations = relations(
@@ -1545,13 +1443,10 @@ export const pantryItems = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userIdIdx: index("pantry_items_user_id_idx").on(table.userId),
-    userExpiresIdx: index("pantry_items_user_expires_idx").on(
-      table.userId,
-      table.expiresAt,
-    ),
-  }),
+  (table) => [
+    index("pantry_items_user_id_idx").on(table.userId),
+    index("pantry_items_user_expires_idx").on(table.userId, table.expiresAt),
+  ],
 );
 
 export const pantryItemsRelations = relations(pantryItems, ({ one }) => ({
@@ -1580,12 +1475,10 @@ export const mealSuggestionCache = pgTable(
       .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
-  (table) => ({
-    cacheKeyIdx: index("meal_suggestion_cache_key_idx").on(table.cacheKey),
-    expiresAtIdx: index("meal_suggestion_cache_expires_idx").on(
-      table.expiresAt,
-    ),
-  }),
+  (table) => [
+    index("meal_suggestion_cache_key_idx").on(table.cacheKey),
+    index("meal_suggestion_cache_expires_idx").on(table.expiresAt),
+  ],
 );
 
 export const mealSuggestionCacheRelations = relations(
@@ -1616,17 +1509,17 @@ export const coachResponseCache = pgTable(
       .notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
-  (table) => ({
+  (table) => [
     // Composite unique index matching semantic intent: one cache entry per
     // (user, question). The questionHash already embeds userId (see
     // hashCoachCacheKey), so this makes the DB constraint align with intent.
-    userQuestionHashIdx: uniqueIndex("coach_response_cache_hash_idx").on(
+    uniqueIndex("coach_response_cache_hash_idx").on(
       table.userId,
       table.questionHash,
     ),
-    expiresAtIdx: index("coach_response_cache_expires_idx").on(table.expiresAt),
-    userIdIdx: index("coach_response_cache_user_idx").on(table.userId),
-  }),
+    index("coach_response_cache_expires_idx").on(table.expiresAt),
+    index("coach_response_cache_user_idx").on(table.userId),
+  ],
 );
 
 export const coachResponseCacheRelations = relations(
@@ -1676,42 +1569,37 @@ export const coachNotebook = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userTypeStatusIdx: index("coach_notebook_user_type_status_idx").on(
+  (table) => [
+    index("coach_notebook_user_type_status_idx").on(
       table.userId,
       table.type,
       table.status,
       table.followUpDate,
     ),
-    userFollowUpIdx: index("coach_notebook_user_follow_up_idx").on(
+    index("coach_notebook_user_follow_up_idx").on(
       table.userId,
       table.followUpDate,
     ),
-    sourceConversationIdx: index("coach_notebook_source_conv_idx").on(
-      table.sourceConversationId,
-    ),
+    index("coach_notebook_source_conv_idx").on(table.sourceConversationId),
     // M16 (2026-04-18): Partial index — only enforce uniqueness when dedupeKey
     // IS NOT NULL so NULL-keyed rows (old entries) don't block each other and
     // onConflictDoNothing correctly skips duplicate keyed inserts.
-    dedupeKeyUniqueIdx: uniqueIndex("coach_notebook_turn_fingerprint_idx")
+    uniqueIndex("coach_notebook_turn_fingerprint_idx")
       .on(table.dedupeKey)
       .where(sql`${table.dedupeKey} IS NOT NULL`),
-    dueCommitmentsIdx: index("coach_notebook_due_commitments_idx")
+    index("coach_notebook_due_commitments_idx")
       .on(table.followUpDate)
       .where(sql`${table.type} = 'commitment' AND ${table.status} = 'active'`),
-    userStatusIdx: index("coach_notebook_user_status_idx").on(
-      table.userId,
-      table.status,
-    ),
-    typeCheck: check(
+    index("coach_notebook_user_status_idx").on(table.userId, table.status),
+    check(
       "coach_notebook_type_check",
       sql`${table.type} IN ('insight', 'commitment', 'preference', 'goal', 'motivation', 'emotional_context', 'conversation_summary', 'coaching_strategy')`,
     ),
-    statusCheck: check(
+    check(
       "coach_notebook_status_check",
       sql`${table.status} IN ('active', 'completed', 'expired', 'archived')`,
     ),
-  }),
+  ],
 );
 
 export const coachNotebookRelations = relations(coachNotebook, ({ one }) => ({
@@ -1833,9 +1721,7 @@ export const cookbooks = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userIdIdx: index("cookbooks_user_id_idx").on(table.userId),
-  }),
+  (table) => [index("cookbooks_user_id_idx").on(table.userId)],
 );
 
 export const cookbookRecipes = pgTable(
@@ -1851,13 +1737,13 @@ export const cookbookRecipes = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    cookbookRecipeTypeIdx: uniqueIndex("cookbook_recipes_unique_idx").on(
+  (table) => [
+    uniqueIndex("cookbook_recipes_unique_idx").on(
       table.cookbookId,
       table.recipeId,
       table.recipeType,
     ),
-  }),
+  ],
 );
 
 export const cookbooksRelations = relations(cookbooks, ({ one, many }) => ({
@@ -1939,15 +1825,13 @@ export const barcodeVerifications = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    levelIdx: index("barcode_verifications_level_idx").on(
-      table.verificationLevel,
-    ),
-    countNonNeg: check(
+  (table) => [
+    index("barcode_verifications_level_idx").on(table.verificationLevel),
+    check(
       "barcode_verifications_count_gte0",
       sql`${table.verificationCount} >= 0`,
     ),
-  }),
+  ],
 );
 
 export const verificationHistory = pgTable(
@@ -1974,14 +1858,11 @@ export const verificationHistory = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    barcodeIdx: index("verification_history_barcode_idx").on(table.barcode),
-    userIdx: index("verification_history_user_id_idx").on(table.userId),
-    uniqueUserBarcode: unique("verification_history_user_barcode").on(
-      table.barcode,
-      table.userId,
-    ),
-  }),
+  (table) => [
+    index("verification_history_barcode_idx").on(table.barcode),
+    index("verification_history_user_id_idx").on(table.userId),
+    unique("verification_history_user_barcode").on(table.barcode, table.userId),
+  ],
 );
 
 export type BarcodeVerification = typeof barcodeVerifications.$inferSelect;
@@ -2009,13 +1890,13 @@ export const reformulationFlags = pgTable(
       .notNull(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
-  (table) => ({
-    barcodeIdx: index("reformulation_flags_barcode_idx").on(table.barcode),
-    statusIdx: index("reformulation_flags_status_idx").on(table.status),
-    activeFlagUniqueIdx: uniqueIndex("reformulation_flags_active_unique")
+  (table) => [
+    index("reformulation_flags_barcode_idx").on(table.barcode),
+    index("reformulation_flags_status_idx").on(table.status),
+    uniqueIndex("reformulation_flags_active_unique")
       .on(table.barcode)
       .where(sql`status = 'flagged'`),
-  }),
+  ],
 );
 
 export type ReformulationFlag = typeof reformulationFlags.$inferSelect;
@@ -2040,10 +1921,10 @@ export const apiKeys = pgTable(
       .notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
-  (table) => ({
-    prefixIdx: uniqueIndex("api_keys_prefix_idx").on(table.keyPrefix),
-    statusIdx: index("api_keys_status_idx").on(table.status),
-  }),
+  (table) => [
+    uniqueIndex("api_keys_prefix_idx").on(table.keyPrefix),
+    index("api_keys_status_idx").on(table.status),
+  ],
 );
 
 export const apiKeyUsage = pgTable(
@@ -2057,12 +1938,9 @@ export const apiKeyUsage = pgTable(
     requestCount: integer("request_count").default(0).notNull(),
     lastRequestAt: timestamp("last_request_at", { withTimezone: true }),
   },
-  (table) => ({
-    usageUniqueIdx: uniqueIndex("api_key_usage_unique_idx").on(
-      table.apiKeyId,
-      table.yearMonth,
-    ),
-  }),
+  (table) => [
+    uniqueIndex("api_key_usage_unique_idx").on(table.apiKeyId, table.yearMonth),
+  ],
 );
 
 export const barcodeNutrition = pgTable(
@@ -2085,12 +1963,12 @@ export const barcodeNutrition = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    caloriesNonNeg: check("bn_calories_gte0", sql`${table.calories} >= 0`),
-    proteinNonNeg: check("bn_protein_gte0", sql`${table.protein} >= 0`),
-    carbsNonNeg: check("bn_carbs_gte0", sql`${table.carbs} >= 0`),
-    fatNonNeg: check("bn_fat_gte0", sql`${table.fat} >= 0`),
-  }),
+  (table) => [
+    check("bn_calories_gte0", sql`${table.calories} >= 0`),
+    check("bn_protein_gte0", sql`${table.protein} >= 0`),
+    check("bn_carbs_gte0", sql`${table.carbs} >= 0`),
+    check("bn_fat_gte0", sql`${table.fat} >= 0`),
+  ],
 );
 
 // ── Carousel (recipe discovery) ──────────────────────────────────────
@@ -2108,12 +1986,12 @@ export const recipeDismissals = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userRecipeUniqueIdx: uniqueIndex("recipe_dismissals_user_recipe_idx").on(
+  (table) => [
+    uniqueIndex("recipe_dismissals_user_recipe_idx").on(
       table.userId,
       table.recipeIdentifier,
     ),
-  }),
+  ],
 );
 
 export const carouselSuggestionCache = pgTable(
@@ -2131,13 +2009,13 @@ export const carouselSuggestionCache = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userProfileMealIdx: uniqueIndex("carousel_cache_user_profile_meal_idx").on(
+  (table) => [
+    uniqueIndex("carousel_cache_user_profile_meal_idx").on(
       table.userId,
       table.profileHash,
       table.mealType,
     ),
-  }),
+  ],
 );
 
 export type RecipeDismissal = typeof recipeDismissals.$inferSelect;
@@ -2183,12 +2061,12 @@ export const pushTokens = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
   },
-  (table) => ({
-    userPlatformIdx: uniqueIndex("push_tokens_user_platform_idx").on(
+  (table) => [
+    uniqueIndex("push_tokens_user_platform_idx").on(
       table.userId,
       table.platform,
     ),
-  }),
+  ],
 );
 
 export type PushToken = typeof pushTokens.$inferSelect;
