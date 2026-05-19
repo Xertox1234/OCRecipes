@@ -13,6 +13,9 @@
     "db:push": "drizzle-kit push",
     "lint": "npx expo lint",
     "lint:fix": "npx expo lint --fix",
+    "lint:suppress": "ESLINT_NO_TYPE_AWARE= eslint . --suppress-rule @typescript-eslint/no-floating-promises --suppress-rule @typescript-eslint/no-misused-promises --suppress-rule @typescript-eslint/await-thenable --suppress-rule @typescript-eslint/require-await --suppress-rule @typescript-eslint/no-implied-eval --suppress-rule @typescript-eslint/prefer-promise-reject-errors",
+    "lint:suppress:prune": "ESLINT_NO_TYPE_AWARE= eslint . --prune-suppressions",
+    "lint:suppress:check": "ESLINT_NO_TYPE_AWARE= eslint . --prune-suppressions && git diff --exit-code -- eslint-suppressions.json",
     "lint:a11y": "node scripts/check-accessibility.js",
     "check:types": "tsc --noEmit",
     "ci:failed-logs": "bash scripts/ci-failed-logs.sh",
@@ -155,11 +158,12 @@
     "sharp": "^0.34.5",
     "supertest": "^7.2.2",
     "typescript": "~5.9.2",
+    "typescript-eslint": "^8.59.4",
     "vitest": "^4.0.18"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
-      "eslint --fix",
+      "ESLINT_NO_TYPE_AWARE=1 eslint --fix",
       "prettier --write"
     ],
     "client/**/*.tsx": [
