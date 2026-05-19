@@ -137,7 +137,7 @@ async function main(): Promise<void> {
 
   if (toProcess.length === 0) {
     console.log("✅ All icons already exist. Skipping generation.\n");
-    await generateCodegenMap();
+    generateCodegenMap();
     return;
   }
 
@@ -211,7 +211,7 @@ async function main(): Promise<void> {
   }
 
   // ── Codegen ─────────────────────────────────────────────────────────────
-  await generateCodegenMap();
+  generateCodegenMap();
 
   if (failures.length > 0) {
     console.log(`\n⚠️  Re-run the script to retry failed icons (resumable).`);
@@ -228,7 +228,7 @@ async function main(): Promise<void> {
 
 // ── Codegen: generate client/data/ingredient-icon-map.ts ────────────────────
 
-async function generateCodegenMap(): Promise<void> {
+function generateCodegenMap(): void {
   console.log(
     `\n📝 Generating icon map: ${path.relative(process.cwd(), CODEGEN_PATH)}`,
   );

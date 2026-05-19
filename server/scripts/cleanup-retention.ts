@@ -428,5 +428,5 @@ async function main() {
 }
 
 if (isMain) {
-  main();
+  void main();
 }

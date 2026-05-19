@@ -327,5 +327,5 @@ async function main() {
 
 main().catch((err) => {
   console.error("Fatal error:", err);
-  pool.end().then(() => process.exit(1));
+  void pool.end().then(() => process.exit(1));
 });

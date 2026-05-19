@@ -160,4 +160,7 @@ runEvalSuite(validation.data as unknown as EvalTestCase[], {
       `Intent: ${i.intent}`,
     ].join("\n");
   },
+}).catch((err) => {
+  console.error(err);
+  process.exit(1);
 });

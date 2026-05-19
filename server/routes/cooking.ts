@@ -171,7 +171,7 @@ export function register(app: Express): void {
     "/api/cooking/sessions/:id",
     requireAuth,
     crudRateLimit,
-    async (req: AuthenticatedRequest, res: Response) => {
+    (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -299,7 +299,7 @@ export function register(app: Express): void {
     "/api/cooking/sessions/:id/ingredients/:ingredientId",
     requireAuth,
     crudRateLimit,
-    async (req: AuthenticatedRequest, res: Response) => {
+    (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,
@@ -354,7 +354,7 @@ export function register(app: Express): void {
     "/api/cooking/sessions/:id/ingredients/:ingredientId",
     requireAuth,
     crudRateLimit,
-    async (req: AuthenticatedRequest, res: Response) => {
+    (req: AuthenticatedRequest, res: Response) => {
       try {
         const session = getSessionForUser(
           req,

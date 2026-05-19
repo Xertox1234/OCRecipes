@@ -53,7 +53,7 @@ import { register as registerExport } from "./routes/export";
 import { initSearchIndex } from "./services/recipe-search";
 import { startNotificationScheduler } from "./services/notification-scheduler";
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export function registerRoutes(app: Express): Server {
   // Public API (separate namespace, registered first to avoid auth conflicts)
   registerApiDocs(app);
   registerPublicApi(app);

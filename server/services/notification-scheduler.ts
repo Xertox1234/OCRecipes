@@ -335,11 +335,11 @@ export function startNotificationScheduler(): void {
 /** Stop the scheduler (used in tests). */
 export function stopNotificationScheduler(): void {
   if (scheduledTask) {
-    scheduledTask.stop();
+    void scheduledTask.stop();
     scheduledTask = null;
   }
   if (mealLogTask) {
-    mealLogTask.stop();
+    void mealLogTask.stop();
     mealLogTask = null;
   }
 }

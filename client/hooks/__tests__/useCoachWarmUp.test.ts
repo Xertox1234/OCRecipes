@@ -21,7 +21,7 @@ describe("useCoachWarmUp", () => {
       vi.useFakeTimers();
       const { result } = renderHook(() => useCoachWarmUp(42));
       act(() => {
-        result.current.sendWarmUp("short");
+        void result.current.sendWarmUp("short");
       });
       await act(() => vi.advanceTimersByTimeAsync(600));
       expect(mockApiRequest).not.toHaveBeenCalled();
@@ -35,7 +35,7 @@ describe("useCoachWarmUp", () => {
       );
       const { result } = renderHook(() => useCoachWarmUp(42));
       act(() => {
-        result.current.sendWarmUp(
+        void result.current.sendWarmUp(
           "this is a longer transcript that exceeds twenty characters",
         );
       });
@@ -58,7 +58,7 @@ describe("useCoachWarmUp", () => {
       vi.useFakeTimers();
       const { result } = renderHook(() => useCoachWarmUp(42));
       act(() => {
-        result.current.sendTextWarmUp("hi");
+        void result.current.sendTextWarmUp("hi");
       });
       await act(() => vi.advanceTimersByTimeAsync(600));
       expect(mockApiRequest).not.toHaveBeenCalled();
@@ -72,7 +72,7 @@ describe("useCoachWarmUp", () => {
       );
       const { result } = renderHook(() => useCoachWarmUp(42));
       act(() => {
-        result.current.sendTextWarmUp("hel");
+        void result.current.sendTextWarmUp("hel");
       });
       await act(() => vi.advanceTimersByTimeAsync(600));
       expect(mockApiRequest).toHaveBeenCalledWith(
@@ -96,7 +96,7 @@ describe("useCoachWarmUp", () => {
       const { result } = renderHook(() => useCoachWarmUp(42));
 
       act(() => {
-        result.current.sendWarmUp(
+        void result.current.sendWarmUp(
           "this is a longer transcript that exceeds twenty characters",
         );
       });
@@ -124,7 +124,7 @@ describe("useCoachWarmUp", () => {
 
       // Start a warm-up
       act(() => {
-        result.current.sendWarmUp(
+        void result.current.sendWarmUp(
           "this is a longer transcript that exceeds twenty characters",
         );
       });
