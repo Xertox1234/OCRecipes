@@ -6,8 +6,9 @@ CLAUDE.md
 # Superpowers brainstorm sessions (visual companion server)
 .superpowers/
 
-# dependencies
-node_modules/
+# dependencies (no trailing slash: also ignores a `node_modules` symlink,
+# which worktrees use to share the main checkout's install)
+node_modules
 
 # Build output
 server_dist/
