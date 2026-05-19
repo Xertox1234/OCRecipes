@@ -26,15 +26,20 @@ MAIN_ROOT=$(dirname "$GIT_COMMON")
 # Nothing to share if the main checkout has no node_modules of its own.
 [ -d "$MAIN_ROOT/node_modules" ] || exit 0
 
-WORKTREES_DIR="$MAIN_ROOT/.claude/worktrees"
-[ -d "$WORKTREES_DIR" ] || exit 0
-
-for wt in "$WORKTREES_DIR"/*/; do
-  [ -d "$wt" ] || continue                   # literal glob when no worktrees exist
-  [ -f "${wt}package.json" ] || continue     # not a JS project worktree
-  { [ -e "${wt}node_modules" ] || [ -L "${wt}node_modules" ]; } && continue
-  # Target is relative: a worktree always sits 3 levels below the repo root.
-  ln -s ../../../node_modules "${wt}node_modules" 2>/dev/null || true
+# Enumerate worktrees precisely via git. This handles worktree names that
+# contain slashes (which a `.claude/worktrees/*/` glob would miss) and reports
+# absolute paths regardless of where this hook is invoked from.
+git worktree list --porcelain 2>/dev/null | while read -r key path; do
+  [ "$key" = "worktree" ] || continue          # skip HEAD/branch/blank lines
+  case "$path" in
+    "$MAIN_ROOT"/.claude/worktrees/*) ;;        # a worktree under .claude/worktrees/
+    *) continue ;;                              # the main checkout, or elsewhere
+  esac
+  [ -f "$path/package.json" ] || continue       # not a JS project worktree
+  [ -e "$path/node_modules" ] && continue       # real dir or resolvable symlink
+  # Absolute target works at any worktree nesting depth. `-fn` replaces a
+  # dangling symlink left by an earlier run (e.g. main node_modules was moved).
+  ln -sfn "$MAIN_ROOT/node_modules" "$path/node_modules" 2>/dev/null || true
 done
 
 exit 0

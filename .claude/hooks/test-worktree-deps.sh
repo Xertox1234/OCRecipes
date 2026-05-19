@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tests for worktree-deps.sh — builds a throwaway git repo with a linked
-# worktree and asserts the hook symlinks node_modules into it.
+# Tests for worktree-deps.sh — builds a throwaway git repo with linked
+# worktrees and asserts the hook symlinks node_modules into them.
 set -uo pipefail
 
 HOOK="$(cd "$(dirname "$0")" && pwd)/worktree-deps.sh"
@@ -47,6 +47,22 @@ assert "symlink resolves to the main checkout's node_modules" test -e "$WT/node_
 # Idempotent: a second run from the main checkout leaves the symlink intact.
 ( cd "$REPO" && bash "$HOOK" )
 assert "re-run keeps the symlink" test -L "$WT/node_modules"
+
+# Worktree whose name contains a slash sits deeper than one level — git
+# enumeration must still find it where a `*/` glob would not.
+NESTED="$REPO/.claude/worktrees/group/deep"
+git -C "$REPO" worktree add -q "$NESTED" -b deep
+( cd "$REPO" && bash "$HOOK" )
+assert "nested-name worktree is symlinked" test -L "$NESTED/node_modules"
+assert "nested-name symlink resolves" test -e "$NESTED/node_modules/.marker"
+
+# A stale/dangling symlink left by an earlier run is replaced, not skipped.
+STALE="$REPO/.claude/worktrees/stale"
+git -C "$REPO" worktree add -q "$STALE" -b stale
+ln -s /nonexistent/node_modules "$STALE/node_modules"
+assert_not "precondition: dangling symlink does not resolve" test -e "$STALE/node_modules"
+( cd "$REPO" && bash "$HOOK" )
+assert "dangling symlink is repaired" test -e "$STALE/node_modules/.marker"
 
 # Fail-open: outside any git repo the hook is a silent no-op.
 assert "no-op outside a git repo" bash -c "cd '$TMP' && bash '$HOOK'"
