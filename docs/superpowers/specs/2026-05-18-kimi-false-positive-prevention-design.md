@@ -151,6 +151,34 @@ In both engine copies, change the ref construction from `{base}..HEAD` to
 `{base}...HEAD` so the diff runs from the merge base to HEAD. Fixes class (4).
 The `HEAD~1` fallback (no `--base`) is unchanged.
 
+### 6. Architecture reference doc
+
+The Kimi review system has grown to two engine copies, three wrapper surfaces,
+two test files, model/profile/pattern config, and non-obvious invariants
+(secret-safety, CI `pull_request_target` rules, skip semantics, the
+unversioned-script gap). There is no single document explaining how it fits
+together. Add one: `docs/kimi-review-architecture.md`, the single source of
+truth, covering:
+
+- **Surfaces** — the three entry points (Claude-Code PreToolUse hook, Husky
+  pre-commit, CI job), what triggers each, and which blocks vs. warns.
+- **Engine** — the two copies (`~/.local/bin/kimi-review`,
+  `scripts/kimi-review.py`), why they are duplicated, and the hand-sync
+  obligation. The unversioned-local-script gap is called out explicitly.
+- **Data flow** — how a diff, the `<changed-files>` manifest, patterns/rules,
+  and the profile become one LLM call; the `--function-context` and three-dot
+  diff behavior.
+- **Config** — model, `WORKER_*` / `OPENROUTER_*` env vars, profiles, the
+  path→domain pattern mapping, `temperature=0`.
+- **Invariants** — the secret-safety exclusion of non-`.ts`/`.tsx` content, the
+  CI security invariant, `SKIP_KIMI_REVIEW` semantics and how the inline-prefix
+  vs. process-env distinction affects each surface.
+- **False-positive design** — a short section summarizing the four mechanisms
+  and the fixes from this spec, so the rationale survives.
+
+The doc reflects the system **after** this change. It is written last, once the
+code changes are settled, so it documents the real end state.
+
 ## Files Changed
 
 | File                                | Change                                                                                                                                       |
@@ -162,6 +190,7 @@ The `HEAD~1` fallback (no `--base`) is unchanged.
 | `scripts/ci-kimi-review.sh`         | Same wrapper changes                                                                                                                         |
 | `.claude/hooks/test-kimi-review.sh` | New cases: `<changed-files>` rendering; existing `filter_review`/CRITICAL-gate cases unchanged                                               |
 | `scripts/test-kimi-review.py`       | New cases: `--changed-files` rendering, three-dot ref; existing cases unchanged                                                              |
+| `docs/kimi-review-architecture.md`  | New — full architecture reference for the Kimi review system (see §6); written last                                                          |
 
 `~/.local/bin/kimi-review` is unversioned — it has no source-of-truth repo.
 The implementation must edit it in place and note in the final report that the
@@ -179,6 +208,8 @@ local copy was changed outside the repo.
 4. Smoke test for class (1): a diff whose relevant context (e.g. a matching
    index line) sits >3 lines from the change; confirm `--function-context`
    includes it.
+5. Read `docs/kimi-review-architecture.md` against the final code — every
+   file path, env var, and invariant it cites matches the shipped state.
 
 ## Open Risks
 
