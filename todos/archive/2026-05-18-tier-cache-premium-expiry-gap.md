@@ -1,6 +1,6 @@
 ---
 title: "resolveSubscriptionTierFeatures ignores premium-expiry — may serve premium features to expired users"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-18
 updated: 2026-05-18

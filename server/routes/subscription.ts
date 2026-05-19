@@ -6,7 +6,7 @@ import {
   TIER_FEATURES,
   isValidSubscriptionTier,
   applyStreakUnlocks,
-  type SubscriptionTier,
+  resolveEffectiveTier,
   type SubscriptionStatus,
   type PremiumFeatureKey,
 } from "@shared/types/premium";
@@ -48,13 +48,11 @@ export function register(app: Express): void {
           : "free";
         const expiresAt = subscriptionData.expiresAt;
 
-        // Check if premium subscription has expired
-        const isActive =
-          tier === "free" ||
-          (tier === "premium" &&
-            (!expiresAt || new Date(expiresAt) > new Date()));
-
-        const effectiveTier: SubscriptionTier = isActive ? tier : "free";
+        // Downgrade an expired-premium subscription to free (shared helper).
+        const { effectiveTier, isActive } = resolveEffectiveTier(
+          tier,
+          expiresAt,
+        );
 
         // Derive verification-streak unlocks on top of the base tier features.
         const streak = await resolveVerificationStreak(req.userId);
