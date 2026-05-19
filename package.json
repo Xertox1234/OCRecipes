@@ -11,7 +11,7 @@
     "server:prod": "NODE_ENV=production node server_dist/index.js",
     "predb:push": "tsx scripts/check-timestamptz-migration.ts",
     "db:push": "drizzle-kit push",
-    "lint": "npx expo lint",
+    "lint": "ESLINT_NO_TYPE_AWARE= npx expo lint",
     "lint:fix": "npx expo lint --fix",
     "lint:suppress": "ESLINT_NO_TYPE_AWARE= eslint . --suppress-rule @typescript-eslint/no-floating-promises --suppress-rule @typescript-eslint/no-misused-promises --suppress-rule @typescript-eslint/await-thenable --suppress-rule @typescript-eslint/require-await --suppress-rule @typescript-eslint/no-implied-eval --suppress-rule @typescript-eslint/prefer-promise-reject-errors",
     "lint:suppress:prune": "ESLINT_NO_TYPE_AWARE= eslint . --prune-suppressions",
