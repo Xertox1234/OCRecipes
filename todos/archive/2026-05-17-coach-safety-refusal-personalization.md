@@ -1,6 +1,6 @@
 ---
 title: "Coach safety_refusal responses score low on personalization (context numbers vs. referral compete for word budget)"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-17
 updated: 2026-05-17
