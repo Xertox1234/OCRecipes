@@ -43,7 +43,7 @@ if ! changed_files=$(git diff --name-only --diff-filter=ACMDR "$merge_base" "$he
 fi
 
 if ! changed_status=$(git diff --name-status --diff-filter=ACMDR "$merge_base" "$head_sha"); then
-  echo "::error title=Unable to compute changed files::Could not diff $merge_base..$head_sha."
+  echo "::error title=Unable to compute file status::Could not diff $merge_base..$head_sha."
   exit 1
 fi
 
