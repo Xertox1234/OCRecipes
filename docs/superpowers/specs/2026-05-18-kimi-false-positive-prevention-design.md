@@ -95,9 +95,18 @@ that residual case.
 
 ### 2. Change-set manifest (`--changed-files`)
 
-The wrappers already compute the full changed-file list for pattern mapping.
-Switch that computation from `--name-only` to `--name-status`, and pass the
-result to the engine via a new `--changed-files` argument.
+Give each wrapper a dedicated `git diff --name-status` capture of the full
+change-set and pass it to the engine via a new `--changed-files` argument. Use a
+separate capture rather than reusing the existing pattern-mapping input:
+
+- The hook (`.claude/hooks/kimi-review.sh`) filters its file list to
+  `.ts`/`.tsx` _before_ the pattern loop, so it has no full list today — a new
+  capture is required regardless.
+- CI (`ci-kimi-review.sh`) and Husky (`pre-commit`) do compute an all-files
+  name-only list, but it feeds `case "$file"` path matching; switching it to
+  `--name-status` would prepend an `M `/`A ` status and break those matches.
+
+A dedicated capture leaves all pattern-loop inputs untouched.
 
 The engine renders it as a `<changed-files>` block in the user message,
 listing **every** file in the change-set with its git status — **names only,
@@ -181,16 +190,16 @@ code changes are settled, so it documents the real end state.
 
 ## Files Changed
 
-| File                                | Change                                                                                                                                       |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.local/bin/kimi-review`          | `--changed-files` arg + `<changed-files>` render; `temperature=0`; prompt hardening; `..`→`...`; `--function-context` on fallback `git diff` |
-| `scripts/kimi-review.py`            | Identical changes (hand-synced)                                                                                                              |
-| `.claude/hooks/kimi-review.sh`      | `--function-context` on review diff; `--name-status` for the file list; pass `--changed-files`                                               |
-| `.husky/pre-commit`                 | Same wrapper changes                                                                                                                         |
-| `scripts/ci-kimi-review.sh`         | Same wrapper changes                                                                                                                         |
-| `.claude/hooks/test-kimi-review.sh` | New cases: `<changed-files>` rendering; existing `filter_review`/CRITICAL-gate cases unchanged                                               |
-| `scripts/test-kimi-review.py`       | New cases: `--changed-files` rendering, three-dot ref; existing cases unchanged                                                              |
-| `docs/kimi-review-architecture.md`  | New — full architecture reference for the Kimi review system (see §6); written last                                                          |
+| File                                | Change                                                                                                                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `~/.local/bin/kimi-review`          | `--changed-files` arg + `<changed-files>` render; `temperature=0`; prompt hardening; `..`→`...`; `--function-context` on fallback `git diff`                                               |
+| `scripts/kimi-review.py`            | Identical changes (hand-synced)                                                                                                                                                            |
+| `.claude/hooks/kimi-review.sh`      | `--function-context` on review diff; new dedicated `--name-status` capture; pass `--changed-files`                                                                                         |
+| `.husky/pre-commit`                 | Same wrapper changes                                                                                                                                                                       |
+| `scripts/ci-kimi-review.sh`         | Same wrapper changes                                                                                                                                                                       |
+| `.claude/hooks/test-kimi-review.sh` | In-repo harness. New bash cases: wrappers pass `--changed-files`; new embedded Python cases for `scripts/kimi-review.py` `render_changed_files`/`build_diff_ref`; existing cases unchanged |
+| `~/.local/bin/test-kimi-review.py`  | Unversioned. New cases for the local engine's `render_changed_files`/`build_diff_ref`; existing `filter_review` cases unchanged                                                            |
+| `docs/kimi-review-architecture.md`  | New — full architecture reference for the Kimi review system (see §6); written last                                                                                                        |
 
 `~/.local/bin/kimi-review` is unversioned — it has no source-of-truth repo.
 The implementation must edit it in place and note in the final report that the
@@ -198,10 +207,11 @@ local copy was changed outside the repo.
 
 ## Verification
 
-1. Run both test suites: `.claude/hooks/test-kimi-review.sh` and
-   `python3 scripts/test-kimi-review.py` — all pass.
-2. One real `temperature=0` call against OpenRouter to confirm it is accepted
-   (see Risk under §4).
+1. **First, before any code change:** one real `temperature=0` call against
+   OpenRouter to confirm DeepSeek V4 Flash accepts it (no 400). This gates §4 —
+   if rejected, drop `temperature` and soften §4's wording (see Risk under §4).
+2. Run both test suites: `.claude/hooks/test-kimi-review.sh` and
+   `python3 ~/.local/bin/test-kimi-review.py` — all pass.
 3. Smoke test for class (2): a synthetic change-set touching `shared/schema.ts`
    with a `migrations/*.sql` file present in `--changed-files`; confirm Kimi no
    longer emits a "no migration" CRITICAL.
