@@ -42,7 +42,12 @@ if ! changed_files=$(git diff --name-only --diff-filter=ACMDR "$merge_base" "$he
   exit 1
 fi
 
-if ! review_diff=$(git diff --diff-filter=ACMDR "$merge_base" "$head_sha" -- '*.ts' '*.tsx'); then
+if ! changed_status=$(git diff --name-status --diff-filter=ACMDR "$merge_base" "$head_sha"); then
+  echo "::error title=Unable to compute changed files::Could not diff $merge_base..$head_sha."
+  exit 1
+fi
+
+if ! review_diff=$(git diff --function-context --diff-filter=ACMDR "$merge_base" "$head_sha" -- '*.ts' '*.tsx'); then
   echo "::error title=Unable to compute diff::Could not diff $merge_base..$head_sha."
   exit 1
 fi
@@ -117,6 +122,7 @@ review_command=(
   "${reviewer_command[@]}"
   --scope "$review_scope"
   --tiers CRITICAL,WARNING
+  --changed-files "$changed_status"
   --profile ocrecipes
 )
 

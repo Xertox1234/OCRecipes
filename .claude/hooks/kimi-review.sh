@@ -34,6 +34,12 @@ GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*g
 FILES=$(git diff --cached --name-only --diff-filter=ACMDR 2>/dev/null | grep -E '\.(ts|tsx)$' || true)
 [ -n "$FILES" ] || exit 0
 
+# Full change-set (all files, with status) for the <changed-files> manifest.
+# Separate from FILES (which is .ts/.tsx-only for the guard + pattern loop) so
+# the reviewer can see non-code files (migrations, config) without those files
+# entering pattern selection or being sent as content.
+CHANGED_FILES=$(git diff --cached --name-status --diff-filter=ACMDR 2>/dev/null || true)
+
 # 6) Map staged files to review patterns
 PATTERNS=''
 add_pattern() {
@@ -82,7 +88,7 @@ while IFS= read -r file; do
 done <<< "$FILES"
 
 # 7) Run review on the staged TypeScript diff. Only CRITICAL + WARNING (project convention).
-REVIEW_DIFF=$(git diff --cached --diff-filter=ACMDR -- '*.ts' '*.tsx')
+REVIEW_DIFF=$(git diff --cached --function-context --diff-filter=ACMDR -- '*.ts' '*.tsx')
 [ -n "$REVIEW_DIFF" ] || exit 0
 
 if [ -n "$PATTERNS" ]; then
@@ -92,11 +98,13 @@ if [ -n "$PATTERNS" ]; then
     --patterns "$PATTERNS" \
     --rules "$PATTERNS" \
     --pattern-max-chars 12000 \
+    --changed-files "$CHANGED_FILES" \
     --tiers CRITICAL,WARNING 2>&1)
 else
   REVIEW=$(printf '%s' "$REVIEW_DIFF" | kimi-review \
     --scope "staged for commit" \
     --profile ocrecipes \
+    --changed-files "$CHANGED_FILES" \
     --tiers CRITICAL,WARNING 2>&1)
 fi
 

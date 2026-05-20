@@ -49,6 +49,7 @@ case "$mode" in
   critical-no-findings-desc)
                     echo "[CRITICAL] server/routes/foo.ts:42 — error handler swallows the error and returns no findings to the caller";;
   echo-input)       printf '%s' "\$input";;
+  echo-args)        printf 'ARGS: %s\n' "\$*";;
 esac
 EOF
   chmod +x "$dir/kimi-review"
@@ -58,6 +59,10 @@ EOF
 #!/usr/bin/env bash
 case "$* " in
   "merge-base "*)                 echo "merge-base-sha";;
+  "diff --cached --name-status"*) printf '%s\n' "${KIMI_TEST_CHANGED_STATUS:-M	server/routes/foo.ts}";;
+  "diff --name-status"*)          printf '%s\n' "${KIMI_TEST_CHANGED_STATUS:-M	server/routes/foo.ts}";;
+  "diff --cached --function-context"*) printf '%s\n' "${KIMI_TEST_REVIEW_DIFF:-diff --git a/server/routes/foo.ts b/server/routes/foo.ts}";;
+  "diff --function-context"*)     printf '%s\n' "${KIMI_TEST_REVIEW_DIFF:-diff --git a/server/routes/foo.ts b/server/routes/foo.ts}";;
   "diff --cached --name-only"*)   printf '%s\n' "${KIMI_TEST_STAGED_FILES:-server/routes/foo.ts}";;
   "diff --name-only"*)            printf '%s\n' "${KIMI_TEST_CHANGED_FILES:-server/routes/foo.ts}";;
   "diff --cached"*)               printf '%s\n' "${KIMI_TEST_REVIEW_DIFF:-diff --git a/server/routes/foo.ts b/server/routes/foo.ts}";;
@@ -395,6 +400,18 @@ OUT=$(KIMI_TEST_STAGED_FILES=$'docs/AI_WORKFLOW.md\nserver/routes/foo.ts' \
   run_hook echo-input '{"tool_input":{"command":"git commit -m x"}}')
 assert_contains "mixed staged files send TypeScript diff" "$OUT" "server/routes/foo.ts"
 assert_not_contains "mixed staged files do not send docs diff" "$OUT" "docs/AI_WORKFLOW.md"
+
+# The hook passes a --changed-files manifest to kimi-review.
+OUT=$(run_hook echo-args '{"tool_input":{"command":"git commit -m x"}}')
+assert_contains "hook passes --changed-files to kimi-review" "$OUT" "--changed-files"
+
+# The CI wrapper passes a --changed-files manifest.
+OUT=$(run_ci_gate echo-args)
+assert_contains "CI passes --changed-files to kimi-review" "$OUT" "--changed-files"
+
+# The Husky wrapper passes a --changed-files manifest.
+OUT=$(run_husky_gate echo-args)
+assert_contains "Husky passes --changed-files to kimi-review" "$OUT" "--changed-files"
 
 # ---------- CI/Husky gate parsing ----------
 
