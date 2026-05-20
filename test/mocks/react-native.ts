@@ -28,7 +28,9 @@ export const AppState = {
 };
 // Share API — used by useFavouriteRecipes useShareRecipe. Default impl is a
 // no-op resolved promise; tests `vi.spyOn(RN.Share, "share").mockResolvedValue(...)`.
-export const Share = { share: vi.fn(async () => ({ action: "sharedAction" })) };
+export const Share = {
+  share: vi.fn(() => Promise.resolve({ action: "sharedAction" })),
+};
 export const Linking = { openURL: async () => {} };
 export const NativeModules = {};
 
@@ -283,7 +285,7 @@ export const KeyboardAvoidingView = mockComponent(
 
 export const AccessibilityInfo = {
   announceForAccessibility: () => {},
-  isScreenReaderEnabled: async () => false,
+  isScreenReaderEnabled: () => Promise.resolve(false),
   addEventListener: () => ({ remove: () => {} }),
 };
 

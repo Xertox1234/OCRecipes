@@ -33,7 +33,7 @@ export function register(app: Express): void {
     "/api/chat/suggestions",
     requireAuth,
     chatRateLimit,
-    async (req: AuthenticatedRequest, res: Response) => {
+    (req: AuthenticatedRequest, res: Response) => {
       const type = req.query.type as string | undefined;
       if (type === "recipe") {
         return res.json(RECIPE_SUGGESTION_CHIPS);

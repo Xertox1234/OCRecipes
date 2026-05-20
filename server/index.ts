@@ -162,7 +162,7 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
-(async () => {
+function startServer() {
   setupCors(app);
   app.use(helmet());
   setupBodyParsing(app);
@@ -209,7 +209,7 @@ function setupErrorHandler(app: express.Application) {
     }
   });
 
-  const server = await registerRoutes(app);
+  const server = registerRoutes(app);
 
   setupErrorHandler(app);
 
@@ -253,7 +253,7 @@ function setupErrorHandler(app: express.Application) {
             );
           });
           retentionInFlight = run;
-          run.finally(() => {
+          void run.finally(() => {
             if (retentionInFlight === run) {
               retentionInFlight = null;
             }
@@ -284,7 +284,7 @@ function setupErrorHandler(app: express.Application) {
     clearInterval(cacheCleanupInterval);
     clearInterval(promotionInterval);
     if (retentionCleanupTask) {
-      retentionCleanupTask.stop();
+      void retentionCleanupTask.stop();
     }
     // Wait up to the shutdown deadline for an in-flight retention cleanup
     // to finish its current batch before draining the pool. A truncation
@@ -296,9 +296,9 @@ function setupErrorHandler(app: express.Application) {
           new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
         ])
       : Promise.resolve();
-    finishRetention.finally(() => {
+    void finishRetention.finally(() => {
       server.close(() => {
-        pool.end().then(() => {
+        void pool.end().then(() => {
           process.exit(0);
         });
       });
@@ -309,4 +309,11 @@ function setupErrorHandler(app: express.Application) {
 
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
-})();
+}
+
+try {
+  startServer();
+} catch (err) {
+  logger.error({ err: toError(err) }, "fatal startup error");
+  process.exit(1);
+}

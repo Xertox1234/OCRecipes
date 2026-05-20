@@ -102,4 +102,7 @@ runEvalSuite(testCases, {
   formatInput: (testCase: EvalTestCase) => {
     return `User message: ${testCase.userMessage ?? ""}\n\n${formatContextSummary(testCase.context as CoachContext)}`;
   },
+}).catch((err) => {
+  console.error(err);
+  process.exit(1);
 });

@@ -59,11 +59,11 @@ describe("createSerialQueue", () => {
       const queue = createSerialQueue();
       const results: number[] = [];
 
-      queue.enqueue(async () => {
+      void queue.enqueue(async () => {
         await new Promise((r) => setTimeout(r, 10));
         results.push(1);
       });
-      queue.enqueue(async () => {
+      void queue.enqueue(async () => {
         await new Promise((r) => setTimeout(r, 10));
         results.push(2);
       });

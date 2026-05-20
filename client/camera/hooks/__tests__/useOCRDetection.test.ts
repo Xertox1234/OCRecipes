@@ -143,7 +143,7 @@ function createOCRHandlerHarness(options?: { debounceMs?: number }) {
           onTextDetected(effect.value);
           break;
         case "fire_haptic":
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           break;
         case "start_debounce":
           debounceTimer.current = setTimeout(() => {
