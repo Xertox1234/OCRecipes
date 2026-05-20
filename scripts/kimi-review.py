@@ -58,6 +58,13 @@ def parse_args():
     parser.add_argument("--model", default=os.environ.get("WORKER_MODEL", "deepseek/deepseek-v4-flash"))
     parser.add_argument("--tiers", default="CRITICAL,WARNING,SUGGESTION")
     parser.add_argument("--rules", default=None, help="Comma-separated docs/rules names to include")
+    parser.add_argument(
+        "--changed-files",
+        default=None,
+        help="Newline-delimited `git diff --name-status` output for the full "
+             "change-set; rendered as a <changed-files> block so the reviewer "
+             "knows which non-.ts/.tsx files (migrations, config) exist.",
+    )
     parser.add_argument("--profile", choices=["auto", "generic", "ocrecipes"], default="auto")
     return parser.parse_args()
 
@@ -89,8 +96,8 @@ def get_diff(args, root):
         print("Error: not inside a git repository.", file=sys.stderr)
         sys.exit(1)
 
-    ref = f"{args.base}..HEAD" if args.base else "HEAD~1"
-    result = subprocess.run(["git", "diff", ref], capture_output=True, text=True, cwd=root)
+    ref = build_diff_ref(args.base)
+    result = subprocess.run(["git", "diff", "--function-context", ref], capture_output=True, text=True, cwd=root)
     if result.returncode != 0:
         print(f"Error: git diff failed.\n{result.stderr.strip()}", file=sys.stderr)
         sys.exit(1)
@@ -250,7 +257,9 @@ def main():
     profile = detect_profile(args, root)
 
     focus = f"Focus: {args.scope}\n\n" if args.scope else ""
-    user_msg = f"{focus}<diff>\n{diff}\n</diff>{context_blocks(args, root)}"
+    changed_block = render_changed_files(args.changed_files)
+    changed_section = f"\n\n{changed_block}" if changed_block else ""
+    user_msg = f"{focus}<diff>\n{diff}\n</diff>{changed_section}{context_blocks(args, root)}"
 
     tier_lines = "\n".join(f"{tier} — {TIER_DEFINITIONS[tier]}" for tier in requested_tiers)
     profile_guidance = PROJECT_PROFILES[profile]
@@ -279,12 +288,20 @@ def main():
                     "content": (
                         "You are a senior code reviewer auditing a code change. "
                         "Your review is a quality gate; defects you miss reach production.\n\n"
-                        "Input: a unified git diff inside <diff>, optionally followed by <file> blocks.\n\n"
+                        "Input: a unified git diff (with function-level context) inside <diff>, "
+                        "optionally followed by a <changed-files> block listing every file in the "
+                        "change-set, then optional <file> blocks.\n\n"
                         "Return findings only in these tiers:\n\n"
                         f"{tier_lines}\n\n"
                         "Review in this priority order: security/access control, data integrity, "
                         "correctness, error handling, regression risk, then test coverage. "
                         "Treat included rules or patterns as binding project standards."
+                        "\n\nYou see a partial view, not whole files. The <changed-files> block "
+                        "lists EVERY file in this change-set; files not shown in <diff> (e.g. .sql "
+                        "migrations, config) were still changed and their existence is established. "
+                        "NEVER claim a file, migration, test, index, or guard is missing when it "
+                        "appears in <changed-files>. If a risk depends on code you cannot see, "
+                        "raise it only as WARNING and say what must be verified."
                         f"{profile_block}\n\n"
                         "Format every finding exactly as:\n"
                         "[TIER] path/to/file.ts:42 — short description\n"
@@ -296,6 +313,7 @@ def main():
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=args.max_tokens,
+            temperature=0,
         )
     except Exception as error:
         print(f"[ERROR: kimi-review request failed: {error}]", file=sys.stderr)
