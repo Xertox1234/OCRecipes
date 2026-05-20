@@ -162,7 +162,7 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
-(() => {
+function startServer() {
   setupCors(app);
   app.use(helmet());
   setupBodyParsing(app);
@@ -309,4 +309,11 @@ function setupErrorHandler(app: express.Application) {
 
   process.on("SIGTERM", () => shutdown("SIGTERM"));
   process.on("SIGINT", () => shutdown("SIGINT"));
-})();
+}
+
+try {
+  startServer();
+} catch (err) {
+  logger.error({ err: toError(err) }, "fatal startup error");
+  process.exit(1);
+}
