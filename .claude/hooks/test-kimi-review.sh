@@ -209,6 +209,42 @@ else:
 PY
 }
 
+run_python_helper_tests() {
+  command -v python3 >/dev/null 2>&1 || {
+    echo "python3 not found"
+    return 1
+  }
+  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+import importlib.util
+import pathlib
+import sys
+
+module_path = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("kimi_review", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+rcf = module.render_changed_files
+bdr = module.build_diff_ref
+
+cases = [
+    (rcf(""), ""),
+    (rcf(None), ""),
+    (
+        rcf("M\tshared/schema.ts\nA\tmigrations/0043.sql"),
+        "<changed-files>\nM\tshared/schema.ts\nA\tmigrations/0043.sql\n</changed-files>",
+    ),
+    (rcf("M\ta.ts\n\n"), "<changed-files>\nM\ta.ts\n</changed-files>"),
+    (bdr("main"), "main...HEAD"),
+    (bdr(None), "HEAD~1"),
+]
+
+for actual, expected in cases:
+    if actual != expected:
+        raise AssertionError(f"expected {expected!r}, got {actual!r}")
+PY
+}
+
 assert_contains() {
   local name="$1" haystack="$2" needle="$3"
   if echo "$haystack" | grep -q -- "$needle"; then
@@ -400,6 +436,14 @@ if run_python_credential_tests; then
   PASS=$((PASS+1))
 else
   echo "FAIL: Python credential resolver handles aliases and provider base URL"
+  FAIL=$((FAIL+1))
+fi
+
+if run_python_helper_tests; then
+  echo "PASS: Python render_changed_files + build_diff_ref helpers"
+  PASS=$((PASS+1))
+else
+  echo "FAIL: Python render_changed_files + build_diff_ref helpers"
   FAIL=$((FAIL+1))
 fi
 

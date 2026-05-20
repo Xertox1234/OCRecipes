@@ -221,6 +221,27 @@ def filter_review(answer, requested_tiers):
     return filtered or f"No findings in requested tiers: {', '.join(requested_tiers)}"
 
 
+def render_changed_files(changed_files):
+    """Render a <changed-files> block from newline-delimited `git diff
+    --name-status` output. Lists every file in the change-set (names only, no
+    content) so the reviewer knows which non-.ts/.tsx files exist and does not
+    false-flag them as missing. Returns '' when nothing is provided."""
+    if not changed_files:
+        return ""
+    entries = [line.rstrip() for line in changed_files.splitlines() if line.strip()]
+    if not entries:
+        return ""
+    body = "\n".join(entries)
+    return f"<changed-files>\n{body}\n</changed-files>"
+
+
+def build_diff_ref(base):
+    """Diff ref for the engine's own `git diff`. Three-dot (merge-base..HEAD)
+    when a base is given, so a branch behind its base does not surface the
+    base's commits as deletions; single-commit fallback otherwise."""
+    return f"{base}...HEAD" if base else "HEAD~1"
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)
