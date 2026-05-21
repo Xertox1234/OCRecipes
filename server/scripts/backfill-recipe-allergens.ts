@@ -21,7 +21,7 @@
 import "dotenv/config";
 import { db, pool } from "../db";
 import { communityRecipes, mealPlanRecipes } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
 import { storage } from "../storage";
 
@@ -35,24 +35,38 @@ async function backfillCommunityRecipes(): Promise<number> {
     })
     .from(communityRecipes);
 
-  let updated = 0;
-  for (const recipe of recipes) {
-    const allergens = deriveRecipeAllergens(
+  const updates = recipes.map((recipe) => ({
+    id: recipe.id,
+    allergens: deriveRecipeAllergens(
       (recipe.ingredients ?? []).map((i) => i.name),
-    );
-    if (DRY_RUN) {
-      console.log(
-        `[dry-run] community ${recipe.id}: ${allergens.length} allergen(s)`,
-      );
-    } else {
-      await db
-        .update(communityRecipes)
-        .set({ allergens })
-        .where(eq(communityRecipes.id, recipe.id));
+    ),
+  }));
+
+  if (DRY_RUN) {
+    for (const { id, allergens } of updates) {
+      console.log(`[dry-run] community ${id}: ${allergens.length} allergen(s)`);
     }
-    updated++;
+    return updates.length;
   }
-  return updated;
+
+  if (updates.length === 0) return 0;
+
+  // Single round-trip via `UPDATE … FROM (VALUES …)` (rule #19) — mirrors
+  // `batchUpdateMealTypes`. `JSON.stringify` is safe because Drizzle's `sql`
+  // tag parameterizes the values; the `::jsonb` cast stores `[]` as an empty
+  // JSONB array, not a string. Rows absent from VALUES keep their existing
+  // value, preserving the null = "not derived" semantics on untouched rows.
+  const valueTuples = updates.map(
+    (u) => sql`(${u.id}::int, ${JSON.stringify(u.allergens)}::jsonb)`,
+  );
+  await db.execute(
+    sql`UPDATE ${communityRecipes}
+        SET allergens = v.allergens
+        FROM (VALUES ${sql.join(valueTuples, sql`, `)}) AS v(id, allergens)
+        WHERE ${communityRecipes.id} = v.id`,
+  );
+
+  return updates.length;
 }
 
 async function backfillMealPlanRecipes(): Promise<number> {
@@ -62,25 +76,36 @@ async function backfillMealPlanRecipes(): Promise<number> {
     .select({ id: mealPlanRecipes.id })
     .from(mealPlanRecipes);
 
-  let updated = 0;
-  for (const recipe of recipes) {
+  const updates = recipes.map((recipe) => {
     const ingredientNames = (ingredientMap.get(recipe.id) ?? []).map(
       (i) => i.name,
     );
-    const allergens = deriveRecipeAllergens(ingredientNames);
-    if (DRY_RUN) {
-      console.log(
-        `[dry-run] meal-plan ${recipe.id}: ${allergens.length} allergen(s)`,
-      );
-    } else {
-      await db
-        .update(mealPlanRecipes)
-        .set({ allergens })
-        .where(eq(mealPlanRecipes.id, recipe.id));
+    return { id: recipe.id, allergens: deriveRecipeAllergens(ingredientNames) };
+  });
+
+  if (DRY_RUN) {
+    for (const { id, allergens } of updates) {
+      console.log(`[dry-run] meal-plan ${id}: ${allergens.length} allergen(s)`);
     }
-    updated++;
+    return updates.length;
   }
-  return updated;
+
+  if (updates.length === 0) return 0;
+
+  // Single round-trip via `UPDATE … FROM (VALUES …)` (rule #19) — mirrors
+  // `batchUpdateMealTypes`. See the community arm above for the null-vs-empty
+  // and parameterization notes.
+  const valueTuples = updates.map(
+    (u) => sql`(${u.id}::int, ${JSON.stringify(u.allergens)}::jsonb)`,
+  );
+  await db.execute(
+    sql`UPDATE ${mealPlanRecipes}
+        SET allergens = v.allergens
+        FROM (VALUES ${sql.join(valueTuples, sql`, `)}) AS v(id, allergens)
+        WHERE ${mealPlanRecipes.id} = v.id`,
+  );
+
+  return updates.length;
 }
 
 async function main() {
