@@ -27,6 +27,16 @@
             "statusMessage": "Provisioning worktree dependencies..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/lsp-warmup.sh",
+            "timeout": 10,
+            "statusMessage": "Priming LSP warm-up directive..."
+          }
+        ]
       }
     ],
     "PreToolUse": [
