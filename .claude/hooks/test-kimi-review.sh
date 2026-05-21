@@ -129,6 +129,20 @@ run_husky_gate() {
   printf '%s\n--RC--%d' "$output" "$rc"
 }
 
+# Same as run_husky_gate but forces dash — the default /bin/sh on Linux. The hook
+# uses bash-only syntax (arrays, `<<<`, `$'...'`) and must re-exec under bash when
+# started by a non-bash sh. This guards against the Linux "Syntax error:
+# redirection unexpected" regression. Only used when dash is available.
+run_husky_gate_dash() {
+  local mode="$1"
+  local stubdir output rc
+  stubdir=$(make_stub_path "$mode")
+  output=$(PATH="$stubdir:$PATH" dash -e "$PRE_COMMIT" 2>&1)
+  rc=$?
+  rm -rf "$stubdir"
+  printf '%s\n--RC--%d' "$output" "$rc"
+}
+
 run_python_filter_tests() {
   command -v python3 >/dev/null 2>&1 || {
     echo "python3 not found"
@@ -443,6 +457,22 @@ assert_not_contains "CI clean-model-prose does not block" "$OUT" "Kimi review bl
 OUT=$(run_husky_gate clean-model-prose)
 assert_contains "Husky clean-model-prose exits 0" "$OUT" "--RC--0"
 assert_not_contains "Husky clean-model-prose does not block" "$OUT" "Commit blocked"
+
+# Regression: on Linux /bin/sh is dash, which cannot parse the hook's bash syntax
+# (arrays, `<<<`, `$'...'`). The hook must re-exec under bash. A clean review must
+# still exit 0 and a CRITICAL must still block — no "Syntax error" abort. Skipped
+# when dash is unavailable (e.g. some macOS setups).
+if command -v dash >/dev/null 2>&1; then
+  OUT=$(run_husky_gate_dash clean-tiered)
+  assert_contains "Husky under dash: clean review exits 0 (re-exec works)" "$OUT" "--RC--0"
+  assert_not_contains "Husky under dash: no syntax error" "$OUT" "Syntax error"
+
+  OUT=$(run_husky_gate_dash critical)
+  assert_contains "Husky under dash: CRITICAL exits 1" "$OUT" "--RC--1"
+  assert_contains "Husky under dash: CRITICAL blocks" "$OUT" "Commit blocked"
+else
+  echo "SKIP: dash not installed — Husky-under-dash re-exec regression tests"
+fi
 
 if run_python_filter_tests; then
   echo "PASS: Python filter_review drops empty-tier placeholders"

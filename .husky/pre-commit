@@ -7,6 +7,15 @@
 # Bypass: set SKIP_KIMI_REVIEW=1 to skip review (lint-staged still runs).
 # Auto-skips when kimi-review is not on PATH so devs without the tool aren't blocked.
 
+# Husky runs hooks as `sh -e`, ignoring the bash shebang above. This script uses
+# bash-only features (arrays, `<<<` here-strings, `$'...'`). When `sh` is not bash
+# — e.g. dash, the default /bin/sh on Linux — re-exec under bash so those features
+# parse. Must run before lint-staged so it doesn't execute twice. On macOS `sh` is
+# bash (BASH_VERSION set), so this is a no-op there.
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
+
 NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false || exit 1
 
 if [ "$SKIP_KIMI_REVIEW" = "1" ]; then
