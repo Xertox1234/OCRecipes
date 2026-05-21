@@ -177,7 +177,7 @@ For **each** finding the user wants fixed:
 
 8. Update manifest:
    - Status → `verified`
-   - Verification column → what you checked (e.g., "grep confirms userId param; 83/83 tests pass; kimi-review: no findings")
+   - Verification column → what you checked (e.g., "grep confirms userId param; 83/83 tests pass; kimi-review: no findings"; for a symbol-changing fix: "findReferences shows 0 stale callers; 83/83 tests pass; kimi-review: no findings")
 9. Move to the next finding
 
 **CRITICAL RULES:**
