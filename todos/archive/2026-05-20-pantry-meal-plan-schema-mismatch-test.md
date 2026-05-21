@@ -1,6 +1,6 @@
 ---
 title: "Test the pantry-meal-plan AI shape-mismatch (ZodError) branch"
-status: backlog
+status: done
 priority: low
 created: 2026-05-20
 updated: 2026-05-20
