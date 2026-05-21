@@ -1,6 +1,6 @@
 ---
 title: "Sanitize pantry unit/category before LLM prompt interpolation"
-status: backlog
+status: done
 priority: low
 created: 2026-05-20
 updated: 2026-05-20
