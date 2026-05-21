@@ -1,6 +1,6 @@
 ---
 title: "Add coach eval cases for the new safety-refusal scenarios"
-status: backlog
+status: done
 priority: low
 created: 2026-05-18
 updated: 2026-05-18
