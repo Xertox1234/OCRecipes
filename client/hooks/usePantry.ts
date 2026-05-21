@@ -44,8 +44,10 @@ export function useCreatePantryItem() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry/expiring"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/pantry/expiring"],
+      });
     },
   });
 }
@@ -73,8 +75,10 @@ export function useUpdatePantryItem() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry/expiring"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/pantry/expiring"],
+      });
     },
   });
 }
@@ -91,8 +95,10 @@ export function useDeletePantryItem() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry/expiring"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/pantry/expiring"],
+      });
     },
   });
 }

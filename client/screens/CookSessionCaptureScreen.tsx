@@ -85,7 +85,7 @@ export default function CookSessionCaptureScreen() {
   // Handle initial photo from PhotoIntentScreen
   useEffect(() => {
     if (route.params?.initialPhotoUri) {
-      handleAnalyzePhoto(route.params.initialPhotoUri);
+      void handleAnalyzePhoto(route.params.initialPhotoUri);
     }
     // Only run on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,7 +130,7 @@ export default function CookSessionCaptureScreen() {
       });
       if (photo?.uri) {
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-        handleAnalyzePhoto(photo.uri);
+        void handleAnalyzePhoto(photo.uri);
       } else {
         Alert.alert("Capture failed", "Try again or pick from your gallery.");
       }
@@ -234,9 +234,9 @@ export default function CookSessionCaptureScreen() {
             ]}
             onPress={() => {
               if (permission?.canAskAgain) {
-                requestPermission();
+                void requestPermission();
               } else {
-                Linking.openSettings();
+                void Linking.openSettings();
               }
             }}
             accessibilityLabel="Grant camera permission"

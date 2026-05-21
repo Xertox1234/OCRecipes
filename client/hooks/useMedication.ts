@@ -32,8 +32,10 @@ export function useLogMedication() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/medication/logs"] });
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/medication/logs"],
+      });
+      void queryClient.invalidateQueries({
         queryKey: ["/api/medication/insights"],
       });
     },

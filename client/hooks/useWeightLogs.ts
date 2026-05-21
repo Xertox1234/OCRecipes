@@ -43,8 +43,8 @@ export function useLogWeight() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/weight"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/weight/trend"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/weight"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/weight/trend"] });
     },
   });
 }
@@ -57,8 +57,8 @@ export function useDeleteWeightLog() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/weight"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/weight/trend"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/weight"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/weight/trend"] });
     },
   });
 }
@@ -71,8 +71,8 @@ export function useSetGoalWeight() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/weight/trend"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/weight/trend"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
     },
   });
 }

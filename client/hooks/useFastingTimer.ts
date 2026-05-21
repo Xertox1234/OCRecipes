@@ -153,57 +153,64 @@ export function useFastingTimer() {
   const handleStartFast = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     startFast.mutate(undefined, {
-      onSuccess: async (log) => {
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
+      onSuccess: (log) => {
+        void (async () => {
+          haptics.notification(Haptics.NotificationFeedbackType.Success);
 
-        // Schedule notifications if any toggle is enabled
-        const s = schedule;
-        const anyEnabled =
-          (s?.notifyMilestones ?? true) ||
-          (s?.notifyCheckIns ?? true) ||
-          (s?.notifyEatingWindow ?? true);
-        if (!anyEnabled) return;
+          // Schedule notifications if any toggle is enabled
+          const s = schedule;
+          const anyEnabled =
+            (s?.notifyMilestones ?? true) ||
+            (s?.notifyCheckIns ?? true) ||
+            (s?.notifyEatingWindow ?? true);
+          if (!anyEnabled) return;
 
-        const granted = await requestNotificationPermission();
-        if (!granted) {
-          Alert.alert(
-            "Notifications Disabled",
-            "Enable notifications in Settings to receive fasting reminders and milestone encouragements.",
-            [
-              { text: "Not Now", style: "cancel" },
-              {
-                text: "Open Settings",
-                onPress: () => Linking.openSettings(),
-              },
-            ],
-          );
-          return;
-        }
+          const granted = await requestNotificationPermission();
+          if (!granted) {
+            Alert.alert(
+              "Notifications Disabled",
+              "Enable notifications in Settings to receive fasting reminders and milestone encouragements.",
+              [
+                { text: "Not Now", style: "cancel" },
+                {
+                  text: "Open Settings",
+                  onPress: () => {
+                    void Linking.openSettings();
+                  },
+                },
+              ],
+            );
+            return;
+          }
 
-        const startedAt = new Date(log.startedAt);
-        const batches: Promise<string[]>[] = [];
+          const startedAt = new Date(log.startedAt);
+          const batches: Promise<string[]>[] = [];
 
-        if (s?.notifyMilestones ?? true) {
-          batches.push(
-            scheduleMilestoneNotifications(startedAt, log.targetDurationHours),
-          );
-        }
-        if (s?.notifyCheckIns ?? true) {
-          batches.push(scheduleCheckInNotifications(startedAt));
-        }
-        if (
-          (s?.notifyEatingWindow ?? true) &&
-          s?.eatingWindowStart &&
-          s?.eatingWindowEnd
-        ) {
-          batches.push(
-            scheduleEatingWindowNotifications(
-              s.eatingWindowStart,
-              s.eatingWindowEnd,
-            ),
-          );
-        }
-        await Promise.all(batches);
+          if (s?.notifyMilestones ?? true) {
+            batches.push(
+              scheduleMilestoneNotifications(
+                startedAt,
+                log.targetDurationHours,
+              ),
+            );
+          }
+          if (s?.notifyCheckIns ?? true) {
+            batches.push(scheduleCheckInNotifications(startedAt));
+          }
+          if (
+            (s?.notifyEatingWindow ?? true) &&
+            s?.eatingWindowStart &&
+            s?.eatingWindowEnd
+          ) {
+            batches.push(
+              scheduleEatingWindowNotifications(
+                s.eatingWindowStart,
+                s.eatingWindowEnd,
+              ),
+            );
+          }
+          await Promise.all(batches);
+        })();
       },
       onError: (err) => {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
@@ -220,7 +227,7 @@ export function useFastingTimer() {
       destructive: true,
       onConfirm: () => {
         // Cancel all pending fasting notifications (survives unmount/crash)
-        Notifications.cancelAllScheduledNotificationsAsync();
+        void Notifications.cancelAllScheduledNotificationsAsync();
 
         endFast.mutate(undefined, {
           onSuccess: (result) => {

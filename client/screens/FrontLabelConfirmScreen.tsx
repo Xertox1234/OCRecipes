@@ -102,26 +102,26 @@ export default function FrontLabelConfirmScreen() {
   const confirmMutation = useMutation({
     mutationFn: () => confirmFrontLabel(sessionId!, barcode),
     onSuccess: () => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       AccessibilityInfo.announceForAccessibility(
         "Product details saved successfully",
       );
       navigation.pop(2);
     },
     onError: (err: Error) => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setConfirmError(err.message || "Failed to save product details");
     },
   });
 
   const handleConfirm = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setConfirmError(null);
     confirmMutation.mutate();
   }, [confirmMutation]);
 
   const handleRetake = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     navigation.replace("Scan", { mode: "front-label", verifyBarcode: barcode });
   }, [navigation, barcode]);
 

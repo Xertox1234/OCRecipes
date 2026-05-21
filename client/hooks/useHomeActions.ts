@@ -18,17 +18,19 @@ export function useHomeActions() {
     useState<Record<string, number>>(getActionUsageCounts);
 
   useEffect(() => {
-    initHomeActionsCache().then(() => {
-      setSections(getSectionState());
-      setRecentActions(getRecentActions());
-      setUsageCounts(getActionUsageCounts());
-    });
+    initHomeActionsCache()
+      .then(() => {
+        setSections(getSectionState());
+        setRecentActions(getRecentActions());
+        setUsageCounts(getActionUsageCounts());
+      })
+      .catch(console.error);
   }, []);
 
   const toggleSection = useCallback((key: SectionKey) => {
     setSections((prev) => {
       const next = { ...prev, [key]: !prev[key] };
-      setSectionExpanded(key, next[key]);
+      void setSectionExpanded(key, next[key]);
       return next;
     });
   }, []);

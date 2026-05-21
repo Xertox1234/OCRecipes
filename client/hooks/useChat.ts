@@ -82,7 +82,9 @@ export function useCreateConversation() {
       return (await res.json()) as ChatConversation;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/chat/conversations"],
+      });
     },
   });
 }
@@ -94,7 +96,9 @@ export function useDeleteConversation() {
       await apiRequest("DELETE", `/api/chat/conversations/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/chat/conversations"],
+      });
     },
   });
 }
@@ -192,10 +196,10 @@ export function useSendMessage(conversationId: number | null) {
             }
             if (data.done) {
               receivedDone = true;
-              queryClient.invalidateQueries({
+              void queryClient.invalidateQueries({
                 queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
               });
-              queryClient.invalidateQueries({
+              void queryClient.invalidateQueries({
                 queryKey: ["/api/chat/conversations"],
               });
             }
@@ -283,10 +287,10 @@ export function useSendMessage(conversationId: number | null) {
           streamingContentRef.current.length > 0
         ) {
           setStreamError(true);
-          queryClient.invalidateQueries({
+          void queryClient.invalidateQueries({
             queryKey: [`/api/chat/conversations/${effectiveId}/messages`],
           });
-          queryClient.invalidateQueries({
+          void queryClient.invalidateQueries({
             queryKey: ["/api/chat/conversations"],
           });
         }
@@ -349,7 +353,9 @@ export function usePinConversation() {
       return (await res.json()) as ChatConversation;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/chat/conversations"],
+      });
     },
   });
 }
@@ -373,7 +379,9 @@ export function useSaveRecipeFromChat() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/chat/conversations"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/chat/conversations"],
+      });
     },
   });
 }
@@ -427,7 +435,7 @@ export function useCreateNotebookEntry() {
       return (await res.json()) as NotebookEntry;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
   });
 }
@@ -453,7 +461,7 @@ export function useUpdateNotebookEntry() {
       return (await res.json()) as NotebookEntry;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
   });
 }
@@ -465,7 +473,7 @@ export function useDeleteNotebookEntry() {
       await apiRequest("DELETE", `/api/coach/notebook/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/coach/notebook"] });
     },
   });
 }

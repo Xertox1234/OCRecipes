@@ -162,9 +162,9 @@ export default function ReceiptCaptureScreen() {
         <Pressable
           onPress={() => {
             if (permission?.canAskAgain) {
-              requestPermission();
+              void requestPermission();
             } else {
-              Linking.openSettings();
+              void Linking.openSettings();
             }
           }}
           style={[styles.permissionButton, { backgroundColor: theme.link }]}

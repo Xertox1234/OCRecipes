@@ -237,7 +237,7 @@ export default function ScanScreen() {
     }
 
     const timer = setTimeout(() => {
-      refreshScanCount();
+      void refreshScanCount();
       navigation.navigate("NutritionDetail", {
         barcode,
         nutritionImageUri,
@@ -257,9 +257,9 @@ export default function ScanScreen() {
         "/api/scanned-items",
         buildScannedItemPayload(confirmCard),
       );
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      refreshScanCount();
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+      void refreshScanCount();
       toast.success(buildSuccessToastMessage(confirmCard));
       navigation.goBack();
     } catch {
@@ -343,7 +343,9 @@ export default function ScanScreen() {
 
         if (confidence >= LOCK_THRESHOLD) {
           hasLockedRef.current = true;
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          void Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success,
+          );
           if (!reducedMotionRef.current) {
             setFlashCount((c) => c + 1);
             setSonarPos({
@@ -353,7 +355,7 @@ export default function ScanScreen() {
             setSonarVisible(true);
           }
           dispatch({ type: "BARCODE_LOCKED" });
-          fetchProductInfo(barcode);
+          void fetchProductInfo(barcode);
         } else {
           barcodeAbsentTimerRef.current = setTimeout(() => {
             dispatch({ type: "BARCODE_LOST" });
@@ -379,7 +381,7 @@ export default function ScanScreen() {
         Alert.alert("Capture failed", "Try again or use the gallery.");
         return;
       }
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       // Label mode: skip smart classification, go directly to LabelAnalysis
       if (isLabelMode) {
@@ -412,7 +414,7 @@ export default function ScanScreen() {
     }
 
     // Haptic + flash immediately after capture, before async OCR
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setFlashCount((c) => c + 1);
 
     if (phase.type === "STEP2_CAPTURING") {

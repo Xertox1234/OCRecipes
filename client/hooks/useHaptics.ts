@@ -14,7 +14,7 @@ export function useHaptics() {
       style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Medium,
     ) => {
       if (!reducedMotion) {
-        Haptics.impactAsync(style);
+        void Haptics.impactAsync(style);
       }
     },
     [reducedMotion],
@@ -23,7 +23,7 @@ export function useHaptics() {
   const notification = useCallback(
     (type: Haptics.NotificationFeedbackType) => {
       if (!reducedMotion) {
-        Haptics.notificationAsync(type);
+        void Haptics.notificationAsync(type);
       }
     },
     [reducedMotion],
@@ -31,7 +31,7 @@ export function useHaptics() {
 
   const selection = useCallback(() => {
     if (!reducedMotion) {
-      Haptics.selectionAsync();
+      void Haptics.selectionAsync();
     }
   }, [reducedMotion]);
 

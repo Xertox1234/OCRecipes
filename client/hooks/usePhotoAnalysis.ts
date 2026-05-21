@@ -176,7 +176,7 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
       }
     };
 
-    analyzePhoto();
+    void analyzePhoto();
     return () => {
       abortController.abort();
       if (abortControllerRef.current === abortController) {
@@ -308,8 +308,8 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
         analysisIntent: intent,
       });
 
-      queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
 
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();

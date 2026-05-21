@@ -169,7 +169,7 @@ export default function BatchScanScreen() {
   // Request permission on mount
   useEffect(() => {
     if (permission?.status !== "granted") {
-      requestPermission();
+      void requestPermission();
     }
   }, [permission, requestPermission]);
 

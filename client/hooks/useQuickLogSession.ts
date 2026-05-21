@@ -113,9 +113,9 @@ export function useQuickLogSession({
   const handleVoicePress = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     if (isListening) {
-      stopListening();
+      void stopListening();
     } else {
-      startListening();
+      void startListening();
     }
   }, [isListening, startListening, stopListening, haptics]);
 
@@ -178,9 +178,11 @@ export function useQuickLogSession({
         ),
         firstName: loggedItems[0]?.name ?? "Food",
       };
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.frequentItems,
+      });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       setParsedItems([]);
       setInputText("");
@@ -197,9 +199,15 @@ export function useQuickLogSession({
         setParsedItems((prev) => prev.filter((_, i) => failedSet.has(i)));
         if (failedIndices.length < items.length) {
           // Some items persisted — refresh stale queries
-          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-          queryClient.invalidateQueries({ queryKey: QUERY_KEYS.frequentItems });
+          void queryClient.invalidateQueries({
+            queryKey: QUERY_KEYS.dailySummary,
+          });
+          void queryClient.invalidateQueries({
+            queryKey: QUERY_KEYS.scannedItems,
+          });
+          void queryClient.invalidateQueries({
+            queryKey: QUERY_KEYS.frequentItems,
+          });
         }
       }
       const cappedCount = Math.min(items.length, MAX_LOG_ITEMS);

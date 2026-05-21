@@ -64,7 +64,9 @@ function useUpdateReminderMute() {
       // Invalidate rather than setQueryData — avoids corrupting the full profile
       // cache when it is cold (old === undefined), which would drop non-mutes
       // fields read by other hooks on the same key.
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dietaryProfile });
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.dietaryProfile,
+      });
     },
   });
 }

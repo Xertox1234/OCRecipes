@@ -36,7 +36,7 @@ export default function CookbookListScreen() {
   // since recipes may have been added from other screens in the stack
   useFocusEffect(
     useCallback(() => {
-      refetch();
+      void refetch();
     }, [refetch]),
   );
 

@@ -70,7 +70,7 @@ export function useNutritionLookup(params: {
 
   useEffect(() => {
     if (Platform.OS === "ios" && correctionNotice) {
-      AccessibilityInfo.announceForAccessibility(
+      void AccessibilityInfo.announceForAccessibility(
         `Serving size adjusted: ${correctionNotice}`,
       );
     }
@@ -78,7 +78,7 @@ export function useNutritionLookup(params: {
 
   useEffect(() => {
     if (Platform.OS === "ios" && error) {
-      AccessibilityInfo.announceForAccessibility(error);
+      void AccessibilityInfo.announceForAccessibility(error);
     }
   }, [error]);
 
@@ -391,7 +391,7 @@ export function useNutritionLookup(params: {
     }
 
     if (barcode) {
-      fetchBarcodeData(barcode);
+      void fetchBarcodeData(barcode);
     } else if (imageUri) {
       setNutrition({
         productName: "Manual Entry",
@@ -416,8 +416,8 @@ export function useNutritionLookup(params: {
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     },

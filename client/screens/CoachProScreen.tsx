@@ -115,10 +115,10 @@ export default function CoachProScreen() {
     const activeIds = notebookEntries
       .filter((e) => e.type === "commitment")
       .map((e) => e.id);
-    cancelStaleReminders(activeIds);
+    cancelStaleReminders(activeIds).catch(() => {});
 
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") cancelStaleReminders(activeIds);
+      if (state === "active") cancelStaleReminders(activeIds).catch(() => {});
     });
     return () => sub.remove();
   }, [notebookEntries, isEntriesLoading, cancelStaleReminders]);

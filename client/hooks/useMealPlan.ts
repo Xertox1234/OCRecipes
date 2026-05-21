@@ -10,7 +10,7 @@ import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 export function invalidateMealPlanItems(
   queryClient: ReturnType<typeof useQueryClient>,
 ) {
-  queryClient.invalidateQueries({
+  void queryClient.invalidateQueries({
     predicate: (query) => {
       const key = query.queryKey;
       return Array.isArray(key) && key[0] === "/api/meal-plan";
@@ -91,7 +91,7 @@ export function useConfirmMealPlanItem() {
     },
     onSuccess: () => {
       invalidateMealPlanItems(queryClient);
-      queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
     },
   });
 }

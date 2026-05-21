@@ -55,8 +55,8 @@ export function useDiscardItem() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
     },
   });
 }

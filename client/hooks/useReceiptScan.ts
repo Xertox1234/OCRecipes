@@ -106,9 +106,13 @@ export function useReceiptConfirm() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry/expiring"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/receipt/scan-count"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/pantry/expiring"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/receipt/scan-count"],
+      });
     },
   });
 }

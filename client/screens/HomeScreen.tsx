@@ -98,11 +98,11 @@ export default function HomeScreen() {
   );
 
   const handleRefresh = useCallback(() => {
-    queryClient.invalidateQueries({
+    void queryClient.invalidateQueries({
       queryKey: ["/api/carousel"],
     });
-    queryClient.invalidateQueries({ queryKey: ["/api/curated-recipes"] });
-    refetch().then(() => haptics.impact());
+    void queryClient.invalidateQueries({ queryKey: ["/api/curated-recipes"] });
+    void refetch().then(() => haptics.impact());
   }, [queryClient, refetch, haptics]);
 
   const handleActionPress = useCallback(

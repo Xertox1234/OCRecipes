@@ -805,7 +805,7 @@ export default function RecipeBrowserScreen() {
             description="Something went wrong searching the online catalog. Check your connection and try again."
             actionLabel="Retry"
             onAction={() => {
-              refetchSearch();
+              void refetchSearch();
             }}
           />
         </View>

@@ -130,7 +130,7 @@ export function useDietaryProfileForm() {
       });
 
       // Invalidate the dietary profile query to refresh data
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: QUERY_KEYS.dietaryProfile,
       });
 
