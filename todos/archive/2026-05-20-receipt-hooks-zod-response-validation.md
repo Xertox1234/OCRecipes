@@ -1,6 +1,6 @@
 ---
 title: "Validate receipt-scan hook responses with Zod at the network boundary"
-status: backlog
+status: done
 priority: low
 created: 2026-05-20
 updated: 2026-05-20

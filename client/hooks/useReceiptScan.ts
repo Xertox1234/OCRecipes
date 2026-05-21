@@ -1,33 +1,62 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
-import type { PantryItem } from "@shared/schema";
+import { ApiError } from "@/lib/api-error";
 
-export interface ReceiptItem {
-  name: string;
-  originalName: string;
-  quantity: number;
-  unit?: string;
-  category: string;
-  isFood: boolean;
-  estimatedShelfLifeDays: number;
-  confidence: number;
-}
+/**
+ * Runtime schemas for the receipt endpoints, validated at the network boundary
+ * so server contract drift surfaces as a structured error instead of a silent
+ * bad cast. Shapes mirror the JSON wire format, not the Drizzle/server types
+ * (see the per-field notes on `pantryItemSchema` for the decimal/timestamp →
+ * string serialization). On the scan response below, `category` is kept as a
+ * plain string (the server enum is validated server-side) for forward-compat
+ * with new categories.
+ */
+const receiptItemSchema = z.object({
+  name: z.string(),
+  originalName: z.string(),
+  quantity: z.number(),
+  unit: z.string().optional(),
+  category: z.string(),
+  isFood: z.boolean(),
+  estimatedShelfLifeDays: z.number(),
+  confidence: z.number(),
+});
 
-export interface ReceiptAnalysisResult {
-  items: ReceiptItem[];
-  storeName?: string;
-  purchaseDate?: string;
-  totalAmount?: string;
-  isPartialExtraction: boolean;
-  overallConfidence: number;
-}
+const receiptAnalysisResultSchema = z.object({
+  items: z.array(receiptItemSchema),
+  storeName: z.string().optional(),
+  purchaseDate: z.string().optional(),
+  totalAmount: z.string().optional(),
+  isPartialExtraction: z.boolean(),
+  overallConfidence: z.number(),
+});
 
-export interface ReceiptConfirmResult {
-  added: number;
-  items: PantryItem[];
-}
+// Wire shape of a `PantryItem` (shared/schema). The Drizzle row types the
+// timestamps as `Date` and `quantity` as `string`, but JSON serialization sends
+// timestamps as ISO strings — this schema matches what actually arrives.
+const pantryItemSchema = z.object({
+  id: z.number(),
+  userId: z.string(),
+  name: z.string(),
+  quantity: z.string().nullable(),
+  unit: z.string().nullable(),
+  category: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+  addedAt: z.string(),
+  updatedAt: z.string(),
+});
+
+const receiptConfirmResultSchema = z.object({
+  added: z.number(),
+  items: z.array(pantryItemSchema),
+});
+
+export type ReceiptItem = z.infer<typeof receiptItemSchema>;
+export type ReceiptAnalysisResult = z.infer<typeof receiptAnalysisResultSchema>;
+export type ReceiptConfirmResult = z.infer<typeof receiptConfirmResultSchema>;
 
 export interface ReceiptScanCount {
   count: number;
@@ -69,13 +98,25 @@ export function useReceiptScan() {
         });
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
+          const errorData = (await response.json().catch(() => ({}))) as {
+            error?: string;
+          };
           throw new Error(
             errorData.error || `Receipt scan failed: ${response.status}`,
           );
         }
 
-        return response.json();
+        const json = await response.json();
+        const parsed = receiptAnalysisResultSchema.safeParse(json);
+        if (!parsed.success) {
+          throw new ApiError(
+            `Unexpected /api/receipt/scan response shape: ${JSON.stringify(
+              parsed.error.flatten(),
+            )}`,
+            "INVALID_RESPONSE_SHAPE",
+          );
+        }
+        return parsed.data;
       } finally {
         await Promise.all(compressedUris.map((uri) => cleanupImage(uri)));
       }
@@ -100,10 +141,22 @@ export function useReceiptConfirm() {
     mutationFn: async (items) => {
       const res = await apiRequest("POST", "/api/receipt/confirm", { items });
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
+        const errorData = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
         throw new Error(errorData.error || `Confirm failed: ${res.status}`);
       }
-      return res.json();
+      const json = await res.json();
+      const parsed = receiptConfirmResultSchema.safeParse(json);
+      if (!parsed.success) {
+        throw new ApiError(
+          `Unexpected /api/receipt/confirm response shape: ${JSON.stringify(
+            parsed.error.flatten(),
+          )}`,
+          "INVALID_RESPONSE_SHAPE",
+        );
+      }
+      return parsed.data;
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
