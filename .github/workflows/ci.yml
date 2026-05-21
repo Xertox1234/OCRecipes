@@ -33,6 +33,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check LSP agent block parity
+        run: npm run lsp:check-agent-block
+
       - name: ESLint suppressions are pruned
         run: npm run lint:suppress:check
 
