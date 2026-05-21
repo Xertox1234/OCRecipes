@@ -246,6 +246,25 @@ Confirmed accepted by DeepSeek V4 Flash via OpenRouter (no 400).
 
 ## 6. Invariants
 
+### Husky shell execution (bash required)
+
+Husky runs the hook as `sh -e` (see `.husky/_/h` → `sh -e "$s"`), **ignoring the
+`#!/usr/bin/env bash` shebang.** Two consequences the hook must handle, or every
+commit breaks:
+
+- **errexit:** any unguarded command that exits non-zero aborts the hook. The
+  CRITICAL-detection `grep` returns 1 on a clean review (no match), so it is
+  guarded with `|| true` (mirrors `scripts/ci-kimi-review.sh`). Without it,
+  every clean `.ts`/`.tsx` commit fails with code 1.
+- **non-bash sh:** on Linux `/bin/sh` is dash, which cannot parse the hook's
+  bash-only syntax (arrays, `<<<`, `$'...'`). `.husky/pre-commit` re-execs under
+  bash (`if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi`) before
+  `lint-staged`. On macOS `sh` is bash, so the guard is a no-op.
+
+The test harness exercises both: `run_husky_gate` invokes `sh -e`, and
+`run_husky_gate_dash` invokes `dash -e` (when dash is installed). Running the hook
+with plain `bash` in tests previously masked the errexit bug.
+
 ### Secret-safety
 
 Only `.ts` and `.tsx` file content enters the `<diff>` block. Non-code files
