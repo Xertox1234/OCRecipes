@@ -102,6 +102,35 @@ describe("classifyIntent", () => {
     }
   });
 
+  // Codified rule (docs/rules/ai-prompting.md): every User: example in the
+  // safety_refusal few-shot bundle must itself classify as safety_refusal — a
+  // few-shot whose message routes elsewhere is never bundled into the prompt
+  // and silently rots. Read from source (not duplicated) so the test tracks
+  // buildIntentBlock's safety block in nutrition-coach.ts.
+  describe("safety few-shot examples must classify as safety_refusal", () => {
+    const coachSource = fs.readFileSync(
+      path.join(__dirname, "../nutrition-coach.ts"),
+      "utf8",
+    );
+    const safetyBlock = coachSource.slice(
+      coachSource.indexOf('intent === "safety_refusal"'),
+      coachSource.indexOf('intent === "general_fact"'),
+    );
+    const fewShotUsers = [...safetyBlock.matchAll(/User: '([^']+)'/g)].map(
+      (m) => m[1],
+    );
+
+    it("extracted the safety few-shot user messages from source", () => {
+      expect(fewShotUsers.length).toBeGreaterThanOrEqual(6);
+    });
+
+    for (const msg of fewShotUsers) {
+      it(`few-shot routes to safety_refusal: "${msg.slice(0, 45)}…"`, () => {
+        expect(classifyIntent(msg).intent).toBe("safety_refusal");
+      });
+    }
+  });
+
   describe("intent-specific unit cases", () => {
     it("classifies 'Help' as vague_request", () => {
       expect(classifyIntent("Help").intent).toBe("vague_request");
