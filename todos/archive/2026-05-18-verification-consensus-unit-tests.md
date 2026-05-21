@@ -1,6 +1,6 @@
 ---
 title: "Add unit tests for the extracted verification-consensus pure functions"
-status: backlog
+status: done
 priority: low
 created: 2026-05-18
 updated: 2026-05-18
