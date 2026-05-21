@@ -22,7 +22,7 @@ export function useDiscoveryCards(usageCounts: Record<string, number>): {
       .then(() => {
         setDismissedIds((prev) => new Set([...getDismissedCardIds(), ...prev]));
       })
-      .catch(() => {});
+      .catch((err) => console.error("Failed to init discovery cache", err));
   }, []);
 
   const visibleCards = DISCOVERY_CARDS.filter(

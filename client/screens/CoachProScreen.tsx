@@ -115,10 +115,15 @@ export default function CoachProScreen() {
     const activeIds = notebookEntries
       .filter((e) => e.type === "commitment")
       .map((e) => e.id);
-    cancelStaleReminders(activeIds).catch(() => {});
+    cancelStaleReminders(activeIds).catch((err) =>
+      console.error("Failed to cancel stale reminders", err),
+    );
 
     const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") cancelStaleReminders(activeIds).catch(() => {});
+      if (state === "active")
+        cancelStaleReminders(activeIds).catch((err) =>
+          console.error("Failed to cancel stale reminders", err),
+        );
     });
     return () => sub.remove();
   }, [notebookEntries, isEntriesLoading, cancelStaleReminders]);
