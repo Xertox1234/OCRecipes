@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   ActivityIndicator,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -253,6 +254,7 @@ export default function RecipeChatScreen() {
           (m) => m.role === "assistant",
         ).length;
         setPendingAssistantMessage({ content, recipe });
+        AccessibilityInfo.announceForAccessibility("Recipe response received");
       }
       lastStreamingContentRef.current = "";
       lastStreamingRecipeRef.current = null;
@@ -284,8 +286,10 @@ export default function RecipeChatScreen() {
         void Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
         );
+        AccessibilityInfo.announceForAccessibility("Recipe saved");
       } catch {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        AccessibilityInfo.announceForAccessibility("Couldn't save recipe");
       }
     },
     [conversationId, saveRecipeMutation],

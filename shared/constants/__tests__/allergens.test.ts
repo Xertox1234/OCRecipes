@@ -162,6 +162,79 @@ describe("ingredientContainsKeyword", () => {
 });
 
 // ============================================================================
+// PLANT-SUBSTITUTE GUARD (bare dairy/wheat keyword preceded by a plant base)
+// ============================================================================
+
+describe("ingredientContainsKeyword — plant-substitute guard", () => {
+  it("does NOT match bare dairy keywords inside plant milks/creams/butters", () => {
+    const cases: [string, string][] = [
+      ["almond milk", "milk"],
+      ["unsweetened oat milk", "milk"],
+      ["soy milk", "milk"],
+      ["coconut milk", "milk"],
+      ["cashew milk", "milk"],
+      ["rice milk", "milk"],
+      ["oat-milk", "milk"],
+      ["coconut cream", "cream"],
+      ["peanut butter", "butter"],
+      ["almond butter", "butter"],
+      ["sunflower butter", "butter"],
+      ["cocoa butter", "butter"],
+    ];
+    for (const [ingredient, keyword] of cases) {
+      expect(ingredientContainsKeyword(ingredient, keyword)).toBe(false);
+    }
+  });
+
+  it("does NOT match bare 'flour' inside gluten-free substitute flours", () => {
+    const flours = [
+      "almond flour",
+      "coconut flour",
+      "rice flour",
+      "chickpea flour",
+      "garbanzo flour",
+      "oat flour",
+      "corn flour",
+      "tapioca flour",
+      "cassava flour",
+      "buckwheat flour",
+    ];
+    for (const ingredient of flours) {
+      expect(ingredientContainsKeyword(ingredient, "flour")).toBe(false);
+    }
+  });
+
+  it("STILL matches bare dairy/wheat staples (must not under-flag)", () => {
+    const mustMatch: [string, string][] = [
+      ["milk", "milk"],
+      ["cream", "cream"],
+      ["butter", "butter"],
+      ["flour", "flour"],
+      ["whole milk", "milk"],
+      ["skim milk", "milk"],
+      ["ice cream", "cream"],
+      ["heavy cream", "cream"],
+      ["whipped cream", "cream"],
+      ["sour cream", "cream"],
+      ["unsalted butter", "butter"],
+      ["cream cheese", "cream"],
+      ["wheat flour", "flour"],
+      ["white flour", "flour"],
+      ["bread flour", "flour"],
+      ["all-purpose flour", "flour"],
+      ["whole wheat flour", "flour"],
+    ];
+    for (const [ingredient, keyword] of mustMatch) {
+      expect(ingredientContainsKeyword(ingredient, keyword)).toBe(true);
+    }
+  });
+
+  it("'buttermilk' still flags milk via its explicit keyword (one word)", () => {
+    expect(ingredientContainsKeyword("buttermilk", "buttermilk")).toBe(true);
+  });
+});
+
+// ============================================================================
 // DETECT ALLERGENS
 // ============================================================================
 
@@ -309,6 +382,40 @@ describe("deriveRecipeAllergens", () => {
 
   it("returns an empty array when no allergen keywords match", () => {
     expect(deriveRecipeAllergens(["broccoli", "olive oil"])).toEqual([]);
+  });
+
+  it("plant substitutes derive only their OWN allergen, not the substituted one", () => {
+    // almond milk → tree_nut (via "almond"), NOT milk
+    const almondMilk = deriveRecipeAllergens(["almond milk"]).map((a) => a.id);
+    expect(almondMilk).toContain("tree_nuts");
+    expect(almondMilk).not.toContain("milk");
+
+    // soy milk → soy, NOT milk
+    const soyMilk = deriveRecipeAllergens(["soy milk"]).map((a) => a.id);
+    expect(soyMilk).toContain("soy");
+    expect(soyMilk).not.toContain("milk");
+
+    // peanut butter → peanuts, NOT milk
+    const peanutButter = deriveRecipeAllergens(["peanut butter"]).map(
+      (a) => a.id,
+    );
+    expect(peanutButter).toContain("peanuts");
+    expect(peanutButter).not.toContain("milk");
+
+    // coconut flour → no allergens (coconut isn't tracked here), NOT wheat
+    expect(deriveRecipeAllergens(["coconut flour"])).toEqual([]);
+  });
+
+  it("real dairy/wheat staples still derive their allergen", () => {
+    expect(deriveRecipeAllergens(["whole milk"]).map((a) => a.id)).toContain(
+      "milk",
+    );
+    expect(deriveRecipeAllergens(["wheat flour"]).map((a) => a.id)).toContain(
+      "wheat",
+    );
+    expect(deriveRecipeAllergens(["butter"]).map((a) => a.id)).toContain(
+      "milk",
+    );
   });
 });
 

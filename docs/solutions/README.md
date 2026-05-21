@@ -52,13 +52,15 @@ Decomposition manifests live under [`_manifests/`](./_manifests/) (prefixed `_` 
 
 ### By Symptom (bug-track)
 
-| Symptom                                                         | Solution                                                                                                                                |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Duplicate callbacks firing                                      | [stale-closure-callback-refs.md](./logic-errors/stale-closure-callback-refs.md)                                                         |
-| UI render branch always shows the fallback / data never appears | [dead-ui-branch-from-duplicated-context-types-2026-05-16.md](./logic-errors/dead-ui-branch-from-duplicated-context-types-2026-05-16.md) |
-| "Can't perform state update on unmounted component"             | [useeffect-cleanup-memory-leak.md](./logic-errors/useeffect-cleanup-memory-leak.md)                                                     |
-| Runtime type errors from database                               | [unsafe-type-cast-zod-validation.md](./runtime-errors/unsafe-type-cast-zod-validation.md)                                               |
-| No style autocomplete                                           | [react-native-style-typing.md](./code-quality/react-native-style-typing.md)                                                             |
+| Symptom                                                           | Solution                                                                                                                                                        |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Duplicate callbacks firing                                        | [stale-closure-callback-refs.md](./logic-errors/stale-closure-callback-refs.md)                                                                                 |
+| UI render branch always shows the fallback / data never appears   | [dead-ui-branch-from-duplicated-context-types-2026-05-16.md](./logic-errors/dead-ui-branch-from-duplicated-context-types-2026-05-16.md)                         |
+| "Can't perform state update on unmounted component"               | [useeffect-cleanup-memory-leak.md](./logic-errors/useeffect-cleanup-memory-leak.md)                                                                             |
+| Loading spinner stuck forever after the screen regains focus      | [abort-on-blur-strands-loading-state-2026-05-20.md](./logic-errors/abort-on-blur-strands-loading-state-2026-05-20.md)                                           |
+| Dairy-free / gluten-free recipes wrongly flagged or over-excluded | [allergen-keyword-matcher-plant-substitute-false-positive-2026-05-20.md](./logic-errors/allergen-keyword-matcher-plant-substitute-false-positive-2026-05-20.md) |
+| Runtime type errors from database                                 | [unsafe-type-cast-zod-validation.md](./runtime-errors/unsafe-type-cast-zod-validation.md)                                                                       |
+| No style autocomplete                                             | [react-native-style-typing.md](./code-quality/react-native-style-typing.md)                                                                                     |
 
 ### By Tag
 
