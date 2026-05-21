@@ -142,9 +142,9 @@ function formatPantryItems(items: PantryItem[]): string {
     .map((item) => {
       const parts = [`- ${sanitizeUserInput(item.name)}`];
       if (item.quantity) parts[0] += `: ${item.quantity}`;
-      if (item.unit) parts[0] += ` ${item.unit}`;
+      if (item.unit) parts[0] += ` ${sanitizeUserInput(item.unit)}`;
       if (item.category && item.category !== "other") {
-        parts[0] += ` (${item.category})`;
+        parts[0] += ` (${sanitizeUserInput(item.category)})`;
       }
       if (item.expiresAt) {
         const daysLeft = Math.ceil(
