@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ZodError } from "zod";
 import {
   generateMealPlanFromPantry,
   buildPantryMealPlanForUser,
@@ -249,6 +250,16 @@ describe("pantry-meal-plan", () => {
       await expect(generateMealPlanFromPantry(BASE_INPUT)).rejects.toThrow(
         "AI returned invalid JSON response",
       );
+    });
+
+    it("should throw a ZodError if AI returns valid JSON of the wrong shape", async () => {
+      vi.mocked(openai.chat.completions.create).mockResolvedValue(
+        createMockChatCompletion(JSON.stringify({ unexpected: true })),
+      );
+
+      await expect(
+        generateMealPlanFromPantry(BASE_INPUT),
+      ).rejects.toBeInstanceOf(ZodError);
     });
 
     it("should throw if OpenAI API fails", async () => {
