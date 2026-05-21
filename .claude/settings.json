@@ -129,6 +129,17 @@
             "statusMessage": "Provisioning worktree dependencies..."
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/lsp-nudge.sh",
+            "timeout": 10,
+            "statusMessage": ""
+          }
+        ]
       }
     ],
     "Stop": [
