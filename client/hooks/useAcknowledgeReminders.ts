@@ -18,7 +18,7 @@ export function useAcknowledgeReminders() {
     },
     onSuccess: (data) => {
       setCoachContext(data.coachContext);
-      queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
+      void queryClient.invalidateQueries({ queryKey: PENDING_REMINDERS_KEY });
     },
   });
 

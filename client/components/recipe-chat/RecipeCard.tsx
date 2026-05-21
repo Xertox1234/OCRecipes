@@ -69,18 +69,18 @@ function RecipeCardInner({
   const toggleIngredients = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setIngredientsExpanded((prev) => !prev);
-    Haptics.selectionAsync();
+    void Haptics.selectionAsync();
   }, []);
 
   const toggleInstructions = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setInstructionsExpanded((prev) => !prev);
-    Haptics.selectionAsync();
+    void Haptics.selectionAsync();
   }, []);
 
   const handleSave = useCallback(() => {
     if (isSaved || isSaving || !onSave) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onSave();
   }, [isSaved, isSaving, onSave]);
 

@@ -40,8 +40,9 @@ export function useIAP(): UseIAPResult {
       return result;
     },
 
-    async finishTransaction(purchase: IAPPurchaseResult): Promise<void> {
+    finishTransaction(purchase: IAPPurchaseResult): Promise<void> {
       console.info(`[MockIAP] finishTransaction: ${purchase.transactionId}`);
+      return Promise.resolve();
     },
   };
 }

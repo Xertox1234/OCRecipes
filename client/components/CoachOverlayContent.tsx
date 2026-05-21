@@ -118,10 +118,10 @@ export function CoachOverlayContent({
   } = useCoachStream({
     onDone: (_fullText, _blocks) => {
       if (conversationId !== null) {
-        queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: [`/api/chat/conversations/${conversationId}/messages`],
         });
-        queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: ["/api/chat/conversations"],
         });
       }

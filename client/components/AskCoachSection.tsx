@@ -41,7 +41,7 @@ export const AskCoachSection = React.memo(function AskCoachSection({
       }
       // Allow parent to intercept specific questions (e.g., remix)
       if (onCustomPress?.(q)) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       navigation.navigate("CoachChat", {
         question: q.question,
         questionText: q.text,

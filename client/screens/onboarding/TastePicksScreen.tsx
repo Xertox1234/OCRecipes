@@ -72,7 +72,7 @@ export default function TastePicksScreen() {
   );
 
   useEffect(() => {
-    loadCandidates(1);
+    void loadCandidates(1);
   }, [loadCandidates]);
 
   const handleToggle = useCallback((recipeId: number) => {
@@ -91,13 +91,13 @@ export default function TastePicksScreen() {
     if (!hasMore) return;
     const nextPage = page + 1;
     setPage(nextPage);
-    loadCandidates(nextPage);
+    void loadCandidates(nextPage);
   }, [hasMore, page, loadCandidates]);
 
   const handleRetry = useCallback(() => {
     setPage(1);
     setHasMore(true);
-    loadCandidates(1);
+    void loadCandidates(1);
   }, [loadCandidates]);
 
   const handleContinue = useCallback(async () => {

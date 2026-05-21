@@ -43,7 +43,7 @@ export default function TimeServingsStep({
     (delta: number) => {
       const next = clampServings(servings, delta);
       if (next === servings) return;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setTimeServings({ ...timeServings, servings: next });
     },
     [servings, timeServings, setTimeServings],

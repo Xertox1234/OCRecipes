@@ -117,8 +117,10 @@ export function useCreateMealPlanRecipe() {
       return res.json() as Promise<MealPlanRecipe>;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meal-plan/recipes"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/meal-plan/recipes"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
   });
 }
@@ -162,8 +164,10 @@ export function useSaveCatalogRecipe() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meal-plan/recipes"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/meal-plan/recipes"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
   });
 }
@@ -187,8 +191,10 @@ export function useImportRecipeFromUrl() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meal-plan/recipes"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/meal-plan/recipes"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["/api/recipes/browse"] });
     },
   });
 }

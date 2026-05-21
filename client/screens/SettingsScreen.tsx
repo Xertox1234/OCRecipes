@@ -211,9 +211,11 @@ export default function SettingsScreen() {
         case "subscription":
           if (isPremium) {
             if (Platform.OS === "ios") {
-              Linking.openURL("https://apps.apple.com/account/subscriptions");
+              void Linking.openURL(
+                "https://apps.apple.com/account/subscriptions",
+              );
             } else {
-              Linking.openURL(
+              void Linking.openURL(
                 "https://play.google.com/store/account/subscriptions",
               );
             }
@@ -230,7 +232,9 @@ export default function SettingsScreen() {
             {
               text: "Sign Out",
               style: "destructive",
-              onPress: () => logout(),
+              onPress: () => {
+                void logout();
+              },
             },
           ]);
           break;

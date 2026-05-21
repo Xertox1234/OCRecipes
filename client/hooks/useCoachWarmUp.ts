@@ -8,7 +8,7 @@ export function useCoachWarmUp(conversationId: number | null) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendWarmUp = useCallback(
-    async (interimTranscript: string) => {
+    (interimTranscript: string) => {
       if (!conversationId || pendingRef.current) return;
       if (interimTranscript.length < 20) return;
       if (interimTranscript === lastTranscriptRef.current) return;
@@ -16,20 +16,22 @@ export function useCoachWarmUp(conversationId: number | null) {
       lastTranscriptRef.current = interimTranscript;
 
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(async () => {
-        pendingRef.current = true;
-        try {
-          const res = await apiRequest("POST", "/api/coach/warm-up", {
-            conversationId,
-            interimTranscript,
-          });
-          const data = await res.json();
-          warmUpIdRef.current = data.warmUpId;
-        } catch {
-          warmUpIdRef.current = null;
-        } finally {
-          pendingRef.current = false;
-        }
+      timerRef.current = setTimeout(() => {
+        void (async () => {
+          pendingRef.current = true;
+          try {
+            const res = await apiRequest("POST", "/api/coach/warm-up", {
+              conversationId,
+              interimTranscript,
+            });
+            const data = await res.json();
+            warmUpIdRef.current = data.warmUpId;
+          } catch {
+            warmUpIdRef.current = null;
+          } finally {
+            pendingRef.current = false;
+          }
+        })();
       }, 500);
     },
     [conversationId],
@@ -42,7 +44,7 @@ export function useCoachWarmUp(conversationId: number | null) {
   }, []);
 
   const sendTextWarmUp = useCallback(
-    async (text: string) => {
+    (text: string) => {
       if (!conversationId || pendingRef.current) return;
       if (text.length < 3) return;
       if (text === lastTranscriptRef.current) return;
@@ -50,20 +52,22 @@ export function useCoachWarmUp(conversationId: number | null) {
       lastTranscriptRef.current = text;
 
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(async () => {
-        pendingRef.current = true;
-        try {
-          const res = await apiRequest("POST", "/api/coach/warm-up", {
-            conversationId,
-            interimTranscript: text,
-          });
-          const data = await res.json();
-          warmUpIdRef.current = data.warmUpId;
-        } catch {
-          warmUpIdRef.current = null;
-        } finally {
-          pendingRef.current = false;
-        }
+      timerRef.current = setTimeout(() => {
+        void (async () => {
+          pendingRef.current = true;
+          try {
+            const res = await apiRequest("POST", "/api/coach/warm-up", {
+              conversationId,
+              interimTranscript: text,
+            });
+            const data = await res.json();
+            warmUpIdRef.current = data.warmUpId;
+          } catch {
+            warmUpIdRef.current = null;
+          } finally {
+            pendingRef.current = false;
+          }
+        })();
       }, 500);
     },
     [conversationId],

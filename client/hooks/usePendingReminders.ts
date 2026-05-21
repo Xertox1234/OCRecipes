@@ -19,7 +19,7 @@ export function usePendingReminders(): { hasPending: boolean } {
   useEffect(() => {
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") {
-        queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+        void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       }
     });
     return () => sub.remove();

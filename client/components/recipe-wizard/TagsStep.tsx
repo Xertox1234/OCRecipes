@@ -40,7 +40,7 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
 
   const handleTagToggle = useCallback(
     (tag: DietTag) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setTags({ ...tags, dietTags: toggleDietTag(tags.dietTags, tag) });
     },
     [tags, setTags],

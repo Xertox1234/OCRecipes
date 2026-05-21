@@ -10,7 +10,9 @@ export function useProfileWidgets() {
     placeholderData: keepPreviousData,
   });
 
-  useRefreshOnFocus(query.refetch);
+  useRefreshOnFocus(() => {
+    void query.refetch();
+  });
 
   return query;
 }

@@ -62,8 +62,10 @@ export function useCreateSavedItem() {
     },
     onSuccess: (data) => {
       if (!data.limitReached) {
-        queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/saved-items/count"] });
+        void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/saved-items/count"],
+        });
       }
     },
   });
@@ -80,8 +82,10 @@ export function useDeleteSavedItem() {
       await apiRequest("DELETE", `/api/saved-items/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-items/count"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/saved-items"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/saved-items/count"],
+      });
     },
   });
 }

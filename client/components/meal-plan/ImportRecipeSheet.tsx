@@ -94,7 +94,7 @@ function ImportRecipeSheetInner({
   );
 
   const handleCamera = useCallback(() => {
-    handlePremiumAction(async () => {
+    void handlePremiumAction(async () => {
       if (!mealType) return;
       haptics.impact(ImpactFeedbackStyle.Light);
       const result = await ImagePicker.launchCameraAsync({
@@ -115,7 +115,7 @@ function ImportRecipeSheetInner({
   ]);
 
   const handleGallery = useCallback(() => {
-    handlePremiumAction(async () => {
+    void handlePremiumAction(async () => {
       if (!mealType) return;
       haptics.impact(ImpactFeedbackStyle.Light);
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -136,7 +136,7 @@ function ImportRecipeSheetInner({
   ]);
 
   const handleClipboard = useCallback(() => {
-    handlePremiumAction(async () => {
+    void handlePremiumAction(async () => {
       if (!mealType) return;
       haptics.impact(ImpactFeedbackStyle.Light);
       setClipboardError(null);

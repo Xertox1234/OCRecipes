@@ -281,9 +281,11 @@ export default function RecipeChatScreen() {
         await saveRecipeMutation.mutateAsync({ conversationId, messageId });
         savedMessageIdsRef.current.add(messageId);
         forceRender((n) => n + 1);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
       } catch {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     },
     [conversationId, saveRecipeMutation],
@@ -297,7 +299,7 @@ export default function RecipeChatScreen() {
       setInputText("");
       setHasStarted(true);
       setPendingUserMessage(content);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       let convId = conversationId;
       if (!convId) {
@@ -321,7 +323,7 @@ export default function RecipeChatScreen() {
         }
       }
 
-      sendMessage(content, undefined, convId);
+      void sendMessage(content, undefined, convId);
     },
     [
       inputText,
@@ -336,7 +338,7 @@ export default function RecipeChatScreen() {
 
   const handleChipPress = useCallback(
     (prompt: string) => {
-      handleSend(prompt);
+      void handleSend(prompt);
     },
     [handleSend],
   );

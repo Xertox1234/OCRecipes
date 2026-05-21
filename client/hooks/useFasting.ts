@@ -45,7 +45,9 @@ export function useUpdateSchedule() {
       return (await res.json()) as ApiFastingSchedule;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/fasting/schedule"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/fasting/schedule"],
+      });
     },
   });
 }
@@ -58,8 +60,12 @@ export function useStartFast() {
       return (await res.json()) as ApiFastingLog;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/fasting/current"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/fasting/history"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/fasting/current"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/fasting/history"],
+      });
     },
   });
 }
@@ -72,8 +78,12 @@ export function useEndFast() {
       return (await res.json()) as ApiFastingLog;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/fasting/current"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/fasting/history"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/fasting/current"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/fasting/history"],
+      });
     },
   });
 }

@@ -56,7 +56,7 @@ export function useToggleFavourite() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
     },
   });
 }

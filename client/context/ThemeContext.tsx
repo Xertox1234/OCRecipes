@@ -49,7 +49,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         setIsLoaded(true);
       }
     }
-    loadPreference();
+    void loadPreference();
   }, []);
 
   const setPreference = useCallback(async (pref: ThemePreference) => {

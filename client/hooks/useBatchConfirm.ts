@@ -34,12 +34,14 @@ export function useBatchConfirm() {
     },
     onSuccess: (_, { destination }) => {
       if (destination === "daily_log") {
-        queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/scanned-items"] });
+        void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/scanned-items"],
+        });
       } else if (destination === "pantry") {
-        queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
+        void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
       } else if (destination === "grocery_list") {
-        queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: ["/api/meal-plan/grocery-lists"],
         });
       }

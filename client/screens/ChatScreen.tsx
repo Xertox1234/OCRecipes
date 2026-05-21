@@ -363,7 +363,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (initialMessage && !didSendInitialRef.current) {
       didSendInitialRef.current = true;
-      handleSend(initialMessage);
+      void handleSend(initialMessage);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage]);
@@ -438,7 +438,7 @@ export default function ChatScreen() {
   const handlePromptSelect = useCallback(
     (prompt: string) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      handleSend(prompt);
+      void handleSend(prompt);
     },
     [haptics, handleSend],
   );

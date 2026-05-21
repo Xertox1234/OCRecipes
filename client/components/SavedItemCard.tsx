@@ -43,14 +43,19 @@ export function SavedItemCard({ item, onPress }: SavedItemCardProps) {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteMutation.mutateAsync(item.id);
-              haptics.notification(Haptics.NotificationFeedbackType.Success);
-            } catch {
-              haptics.notification(Haptics.NotificationFeedbackType.Error);
-              Alert.alert("Error", "Failed to delete item. Please try again.");
-            }
+          onPress: () => {
+            void (async () => {
+              try {
+                await deleteMutation.mutateAsync(item.id);
+                haptics.notification(Haptics.NotificationFeedbackType.Success);
+              } catch {
+                haptics.notification(Haptics.NotificationFeedbackType.Error);
+                Alert.alert(
+                  "Error",
+                  "Failed to delete item. Please try again.",
+                );
+              }
+            })();
           },
         },
       ],

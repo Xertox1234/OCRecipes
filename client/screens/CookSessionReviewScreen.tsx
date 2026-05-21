@@ -104,9 +104,11 @@ export default function CookSessionReviewScreen() {
         message: `Remove ${name}?`,
         confirmLabel: "Remove",
         destructive: true,
-        onConfirm: async () => {
-          await deleteIngredient.mutateAsync(ingredientId);
-          AccessibilityInfo.announceForAccessibility(`${name} removed`);
+        onConfirm: () => {
+          void (async () => {
+            await deleteIngredient.mutateAsync(ingredientId);
+            AccessibilityInfo.announceForAccessibility(`${name} removed`);
+          })();
         },
       });
     },

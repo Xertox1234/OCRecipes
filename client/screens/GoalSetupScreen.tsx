@@ -296,8 +296,8 @@ export default function GoalSetupScreen() {
       await updateUser({
         dailyCalorieGoal: parseInt(manualCalories),
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/daily-summary"] });
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     },

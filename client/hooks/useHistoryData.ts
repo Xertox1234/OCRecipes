@@ -277,7 +277,7 @@ export function useHistoryData() {
 
   const handleEndReached = useCallback(() => {
     if (showAll && hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
+      void fetchNextPage();
     }
   }, [showAll, hasNextPage, isFetchingNextPage, fetchNextPage]);
 

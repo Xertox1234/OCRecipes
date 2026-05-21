@@ -35,9 +35,9 @@ export function useAcceptAdaptiveGoal() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/goals/adaptive"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/goals/adaptive"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/goals"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/daily-budget"] });
     },
   });
 }
@@ -50,7 +50,7 @@ export function useDismissAdaptiveGoal() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/goals/adaptive"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/goals/adaptive"] });
     },
   });
 }

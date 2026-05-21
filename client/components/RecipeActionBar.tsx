@@ -55,7 +55,7 @@ export const RecipeActionBar = React.memo(function RecipeActionBar({
 
   const handleShare = useCallback(() => {
     haptics.impact();
-    share(recipeId, recipeType);
+    void share(recipeId, recipeType);
   }, [haptics, share, recipeId, recipeType]);
 
   const handleSave = useCallback(() => {

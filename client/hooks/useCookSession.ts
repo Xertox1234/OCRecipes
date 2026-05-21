@@ -95,7 +95,7 @@ export function useAddCookPhoto() {
       }
     },
     onSuccess: (_data, { sessionId }) => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["/api/cooking/sessions", sessionId],
       });
     },
@@ -120,7 +120,7 @@ export function useEditIngredient(sessionId: string | null) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["/api/cooking/sessions", sessionId],
       });
     },
@@ -144,7 +144,7 @@ export function useDeleteIngredient(sessionId: string | null) {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["/api/cooking/sessions", sessionId],
       });
     },

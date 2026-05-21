@@ -51,7 +51,7 @@ export function useCreateGroceryList() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["/api/meal-plan/grocery-lists"],
       });
     },
@@ -115,7 +115,7 @@ export function useToggleGroceryItem() {
       }
     },
     onSettled: (_data, _err, { listId }) => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["/api/meal-plan/grocery-lists", listId],
       });
     },
@@ -151,7 +151,7 @@ export function useAddManualGroceryItem() {
       return res.json();
     },
     onSuccess: (_data, { listId }) => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["/api/meal-plan/grocery-lists", listId],
       });
     },
@@ -173,7 +173,7 @@ export function useDeleteGroceryList() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["/api/meal-plan/grocery-lists"],
       });
     },
@@ -202,11 +202,13 @@ export function useAddGroceryItemToPantry() {
       return res.json();
     },
     onSuccess: (_data, { listId }) => {
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["/api/meal-plan/grocery-lists", listId],
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/pantry/expiring"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/pantry"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/pantry/expiring"],
+      });
     },
   });
 }

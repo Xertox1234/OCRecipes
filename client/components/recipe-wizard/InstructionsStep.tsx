@@ -159,13 +159,13 @@ export default function InstructionsStep({
   const { theme } = useTheme();
 
   const handleAdd = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     addStep();
   }, [addStep]);
 
   const handleRemove = useCallback(
     (key: string) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       removeStep(key);
       AccessibilityInfo.announceForAccessibility("Step removed");
     },
@@ -174,7 +174,7 @@ export default function InstructionsStep({
 
   const handleMove = useCallback(
     (key: string, direction: "up" | "down") => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       moveStep(key, direction);
       AccessibilityInfo.announceForAccessibility(
         direction === "up" ? "Step moved up" : "Step moved down",

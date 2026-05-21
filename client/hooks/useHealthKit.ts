@@ -34,7 +34,9 @@ export function useUpdateHealthKitSettings() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/healthkit/settings"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/healthkit/settings"],
+      });
     },
   });
 }
@@ -56,8 +58,8 @@ export function useSyncHealthKit() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/weight"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/exercises"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/weight"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/exercises"] });
     },
   });
 }

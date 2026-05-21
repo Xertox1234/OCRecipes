@@ -51,7 +51,7 @@ export function useCreateCookbook() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
     },
   });
 }
@@ -76,8 +76,8 @@ export function useUpdateCookbook() {
       return res.json();
     },
     onSuccess: (_data, { id }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cookbooks", id] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks", id] });
     },
   });
 }
@@ -94,7 +94,7 @@ export function useDeleteCookbook() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
     },
   });
 }
@@ -127,8 +127,8 @@ export function useAddRecipeToCookbook() {
       return res.json();
     },
     onSuccess: (_data, { cookbookId }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
+      void queryClient.invalidateQueries({
         queryKey: ["/api/cookbooks", cookbookId],
       });
     },
@@ -158,8 +158,8 @@ export function useRemoveRecipeFromCookbook() {
       }
     },
     onSuccess: (_data, { cookbookId }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
-      queryClient.invalidateQueries({
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
+      void queryClient.invalidateQueries({
         queryKey: ["/api/cookbooks", cookbookId],
       });
     },

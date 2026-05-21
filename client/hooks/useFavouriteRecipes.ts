@@ -107,8 +107,8 @@ export function useToggleFavouriteRecipe() {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: FAVOURITES_IDS_KEY });
-      queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
+      void queryClient.invalidateQueries({ queryKey: FAVOURITES_IDS_KEY });
+      void queryClient.invalidateQueries({ queryKey: FAVOURITES_KEY });
     },
   });
 }

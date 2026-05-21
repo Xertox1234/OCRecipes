@@ -58,7 +58,7 @@ export default function TasteProfileScreen() {
   }, []);
 
   useEffect(() => {
-    loadPicks();
+    void loadPicks();
   }, [loadPicks]);
 
   const loadCandidates = useCallback(async (pageNum: number) => {
@@ -91,7 +91,7 @@ export default function TasteProfileScreen() {
   }, []);
 
   useEffect(() => {
-    loadCandidates(1);
+    void loadCandidates(1);
   }, [loadCandidates]);
 
   // Announce selection-count changes to screen readers — only for user
@@ -132,14 +132,14 @@ export default function TasteProfileScreen() {
     if (!hasMore) return;
     const nextPage = page + 1;
     setPage(nextPage);
-    loadCandidates(nextPage);
+    void loadCandidates(nextPage);
   }, [hasMore, page, loadCandidates]);
 
   const handleRetry = useCallback(() => {
     setPage(1);
     setHasMore(true);
-    loadPicks();
-    loadCandidates(1);
+    void loadPicks();
+    void loadCandidates(1);
   }, [loadPicks, loadCandidates]);
 
   const handleSave = useCallback(async () => {
@@ -151,7 +151,7 @@ export default function TasteProfileScreen() {
       // Cuisine preferences may have changed — invalidate the carousel cache
       // so the Home tab shows updated "Matches your cuisine preferences"
       // labels on return without requiring a manual pull-to-refresh.
-      queryClient.invalidateQueries({ queryKey: ["/api/carousel"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/carousel"] });
       setIsDirty(false);
       navigation.goBack();
     } catch (err) {

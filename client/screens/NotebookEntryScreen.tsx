@@ -137,10 +137,12 @@ export default function NotebookEntryScreen() {
       { text: "Cancel", style: "cancel" },
       {
         text: "Complete",
-        onPress: async () => {
-          await updateEntry.mutateAsync({ id: entryId, status: "completed" });
-          await cancelCommitmentReminder(entryId);
-          navigation.goBack();
+        onPress: () => {
+          void (async () => {
+            await updateEntry.mutateAsync({ id: entryId, status: "completed" });
+            await cancelCommitmentReminder(entryId);
+            navigation.goBack();
+          })();
         },
       },
     ]);
@@ -152,10 +154,12 @@ export default function NotebookEntryScreen() {
       { text: "Cancel", style: "cancel" },
       {
         text: "Archive",
-        onPress: async () => {
-          await updateEntry.mutateAsync({ id: entryId, status: "archived" });
-          await cancelCommitmentReminder(entryId);
-          navigation.goBack();
+        onPress: () => {
+          void (async () => {
+            await updateEntry.mutateAsync({ id: entryId, status: "archived" });
+            await cancelCommitmentReminder(entryId);
+            navigation.goBack();
+          })();
         },
       },
     ]);

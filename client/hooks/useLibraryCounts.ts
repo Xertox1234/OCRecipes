@@ -10,7 +10,9 @@ export function useLibraryCounts() {
     placeholderData: keepPreviousData,
   });
 
-  useRefreshOnFocus(query.refetch);
+  useRefreshOnFocus(() => {
+    void query.refetch();
+  });
 
   return query;
 }

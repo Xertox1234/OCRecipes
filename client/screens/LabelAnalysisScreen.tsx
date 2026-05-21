@@ -147,7 +147,7 @@ export default function LabelAnalysisScreen() {
       }
     }
 
-    analyze();
+    void analyze();
     return () => {
       cancelled = true;
       if (toastTimer) clearTimeout(toastTimer);
@@ -161,8 +161,8 @@ export default function LabelAnalysisScreen() {
     },
     onSuccess: () => {
       haptics.notification(Haptics.NotificationFeedbackType.Success);
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       navigation.goBack();
     },
     onError: (err) => {

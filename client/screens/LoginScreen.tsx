@@ -61,11 +61,11 @@ export default function LoginScreen() {
   };
 
   const openTerms = () => {
-    openExternalUrl(TERMS_URL);
+    void openExternalUrl(TERMS_URL);
   };
 
   const openPrivacy = () => {
-    openExternalUrl(PRIVACY_URL);
+    void openExternalUrl(PRIVACY_URL);
   };
 
   const handleSubmit = async () => {

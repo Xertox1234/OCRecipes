@@ -77,7 +77,7 @@ export default function RecipePhotoImportScreen() {
       }
     }
 
-    analyze();
+    void analyze();
     return () => {
       cancelled = true;
     };

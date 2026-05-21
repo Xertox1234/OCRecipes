@@ -89,7 +89,7 @@ export function useSaveGeneratedMealPlan() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/meal-plan"] });
     },
   });
 }
