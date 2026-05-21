@@ -101,6 +101,14 @@ The copies implement the same review logic but differ in two places:
    prompt. The core hardening paragraphs (changed-files manifest, never-flag-absent
    rule, raise-as-WARNING fallback) are present in both.
 
+4. **Truncation detection.** `scripts/kimi-review.py` checks
+   `finish_reason == "length"` (line 324) and exits 1 when the response was
+   truncated before printing findings. The local `~/.local/bin/kimi-review` only
+   checks `if answer:` (line 361) — a `length`-truncated response with partial
+   content passes to `filter_review` and prints potentially incomplete findings.
+   This is a CI-only safety feature and a pre-existing divergence (not introduced
+   by the false-positive work).
+
 ### Testable seams
 
 The engine exposes four pure functions that tests can import and call without a
