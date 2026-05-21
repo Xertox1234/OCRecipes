@@ -124,7 +124,7 @@ export default function CoachChat({
       setOptimisticMessage(null);
       if (blocks && blocks.length > 0) setStreamBlocks(blocks);
       if (activeConvIdRef.current !== null) {
-        queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: [
             `/api/chat/conversations/${activeConvIdRef.current}/messages`,
           ],
@@ -231,7 +231,7 @@ export default function CoachChat({
   // Auto-send when speech finalizes
   useEffect(() => {
     if (isFinal && transcript) {
-      handleSend(transcript);
+      void handleSend(transcript);
     }
   }, [isFinal]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -297,7 +297,7 @@ export default function CoachChat({
       setStreamingError("Retry failed. Check your connection and try again.");
       return;
     }
-    handleSend(lastUserMsg.content);
+    void handleSend(lastUserMsg.content);
   }, [
     messages,
     isStreaming,
@@ -310,7 +310,7 @@ export default function CoachChat({
   // Auto-send suggestion chip messages
   useEffect(() => {
     if (initialMessage) {
-      handleSend(initialMessage);
+      void handleSend(initialMessage);
       onInitialMessageSent?.();
     }
   }, [initialMessage]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -318,7 +318,7 @@ export default function CoachChat({
   const handleBlockAction = useCallback(
     (action: Record<string, unknown>) => {
       if (action.type === "log_food") {
-        handleSend(`Please log: ${action.description as string}`);
+        void handleSend(`Please log: ${action.description as string}`);
       } else if (action.type === "navigate") {
         const screen = action.screen as string;
         const params = action.params as Record<string, unknown> | undefined;
@@ -424,7 +424,7 @@ export default function CoachChat({
         ]);
         setQuickReplyVersion((v) => v + 1);
       }
-      handleSend(message);
+      void handleSend(message);
     },
     [handleSend],
   );
@@ -557,7 +557,7 @@ export default function CoachChat({
     if (isListening) {
       stopListening();
     } else {
-      startListening();
+      void startListening();
     }
   }, [isListening, startListening, stopListening]);
 

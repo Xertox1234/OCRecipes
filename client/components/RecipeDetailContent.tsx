@@ -96,9 +96,11 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
 
   useEffect(() => {
     if (props.isCanonical) {
-      AsyncStorage.getItem(CURATED_STEP_HINT_KEY).then((v) => {
-        if (!v) setHasShownHint(false);
-      });
+      AsyncStorage.getItem(CURATED_STEP_HINT_KEY)
+        .then((v) => {
+          if (!v) setHasShownHint(false);
+        })
+        .catch((err) => console.error("Failed to read curated step hint", err));
     }
   }, [props.isCanonical]);
 
@@ -115,7 +117,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
     setExpandedStep((prev) => (prev === index ? null : index));
     if (!hasShownHintRef.current) {
       setHasShownHint(true);
-      AsyncStorage.setItem(CURATED_STEP_HINT_KEY, "1");
+      void AsyncStorage.setItem(CURATED_STEP_HINT_KEY, "1");
     }
   }, []); // stable reference — reads hasShownHint via ref
 

@@ -196,8 +196,12 @@ export function BeveragePickerSheet({
 
         // Success
         haptics.notification(NotificationFeedbackType.Success);
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.dailySummary,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.scannedItems,
+        });
 
         // Build confirmation text and call onLogged callback
         const displayName = isCustom
@@ -228,7 +232,7 @@ export function BeveragePickerSheet({
 
   const handleSizeSelect = useCallback(
     (size: BeverageSize) => {
-      logBeverage(size);
+      void logBeverage(size);
     },
     [logBeverage],
   );

@@ -57,7 +57,9 @@ export default function App() {
   // and register a tap listener that deep-links commitment reminders to
   // the relevant NotebookEntry screen.
   useEffect(() => {
-    setupNotificationChannel();
+    setupNotificationChannel().catch((err) =>
+      console.error("Failed to set up notification channels:", err),
+    );
     const sub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         const entryId = response.notification.request.content.data?.entryId as

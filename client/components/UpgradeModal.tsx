@@ -68,12 +68,12 @@ export function UpgradeModal({
 
   const handleUpgrade = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-    purchase();
+    void purchase();
   }, [haptics, purchase]);
 
   const handleRestore = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    restore();
+    void restore();
   }, [haptics, restore]);
 
   const handleClose = useCallback(() => {

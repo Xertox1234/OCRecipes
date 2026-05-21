@@ -66,7 +66,7 @@ export function useOCRDetection(
             onTextDetectedRef.current?.(effect.value);
             break;
           case "fire_haptic":
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             break;
           case "start_debounce":
             debounceTimerRef.current = setTimeout(() => {

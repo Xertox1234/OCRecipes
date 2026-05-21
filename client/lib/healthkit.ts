@@ -11,23 +11,28 @@ export interface HealthKitPermissions {
   activeEnergy: boolean;
 }
 
-export async function requestPermissions(): Promise<HealthKitPermissions> {
+export function requestPermissions(): Promise<HealthKitPermissions> {
   // In production, this would call the native HealthKit APIs
   // For now, return a stub indicating the feature is available but not connected
   console.warn(
     "HealthKit: native module not yet installed. Install react-native-health for full support.",
   );
-  return { weight: false, steps: false, workouts: false, activeEnergy: false };
+  return Promise.resolve({
+    weight: false,
+    steps: false,
+    workouts: false,
+    activeEnergy: false,
+  });
 }
 
-export async function readWeightSamples(
+export function readWeightSamples(
   _startDate: Date,
   _endDate: Date,
 ): Promise<{ weight: number; date: string }[]> {
-  return [];
+  return Promise.resolve([]);
 }
 
-export async function readWorkouts(
+export function readWorkouts(
   _startDate: Date,
   _endDate: Date,
 ): Promise<
@@ -39,12 +44,12 @@ export async function readWorkouts(
     date: string;
   }[]
 > {
-  return [];
+  return Promise.resolve([]);
 }
 
-export async function readSteps(
+export function readSteps(
   _startDate: Date,
   _endDate: Date,
 ): Promise<{ date: string; count: number }[]> {
-  return [];
+  return Promise.resolve([]);
 }

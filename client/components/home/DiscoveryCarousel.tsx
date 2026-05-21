@@ -70,7 +70,7 @@ export function DiscoveryCarousel({
                 action && onActionPress(action);
               }}
               onDismiss={() => {
-                dismiss(item.id);
+                void dismiss(item.id);
                 setActiveIndex((prev) => Math.max(0, prev - 1));
               }}
             />

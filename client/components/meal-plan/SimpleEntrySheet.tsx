@@ -150,7 +150,7 @@ function SimpleEntrySheetInner({
     if (isListening) {
       stopListening();
     } else {
-      startListening();
+      void startListening();
     }
   }, [isListening, startListening, stopListening, haptics]);
 

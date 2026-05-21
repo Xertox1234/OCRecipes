@@ -224,7 +224,7 @@ export default function WizardShell({
     try {
       const payload = form.formToPayload();
       const created = await createMutation.mutateAsync(payload);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       if (returnToMealPlan) {
         await addItemMutation.mutateAsync({

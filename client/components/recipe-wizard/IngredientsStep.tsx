@@ -103,13 +103,13 @@ export default function IngredientsStep({
   const { theme } = useTheme();
 
   const handleAdd = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     addIngredient();
   }, [addIngredient]);
 
   const handleRemove = useCallback(
     (key: string) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       removeIngredient(key);
       AccessibilityInfo.announceForAccessibility("Ingredient removed");
     },
