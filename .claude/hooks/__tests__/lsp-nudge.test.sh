@@ -3,6 +3,9 @@
 set -uo pipefail
 HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lsp-nudge.sh"
 PASS=0; FAIL=0
+# Idempotency: clear throttle state for the session ids these fixtures use, so the
+# suite passes on every run (the hook throttles once-per-session-per-pattern).
+rm -f /tmp/ocrecipes-lsp-nudge-TESTSESSION
 run() { printf '%s' "$1" | bash "$HOOK" 2>/dev/null; }
 expect_nudge() { if run "$2" | grep -q "symbol search"; then echo "ok: $1"; PASS=$((PASS+1)); else echo "FAIL (expected nudge): $1"; FAIL=$((FAIL+1)); fi; }
 expect_quiet() { if run "$2" | grep -q "symbol search"; then echo "FAIL (expected quiet): $1"; FAIL=$((FAIL+1)); else echo "ok: $1"; PASS=$((PASS+1)); fi; }
