@@ -510,6 +510,33 @@ git commit -m "feat(kimi): typed finding schema with parse_findings/findings_to_
 **Files:**
 
 - Modify: canonical engine + `scripts/kimi-review.py` (via sync)
+- Modify: `.github/workflows/kimi-review.yml` (SDK version pin)
+
+- [ ] **Step 0: Probe that OpenRouter honors json_schema for this model (de-risk before the rewrite)**
+
+OpenRouter lists `structured_outputs` in `supported_parameters` for `deepseek/deepseek-v4-flash`, but that only confirms the parameter is accepted — not that its translation layer enforces strict schema conformance (some providers silently degrade `json_schema` to loose `json_object`). Verify before rewriting the engine. Run this throwaway probe (requires `OPENROUTER_API_KEY` / `WORKER_API_KEY`):
+
+```bash
+python3 - <<'PY'
+import os, json
+from openai import OpenAI
+client = OpenAI(api_key=os.environ.get("WORKER_API_KEY") or os.environ["OPENROUTER_API_KEY"],
+                base_url="https://openrouter.ai/api/v1")
+schema = {"type":"object","properties":{"findings":{"type":"array","items":{"type":"object",
+  "properties":{"tier":{"type":"string"},"detail":{"type":"string"}},
+  "required":["tier","detail"],"additionalProperties":False}}},
+  "required":["findings"],"additionalProperties":False}
+r = client.chat.completions.create(
+    model="deepseek/deepseek-v4-flash", temperature=0,
+    messages=[{"role":"user","content":"Return one CRITICAL finding about an injection bug as JSON."}],
+    response_format={"type":"json_schema","json_schema":{"name":"f","strict":True,"schema":schema}})
+data = json.loads(r.choices[0].message.content)  # must not raise
+assert "findings" in data, data
+print("OK structured outputs:", data)
+PY
+```
+
+Expected: prints `OK structured outputs: {...}`. If it raises (non-JSON content) or ignores the schema, fall back in Step 1 to `response_format={"type":"json_object"}` plus a `json.loads` retry, and note the deviation in the architecture doc. Record the outcome before proceeding.
 
 - [ ] **Step 1: Request structured output in the draft call**
 
@@ -564,7 +591,15 @@ Keep the existing `finish_reason == "length"` → `sys.exit(1)` and the no-`answ
 
 Do not delete `filter_review` yet — the harness still calls it. It is removed in Task 2.3 Step 4 once wrappers no longer depend on the text gate.
 
-- [ ] **Step 4: Manual smoke (structured path)**
+- [ ] **Step 4: Pin the OpenAI SDK to a version with json_schema support**
+
+`json_schema` structured outputs require `openai>=1.40`. In `.github/workflows/kimi-review.yml`, change the install step (line 54) from `python -m pip install "openai>=1.0.0,<2"` to:
+
+```yaml
+run: python -m pip install "openai>=1.40,<2"
+```
+
+- [ ] **Step 5: Manual smoke (structured path)**
 
 ```bash
 git diff HEAD~1 -- '*.ts' '*.tsx' | kimi-review --scope "phase-2 smoke" --profile ocrecipes --tiers CRITICAL,WARNING; echo "exit=$?"
@@ -572,11 +607,11 @@ git diff HEAD~1 -- '*.ts' '*.tsx' | kimi-review --scope "phase-2 smoke" --profil
 
 Expected: text findings (or clean message); `exit=2` iff a CRITICAL is present, else `exit=0`. (Requires API key.)
 
-- [ ] **Step 5: Sync + commit**
+- [ ] **Step 6: Sync + commit**
 
 ```bash
 npm run kimi:engine:sync && npm run kimi:engine:check
-git add scripts/kimi-review.py
+git add scripts/kimi-review.py .github/workflows/kimi-review.yml
 git commit -m "feat(kimi): structured-output draft with exit-code blocking signal"
 ```
 
@@ -958,13 +993,16 @@ import importlib.util, pathlib, sys, tempfile
 spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 
+import subprocess
 d = tempfile.mkdtemp()
+def git(*a): return subprocess.run(["git","-C",d,*a], capture_output=True, text=True)
+git("init","-q"); git("config","user.email","t@t"); git("config","user.name","t")
 (pathlib.Path(d)/"a.ts").write_text("line1\nrequireOwner()\nline3\n")
 
-# read_file returns file contents
+# working-tree read (tree_ref=None) returns file contents
 r = m.run_tool("read_file", {"path": "a.ts"}, root=d)
 assert "requireOwner" in r, r
-# grep returns matching lines
+# grep (working tree) returns matching lines
 g = m.run_tool("grep", {"pattern": "requireOwner"}, root=d)
 assert "requireOwner" in g, g
 # path traversal is refused (read-only, in-tree only)
@@ -972,6 +1010,19 @@ bad = m.run_tool("read_file", {"path": "../../../etc/passwd"}, root=d)
 assert "error" in bad.lower() or bad == "", bad
 # unknown tool is refused
 assert "error" in m.run_tool("rm", {"path":"a.ts"}, root=d).lower()
+
+# TREE DISCIPLINE: read a committed sha (simulates CI reading PR head, not the
+# checked-out base). Commit a CHANGED version, then read it back by sha.
+git("add","a.ts"); git("commit","-q","-m","base")
+(pathlib.Path(d)/"a.ts").write_text("line1\nverifiedAtHead()\nline3\n")
+git("add","a.ts"); git("commit","-q","-m","head")
+head = git("rev-parse","HEAD").stdout.strip()
+git("checkout","-q","HEAD~1")  # working tree is now BASE, like CI
+assert "verifiedAtHead" not in (pathlib.Path(d)/"a.ts").read_text()
+rh = m.run_tool("read_file", {"path":"a.ts"}, root=d, tree_ref=head)
+assert "verifiedAtHead" in rh, "tree_ref read must see the head tree, not working tree"
+gh = m.run_tool("grep", {"pattern":"verifiedAtHead"}, root=d, tree_ref=head)
+assert "verifiedAtHead" in gh, gh
 PY
 }
 ```
@@ -1006,19 +1057,35 @@ def _safe_path(root, rel):
         return None  # escape attempt
     return target
 
-def run_tool(name, args, root):
-    """Execute a read-only tool. Never writes, never executes project code."""
+def _read_tree(path, root, tree_ref):
+    """Read a file from a git tree. tree_ref None => working tree (via _safe_path,
+    in-tree only); a sha/ref => `git show <ref>:path` (CI reads PR head this way)."""
+    if tree_ref:
+        r = subprocess.run(["git", "show", f"{tree_ref}:{path}"],
+                           capture_output=True, text=True, cwd=root)
+        return r.stdout if r.returncode == 0 else None
+    target = _safe_path(root, path)
+    if target is None or not target.is_file():
+        return None
+    return target.read_text(errors="replace")
+
+def run_tool(name, args, root, tree_ref=None):
+    """Execute a read-only tool against the chosen git tree. Never writes, never
+    executes project code. tree_ref selects the tree per surface (None = working
+    tree for local/manual; KIMI_REVIEW_HEAD_SHA for CI PR-head)."""
     if name == "read_file":
-        target = _safe_path(root, args.get("path", ""))
-        if target is None or not target.is_file():
+        content = _read_tree(args.get("path", ""), root, tree_ref)
+        if content is None:
             return "error: path not readable in tree"
-        return target.read_text(errors="replace")[:8000]
+        return content[:8000]
     if name == "grep":
         pattern = args.get("pattern", "")
         if not pattern:
             return "error: empty pattern"
-        r = subprocess.run(["git", "grep", "-n", "-F", "--", pattern],
-                           capture_output=True, text=True, cwd=root)
+        cmd = ["git", "grep", "-n", "-F", "-e", pattern]
+        if tree_ref:
+            cmd.append(tree_ref)   # search the PR-head tree, not the checked-out base
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=root)
         return r.stdout[:8000] if r.stdout else "(no matches)"
     return f"error: unknown tool {name}"
 ```
@@ -1108,9 +1175,10 @@ VERIFY_SYSTEM = (
     "Use tools before deciding. Never assume; check."
 )
 
-def verify_one_agentic(finding, client, model, root, max_turns=5):
+def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None):
     """Bounded read-only verify loop for one finding. Returns 'keep' (verified)
-    or 'downgrade' (refuted/uncertain). MONOTONIC: only ever downgrades."""
+    or 'downgrade' (refuted/uncertain). MONOTONIC: only ever downgrades.
+    tree_ref selects which git tree the tools read (None = working tree)."""
     messages = [
         {"role": "system", "content": VERIFY_SYSTEM},
         {"role": "user", "content": "Finding to verify:\n" + json.dumps(finding)},
@@ -1132,7 +1200,7 @@ def verify_one_agentic(finding, client, model, root, max_turns=5):
                     a = json.loads(tc.function.arguments)
                 except ValueError:
                     a = {}
-                result = run_tool(tc.function.name, a, root=root)
+                result = run_tool(tc.function.name, a, root=root, tree_ref=tree_ref)
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
             continue
         # No tool call → ask for the structured verdict and stop.
@@ -1150,7 +1218,7 @@ def verify_one_agentic(finding, client, model, root, max_turns=5):
     return "downgrade"  # ran out of turns → treat as uncertain
 
 
-def verify_agentic(findings, client, model, root, max_turns=5, jobs=4):
+def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=None):
     """Verify all CRITICAL findings in parallel; non-CRITICAL always 'keep'."""
     import concurrent.futures
     verdicts = ["keep"] * len(findings)
@@ -1158,7 +1226,7 @@ def verify_agentic(findings, client, model, root, max_turns=5, jobs=4):
     if not targets:
         return verdicts
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
-        futs = {ex.submit(verify_one_agentic, findings[i], client, model, root, max_turns): i
+        futs = {ex.submit(verify_one_agentic, findings[i], client, model, root, max_turns, tree_ref): i
                 for i in targets}
         for fut in concurrent.futures.as_completed(futs):
             verdicts[futs[fut]] = fut.result()
@@ -1195,7 +1263,11 @@ In `main`, extend the verification block from Phase 3:
         verdicts = verify_deterministic(findings, cwd=root)
         findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
     elif args.verify == "agentic":
-        verdicts = verify_agentic(findings, client, args.model, root)
+        # CI sets KIMI_REVIEW_HEAD_SHA and checks out the BASE tree, so PR-head
+        # content is only reachable by sha. Local/manual runs leave it unset =>
+        # working tree. This is the Tier B half of the spec's tree-discipline rule.
+        head_ref = os.environ.get("KIMI_REVIEW_HEAD_SHA") or None
+        verdicts = verify_agentic(findings, client, args.model, root, tree_ref=head_ref)
         findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
 ```
 
