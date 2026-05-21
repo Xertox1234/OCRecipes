@@ -122,8 +122,13 @@ its necessity can be judged after the foundation lands.
 
 ### Phase 3 — Symbol-working agent prompts
 
-- **Canonical LSP block** authored once (LSP-first directive + cold-start
-  warm-up/re-run + the 3 underused ops as one-liners with use cases).
+- **Canonical LSP block** authored once and version-controlled. Its single
+  authoritative copy lives verbatim in `docs/rules/lsp.md` (a clearly delimited
+  "Canonical agent block" section, e.g. fenced between
+  `<!-- LSP-AGENT-BLOCK:START -->` / `<!-- LSP-AGENT-BLOCK:END -->` markers). The
+  agent-file copies are derived from it and must match byte-for-byte; the
+  drift-check below enforces this. Block content: LSP-first directive + cold-start
+  warm-up/re-run + the 3 underused ops as one-liners with use cases.
 - Pasted verbatim into these 9 repo agents:
   `code-reviewer`, `architecture-specialist`, `database-specialist`,
   `api-specialist`, `performance-specialist`, `typescript-specialist`,
@@ -176,8 +181,10 @@ its necessity can be judged after the foundation lands.
 
 - **Nudge false positives** → advisory-only + conservative identifier heuristic +
   per-session throttle + opt-out env var; deferred to the last phase.
-- **Agent block drift** (9 copies) → block changes are rare; the canonical text
-  lives in this spec and `docs/rules/lsp.md` as the source of truth.
+- **Agent block drift** (9 copies) → the authoritative copy is version-controlled
+  in `docs/rules/lsp.md` between the `LSP-AGENT-BLOCK` markers; agent copies are
+  derived from it and a drift-check (see Verification) fails CI/pre-commit if any
+  copy diverges. Block changes are rare and edited in `docs/rules/lsp.md` first.
 - **Warm-up directive ignored** → it is also embedded in agent prompts and
   `docs/rules/lsp.md`, so the discipline survives even if the SessionStart
   directive is skipped.
@@ -193,3 +200,14 @@ its necessity can be judged after the foundation lands.
 - Phase 5: unit-style checks of the heuristic against a fixtures list (symbol-like
   patterns fire; text/regex/`-F`/non-TS patterns do not); confirm exit code is
   always 0 and the throttle suppresses repeats.
+- Agent-block drift-check: a script (run in pre-commit and/or CI) extracts the
+  canonical block from `docs/rules/lsp.md` (the `LSP-AGENT-BLOCK` markers) and
+  fails if any of the 9 agent files is missing it or has a divergent copy.
+
+## Follow-up (post-Phase 5)
+
+- Run a dedicated `/audit` once the nudge hook has been live for a representative
+  period to measure its effectiveness: nudge fire rate, the share of fires that
+  led to an LSP call (effectiveness), and the false-positive rate (fires on
+  legitimate text searches). Use the findings to tighten the heuristic, adjust the
+  throttle, or remove the hook if it is net-negative.

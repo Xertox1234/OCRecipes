@@ -31,7 +31,7 @@ migration runs.
 
 - [ ] Run the Step 1 audit against the production DB:
       `SELECT id, user_id, recipe_id, scanned_item_id FROM meal_plan_items
-    WHERE recipe_id IS NOT NULL AND scanned_item_id IS NOT NULL;`
+  WHERE recipe_id IS NOT NULL AND scanned_item_id IS NOT NULL;`
 - [ ] If it returns rows, reconcile them first — null `scanned_item_id` on each
       two-source row (`recipe_id` is canonical; see the archived todo
       `2026-05-17-meal-plan-source-xor-db-constraint.md`, Step 2).
