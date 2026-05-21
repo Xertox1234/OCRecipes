@@ -1,6 +1,6 @@
 ---
 title: "Apply meal-plan source-XOR migration 0005 to production"
-status: backlog
+status: obsolete
 priority: medium
 created: 2026-05-18
 updated: 2026-05-18
@@ -31,7 +31,7 @@ migration runs.
 
 - [ ] Run the Step 1 audit against the production DB:
       `SELECT id, user_id, recipe_id, scanned_item_id FROM meal_plan_items
-  WHERE recipe_id IS NOT NULL AND scanned_item_id IS NOT NULL;`
+WHERE recipe_id IS NOT NULL AND scanned_item_id IS NOT NULL;`
 - [ ] If it returns rows, reconcile them first — null `scanned_item_id` on each
       two-source row (`recipe_id` is canonical; see the archived todo
       `2026-05-17-meal-plan-source-xor-db-constraint.md`, Step 2).
@@ -65,6 +65,15 @@ migration runs.
 
 - Created as the production follow-up to Todo #1
   (`2026-05-17-meal-plan-source-xor-db-constraint`, completed via PR #227).
+
+### 2026-05-20
+
+- Closed as **obsolete**. The app has never been deployed and there is no
+  production database, so there is nothing to audit or migrate. Whenever prod is
+  first stood up it will be built by replaying migrations `0001 → 0005` on an
+  empty DB — the XOR constraint holds from the first row and there is no legacy
+  data to reconcile. The "audit prod for two-source rows / reconcile" steps can
+  never apply to a fresh deploy, so no human-ops task remains.
 
 ## Copilot Delegation
 
