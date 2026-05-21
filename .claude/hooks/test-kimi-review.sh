@@ -49,6 +49,7 @@ case "$mode" in
   critical-no-findings-desc)
                     echo "[CRITICAL] server/routes/foo.ts:42 — error handler swallows the error and returns no findings to the caller";;
   echo-input)       printf '%s' "\$input";;
+  echo-args)        printf 'ARGS: %s\n' "\$*";;
 esac
 EOF
   chmod +x "$dir/kimi-review"
@@ -58,6 +59,10 @@ EOF
 #!/usr/bin/env bash
 case "$* " in
   "merge-base "*)                 echo "merge-base-sha";;
+  "diff --cached --name-status"*) printf '%s\n' "${KIMI_TEST_CHANGED_STATUS:-M	server/routes/foo.ts}";;
+  "diff --name-status"*)          printf '%s\n' "${KIMI_TEST_CHANGED_STATUS:-M	server/routes/foo.ts}";;
+  "diff --cached --function-context"*) printf '%s\n' "${KIMI_TEST_REVIEW_DIFF:-diff --git a/server/routes/foo.ts b/server/routes/foo.ts}";;
+  "diff --function-context"*)     printf '%s\n' "${KIMI_TEST_REVIEW_DIFF:-diff --git a/server/routes/foo.ts b/server/routes/foo.ts}";;
   "diff --cached --name-only"*)   printf '%s\n' "${KIMI_TEST_STAGED_FILES:-server/routes/foo.ts}";;
   "diff --name-only"*)            printf '%s\n' "${KIMI_TEST_CHANGED_FILES:-server/routes/foo.ts}";;
   "diff --cached"*)               printf '%s\n' "${KIMI_TEST_REVIEW_DIFF:-diff --git a/server/routes/foo.ts b/server/routes/foo.ts}";;
@@ -114,7 +119,25 @@ run_husky_gate() {
   local mode="$1"
   local stubdir output rc
   stubdir=$(make_stub_path "$mode")
-  output=$(PATH="$stubdir:$PATH" bash "$PRE_COMMIT" 2>&1)
+  # Husky runs this hook as `sh -e` (see .husky/_/h), NOT `bash`. Invoke it the
+  # same way so the harness catches errexit-only bugs — e.g. a clean review whose
+  # CRITICAL grep returns 1 and would abort under `set -e`. Running it with plain
+  # `bash` here previously masked exactly that bug.
+  output=$(PATH="$stubdir:$PATH" sh -e "$PRE_COMMIT" 2>&1)
+  rc=$?
+  rm -rf "$stubdir"
+  printf '%s\n--RC--%d' "$output" "$rc"
+}
+
+# Same as run_husky_gate but forces dash — the default /bin/sh on Linux. The hook
+# uses bash-only syntax (arrays, `<<<`, `$'...'`) and must re-exec under bash when
+# started by a non-bash sh. This guards against the Linux "Syntax error:
+# redirection unexpected" regression. Only used when dash is available.
+run_husky_gate_dash() {
+  local mode="$1"
+  local stubdir output rc
+  stubdir=$(make_stub_path "$mode")
+  output=$(PATH="$stubdir:$PATH" dash -e "$PRE_COMMIT" 2>&1)
   rc=$?
   rm -rf "$stubdir"
   printf '%s\n--RC--%d' "$output" "$rc"
@@ -206,6 +229,42 @@ except SystemExit as error:
         raise AssertionError(f"unexpected empty-credential SystemExit code: {error.code!r}")
 else:
     raise AssertionError("empty WORKER_API_KEY without fallback credentials should exit")
+PY
+}
+
+run_python_helper_tests() {
+  command -v python3 >/dev/null 2>&1 || {
+    echo "python3 not found"
+    return 1
+  }
+  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+import importlib.util
+import pathlib
+import sys
+
+module_path = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("kimi_review", module_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+rcf = module.render_changed_files
+bdr = module.build_diff_ref
+
+cases = [
+    (rcf(""), ""),
+    (rcf(None), ""),
+    (
+        rcf("M\tshared/schema.ts\nA\tmigrations/0043.sql"),
+        "<changed-files>\nM\tshared/schema.ts\nA\tmigrations/0043.sql\n</changed-files>",
+    ),
+    (rcf("M\ta.ts\n\n"), "<changed-files>\nM\ta.ts\n</changed-files>"),
+    (bdr("main"), "main...HEAD"),
+    (bdr(None), "HEAD~1"),
+]
+
+for actual, expected in cases:
+    if actual != expected:
+        raise AssertionError(f"expected {expected!r}, got {actual!r}")
 PY
 }
 
@@ -360,6 +419,18 @@ OUT=$(KIMI_TEST_STAGED_FILES=$'docs/AI_WORKFLOW.md\nserver/routes/foo.ts' \
 assert_contains "mixed staged files send TypeScript diff" "$OUT" "server/routes/foo.ts"
 assert_not_contains "mixed staged files do not send docs diff" "$OUT" "docs/AI_WORKFLOW.md"
 
+# The hook passes a --changed-files manifest to kimi-review.
+OUT=$(run_hook echo-args '{"tool_input":{"command":"git commit -m x"}}')
+assert_contains "hook passes --changed-files to kimi-review" "$OUT" "--changed-files"
+
+# The CI wrapper passes a --changed-files manifest.
+OUT=$(run_ci_gate echo-args)
+assert_contains "CI passes --changed-files to kimi-review" "$OUT" "--changed-files"
+
+# The Husky wrapper passes a --changed-files manifest.
+OUT=$(run_husky_gate echo-args)
+assert_contains "Husky passes --changed-files to kimi-review" "$OUT" "--changed-files"
+
 # ---------- CI/Husky gate parsing ----------
 
 OUT=$(run_ci_gate clean-tiered)
@@ -387,6 +458,22 @@ OUT=$(run_husky_gate clean-model-prose)
 assert_contains "Husky clean-model-prose exits 0" "$OUT" "--RC--0"
 assert_not_contains "Husky clean-model-prose does not block" "$OUT" "Commit blocked"
 
+# Regression: on Linux /bin/sh is dash, which cannot parse the hook's bash syntax
+# (arrays, `<<<`, `$'...'`). The hook must re-exec under bash. A clean review must
+# still exit 0 and a CRITICAL must still block — no "Syntax error" abort. Skipped
+# when dash is unavailable (e.g. some macOS setups).
+if command -v dash >/dev/null 2>&1; then
+  OUT=$(run_husky_gate_dash clean-tiered)
+  assert_contains "Husky under dash: clean review exits 0 (re-exec works)" "$OUT" "--RC--0"
+  assert_not_contains "Husky under dash: no syntax error" "$OUT" "Syntax error"
+
+  OUT=$(run_husky_gate_dash critical)
+  assert_contains "Husky under dash: CRITICAL exits 1" "$OUT" "--RC--1"
+  assert_contains "Husky under dash: CRITICAL blocks" "$OUT" "Commit blocked"
+else
+  echo "SKIP: dash not installed — Husky-under-dash re-exec regression tests"
+fi
+
 if run_python_filter_tests; then
   echo "PASS: Python filter_review drops empty-tier placeholders"
   PASS=$((PASS+1))
@@ -400,6 +487,14 @@ if run_python_credential_tests; then
   PASS=$((PASS+1))
 else
   echo "FAIL: Python credential resolver handles aliases and provider base URL"
+  FAIL=$((FAIL+1))
+fi
+
+if run_python_helper_tests; then
+  echo "PASS: Python render_changed_files + build_diff_ref helpers"
+  PASS=$((PASS+1))
+else
+  echo "FAIL: Python render_changed_files + build_diff_ref helpers"
   FAIL=$((FAIL+1))
 fi
 
