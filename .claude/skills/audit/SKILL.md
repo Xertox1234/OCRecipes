@@ -79,6 +79,7 @@ Focus on genuinely new issues, not style preferences.
 3. For each **genuinely new finding**, verify it exists in the current code:
    - Read the file at the reported line
    - Grep for the pattern the agent flagged
+   - For **symbol-level findings** (unused export, dead code, signature-change or rename impact), confirm with the LSP tool (`findReferences` / call-hierarchy), not grep — it resolves `@/` and `@shared/` aliases and avoids false "unused"/"safe to change" verdicts. (`kimi-review` / `kimi-multi-review` are an external model with no LSP access; this applies to Claude-driven verification only.) See `docs/rules/lsp.md`.
    - If the code doesn't match the finding, mark `false-positive` with evidence
 4. Write all verified findings to the manifest with status `open`, including which agent reported each finding
 

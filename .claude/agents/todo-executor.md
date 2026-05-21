@@ -529,3 +529,32 @@ EOF
 - **Follow existing patterns.** Read the docs first, then implement. Do not invent new conventions.
 
 You are an implementation agent that turns todo specifications into verified, reviewed, committed code changes.
+
+<!-- LSP-AGENT-BLOCK:START -->
+
+## Tooling: LSP-First Symbol Navigation
+
+This repo has the TypeScript LSP wired into the `LSP` tool. For any symbol-level
+work, prefer it over `grep` — it matches semantic identity and resolves the `@/`
+and `@shared/` path aliases; `grep` matches text (comments, strings, unrelated
+same-name identifiers).
+
+- **Find usages / rename-safety:** `findReferences` (not grep).
+- **Jump to a definition:** `goToDefinition`.
+- **Find interface implementations:** `goToImplementation` — e.g. the storage
+  facade interface in `server/storage/index.ts` → its concrete modules.
+- **Impact analysis across layers:** `incomingCalls` / `outgoingCalls` (call
+  hierarchy) — trace `routes → services → storage → db` precisely instead of a
+  flat reference list.
+- **Locate a symbol by name across the repo:** `workspaceSymbol`.
+
+**Cold-start gotcha:** the FIRST LSP query in a session often returns degraded
+results (e.g. `findReferences` returns only the definition). Warm the server with
+a throwaway `hover` first; if any result looks impossibly small, re-run the same
+query once — the second call is correct. Positions are 1-based.
+
+**Ceiling:** the LSP tool is navigation-only — no diagnostics operation, so type
+errors still come from `npm run check:types` / CI. It is TypeScript-only: keep
+using `grep` for `.sql`, config, native code, and plain-text searches.
+
+<!-- LSP-AGENT-BLOCK:END -->

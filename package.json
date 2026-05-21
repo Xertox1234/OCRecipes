@@ -47,7 +47,8 @@
     "eval:recipe-generation": "EVAL_SKIP_IMAGE_GENERATION=true npx tsx evals/runner-recipe-generation.ts",
     "eval:photo": "npx tsx evals/runner-photo-analysis.ts",
     "eval:all": "npm run eval:coach && npm run eval:recipe-chat && npm run eval:meal-suggestions && npm run eval:recipe-generation",
-    "generate:icons": "npx tsx scripts/generate-ingredient-icons.ts"
+    "generate:icons": "npx tsx scripts/generate-ingredient-icons.ts",
+    "lsp:check-agent-block": "bash scripts/check-lsp-agent-block.sh"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^2.0.0",
