@@ -7,6 +7,7 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  AccessibilityInfo,
   type GestureResponderEvent,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -370,6 +371,27 @@ export default function RecipeBrowserScreen() {
   // Any other catalog failure (server 500, network) — distinct from quota so
   // the user gets a descriptive error + retry rather than a blank list.
   const isOnlineError = isOnlineSource && !!searchError && !isQuotaExceeded;
+
+  // Announce online-search failures to screen readers — the list silently
+  // swaps to an error EmptyState otherwise. Track the announced error *kind* so
+  // each entry announces once, a kind change (quota → network error) re-announces
+  // even with no intervening no-error frame, and a clear resets it. Mount state
+  // is no-error, so there is no false announce on first render.
+  const announcedSearchErrorRef = React.useRef<"quota" | "online" | null>(null);
+  React.useEffect(() => {
+    const kind = isQuotaExceeded ? "quota" : isOnlineError ? "online" : null;
+    if (kind === null) {
+      announcedSearchErrorRef.current = null;
+      return;
+    }
+    if (announcedSearchErrorRef.current === kind) return;
+    AccessibilityInfo.announceForAccessibility(
+      kind === "quota"
+        ? "Online search is temporarily unavailable"
+        : "Couldn't load online recipes",
+    );
+    announcedSearchErrorRef.current = kind;
+  }, [isQuotaExceeded, isOnlineError]);
 
   const addItemMutation = useAddMealPlanItem();
   const { data: favouriteData } = useFavouriteRecipeIds();

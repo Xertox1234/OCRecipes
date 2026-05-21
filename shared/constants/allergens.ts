@@ -632,12 +632,99 @@ for (const def of Object.values(ALLERGEN_INGREDIENT_MAP)) {
 }
 
 /**
+ * Bare keywords that name a dairy/wheat staple on their own ("milk", "butter")
+ * but also appear inside plant substitutes ("almond milk", "oat flour"). When
+ * one of these is immediately preceded by a plant qualifier, the ingredient is
+ * a substitute that carries NONE of the dairy/wheat allergen — see the guard in
+ * `ingredientContainsKeyword`.
+ */
+const MODIFIER_SENSITIVE_KEYWORDS = new Set([
+  "milk",
+  "cream",
+  "butter",
+  "flour",
+]);
+
+/**
+ * STRICTLY plant-based qualifiers. Animal-milk qualifiers (goat, sheep, buffalo,
+ * camel) are deliberately excluded — those ARE dairy, so suppressing them would
+ * turn a safe over-flag into a dangerous under-flag. Suppression only removes
+ * the dairy/wheat allergen; the substitute's OWN allergen still matches via its
+ * own keyword (e.g. "almond milk" loses dairy but keeps tree_nut via "almond").
+ *
+ * Gluten-free flour bases (oat, rice, corn, buckwheat, …) suppress the *wheat*
+ * keyword by ingredient-text semantics: "oat flour" does not assert wheat in the
+ * ingredient string. Cross-contamination ("may contain wheat") is a separate
+ * advisory channel, not derivable from the ingredient name. Gluten-containing
+ * grains (wheat/spelt/rye/barley) are intentionally NOT in this list, so
+ * "spelt flour"/"rye flour" still flag.
+ */
+const SUBSTITUTE_MODIFIERS = [
+  "almond",
+  "cashew",
+  "hazelnut",
+  "macadamia",
+  "pistachio",
+  "walnut",
+  "peanut",
+  "coconut",
+  "oat",
+  "soy",
+  "soya",
+  "soybean",
+  "rice",
+  "hemp",
+  "pea",
+  "sunflower",
+  "flax",
+  "chia",
+  "sesame",
+  "cocoa",
+  "shea",
+  "chickpea",
+  "garbanzo",
+  "corn",
+  "tapioca",
+  "cassava",
+  "buckwheat",
+  "millet",
+  "sorghum",
+  "quinoa",
+  "amaranth",
+  "teff",
+  "potato",
+  "plantain",
+];
+
+const substituteModifierPatternCache = new Map<string, RegExp>();
+
+function getSubstituteModifierPattern(keyword: string): RegExp {
+  let pattern = substituteModifierPatternCache.get(keyword);
+  if (!pattern) {
+    const mods = SUBSTITUTE_MODIFIERS.join("|");
+    // <plant qualifier><space|hyphen><keyword> at word boundaries, e.g.
+    // "almond milk", "unsweetened oat-milk", "coconut flour".
+    pattern = new RegExp(
+      `(?:^|[\\s,;/()\\-])(?:${mods})[\\s\\-]${keyword}(?:$|[\\s,;/()\\-])`,
+      "i",
+    );
+    substituteModifierPatternCache.set(keyword, pattern);
+  }
+  return pattern;
+}
+
+/**
  * Word-boundary–aware substring match.
  *
  * Prevents "cod" from matching "avocado" by requiring the keyword to appear
  * at a word boundary (start of string, space, hyphen, slash, or parenthesis).
  * Single-word keywords use regex boundaries; multi-word keywords use simple
  * `includes()` since they're specific enough.
+ *
+ * Plant-substitute guard: a bare dairy/wheat keyword preceded by a plant
+ * qualifier ("almond milk", "oat flour") names a substitute that carries none
+ * of that allergen, so it does NOT match. The substitute's own allergen still
+ * matches through its own keyword.
  */
 function ingredientContainsKeyword(
   lowerIngredient: string,
@@ -652,7 +739,16 @@ function ingredientContainsKeyword(
   if (lowerIngredient === keyword) return true;
 
   // Single-word keyword — use pre-compiled word boundary pattern
-  return getKeywordPattern(keyword).test(lowerIngredient);
+  if (!getKeywordPattern(keyword).test(lowerIngredient)) return false;
+
+  if (
+    MODIFIER_SENSITIVE_KEYWORDS.has(keyword) &&
+    getSubstituteModifierPattern(keyword).test(lowerIngredient)
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 // ============================================================================

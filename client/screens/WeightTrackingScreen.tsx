@@ -95,6 +95,11 @@ export default function WeightTrackingScreen() {
             "Weight logged successfully",
           );
         },
+        onError: () => {
+          setWeightError("Couldn't save your weight. Please try again.");
+          haptics.notification(Haptics.NotificationFeedbackType.Error);
+          AccessibilityInfo.announceForAccessibility("Failed to log weight");
+        },
       },
     );
   }, [weightInput, noteInput, haptics, logWeight, unit, unitLabel]);
@@ -132,6 +137,11 @@ export default function WeightTrackingScreen() {
         setGoalInput("");
         setShowGoalInput(false);
         haptics.notification(Haptics.NotificationFeedbackType.Success);
+      },
+      onError: () => {
+        setGoalError("Couldn't save your goal. Please try again.");
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        AccessibilityInfo.announceForAccessibility("Failed to save goal");
       },
     });
   }, [goalInput, haptics, setGoalWeight, unit]);
@@ -180,6 +190,7 @@ export default function WeightTrackingScreen() {
                     ? "Weight in pounds"
                     : "Weight in kilograms"
                 }
+                aria-invalid={weightError != null}
               />
               <Pressable
                 onPress={handleLogWeight}
@@ -199,7 +210,12 @@ export default function WeightTrackingScreen() {
                   },
                 ]}
               >
-                <Feather name="plus" size={20} color={theme.buttonText} />
+                <Feather
+                  name="plus"
+                  size={20}
+                  color={theme.buttonText}
+                  accessible={false}
+                />
               </Pressable>
             </View>
             <TextInput
@@ -353,12 +369,14 @@ export default function WeightTrackingScreen() {
                       ? "Goal weight in pounds"
                       : "Goal weight in kilograms"
                   }
+                  aria-invalid={goalError != null}
                 />
                 <Pressable
                   onPress={handleSetGoal}
                   disabled={!goalInput}
                   accessibilityLabel="Save goal weight"
                   accessibilityRole="button"
+                  accessibilityState={{ disabled: !goalInput }}
                   style={({ pressed }) => [
                     styles.logButton,
                     {
@@ -367,7 +385,12 @@ export default function WeightTrackingScreen() {
                     },
                   ]}
                 >
-                  <Feather name="check" size={20} color={theme.buttonText} />
+                  <Feather
+                    name="check"
+                    size={20}
+                    color={theme.buttonText}
+                    accessible={false}
+                  />
                 </Pressable>
               </View>
             )}

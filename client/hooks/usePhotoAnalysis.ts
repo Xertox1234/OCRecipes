@@ -170,9 +170,10 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
           isUploadingRef.current = false;
           abortControllerRef.current = null;
         }
-        if (!abortController.signal.aborted) {
-          setIsAnalyzing(false);
-        }
+        // Always clear the spinner: useFocusEffect's cleanup aborts on blur but
+        // the main effect's deps are stable, so it never re-runs on refocus —
+        // a guarded clear would strand the spinner. Harmless no-op if unmounted.
+        setIsAnalyzing(false);
       }
     };
 
@@ -244,11 +245,16 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
   );
 
   const handleFollowUpAnswer = async (question: string, answer: string) => {
-    if (!analysisResult) return;
+    // No session id means refinement is impossible — skip the follow-up flow
+    // rather than ship a null session into the request.
+    if (!analysisResult?.sessionId) {
+      setShowFollowUp(false);
+      return;
+    }
 
     try {
       const refined = await submitFollowUp(
-        analysisResult.sessionId!,
+        analysisResult.sessionId,
         question,
         answer,
       );
@@ -278,13 +284,19 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
 
   const handleLogSelected = async () => {
     if (!analysisResult || selectedItems.size === 0) return;
+    if (!analysisResult.sessionId) {
+      setError("Analysis session expired. Please retake the photo.");
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+    const sessionId = analysisResult.sessionId;
 
     // Filter to only selected items
     const selectedFoods = foods.filter((_, index) => selectedItems.has(index));
 
     // Build preparation methods array from selected items
     const preparationMethodsArr = selectedFoods
-      .map((food, i) => {
+      .map((food) => {
         const originalIndex = foods.indexOf(food);
         const method = prepMethods[originalIndex] || "As Served";
         return { name: food.name, method };
@@ -294,7 +306,7 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
     setIsConfirming(true);
     try {
       await confirmPhotoAnalysis({
-        sessionId: analysisResult.sessionId!,
+        sessionId,
         foods: selectedFoods.map((f) => ({
           name: f.name,
           quantity: f.quantity,

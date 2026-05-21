@@ -15,6 +15,21 @@ Append-only history of all code audits performed on this project. Each entry lin
 
 ---
 
+## 2026-05-20 — Full Codebase Audit
+
+- **Trigger:** Periodic full audit, scoped to source changed since the 2026-05-16 full audit (~228 files / +5969/-1960 across `client/`, `server/`, `shared/`). 7 specialist domains + Phase 2.5 docs-researcher validation.
+- **Manifest:** [docs/audits/2026-05-20-full.md](2026-05-20-full.md)
+- **Findings:** 0 critical, 0 high, 5 medium, 12 low (17 total)
+- **Resolved:** 9 verified, 8 deferred (7 todos), 0 false-positive
+- **Commit(s):** _(see manifest Fix Commits)_
+- **Baseline:** taken from CI (green at `6b833ad1`) per CLAUDE.md, not a local run.
+- **Key fix:** M1 — the allergen matcher false-flagged plant substitutes ("almond flour"→wheat, "oat milk"/"coconut cream"/"peanut butter"→dairy), poisoning the denormalized `allergens` cache and degrading the `safeForMe` filter for the dietary-restricted users it serves. Fixed with a strictly-plant-based modifier guard in `ingredientContainsKeyword` (animal-milk qualifiers goat/sheep/buffalo/camel and gluten grains spelt/rye/barley deliberately excluded — over-flag is safe, under-flag is dangerous); the substitute's own allergen still fires via its own keyword. +15 regression tests incl. must-still-flag negatives.
+- **Other verified fixes:** M2 `sessionId!` non-null assertions → fail-closed guards (usePhotoAnalysis); M3/M4/M5 + L11/L12 a11y (aria-invalid, stream/save/search-error announcements, accessibilityState, decorative icons); L8 weight-mutation onError feedback; L10 abort-on-blur spinner strand.
+- **Deferred (8 → 7 todos):** pantry prompt sanitization (L1), TTL cache eviction+invalidation (L2/L3), allergen backfill batch UPDATE + M1 cache re-derive (L4), oversized storage-module split (L5), receipt-hook Zod validation (L6), SubscriptionTier type import (L7), pantry schema-mismatch test (L9).
+- **Notes:** code-reviewer Phase 6 pass — 0 CRITICAL/HIGH; safety-critical allergen asymmetry confirmed clean. kimi-review per-fix surfaced 3 WARNINGs (2 deferred safe-direction, 1 fixed inline). Full `test:run` left to CI per CLAUDE.md; `check:types`/lint clean locally, allergen + recipe-search tests green (101/101).
+
+---
+
 ## 2026-05-18 — Kimi Review Pipeline Improvements Audit
 
 - **Trigger:** User-requested audit of recent Kimi-related changes to make sure they are actual improvements.
