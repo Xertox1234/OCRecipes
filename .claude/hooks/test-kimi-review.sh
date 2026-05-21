@@ -119,7 +119,11 @@ run_husky_gate() {
   local mode="$1"
   local stubdir output rc
   stubdir=$(make_stub_path "$mode")
-  output=$(PATH="$stubdir:$PATH" bash "$PRE_COMMIT" 2>&1)
+  # Husky runs this hook as `sh -e` (see .husky/_/h), NOT `bash`. Invoke it the
+  # same way so the harness catches errexit-only bugs — e.g. a clean review whose
+  # CRITICAL grep returns 1 and would abort under `set -e`. Running it with plain
+  # `bash` here previously masked exactly that bug.
+  output=$(PATH="$stubdir:$PATH" sh -e "$PRE_COMMIT" 2>&1)
   rc=$?
   rm -rf "$stubdir"
   printf '%s\n--RC--%d' "$output" "$rc"

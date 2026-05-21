@@ -111,8 +111,12 @@ printf '%s\n' "$REVIEW_OUTPUT"
 # mandated finding shape — a `[CRITICAL]` tag followed on the same line by a
 # `:<line-number>`. An empty-tier placeholder ("[CRITICAL] No critical issues
 # found.") has no `:line`, so it cannot match and never phantom-blocks.
+# `|| true` is load-bearing: husky runs this hook as `sh -e` (see .husky/_/h),
+# so a grep that finds nothing (exit 1 — the normal case for a CLEAN review)
+# would abort the whole hook under errexit and block the commit. Mirrors the
+# same guard in scripts/ci-kimi-review.sh.
 CRITICAL_FINDINGS=$(printf '%s\n' "$REVIEW_OUTPUT" \
-  | grep -E '[[]CRITICAL[]][^:]*:[0-9]')
+  | grep -E '[[]CRITICAL[]][^:]*:[0-9]' || true)
 
 if [ -n "$CRITICAL_FINDINGS" ]; then
   echo "" >&2
@@ -130,3 +134,8 @@ if [ $REVIEW_STATUS -ne 0 ]; then
   echo "kimi-review failed to run (exit $REVIEW_STATUS); skipping gate." >&2
   exit 0
 fi
+
+# Clean review (kimi exited 0, no CRITICAL): pass explicitly. Defensive — the
+# real clean-commit fix is the `|| true` on the CRITICAL grep above; this also
+# guarantees a 0 exit if the hook is ever run without errexit.
+exit 0
