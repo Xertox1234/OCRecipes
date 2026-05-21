@@ -134,6 +134,7 @@ Validate the Phase 2 findings against current documentation before the user tria
 4. For each **new finding candidate** a researcher surfaced, verify it exists in the current code before adding it — same discipline as Phase 2 step 3:
    - Read the file at the reported line
    - Grep for the pattern
+   - For **symbol-level candidates** (unused export, dead code, signature-change or rename impact), confirm with the LSP tool (`findReferences` / call-hierarchy), not grep — it resolves `@/` and `@shared/` aliases and avoids false "unused"/"safe to change" verdicts. Same rationale as Phase 2 step 3. See `docs/rules/lsp.md`.
    - If confirmed, add it to the manifest with status `open`, `Agent` = `docs-researcher`, `Research` = `confirmed`
    - If not confirmed, discard it (do not add it to the manifest)
 5. **Show the user the complete findings table** (with the `Research` column populated) and ask: "Which findings should I fix now, and which should be deferred? Note the research verdicts — `contradicted ⚠` findings may be false positives."
@@ -143,12 +144,13 @@ Validate the Phase 2 findings against current documentation before the user tria
 For **each** finding the user wants fixed:
 
 1. Update manifest status to `fixing`
-2. Read the relevant code
+2. Read the relevant code. For a **symbol-changing fix** (rename, signature change, removing or altering an exported symbol), first map the blast radius with the LSP tool (`findReferences` / call-hierarchy), not grep, so the fix reaches every call site across `routes → services → storage → db`. See `docs/rules/lsp.md`.
 3. Make the fix (minimal, surgical — no drive-by improvements)
 4. Run the targeted tests for the affected files
 5. If tests fail, fix until they pass
 6. **Verify** the fix landed:
    - Grep/read the fixed code to confirm the change is present
+   - For a **symbol-changing fix**, re-run `findReferences` to confirm the change propagated to every call site with no stale callers or dangling references — grep can miss alias-resolved usages.
    - Run the specific test file(s) to confirm they pass
 7. **kimi-review** the fix — run from the audit worktree root:
 
