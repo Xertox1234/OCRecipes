@@ -15,8 +15,18 @@
 if [ -z "${BASH_VERSION:-}" ]; then
   exec bash "$0" "$@"
 fi
+# Husky invokes this script as `sh -e`, which activates errexit. We manage exit
+# codes explicitly (REVIEW_STATUS=$?, || exit 1), so clear errexit now that we
+# are running under bash — we only need to drop the -e flag Husky/sh imposed.
+set +e
 
 NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false || exit 1
+
+# Engine drift check: vendored scripts/kimi-review.py must match the canonical
+# engine on this machine. Skips when canonical is absent (see check script).
+if [ -f scripts/check-kimi-engine.sh ]; then
+  bash scripts/check-kimi-engine.sh || exit 1
+fi
 
 if [ "$SKIP_KIMI_REVIEW" = "1" ]; then
   exit 0
@@ -101,7 +111,8 @@ REVIEW_COMMAND=(kimi-review
   --scope "pre-commit staged diff" \
   --tiers CRITICAL,WARNING \
   --changed-files "$CHANGED_FILES" \
-  --profile ocrecipes)
+  --profile ocrecipes \
+  --verify deterministic)
 
 if [ -n "$PATTERNS" ]; then
   REVIEW_COMMAND+=(--patterns "$PATTERNS" --rules "$PATTERNS" --pattern-max-chars 12000)
@@ -114,23 +125,10 @@ REVIEW_OUTPUT=$(printf '%s' "$REVIEW_RAW" | sed $'s/\x1b\\[[0-9;]*m//g')
 
 printf '%s\n' "$REVIEW_OUTPUT"
 
-# Check for CRITICAL findings FIRST, before any tool-failure short-circuit —
-# kimi-review may print findings and still exit non-zero, and we don't want
-# a crash-after-detection to silently let CRITICAL findings land. Match the
-# mandated finding shape — a `[CRITICAL]` tag followed on the same line by a
-# `:<line-number>`. An empty-tier placeholder ("[CRITICAL] No critical issues
-# found.") has no `:line`, so it cannot match and never phantom-blocks.
-# `|| true` is load-bearing: husky runs this hook as `sh -e` (see .husky/_/h),
-# so a grep that finds nothing (exit 1 — the normal case for a CLEAN review)
-# would abort the whole hook under errexit and block the commit. Mirrors the
-# same guard in scripts/ci-kimi-review.sh.
-CRITICAL_FINDINGS=$(printf '%s\n' "$REVIEW_OUTPUT" \
-  | grep -E '[[]CRITICAL[]][^:]*:[0-9]' || true)
-
-if [ -n "$CRITICAL_FINDINGS" ]; then
+if [ "$REVIEW_STATUS" -eq 2 ]; then
   echo "" >&2
-  echo "Commit blocked: kimi-review reported CRITICAL findings above." >&2
-  echo "Fix the issues or set SKIP_KIMI_REVIEW=1 to bypass." >&2
+  echo "Commit blocked: kimi-review reported a verified CRITICAL finding above." >&2
+  echo "Fix the issue or set SKIP_KIMI_REVIEW=1 to bypass." >&2
   exit 1
 fi
 

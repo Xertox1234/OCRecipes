@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal kimi-review CLI for CI.
+"""Canonical kimi-review engine (cross-project home).
 
 Reads a unified diff from stdin, sends it to an OpenAI-compatible endpoint, and
 prints CRITICAL / WARNING / SUGGESTION findings in the same format as the local
@@ -7,6 +7,7 @@ developer kimi-review helper.
 """
 
 import argparse
+import json
 import os
 import pathlib
 import re
@@ -22,23 +23,20 @@ TIER_DEFINITIONS = {
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
-PROJECT_PROFILES = {
-    "generic": "",
-    "ocrecipes": """
-Project profile: OCRecipes (Expo/React Native + Express/Drizzle/PostgreSQL nutrition app).
 
-Review priorities:
-- Auth/security: Bearer JWT auth only; flag missing ownership/userId checks, IDOR risks, token leaks, secret exposure, unsafe admin paths.
-- Health/nutrition data: flag cross-user data access, unsafe medical/nutrition advice paths, and changes that could corrupt logs, meal plans, receipts, pantry, or IAP state.
-- API/backend: Express route handlers should use existing error/auth patterns; Drizzle queries should preserve transactions, soft-delete/ownership filters, and JSONB safety.
-- Client: React Native/Expo code should follow existing navigation, safe-area, accessibility, TanStack Query, and theme patterns; flag web-only assumptions.
-- AI/evals: prompt, classifier, and eval changes should preserve safety/accuracy gates, cache-key isolation, deterministic behavior where intended, and avoid prompt-injection regressions.
-- Tests: flag missing focused tests only when the diff changes shared behavior, security boundaries, storage contracts, navigation flows, or AI routing/eval semantics.
-""".strip(),
-}
+def load_profiles(path):
+    """Load project profiles from a JSON file. Missing/unreadable -> {}."""
+    try:
+        return json.loads(pathlib.Path(path).read_text(errors="replace"))
+    except (OSError, ValueError):
+        return {}
+
+
+PROFILES = load_profiles(pathlib.Path(__file__).resolve().parent / "kimi-profiles.json")
 
 
 def parse_args():
+    profile_choices = sorted({"auto", "generic"} | set(PROFILES.keys()))
     parser = argparse.ArgumentParser(description="Code review via Kimi")
     parser.add_argument("--base", default=None, help="Branch or commit to diff against")
     parser.add_argument("--scope", default=None, help="One-line context for the reviewer")
@@ -65,7 +63,11 @@ def parse_args():
              "change-set; rendered as a <changed-files> block so the reviewer "
              "knows which non-.ts/.tsx files (migrations, config) exist.",
     )
-    parser.add_argument("--profile", choices=["auto", "generic", "ocrecipes"], default="auto")
+    parser.add_argument("--profile", choices=profile_choices, default="auto")
+    parser.add_argument(
+        "--verify", choices=["off", "deterministic", "agentic"], default="off",
+        help="Post-draft verification: off | deterministic (Tier A gate) | agentic (Tier B)",
+    )
     return parser.parse_args()
 
 
@@ -115,8 +117,10 @@ def detect_profile(args, root):
     root_path = pathlib.Path(root)
     claude_md = root_path / "CLAUDE.md"
     claude_head = claude_md.read_text(errors="replace")[:2000] if claude_md.exists() else ""
-    if root_path.name == "OCRecipes" or "OCRecipes" in claude_head:
+    if "ocrecipes" in PROFILES and (root_path.name == "OCRecipes" or "OCRecipes" in claude_head):
         return "ocrecipes"
+    if "plant_id" in PROFILES and (root_path.name == "plant_id_community" or "Plant ID Community" in claude_head):
+        return "plant_id"
     return "generic"
 
 
@@ -151,8 +155,11 @@ def context_blocks(args, root):
                 continue
             path = resolve_pattern_path(pattern, root)
             if not path.exists():
-                print(f"Error: pattern file not found: {path}", file=sys.stderr)
-                sys.exit(1)
+                # Warn and skip rather than sys.exit: a hard exit here returns a
+                # non-2 status that fail-OPENS the local commit gate on every TS
+                # commit if a pattern dir is ever pruned. Matches --rules below.
+                print(f"Warning: pattern file not found, skipping: {path}", file=sys.stderr)
+                continue
             paths.append(path)
 
     if args.rules:
@@ -191,42 +198,6 @@ def resolve_client_config(env=os.environ):
     return api_key, base_url
 
 
-# A real finding cites a file location, per the mandated format
-# `[TIER] path/to/file.ts:42 — description`. A bracketed line that cites no file
-# ("[CRITICAL] No critical issues found.") is the model decorating an empty tier
-# against instructions — a placeholder. We err toward keeping anything file-like:
-# dropping a real finding is unrecoverable, whereas a stray placeholder is caught
-# by the CI/Husky gate's stricter [CRITICAL]+:line grep.
-_FILE_REF_RE = re.compile(r"/|:\d|\.\w{1,6}\b")
-
-
-def filter_review(answer, requested_tiers):
-    """Return the review text to print: allowed-tier findings, else the clean message.
-
-    A bracketed `[TIER]` line counts as a real finding only when its body
-    references a file location. A bracketed line that references no file is an
-    empty-tier placeholder the model emitted against instructions — it is
-    dropped and does not count as a finding.
-    """
-    allowed_tiers = {t.upper() for t in requested_tiers}
-    filtered_lines = []
-    keep_current_finding = False
-    saw_finding = False
-    for line in answer.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith("[") and "]" in stripped:
-            tier = stripped[1 : stripped.index("]")].strip().upper()
-            body = stripped[stripped.index("]") + 1 :]
-            is_finding = bool(_FILE_REF_RE.search(body))
-            saw_finding = True
-            keep_current_finding = is_finding and tier in allowed_tiers
-            if keep_current_finding:
-                filtered_lines.append(line)
-        elif keep_current_finding or not saw_finding:
-            filtered_lines.append(line)
-    filtered = "\n".join(filtered_lines).strip()
-    return filtered or f"No findings in requested tiers: {', '.join(requested_tiers)}"
-
 
 def render_changed_files(changed_files):
     """Render a <changed-files> block from newline-delimited `git diff
@@ -249,6 +220,270 @@ def build_diff_ref(base):
     return f"{base}...HEAD" if base else "HEAD~1"
 
 
+FINDING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tier": {"type": "string", "enum": ["CRITICAL", "WARNING", "SUGGESTION"]},
+                    "claim_type": {"type": "string", "enum": ["absent_symbol", "line_assertion", "semantic"]},
+                    "file": {"type": "string"},
+                    "line": {"type": ["integer", "null"]},
+                    "symbol": {"type": ["string", "null"]},
+                    "detail": {"type": "string"},
+                },
+                "required": ["tier", "claim_type", "file", "line", "symbol", "detail"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["findings"],
+    "additionalProperties": False,
+}
+
+
+def parse_findings(answer, requested_tiers):
+    """Parse the model's JSON payload into a list of finding dicts, keeping only
+    requested tiers. Tier is normalized to uppercase. Every returned finding is a
+    complete, well-typed dict; findings missing required fields (file/detail/tier)
+    are dropped. Defense-in-depth: strict json_schema is not guaranteed across all
+    providers, and a malformed finding must never KeyError-crash the engine — a
+    crash exits non-2 and the local wrappers fail-open, which would silently let a
+    real CRITICAL through the gate. Returns [] on malformed JSON (treated as clean)."""
+    allowed = {t.upper() for t in requested_tiers}
+    try:
+        data = json.loads(answer)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    out = []
+    for f in data.get("findings", []):
+        if not isinstance(f, dict):
+            continue
+        tier = str(f.get("tier", "")).upper()
+        file = f.get("file")
+        detail = f.get("detail")
+        if tier not in allowed or not file or not detail:
+            continue
+        line = f.get("line")
+        symbol = f.get("symbol")
+        out.append({
+            "tier": tier,
+            "claim_type": f.get("claim_type") or "semantic",
+            "file": str(file),
+            "line": line if isinstance(line, int) else None,
+            "symbol": symbol if isinstance(symbol, str) else None,
+            "detail": str(detail),
+        })
+    return out
+
+
+def findings_to_text(findings):
+    """Render findings to the human format the wrappers and humans already read."""
+    if not findings:
+        return ""
+    lines = []
+    for f in findings:
+        loc = f["file"] + (f":{f['line']}" if f.get("line") is not None else "")
+        lines.append(f"[{f['tier']}] {loc} — {f['detail']}")
+    return "\n".join(lines)
+
+
+def apply_downgrades(findings, verdicts):
+    """Return a new findings list with CRITICAL→WARNING where verdicts say
+    'downgrade'. MONOTONIC: never raises a tier, never adds or drops a finding."""
+    out = []
+    for i, f in enumerate(findings):
+        g = dict(f)
+        if verdicts.get(i) == "downgrade" and g["tier"].upper() == "CRITICAL":
+            g["tier"] = "WARNING"
+            g["detail"] = g["detail"] + " [downgraded: unverified against code]"
+        out.append(g)
+    return out
+
+
+def _staged_file(path, cwd):
+    r = subprocess.run(["git", "show", f":{path}"], capture_output=True, text=True, cwd=cwd)
+    return r.stdout if r.returncode == 0 else None
+
+def _grep_staged(symbol, cwd):
+    # Fixed-string, staged-tree search. Returns True if found anywhere.
+    r = subprocess.run(["git", "grep", "--cached", "-F", "-q", "--", symbol],
+                       capture_output=True, text=True, cwd=cwd)
+    return r.returncode == 0
+
+def _normalize(s):
+    return " ".join(s.split())
+
+def verify_deterministic(findings, cwd=None):
+    """Return a list of per-finding verdicts ('keep'|'downgrade') for CRITICALs,
+    routed by claim_type against the STAGED tree. Non-CRITICAL findings always
+    'keep' (nothing to block). F2: semantic/uncertain CRITICALs downgrade."""
+    verdicts = []
+    for f in findings:
+        if f["tier"].upper() != "CRITICAL":
+            verdicts.append("keep"); continue
+        ct = f.get("claim_type")
+        if ct == "absent_symbol":
+            sym = f.get("symbol")
+            if sym and _grep_staged(sym, cwd):
+                verdicts.append("downgrade")
+            elif sym:
+                verdicts.append("keep")
+            else:
+                verdicts.append("downgrade")
+        elif ct == "line_assertion":
+            content = _staged_file(f["file"], cwd)
+            quote = f.get("symbol") or ""
+            lines = content.splitlines() if content is not None else []
+            ln = f.get("line")
+            on_line = lines[ln - 1] if isinstance(ln, int) and 1 <= ln <= len(lines) else ""
+            if quote and on_line and _normalize(quote) in _normalize(on_line):
+                verdicts.append("keep")
+            else:
+                verdicts.append("downgrade")
+        else:
+            verdicts.append("downgrade")
+    return verdicts
+
+
+TOOL_DEFS = [
+    {"type": "function", "function": {
+        "name": "read_file",
+        "description": "Read a repo-relative text file. Read-only.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {
+        "name": "grep",
+        "description": "Search the repo for a fixed string. Read-only.",
+        "parameters": {"type": "object", "properties": {
+            "pattern": {"type": "string"}}, "required": ["pattern"]}}},
+]
+
+
+def _safe_path(root, rel):
+    base = pathlib.Path(root).resolve()
+    target = (base / rel).resolve()
+    if base != target and base not in target.parents:
+        return None  # escape attempt
+    return target
+
+
+def _read_tree(path, root, tree_ref):
+    """Read a file from a git tree. tree_ref None => working tree (via _safe_path,
+    in-tree only); a sha/ref => `git show <ref>:path` (CI reads PR head this way)."""
+    if tree_ref:
+        r = subprocess.run(["git", "show", f"{tree_ref}:{path}"],
+                           capture_output=True, text=True, cwd=root)
+        return r.stdout if r.returncode == 0 else None
+    target = _safe_path(root, path)
+    if target is None or not target.is_file():
+        return None
+    return target.read_text(errors="replace")
+
+
+def run_tool(name, args, root, tree_ref=None):
+    """Execute a read-only tool against the chosen git tree. Never writes, never
+    executes project code. tree_ref selects the tree per surface (None = working
+    tree for local/manual; KIMI_REVIEW_HEAD_SHA for CI PR-head)."""
+    if name == "read_file":
+        content = _read_tree(args.get("path", ""), root, tree_ref)
+        if content is None:
+            return "error: path not readable in tree"
+        return content[:8000]
+    if name == "grep":
+        pattern = args.get("pattern", "")
+        if not pattern:
+            return "error: empty pattern"
+        cmd = ["git", "grep", "-n", "-F"]
+        if tree_ref:
+            cmd.extend(["-e", pattern, tree_ref])
+        else:
+            cmd.extend(["--untracked", "-e", pattern])
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=root)
+        return r.stdout[:8000] if r.stdout else "(no matches)"
+    return f"error: unknown tool {name}"
+
+
+VERIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["verified", "refuted", "uncertain"]},
+        "corrected_detail": {"type": "string"},
+        "confidence": {"type": "number"},
+    },
+    "required": ["verdict", "corrected_detail", "confidence"],
+    "additionalProperties": False,
+}
+
+VERIFY_SYSTEM = (
+    "You verify a single code-review finding against the real code using read-only "
+    "tools (read_file, grep). Decide if the finding's claim actually holds. "
+    "verdict=verified (claim is real), refuted (claim is false), uncertain (cannot tell). "
+    "Use tools before deciding. Never assume; check."
+)
+
+def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None):
+    """Bounded read-only verify loop for one finding. Returns 'keep' (verified)
+    or 'downgrade' (refuted/uncertain). MONOTONIC: only ever downgrades.
+    tree_ref selects which git tree the tools read (None = working tree)."""
+    messages = [
+        {"role": "system", "content": VERIFY_SYSTEM},
+        {"role": "user", "content": "Finding to verify:\n" + json.dumps(finding)},
+    ]
+    for _ in range(max_turns):
+        resp = client.chat.completions.create(
+            model=model, messages=messages, temperature=0, tools=TOOL_DEFS)
+        msg = resp.choices[0].message
+        tool_calls = getattr(msg, "tool_calls", None)
+        if tool_calls:
+            messages.append({"role": "assistant", "content": msg.content or "",
+                             "tool_calls": [
+                                 {"id": tc.id, "type": "function",
+                                  "function": {"name": tc.function.name,
+                                               "arguments": tc.function.arguments}}
+                                 for tc in tool_calls]})
+            for tc in tool_calls:
+                try:
+                    a = json.loads(tc.function.arguments)
+                except ValueError:
+                    a = {}
+                result = run_tool(tc.function.name, a, root=root, tree_ref=tree_ref)
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+            continue
+        verdict_resp = client.chat.completions.create(
+            model=model, messages=messages + [
+                {"role": "user", "content": "Now return your verdict as JSON."}],
+            temperature=0,
+            response_format={"type": "json_schema",
+                             "json_schema": {"name": "verify", "strict": True, "schema": VERIFY_SCHEMA}})
+        try:
+            v = json.loads(verdict_resp.choices[0].message.content)
+        except (ValueError, TypeError):
+            return "downgrade"
+        return "keep" if v.get("verdict") == "verified" else "downgrade"
+    return "downgrade"
+
+
+def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=None):
+    """Verify all CRITICAL findings in parallel; non-CRITICAL always 'keep'."""
+    import concurrent.futures
+    verdicts = ["keep"] * len(findings)
+    targets = [i for i, f in enumerate(findings) if f["tier"].upper() == "CRITICAL"]
+    if not targets:
+        return verdicts
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
+        futs = {ex.submit(verify_one_agentic, findings[i], client, model, root, max_turns, tree_ref): i
+                for i in targets}
+        for fut in concurrent.futures.as_completed(futs):
+            verdicts[futs[fut]] = fut.result()
+    return verdicts
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)
@@ -262,7 +497,7 @@ def main():
     user_msg = f"{focus}<diff>\n{diff}\n</diff>{changed_section}{context_blocks(args, root)}"
 
     tier_lines = "\n".join(f"{tier} — {TIER_DEFINITIONS[tier]}" for tier in requested_tiers)
-    profile_guidance = PROJECT_PROFILES[profile]
+    profile_guidance = PROFILES.get(profile, "")
     profile_block = f"\n\n{profile_guidance}" if profile_guidance else ""
 
     try:
@@ -279,41 +514,70 @@ def main():
         timeout=90.0,
     )
 
+    system_prompt = (
+        "You are a senior code reviewer auditing a code change. "
+        "Your review is a quality gate — defects you miss reach production.\n\n"
+        "Input: a unified git diff (with function-level context) inside <diff>, "
+        "optionally followed by a <changed-files> block listing every file in the "
+        "change-set, then optional <file> blocks containing source context, "
+        "docs/patterns/* convention docs, or docs/rules/* checklists.\n\n"
+        "Return findings only in these tiers:\n\n"
+        f"{tier_lines}\n\n"
+        "Review the change systematically, in this priority order — earlier "
+        "categories outrank later ones when triaging effort:\n"
+        "1. Security & access control — authn/authz, ownership and userId checks, "
+        "injection, SSRF, secret or token exposure, unsafe input handling.\n"
+        "2. Data integrity — transactions, race conditions, corruption of persisted "
+        "state, migration and schema safety.\n"
+        "3. Correctness — logic errors, wrong conditionals, off-by-one, unhandled "
+        "cases, broken control flow.\n"
+        "4. Error handling & resilience — unhandled rejections, swallowed errors, "
+        "missing validation at boundaries.\n"
+        "5. Regression risk — changed shared behavior, broken contracts, removed "
+        "guards or checks.\n"
+        "6. Test coverage — missing tests for the above when the diff changes "
+        "shared behavior, security boundaries, or storage contracts.\n\n"
+        "Treat any included docs/patterns or docs/rules file as the project's "
+        "binding standards — flag violations and cite the specific convention."
+        "\n\nYou see a partial view: a diff with function-level context, not "
+        "necessarily whole files. The <changed-files> block lists EVERY file in "
+        "this change-set; files not shown in <diff> (e.g. .sql migrations, config, "
+        "JSON) were still changed and their existence is established. NEVER raise a "
+        "finding claiming a file, migration, test, index, or guard is missing when "
+        "it appears in <changed-files>. If a risk depends on code you cannot see, "
+        "raise it only as WARNING and state explicitly what must be verified."
+        f"{profile_block}\n\n"
+        "Constraints:\n"
+        "- Calibrate severity honestly. Do not inflate a WARNING into a CRITICAL, "
+        "and never invent findings to fill a tier.\n"
+        "- If the diff lacks the context to confirm a risk, report it only when the "
+        "risk is concrete, and state what must be checked.\n"
+        "- Report style preferences only when SUGGESTION is a requested tier.\n\n"
+        'Return a JSON object {"findings": [...]}. Each finding has:\n'
+        "- tier: CRITICAL | WARNING | SUGGESTION\n"
+        "- claim_type: absent_symbol (you assert code/guard/test is missing) | "
+        "line_assertion (you assert a specific line does/says something) | "
+        "semantic (you assert behavior is wrong but it needs reasoning, not a lookup)\n"
+        "- file: repo-relative path\n"
+        "- line: the line number you are citing, or null\n"
+        "- symbol: the identifier your claim is about (the asserted-missing or asserted-present name), or null\n"
+        "- detail: one or two sentences on why it is wrong and what to fix\n"
+        'Return {"findings": []} when there are no issues. Do not praise. Do not summarize the diff.'
+    )
+
     try:
         response = client.chat.completions.create(
             model=args.model,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a senior code reviewer auditing a code change. "
-                        "Your review is a quality gate; defects you miss reach production.\n\n"
-                        "Input: a unified git diff (with function-level context) inside <diff>, "
-                        "optionally followed by a <changed-files> block listing every file in the "
-                        "change-set, then optional <file> blocks.\n\n"
-                        "Return findings only in these tiers:\n\n"
-                        f"{tier_lines}\n\n"
-                        "Review in this priority order: security/access control, data integrity, "
-                        "correctness, error handling, regression risk, then test coverage. "
-                        "Treat included rules or patterns as binding project standards."
-                        "\n\nYou see a partial view, not whole files. The <changed-files> block "
-                        "lists EVERY file in this change-set; files not shown in <diff> (e.g. .sql "
-                        "migrations, config) were still changed and their existence is established. "
-                        "NEVER claim a file, migration, test, index, or guard is missing when it "
-                        "appears in <changed-files>. If a risk depends on code you cannot see, "
-                        "raise it only as WARNING and say what must be verified."
-                        f"{profile_block}\n\n"
-                        "Format every finding exactly as:\n"
-                        "[TIER] path/to/file.ts:42 — short description\n"
-                        "  Detail: one or two sentences on why it is wrong and what to fix.\n\n"
-                        "Order findings most-severe first within each tier. Omit tiers with no findings. "
-                        "Do not summarize the diff. Do not praise. Find problems."
-                    ),
-                },
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=args.max_tokens,
             temperature=0,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "kimi_findings", "strict": True, "schema": FINDING_SCHEMA},
+            },
         )
     except Exception as error:
         print(f"[ERROR: kimi-review request failed: {error}]", file=sys.stderr)
@@ -328,7 +592,21 @@ def main():
         print("[ERROR: ran out of tokens — raise --max-tokens]", file=sys.stderr)
         sys.exit(1)
 
-    print(filter_review(answer, requested_tiers))
+    findings = parse_findings(answer, requested_tiers)
+
+    if args.verify == "deterministic":
+        verdicts = verify_deterministic(findings, cwd=root)
+        findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
+    elif args.verify == "agentic":
+        # CI sets KIMI_REVIEW_HEAD_SHA and checks out the BASE tree, so PR-head
+        # content is only reachable by sha. Local/manual runs leave it unset =>
+        # working tree. This is the Tier B half of the spec's tree-discipline rule.
+        head_ref = os.environ.get("KIMI_REVIEW_HEAD_SHA") or None
+        verdicts = verify_agentic(findings, client, args.model, root, tree_ref=head_ref)
+        findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
+
+    text = findings_to_text(findings)
+    print(text if text else f"No findings in requested tiers: {', '.join(requested_tiers)}")
 
     usage = response.usage
     cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0
@@ -337,6 +615,9 @@ def main():
             f"{usage.completion_tokens} out | finish: {finish_reason}]",
         file=sys.stderr,
     )
+
+    if any(f["tier"].upper() == "CRITICAL" for f in findings):
+        sys.exit(2)
 
 
 if __name__ == "__main__":

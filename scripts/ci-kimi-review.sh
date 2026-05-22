@@ -124,6 +124,7 @@ review_command=(
   --tiers CRITICAL,WARNING
   --changed-files "$changed_status"
   --profile ocrecipes
+  --verify agentic
 )
 
 if [[ -n "$review_patterns" ]]; then
@@ -142,15 +143,9 @@ review_output=$(printf '%s' "$review_raw" | sed $'s/\x1b\\[[0-9;]*m//g')
 
 printf '%s\n' "$review_output"
 
-# Match the mandated finding shape — a `[CRITICAL]` tag followed on the same
-# line by a `:<line-number>`. An empty-tier placeholder ("[CRITICAL] No critical
-# issues found.") has no `:line` and cannot match, so it never phantom-blocks.
-critical_findings=$(printf '%s\n' "$review_output" \
-  | grep -E '[[]CRITICAL[]][^:]*:[0-9]' || true)
-
-if [[ -n "$critical_findings" ]]; then
+if [[ $review_status -eq 2 ]]; then
   echo "" >&2
-  echo "Kimi review blocked this PR: CRITICAL finding present." >&2
+  echo "Kimi review blocked this PR: verified CRITICAL finding present." >&2
   exit 1
 fi
 

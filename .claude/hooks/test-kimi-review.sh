@@ -10,24 +10,12 @@ CI_SCRIPT="$ROOT/scripts/ci-kimi-review.sh"
 PRE_COMMIT="$ROOT/.husky/pre-commit"
 PASS=0; FAIL=0
 
-# Make a sandbox PATH with stub binaries. The stub mirrors kimi-review's real
-# output: findings are `[TIER] path:line — description` lines, a clean run prints
-# `No findings in requested tiers: CRITICAL, WARNING`. KIMI_STUB_MODE controls it:
-#   critical          → a plain [CRITICAL] finding line
-#   critical-bracket  → a bullet+indent decorated [CRITICAL] finding line
-#   critical-bold     → a markdown-bold-wrapped [CRITICAL] finding line
-#   critical-nobody   → a bare [CRITICAL] tag with no finding body
-#   warning           → a [WARNING] finding line
-#   noisy-prose       → lowercase "critical" in prose, no real finding
-#   negative-prose    → the model's "No CRITICAL or WARNING findings" phrasing
-#   clean             → kimi-review's clean-output message (prose phrasing)
-#   clean-tiered      → a clean review decorated as bracketed per-tier headers
-#   clean-model-prose → the real-world phantom case: the model emits a bracketed
-#                       [TIER] line per tier whose body is free-form "no issues"
-#                       prose ("No critical issues found.") instead of omitting
-#                       the empty tier — no path:line, so it is not a finding
-#   critical-no-findings-desc → a real [CRITICAL] finding whose description says "no findings"
-#   echo-input        → echoes stdin back to the caller
+# Make a sandbox PATH with stub binaries. The stub exercises the exit-code contract:
+#   exit 2  → verified CRITICAL present (wrappers must block)
+#   exit 0  → clean / warnings / placeholder (wrappers must NOT block)
+# KIMI_STUB_MODE controls output and exit code:
+#   critical, critical-bracket, critical-bold, critical-no-findings-desc → exit 2
+#   all other modes (clean, warning, noisy-prose, critical-nobody, …)     → exit 0
 make_stub_path() {
   local mode="$1"
   local dir
@@ -36,9 +24,9 @@ make_stub_path() {
 #!/usr/bin/env bash
   input=\$(cat)  # consume stdin so the pipe doesn't SIGPIPE
 case "$mode" in
-  critical)         echo "[CRITICAL] server/routes/foo.ts:42 — stub finding for tests";;
-  critical-bracket) echo "  - [CRITICAL] server/routes/foo.ts:10 — bullet+indent decorated finding";;
-  critical-bold)    echo "**[CRITICAL]** server/routes/foo.ts:10 — markdown-bold form";;
+  critical)         echo "[CRITICAL] server/routes/foo.ts:42 — stub finding for tests"; exit 2;;
+  critical-bracket) echo "  - [CRITICAL] server/routes/foo.ts:10 — bullet+indent decorated finding"; exit 2;;
+  critical-bold)    echo "**[CRITICAL]** server/routes/foo.ts:10 — markdown-bold form"; exit 2;;
   critical-nobody)  echo "[CRITICAL]";;
   warning)          echo "[WARNING] server/routes/foo.ts:5 — stub finding for tests";;
   noisy-prose)      echo "no critical issues found in stub run";;
@@ -47,7 +35,7 @@ case "$mode" in
   clean-tiered)     printf '[CRITICAL] — No findings.\n[WARNING] — No findings.\n';;
   clean-model-prose) printf '[CRITICAL] No critical issues found.\n[WARNING] No warning-level issues found.\n';;
   critical-no-findings-desc)
-                    echo "[CRITICAL] server/routes/foo.ts:42 — error handler swallows the error and returns no findings to the caller";;
+                    echo "[CRITICAL] server/routes/foo.ts:42 — error handler swallows the error and returns no findings to the caller"; exit 2;;
   echo-input)       printf '%s' "\$input";;
   echo-args)        printf 'ARGS: %s\n' "\$*";;
 esac
@@ -143,49 +131,11 @@ run_husky_gate_dash() {
   printf '%s\n--RC--%d' "$output" "$rc"
 }
 
-run_python_filter_tests() {
-  command -v python3 >/dev/null 2>&1 || {
-    echo "python3 not found"
-    return 1
-  }
-  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
-import importlib.util
-import pathlib
-import sys
-
-module_path = pathlib.Path(sys.argv[1])
-spec = importlib.util.spec_from_file_location("kimi_review", module_path)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-
-CW = ["CRITICAL", "WARNING"]
-CLEAN = "No findings in requested tiers: CRITICAL, WARNING"
-REAL = "[CRITICAL] server/a.ts:10 — broken guard"
-
-cases = [
-    # empty-tier placeholder lines carry no path:line → dropped → clean message
-    ("[CRITICAL] No critical issues found.\n[WARNING] No warning-level issues found.", CW, CLEAN),
-    # a real finding (path:line) is kept
-    (REAL, CW, REAL),
-    # a finding in an unrequested tier is dropped
-    ("[SUGGESTION] client/x.ts:5 — rename var", CW, CLEAN),
-    # placeholder + real finding → only the real finding survives
-    ("[CRITICAL] No critical issues found.\n" + REAL, CW, REAL),
-]
-
-for answer, tiers, expected in cases:
-    actual = module.filter_review(answer, tiers)
-    if actual != expected:
-        raise AssertionError(f"filter_review({answer!r}): expected {expected!r}, got {actual!r}")
-PY
-}
 
 run_python_credential_tests() {
-  command -v python3 >/dev/null 2>&1 || {
-    echo "python3 not found"
-    return 1
-  }
-  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
 import importlib.util
 import pathlib
 import sys
@@ -233,11 +183,9 @@ PY
 }
 
 run_python_helper_tests() {
-  command -v python3 >/dev/null 2>&1 || {
-    echo "python3 not found"
-    return 1
-  }
-  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
 import importlib.util
 import pathlib
 import sys
@@ -265,6 +213,210 @@ cases = [
 for actual, expected in cases:
     if actual != expected:
         raise AssertionError(f"expected {expected!r}, got {actual!r}")
+PY
+}
+
+run_python_profile_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" "$ROOT/scripts/kimi-profiles.json" <<'PY'
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+profiles = module.load_profiles(pathlib.Path(sys.argv[2]))
+assert profiles["generic"] == "", "generic profile must be empty string"
+assert "OCRecipes" in profiles["ocrecipes"], "ocrecipes profile must load"
+assert module.load_profiles(pathlib.Path("/nonexistent.json")) == {}, "missing file -> {}"
+PY
+}
+
+run_python_schema_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, json
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+findings = [
+    {"tier":"CRITICAL","claim_type":"absent_symbol","file":"server/a.ts","line":42,"symbol":"requireOwner","detail":"missing ownership check"},
+    {"tier":"WARNING","claim_type":"semantic","file":"server/b.ts","line":7,"symbol":None,"detail":"noisy log"},
+]
+text = m.findings_to_text(findings)
+assert "[CRITICAL] server/a.ts:42 — missing ownership check" in text, text
+assert "[WARNING] server/b.ts:7 — noisy log" in text, text
+
+payload = '{"findings": ' + json.dumps(findings) + '}'
+parsed = m.parse_findings(payload, {"CRITICAL","WARNING"})
+assert len(parsed) == 2 and parsed[0]["tier"] == "CRITICAL"
+parsed_c = m.parse_findings(payload, {"CRITICAL"})
+assert len(parsed_c) == 1 and parsed_c[0]["tier"] == "CRITICAL"
+
+# tier is normalized to uppercase even if the model returns lowercase
+low = '{"findings":[{"tier":"critical","claim_type":"semantic","file":"x.ts","line":1,"symbol":null,"detail":"d"}]}'
+pl = m.parse_findings(low, {"CRITICAL"})
+assert len(pl) == 1 and pl[0]["tier"] == "CRITICAL", pl
+assert "[CRITICAL] x.ts:1 — d" in m.findings_to_text(pl)
+
+# malformed JSON -> [] (treated as clean by caller)
+assert m.parse_findings("not json", {"CRITICAL"}) == []
+
+# DEFENSE-IN-DEPTH: a finding missing required fields is DROPPED, never crashes.
+# (A crash would exit non-2 and silently fail-open the gate.)
+miss_file = '{"findings":[{"tier":"CRITICAL","claim_type":"semantic","line":1,"symbol":null,"detail":"d"}]}'
+assert m.parse_findings(miss_file, {"CRITICAL"}) == [], "finding missing file must be dropped"
+miss_detail = '{"findings":[{"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":null}]}'
+assert m.parse_findings(miss_detail, {"CRITICAL"}) == [], "finding missing detail must be dropped"
+# a valid finding alongside a malformed one: keep the valid, drop the bad, no crash
+mixed = '{"findings":[{"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":2,"symbol":null,"detail":"ok"},{"tier":"CRITICAL"}]}'
+mp = m.parse_findings(mixed, {"CRITICAL"})
+assert len(mp) == 1 and mp[0]["file"] == "a.ts", mp
+# every kept finding is fully shaped, so findings_to_text never KeyErrors
+assert "[CRITICAL] a.ts:2 — ok" in m.findings_to_text(mp)
+# bad line type is normalized to None (no f":{line}" with a non-int)
+badline = '{"findings":[{"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":"oops","symbol":null,"detail":"d"}]}'
+bp = m.parse_findings(badline, {"CRITICAL"})
+assert bp[0]["line"] is None and m.findings_to_text(bp) == "[CRITICAL] a.ts — d", bp
+PY
+}
+
+run_python_tool_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, tempfile
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+import subprocess
+d = tempfile.mkdtemp()
+def git(*a): return subprocess.run(["git","-C",d,*a], capture_output=True, text=True)
+git("init","-q"); git("config","user.email","t@t"); git("config","user.name","t")
+(pathlib.Path(d)/"a.ts").write_text("line1\nrequireOwner()\nline3\n")
+r = m.run_tool("read_file", {"path": "a.ts"}, root=d)
+assert "requireOwner" in r, r
+g = m.run_tool("grep", {"pattern": "requireOwner"}, root=d)
+assert "requireOwner" in g, g
+bad = m.run_tool("read_file", {"path": "../../../etc/passwd"}, root=d)
+assert "error" in bad.lower() or bad == "", bad
+assert "error" in m.run_tool("rm", {"path":"a.ts"}, root=d).lower()
+# TREE DISCIPLINE: read a committed sha (CI reads PR head, not the checked-out base)
+git("add","a.ts"); git("commit","-q","-m","base")
+(pathlib.Path(d)/"a.ts").write_text("line1\nverifiedAtHead()\nline3\n")
+git("add","a.ts"); git("commit","-q","-m","head")
+head = git("rev-parse","HEAD").stdout.strip()
+git("checkout","-q","HEAD~1")
+assert "verifiedAtHead" not in (pathlib.Path(d)/"a.ts").read_text()
+rh = m.run_tool("read_file", {"path":"a.ts"}, root=d, tree_ref=head)
+assert "verifiedAtHead" in rh, "tree_ref read must see the head tree, not working tree"
+gh = m.run_tool("grep", {"pattern":"verifiedAtHead"}, root=d, tree_ref=head)
+assert "verifiedAtHead" in gh, gh
+before = (pathlib.Path(d)/"a.ts").read_text()
+m.run_tool("read_file", {"path":"a.ts"}, root=d, tree_ref=head)
+assert (pathlib.Path(d)/"a.ts").read_text() == before, "tools must never mutate files"
+PY
+}
+
+run_python_verifyloop_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, tempfile, types, json
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+d = tempfile.mkdtemp(); (pathlib.Path(d)/"a.ts").write_text("requireOwner()\n")
+def msg(content=None, tool_calls=None):
+    return types.SimpleNamespace(content=content, tool_calls=tool_calls)
+def choice(m_): return types.SimpleNamespace(message=m_, finish_reason="stop")
+def resp(m_): return types.SimpleNamespace(choices=[choice(m_)])
+class FakeClient:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            tc = types.SimpleNamespace(id="t1", function=types.SimpleNamespace(
+                name="grep", arguments=json.dumps({"pattern":"requireOwner"})))
+            return resp(msg(tool_calls=[tc]))
+        return resp(msg(content=json.dumps({"verdict":"refuted","corrected_detail":"exists","confidence":0.9})))
+f = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"x missing"}
+verdict = m.verify_one_agentic(f, FakeClient(), model="x", root=d, max_turns=5)
+assert verdict == "downgrade", verdict  # refuted -> downgrade
+
+# a 'verified' verdict -> keep
+class FakeVerified(FakeClient):
+    def create(self, **kw):
+        self.calls += 1
+        return resp(msg(content=json.dumps({"verdict":"verified","corrected_detail":"real","confidence":0.9})))
+assert m.verify_one_agentic(f, FakeVerified(), model="x", root=d, max_turns=5) == "keep"
+
+# verify_agentic only targets CRITICALs; non-CRITICAL stays 'keep' without calling the model
+findings = [f, {"tier":"WARNING","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"w"}]
+vs = m.verify_agentic(findings, FakeVerified(), model="x", root=d)
+assert vs[1] == "keep", vs
+PY
+}
+
+run_python_detverify_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, subprocess, tempfile, os
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+d = tempfile.mkdtemp()
+def git(*a): return subprocess.run(["git","-C",d,*a], capture_output=True, text=True)
+git("init","-q"); git("config","user.email","t@t"); git("config","user.name","t")
+(pathlib.Path(d)/"a.ts").write_text("export function requireOwner() {}\nconst y = 2;\n")
+git("add","a.ts")
+f_present = {"tier":"CRITICAL","claim_type":"absent_symbol","file":"a.ts","line":None,"symbol":"requireOwner","detail":"d"}
+f_missing = {"tier":"CRITICAL","claim_type":"absent_symbol","file":"a.ts","line":None,"symbol":"nonexistentGuard","detail":"d"}
+f_goodline = {"tier":"CRITICAL","claim_type":"line_assertion","file":"a.ts","line":1,"symbol":"requireOwner","detail":"d"}
+f_badline = {"tier":"CRITICAL","claim_type":"line_assertion","file":"a.ts","line":2,"symbol":"totallyWrongText","detail":"d"}
+f_semantic = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}
+verdicts = m.verify_deterministic([f_present,f_missing,f_goodline,f_badline,f_semantic], cwd=d)
+assert verdicts[0] == "downgrade", verdicts
+assert verdicts[1] == "keep", verdicts
+assert verdicts[2] == "keep", verdicts
+assert verdicts[3] == "downgrade", verdicts
+assert verdicts[4] == "downgrade", verdicts
+PY
+}
+
+run_python_monotonic_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+findings = [{"tier":"CRITICAL","claim_type":"absent_symbol","file":"a.ts","line":1,"symbol":"x","detail":"d"}]
+out = m.apply_downgrades(findings, {0: "downgrade"})
+assert out[0]["tier"] == "WARNING", "downgrade must lower CRITICAL to WARNING"
+out2 = m.apply_downgrades(findings, {0: "keep"})
+assert out2[0]["tier"] == "CRITICAL", "keep must preserve tier"
+warn = [{"tier":"WARNING","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}]
+out3 = m.apply_downgrades(warn, {0: "keep"})
+assert out3[0]["tier"] == "WARNING", "verify must never promote a tier"
+PY
+}
+
+run_python_pattern_resolution_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, tempfile, types
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+d = tempfile.mkdtemp()
+# A missing --patterns name must NOT exit the process. A hard sys.exit returns a
+# non-2 status that fail-OPENS the local commit gate on every TS commit if a
+# pattern dir is ever pruned. It must warn and skip, like --rules already does.
+args = types.SimpleNamespace(paths=None, patterns="definitely-not-a-real-pattern-xyz",
+                             pattern_max_chars=12000, rules=None)
+assert m.context_blocks(args, d) == "", "missing pattern must be skipped, not fatal"
+# --rules parity: a missing rule name is likewise skipped, not fatal.
+args2 = types.SimpleNamespace(paths=None, patterns=None,
+                              pattern_max_chars=12000, rules="definitely-not-a-real-rule-xyz")
+assert m.context_blocks(args2, d) == "", "missing rule must be skipped"
 PY
 }
 
@@ -426,10 +578,17 @@ assert_contains "hook passes --changed-files to kimi-review" "$OUT" "--changed-f
 # The CI wrapper passes a --changed-files manifest.
 OUT=$(run_ci_gate echo-args)
 assert_contains "CI passes --changed-files to kimi-review" "$OUT" "--changed-files"
+assert_contains "CI forwards --verify agentic" "$OUT" "--verify agentic"
 
 # The Husky wrapper passes a --changed-files manifest.
 OUT=$(run_husky_gate echo-args)
 assert_contains "Husky passes --changed-files to kimi-review" "$OUT" "--changed-files"
+
+OUT=$(run_husky_gate echo-args)
+assert_contains "Husky forwards --verify deterministic" "$OUT" "--verify deterministic"
+
+OUT=$(run_hook echo-args '{"tool_input":{"command":"git commit -m x"}}')
+assert_contains "Claude hook forwards --verify deterministic" "$OUT" "--verify deterministic"
 
 # ---------- CI/Husky gate parsing ----------
 
@@ -474,14 +633,6 @@ else
   echo "SKIP: dash not installed — Husky-under-dash re-exec regression tests"
 fi
 
-if run_python_filter_tests; then
-  echo "PASS: Python filter_review drops empty-tier placeholders"
-  PASS=$((PASS+1))
-else
-  echo "FAIL: Python filter_review drops empty-tier placeholders"
-  FAIL=$((FAIL+1))
-fi
-
 if run_python_credential_tests; then
   echo "PASS: Python credential resolver handles aliases and provider base URL"
   PASS=$((PASS+1))
@@ -496,6 +647,73 @@ if run_python_helper_tests; then
 else
   echo "FAIL: Python render_changed_files + build_diff_ref helpers"
   FAIL=$((FAIL+1))
+fi
+
+if run_python_schema_tests; then
+  echo "PASS: Python parse_findings + findings_to_text schema helpers"
+  PASS=$((PASS+1))
+else
+  echo "FAIL: Python parse_findings + findings_to_text schema helpers"
+  FAIL=$((FAIL+1))
+fi
+
+if run_python_monotonic_tests; then
+  echo "PASS: Python apply_downgrades is monotonic (CRITICAL→WARNING only)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python apply_downgrades is monotonic (CRITICAL→WARNING only)"; FAIL=$((FAIL+1))
+fi
+
+if run_python_detverify_tests; then
+  echo "PASS: Python verify_deterministic staged-tree verification (Tier A)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python verify_deterministic staged-tree verification (Tier A)"; FAIL=$((FAIL+1))
+fi
+
+if run_python_pattern_resolution_tests; then
+  echo "PASS: Python context_blocks skips missing patterns/rules (no fail-open)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python context_blocks skips missing patterns/rules (no fail-open)"; FAIL=$((FAIL+1))
+fi
+
+if run_python_tool_tests; then
+  echo "PASS: Python run_tool read-only executor (read_file + grep + tree_ref)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python run_tool read-only executor (read_file + grep + tree_ref)"; FAIL=$((FAIL+1))
+fi
+
+if run_python_verifyloop_tests; then
+  echo "PASS: Python verify_one_agentic + verify_agentic bounded loop (Tier B)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python verify_one_agentic + verify_agentic bounded loop (Tier B)"; FAIL=$((FAIL+1))
+fi
+
+CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
+if [ -f "$CANON_ENGINE" ]; then
+  # importlib requires a .py suffix to resolve the loader; the canonical engine is
+  # an extensionless executable, so shim it via a temp symlink before passing in.
+  CANON_TMP=$(mktemp -d)
+  ln -s "$CANON_ENGINE" "$CANON_TMP/kimi_review.py"
+  if run_python_helper_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_credential_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_schema_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_monotonic_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_detverify_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_pattern_resolution_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_tool_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py"; then
+    echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
+  else
+    echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))
+  fi
+  rm -rf "$CANON_TMP"
+else
+  echo "SKIP: canonical engine absent — behavioral parity check"
+fi
+
+if run_python_profile_tests; then
+  echo "PASS: Python profile loader reads kimi-profiles.json"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python profile loader reads kimi-profiles.json"; FAIL=$((FAIL+1))
 fi
 
 echo ""
