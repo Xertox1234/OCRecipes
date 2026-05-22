@@ -249,6 +249,61 @@ def build_diff_ref(base):
     return f"{base}...HEAD" if base else "HEAD~1"
 
 
+FINDING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tier": {"type": "string", "enum": ["CRITICAL", "WARNING", "SUGGESTION"]},
+                    "claim_type": {"type": "string", "enum": ["absent_symbol", "line_assertion", "semantic"]},
+                    "file": {"type": "string"},
+                    "line": {"type": ["integer", "null"]},
+                    "symbol": {"type": ["string", "null"]},
+                    "detail": {"type": "string"},
+                },
+                "required": ["tier", "claim_type", "file", "line", "symbol", "detail"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["findings"],
+    "additionalProperties": False,
+}
+
+
+def parse_findings(answer, requested_tiers):
+    """Parse the model's JSON payload into a list of finding dicts, keeping only
+    requested tiers. Tier is normalized to uppercase. Returns [] on malformed
+    JSON (caller treats as clean)."""
+    allowed = {t.upper() for t in requested_tiers}
+    try:
+        data = json.loads(answer)
+    except (ValueError, TypeError):
+        return []
+    out = []
+    for f in data.get("findings", []):
+        tier = f.get("tier", "").upper()
+        if tier in allowed:
+            f = dict(f)
+            f["tier"] = tier
+            out.append(f)
+    return out
+
+
+def findings_to_text(findings):
+    """Render findings to the human format the wrappers and humans already read."""
+    if not findings:
+        return ""
+    lines = []
+    for f in findings:
+        loc = f["file"] + (f":{f['line']}" if f.get("line") is not None else "")
+        lines.append(f"[{f['tier']}] {loc} — {f['detail']}")
+    return "\n".join(lines)
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)

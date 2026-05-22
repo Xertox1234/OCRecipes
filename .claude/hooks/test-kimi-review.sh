@@ -276,6 +276,39 @@ assert module.load_profiles(pathlib.Path("/nonexistent.json")) == {}, "missing f
 PY
 }
 
+run_python_schema_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, json
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+findings = [
+    {"tier":"CRITICAL","claim_type":"absent_symbol","file":"server/a.ts","line":42,"symbol":"requireOwner","detail":"missing ownership check"},
+    {"tier":"WARNING","claim_type":"semantic","file":"server/b.ts","line":7,"symbol":None,"detail":"noisy log"},
+]
+text = m.findings_to_text(findings)
+assert "[CRITICAL] server/a.ts:42 — missing ownership check" in text, text
+assert "[WARNING] server/b.ts:7 — noisy log" in text, text
+
+payload = '{"findings": ' + json.dumps(findings) + '}'
+parsed = m.parse_findings(payload, {"CRITICAL","WARNING"})
+assert len(parsed) == 2 and parsed[0]["tier"] == "CRITICAL"
+parsed_c = m.parse_findings(payload, {"CRITICAL"})
+assert len(parsed_c) == 1 and parsed_c[0]["tier"] == "CRITICAL"
+
+# tier is normalized to uppercase even if the model returns lowercase
+low = '{"findings":[{"tier":"critical","claim_type":"semantic","file":"x.ts","line":1,"symbol":null,"detail":"d"}]}'
+pl = m.parse_findings(low, {"CRITICAL"})
+assert len(pl) == 1 and pl[0]["tier"] == "CRITICAL", pl
+assert "[CRITICAL] x.ts:1 — d" in m.findings_to_text(pl)
+
+# malformed JSON -> [] (treated as clean by caller)
+assert m.parse_findings("not json", {"CRITICAL"}) == []
+PY
+}
+
 assert_contains() {
   local name="$1" haystack="$2" needle="$3"
   if echo "$haystack" | grep -q -- "$needle"; then
@@ -506,6 +539,14 @@ else
   FAIL=$((FAIL+1))
 fi
 
+if run_python_schema_tests; then
+  echo "PASS: Python parse_findings + findings_to_text schema helpers"
+  PASS=$((PASS+1))
+else
+  echo "FAIL: Python parse_findings + findings_to_text schema helpers"
+  FAIL=$((FAIL+1))
+fi
+
 CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
 if [ -f "$CANON_ENGINE" ]; then
   # importlib requires a .py suffix to resolve the loader; the canonical engine is
@@ -514,7 +555,8 @@ if [ -f "$CANON_ENGINE" ]; then
   ln -s "$CANON_ENGINE" "$CANON_TMP/kimi_review.py"
   if run_python_helper_tests "$CANON_TMP/kimi_review.py" \
      && run_python_filter_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_credential_tests "$CANON_TMP/kimi_review.py"; then
+     && run_python_credential_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_schema_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
   else
     echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))
