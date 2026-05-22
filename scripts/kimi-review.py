@@ -281,6 +281,51 @@ def apply_downgrades(findings, verdicts):
     return out
 
 
+def _staged_file(path, cwd):
+    r = subprocess.run(["git", "show", f":{path}"], capture_output=True, text=True, cwd=cwd)
+    return r.stdout if r.returncode == 0 else None
+
+def _grep_staged(symbol, cwd):
+    # Fixed-string, staged-tree search. Returns True if found anywhere.
+    r = subprocess.run(["git", "grep", "--cached", "-F", "-q", "--", symbol],
+                       capture_output=True, text=True, cwd=cwd)
+    return r.returncode == 0
+
+def _normalize(s):
+    return " ".join(s.split())
+
+def verify_deterministic(findings, cwd=None):
+    """Return a list of per-finding verdicts ('keep'|'downgrade') for CRITICALs,
+    routed by claim_type against the STAGED tree. Non-CRITICAL findings always
+    'keep' (nothing to block). F2: semantic/uncertain CRITICALs downgrade."""
+    verdicts = []
+    for f in findings:
+        if f["tier"].upper() != "CRITICAL":
+            verdicts.append("keep"); continue
+        ct = f.get("claim_type")
+        if ct == "absent_symbol":
+            sym = f.get("symbol")
+            if sym and _grep_staged(sym, cwd):
+                verdicts.append("downgrade")
+            elif sym:
+                verdicts.append("keep")
+            else:
+                verdicts.append("downgrade")
+        elif ct == "line_assertion":
+            content = _staged_file(f["file"], cwd)
+            quote = f.get("symbol") or ""
+            lines = content.splitlines() if content is not None else []
+            ln = f.get("line")
+            on_line = lines[ln - 1] if isinstance(ln, int) and 1 <= ln <= len(lines) else ""
+            if quote and on_line and _normalize(quote) in _normalize(on_line):
+                verdicts.append("keep")
+            else:
+                verdicts.append("downgrade")
+        else:
+            verdicts.append("downgrade")
+    return verdicts
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)

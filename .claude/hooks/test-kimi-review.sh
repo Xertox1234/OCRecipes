@@ -263,6 +263,32 @@ assert m.parse_findings("not json", {"CRITICAL"}) == []
 PY
 }
 
+run_python_detverify_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, subprocess, tempfile, os
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+d = tempfile.mkdtemp()
+def git(*a): return subprocess.run(["git","-C",d,*a], capture_output=True, text=True)
+git("init","-q"); git("config","user.email","t@t"); git("config","user.name","t")
+(pathlib.Path(d)/"a.ts").write_text("export function requireOwner() {}\nconst y = 2;\n")
+git("add","a.ts")
+f_present = {"tier":"CRITICAL","claim_type":"absent_symbol","file":"a.ts","line":None,"symbol":"requireOwner","detail":"d"}
+f_missing = {"tier":"CRITICAL","claim_type":"absent_symbol","file":"a.ts","line":None,"symbol":"nonexistentGuard","detail":"d"}
+f_goodline = {"tier":"CRITICAL","claim_type":"line_assertion","file":"a.ts","line":1,"symbol":"requireOwner","detail":"d"}
+f_badline = {"tier":"CRITICAL","claim_type":"line_assertion","file":"a.ts","line":2,"symbol":"totallyWrongText","detail":"d"}
+f_semantic = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}
+verdicts = m.verify_deterministic([f_present,f_missing,f_goodline,f_badline,f_semantic], cwd=d)
+assert verdicts[0] == "downgrade", verdicts
+assert verdicts[1] == "keep", verdicts
+assert verdicts[2] == "keep", verdicts
+assert verdicts[3] == "downgrade", verdicts
+assert verdicts[4] == "downgrade", verdicts
+PY
+}
+
 run_python_monotonic_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -517,6 +543,12 @@ else
   echo "FAIL: Python apply_downgrades is monotonic (CRITICAL→WARNING only)"; FAIL=$((FAIL+1))
 fi
 
+if run_python_detverify_tests; then
+  echo "PASS: Python verify_deterministic staged-tree verification (Tier A)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python verify_deterministic staged-tree verification (Tier A)"; FAIL=$((FAIL+1))
+fi
+
 CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
 if [ -f "$CANON_ENGINE" ]; then
   # importlib requires a .py suffix to resolve the loader; the canonical engine is
@@ -526,7 +558,8 @@ if [ -f "$CANON_ENGINE" ]; then
   if run_python_helper_tests "$CANON_TMP/kimi_review.py" \
      && run_python_credential_tests "$CANON_TMP/kimi_review.py" \
      && run_python_schema_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_monotonic_tests "$CANON_TMP/kimi_review.py"; then
+     && run_python_monotonic_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_detverify_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
   else
     echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))
