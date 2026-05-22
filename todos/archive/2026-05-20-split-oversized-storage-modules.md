@@ -1,6 +1,6 @@
 ---
 title: "Split community.ts and meal-plan-recipes.ts under the 500-line cap"
-status: backlog
+status: done
 priority: low
 created: 2026-05-20
 updated: 2026-05-20
@@ -47,3 +47,18 @@ the LSP tool (`findReferences`) before/after so no consumer breaks.
 ### 2026-05-20
 
 - Initial creation (deferred from 2026-05-20 full audit, finding L5).
+
+### 2026-05-21
+
+- Split both modules into sub-domain files behind thin re-export barrels
+  (architecture.md rule 1), mirroring the existing `meal-plans.ts` pattern:
+  - `community.ts` (563 → 15-line barrel) →
+    `community-recipes.ts` (437), `community-generation-log.ts` (69),
+    `community-meal-types.ts` (68).
+  - `meal-plan-recipes.ts` (578 → 14-line barrel) →
+    `meal-plan-recipes-crud.ts` (282), `meal-plan-recipes-browse.ts` (306).
+- Facade re-exports unchanged: `git diff main -- server/storage/index.ts` and
+  `server/storage/meal-plans.ts` are both empty. LSP `findReferences` on
+  relocated symbols matches the pre-split call sites exactly.
+- Verified: 124 storage tests pass (community/meal-plan-recipes/meal-plans),
+  `check:types` clean, `lint` clean for touched files.
