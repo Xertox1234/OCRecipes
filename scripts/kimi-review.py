@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal kimi-review CLI for CI.
+"""Canonical kimi-review engine (cross-project home).
 
 Reads a unified diff from stdin, sends it to an OpenAI-compatible endpoint, and
 prints CRITICAL / WARNING / SUGGESTION findings in the same format as the local
@@ -23,21 +23,6 @@ TIER_DEFINITIONS = {
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
-PROJECT_PROFILES = {
-    "generic": "",
-    "ocrecipes": """
-Project profile: OCRecipes (Expo/React Native + Express/Drizzle/PostgreSQL nutrition app).
-
-Review priorities:
-- Auth/security: Bearer JWT auth only; flag missing ownership/userId checks, IDOR risks, token leaks, secret exposure, unsafe admin paths.
-- Health/nutrition data: flag cross-user data access, unsafe medical/nutrition advice paths, and changes that could corrupt logs, meal plans, receipts, pantry, or IAP state.
-- API/backend: Express route handlers should use existing error/auth patterns; Drizzle queries should preserve transactions, soft-delete/ownership filters, and JSONB safety.
-- Client: React Native/Expo code should follow existing navigation, safe-area, accessibility, TanStack Query, and theme patterns; flag web-only assumptions.
-- AI/evals: prompt, classifier, and eval changes should preserve safety/accuracy gates, cache-key isolation, deterministic behavior where intended, and avoid prompt-injection regressions.
-- Tests: flag missing focused tests only when the diff changes shared behavior, security boundaries, storage contracts, navigation flows, or AI routing/eval semantics.
-""".strip(),
-}
-
 
 def load_profiles(path):
     """Load project profiles from a JSON file. Missing/unreadable -> {}."""
@@ -47,7 +32,11 @@ def load_profiles(path):
         return {}
 
 
+PROFILES = load_profiles(pathlib.Path(__file__).resolve().parent / "kimi-profiles.json")
+
+
 def parse_args():
+    profile_choices = sorted({"auto", "generic"} | set(PROFILES.keys()))
     parser = argparse.ArgumentParser(description="Code review via Kimi")
     parser.add_argument("--base", default=None, help="Branch or commit to diff against")
     parser.add_argument("--scope", default=None, help="One-line context for the reviewer")
@@ -74,7 +63,7 @@ def parse_args():
              "change-set; rendered as a <changed-files> block so the reviewer "
              "knows which non-.ts/.tsx files (migrations, config) exist.",
     )
-    parser.add_argument("--profile", choices=["auto", "generic", "ocrecipes"], default="auto")
+    parser.add_argument("--profile", choices=profile_choices, default="auto")
     return parser.parse_args()
 
 
@@ -124,8 +113,10 @@ def detect_profile(args, root):
     root_path = pathlib.Path(root)
     claude_md = root_path / "CLAUDE.md"
     claude_head = claude_md.read_text(errors="replace")[:2000] if claude_md.exists() else ""
-    if root_path.name == "OCRecipes" or "OCRecipes" in claude_head:
+    if "ocrecipes" in PROFILES and (root_path.name == "OCRecipes" or "OCRecipes" in claude_head):
         return "ocrecipes"
+    if "plant_id" in PROFILES and (root_path.name == "plant_id_community" or "Plant ID Community" in claude_head):
+        return "plant_id"
     return "generic"
 
 
@@ -271,7 +262,7 @@ def main():
     user_msg = f"{focus}<diff>\n{diff}\n</diff>{changed_section}{context_blocks(args, root)}"
 
     tier_lines = "\n".join(f"{tier} — {TIER_DEFINITIONS[tier]}" for tier in requested_tiers)
-    profile_guidance = PROJECT_PROFILES[profile]
+    profile_guidance = PROFILES.get(profile, "")
     profile_block = f"\n\n{profile_guidance}" if profile_guidance else ""
 
     try:
@@ -296,26 +287,53 @@ def main():
                     "role": "system",
                     "content": (
                         "You are a senior code reviewer auditing a code change. "
-                        "Your review is a quality gate; defects you miss reach production.\n\n"
+                        "Your review is a quality gate — defects you miss reach production.\n\n"
                         "Input: a unified git diff (with function-level context) inside <diff>, "
                         "optionally followed by a <changed-files> block listing every file in the "
-                        "change-set, then optional <file> blocks.\n\n"
+                        "change-set, then optional <file> blocks containing source context, "
+                        "docs/patterns/* convention docs, or docs/rules/* checklists.\n\n"
                         "Return findings only in these tiers:\n\n"
                         f"{tier_lines}\n\n"
-                        "Review in this priority order: security/access control, data integrity, "
-                        "correctness, error handling, regression risk, then test coverage. "
-                        "Treat included rules or patterns as binding project standards."
-                        "\n\nYou see a partial view, not whole files. The <changed-files> block "
-                        "lists EVERY file in this change-set; files not shown in <diff> (e.g. .sql "
-                        "migrations, config) were still changed and their existence is established. "
-                        "NEVER claim a file, migration, test, index, or guard is missing when it "
-                        "appears in <changed-files>. If a risk depends on code you cannot see, "
-                        "raise it only as WARNING and say what must be verified."
+                        "Review the change systematically, in this priority order — earlier "
+                        "categories outrank later ones when triaging effort:\n"
+                        "1. Security & access control — authn/authz, ownership and userId checks, "
+                        "injection, SSRF, secret or token exposure, unsafe input handling.\n"
+                        "2. Data integrity — transactions, race conditions, corruption of persisted "
+                        "state, migration and schema safety.\n"
+                        "3. Correctness — logic errors, wrong conditionals, off-by-one, unhandled "
+                        "cases, broken control flow.\n"
+                        "4. Error handling & resilience — unhandled rejections, swallowed errors, "
+                        "missing validation at boundaries.\n"
+                        "5. Regression risk — changed shared behavior, broken contracts, removed "
+                        "guards or checks.\n"
+                        "6. Test coverage — missing tests for the above when the diff changes "
+                        "shared behavior, security boundaries, or storage contracts.\n\n"
+                        "Treat any included docs/patterns or docs/rules file as the project's "
+                        "binding standards — flag violations and cite the specific convention."
+                        "\n\nYou see a partial view: a diff with function-level context, not "
+                        "necessarily whole files. The <changed-files> block lists EVERY file in "
+                        "this change-set; files not shown in <diff> (e.g. .sql migrations, config, "
+                        "JSON) were still changed and their existence is established. NEVER raise a "
+                        "finding claiming a file, migration, test, index, or guard is missing when "
+                        "it appears in <changed-files>. If a risk depends on code you cannot see, "
+                        "raise it only as WARNING and state explicitly what must be verified."
                         f"{profile_block}\n\n"
+                        "Constraints:\n"
+                        "- Calibrate severity honestly. Do not inflate a WARNING into a CRITICAL, "
+                        "and never invent findings to fill a tier.\n"
+                        "- If the diff lacks the context to confirm a risk, report it only when the "
+                        "risk is concrete, and state what must be checked.\n"
+                        "- Report style preferences only when SUGGESTION is a requested tier.\n\n"
                         "Format every finding exactly as:\n"
                         "[TIER] path/to/file.ts:42 — short description\n"
                         "  Detail: one or two sentences on why it is wrong and what to fix.\n\n"
-                        "Order findings most-severe first within each tier. Omit tiers with no findings. "
+                        "Example:\n"
+                        "[CRITICAL] server/routes/meals.ts:88 — update handler missing ownership check\n"
+                        "  Detail: The query filters by mealId but not userId, so any authenticated "
+                        "user can edit another user's meal. Add eq(meals.userId, req.userId) to the "
+                        "where clause.\n\n"
+                        "Order findings most-severe first within each tier, and omit any tier that "
+                        "has no findings.\n"
                         "Do not summarize the diff. Do not praise. Find problems."
                     ),
                 },
