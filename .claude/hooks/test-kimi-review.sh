@@ -293,9 +293,9 @@ rh = m.run_tool("read_file", {"path":"a.ts"}, root=d, tree_ref=head)
 assert "verifiedAtHead" in rh, "tree_ref read must see the head tree, not working tree"
 gh = m.run_tool("grep", {"pattern":"verifiedAtHead"}, root=d, tree_ref=head)
 assert "verifiedAtHead" in gh, gh
-# tools must never mutate files
-before = "line1\nverifiedAtHead()\nline3\n"
+before = (pathlib.Path(d)/"a.ts").read_text()
 m.run_tool("read_file", {"path":"a.ts"}, root=d, tree_ref=head)
+assert (pathlib.Path(d)/"a.ts").read_text() == before, "tools must never mutate files"
 PY
 }
 

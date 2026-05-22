@@ -576,6 +576,13 @@ def main():
     if args.verify == "deterministic":
         verdicts = verify_deterministic(findings, cwd=root)
         findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
+    elif args.verify == "agentic":
+        # CI sets KIMI_REVIEW_HEAD_SHA and checks out the BASE tree, so PR-head
+        # content is only reachable by sha. Local/manual runs leave it unset =>
+        # working tree. This is the Tier B half of the spec's tree-discipline rule.
+        head_ref = os.environ.get("KIMI_REVIEW_HEAD_SHA") or None
+        verdicts = verify_agentic(findings, client, args.model, root, tree_ref=head_ref)
+        findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
 
     text = findings_to_text(findings)
     print(text if text else f"No findings in requested tiers: {', '.join(requested_tiers)}")

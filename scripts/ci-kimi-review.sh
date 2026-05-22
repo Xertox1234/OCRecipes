@@ -124,6 +124,7 @@ review_command=(
   --tiers CRITICAL,WARNING
   --changed-files "$changed_status"
   --profile ocrecipes
+  --verify agentic
 )
 
 if [[ -n "$review_patterns" ]]; then
