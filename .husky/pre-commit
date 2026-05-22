@@ -18,6 +18,12 @@ fi
 
 NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false || exit 1
 
+# Engine drift check: vendored scripts/kimi-review.py must match the canonical
+# engine on this machine. Skips when canonical is absent (see check script).
+if [ -f scripts/check-kimi-engine.sh ]; then
+  bash scripts/check-kimi-engine.sh || exit 1
+fi
+
 if [ "$SKIP_KIMI_REVIEW" = "1" ]; then
   exit 0
 fi
