@@ -155,8 +155,11 @@ def context_blocks(args, root):
                 continue
             path = resolve_pattern_path(pattern, root)
             if not path.exists():
-                print(f"Error: pattern file not found: {path}", file=sys.stderr)
-                sys.exit(1)
+                # Warn and skip rather than sys.exit: a hard exit here returns a
+                # non-2 status that fail-OPENS the local commit gate on every TS
+                # commit if a pattern dir is ever pruned. Matches --rules below.
+                print(f"Warning: pattern file not found, skipping: {path}", file=sys.stderr)
+                continue
             paths.append(path)
 
     if args.rules:

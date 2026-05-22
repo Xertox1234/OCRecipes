@@ -399,6 +399,27 @@ assert out3[0]["tier"] == "WARNING", "verify must never promote a tier"
 PY
 }
 
+run_python_pattern_resolution_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, tempfile, types
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+d = tempfile.mkdtemp()
+# A missing --patterns name must NOT exit the process. A hard sys.exit returns a
+# non-2 status that fail-OPENS the local commit gate on every TS commit if a
+# pattern dir is ever pruned. It must warn and skip, like --rules already does.
+args = types.SimpleNamespace(paths=None, patterns="definitely-not-a-real-pattern-xyz",
+                             pattern_max_chars=12000, rules=None)
+assert m.context_blocks(args, d) == "", "missing pattern must be skipped, not fatal"
+# --rules parity: a missing rule name is likewise skipped, not fatal.
+args2 = types.SimpleNamespace(paths=None, patterns=None,
+                              pattern_max_chars=12000, rules="definitely-not-a-real-rule-xyz")
+assert m.context_blocks(args2, d) == "", "missing rule must be skipped"
+PY
+}
+
 assert_contains() {
   local name="$1" haystack="$2" needle="$3"
   if echo "$haystack" | grep -q -- "$needle"; then
@@ -648,6 +669,12 @@ else
   echo "FAIL: Python verify_deterministic staged-tree verification (Tier A)"; FAIL=$((FAIL+1))
 fi
 
+if run_python_pattern_resolution_tests; then
+  echo "PASS: Python context_blocks skips missing patterns/rules (no fail-open)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python context_blocks skips missing patterns/rules (no fail-open)"; FAIL=$((FAIL+1))
+fi
+
 if run_python_tool_tests; then
   echo "PASS: Python run_tool read-only executor (read_file + grep + tree_ref)"; PASS=$((PASS+1))
 else
@@ -671,6 +698,7 @@ if [ -f "$CANON_ENGINE" ]; then
      && run_python_schema_tests "$CANON_TMP/kimi_review.py" \
      && run_python_monotonic_tests "$CANON_TMP/kimi_review.py" \
      && run_python_detverify_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_pattern_resolution_tests "$CANON_TMP/kimi_review.py" \
      && run_python_tool_tests "$CANON_TMP/kimi_review.py" \
      && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
