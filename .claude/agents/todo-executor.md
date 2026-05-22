@@ -394,9 +394,7 @@ If the push is rejected because `todo/<todo-slug>` already exists on the remote,
 git push --force-with-lease -u origin todo/<todo-slug>
 ```
 
-3. **Create the PR** using the current pull-request tool path for this environment:
-   - First call `activate_pull_request_management_tools`
-   - Then use the PR creation tool exposed by that category with these fields:
+3. **Create the PR.** The GitHub MCP tools are deferred — first load them with `ToolSearch` (query: `select:mcp__github__create_pull_request,mcp__github__list_pull_requests`), then call `mcp__github__create_pull_request` with these fields:
    - `owner`: `xertox1234`
    - `repo`: `OCRecipes`
    - `title`: `<todo title from frontmatter>`
@@ -424,7 +422,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
 🤖 Implemented by Claude Code /todo skill
 ```
 
-4. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, use the PR listing tool exposed after `activate_pull_request_management_tools` to look up an existing open PR for `head: xertox1234:todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL`. If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
+4. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, call `mcp__github__list_pull_requests` (`state: open`) and match the PR whose head branch is `todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL`. If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
 
 ---
 
