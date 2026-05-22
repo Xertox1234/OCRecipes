@@ -7,6 +7,7 @@ developer kimi-review helper.
 """
 
 import argparse
+import json
 import os
 import pathlib
 import re
@@ -36,6 +37,14 @@ Review priorities:
 - Tests: flag missing focused tests only when the diff changes shared behavior, security boundaries, storage contracts, navigation flows, or AI routing/eval semantics.
 """.strip(),
 }
+
+
+def load_profiles(path):
+    """Load project profiles from a JSON file. Missing/unreadable -> {}."""
+    try:
+        return json.loads(pathlib.Path(path).read_text(errors="replace"))
+    except (OSError, ValueError):
+        return {}
 
 
 def parse_args():

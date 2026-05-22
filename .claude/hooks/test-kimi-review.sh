@@ -268,6 +268,20 @@ for actual, expected in cases:
 PY
 }
 
+run_python_profile_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" "$ROOT/scripts/kimi-profiles.json" <<'PY'
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+profiles = module.load_profiles(pathlib.Path(sys.argv[2]))
+assert profiles["generic"] == "", "generic profile must be empty string"
+assert "OCRecipes" in profiles["ocrecipes"], "ocrecipes profile must load"
+assert module.load_profiles(pathlib.Path("/nonexistent.json")) == {}, "missing file -> {}"
+PY
+}
+
 assert_contains() {
   local name="$1" haystack="$2" needle="$3"
   if echo "$haystack" | grep -q -- "$needle"; then
@@ -496,6 +510,12 @@ if run_python_helper_tests; then
 else
   echo "FAIL: Python render_changed_files + build_diff_ref helpers"
   FAIL=$((FAIL+1))
+fi
+
+if run_python_profile_tests; then
+  echo "PASS: Python profile loader reads kimi-profiles.json"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python profile loader reads kimi-profiles.json"; FAIL=$((FAIL+1))
 fi
 
 echo ""
