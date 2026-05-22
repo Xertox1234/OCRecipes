@@ -268,6 +268,19 @@ def findings_to_text(findings):
     return "\n".join(lines)
 
 
+def apply_downgrades(findings, verdicts):
+    """Return a new findings list with CRITICAL→WARNING where verdicts say
+    'downgrade'. MONOTONIC: never raises a tier, never adds or drops a finding."""
+    out = []
+    for i, f in enumerate(findings):
+        g = dict(f)
+        if verdicts.get(i) == "downgrade" and g["tier"].upper() == "CRITICAL":
+            g["tier"] = "WARNING"
+            g["detail"] = g["detail"] + " [downgraded: unverified against code]"
+        out.append(g)
+    return out
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)
