@@ -144,11 +144,9 @@ run_husky_gate_dash() {
 }
 
 run_python_filter_tests() {
-  command -v python3 >/dev/null 2>&1 || {
-    echo "python3 not found"
-    return 1
-  }
-  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
 import importlib.util
 import pathlib
 import sys
@@ -181,11 +179,9 @@ PY
 }
 
 run_python_credential_tests() {
-  command -v python3 >/dev/null 2>&1 || {
-    echo "python3 not found"
-    return 1
-  }
-  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
 import importlib.util
 import pathlib
 import sys
@@ -233,11 +229,9 @@ PY
 }
 
 run_python_helper_tests() {
-  command -v python3 >/dev/null 2>&1 || {
-    echo "python3 not found"
-    return 1
-  }
-  python3 - "$ROOT/scripts/kimi-review.py" <<'PY'
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
 import importlib.util
 import pathlib
 import sys
@@ -510,6 +504,24 @@ if run_python_helper_tests; then
 else
   echo "FAIL: Python render_changed_files + build_diff_ref helpers"
   FAIL=$((FAIL+1))
+fi
+
+CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
+if [ -f "$CANON_ENGINE" ]; then
+  # importlib requires a .py suffix to resolve the loader; the canonical engine is
+  # an extensionless executable, so shim it via a temp symlink before passing in.
+  CANON_TMP=$(mktemp -d)
+  ln -s "$CANON_ENGINE" "$CANON_TMP/kimi_review.py"
+  if run_python_helper_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_filter_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_credential_tests "$CANON_TMP/kimi_review.py"; then
+    echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
+  else
+    echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))
+  fi
+  rm -rf "$CANON_TMP"
+else
+  echo "SKIP: canonical engine absent — behavioral parity check"
 fi
 
 if run_python_profile_tests; then
