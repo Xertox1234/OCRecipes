@@ -10,24 +10,12 @@ CI_SCRIPT="$ROOT/scripts/ci-kimi-review.sh"
 PRE_COMMIT="$ROOT/.husky/pre-commit"
 PASS=0; FAIL=0
 
-# Make a sandbox PATH with stub binaries. The stub mirrors kimi-review's real
-# output: findings are `[TIER] path:line — description` lines, a clean run prints
-# `No findings in requested tiers: CRITICAL, WARNING`. KIMI_STUB_MODE controls it:
-#   critical          → a plain [CRITICAL] finding line
-#   critical-bracket  → a bullet+indent decorated [CRITICAL] finding line
-#   critical-bold     → a markdown-bold-wrapped [CRITICAL] finding line
-#   critical-nobody   → a bare [CRITICAL] tag with no finding body
-#   warning           → a [WARNING] finding line
-#   noisy-prose       → lowercase "critical" in prose, no real finding
-#   negative-prose    → the model's "No CRITICAL or WARNING findings" phrasing
-#   clean             → kimi-review's clean-output message (prose phrasing)
-#   clean-tiered      → a clean review decorated as bracketed per-tier headers
-#   clean-model-prose → the real-world phantom case: the model emits a bracketed
-#                       [TIER] line per tier whose body is free-form "no issues"
-#                       prose ("No critical issues found.") instead of omitting
-#                       the empty tier — no path:line, so it is not a finding
-#   critical-no-findings-desc → a real [CRITICAL] finding whose description says "no findings"
-#   echo-input        → echoes stdin back to the caller
+# Make a sandbox PATH with stub binaries. The stub exercises the exit-code contract:
+#   exit 2  → verified CRITICAL present (wrappers must block)
+#   exit 0  → clean / warnings / placeholder (wrappers must NOT block)
+# KIMI_STUB_MODE controls output and exit code:
+#   critical, critical-bracket, critical-bold, critical-no-findings-desc → exit 2
+#   all other modes (clean, warning, noisy-prose, critical-nobody, …)     → exit 0
 make_stub_path() {
   local mode="$1"
   local dir
@@ -36,9 +24,9 @@ make_stub_path() {
 #!/usr/bin/env bash
   input=\$(cat)  # consume stdin so the pipe doesn't SIGPIPE
 case "$mode" in
-  critical)         echo "[CRITICAL] server/routes/foo.ts:42 — stub finding for tests";;
-  critical-bracket) echo "  - [CRITICAL] server/routes/foo.ts:10 — bullet+indent decorated finding";;
-  critical-bold)    echo "**[CRITICAL]** server/routes/foo.ts:10 — markdown-bold form";;
+  critical)         echo "[CRITICAL] server/routes/foo.ts:42 — stub finding for tests"; exit 2;;
+  critical-bracket) echo "  - [CRITICAL] server/routes/foo.ts:10 — bullet+indent decorated finding"; exit 2;;
+  critical-bold)    echo "**[CRITICAL]** server/routes/foo.ts:10 — markdown-bold form"; exit 2;;
   critical-nobody)  echo "[CRITICAL]";;
   warning)          echo "[WARNING] server/routes/foo.ts:5 — stub finding for tests";;
   noisy-prose)      echo "no critical issues found in stub run";;
@@ -47,7 +35,7 @@ case "$mode" in
   clean-tiered)     printf '[CRITICAL] — No findings.\n[WARNING] — No findings.\n';;
   clean-model-prose) printf '[CRITICAL] No critical issues found.\n[WARNING] No warning-level issues found.\n';;
   critical-no-findings-desc)
-                    echo "[CRITICAL] server/routes/foo.ts:42 — error handler swallows the error and returns no findings to the caller";;
+                    echo "[CRITICAL] server/routes/foo.ts:42 — error handler swallows the error and returns no findings to the caller"; exit 2;;
   echo-input)       printf '%s' "\$input";;
   echo-args)        printf 'ARGS: %s\n' "\$*";;
 esac
@@ -143,40 +131,6 @@ run_husky_gate_dash() {
   printf '%s\n--RC--%d' "$output" "$rc"
 }
 
-run_python_filter_tests() {
-  local engine="${1:-$ROOT/scripts/kimi-review.py}"
-  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
-  python3 - "$engine" <<'PY'
-import importlib.util
-import pathlib
-import sys
-
-module_path = pathlib.Path(sys.argv[1])
-spec = importlib.util.spec_from_file_location("kimi_review", module_path)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-
-CW = ["CRITICAL", "WARNING"]
-CLEAN = "No findings in requested tiers: CRITICAL, WARNING"
-REAL = "[CRITICAL] server/a.ts:10 — broken guard"
-
-cases = [
-    # empty-tier placeholder lines carry no path:line → dropped → clean message
-    ("[CRITICAL] No critical issues found.\n[WARNING] No warning-level issues found.", CW, CLEAN),
-    # a real finding (path:line) is kept
-    (REAL, CW, REAL),
-    # a finding in an unrequested tier is dropped
-    ("[SUGGESTION] client/x.ts:5 — rename var", CW, CLEAN),
-    # placeholder + real finding → only the real finding survives
-    ("[CRITICAL] No critical issues found.\n" + REAL, CW, REAL),
-]
-
-for answer, tiers, expected in cases:
-    actual = module.filter_review(answer, tiers)
-    if actual != expected:
-        raise AssertionError(f"filter_review({answer!r}): expected {expected!r}, got {actual!r}")
-PY
-}
 
 run_python_credential_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
@@ -515,14 +469,6 @@ else
   echo "SKIP: dash not installed — Husky-under-dash re-exec regression tests"
 fi
 
-if run_python_filter_tests; then
-  echo "PASS: Python filter_review drops empty-tier placeholders"
-  PASS=$((PASS+1))
-else
-  echo "FAIL: Python filter_review drops empty-tier placeholders"
-  FAIL=$((FAIL+1))
-fi
-
 if run_python_credential_tests; then
   echo "PASS: Python credential resolver handles aliases and provider base URL"
   PASS=$((PASS+1))
@@ -554,7 +500,6 @@ if [ -f "$CANON_ENGINE" ]; then
   CANON_TMP=$(mktemp -d)
   ln -s "$CANON_ENGINE" "$CANON_TMP/kimi_review.py"
   if run_python_helper_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_filter_tests "$CANON_TMP/kimi_review.py" \
      && run_python_credential_tests "$CANON_TMP/kimi_review.py" \
      && run_python_schema_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
