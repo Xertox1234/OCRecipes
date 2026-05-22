@@ -295,15 +295,27 @@ PR head while secrets are in scope is not.
 
 All three wrappers gate solely on the engine's exit code:
 
-| Exit code | Meaning                                                                 | Wrapper action         |
-| --------- | ----------------------------------------------------------------------- | ---------------------- |
-| `0`       | Clean or only non-blocking (WARNING/SUGGESTION) findings                | Allow commit/merge     |
-| `2`       | At least one CRITICAL survived verification                             | **BLOCK** commit/merge |
-| other     | Tool error (timeout, missing API key, truncation, unexpected exception) | Fail-open — skip gate  |
+| Exit code | Meaning                                                                 | Wrapper action                                 |
+| --------- | ----------------------------------------------------------------------- | ---------------------------------------------- |
+| `0`       | Clean or only non-blocking (WARNING/SUGGESTION) findings                | Allow commit/merge                             |
+| `2`       | At least one CRITICAL survived verification                             | **BLOCK** commit/merge                         |
+| other     | Tool error (timeout, missing API key, truncation, unexpected exception) | Local gates fail **open**; CI fails **closed** |
+
+**Local-vs-CI asymmetry on tool error.** The two commit-gate wrappers
+(`.claude/hooks/kimi-review.sh`, `.husky/pre-commit`) fail **open** on any non-`2`
+non-zero exit — a transient tool hiccup must never block a developer's local
+commit. The CI wrapper (`scripts/ci-kimi-review.sh`) instead `exit`s with the
+engine's status, failing the PR job — in CI a gate that could not run should be
+visible, not silently skipped. Only exit `2` blocks in every surface.
 
 The old shape-based grep pattern (`[[]CRITICAL[]][^:]*:[0-9]`), the `filter_review`
 function, and the `_FILE_REF_RE` regex have all been removed. Wrappers no longer
 parse the review text to detect blocking — the exit code is the sole signal.
+
+Defense-in-depth: `parse_findings` normalizes every finding to a complete,
+well-typed dict and drops malformed ones, so a non-schema-conforming model
+response cannot KeyError-crash the engine (which would exit non-`2` and, locally,
+fail-open past a real CRITICAL).
 
 ### Monotonicity of verification
 
