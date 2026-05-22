@@ -334,68 +334,70 @@ def main():
         timeout=90.0,
     )
 
+    system_prompt = (
+        "You are a senior code reviewer auditing a code change. "
+        "Your review is a quality gate — defects you miss reach production.\n\n"
+        "Input: a unified git diff (with function-level context) inside <diff>, "
+        "optionally followed by a <changed-files> block listing every file in the "
+        "change-set, then optional <file> blocks containing source context, "
+        "docs/patterns/* convention docs, or docs/rules/* checklists.\n\n"
+        "Return findings only in these tiers:\n\n"
+        f"{tier_lines}\n\n"
+        "Review the change systematically, in this priority order — earlier "
+        "categories outrank later ones when triaging effort:\n"
+        "1. Security & access control — authn/authz, ownership and userId checks, "
+        "injection, SSRF, secret or token exposure, unsafe input handling.\n"
+        "2. Data integrity — transactions, race conditions, corruption of persisted "
+        "state, migration and schema safety.\n"
+        "3. Correctness — logic errors, wrong conditionals, off-by-one, unhandled "
+        "cases, broken control flow.\n"
+        "4. Error handling & resilience — unhandled rejections, swallowed errors, "
+        "missing validation at boundaries.\n"
+        "5. Regression risk — changed shared behavior, broken contracts, removed "
+        "guards or checks.\n"
+        "6. Test coverage — missing tests for the above when the diff changes "
+        "shared behavior, security boundaries, or storage contracts.\n\n"
+        "Treat any included docs/patterns or docs/rules file as the project's "
+        "binding standards — flag violations and cite the specific convention."
+        "\n\nYou see a partial view: a diff with function-level context, not "
+        "necessarily whole files. The <changed-files> block lists EVERY file in "
+        "this change-set; files not shown in <diff> (e.g. .sql migrations, config, "
+        "JSON) were still changed and their existence is established. NEVER raise a "
+        "finding claiming a file, migration, test, index, or guard is missing when "
+        "it appears in <changed-files>. If a risk depends on code you cannot see, "
+        "raise it only as WARNING and state explicitly what must be verified."
+        f"{profile_block}\n\n"
+        "Constraints:\n"
+        "- Calibrate severity honestly. Do not inflate a WARNING into a CRITICAL, "
+        "and never invent findings to fill a tier.\n"
+        "- If the diff lacks the context to confirm a risk, report it only when the "
+        "risk is concrete, and state what must be checked.\n"
+        "- Report style preferences only when SUGGESTION is a requested tier.\n\n"
+        'Return a JSON object {"findings": [...]}. Each finding has:\n'
+        "- tier: CRITICAL | WARNING | SUGGESTION\n"
+        "- claim_type: absent_symbol (you assert code/guard/test is missing) | "
+        "line_assertion (you assert a specific line does/says something) | "
+        "semantic (you assert behavior is wrong but it needs reasoning, not a lookup)\n"
+        "- file: repo-relative path\n"
+        "- line: the line number you are citing, or null\n"
+        "- symbol: the identifier your claim is about (the asserted-missing or asserted-present name), or null\n"
+        "- detail: one or two sentences on why it is wrong and what to fix\n"
+        'Return {"findings": []} when there are no issues. Do not praise. Do not summarize the diff.'
+    )
+
     try:
         response = client.chat.completions.create(
             model=args.model,
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a senior code reviewer auditing a code change. "
-                        "Your review is a quality gate — defects you miss reach production.\n\n"
-                        "Input: a unified git diff (with function-level context) inside <diff>, "
-                        "optionally followed by a <changed-files> block listing every file in the "
-                        "change-set, then optional <file> blocks containing source context, "
-                        "docs/patterns/* convention docs, or docs/rules/* checklists.\n\n"
-                        "Return findings only in these tiers:\n\n"
-                        f"{tier_lines}\n\n"
-                        "Review the change systematically, in this priority order — earlier "
-                        "categories outrank later ones when triaging effort:\n"
-                        "1. Security & access control — authn/authz, ownership and userId checks, "
-                        "injection, SSRF, secret or token exposure, unsafe input handling.\n"
-                        "2. Data integrity — transactions, race conditions, corruption of persisted "
-                        "state, migration and schema safety.\n"
-                        "3. Correctness — logic errors, wrong conditionals, off-by-one, unhandled "
-                        "cases, broken control flow.\n"
-                        "4. Error handling & resilience — unhandled rejections, swallowed errors, "
-                        "missing validation at boundaries.\n"
-                        "5. Regression risk — changed shared behavior, broken contracts, removed "
-                        "guards or checks.\n"
-                        "6. Test coverage — missing tests for the above when the diff changes "
-                        "shared behavior, security boundaries, or storage contracts.\n\n"
-                        "Treat any included docs/patterns or docs/rules file as the project's "
-                        "binding standards — flag violations and cite the specific convention."
-                        "\n\nYou see a partial view: a diff with function-level context, not "
-                        "necessarily whole files. The <changed-files> block lists EVERY file in "
-                        "this change-set; files not shown in <diff> (e.g. .sql migrations, config, "
-                        "JSON) were still changed and their existence is established. NEVER raise a "
-                        "finding claiming a file, migration, test, index, or guard is missing when "
-                        "it appears in <changed-files>. If a risk depends on code you cannot see, "
-                        "raise it only as WARNING and state explicitly what must be verified."
-                        f"{profile_block}\n\n"
-                        "Constraints:\n"
-                        "- Calibrate severity honestly. Do not inflate a WARNING into a CRITICAL, "
-                        "and never invent findings to fill a tier.\n"
-                        "- If the diff lacks the context to confirm a risk, report it only when the "
-                        "risk is concrete, and state what must be checked.\n"
-                        "- Report style preferences only when SUGGESTION is a requested tier.\n\n"
-                        "Format every finding exactly as:\n"
-                        "[TIER] path/to/file.ts:42 — short description\n"
-                        "  Detail: one or two sentences on why it is wrong and what to fix.\n\n"
-                        "Example:\n"
-                        "[CRITICAL] server/routes/meals.ts:88 — update handler missing ownership check\n"
-                        "  Detail: The query filters by mealId but not userId, so any authenticated "
-                        "user can edit another user's meal. Add eq(meals.userId, req.userId) to the "
-                        "where clause.\n\n"
-                        "Order findings most-severe first within each tier, and omit any tier that "
-                        "has no findings.\n"
-                        "Do not summarize the diff. Do not praise. Find problems."
-                    ),
-                },
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_msg},
             ],
             max_tokens=args.max_tokens,
             temperature=0,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "kimi_findings", "strict": True, "schema": FINDING_SCHEMA},
+            },
         )
     except Exception as error:
         print(f"[ERROR: kimi-review request failed: {error}]", file=sys.stderr)
@@ -410,7 +412,9 @@ def main():
         print("[ERROR: ran out of tokens — raise --max-tokens]", file=sys.stderr)
         sys.exit(1)
 
-    print(filter_review(answer, requested_tiers))
+    findings = parse_findings(answer, requested_tiers)
+    text = findings_to_text(findings)
+    print(text if text else f"No findings in requested tiers: {', '.join(requested_tiers)}")
 
     usage = response.usage
     cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0
@@ -419,6 +423,10 @@ def main():
             f"{usage.completion_tokens} out | finish: {finish_reason}]",
         file=sys.stderr,
     )
+
+    # (Phase 3/4 insert verification here, mutating `findings` before this point.)
+    if any(f["tier"].upper() == "CRITICAL" for f in findings):
+        sys.exit(2)
 
 
 if __name__ == "__main__":
