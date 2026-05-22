@@ -107,36 +107,17 @@ else
     --changed-files "$CHANGED_FILES" \
     --tiers CRITICAL,WARNING 2>&1)
 fi
+REVIEW_STATUS=$?
 
-# 8) Detect CRITICAL findings by matching the tool's MANDATED finding shape, not
-#    by keyword. kimi-review instructs the model to format every finding exactly
-#    as `[CRITICAL] path/to/file.ts:42 — description`, so a real finding always
-#    carries a `:<line-number>` after the tag. A clean review has no such line.
-#    Earlier fixes keyed detection on a guess about the tool's clean-output
-#    phrasing (first the bare word `CRITICAL`, then a `[CRITICAL]` tag minus a
-#    "no findings" substring). Both broke because an LLM phrases a clean tier
-#    freely — the model ignores "omit empty tiers" and emits a bracketed
-#    `[CRITICAL] No critical issues found.` placeholder, which the prose exclude
-#    ("no findings") never matched. Keying on the finding shape sidesteps every
-#    clean phrasing: a placeholder has no `path:line`, so it cannot match.
-#    The pattern: `[CRITICAL]` tag, then non-colon chars (the path), then `:` and
-#    a digit (the line number). It is deliberately NOT anchored to line start so
-#    an LLM-decorated finding ("- [CRITICAL] ...", "**[CRITICAL]** ...") still
-#    fails closed. Literal brackets use POSIX bracket-expression escaping
-#    (`[[]`, `[]]`), portable across GNU and BSD grep without a GNU ERE extension.
-#    Trade-off: a malformed real finding that omits the line number would fail
-#    OPEN (not block) — acceptable because it still surfaces in additionalContext
-#    below, and it matches the existing precedent that a bare `[CRITICAL]` tag
-#    does not block. Do not "fix" this back to prose matching.
-#    The result is captured (not piped into `grep -q`) so grep does not exit
-#    early — under `set -o pipefail` an early `-q` exit can SIGPIPE the upstream
-#    process and surface a non-zero pipeline status that would silently skip the block.
-CRITICAL_FINDINGS=$(printf '%s\n' "$REVIEW" \
-  | grep -E '[[]CRITICAL[]][^:]*:[0-9]')
-if [ -n "$CRITICAL_FINDINGS" ]; then
+# 8) Block only on the engine's blocking exit code (2 = a CRITICAL survived
+#    verification). Exit 0 = clean or non-blocking findings; any other non-zero =
+#    tool error (timeout, missing key) which falls through to additionalContext
+#    (fail-open) rather than blocking. The engine now emits structured findings
+#    and owns the blocking decision, so the wrapper no longer parses prose.
+if [ "$REVIEW_STATUS" -eq 2 ]; then
   # Block the commit and feed the full review body back to the model so it
   # can decide whether to amend, abort, or override.
-  REASON=$(printf 'kimi-review blocked the commit — CRITICAL finding present.\n\n%s\n\n%s' \
+  REASON=$(printf 'kimi-review blocked the commit — verified CRITICAL finding present.\n\n%s\n\n%s' \
     "${PATTERNS:+patterns: $PATTERNS}" \
     "$REVIEW")
   jq -n --arg reason "$REASON" \
