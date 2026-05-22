@@ -64,7 +64,7 @@ Focus on genuinely new issues, not style preferences.
    ```bash
    git worktree remove .worktrees/audit-YYYY-MM-DD
    ```
-   (replace `YYYY-MM-DD` with the date suffix used when creating it)
+   (in the create command, substitute the audit `<scope>` — e.g. `security` — and note `-b` creates the branch the Phase 9 PR will push; replace `YYYY-MM-DD` with the date suffix used when creating it)
 
 ## Phase 2: Discovery
 
