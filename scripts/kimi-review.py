@@ -330,6 +330,64 @@ def verify_deterministic(findings, cwd=None):
     return verdicts
 
 
+TOOL_DEFS = [
+    {"type": "function", "function": {
+        "name": "read_file",
+        "description": "Read a repo-relative text file. Read-only.",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {
+        "name": "grep",
+        "description": "Search the repo for a fixed string. Read-only.",
+        "parameters": {"type": "object", "properties": {
+            "pattern": {"type": "string"}}, "required": ["pattern"]}}},
+]
+
+
+def _safe_path(root, rel):
+    base = pathlib.Path(root).resolve()
+    target = (base / rel).resolve()
+    if base != target and base not in target.parents:
+        return None  # escape attempt
+    return target
+
+
+def _read_tree(path, root, tree_ref):
+    """Read a file from a git tree. tree_ref None => working tree (via _safe_path,
+    in-tree only); a sha/ref => `git show <ref>:path` (CI reads PR head this way)."""
+    if tree_ref:
+        r = subprocess.run(["git", "show", f"{tree_ref}:{path}"],
+                           capture_output=True, text=True, cwd=root)
+        return r.stdout if r.returncode == 0 else None
+    target = _safe_path(root, path)
+    if target is None or not target.is_file():
+        return None
+    return target.read_text(errors="replace")
+
+
+def run_tool(name, args, root, tree_ref=None):
+    """Execute a read-only tool against the chosen git tree. Never writes, never
+    executes project code. tree_ref selects the tree per surface (None = working
+    tree for local/manual; KIMI_REVIEW_HEAD_SHA for CI PR-head)."""
+    if name == "read_file":
+        content = _read_tree(args.get("path", ""), root, tree_ref)
+        if content is None:
+            return "error: path not readable in tree"
+        return content[:8000]
+    if name == "grep":
+        pattern = args.get("pattern", "")
+        if not pattern:
+            return "error: empty pattern"
+        cmd = ["git", "grep", "-n", "-F"]
+        if tree_ref:
+            cmd.extend(["-e", pattern, tree_ref])
+        else:
+            cmd.extend(["--untracked", "-e", pattern])
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=root)
+        return r.stdout[:8000] if r.stdout else "(no matches)"
+    return f"error: unknown tool {name}"
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)

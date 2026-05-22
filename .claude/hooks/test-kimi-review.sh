@@ -263,6 +263,42 @@ assert m.parse_findings("not json", {"CRITICAL"}) == []
 PY
 }
 
+run_python_tool_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, tempfile
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+import subprocess
+d = tempfile.mkdtemp()
+def git(*a): return subprocess.run(["git","-C",d,*a], capture_output=True, text=True)
+git("init","-q"); git("config","user.email","t@t"); git("config","user.name","t")
+(pathlib.Path(d)/"a.ts").write_text("line1\nrequireOwner()\nline3\n")
+r = m.run_tool("read_file", {"path": "a.ts"}, root=d)
+assert "requireOwner" in r, r
+g = m.run_tool("grep", {"pattern": "requireOwner"}, root=d)
+assert "requireOwner" in g, g
+bad = m.run_tool("read_file", {"path": "../../../etc/passwd"}, root=d)
+assert "error" in bad.lower() or bad == "", bad
+assert "error" in m.run_tool("rm", {"path":"a.ts"}, root=d).lower()
+# TREE DISCIPLINE: read a committed sha (CI reads PR head, not the checked-out base)
+git("add","a.ts"); git("commit","-q","-m","base")
+(pathlib.Path(d)/"a.ts").write_text("line1\nverifiedAtHead()\nline3\n")
+git("add","a.ts"); git("commit","-q","-m","head")
+head = git("rev-parse","HEAD").stdout.strip()
+git("checkout","-q","HEAD~1")
+assert "verifiedAtHead" not in (pathlib.Path(d)/"a.ts").read_text()
+rh = m.run_tool("read_file", {"path":"a.ts"}, root=d, tree_ref=head)
+assert "verifiedAtHead" in rh, "tree_ref read must see the head tree, not working tree"
+gh = m.run_tool("grep", {"pattern":"verifiedAtHead"}, root=d, tree_ref=head)
+assert "verifiedAtHead" in gh, gh
+# tools must never mutate files
+before = "line1\nverifiedAtHead()\nline3\n"
+m.run_tool("read_file", {"path":"a.ts"}, root=d, tree_ref=head)
+PY
+}
+
 run_python_detverify_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -555,6 +591,12 @@ else
   echo "FAIL: Python verify_deterministic staged-tree verification (Tier A)"; FAIL=$((FAIL+1))
 fi
 
+if run_python_tool_tests; then
+  echo "PASS: Python run_tool read-only executor (read_file + grep + tree_ref)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python run_tool read-only executor (read_file + grep + tree_ref)"; FAIL=$((FAIL+1))
+fi
+
 CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
 if [ -f "$CANON_ENGINE" ]; then
   # importlib requires a .py suffix to resolve the loader; the canonical engine is
@@ -565,7 +607,8 @@ if [ -f "$CANON_ENGINE" ]; then
      && run_python_credential_tests "$CANON_TMP/kimi_review.py" \
      && run_python_schema_tests "$CANON_TMP/kimi_review.py" \
      && run_python_monotonic_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_detverify_tests "$CANON_TMP/kimi_review.py"; then
+     && run_python_detverify_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_tool_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
   else
     echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))
