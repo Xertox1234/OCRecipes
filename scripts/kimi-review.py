@@ -244,20 +244,38 @@ FINDING_SCHEMA = {
 
 def parse_findings(answer, requested_tiers):
     """Parse the model's JSON payload into a list of finding dicts, keeping only
-    requested tiers. Tier is normalized to uppercase. Returns [] on malformed
-    JSON (caller treats as clean)."""
+    requested tiers. Tier is normalized to uppercase. Every returned finding is a
+    complete, well-typed dict; findings missing required fields (file/detail/tier)
+    are dropped. Defense-in-depth: strict json_schema is not guaranteed across all
+    providers, and a malformed finding must never KeyError-crash the engine — a
+    crash exits non-2 and the local wrappers fail-open, which would silently let a
+    real CRITICAL through the gate. Returns [] on malformed JSON (treated as clean)."""
     allowed = {t.upper() for t in requested_tiers}
     try:
         data = json.loads(answer)
     except (ValueError, TypeError):
         return []
+    if not isinstance(data, dict):
+        return []
     out = []
     for f in data.get("findings", []):
-        tier = f.get("tier", "").upper()
-        if tier in allowed:
-            f = dict(f)
-            f["tier"] = tier
-            out.append(f)
+        if not isinstance(f, dict):
+            continue
+        tier = str(f.get("tier", "")).upper()
+        file = f.get("file")
+        detail = f.get("detail")
+        if tier not in allowed or not file or not detail:
+            continue
+        line = f.get("line")
+        symbol = f.get("symbol")
+        out.append({
+            "tier": tier,
+            "claim_type": f.get("claim_type") or "semantic",
+            "file": str(file),
+            "line": line if isinstance(line, int) else None,
+            "symbol": symbol if isinstance(symbol, str) else None,
+            "detail": str(detail),
+        })
     return out
 
 

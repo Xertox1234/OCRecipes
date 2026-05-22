@@ -260,6 +260,23 @@ assert "[CRITICAL] x.ts:1 — d" in m.findings_to_text(pl)
 
 # malformed JSON -> [] (treated as clean by caller)
 assert m.parse_findings("not json", {"CRITICAL"}) == []
+
+# DEFENSE-IN-DEPTH: a finding missing required fields is DROPPED, never crashes.
+# (A crash would exit non-2 and silently fail-open the gate.)
+miss_file = '{"findings":[{"tier":"CRITICAL","claim_type":"semantic","line":1,"symbol":null,"detail":"d"}]}'
+assert m.parse_findings(miss_file, {"CRITICAL"}) == [], "finding missing file must be dropped"
+miss_detail = '{"findings":[{"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":null}]}'
+assert m.parse_findings(miss_detail, {"CRITICAL"}) == [], "finding missing detail must be dropped"
+# a valid finding alongside a malformed one: keep the valid, drop the bad, no crash
+mixed = '{"findings":[{"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":2,"symbol":null,"detail":"ok"},{"tier":"CRITICAL"}]}'
+mp = m.parse_findings(mixed, {"CRITICAL"})
+assert len(mp) == 1 and mp[0]["file"] == "a.ts", mp
+# every kept finding is fully shaped, so findings_to_text never KeyErrors
+assert "[CRITICAL] a.ts:2 — ok" in m.findings_to_text(mp)
+# bad line type is normalized to None (no f":{line}" with a non-int)
+badline = '{"findings":[{"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":"oops","symbol":null,"detail":"d"}]}'
+bp = m.parse_findings(badline, {"CRITICAL"})
+assert bp[0]["line"] is None and m.findings_to_text(bp) == "[CRITICAL] a.ts — d", bp
 PY
 }
 
