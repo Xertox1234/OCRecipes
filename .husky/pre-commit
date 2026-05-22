@@ -111,7 +111,8 @@ REVIEW_COMMAND=(kimi-review
   --scope "pre-commit staged diff" \
   --tiers CRITICAL,WARNING \
   --changed-files "$CHANGED_FILES" \
-  --profile ocrecipes)
+  --profile ocrecipes \
+  --verify deterministic)
 
 if [ -n "$PATTERNS" ]; then
   REVIEW_COMMAND+=(--patterns "$PATTERNS" --rules "$PATTERNS" --pattern-max-chars 12000)

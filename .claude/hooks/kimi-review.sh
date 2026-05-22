@@ -95,6 +95,7 @@ if [ -n "$PATTERNS" ]; then
   REVIEW=$(printf '%s' "$REVIEW_DIFF" | kimi-review \
     --scope "staged for commit" \
     --profile ocrecipes \
+    --verify deterministic \
     --patterns "$PATTERNS" \
     --rules "$PATTERNS" \
     --pattern-max-chars 12000 \
@@ -104,6 +105,7 @@ else
   REVIEW=$(printf '%s' "$REVIEW_DIFF" | kimi-review \
     --scope "staged for commit" \
     --profile ocrecipes \
+    --verify deterministic \
     --changed-files "$CHANGED_FILES" \
     --tiers CRITICAL,WARNING 2>&1)
 fi

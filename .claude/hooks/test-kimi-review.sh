@@ -470,6 +470,12 @@ assert_contains "CI passes --changed-files to kimi-review" "$OUT" "--changed-fil
 OUT=$(run_husky_gate echo-args)
 assert_contains "Husky passes --changed-files to kimi-review" "$OUT" "--changed-files"
 
+OUT=$(run_husky_gate echo-args)
+assert_contains "Husky forwards --verify deterministic" "$OUT" "--verify deterministic"
+
+OUT=$(run_hook echo-args '{"tool_input":{"command":"git commit -m x"}}')
+assert_contains "Claude hook forwards --verify deterministic" "$OUT" "--verify deterministic"
+
 # ---------- CI/Husky gate parsing ----------
 
 OUT=$(run_ci_gate clean-tiered)

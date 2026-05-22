@@ -64,6 +64,10 @@ def parse_args():
              "knows which non-.ts/.tsx files (migrations, config) exist.",
     )
     parser.add_argument("--profile", choices=profile_choices, default="auto")
+    parser.add_argument(
+        "--verify", choices=["off", "deterministic", "agentic"], default="off",
+        help="Post-draft verification: off | deterministic (Tier A gate) | agentic (Tier B)",
+    )
     return parser.parse_args()
 
 
@@ -435,6 +439,11 @@ def main():
         sys.exit(1)
 
     findings = parse_findings(answer, requested_tiers)
+
+    if args.verify == "deterministic":
+        verdicts = verify_deterministic(findings, cwd=root)
+        findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
+
     text = findings_to_text(findings)
     print(text if text else f"No findings in requested tiers: {', '.join(requested_tiers)}")
 
@@ -446,7 +455,6 @@ def main():
         file=sys.stderr,
     )
 
-    # (Phase 3/4 insert verification here, mutating `findings` before this point.)
     if any(f["tier"].upper() == "CRITICAL" for f in findings):
         sys.exit(2)
 
