@@ -2,6 +2,7 @@
 // Import from server/lib/jwt-types.ts instead to avoid pulling jsonwebtoken into client bundles.
 
 import type { MeasurementUnit } from "@shared/lib/units";
+import type { SubscriptionTier } from "@shared/types/premium";
 
 // User type for client-side auth
 export interface User {
@@ -11,7 +12,7 @@ export interface User {
   avatarUrl?: string | null;
   dailyCalorieGoal?: number;
   onboardingCompleted?: boolean;
-  subscriptionTier?: "free" | "premium";
+  subscriptionTier?: SubscriptionTier;
   measurementUnit?: MeasurementUnit;
 }
 

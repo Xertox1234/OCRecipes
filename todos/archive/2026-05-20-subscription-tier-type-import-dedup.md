@@ -1,6 +1,6 @@
 ---
 title: "Import SubscriptionTier in auth.ts instead of re-inlining the union"
-status: backlog
+status: done
 priority: low
 created: 2026-05-20
 updated: 2026-05-20
