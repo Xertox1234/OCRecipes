@@ -299,6 +299,45 @@ m.run_tool("read_file", {"path":"a.ts"}, root=d, tree_ref=head)
 PY
 }
 
+run_python_verifyloop_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, tempfile, types, json
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+d = tempfile.mkdtemp(); (pathlib.Path(d)/"a.ts").write_text("requireOwner()\n")
+def msg(content=None, tool_calls=None):
+    return types.SimpleNamespace(content=content, tool_calls=tool_calls)
+def choice(m_): return types.SimpleNamespace(message=m_, finish_reason="stop")
+def resp(m_): return types.SimpleNamespace(choices=[choice(m_)])
+class FakeClient:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            tc = types.SimpleNamespace(id="t1", function=types.SimpleNamespace(
+                name="grep", arguments=json.dumps({"pattern":"requireOwner"})))
+            return resp(msg(tool_calls=[tc]))
+        return resp(msg(content=json.dumps({"verdict":"refuted","corrected_detail":"exists","confidence":0.9})))
+f = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"x missing"}
+verdict = m.verify_one_agentic(f, FakeClient(), model="x", root=d, max_turns=5)
+assert verdict == "downgrade", verdict  # refuted -> downgrade
+
+# a 'verified' verdict -> keep
+class FakeVerified(FakeClient):
+    def create(self, **kw):
+        self.calls += 1
+        return resp(msg(content=json.dumps({"verdict":"verified","corrected_detail":"real","confidence":0.9})))
+assert m.verify_one_agentic(f, FakeVerified(), model="x", root=d, max_turns=5) == "keep"
+
+# verify_agentic only targets CRITICALs; non-CRITICAL stays 'keep' without calling the model
+findings = [f, {"tier":"WARNING","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"w"}]
+vs = m.verify_agentic(findings, FakeVerified(), model="x", root=d)
+assert vs[1] == "keep", vs
+PY
+}
+
 run_python_detverify_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -597,6 +636,12 @@ else
   echo "FAIL: Python run_tool read-only executor (read_file + grep + tree_ref)"; FAIL=$((FAIL+1))
 fi
 
+if run_python_verifyloop_tests; then
+  echo "PASS: Python verify_one_agentic + verify_agentic bounded loop (Tier B)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python verify_one_agentic + verify_agentic bounded loop (Tier B)"; FAIL=$((FAIL+1))
+fi
+
 CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
 if [ -f "$CANON_ENGINE" ]; then
   # importlib requires a .py suffix to resolve the loader; the canonical engine is
@@ -608,7 +653,8 @@ if [ -f "$CANON_ENGINE" ]; then
      && run_python_schema_tests "$CANON_TMP/kimi_review.py" \
      && run_python_monotonic_tests "$CANON_TMP/kimi_review.py" \
      && run_python_detverify_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_tool_tests "$CANON_TMP/kimi_review.py"; then
+     && run_python_tool_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
   else
     echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))

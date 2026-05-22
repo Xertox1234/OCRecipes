@@ -388,6 +388,81 @@ def run_tool(name, args, root, tree_ref=None):
     return f"error: unknown tool {name}"
 
 
+VERIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["verified", "refuted", "uncertain"]},
+        "corrected_detail": {"type": "string"},
+        "confidence": {"type": "number"},
+    },
+    "required": ["verdict", "corrected_detail", "confidence"],
+    "additionalProperties": False,
+}
+
+VERIFY_SYSTEM = (
+    "You verify a single code-review finding against the real code using read-only "
+    "tools (read_file, grep). Decide if the finding's claim actually holds. "
+    "verdict=verified (claim is real), refuted (claim is false), uncertain (cannot tell). "
+    "Use tools before deciding. Never assume; check."
+)
+
+def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None):
+    """Bounded read-only verify loop for one finding. Returns 'keep' (verified)
+    or 'downgrade' (refuted/uncertain). MONOTONIC: only ever downgrades.
+    tree_ref selects which git tree the tools read (None = working tree)."""
+    messages = [
+        {"role": "system", "content": VERIFY_SYSTEM},
+        {"role": "user", "content": "Finding to verify:\n" + json.dumps(finding)},
+    ]
+    for _ in range(max_turns):
+        resp = client.chat.completions.create(
+            model=model, messages=messages, temperature=0, tools=TOOL_DEFS)
+        msg = resp.choices[0].message
+        tool_calls = getattr(msg, "tool_calls", None)
+        if tool_calls:
+            messages.append({"role": "assistant", "content": msg.content or "",
+                             "tool_calls": [
+                                 {"id": tc.id, "type": "function",
+                                  "function": {"name": tc.function.name,
+                                               "arguments": tc.function.arguments}}
+                                 for tc in tool_calls]})
+            for tc in tool_calls:
+                try:
+                    a = json.loads(tc.function.arguments)
+                except ValueError:
+                    a = {}
+                result = run_tool(tc.function.name, a, root=root, tree_ref=tree_ref)
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+            continue
+        verdict_resp = client.chat.completions.create(
+            model=model, messages=messages + [
+                {"role": "user", "content": "Now return your verdict as JSON."}],
+            temperature=0,
+            response_format={"type": "json_schema",
+                             "json_schema": {"name": "verify", "strict": True, "schema": VERIFY_SCHEMA}})
+        try:
+            v = json.loads(verdict_resp.choices[0].message.content)
+        except (ValueError, TypeError):
+            return "downgrade"
+        return "keep" if v.get("verdict") == "verified" else "downgrade"
+    return "downgrade"
+
+
+def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=None):
+    """Verify all CRITICAL findings in parallel; non-CRITICAL always 'keep'."""
+    import concurrent.futures
+    verdicts = ["keep"] * len(findings)
+    targets = [i for i, f in enumerate(findings) if f["tier"].upper() == "CRITICAL"]
+    if not targets:
+        return verdicts
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
+        futs = {ex.submit(verify_one_agentic, findings[i], client, model, root, max_turns, tree_ref): i
+                for i in targets}
+        for fut in concurrent.futures.as_completed(futs):
+            verdicts[futs[fut]] = fut.result()
+    return verdicts
+
+
 def main():
     args = parse_args()
     requested_tiers = validate_tiers(args.tiers)
