@@ -540,6 +540,7 @@ assert_contains "hook passes --changed-files to kimi-review" "$OUT" "--changed-f
 # The CI wrapper passes a --changed-files manifest.
 OUT=$(run_ci_gate echo-args)
 assert_contains "CI passes --changed-files to kimi-review" "$OUT" "--changed-files"
+assert_contains "CI forwards --verify agentic" "$OUT" "--verify agentic"
 
 # The Husky wrapper passes a --changed-files manifest.
 OUT=$(run_husky_gate echo-args)
