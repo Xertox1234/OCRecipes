@@ -139,13 +139,9 @@ export function useReceiptConfirm() {
     }[]
   >({
     mutationFn: async (items) => {
+      // `apiRequest` throws (via `throwIfResNotOk`) on any non-2xx, so `res` is
+      // always ok here — no manual status check needed.
       const res = await apiRequest("POST", "/api/receipt/confirm", { items });
-      if (!res.ok) {
-        const errorData = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        throw new Error(errorData.error || `Confirm failed: ${res.status}`);
-      }
       const json = await res.json();
       const parsed = receiptConfirmResultSchema.safeParse(json);
       if (!parsed.success) {

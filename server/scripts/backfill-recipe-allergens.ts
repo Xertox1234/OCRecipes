@@ -22,10 +22,41 @@ import "dotenv/config";
 import { db, pool } from "../db";
 import { communityRecipes, mealPlanRecipes } from "@shared/schema";
 import { sql } from "drizzle-orm";
-import { deriveRecipeAllergens } from "@shared/constants/allergens";
+import {
+  deriveRecipeAllergens,
+  type DerivedRecipeAllergen,
+} from "@shared/constants/allergens";
 import { storage } from "../storage";
 
 const DRY_RUN = process.env.DRY_RUN === "1";
+
+// Postgres caps bind parameters at ~65535 per query; each VALUES tuple binds 2,
+// so flush in chunks well under that ceiling rather than one unbounded UPDATE.
+const CHUNK_SIZE = 1000;
+
+// Single round-trip per chunk via `UPDATE … FROM (VALUES …)` (rule #19) —
+// mirrors `batchUpdateMealTypes`. This is an all-rows backfill: every row is
+// re-derived and rewritten, so previously-null rows become `[]` ("derived, no
+// allergens") and are never left null. `JSON.stringify` values are
+// parameterized by Drizzle's `sql` tag; the `::jsonb` cast stores `[]` as a
+// real empty JSONB array, not the string "[]".
+async function applyAllergenUpdates(
+  table: typeof communityRecipes | typeof mealPlanRecipes,
+  updates: { id: number; allergens: DerivedRecipeAllergen[] }[],
+): Promise<void> {
+  for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+    const chunk = updates.slice(i, i + CHUNK_SIZE);
+    const valueTuples = chunk.map(
+      (u) => sql`(${u.id}::int, ${JSON.stringify(u.allergens)}::jsonb)`,
+    );
+    await db.execute(
+      sql`UPDATE ${table}
+          SET allergens = v.allergens
+          FROM (VALUES ${sql.join(valueTuples, sql`, `)}) AS v(id, allergens)
+          WHERE ${table.id} = v.id`,
+    );
+  }
+}
 
 async function backfillCommunityRecipes(): Promise<number> {
   const recipes = await db
@@ -49,23 +80,7 @@ async function backfillCommunityRecipes(): Promise<number> {
     return updates.length;
   }
 
-  if (updates.length === 0) return 0;
-
-  // Single round-trip via `UPDATE … FROM (VALUES …)` (rule #19) — mirrors
-  // `batchUpdateMealTypes`. `JSON.stringify` is safe because Drizzle's `sql`
-  // tag parameterizes the values; the `::jsonb` cast stores `[]` as an empty
-  // JSONB array, not a string. Rows absent from VALUES keep their existing
-  // value, preserving the null = "not derived" semantics on untouched rows.
-  const valueTuples = updates.map(
-    (u) => sql`(${u.id}::int, ${JSON.stringify(u.allergens)}::jsonb)`,
-  );
-  await db.execute(
-    sql`UPDATE ${communityRecipes}
-        SET allergens = v.allergens
-        FROM (VALUES ${sql.join(valueTuples, sql`, `)}) AS v(id, allergens)
-        WHERE ${communityRecipes.id} = v.id`,
-  );
-
+  await applyAllergenUpdates(communityRecipes, updates);
   return updates.length;
 }
 
@@ -90,21 +105,7 @@ async function backfillMealPlanRecipes(): Promise<number> {
     return updates.length;
   }
 
-  if (updates.length === 0) return 0;
-
-  // Single round-trip via `UPDATE … FROM (VALUES …)` (rule #19) — mirrors
-  // `batchUpdateMealTypes`. See the community arm above for the null-vs-empty
-  // and parameterization notes.
-  const valueTuples = updates.map(
-    (u) => sql`(${u.id}::int, ${JSON.stringify(u.allergens)}::jsonb)`,
-  );
-  await db.execute(
-    sql`UPDATE ${mealPlanRecipes}
-        SET allergens = v.allergens
-        FROM (VALUES ${sql.join(valueTuples, sql`, `)}) AS v(id, allergens)
-        WHERE ${mealPlanRecipes.id} = v.id`,
-  );
-
+  await applyAllergenUpdates(mealPlanRecipes, updates);
   return updates.length;
 }
 
