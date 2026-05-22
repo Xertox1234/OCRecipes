@@ -4,7 +4,9 @@ import {
   recipeIngredients,
   communityRecipes,
 } from "@shared/schema";
-import { FEATURED_COLUMNS, type FeaturedRecipe } from "./community";
+// Import directly from the sub-module, not the `./community` barrel, so this
+// sub-module never depends on the barrel (avoids latent circular-import risk).
+import { FEATURED_COLUMNS, type FeaturedRecipe } from "./community-recipes";
 import { db } from "../db";
 import { eq, desc, and, or, ilike, inArray, sql } from "drizzle-orm";
 import { escapeLike } from "./helpers";
