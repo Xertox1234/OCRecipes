@@ -50,6 +50,11 @@ export function useQuickLogSession({
   // Tracks the intended source for the next parse trigger
   const pendingSourceRef = useRef<"voice" | "text" | "chip">("text");
 
+  // Guards the auto-parse effect against re-firing for a transcript it already
+  // consumed. isFinal/transcript stay set until the next startListening(), so
+  // without this the effect re-parses on every mutation settle (isParsing toggle).
+  const autoParsedTranscriptRef = useRef<string | null>(null);
+
   const {
     isListening,
     transcript,
@@ -72,7 +77,17 @@ export function useQuickLogSession({
 
   // Auto-trigger parse when recognition produces a final result
   useEffect(() => {
-    if (isFinal && transcript && !isParsing) {
+    if (!isFinal) {
+      // A new (or interim) recognition pass — let the upcoming final result parse
+      autoParsedTranscriptRef.current = null;
+      return;
+    }
+    if (
+      transcript &&
+      !isParsing &&
+      autoParsedTranscriptRef.current !== transcript
+    ) {
+      autoParsedTranscriptRef.current = transcript;
       setInputText(transcript);
       setParseError(null);
       parseFoodTextMutate(transcript, {
