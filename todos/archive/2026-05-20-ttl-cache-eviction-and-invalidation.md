@@ -1,6 +1,6 @@
 ---
 title: "Bound + invalidate the subscription-tier and verification-streak TTL caches"
-status: backlog
+status: done
 priority: low
 created: 2026-05-20
 updated: 2026-05-20

@@ -11,6 +11,7 @@ import {
   type PremiumFeatureKey,
 } from "@shared/types/premium";
 import { resolveVerificationStreak } from "../services/verification-streak-cache";
+import { invalidateCache as invalidateTierCache } from "../services/subscription-tier-cache";
 import { validateReceipt } from "../services/receipt-validation";
 import {
   UpgradeRequestSchema,
@@ -157,6 +158,10 @@ export function register(app: Express): void {
           expiresAt,
         );
 
+        // Evict the cached tier so the upgrade takes effect immediately
+        // instead of after the 60s TTL.
+        invalidateTierCache(req.userId);
+
         res.json({
           success: true,
           tier: "premium",
@@ -208,6 +213,10 @@ export function register(app: Express): void {
           "premium",
           expiresAt,
         );
+
+        // Evict the cached tier so the restored subscription takes effect
+        // immediately instead of after the 60s TTL.
+        invalidateTierCache(req.userId);
 
         res.json({
           success: true,

@@ -7,6 +7,8 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { logger } from "../lib/logger";
 import { detectImageMimeType } from "../lib/image-mime";
 import { extractVerificationNutrition } from "../services/verification-comparison";
+import { invalidateCache as invalidateStreakCache } from "../services/verification-streak-cache";
+import { invalidateCache as invalidateTierCache } from "../services/subscription-tier-cache";
 import { detectReformulation } from "../services/reformulation-detection";
 import { analyzeFrontLabel } from "../services/front-label-analysis";
 import { consensusNutritionSchema } from "@shared/types/verification";
@@ -123,6 +125,14 @@ export function register(app: Express): void {
           extracted,
           session.labelData.confidence,
         );
+
+        // Evict the caches keyed on this user's verification stats so a
+        // freshly-earned streak (and any streak-based tier-feature unlock it
+        // triggers) takes effect immediately instead of after the 60s TTL.
+        // The streak feeds the tier cache via applyStreakUnlocks, so both must
+        // be evicted.
+        invalidateStreakCache(req.userId);
+        invalidateTierCache(req.userId);
 
         // ── Reformulation detection ──────────────────────────────────
         // When a scan doesn't match on a previously-verified product,

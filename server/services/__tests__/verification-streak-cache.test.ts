@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   resolveVerificationStreak,
+  invalidateCache,
   _testInternals,
 } from "../verification-streak-cache";
 import { storage } from "../../storage";
@@ -70,5 +71,27 @@ describe("verification-streak-cache", () => {
     await resolveVerificationStreak("u4");
 
     expect(mockGetUserVerificationStats).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-fetches after invalidateCache evicts the entry", async () => {
+    mockGetUserVerificationStats.mockResolvedValue(statsWithStreak(4));
+
+    await resolveVerificationStreak("u5");
+    invalidateCache("u5");
+    await resolveVerificationStreak("u5");
+
+    expect(mockGetUserVerificationStats).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidateCache only evicts the given user", async () => {
+    mockGetUserVerificationStats.mockResolvedValue(statsWithStreak(2));
+
+    await resolveVerificationStreak("u6");
+    await resolveVerificationStreak("u7");
+    invalidateCache("u6");
+    await resolveVerificationStreak("u6"); // miss → re-fetch
+    await resolveVerificationStreak("u7"); // still cached → no fetch
+
+    expect(mockGetUserVerificationStats).toHaveBeenCalledTimes(3);
   });
 });

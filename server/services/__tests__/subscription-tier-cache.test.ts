@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   resolveSubscriptionTierFeatures,
+  invalidateCache,
   _testInternals,
 } from "../subscription-tier-cache";
 import { storage } from "../../storage";
@@ -67,6 +68,28 @@ describe("subscription-tier-cache", () => {
     await resolveSubscriptionTierFeatures("u3");
 
     expect(mockGetSubscriptionStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-fetches after invalidateCache evicts the entry", async () => {
+    mockGetSubscriptionStatus.mockResolvedValue(freeStatus);
+
+    await resolveSubscriptionTierFeatures("u11");
+    invalidateCache("u11");
+    await resolveSubscriptionTierFeatures("u11");
+
+    expect(mockGetSubscriptionStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidateCache only evicts the given user", async () => {
+    mockGetSubscriptionStatus.mockResolvedValue(freeStatus);
+
+    await resolveSubscriptionTierFeatures("u12");
+    await resolveSubscriptionTierFeatures("u13");
+    invalidateCache("u12");
+    await resolveSubscriptionTierFeatures("u12"); // miss → re-fetch
+    await resolveSubscriptionTierFeatures("u13"); // still cached → no fetch
+
+    expect(mockGetSubscriptionStatus).toHaveBeenCalledTimes(3);
   });
 
   it("falls back to free tier when subscription is undefined", async () => {
