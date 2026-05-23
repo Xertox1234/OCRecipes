@@ -1,6 +1,6 @@
 ---
 title: "Wire Maestro e2e:smoke into CI so E2E flows can't rot"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-23
 updated: 2026-05-23
@@ -21,10 +21,13 @@ Surfaced by the 2026-05-23 testing audit. The repo has a real E2E layer (`npm ru
 
 ## Acceptance Criteria
 
-- [ ] CI runs the Maestro `smoke` subset (`npm run e2e:smoke`) on an appropriate trigger (likely a separate job/workflow, not the per-push unit gate)
-- [ ] The job spins up an iOS simulator or Android emulator runner with the app build Maestro needs
-- [ ] A failing flow fails the job (non-zero exit propagates)
-- [ ] Decide and document cadence: every PR vs. nightly vs. pre-release (emulator jobs are slow/flaky — nightly may be the right tradeoff)
+> **Scope decision (2026-05-23):** Trigger is `workflow_dispatch` only (manual, on-demand). No schedule/nightly and no push/pull_request trigger — keeps paid macOS-runner minutes confined to deliberate manual runs. No production deployment yet; revisit cadence pre-launch.
+
+- [ ] A dedicated workflow (e.g. `.github/workflows/e2e-smoke.yml`) triggers on `workflow_dispatch` only — not on push, pull_request, or schedule
+- [ ] The job provisions the runner Maestro needs (macOS runner + iOS simulator, or Android emulator on a Linux runner) and installs the app build / Maestro CLI
+- [ ] The job runs `npm run e2e:smoke`; a failing flow fails the job (non-zero exit propagates)
+- [ ] Confirm which flows are tagged `smoke` (add `tags: smoke` to the relevant `e2e/flows/*.yaml` if none are tagged yet) so `e2e:smoke` selects a real subset
+- [ ] The workflow documents (comment header + a line in `e2e/README.md`) that it is manual-trigger-only by design, for cost reasons
 
 ## Implementation Notes
 
@@ -46,3 +49,5 @@ Surfaced by the 2026-05-23 testing audit. The repo has a real E2E layer (`npm ru
 ### 2026-05-23
 
 - Initial creation (from testing audit).
+- Scope narrowed to `workflow_dispatch`-only (manual) per maintainer decision — no schedule/push/PR trigger, to keep paid macOS-runner minutes confined to deliberate runs. Acceptance Criteria rewritten accordingly.
+- Implemented `.github/workflows/e2e-smoke.yml` (manual trigger, macOS-14 runner, iOS simulator, Postgres + backend startup, `npm run e2e:smoke`). Three flows already tagged `smoke` (auth/login, home/navigate-tabs, onboarding/complete-onboarding) — no new tags needed. Documented manual-only intent in workflow header + `e2e/README.md`. Real end-to-end validation requires a manual `workflow_dispatch` run by the maintainer (cannot run from a worktree).
