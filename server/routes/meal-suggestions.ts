@@ -158,8 +158,10 @@ export function register(app: Express): void {
         }
 
         // Resolve dismissed IDs → titles AFTER cache miss (no point hitting the DB if cache hit)
-        const titlesMap =
-          await storage.getCommunityRecipeTitlesByIds(dismissedIds);
+        const titlesMap = await storage.getCommunityRecipeTitlesByIds(
+          dismissedIds,
+          req.userId,
+        );
         const dismissedRecipeTitles = dismissedIds
           .map((id) => titlesMap.get(id))
           .filter((t): t is string => t !== undefined);

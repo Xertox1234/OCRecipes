@@ -1,6 +1,6 @@
 ---
 title: "Scope community-recipe storage reads by visibility/ownership (2 CRITICAL findings)"
-status: backlog
+status: done
 priority: high
 created: 2026-05-21
 updated: 2026-05-21
