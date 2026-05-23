@@ -283,6 +283,7 @@ When reviewing or writing AI service code, verify:
 - [ ] `containsDangerousDietaryAdvice()` check on coaching/suggestion outputs
 - [ ] `checkAiConfigured()` guard at start of route handler
 - [ ] No user input directly interpolated into prompts without sanitization
+- [ ] DB-stored user content (community-recipe ingredient/instruction text, URL-imported recipes, pantry items) is sanitized at **prompt-construction** time — the write path (`recipe-normalization.ts`, storage inserts) does NOT sanitize, so the prompt is the only gate. Especially for enrichment whose output is persisted and shown to other users (stored injection, e.g. `canonical-enrichment.ts`). Don't assume server-sourced rows are clean.
 
 ### Model & Cost
 

@@ -9,6 +9,7 @@
  * by the caller.
  */
 
+import { z } from "zod";
 import { createServiceLogger, toError } from "../lib/logger";
 import { storage } from "../storage";
 import {
@@ -216,6 +217,21 @@ const EDITORIAL_FALLBACK: EditorialContent = {
   cuisineOrigin: "",
 };
 
+// Validates the GPT-4o editorial JSON response. Lenient where the consumer
+// already tolerates absence (nullable elements, optional cuisineOrigin), strict
+// on element types so a malformed response falls closed to EDITORIAL_FALLBACK.
+const editorialResponseSchema = z.object({
+  instructionDetails: z.array(z.string().nullable()),
+  toolsRequired: z.array(
+    z.object({
+      name: z.string(),
+      affiliateUrl: z.string().nullable().optional(),
+    }),
+  ),
+  chefTips: z.array(z.string()),
+  cuisineOrigin: z.string().optional(),
+});
+
 /**
  * Generate AI editorial content for a recipe: detailed instruction notes,
  * required tools, chef tips, and cuisine origin.
@@ -230,12 +246,12 @@ export async function generateEditorialContent(
   const ingredientList = input.ingredients
     .map(
       (i) =>
-        `${i.quantity ? i.quantity + " " : ""}${i.unit ? i.unit + " " : ""}${i.name}`,
+        `${i.quantity ? sanitizeUserInput(i.quantity) + " " : ""}${i.unit ? sanitizeUserInput(i.unit) + " " : ""}${sanitizeUserInput(i.name)}`,
     )
     .join(", ");
 
   const instructionList = input.instructions
-    .map((step, idx) => `${idx + 1}. ${step}`)
+    .map((step, idx) => `${idx + 1}. ${sanitizeUserInput(step)}`)
     .join("\n");
 
   const systemPrompt =
@@ -284,23 +300,16 @@ export async function generateEditorialContent(
       return EDITORIAL_FALLBACK;
     }
 
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      !Array.isArray((parsed as Record<string, unknown>).instructionDetails) ||
-      !Array.isArray((parsed as Record<string, unknown>).toolsRequired) ||
-      !Array.isArray((parsed as Record<string, unknown>).chefTips)
-    ) {
-      log.warn("GPT-4o editorial response has unexpected shape");
+    const validated = editorialResponseSchema.safeParse(parsed);
+    if (!validated.success) {
+      log.warn(
+        { issues: validated.error.issues },
+        "GPT-4o editorial response failed schema validation",
+      );
       return EDITORIAL_FALLBACK;
     }
 
-    const data = parsed as {
-      instructionDetails: (string | null)[];
-      toolsRequired: { name: string; affiliateUrl: string | null }[];
-      chefTips: string[];
-      cuisineOrigin: string;
-    };
+    const data = validated.data;
 
     // Pad instructionDetails to match the number of instruction steps so
     // callers indexing by step position always get string | null, not undefined.

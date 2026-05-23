@@ -444,10 +444,10 @@ export function getToolDefinitions(): ChatCompletionTool[] {
                     type: "string",
                     description: "Ingredient name, e.g. 'butter'.",
                   },
-                  reason: {
+                  unit: {
                     type: "string",
                     description:
-                      "Why a substitution is needed, e.g. 'dairy-free', 'vegan', 'missing from pantry'.",
+                      "Unit of measure for the ingredient, e.g. 'cup', 'tbsp', 'g'.",
                   },
                 },
                 required: ["name"],

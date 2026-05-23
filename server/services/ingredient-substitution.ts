@@ -324,7 +324,7 @@ async function getAiSubstitutions(
     .map((i) => {
       const role = FUNCTIONAL_ROLES[i.name.toLowerCase().trim()];
       const roleNote = role ? ` [functional role: ${role}]` : "";
-      return `- ${i.name} (${i.quantity} ${i.unit}, id: ${i.id})${roleNote}`;
+      return `- ${sanitizeUserInput(i.name)} (${i.quantity} ${sanitizeUserInput(i.unit)}, id: ${i.id})${roleNote}`;
     })
     .join("\n");
 
@@ -332,7 +332,7 @@ async function getAiSubstitutions(
   // substitutions that harmonize with the rest of the dish
   const otherIngredients = allIngredients
     .filter((a) => !ingredients.some((i) => i.id === a.id))
-    .map((a) => a.name);
+    .map((a) => sanitizeUserInput(a.name));
   const recipeContext =
     otherIngredients.length > 0
       ? `\nOther ingredients in this recipe (do NOT substitute these — use them as context): ${otherIngredients.join(", ")}\n`
