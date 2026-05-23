@@ -141,7 +141,10 @@ function formatPantryItems(items: PantryItem[]): string {
   return sorted
     .map((item) => {
       const parts = [`- ${sanitizeUserInput(item.name)}`];
-      if (item.quantity) parts[0] += `: ${item.quantity}`;
+      if (item.quantity) {
+        const quantity = Number(item.quantity);
+        if (Number.isFinite(quantity)) parts[0] += `: ${quantity}`;
+      }
       if (item.unit) parts[0] += ` ${sanitizeUserInput(item.unit)}`;
       if (item.category && item.category !== "other") {
         parts[0] += ` (${sanitizeUserInput(item.category)})`;
