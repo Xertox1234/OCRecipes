@@ -145,9 +145,12 @@ export function register(app: Express): void {
             );
           }
 
-          // Fetch source recipe to validate it exists and is accessible
+          // Fetch source recipe to validate it exists and is accessible.
+          // Storage scopes by visibility/ownership: a private recipe the user
+          // does not own resolves to undefined (no existence leak).
           remixSourceRecipe = await storage.getCommunityRecipe(
             parsed.data.sourceRecipeId,
+            req.userId,
           );
           if (!remixSourceRecipe) {
             return sendError(
@@ -158,7 +161,9 @@ export function register(app: Express): void {
             );
           }
 
-          // Block remixing private recipes the user doesn't own
+          // Defense in depth: storage already scopes by visibility/ownership,
+          // but re-check at the route boundary so a future storage regression
+          // cannot leak a private recipe the user does not own.
           if (
             !remixSourceRecipe.isPublic &&
             remixSourceRecipe.authorId !== req.userId
@@ -393,7 +398,7 @@ export function register(app: Express): void {
               storage.getUserProfile(req.userId),
               storage.getChatMessages(id, 10, req.userId),
               remixSourceId
-                ? storage.getCommunityRecipe(remixSourceId)
+                ? storage.getCommunityRecipe(remixSourceId, req.userId)
                 : undefined,
             ]);
 

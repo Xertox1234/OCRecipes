@@ -32,10 +32,12 @@ const {
   createCommunityRecipe,
   updateRecipePublicStatus,
   getCommunityRecipe,
+  getCommunityRecipeTitlesByIds,
   getFeaturedRecipes,
   deleteCommunityRecipe,
   getUserRecipes,
 } = await import("../community");
+const { dismissRecipe } = await import("../carousel");
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
@@ -239,7 +241,7 @@ describe("community storage", () => {
       expect(result).toBeUndefined();
 
       // Original recipe should remain unchanged
-      const original = await getCommunityRecipe(recipe.id);
+      const original = await getCommunityRecipe(recipe.id, testUser.id);
       expect(original!.isPublic).toBe(true);
     });
   });
@@ -248,19 +250,102 @@ describe("community storage", () => {
   // getCommunityRecipe
   // --------------------------------------------------------------------------
   describe("getCommunityRecipe", () => {
-    it("returns the recipe when it exists", async () => {
+    it("returns a public recipe to any user", async () => {
+      const otherUser = await createTestUser(tx);
       const created = await createTestRecipe(testUser.id, {
         title: "Find Me",
+        isPublic: true,
       });
 
-      const found = await getCommunityRecipe(created.id);
+      const found = await getCommunityRecipe(created.id, otherUser.id);
       expect(found).toBeDefined();
       expect(found!.title).toBe("Find Me");
     });
 
-    it("returns undefined when recipe does not exist", async () => {
-      const found = await getCommunityRecipe(999999);
+    it("returns a private recipe to its owner", async () => {
+      const created = await createTestRecipe(testUser.id, {
+        title: "My Private Recipe",
+        isPublic: false,
+      });
+
+      const found = await getCommunityRecipe(created.id, testUser.id);
+      expect(found).toBeDefined();
+      expect(found!.title).toBe("My Private Recipe");
+    });
+
+    it("returns undefined for a private recipe the user does not own (no existence leak)", async () => {
+      const otherUser = await createTestUser(tx);
+      const created = await createTestRecipe(testUser.id, {
+        title: "Secret Recipe",
+        isPublic: false,
+      });
+
+      const found = await getCommunityRecipe(created.id, otherUser.id);
       expect(found).toBeUndefined();
+    });
+
+    it("returns undefined when recipe does not exist", async () => {
+      const found = await getCommunityRecipe(999999, testUser.id);
+      expect(found).toBeUndefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // getCommunityRecipeTitlesByIds
+  // --------------------------------------------------------------------------
+  describe("getCommunityRecipeTitlesByIds", () => {
+    it("returns an empty map for an empty id list", async () => {
+      const titles = await getCommunityRecipeTitlesByIds([], testUser.id);
+      expect(titles.size).toBe(0);
+    });
+
+    it("resolves titles for ids the user has dismissed", async () => {
+      const a = await createTestRecipe(testUser.id, { title: "Recipe A" });
+      const b = await createTestRecipe(testUser.id, { title: "Recipe B" });
+      await dismissRecipe(testUser.id, a.id);
+      await dismissRecipe(testUser.id, b.id);
+
+      const titles = await getCommunityRecipeTitlesByIds(
+        [a.id, b.id],
+        testUser.id,
+      );
+      expect(titles.get(a.id)).toBe("Recipe A");
+      expect(titles.get(b.id)).toBe("Recipe B");
+    });
+
+    it("still resolves the title of a dismissed recipe that is now private", async () => {
+      // A recipe public when dismissed but later made private must still
+      // resolve its title, or the dismissed-recipe prompt context silently
+      // loses entries and the LLM re-suggests it.
+      const recipe = await createTestRecipe(testUser.id, {
+        title: "Now Private",
+        isPublic: false,
+      });
+      await dismissRecipe(testUser.id, recipe.id);
+
+      const titles = await getCommunityRecipeTitlesByIds(
+        [recipe.id],
+        testUser.id,
+      );
+      expect(titles.get(recipe.id)).toBe("Now Private");
+    });
+
+    it("does not resolve titles for ids the user has not dismissed (IDOR)", async () => {
+      // Another user's private recipe — never dismissed by testUser. Even
+      // though the id is passed in, the dismissal join scopes the result so
+      // its title is not leaked.
+      const otherUser = await createTestUser(tx);
+      const recipe = await createTestRecipe(otherUser.id, {
+        title: "Not Mine",
+        isPublic: false,
+      });
+      await dismissRecipe(otherUser.id, recipe.id);
+
+      const titles = await getCommunityRecipeTitlesByIds(
+        [recipe.id],
+        testUser.id,
+      );
+      expect(titles.has(recipe.id)).toBe(false);
     });
   });
 
@@ -321,7 +406,7 @@ describe("community storage", () => {
       const deleted = await deleteCommunityRecipe(recipe.id, testUser.id);
       expect(deleted).toBe(true);
 
-      const found = await getCommunityRecipe(recipe.id);
+      const found = await getCommunityRecipe(recipe.id, testUser.id);
       expect(found).toBeUndefined();
     });
 
@@ -333,7 +418,7 @@ describe("community storage", () => {
       expect(deleted).toBe(false);
 
       // Recipe should still exist
-      const found = await getCommunityRecipe(recipe.id);
+      const found = await getCommunityRecipe(recipe.id, testUser.id);
       expect(found).toBeDefined();
     });
 

@@ -6,6 +6,7 @@ import {
   recipeGenerationLog,
   cookbookRecipes,
   favouriteRecipes,
+  recipeDismissals,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, or, ilike, inArray } from "drizzle-orm";
@@ -168,13 +169,31 @@ export async function updateCommunityRecipeImageUrl( // idor-safe: internal back
     .where(eq(communityRecipes.id, recipeId));
 }
 
+/**
+ * Fetch a single community recipe, scoped to what the requesting user may see.
+ *
+ * Visibility is enforced in SQL: a recipe is returned only when it is public
+ * OR owned by `userId`. A private recipe owned by someone else resolves to
+ * `undefined` — identical to a missing id — so callers cannot probe whether a
+ * private recipe exists (no existence leak). All call-sites supply
+ * `req.userId`; there is no internal/unscoped read of this function.
+ */
 export async function getCommunityRecipe(
   id: number,
+  userId: string,
 ): Promise<CommunityRecipe | undefined> {
   const [recipe] = await db
     .select()
     .from(communityRecipes)
-    .where(eq(communityRecipes.id, id));
+    .where(
+      and(
+        eq(communityRecipes.id, id),
+        or(
+          eq(communityRecipes.isPublic, true),
+          eq(communityRecipes.authorId, userId),
+        ),
+      ),
+    );
   return recipe || undefined;
 }
 
@@ -415,23 +434,38 @@ export async function getRecipeSharePayload(
 }
 
 /**
- * Fetch the display titles for a batch of community recipe IDs.
- * Used to resolve dismissed recipe IDs → titles for prompt injection.
- * Returns a Map so callers can efficiently look up titles by ID
- * while preserving the original order of the input id array.
+ * Resolve a batch of community recipe IDs → display titles, scoped to recipes
+ * the given user has dismissed. Used to build the dismissed-recipe context for
+ * the meal-suggestion prompt (so the LLM does not re-suggest rejected recipes).
+ *
+ * Visibility is intentionally NOT filtered by `isPublic`: a recipe that was
+ * public when dismissed but later made private must still resolve its title, or
+ * the dismissed-context map silently loses entries. Instead the query is scoped
+ * by an INNER JOIN through `recipe_dismissals` (source `community`, the same
+ * user) — the dismissal record is the authorization. This makes the function
+ * self-enforcing: it can only ever return titles for recipes THIS user has
+ * dismissed, so a caller cannot pass arbitrary ids and read another user's
+ * private recipe titles. Returns a Map for order-preserving id→title lookup.
  */
 export async function getCommunityRecipeTitlesByIds(
   ids: number[],
+  userId: string,
 ): Promise<Map<number, string>> {
   if (ids.length === 0) return new Map();
   const rows = await db
     .select({ id: communityRecipes.id, title: communityRecipes.title })
     .from(communityRecipes)
-    .where(
+    .innerJoin(
+      recipeDismissals,
       and(
-        inArray(communityRecipes.id, ids),
-        eq(communityRecipes.isPublic, true),
+        eq(
+          recipeDismissals.recipeIdentifier,
+          sql`${communityRecipes.id}::text`,
+        ),
+        eq(recipeDismissals.userId, userId),
+        eq(recipeDismissals.source, "community"),
       ),
-    );
+    )
+    .where(inArray(communityRecipes.id, ids));
   return new Map(rows.map((r) => [r.id, r.title]));
 }

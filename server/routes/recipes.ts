@@ -337,14 +337,17 @@ export function register(app: Express): void {
           return;
         }
 
-        const recipe = await storage.getCommunityRecipe(recipeId);
+        const recipe = await storage.getCommunityRecipe(recipeId, req.userId);
 
         if (!recipe) {
           sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
         }
 
-        // Only show public recipes or recipes owned by the user
+        // Defense in depth: storage already scopes by visibility/ownership
+        // (returns undefined for a private recipe the user does not own), but
+        // re-check at the route boundary so a future storage regression cannot
+        // leak a private recipe through this endpoint.
         if (!recipe.isPublic && recipe.authorId !== req.userId) {
           sendError(res, 404, "Recipe not found", ErrorCode.NOT_FOUND);
           return;
