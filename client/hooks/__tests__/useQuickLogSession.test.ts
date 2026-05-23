@@ -381,6 +381,55 @@ describe("useQuickLogSession", () => {
     expect(result.current.parsedItems[0].name).toBe("eggs");
   });
 
+  it("auto-parses a final transcript only once, not on every mutation settle", async () => {
+    const { useSpeechToText } = await import("@/hooks/useSpeechToText");
+    // isFinal/transcript stay constant (they only reset on the next startListening)
+    (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({
+      ...mockSpeechToText,
+      isFinal: true,
+      transcript: "3 eggs",
+    });
+
+    const { wrapper } = createQueryWrapper();
+    // First parse succeeds; any erroneous re-fire gets a never-resolving promise so
+    // isParsing stays true — this bounds the buggy loop at one extra call to assert on
+    // (a resolving mock would re-fire forever and OOM the test).
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "eggs",
+                quantity: 3,
+                unit: "large",
+                calories: 216,
+                protein: 18,
+                carbs: 1,
+                fat: 15,
+                servingSize: null,
+              },
+            ],
+          }),
+      })
+      .mockReturnValue(new Promise(() => {}));
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
+
+    // Let any erroneous re-fire (effect re-runs once isParsing settles) flush through
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    const parseCalls = mockApiRequest.mock.calls.filter((args) =>
+      String(args[1]).includes("/api/food/parse"),
+    );
+    expect(parseCalls).toHaveLength(1);
+  });
+
   it("handleVoicePress calls startListening when not listening", () => {
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(() => useQuickLogSession(), { wrapper });
