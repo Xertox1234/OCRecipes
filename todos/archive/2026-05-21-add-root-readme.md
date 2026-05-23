@@ -1,6 +1,6 @@
 ---
 title: "Add a tracked root README.md"
-status: backlog
+status: done
 priority: low
 created: 2026-05-21
 updated: 2026-05-21
