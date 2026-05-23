@@ -1,6 +1,6 @@
 ---
 title: "Add branch tests for under-covered Coach UI, recipe-chat route, and canonical-enrichment"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-23
 updated: 2026-05-23
