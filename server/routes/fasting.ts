@@ -7,7 +7,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { calculateFastingStats } from "../services/fasting-stats";
-import { toError } from "../lib/logger";
+import { isUniqueViolation } from "../lib/db-errors";
 
 export function register(app: Express): void {
   // GET /api/fasting/schedule
@@ -95,8 +95,7 @@ export function register(app: Express): void {
         });
         res.status(201).json(log);
       } catch (error) {
-        const err = toError(error);
-        if (err.message?.includes("23505")) {
+        if (isUniqueViolation(error)) {
           return sendError(
             res,
             409,

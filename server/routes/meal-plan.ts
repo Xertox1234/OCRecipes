@@ -23,6 +23,7 @@ import {
   parseQueryString,
 } from "./_helpers";
 import { logger, toError } from "../lib/logger";
+import { isUniqueViolation } from "../lib/db-errors";
 import {
   buildPantryMealPlanForUser,
   EmptyPantryError,
@@ -574,8 +575,7 @@ export function register(app: Express): void {
         res.status(201).json(dailyLog);
       } catch (error) {
         // Catch unique constraint violation from concurrent confirms
-        const err = toError(error);
-        if (err.message?.includes("23505") || err.message?.includes("unique")) {
+        if (isUniqueViolation(error)) {
           sendError(
             res,
             409,
@@ -584,7 +584,7 @@ export function register(app: Express): void {
           );
           return;
         }
-        logger.error({ err }, "meal confirmation failed");
+        logger.error({ err: toError(error) }, "meal confirmation failed");
         sendError(res, 500, "Failed to confirm meal", ErrorCode.INTERNAL_ERROR);
       }
     },

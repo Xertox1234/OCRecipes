@@ -369,6 +369,30 @@ describe("recipe-catalog routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(99);
     });
+
+    it("recovers from a wrapped DrizzleQueryError (cause.code 23505) by returning existing recipe", async () => {
+      vi.mocked(storage.findMealPlanRecipeByExternalId)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(
+          createMockMealPlanRecipe({ id: 99, title: "Existing" }),
+        );
+      vi.mocked(getCatalogRecipeDetail).mockResolvedValue({
+        recipe: createMockMealPlanRecipe({ title: "Existing" }),
+        ingredients: [],
+      });
+      // drizzle-orm 0.44+ wraps the pg error: the 23505 code moves to .cause.
+      const wrapped = Object.assign(new Error("Failed query: insert ..."), {
+        cause: { code: "23505" },
+      });
+      vi.mocked(storage.createMealPlanRecipe).mockRejectedValue(wrapped);
+
+      const res = await request(app)
+        .post("/api/meal-plan/catalog/123/save")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(99);
+    });
   });
 });
 

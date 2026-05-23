@@ -20,6 +20,7 @@ import bcrypt from "bcrypt";
 import type * as schema from "@shared/schema";
 import { apiKeys, apiKeyUsage, barcodeNutrition } from "@shared/schema";
 import { createMockApiKey } from "../../__tests__/factories/verification";
+import { isUniqueViolation } from "../../lib/db-errors";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -117,20 +118,27 @@ describe("api-keys storage", () => {
 
     it("rejects a duplicate keyPrefix via the unique constraint", async () => {
       // Verify the unique(keyPrefix) index is wired. `createApiKey` has no
-      // retry logic, so a collision raises at the DB layer. Insert a second
-      // row with an explicitly duplicated prefix and expect a PG unique-
-      // violation error.
+      // retry logic, so a collision raises at the DB layer. drizzle-orm 0.44+
+      // wraps the pg error in a DrizzleQueryError (top-level message becomes
+      // "Failed query: ..."), so assert on the unwrapped 23505 code via the
+      // shared helper rather than matching the top-level message text.
       const first = await createApiKey("Original", "free", testUser.id);
-      await expect(
-        tx.insert(apiKeys).values({
+      const error = await tx
+        .insert(apiKeys)
+        .values({
           keyPrefix: first.keyPrefix,
           keyHash:
             "$2b$10$abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOP",
           name: "Collision",
           tier: "free",
           ownerId: testUser.id,
-        }),
-      ).rejects.toThrow(/duplicate key|unique constraint/i);
+        })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(error).not.toBeNull();
+      expect(isUniqueViolation(error)).toBe(true);
     });
   });
 

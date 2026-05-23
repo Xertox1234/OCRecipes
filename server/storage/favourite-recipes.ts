@@ -9,6 +9,7 @@ import {
 } from "@shared/schema";
 import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { isUniqueViolation } from "../lib/db-errors";
 import { incrementRecipePopularity } from "./canonical-recipes";
 
 export async function toggleFavouriteRecipe(
@@ -95,12 +96,7 @@ export async function toggleFavouriteRecipe(
         .values({ userId, recipeId, recipeType });
       return true;
     } catch (err: unknown) {
-      if (
-        err &&
-        typeof err === "object" &&
-        "code" in err &&
-        err.code === "23505"
-      ) {
+      if (isUniqueViolation(err)) {
         await tx
           .delete(favouriteRecipes)
           .where(

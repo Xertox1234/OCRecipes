@@ -115,6 +115,26 @@ describe("Auth Routes", () => {
       expect(res.body.error).toBe("Username already exists");
     });
 
+    it("returns 409 when createUser loses a unique-violation race (wrapped 23505)", async () => {
+      // Pre-check passes, but a concurrent registration wins the insert.
+      // drizzle-orm 0.44+ wraps the pg error, moving the 23505 code to .cause.
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      const wrapped = Object.assign(
+        new Error("Failed query: insert into users ..."),
+        { cause: { code: "23505" } },
+      );
+      vi.mocked(storage.createUser).mockRejectedValue(wrapped);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "raceuser",
+        password: "password123",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("Username already exists");
+    });
+
     it("returns 400 for short username", async () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "ab",
