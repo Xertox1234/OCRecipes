@@ -1,335 +1,348 @@
 import jwt from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
+import {
+  requireAuth,
+  generateToken,
+  invalidateTokenVersionCache,
+} from "../middleware/auth";
+import { storage } from "../storage";
 
-const JWT_SECRET = "test-jwt-secret";
-
-// Mock storage for tokenVersion verification
-const mockGetUser = vi.fn();
+// Exercise the REAL requireAuth — mock only its storage dependency.
+// A previous version mocked "../middleware/auth" itself with a hand-written
+// reimplementation, so these tests passed against a copy that had drifted from
+// production (it lacked the tokenVersion cache and issuer/audience checks).
+// Never mock the module under test here. (vi.mock is hoisted above imports,
+// so the storage import above still resolves to this mock.)
 vi.mock("../storage", () => ({
-  storage: {
-    getUser: (...args: unknown[]) => mockGetUser(...args),
-  },
+  storage: { getUser: vi.fn() },
 }));
 
-// Mock the auth module to control JWT_SECRET
-vi.mock("../middleware/auth", async () => {
-  const jwtModule = await import("jsonwebtoken");
-  const { isAccessTokenPayload } = await import("../lib/jwt-types");
-  const { storage } = await import("../storage");
-  const JWT_SECRET = "test-jwt-secret";
+const mockGetUser = vi.mocked(storage.getUser);
 
-  async function requireAuth(
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ): Promise<void> {
-    const authHeader = req.headers.authorization;
+// JWT_SECRET is set by test/setup.ts before this module loads.
+const JWT_SECRET = process.env.JWT_SECRET as string;
+// Must match the private constants in server/middleware/auth.ts.
+const JWT_ISSUER = "ocrecipes-api";
+const JWT_AUDIENCE = "ocrecipes-client";
 
-    if (!authHeader?.startsWith("Bearer ")) {
-      res.status(401).json({ error: "No token provided", code: "NO_TOKEN" });
-      return;
-    }
+// Unique id per test so the middleware's process-local tokenVersion cache
+// (module state, not reset between tests) cannot bleed across cases.
+let userCounter = 0;
+const nextUserId = () => `user-${++userCounter}`;
 
-    const token = authHeader.slice(7);
+type DbUser = NonNullable<Awaited<ReturnType<typeof storage.getUser>>>;
+const userRow = (id: string, tokenVersion: number): DbUser =>
+  ({ id, tokenVersion }) as unknown as DbUser;
 
-    try {
-      const payload = jwtModule.default.verify(token, JWT_SECRET);
+function signToken(
+  payload: Record<string, unknown>,
+  opts: jwt.SignOptions = {},
+): string {
+  return jwt.sign(payload, JWT_SECRET, {
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+    ...opts,
+  });
+}
 
-      if (!isAccessTokenPayload(payload)) {
-        res
-          .status(401)
-          .json({ error: "Invalid token payload", code: "TOKEN_INVALID" });
-        return;
-      }
+function makeReq(authorization?: string): Request {
+  return {
+    headers: authorization ? { authorization } : {},
+  } as unknown as Request;
+}
 
-      // Verify tokenVersion against database
-      const user = await storage.getUser(payload.sub);
-      if (!user) {
-        res
-          .status(401)
-          .json({ error: "User not found", code: "TOKEN_INVALID" });
-        return;
-      }
+function makeRes() {
+  const res = {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnThis(),
+  };
+  return res;
+}
 
-      if (payload.tokenVersion !== user.tokenVersion) {
-        res
-          .status(401)
-          .json({ error: "Token has been revoked", code: "TOKEN_REVOKED" });
-        return;
-      }
-
-      req.userId = payload.sub;
-      next();
-    } catch (err) {
-      if (err instanceof jwtModule.default.TokenExpiredError) {
-        res.status(401).json({ error: "Token expired", code: "TOKEN_EXPIRED" });
-        return;
-      }
-      res.status(401).json({ error: "Invalid token", code: "TOKEN_INVALID" });
-    }
-  }
-
-  function generateToken(userId: string, tokenVersion: number): string {
-    return jwtModule.default.sign({ sub: userId, tokenVersion }, JWT_SECRET, {
-      expiresIn: "7d",
-    });
-  }
-
-  return { requireAuth, generateToken };
-});
-
-const { requireAuth, generateToken } = await import("../middleware/auth");
+const callAuth = (req: Request, res: ReturnType<typeof makeRes>) => {
+  const next = vi.fn();
+  return {
+    next,
+    promise: requireAuth(req, res as unknown as Response, next as NextFunction),
+  };
+};
 
 describe("Auth Middleware", () => {
-  let mockRequest: Partial<Request>;
-  let mockResponse: Partial<Response>;
-  let mockNext: NextFunction;
-
   beforeEach(() => {
-    mockRequest = {
-      headers: {},
-    };
-    mockResponse = {
-      status: vi.fn().mockReturnThis(),
-      json: vi.fn().mockReturnThis(),
-    };
-    mockNext = vi.fn();
     mockGetUser.mockReset();
-    // Default: user exists with tokenVersion 0
-    mockGetUser.mockResolvedValue({ id: "user-123", tokenVersion: 0 });
+    mockGetUser.mockResolvedValue(userRow("default-user", 0));
   });
 
-  describe("requireAuth", () => {
-    it("returns 401 when no authorization header is provided", async () => {
-      mockRequest.headers = {};
+  describe("requireAuth — header validation", () => {
+    it("returns 401 NO_TOKEN when no authorization header is provided", async () => {
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq(), res);
+      await promise;
 
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(401);
-      expect(mockResponse.json).toHaveBeenCalledWith({
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
         error: "No token provided",
         code: "NO_TOKEN",
       });
-      expect(mockNext).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
     });
 
-    it("returns 401 when authorization header does not start with Bearer", async () => {
-      mockRequest.headers = { authorization: "Basic sometoken" };
+    it("returns 401 NO_TOKEN when the header does not start with Bearer", async () => {
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq("Basic sometoken"), res);
+      await promise;
 
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(401);
-      expect(mockResponse.json).toHaveBeenCalledWith({
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
         error: "No token provided",
         code: "NO_TOKEN",
       });
-      expect(mockNext).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
     });
+  });
 
-    it("returns 401 when token is invalid", async () => {
-      mockRequest.headers = { authorization: "Bearer invalid-token" };
+  describe("requireAuth — token signature, issuer & audience", () => {
+    it("returns 401 TOKEN_INVALID for a malformed token", async () => {
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq("Bearer not-a-jwt"), res);
+      await promise;
 
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(401);
-      expect(mockResponse.json).toHaveBeenCalledWith({
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
         error: "Invalid token",
         code: "TOKEN_INVALID",
       });
-      expect(mockNext).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
     });
 
-    it("returns 401 when token payload is invalid (missing sub)", async () => {
-      // Create a token without sub claim
-      const invalidToken = jwt.sign({ foo: "bar" }, JWT_SECRET);
-      mockRequest.headers = { authorization: `Bearer ${invalidToken}` };
-
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(401);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Invalid token payload",
-        code: "TOKEN_INVALID",
-      });
-      expect(mockNext).not.toHaveBeenCalled();
-    });
-
-    it("returns 401 when token payload is missing tokenVersion", async () => {
-      // Create a token with sub but no tokenVersion
-      const invalidToken = jwt.sign({ sub: "user-123" }, JWT_SECRET);
-      mockRequest.headers = { authorization: `Bearer ${invalidToken}` };
-
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(401);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Invalid token payload",
-        code: "TOKEN_INVALID",
-      });
-      expect(mockNext).not.toHaveBeenCalled();
-    });
-
-    it("calls next and sets userId when token is valid and tokenVersion matches", async () => {
-      const userId = "user-123";
-      const validToken = jwt.sign({ sub: userId, tokenVersion: 0 }, JWT_SECRET);
-      mockRequest.headers = { authorization: `Bearer ${validToken}` };
-      mockGetUser.mockResolvedValue({ id: userId, tokenVersion: 0 });
-
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
-      );
-
-      expect((mockRequest as any).userId).toBe(userId);
-      expect(mockNext).toHaveBeenCalled();
-      expect(mockResponse.status).not.toHaveBeenCalled();
-    });
-
-    it("returns 401 with TOKEN_REVOKED when tokenVersion does not match", async () => {
-      const userId = "user-123";
-      // Token has tokenVersion 0 but user has tokenVersion 1 (was incremented on logout)
-      const validToken = jwt.sign({ sub: userId, tokenVersion: 0 }, JWT_SECRET);
-      mockRequest.headers = { authorization: `Bearer ${validToken}` };
-      mockGetUser.mockResolvedValue({ id: userId, tokenVersion: 1 });
-
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(401);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "Token has been revoked",
-        code: "TOKEN_REVOKED",
-      });
-      expect(mockNext).not.toHaveBeenCalled();
-    });
-
-    it("returns 401 when user is not found in database", async () => {
-      const validToken = jwt.sign(
-        { sub: "deleted-user", tokenVersion: 0 },
+    it("rejects a token signed with the wrong issuer", async () => {
+      const token = jwt.sign(
+        { sub: nextUserId(), tokenVersion: 0 },
         JWT_SECRET,
+        { issuer: "evil-issuer", audience: JWT_AUDIENCE },
       );
-      mockRequest.headers = { authorization: `Bearer ${validToken}` };
-      mockGetUser.mockResolvedValue(undefined);
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq(`Bearer ${token}`), res);
+      await promise;
 
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
-      );
-
-      expect(mockResponse.status).toHaveBeenCalledWith(401);
-      expect(mockResponse.json).toHaveBeenCalledWith({
-        error: "User not found",
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Invalid token",
         code: "TOKEN_INVALID",
       });
-      expect(mockNext).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+      // Real module enforces issuer; storage is never consulted.
+      expect(mockGetUser).not.toHaveBeenCalled();
     });
 
-    it("returns 401 with TOKEN_EXPIRED when token is expired", async () => {
-      const expiredToken = jwt.sign(
-        { sub: "user-123", tokenVersion: 0 },
+    it("rejects a token signed with the wrong audience", async () => {
+      const token = jwt.sign(
+        { sub: nextUserId(), tokenVersion: 0 },
         JWT_SECRET,
-        {
-          expiresIn: "-1s",
-        },
+        { issuer: JWT_ISSUER, audience: "evil-audience" },
       );
-      mockRequest.headers = { authorization: `Bearer ${expiredToken}` };
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq(`Bearer ${token}`), res);
+      await promise;
 
-      await requireAuth(
-        mockRequest as Request,
-        mockResponse as Response,
-        mockNext,
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Invalid token",
+        code: "TOKEN_INVALID",
+      });
+      expect(next).not.toHaveBeenCalled();
+      expect(mockGetUser).not.toHaveBeenCalled();
+    });
+
+    it("returns 401 TOKEN_EXPIRED for an expired token", async () => {
+      const token = signToken(
+        { sub: nextUserId(), tokenVersion: 0 },
+        { expiresIn: "-1s" },
       );
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq(`Bearer ${token}`), res);
+      await promise;
 
-      expect(mockResponse.status).toHaveBeenCalledWith(401);
-      expect(mockResponse.json).toHaveBeenCalledWith({
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
         error: "Token expired",
         code: "TOKEN_EXPIRED",
       });
-      expect(mockNext).not.toHaveBeenCalled();
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("requireAuth — payload validation", () => {
+    it("returns 401 TOKEN_INVALID when sub is missing", async () => {
+      const token = signToken({ foo: "bar" });
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq(`Bearer ${token}`), res);
+      await promise;
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Invalid token payload",
+        code: "TOKEN_INVALID",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("returns 401 TOKEN_INVALID when tokenVersion is missing", async () => {
+      const token = signToken({ sub: nextUserId() });
+      const res = makeRes();
+      const { next, promise } = callAuth(makeReq(`Bearer ${token}`), res);
+      await promise;
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Invalid token payload",
+        code: "TOKEN_INVALID",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("requireAuth — DB lookup path (cache miss)", () => {
+    it("calls next and sets userId for a valid token whose version matches", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 0));
+      const req = makeReq(`Bearer ${generateToken(userId, 0)}`);
+      const res = makeRes();
+      const { next, promise } = callAuth(req, res);
+      await promise;
+
+      expect(req.userId).toBe(userId);
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(res.status).not.toHaveBeenCalled();
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns 401 TOKEN_INVALID when the user no longer exists", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(undefined);
+      const res = makeRes();
+      const { next, promise } = callAuth(
+        makeReq(`Bearer ${generateToken(userId, 0)}`),
+        res,
+      );
+      await promise;
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "User not found",
+        code: "TOKEN_INVALID",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("returns 401 TOKEN_REVOKED when the DB tokenVersion is newer", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 1));
+      const res = makeRes();
+      const { next, promise } = callAuth(
+        makeReq(`Bearer ${generateToken(userId, 0)}`),
+        res,
+      );
+      await promise;
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Token has been revoked",
+        code: "TOKEN_REVOKED",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("requireAuth — tokenVersion cache", () => {
+    it("serves the second request from cache without a second DB lookup", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 0));
+      const token = generateToken(userId, 0);
+
+      const first = callAuth(makeReq(`Bearer ${token}`), makeRes());
+      await first.promise;
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+      expect(first.next).toHaveBeenCalled();
+
+      const second = callAuth(makeReq(`Bearer ${token}`), makeRes());
+      await second.promise;
+      expect(mockGetUser).toHaveBeenCalledTimes(1); // still 1 — served from cache
+      expect(second.next).toHaveBeenCalled();
+    });
+
+    it("rejects from cache with TOKEN_REVOKED when a newer token version arrives", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 0));
+
+      // Prime the cache with version 0.
+      const prime = callAuth(
+        makeReq(`Bearer ${generateToken(userId, 0)}`),
+        makeRes(),
+      );
+      await prime.promise;
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+
+      // A token claiming version 1 is rejected against the cached 0 — no new DB hit.
+      const res = makeRes();
+      const { next, promise } = callAuth(
+        makeReq(`Bearer ${generateToken(userId, 1)}`),
+        res,
+      );
+      await promise;
+
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Token has been revoked",
+        code: "TOKEN_REVOKED",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("invalidateTokenVersionCache forces a fresh DB lookup", async () => {
+      const userId = nextUserId();
+      mockGetUser.mockResolvedValue(userRow(userId, 0));
+      const token = generateToken(userId, 0);
+
+      await callAuth(makeReq(`Bearer ${token}`), makeRes()).promise;
+      expect(mockGetUser).toHaveBeenCalledTimes(1);
+
+      invalidateTokenVersionCache(userId);
+
+      await callAuth(makeReq(`Bearer ${token}`), makeRes()).promise;
+      expect(mockGetUser).toHaveBeenCalledTimes(2); // cache cleared → re-read
     });
   });
 
   describe("generateToken", () => {
-    it("generates a valid JWT token with user ID and tokenVersion", () => {
-      const userId = "user-456";
+    it("signs a verifiable token with sub, tokenVersion, issuer and audience", () => {
+      const userId = nextUserId();
       const token = generateToken(userId, 0);
 
-      expect(token).toBeDefined();
-      expect(typeof token).toBe("string");
+      const decoded = jwt.verify(token, JWT_SECRET, {
+        issuer: JWT_ISSUER,
+        audience: JWT_AUDIENCE,
+      }) as jwt.JwtPayload;
 
-      const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload;
       expect(decoded.sub).toBe(userId);
       expect(decoded.tokenVersion).toBe(0);
     });
 
-    it("generates token with 7 day expiration", () => {
-      const token = generateToken("user-789", 0);
+    it("sets a 7 day expiration", () => {
+      const token = generateToken(nextUserId(), 0);
       const decoded = jwt.decode(token) as jwt.JwtPayload;
 
-      expect(decoded.exp).toBeDefined();
       const now = Math.floor(Date.now() / 1000);
       const sevenDaysInSeconds = 7 * 24 * 60 * 60;
-
-      // Check expiration is roughly 7 days from now (within 60 seconds tolerance)
       expect(decoded.exp! - now).toBeGreaterThan(sevenDaysInSeconds - 60);
       expect(decoded.exp! - now).toBeLessThanOrEqual(sevenDaysInSeconds);
     });
 
-    it("includes tokenVersion in the payload", () => {
-      const token = generateToken("user-123", 5);
+    it("embeds the provided tokenVersion", () => {
+      const token = generateToken(nextUserId(), 5);
       const decoded = jwt.decode(token) as jwt.JwtPayload;
-
       expect(decoded.tokenVersion).toBe(5);
-    });
-
-    it("generates tokens with same payload content for same user and version", () => {
-      const token1 = generateToken("user-1", 0);
-      const token2 = generateToken("user-1", 0);
-
-      const decoded1 = jwt.decode(token1) as jwt.JwtPayload;
-      const decoded2 = jwt.decode(token2) as jwt.JwtPayload;
-
-      // Both tokens should have the same subject and tokenVersion
-      expect(decoded1.sub).toBe(decoded2.sub);
-      expect(decoded1.sub).toBe("user-1");
-      expect(decoded1.tokenVersion).toBe(decoded2.tokenVersion);
-    });
-
-    it("generates different tokens for different users", () => {
-      const token1 = generateToken("user-1", 0);
-      const token2 = generateToken("user-2", 0);
-
-      const decoded1 = jwt.decode(token1) as jwt.JwtPayload;
-      const decoded2 = jwt.decode(token2) as jwt.JwtPayload;
-
-      expect(decoded1.sub).toBe("user-1");
-      expect(decoded2.sub).toBe("user-2");
-      expect(decoded1.sub).not.toBe(decoded2.sub);
     });
   });
 });
