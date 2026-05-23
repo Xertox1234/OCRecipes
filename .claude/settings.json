@@ -140,6 +140,17 @@
             "statusMessage": ""
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "file=$(jq -r '.tool_input.file_path // empty'); case \"$file\" in *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs) ESLINT_NO_TYPE_AWARE=1 npx eslint --no-warn-ignored --fix \"$file\" ;; esac",
+            "timeout": 60,
+            "statusMessage": "eslint --fix on changed file..."
+          }
+        ]
       }
     ],
     "Stop": [

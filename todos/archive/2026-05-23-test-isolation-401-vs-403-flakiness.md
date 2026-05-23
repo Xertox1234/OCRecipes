@@ -1,6 +1,6 @@
 ---
 title: "Investigate test-isolation flakiness (401-vs-403 + timeout under parallel runs)"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-23
 updated: 2026-05-23
@@ -52,3 +52,48 @@ Both pass in isolation (per the known full-suite flakiness noted in project memo
 ### 2026-05-23
 
 - Initial creation (from testing audit).
+
+### 2026-05-23 — Investigation (manual, systematic-debugging)
+
+**Conclusion: probabilistic timing/CPU-contention flake under full-suite parallel
+load. No deterministic root cause. The "401-vs-403 ⇒ requireAuth mock is
+unreliable" hypothesis is REFUTED.**
+
+Evidence:
+
+- Every observed flaky test is a _fully-mocked_ route test (`storage` + `auth` +
+  `express-rate-limit` all mocked) — none touch the real DB. Shared-DB
+  contamination is ruled out for these (confirmed by reading the mock setups in
+  `auth.test.ts`, `medication.test.ts`, `recipe-catalog.test.ts`).
+- Failures **rotate every run and never repeat**. Across 6 full-suite runs the
+  failing test was, in turn: `auth` + `medication` (capped baseline), `weight`
+  (uncapped), `micronutrients` (capped, timeout), `fasting` (capped, 404-vs-400);
+  **2 of the 4 capped runs were fully clean (5362/5362)**. No test failed twice
+  with the same signature.
+- Two failure modes: (a) **request timeout** (10s) — a mocked middleware never
+  called `next()`; correlates with worker starvation (uncapping via `CI=true`
+  amplified it), already mitigated by the local `maxWorkers = cpus-3` cap; (b)
+  **wrong HTTP status** (404/401) — a mock returned the wrong value at request
+  time under contention.
+- Controlled experiment (`--maxWorkers=1`, forcing the only `resetAllMocks` file
+  [`notification-scheduler.test.ts`] adjacent to victim route tests): **passes
+  under both `isolate:true` (real config) and `isolate:false`.** So
+  `resetAllMocks` does NOT leak across the file-isolation boundary.
+- `vi.clearAllMocks()` (in `test/setup.ts` + per-file `beforeEach`) clears call
+  history but NOT implementations, so the shared `__mocks__/auth.ts` `requireAuth`
+  impl (`req.userId = "1"`; `next()`) is preserved between tests — consistent with
+  the experiment. The auth mock is not the problem.
+
+Not reproducible: any deterministic cross-test mock leak or auth-mock failure.
+The flake only appears probabilistically under full-suite parallel CPU contention
+(~1 flake per ~2 local runs; ~50% of runs fully clean).
+
+Existing mitigation: `vitest.config.ts` already caps local workers
+(`maxWorkers = cpus-3`) to curb starvation timeouts; established practice is to
+re-run a named file in isolation before treating a full-suite failure as a
+regression.
+
+AC status: "full `test:coverage` passes cleanly across several consecutive local
+runs" is not _deterministically_ achievable without either (a) a test-level
+`retry`, or (b) deeper restructuring (e.g., isolating DB-touching tests into a
+single-fork vitest project). Both are policy decisions left to the maintainer.

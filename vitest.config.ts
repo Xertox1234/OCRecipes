@@ -52,6 +52,14 @@ export default defineConfig({
     // oversubscribe smaller runners. See docs/legacy-patterns/testing.md.
     maxWorkers: process.env.CI ? undefined : Math.max(1, os.cpus().length - 3),
     testTimeout: 10000,
+    // Retry failed tests up to 2x (3 attempts total). The route-test suite has a
+    // probabilistic flake under full-suite parallel CPU contention: a rotating ~1
+    // test per ~2 runs intermittently times out or returns a wrong status, yet
+    // passes on re-run and in isolation (investigation:
+    // todos/archive/2026-05-23-test-isolation-401-vs-403-flakiness.md). There is
+    // no deterministic root cause to fix. A genuine failure fails all 3 attempts
+    // and is still reported; only contention flakes are absorbed.
+    retry: 2,
     setupFiles: ["./test/setup.ts"],
     globalSetup: ["./test/global-teardown.ts"],
   },
