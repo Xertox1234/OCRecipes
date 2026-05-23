@@ -2,6 +2,7 @@ import type { Express, Response } from "express";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { isUniqueViolation } from "../lib/db-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import {
   parseUserAllergies,
@@ -225,11 +226,7 @@ export function register(app: Express): void {
           return;
         }
         // Handle TOCTOU race: concurrent save creates duplicate — return existing
-        if (
-          error instanceof Error &&
-          "code" in error &&
-          (error as { code: string }).code === "23505"
-        ) {
+        if (isUniqueViolation(error)) {
           const existing = await storage.findMealPlanRecipeByExternalId(
             req.userId,
             String(parsePositiveIntParam(req.params.id)),

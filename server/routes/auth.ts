@@ -29,6 +29,7 @@ import {
 } from "./_schemas";
 import { upload } from "./_upload";
 import { logger, toError } from "../lib/logger";
+import { isUniqueViolation } from "../lib/db-errors";
 import type { MeasurementUnit } from "@shared/lib/units";
 
 const AVATAR_DIR = path.resolve(process.cwd(), "uploads/avatars");
@@ -91,8 +92,7 @@ export function register(app: Express): void {
           });
         } catch (err) {
           // Catch unique constraint violation from concurrent registrations
-          const msg = toError(err).message;
-          if (msg.includes("23505") || msg.includes("unique")) {
+          if (isUniqueViolation(err)) {
             return sendError(
               res,
               409,

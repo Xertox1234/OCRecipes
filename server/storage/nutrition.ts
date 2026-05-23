@@ -17,6 +17,7 @@ import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, isNull, inArray } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
+import { isUniqueViolation } from "../lib/db-errors";
 
 // ============================================================================
 // SCANNED ITEMS
@@ -211,12 +212,7 @@ export async function toggleFavouriteScannedItem(
     } catch (err: unknown) {
       // Concurrent toggle race: unique constraint violation means another
       // request already inserted the favourite — treat as "toggle off".
-      if (
-        err &&
-        typeof err === "object" &&
-        "code" in err &&
-        err.code === "23505"
-      ) {
+      if (isUniqueViolation(err)) {
         await tx
           .delete(favouriteScannedItems)
           .where(
