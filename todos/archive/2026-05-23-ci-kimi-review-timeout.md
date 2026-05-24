@@ -1,6 +1,6 @@
 ---
 title: "Bump CI kimi-review timeout — 180s flakes on a cold cache"
-status: backlog
+status: done
 priority: low
 created: 2026-05-23
 updated: 2026-05-23
