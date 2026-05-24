@@ -1,6 +1,6 @@
 ---
 title: "Enable coverage.all to expose true client-side coverage"
-status: backlog
+status: done
 priority: low
 created: 2026-05-23
 updated: 2026-05-23
@@ -46,3 +46,12 @@ Surfaced by the 2026-05-23 testing audit. A full coverage run reported **84.1% l
 ### 2026-05-23
 
 - Initial creation (from testing audit).
+- Implemented. Vitest 4.1.7 removed `coverage.all` (would be a type error); defining
+  `coverage.include` is now the supported way to count unimported files as 0%. Added
+  `include: ["client/**/*.{ts,tsx}", "server/**/*.ts", "shared/**/*.ts"]`, kept the
+  existing `exclude`, and added `server/scripts/**` to exclude (operational CLI scripts).
+- Honest baseline measured via `npm run test:coverage` (exit 0, 5362 tests pass):
+  lines 53.05%, statements 52.66%, functions 46.66%, branches 44.24% — down from the
+  inflated 84.1% lines / 74.2% branches that excluded ~200 unimported client files.
+- Re-baselined thresholds with ~4pt headroom: lines 49, statements 48, functions 42,
+  branches 40. Coverage CI job passes the new floors. Comment updated to the new baseline.

@@ -20,6 +20,13 @@ export default defineConfig({
     ],
     coverage: {
       provider: "v8",
+      // `include` makes coverage count source files no test imports as 0% so the
+      // headline is honest (without it, untested files vanish from the
+      // denominator and inflate the number). In Vitest 4 `coverage.all` was
+      // removed — defining `include` is now the supported way to pull in
+      // uncovered files. The glob keeps instrumentation scoped to app source;
+      // configs, mocks, and type-only files stay out.
+      include: ["client/**/*.{ts,tsx}", "server/**/*.ts", "shared/**/*.ts"],
       reporter: ["text", "text-summary", "json", "html"],
       exclude: [
         "node_modules",
@@ -29,19 +36,23 @@ export default defineConfig({
         "test/mocks/**",
         "test/setup.ts",
         "test/global-teardown.ts",
+        // Operational CLI scripts (backfills, seeds, migrations) — run by hand,
+        // not part of app runtime; excluded so they don't skew the floor.
+        "server/scripts/**",
       ],
-      // Hard floor — set below current measured baseline (as of 2026-05-15:
-      // lines 83.92%, statements 83.14%, functions 81.54%, branches 74.02%)
+      // Hard floor — set below current measured baseline (as of 2026-05-23,
+      // with the `include` glob above so untested files count as 0%:
+      // lines 53.05%, statements 52.66%, functions 46.66%, branches 44.24%)
       // to leave room for normal variance. Ratchet up over time;
       // see docs/legacy-patterns/testing.md → "Coverage Threshold Ratcheting".
       thresholds: {
         // autoUpdate must stay false — never let CI rewrite this config.
         // Set in config (not CLI) so it cannot be parsed as the truthy string "false".
         autoUpdate: false,
-        lines: 80,
-        functions: 78,
-        statements: 80,
-        branches: 70,
+        lines: 49,
+        functions: 42,
+        statements: 48,
+        branches: 40,
       },
     },
     pool: "forks",
