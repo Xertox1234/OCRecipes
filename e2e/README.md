@@ -26,8 +26,12 @@ export PASSWORD=testpass123
 
 ```bash
 npm run e2e          # Run all E2E flows
-npm run e2e:smoke    # Run smoke-tagged flows only (auth + onboarding)
+npm run e2e:smoke    # Run smoke-tagged flows only (auth + navigation + onboarding)
 ```
+
+## CI
+
+A manual-trigger-only `E2E Smoke` workflow (`.github/workflows/e2e-smoke.yml`) runs `npm run e2e:smoke` on demand from the GitHub Actions tab. It is intentionally **`workflow_dispatch` only** — no push, pull_request, or scheduled trigger — because it runs on a paid macOS runner (~10x Linux minutes) and the app has no production deployment yet. Trigger it deliberately when you want to confirm the smoke flows still pass.
 
 ## Flow Structure
 

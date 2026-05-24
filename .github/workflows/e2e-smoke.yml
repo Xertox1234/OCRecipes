@@ -1,0 +1,114 @@
+# E2E Smoke (Maestro)
+#
+# Manual (`workflow_dispatch`) trigger only — by design, to confine paid
+# macOS-runner minutes to deliberate runs. There is intentionally NO `push`,
+# `pull_request`, or `schedule` trigger: macOS GitHub Actions minutes are billed
+# at ~10x the Linux rate, and the app has no production deployment yet. Run this
+# on demand from the Actions tab when you want to confirm the Maestro smoke
+# flows still pass. Revisit cadence pre-launch.
+#
+# NOTE: This workflow cannot be validated from a worktree — it must be exercised
+# via a manual `workflow_dispatch` run. The first dispatch will likely need one
+# or two iterations to settle the iOS build/simulator boot on the runner.
+
+name: E2E Smoke
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-smoke:
+    name: Maestro smoke (iOS simulator)
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    env:
+      # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
+      # same here. The smoke flows hit the backend (login needs a real user;
+      # navigate-tabs needs a logged-in session), so the API must be up.
+      DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
+      JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
+      LOG_LEVEL: silent
+      AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
+      USDA_API_KEY: stub
+      API_NINJAS_KEY: stub
+      RECEIPT_VALIDATION_STUB: "true"
+      # Credentials consumed by the Maestro flows (see e2e/README.md).
+      USERNAME: testuser
+      PASSWORD: testpass123
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # macOS runners ship Postgres but leave it stopped; start it and provision
+      # the role + database the server expects.
+      - name: Start Postgres
+        run: |
+          brew services start postgresql@14 || brew services start postgresql
+          for i in $(seq 1 30); do
+            if pg_isready -q; then break; fi
+            sleep 2
+          done
+          createuser -s ocrecipes || true
+          psql -d postgres -c "ALTER USER ocrecipes WITH PASSWORD 'ocrecipes';"
+          createdb -O ocrecipes ocrecipes_test || true
+          psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+      - name: Push database schema
+        run: npm run db:push
+
+      # curl installer is faster and avoids brew rate limits on a cold runner.
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # Boot an iOS simulator for Maestro to drive. macos-14 ships Xcode with
+      # iPhone simulators preinstalled.
+      - name: Boot iOS simulator
+        run: |
+          xcrun simctl boot "iPhone 15" || true
+          xcrun simctl bootstatus "iPhone 15" -b
+
+      # Start the backend the flows talk to; keep it running for the rest of the job.
+      - name: Start backend
+        run: |
+          npm run server:dev > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+
+      # Build the native iOS app and install it on the booted simulator.
+      # expo run:ios builds the dev client and installs to the running simulator.
+      - name: Build and install iOS app
+        run: npx expo run:ios --no-bundler
+
+      # Runs `maestro test --tags smoke e2e/flows/`. A failing flow exits non-zero
+      # and fails the job. Currently selects: auth/login, home/navigate-tabs,
+      # onboarding/complete-onboarding (the three flows tagged `smoke`).
+      - name: Run Maestro smoke flows
+        run: npm run e2e:smoke
+
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-log
+          path: server.log
+          if-no-files-found: warn
