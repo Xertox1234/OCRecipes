@@ -18,3 +18,17 @@ for env_file in .env .env.local .env.development .env.production .env.test; do
     echo "post-checkout: linked $env_file from main repo"
   fi
 done
+
+# Gitignored local knowledge base the todo-executor research step greps.
+# The dir symlink also lets codify writes inside the worktree reach the shared
+# store instead of dying when the worktree is removed.
+if [ -d "$MAIN_REPO/docs/solutions" ] && [ ! -e "./docs/solutions" ]; then
+  mkdir -p ./docs
+  ln -s "$MAIN_REPO/docs/solutions" "./docs/solutions"
+  echo "post-checkout: linked docs/solutions from main repo"
+fi
+if [ -f "$MAIN_REPO/docs/LEARNINGS.md" ] && [ ! -e "./docs/LEARNINGS.md" ]; then
+  mkdir -p ./docs
+  ln -s "$MAIN_REPO/docs/LEARNINGS.md" "./docs/LEARNINGS.md"
+  echo "post-checkout: linked docs/LEARNINGS.md from main repo"
+fi

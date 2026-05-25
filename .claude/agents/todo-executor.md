@@ -52,7 +52,50 @@ Check whether this todo is eligible for execution:
 
 **Lightweight path**: Before spawning the researcher, check whether **at least one file was extracted** AND ALL extracted files are documentation or configuration only — paths under `docs/` or `todos/`, or with extensions `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.*rc`, `.*ignore`. If both conditions hold, skip the researcher entirely: read those files directly with the Read tool and proceed to Step 4.
 
-Before implementing (for non-lightweight todos), extract the list of affected source files from the todo's Implementation Notes and Acceptance Criteria (any file references — including fully-qualified paths (`server/routes/cooking.ts`), bare filenames (`` `cooking.ts` ``), and paths with line ranges (`path/to/file.ts:123-145`). Extract paths exactly as they appear in the todo text). Then spawn the `todo-researcher` subagent:
+For non-lightweight todos, **extract the affected source files** from the todo's Implementation Notes and Acceptance Criteria (any file references — fully-qualified paths (`server/routes/cooking.ts`), bare filenames (`` `cooking.ts` ``), and paths with line ranges (`path/to/file.ts:123-145`); extract paths exactly as they appear). Every step below keys off this list.
+
+### Step 3a — Verified-solution read-back (`docs/solutions/`)
+
+The codify step (Step 9) writes verified fixes and conventions into `docs/solutions/`; this step reads them back **first — before the researcher** — so you reuse a known solution instead of re-deriving it, and on a tight match skip the researcher fan-out entirely. Nearly every solution declares an `applies_to:` glob list — use it as the primary match key against the affected files.
+
+1. **Stage 1 — candidate set (cheap grep).** For each affected file, derive its two-segment directory prefix (`server/storage/cookbooks.ts` → `server/storage`; `client/hooks/useFoo.ts` → `client/hooks`) and its top segment (`server`, `client`, `shared`). Union **two** greps per affected file over `^applies_to:` lines, excluding `_manifests/`:
+
+   ```bash
+   # narrow (scoped globs) + broad (top-level ** globs) — both forms exist in the corpus
+   grep -rlE "^applies_to:.*server/storage" docs/solutions --include='*.md' | grep -v _manifests
+   grep -rlE "^applies_to:.*\bserver/\*\*"  docs/solutions --include='*.md' | grep -v _manifests
+   ```
+
+   Both greps are required: a file like `client/components/Foo.tsx` is covered by scoped globs (`client/components/**/*.tsx`) **and** by broad globs (`client/**/*.tsx`); the narrow grep alone misses the broad form (~30 solution files use it). For a top-level affected file (e.g. `shared/schema.ts`) grep the filename and the top segment. Cap the union at ~25 candidates; if it overflows, intersect with a `tags` grep on the todo's labels (`^tags:.*\b<label>\b`) to tighten.
+
+2. **Stage 2 — precise match + rank (candidates only).** Read the frontmatter of the candidate files. Keep a candidate if any of its `applies_to` globs matches a full affected path. Evaluate globs with a POSIX shell `case` test — it is deterministic and treats `*` and `**` identically (both span `/`), so it errs toward inclusion, never exclusion:
+
+   ```bash
+   case "client/components/Foo.tsx" in client/**/*.tsx) echo match ;; esac
+   ```
+
+   Rank the survivors:
+   1. `applies_to` glob matches an affected file (strongest).
+   2. `tags` ∩ todo `labels` — more overlap ranks higher.
+   3. bug-track `symptoms`, or `title` keywords, overlapping the todo title / Implementation Notes.
+
+   Read the **full body of the top 3** only.
+
+3. **Threshold (no weak matches).** Surface a solution only if **either** ≥1 `applies_to` glob matches an affected file, **or** (affected files are empty/unknown) ≥2 tag overlaps with labels AND a title/symptom keyword hit. Otherwise note `No verified solution matched.` and proceed.
+
+4. **Carry forward.** Keep a `verified_solutions` note in context for Step 4 and Step 9, ≤3 entries, each: solution path, match type (`GLOB MATCH` / `TAG MATCH`), and the one-line takeaway from its `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) section. Mark any solution whose `## Related Files` are missing as **stale** — advisory only, never a blind fix (the Short-circuit gate below has the concrete freshness test).
+
+### Short-circuit gate
+
+From the read-back results, check for a **tight match** — a single surfaced solution where **all four** hold:
+
+1. **GLOB MATCH** — at least one `applies_to` glob matches an affected file. A tag-only match never qualifies, and a match via a broad `<top>/**` glob (e.g. `client/**/*.tsx`) does **not** count toward a tight match — only a narrowly-scoped glob does.
+2. **Directly on-task** — you can quote a specific sentence in the solution that names this todo's task. Bug-track: at least one `## Symptoms` entry paraphrases a phrase from the todo's Implementation Notes or Acceptance Criteria. Knowledge-track: the todo's Acceptance Criteria explicitly require enforcing the solution's `## Rule` (not merely "happens to touch a file the rule covers"). **If you cannot quote a specific sentence in the solution that names this todo's task, it is not a tight match.**
+3. **Fresh** — extract every backtick-quoted path containing `/` from the solution's `## Related Files`, resolve each relative to the **repo root**, and `test -e` it; every one must exist. (In your worktree this is reliable: tracked files are checked out and the post-checkout symlinks make `docs/solutions/` paths resolvable, so a missing tracked path means the solution is genuinely stale.) A stale solution never short-circuits.
+4. **Unrivalled** — it is the _only_ tight match. If two or more solutions tightly match, the task spans concerns — do not short-circuit.
+
+- **Tight match** → **short-circuit**: do **not** spawn the researcher. Skip to "In both paths" below, then implement in Step 4 using the matched solution as the primary guide. The short-circuit path relies on **Step 3b** for domain patterns — the label-based researcher fallback below runs only when the researcher was actually spawned and failed. Record `SHORT_CIRCUIT: <solution path>` for your Step 11 report.
+- **No tight match** → spawn the `todo-researcher` subagent for the full fan-out:
 
 ```
 Agent({
@@ -84,7 +127,7 @@ Read the research brief the agent returns. Keep it in context for Step 4 — it 
 
 If the researcher failed and no label matches the table above, read `CLAUDE.md` for general project guidance.
 
-**Regardless of whether the researcher succeeded or fell back**, also do:
+**In both paths (short-circuit or full research)**, also do:
 
 - **Grep `docs/LEARNINGS.md`** for mentions of the affected files or domain area.
 - **Grep `todos/archive/`** for prior todos that touched the same files.
@@ -92,7 +135,7 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 ---
 
-**3b — File-path pattern + rules supplement:** After the researcher returns (or fallback completes), apply the domain mapping below to the source file paths extracted above. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/legacy-patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
+**3b — File-path pattern + rules supplement:** After the read-back and (if it ran) the researcher, apply the domain mapping below to the source file paths extracted above. This runs on both paths — it is how the short-circuit path loads domain patterns. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/legacy-patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
 
 | File path pattern                                                                                                                                   | Additional domains to load                 |
 | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
@@ -117,7 +160,7 @@ Execute the todo:
 0. **Mark in-progress**: Update the todo's YAML frontmatter `status` to `in-progress` before starting work. This signals that the todo is being worked on. Add `todos/<filename>.md` to your tracked-files list now — it must be included in any revert in the Failure Path.
 1. Use the **Acceptance Criteria** as the definition of done. Every checkbox item must be satisfied.
 2. Use the **Implementation Notes** as guidance for approach, but the acceptance criteria take precedence if they conflict.
-3. Apply patterns discovered in Step 3. Follow established conventions — do not introduce new patterns without cause.
+3. Apply patterns discovered in Step 3, including any `verified_solutions` surfaced there — treat a glob-matched solution's `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) as **authoritative guidance**, following it over re-derivation. If a solution conflicts with the todo, Acceptance Criteria win; flag the conflict in your Step 11 report rather than silently diverging. Follow established conventions — do not introduce new patterns without cause.
 4. Consider risks and constraints noted in the todo's **Risks** section. If a risk materializes during implementation, adapt the approach or escalate via the Failure Path.
 5. Keep changes minimal. Only modify what is necessary to satisfy the acceptance criteria. Do not refactor adjacent code, add features, or gold-plate.
 6. **Track all files you modify** during this step — you will need this list for scoped reverts in the Failure Path.
@@ -323,7 +366,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 4. Compose a short description of what was learned: the non-obvious constraint, workaround, reusable rule, or review gap exposed by the todo or by `review_output`.
 
 5. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip routine fixes.
-   - For **solutions**, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
+   - For **solutions**, first check the `verified_solutions` note from Step 3: if a surfaced solution is in the same category and covers the same files/finding, **update that existing file** (extend its body, bump `last_updated`) instead of writing a duplicate. Only when no existing solution covers the finding, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 
@@ -333,7 +376,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
    ```bash
    kimi-write \
-     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. For new files at docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md, use the frontmatter schema in docs/solutions/README.md and the body template for the chosen track (bug or knowledge); create cleanly. For existing agent files, preserve all existing content exactly and add checklist items to the review checklist; update Common Mistakes to Catch when the issue is a recurring failure mode." \
+     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. For new files at docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md, use the frontmatter schema in docs/solutions/README.md and the body template for the chosen track (bug or knowledge); create cleanly. For an existing solution file being updated via the dedup path, preserve its frontmatter and existing body, extend only the relevant section with the new knowledge, and bump last_updated. For existing agent files, preserve all existing content exactly and add checklist items to the review checklist; update Common Mistakes to Catch when the issue is a recurring failure mode." \
      --context <target file> \
      --target <target file>
    ```
@@ -439,6 +482,7 @@ BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "skipped-low-priority" | "null" if PR creation failed>
 CODIFICATION_COMMIT: <commit hash> | none
 FILES_CHANGED: <list of modified files>
+SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (researcher skipped), or "none">
 REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
 DEFERRED_WARNINGS: <one line per unaddressed kimi-review WARNING (description + file path), or "none">
 ```

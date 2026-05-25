@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # PostToolUse(EnterWorktree) + SessionStart hook — give every git worktree under
-# .claude/worktrees/ a node_modules so the TypeScript language server can
-# resolve dependencies.
+# .claude/worktrees/ the gitignored, local-only files it needs but that
+# `git worktree add` does not copy:
+#   - node_modules — so the TypeScript language server can resolve dependencies.
+#   - docs/solutions/ + docs/LEARNINGS.md — the local knowledge base the
+#     todo-executor research step greps; the dir symlink also lets codify writes
+#     inside a worktree land in the shared store instead of dying with the
+#     worktree on cleanup.
 #
 # `git worktree add` copies tracked files only, so a fresh worktree has no
 # node_modules. Without it the worktree's own tsconfig.json — which does
@@ -23,8 +28,9 @@ GIT_COMMON=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 GIT_COMMON=$(cd "$GIT_COMMON" 2>/dev/null && pwd -P) || exit 0
 MAIN_ROOT=$(dirname "$GIT_COMMON")
 
-# Nothing to share if the main checkout has no node_modules of its own.
-[ -d "$MAIN_ROOT/node_modules" ] || exit 0
+# Nothing to share if the main checkout has none of the linkable sources.
+[ -d "$MAIN_ROOT/node_modules" ] || [ -d "$MAIN_ROOT/docs/solutions" ] || \
+  [ -f "$MAIN_ROOT/docs/LEARNINGS.md" ] || exit 0
 
 # Enumerate worktrees precisely via git. This handles worktree names that
 # contain slashes (which a `.claude/worktrees/*/` glob would miss) and reports
@@ -36,10 +42,22 @@ git worktree list --porcelain 2>/dev/null | while read -r key path; do
     *) continue ;;                              # the main checkout, or elsewhere
   esac
   [ -f "$path/package.json" ] || continue       # not a JS project worktree
-  [ -e "$path/node_modules" ] && continue       # real dir or resolvable symlink
-  # Absolute target works at any worktree nesting depth. `-fn` replaces a
-  # dangling symlink left by an earlier run (e.g. main node_modules was moved).
-  ln -sfn "$MAIN_ROOT/node_modules" "$path/node_modules" 2>/dev/null || true
+
+  # Absolute targets work at any worktree nesting depth. `-fn` replaces a
+  # dangling symlink left by an earlier run (e.g. the main source was moved).
+  # Each link is independent and guarded: create only when the main checkout
+  # has the source and the worktree lacks a resolvable copy.
+  if [ -d "$MAIN_ROOT/node_modules" ] && [ ! -e "$path/node_modules" ]; then
+    ln -sfn "$MAIN_ROOT/node_modules" "$path/node_modules" 2>/dev/null || true
+  fi
+  if [ -d "$MAIN_ROOT/docs/solutions" ] && [ ! -e "$path/docs/solutions" ]; then
+    mkdir -p "$path/docs" 2>/dev/null || true
+    ln -sfn "$MAIN_ROOT/docs/solutions" "$path/docs/solutions" 2>/dev/null || true
+  fi
+  if [ -f "$MAIN_ROOT/docs/LEARNINGS.md" ] && [ ! -e "$path/docs/LEARNINGS.md" ]; then
+    mkdir -p "$path/docs" 2>/dev/null || true
+    ln -sfn "$MAIN_ROOT/docs/LEARNINGS.md" "$path/docs/LEARNINGS.md" 2>/dev/null || true
+  fi
 done
 
 exit 0

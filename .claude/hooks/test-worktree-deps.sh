@@ -31,18 +31,28 @@ mkdir -p "$REPO"
   git config user.name test
   echo '{}' > package.json
   mkdir node_modules && touch node_modules/.marker
+  # Gitignored, local-only sources: created in the main checkout but never
+  # committed, so a fresh worktree does not get them (the bug this hook fixes).
+  mkdir -p docs/solutions && touch docs/solutions/.marker
+  printf 'learnings\n' > docs/LEARNINGS.md
   git add package.json && git commit -qm init
 )
 WT="$REPO/.claude/worktrees/sample"
 git -C "$REPO" worktree add -q "$WT" -b sample
 
-# A fresh worktree has no node_modules (the bug this hook fixes).
+# A fresh worktree has none of the gitignored sources (the bug this hook fixes).
 assert_not "fresh worktree starts without node_modules" test -e "$WT/node_modules"
+assert_not "fresh worktree starts without docs/solutions" test -e "$WT/docs/solutions"
+assert_not "fresh worktree starts without docs/LEARNINGS.md" test -e "$WT/docs/LEARNINGS.md"
 
 # Run the hook from inside the worktree (simulates the PostToolUse cwd).
 ( cd "$WT" && bash "$HOOK" )
 assert "hook creates a node_modules symlink" test -L "$WT/node_modules"
 assert "symlink resolves to the main checkout's node_modules" test -e "$WT/node_modules/.marker"
+assert "hook symlinks docs/solutions" test -L "$WT/docs/solutions"
+assert "docs/solutions symlink resolves" test -e "$WT/docs/solutions/.marker"
+assert "hook symlinks docs/LEARNINGS.md" test -L "$WT/docs/LEARNINGS.md"
+assert "docs/LEARNINGS.md symlink resolves" test -e "$WT/docs/LEARNINGS.md"
 
 # Idempotent: a second run from the main checkout leaves the symlink intact.
 ( cd "$REPO" && bash "$HOOK" )
