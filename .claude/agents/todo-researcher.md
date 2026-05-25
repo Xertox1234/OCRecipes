@@ -34,7 +34,7 @@ Scan the `Affected files` list and match each file path against this table to id
 | `*.test.*` or `__tests__/` | Vitest                    |
 | `express`                  | Express.js                |
 
-Collect the unique list of detected package families. A single file can match multiple rows — collect all matches, not just the first. This drives the pinned docs lookups in Step 2.
+Collect the unique list of detected package families. A single file can match multiple rows — collect all matches, not just the first. This drives the Context7 lookups in Step 2.
 
 If `Affected files` is empty or no file paths were provided, skip Step 1 and Step 2a entirely. Proceed directly to Step 2b and 2c using keywords from the todo title and labels.
 
@@ -44,42 +44,42 @@ If `Affected files` is non-empty but no paths match the table above (e.g., all f
 
 ## Step 2: Gather context
 
-Use two turns:
+Context7 docs (2a) need a resolve→query sequence, so use up to three turns:
 
-- **Turn 1**: Fire all Step 2a `fetch_webpage` docs lookups, one Step 2b `github_text_search`, and one Step 2c `mcp_github_search_code` call simultaneously in the same response turn.
-- **Turn 2**: If Step 2b keyword search is weak or empty, run one fallback `github_repo` search against `xertox1234/OCRecipes` before returning the brief.
+- **Turn 1**: Fire all Step 2a `resolve-library-id` calls (one per prioritized library, in parallel with each other), one Step 2b `github_text_search`, and one Step 2c `mcp_github_search_code` call — all simultaneously in the same response turn.
+- **Turn 2**: Fire all Step 2a `query-docs` calls (parallel, one per library that resolved). If Step 2b keyword search was weak or empty, also run the fallback `github_repo` search against `xertox1234/OCRecipes` this turn.
+- **Turn 3** (only if needed): `fetch_webpage` against the pinned URL for any library Context7 could not resolve or answer (see 2a fallback).
 
-Never serialize all calls into a single sequential chain.
+Parallelize within each turn — the `resolve-library-id` calls fire together, and the `query-docs` calls fire together. The only sequencing is resolve → query. Never serialize independent calls into a single sequential chain.
 
-### 2a — Library docs via `fetch_webpage`
+### 2a — Library docs via Context7 (with `fetch_webpage` fallback)
 
-For each library family detected in Step 1:
+Context7 is the **primary** source for library docs — it returns version-current, topic-scoped documentation. Use `fetch_webpage` only as a fallback.
 
-1. Use `fetch_webpage` against the smallest official docs page that matches the todo's topic. Prefer topic-specific API or guide pages when the todo already names the API, hook, component, route, or concept.
-2. Query the fetched docs for:
-   - the specific API or concept mentioned in the todo; derive the topic from the todo's Implementation Notes or Acceptance Criteria when possible
-   - otherwise, use the todo title as the topic
-   - enough result budget to capture current API behavior, gotchas, and deprecations
+The Context7 tools are deferred — load their schemas once with `ToolSearch` (query: `select:mcp__plugin_context7_context7__resolve-library-id,mcp__plugin_context7_context7__query-docs`) before first use. If `ToolSearch` is unavailable or the tools cannot be loaded, skip Context7 and use the `fetch_webpage` fallback for every library.
 
-Pinned fallback docs URL table:
+**Prioritize by the todo, not by detection.** Rank the families detected in Step 1 by how directly the todo's Implementation Notes / Acceptance Criteria name the library, its API surface, or a symbol that belongs to it. "uses `useQuery`" makes TanStack Query a top hit; "touches `client/hooks/`" alone does **not** — that's a path, not a library reference. **If you cannot point to a phrase in the todo that names a library or its API, do not spend a resolve on it.** Take the **top 1–3** libraries only.
 
-| Library family            | URL(s) to fetch with `fetch_webpage`                                                                                                    |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| React Native / Expo       | `https://docs.expo.dev/`, `https://reactnative.dev/docs/getting-started`                                                                |
-| React Navigation          | `https://reactnavigation.org/docs/getting-started/`                                                                                     |
-| TanStack Query            | `https://tanstack.com/query/latest/docs/framework/react/overview`                                                                       |
-| React Native / Reanimated | `https://reactnative.dev/docs/getting-started`, `https://docs.swmansion.com/react-native-reanimated/docs/fundamentals/getting-started/` |
-| Express.js                | `https://expressjs.com/en/5x/api.html`                                                                                                  |
-| Drizzle ORM               | `https://orm.drizzle.team/docs/overview`                                                                                                |
-| OpenAI API                | `https://platform.openai.com/docs/overview`                                                                                             |
-| Zod / TypeScript          | `https://zod.dev/`, `https://www.typescriptlang.org/docs/`                                                                              |
-| Vitest                    | `https://vitest.dev/guide/`                                                                                                             |
+For each prioritized library — **one `resolve-library-id` + one `query-docs`, at most 3 libraries total** (respect Context7's per-tool 3-call cap; do not burn a second resolve to disambiguate):
 
-Use the table above as a fallback seed list when the todo does not give enough information to infer a narrower official docs page.
+1. **Resolve**: `resolve-library-id({ libraryName: "<official name from the table>", query: "<the todo's topic>" })`. Pick the result matching the official org's project with **High or Medium** reputation and the highest snippet count — do **not** blindly take rank 1 (TanStack ships Query/Router/Table; "OpenAI" / "React Native" return siblings). **If no result is High/Medium reputation, treat Context7 as having no entry and fall through to `fetch_webpage`** — never `query-docs` a Low-reputation match.
+2. **Query**: `query-docs({ libraryId: "<resolved /org/project>", query: "<specific question from the todo's Implementation Notes / Acceptance Criteria — the named API, hook, component, route, or concept; fall back to the todo title only if nothing more specific exists>" })`.
 
-If a library family is detected but no URL is listed above, note `No pinned docs URL for <library>.` in the brief.
+Library → Context7 `libraryName` (and the `fetch_webpage` fallback URL):
 
-If `fetch_webpage` returns no useful result for a library, note `No docs available for <library>.` in the brief.
+| Library family            | Context7 `libraryName`    | `fetch_webpage` fallback URL(s)                                                         |
+| ------------------------- | ------------------------- | --------------------------------------------------------------------------------------- |
+| React Native / Expo       | `Expo`, `React Native`    | `https://docs.expo.dev/`, `https://reactnative.dev/docs/getting-started`                |
+| React Navigation          | `React Navigation`        | `https://reactnavigation.org/docs/getting-started/`                                     |
+| TanStack Query            | `TanStack Query`          | `https://tanstack.com/query/latest/docs/framework/react/overview`                       |
+| React Native / Reanimated | `React Native Reanimated` | `https://docs.swmansion.com/react-native-reanimated/docs/fundamentals/getting-started/` |
+| Express.js                | `Express`                 | `https://expressjs.com/en/5x/api.html`                                                  |
+| Drizzle ORM               | `Drizzle ORM`             | `https://orm.drizzle.team/docs/overview`                                                |
+| OpenAI API                | `OpenAI Node`             | `https://platform.openai.com/docs/overview`                                             |
+| Zod / TypeScript          | `Zod`, `TypeScript`       | `https://zod.dev/`, `https://www.typescriptlang.org/docs/`                              |
+| Vitest                    | `Vitest`                  | `https://vitest.dev/guide/`                                                             |
+
+If a detected library is not in the table, resolve it by its official name; on failure use `fetch_webpage` against its official docs. If neither Context7 nor `fetch_webpage` yields a useful result for a library, note `No docs available for <library>.` in the brief.
 
 ### 2b — Repo context via `github_text_search` and `github_repo`
 
@@ -112,7 +112,7 @@ Return the brief using this exact structure (no wrapping code block):
 
 ## Library Notes
 
-[For each library where `fetch_webpage` returned useful results: note current API behavior, version-specific gotchas, deprecation warnings, or relevant configuration. If no docs were available for a specific library, write `No docs available for <library>.` If Step 2a was skipped entirely because no affected files were provided, write `No library lookup performed — no affected files provided.`]
+[For each library where Context7 (or the `fetch_webpage` fallback) returned useful results: note current API behavior, version-specific gotchas, deprecation warnings, or relevant configuration. If no docs were available for a specific library, write `No docs available for <library>.` If Step 2a was skipped entirely because no affected files were provided, write `No library lookup performed — no affected files provided.`]
 
 ## Project Context
 
