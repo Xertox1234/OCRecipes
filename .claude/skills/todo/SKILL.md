@@ -90,7 +90,7 @@ Establish a green baseline before touching any code.
 
 Build the work queue from the `todos/` backlog.
 
-1. Read all `.md` files in `todos/` — **exclude** `README.md`, `TEMPLATE.md`, and anything inside `todos/archive/`.
+1. Read all `.md` files in `todos/` — **exclude** `README.md`, `TEMPLATE.md`, anything inside `todos/archive/`, and anything inside `todos/deployment/` (deployment/scaling work is parked until launch is financially viable).
 2. Parse each file's YAML frontmatter. Extract: `title`, `status`, `priority`, `created`, `labels`.
 3. Filter to **actionable** todos: status is `backlog` or `planned`. Skip any todo with status `in-progress`, `blocked`, `review`, or `done`.
 
