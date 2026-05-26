@@ -33,6 +33,10 @@ describe("useReceiptScan", () => {
     mockCleanupImage.mockResolvedValue(undefined);
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("aborts the in-flight scan fetch when the consumer unmounts", async () => {
     let capturedSignal: AbortSignal | undefined;
     const fetchMock = vi.fn(
@@ -60,7 +64,5 @@ describe("useReceiptScan", () => {
     unmount();
 
     expect(capturedSignal?.aborted).toBe(true);
-
-    vi.unstubAllGlobals();
   });
 });
