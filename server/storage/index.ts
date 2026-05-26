@@ -63,6 +63,7 @@ export const storage = {
   upsertProfileWithOnboarding: users.upsertProfileWithOnboarding,
   updateUserGoalsAndProfile: users.updateUserGoalsAndProfile,
   getSubscriptionStatus: users.getSubscriptionStatus,
+  getEffectiveTierForUser: users.getEffectiveTierForUser,
   updateSubscription: users.updateSubscription,
   getTransaction: users.getTransaction,
   createTransaction: users.createTransaction,

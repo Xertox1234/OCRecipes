@@ -20,6 +20,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getUserMealPlanRecipes: vi.fn(),
     getMealPlanRecipeWithIngredients: vi.fn(),
     getMealPlanRecipe: vi.fn(),
@@ -86,6 +87,7 @@ function mockPremium() {
     tier: "premium",
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 const mockRecipe = createMockMealPlanRecipe({
@@ -98,6 +100,7 @@ describe("Meal Plan Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
 
@@ -712,6 +715,7 @@ describe("Meal Plan Routes", () => {
 
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/meal-plan/items/1/confirm")
@@ -781,6 +785,7 @@ describe("Meal Plan Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/meal-plan/generate-from-pantry")

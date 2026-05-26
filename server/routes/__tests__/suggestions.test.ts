@@ -26,6 +26,7 @@ vi.mock("../../storage", () => ({
     incrementInstructionCacheHit: vi.fn(),
     createInstructionCache: vi.fn(),
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
   },
 }));
 
@@ -65,6 +66,7 @@ describe("Suggestions Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
     // Default to premium so existing assertions exercise the happy path;
     // tests that need the free tier override this explicitly.
@@ -72,11 +74,13 @@ describe("Suggestions Routes", () => {
       tier: "premium",
       expiresAt: null,
     });
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
   });
 
   describe("POST /api/items/:id/suggestions", () => {
     it("returns 403 for non-premium users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/items/1/suggestions")
@@ -170,6 +174,7 @@ describe("Suggestions Routes", () => {
   describe("POST /api/items/:itemId/suggestions/:suggestionIndex/instructions", () => {
     it("returns 403 for non-premium users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/items/1/suggestions/0/instructions")

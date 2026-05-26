@@ -18,6 +18,7 @@ vi.mock("../../storage", () => ({
     getChatMessageById: vi.fn().mockResolvedValue(undefined),
     saveRecipeFromChat: vi.fn(),
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     createChatMessage: vi.fn(),
   },
 }));
@@ -90,6 +91,7 @@ describe("Recipe Chat Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     mockFile.current = VALID_JPEG_HEADER;
     vi.mocked(inferMealTypes).mockReturnValue([]);
     // Default: premium user so the upload-image gate passes unless overridden.
@@ -97,6 +99,7 @@ describe("Recipe Chat Routes", () => {
       tier: "premium",
       expiresAt: null,
     });
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     app = createApp();
   });
 
@@ -355,6 +358,7 @@ describe("Recipe Chat Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/chat/conversations/5/upload-image")

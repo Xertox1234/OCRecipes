@@ -4,17 +4,13 @@ import {
   favouriteRecipes,
   mealPlanRecipes,
   communityRecipes,
-  users,
   type ResolvedFavouriteRecipe,
 } from "@shared/schema";
-import {
-  TIER_FEATURES,
-  isValidSubscriptionTier,
-  resolveEffectiveTier,
-} from "@shared/types/premium";
+import { TIER_FEATURES } from "@shared/types/premium";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { isUniqueViolation } from "../lib/db-errors";
 import { incrementRecipePopularity } from "./canonical-recipes";
+import { getEffectiveTierForUser } from "./users";
 
 export async function toggleFavouriteRecipe(
   userId: string,
@@ -75,25 +71,18 @@ export async function toggleFavouriteRecipe(
       return false;
     }
 
-    const [countResult, [subRow]] = await Promise.all([
+    // `getEffectiveTierForUser` reads via `db` (pool connection), not `tx`. The
+    // tier itself does not race with a toggle in practice, and routing tier
+    // resolution through the canonical helper enforces the expired-premium
+    // downgrade rule by construction.
+    const [countResult, effectiveTier] = await Promise.all([
       tx
         .select({ count: sql<number>`count(*)::int` })
         .from(favouriteRecipes)
         .where(eq(favouriteRecipes.userId, userId)),
-      tx
-        .select({
-          tier: users.subscriptionTier,
-          expiresAt: users.subscriptionExpiresAt,
-        })
-        .from(users)
-        .where(eq(users.id, userId)),
+      getEffectiveTierForUser(userId),
     ]);
     const count = countResult[0]?.count ?? 0;
-    const tierValue = subRow?.tier || "free";
-    const { effectiveTier } = resolveEffectiveTier(
-      isValidSubscriptionTier(tierValue) ? tierValue : "free",
-      subRow?.expiresAt ?? null,
-    );
     const limit = TIER_FEATURES[effectiveTier].maxFavouriteRecipes;
 
     if (count >= limit) {

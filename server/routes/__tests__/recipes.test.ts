@@ -23,6 +23,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getFeaturedRecipes: vi.fn(),
     getUnifiedRecipes: vi.fn(),
     getCommunityRecipes: vi.fn(),
@@ -106,6 +107,7 @@ describe("Recipes Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     // resolveSubscriptionTierFeatures (via the recipe-generation gate) reads
     // the verification streak — default to no streak unless a test overrides it.
     vi.mocked(storage.getUserVerificationStats).mockResolvedValue({
@@ -310,6 +312,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(2);
 
       const res = await request(app)
@@ -328,6 +331,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(generateFullRecipe).mockResolvedValue({
@@ -357,6 +361,7 @@ describe("Recipes Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/recipes/generate")
@@ -372,6 +377,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(100);
 
       const res = await request(app)
@@ -387,6 +393,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
 
       const res = await request(app)
@@ -510,6 +517,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     });
 
     it("searches catalog recipes", async () => {
@@ -540,6 +548,7 @@ describe("Recipes Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/meal-plan/catalog/search?query=chicken")
@@ -557,6 +566,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     });
 
     it("returns catalog recipe detail", async () => {
@@ -587,6 +597,7 @@ describe("Recipes Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/meal-plan/catalog/123")
@@ -603,6 +614,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     });
 
     it("saves a catalog recipe", async () => {
@@ -629,6 +641,7 @@ describe("Recipes Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/meal-plan/catalog/123/save")
@@ -745,6 +758,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyRecipeGenerationCount).mockRejectedValue(
         new Error("DB error"),
       );
@@ -761,6 +775,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(generateFullRecipe).mockRejectedValue(new Error("AI error"));
@@ -867,6 +882,7 @@ describe("Recipes Routes", () => {
     });
 
     it("GET /api/meal-plan/catalog/search returns 500 on service error", async () => {
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(searchCatalogRecipes).mockRejectedValue(
         new Error("Service error"),
       );
@@ -879,6 +895,7 @@ describe("Recipes Routes", () => {
     });
 
     it("GET /api/meal-plan/catalog/:id returns 400 for invalid ID", async () => {
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       const res = await request(app)
         .get("/api/meal-plan/catalog/abc")
         .set("Authorization", "Bearer token");
@@ -887,6 +904,7 @@ describe("Recipes Routes", () => {
     });
 
     it("GET /api/meal-plan/catalog/:id returns 500 on service error", async () => {
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(getCatalogRecipeDetail).mockRejectedValue(
         new Error("Service error"),
       );
@@ -903,6 +921,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 
       const res = await request(app)
         .post("/api/meal-plan/catalog/abc/save")
@@ -916,6 +935,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
         undefined,
       );
@@ -933,6 +953,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.findMealPlanRecipeByExternalId).mockResolvedValue(
         undefined,
       );
@@ -954,6 +975,7 @@ describe("Recipes Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     });
 
     it("returns 403 for free tier (does not call importer)", async () => {
@@ -961,6 +983,7 @@ describe("Recipes Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/meal-plan/recipes/import-url")
@@ -1215,6 +1238,7 @@ describe("Recipes Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
       vi.mocked(importRecipeFromUrl).mockResolvedValue({
         success: true,
         data: {

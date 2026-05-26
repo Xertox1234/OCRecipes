@@ -18,6 +18,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getScannedItem: vi.fn(),
     getDailyLogs: vi.fn(),
     getScannedItemsByIds: vi.fn(),
@@ -47,6 +48,7 @@ function mockPremium() {
     tier: "premium",
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 describe("Micronutrients Routes", () => {
@@ -54,6 +56,7 @@ describe("Micronutrients Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
 
@@ -117,6 +120,7 @@ describe("Micronutrients Routes", () => {
 
     it("returns 403 for free tier users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/micronutrients/item/1")
@@ -175,6 +179,7 @@ describe("Micronutrients Routes", () => {
 
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/micronutrients/daily")
@@ -233,6 +238,7 @@ describe("Micronutrients Routes", () => {
 
     it("returns 403 for free tier users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/micronutrients/lookup?name=chicken+breast")

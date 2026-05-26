@@ -1,6 +1,6 @@
 ---
 title: "Extract a getEffectiveTierForUser(userId) storage helper"
-status: backlog
+status: done
 priority: low
 created: 2026-05-25
 updated: 2026-05-25

@@ -10,6 +10,7 @@ import { createMockHealthKitSync } from "../../__tests__/factories";
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getHealthKitSyncSettings: vi.fn(),
     upsertHealthKitSyncSetting: vi.fn(),
   },
@@ -35,6 +36,7 @@ function mockPremium() {
     tier: "premium",
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 describe("HealthKit Routes", () => {
@@ -42,6 +44,7 @@ describe("HealthKit Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
 
@@ -80,6 +83,7 @@ describe("HealthKit Routes", () => {
 
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/healthkit/sync")
@@ -150,6 +154,7 @@ describe("HealthKit Routes", () => {
 
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .put("/api/healthkit/settings")

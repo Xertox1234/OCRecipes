@@ -34,6 +34,7 @@ vi.mock("../../storage", async () => {
   return {
     storage: {
       getSubscriptionStatus: vi.fn(),
+      getEffectiveTierForUser: vi.fn(),
       getUserProfile: vi.fn(),
       createScannedItemWithLog: vi.fn(),
       getDailyRecipeGenerationCount: vi.fn().mockResolvedValue(0),
@@ -133,6 +134,7 @@ function setupPremiumMock() {
     tier: "premium" as const,
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 function setupFreeMock() {
@@ -140,6 +142,7 @@ function setupFreeMock() {
     tier: "free" as const,
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 }
 
 const mockIngredient: CookingSessionIngredient = {
@@ -158,6 +161,7 @@ describe("Cooking Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     cookingSessionStore._internals.store.clear();
     cookingSessionStore._internals.userCount.clear();
     // Clear any pending timeouts
@@ -1081,6 +1085,7 @@ describe("Cooking Routes", () => {
         tier: "premium" as const,
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     });
 
     it("stores sourceCommunityRecipeId on the session when provided", async () => {

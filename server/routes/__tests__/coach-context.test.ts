@@ -15,6 +15,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getUserProfile: vi.fn(),
     getUser: vi.fn(),
     getDailySummary: vi.fn(),
@@ -47,6 +48,7 @@ function setupPremiumMock() {
     tier: "premium" as const,
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 /** Set up storage mocks so checkPremiumFeature returns a free subscription. */
@@ -55,6 +57,7 @@ function setupFreeMock() {
     tier: "free" as const,
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 }
 
 describe("Coach Context Routes", () => {
@@ -62,6 +65,7 @@ describe("Coach Context Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
 

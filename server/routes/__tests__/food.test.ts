@@ -13,6 +13,7 @@ import { storage } from "../../storage";
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
   },
 }));
 
@@ -71,6 +72,7 @@ describe("Food Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
     // Default to premium so existing assertions exercise the happy path;
     // tests that need the free tier override this explicitly.
@@ -78,11 +80,13 @@ describe("Food Routes", () => {
       tier: "premium",
       expiresAt: null,
     });
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
   });
 
   describe("POST /api/food/parse-text", () => {
     it("returns 403 for non-premium users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/food/parse-text")
@@ -151,6 +155,7 @@ describe("Food Routes", () => {
   describe("POST /api/food/transcribe", () => {
     it("returns 403 for non-premium users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/food/transcribe")
@@ -169,6 +174,7 @@ describe("Food Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 
       const res = await request(app)
         .post("/api/food/transcribe")
@@ -183,6 +189,7 @@ describe("Food Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(transcribeAudio).mockResolvedValue("chicken breast and rice");
       vi.mocked(parseNaturalLanguageFood).mockResolvedValue(mockParsedItems);
 
@@ -204,6 +211,7 @@ describe("Food Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(transcribeAudio).mockResolvedValue("   ");
 
       const res = await request(app)

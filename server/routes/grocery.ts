@@ -4,12 +4,7 @@ import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import {
-  TIER_FEATURES,
-  isValidSubscriptionTier,
-  applyStreakUnlocks,
-  resolveEffectiveTier,
-} from "@shared/types/premium";
+import { TIER_FEATURES, applyStreakUnlocks } from "@shared/types/premium";
 import { resolveVerificationStreak } from "../services/verification-streak-cache";
 import { isValidCalendarDate } from "../utils/date-validation";
 import {
@@ -102,16 +97,13 @@ export function register(app: Express): void {
 
         // Enforce date range limit based on subscription tier. A verification
         // streak can unlock extendedPlanRange for free-tier users, so the
-        // feature set is resolved through applyStreakUnlocks.
-        const [subscription, streak] = await Promise.all([
-          storage.getSubscriptionStatus(req.userId),
+        // feature set is resolved through applyStreakUnlocks. Tier resolution
+        // (including expired-premium downgrade) goes through the canonical
+        // `getEffectiveTierForUser` helper.
+        const [effectiveTier, streak] = await Promise.all([
+          storage.getEffectiveTierForUser(req.userId),
           resolveVerificationStreak(req.userId),
         ]);
-        const tierValue = subscription?.tier || "free";
-        const { effectiveTier } = resolveEffectiveTier(
-          isValidSubscriptionTier(tierValue) ? tierValue : "free",
-          subscription?.expiresAt ?? null,
-        );
         const features = applyStreakUnlocks(
           TIER_FEATURES[effectiveTier],
           streak,

@@ -37,6 +37,7 @@ function createMockMealSuggestion(
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getDailyMealSuggestionCount: vi.fn(),
     getUserProfile: vi.fn(),
     getUser: vi.fn(),
@@ -79,6 +80,7 @@ describe("Meal Suggestions Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
 
@@ -88,6 +90,7 @@ describe("Meal Suggestions Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(0);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getUser).mockResolvedValue(
@@ -127,6 +130,7 @@ describe("Meal Suggestions Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(1);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
@@ -174,6 +178,7 @@ describe("Meal Suggestions Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/meal-plan/suggest")
@@ -189,6 +194,7 @@ describe("Meal Suggestions Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(100);
 
       const res = await request(app)
@@ -222,6 +228,7 @@ describe("Meal Suggestions Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(0);
       vi.mocked(storage.getUserProfile).mockRejectedValue(
         new Error("DB error"),
@@ -242,6 +249,7 @@ describe("Meal Suggestions Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getDailyMealSuggestionCount).mockResolvedValue(0);
       vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
       vi.mocked(storage.getUser).mockResolvedValue(

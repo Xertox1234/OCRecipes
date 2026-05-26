@@ -10,18 +10,14 @@ import {
   favouriteScannedItems,
   mealPlanItems,
   mealPlanRecipes,
-  users,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
-import {
-  TIER_FEATURES,
-  isValidSubscriptionTier,
-  resolveEffectiveTier,
-} from "@shared/types/premium";
+import { TIER_FEATURES } from "@shared/types/premium";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, isNull, inArray } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 import { isUniqueViolation } from "../lib/db-errors";
+import { getEffectiveTierForUser } from "./users";
 
 // ============================================================================
 // SCANNED ITEMS
@@ -445,27 +441,20 @@ export async function createSavedItem(
   userId: string,
   itemData: CreateSavedItemInput,
 ): Promise<SavedItem | null> {
-  // Wrap in transaction to prevent TOCTOU race on tier limit check
+  // Resolve the effective tier OUTSIDE the transaction — `getEffectiveTierForUser`
+  // applies the expired-premium downgrade and uses the canonical single-call path.
+  // Tier changes do not race in practice with limit-checked inserts, so a separate
+  // pool connection for this read is acceptable (and matches `getSubscriptionStatus`).
+  const effectiveTier = await getEffectiveTierForUser(userId);
+  const limit = TIER_FEATURES[effectiveTier].maxSavedItems;
+
+  // Wrap the count + insert in a transaction to prevent TOCTOU race on the count.
   return db.transaction(async (tx) => {
     const countResult = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(savedItems)
       .where(eq(savedItems.userId, userId));
     const count = countResult[0]?.count ?? 0;
-
-    const [subRow] = await tx
-      .select({
-        tier: users.subscriptionTier,
-        expiresAt: users.subscriptionExpiresAt,
-      })
-      .from(users)
-      .where(eq(users.id, userId));
-    const tierValue = subRow?.tier || "free";
-    const { effectiveTier } = resolveEffectiveTier(
-      isValidSubscriptionTier(tierValue) ? tierValue : "free",
-      subRow?.expiresAt ?? null,
-    );
-    const limit = TIER_FEATURES[effectiveTier].maxSavedItems;
 
     if (count >= limit) {
       return null; // Signal limit reached

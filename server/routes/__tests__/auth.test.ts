@@ -34,6 +34,7 @@ vi.mock("../../storage", () => ({
     updateUser: vi.fn(),
     incrementTokenVersion: vi.fn(),
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     deleteUser: vi.fn(),
   },
 }));
@@ -883,6 +884,7 @@ describe("Auth Routes", () => {
 describe("_helpers utility functions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
   });
 
   describe("parsePositiveIntParam", () => {
@@ -1071,6 +1073,7 @@ describe("_helpers utility functions", () => {
   describe("getPremiumFeatures", () => {
     it("returns free tier features when no subscription", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
       const req = mockExpressReq({ userId: "1" });
       const features = await getPremiumFeatures(req);
       expect(features.maxDailyScans).toBe(3);
@@ -1082,6 +1085,7 @@ describe("_helpers utility functions", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       const req = mockExpressReq({ userId: "1" });
       const features = await getPremiumFeatures(req);
       expect(features.maxDailyScans).toBe(999999);
@@ -1105,6 +1109,7 @@ describe("_helpers utility functions", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       const req = mockExpressReq({ userId: "1" });
       const res = mockExpressRes();
       const features = await checkPremiumFeature(
@@ -1119,6 +1124,7 @@ describe("_helpers utility functions", () => {
 
     it("sends 403 and returns null when user lacks the feature", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
       const req = mockExpressReq({ userId: "1" });
       const res = mockExpressRes();
       const features = await checkPremiumFeature(
