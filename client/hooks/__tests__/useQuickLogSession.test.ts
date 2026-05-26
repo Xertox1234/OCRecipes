@@ -138,6 +138,55 @@ describe("useQuickLogSession", () => {
     expect(result.current.parsedItems[0].name).toBe("coffee");
   });
 
+  it("removeItem is a no-op while a log submit is in flight", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          items: [
+            {
+              name: "eggs",
+              quantity: 2,
+              unit: "large",
+              calories: 143,
+              protein: 12,
+              carbs: 1,
+              fat: 10,
+              servingSize: null,
+            },
+            {
+              name: "coffee",
+              quantity: 1,
+              unit: "cup",
+              calories: 5,
+              protein: 0,
+              carbs: 1,
+              fat: 0,
+              servingSize: null,
+            },
+          ],
+        }),
+    });
+    // logAll POSTs hang so the submit stays in flight
+    mockApiRequest.mockReturnValue(new Promise(() => {}));
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("2 eggs and coffee"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(2));
+
+    act(() => result.current.submitLog());
+    await waitFor(() => expect(result.current.isSubmitting).toBe(true));
+
+    // Removing mid-submit must be ignored — the list is frozen so onError's
+    // failedIndices stay aligned with the submitted array.
+    act(() => result.current.removeItem(0));
+    expect(result.current.parsedItems).toHaveLength(2);
+  });
+
   it("calls onLogSuccess with summary after submitLog succeeds", async () => {
     const { wrapper } = createQueryWrapper();
     const onLogSuccess = vi.fn();

@@ -60,6 +60,11 @@ export function useQuickLogSession({
   // or fire a haptic for an abandoned session (TanStack v5 has no mutation cancel).
   const sessionEpochRef = useRef(0);
 
+  // Mirror of logAllMutation.isPending so the zero-dep removeItem callback can
+  // freeze the list during a submit — onError computes failedIndices against the
+  // submitted array, so removing an item mid-flight corrupts the partial-retry set.
+  const isSubmittingRef = useRef(false);
+
   const {
     isListening,
     transcript,
@@ -146,6 +151,9 @@ export function useQuickLogSession({
   }, [isListening, startListening, stopListening, haptics]);
 
   const removeItem = useCallback((index: number) => {
+    // Frozen while a log submit is in flight (see isSubmittingRef) so the
+    // onError partial-retry handler's index math stays valid.
+    if (isSubmittingRef.current) return;
     setParsedItems((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
@@ -263,6 +271,10 @@ export function useQuickLogSession({
   });
 
   const { mutate: logAllMutate } = logAllMutation;
+
+  useEffect(() => {
+    isSubmittingRef.current = logAllMutation.isPending;
+  }, [logAllMutation.isPending]);
 
   const submitLog = useCallback(() => {
     if (parsedItems.length === 0) return;
