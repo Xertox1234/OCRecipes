@@ -11,6 +11,7 @@ import { register } from "../menu";
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     createMenuScan: vi.fn(),
     getMenuScans: vi.fn(),
     deleteMenuScan: vi.fn(),
@@ -72,6 +73,7 @@ function mockPremium() {
     tier: "premium" as const,
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 describe("Menu Routes", () => {
@@ -79,6 +81,7 @@ describe("Menu Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     simulateNoFile = false;
     app = createApp();
   });
@@ -129,6 +132,7 @@ describe("Menu Routes", () => {
 
     it("returns 403 for free tier users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/menu/scan")
@@ -194,6 +198,7 @@ describe("Menu Routes", () => {
 
     it("returns 403 for free tier users", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/menu/history")

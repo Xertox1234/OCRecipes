@@ -30,6 +30,7 @@ vi.mock("../../storage", async () => {
     MAX_IMAGE_SIZE_BYTES: sessions.MAX_IMAGE_SIZE_BYTES,
     storage: {
       getSubscriptionStatus: vi.fn(),
+      getEffectiveTierForUser: vi.fn(),
       getDailyScanCount: vi.fn(),
       createScannedItem: vi.fn(),
       createDailyLog: vi.fn(),
@@ -118,6 +119,7 @@ describe("Photos Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     // Reset to valid JPEG buffer for magic-byte validation
     mockFileBuffer.current = VALID_JPEG_HEADER;
     // Clear pending timeouts before clearing maps to prevent leaks
@@ -144,6 +146,7 @@ describe("Photos Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(analyzePhoto).mockResolvedValue({
         foods: [
           {
@@ -191,6 +194,7 @@ describe("Photos Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/photos/analyze")
@@ -206,6 +210,7 @@ describe("Photos Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(analyzePhoto).mockRejectedValue(new Error("Vision API down"));
 
       const res = await request(app)
@@ -222,6 +227,7 @@ describe("Photos Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(analyzePhoto).mockResolvedValue({
         foods: [
           {
@@ -305,6 +311,7 @@ describe("Photos Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(analyzePhoto).mockResolvedValue({
         foods: [
           {
@@ -669,6 +676,7 @@ describe("Photos Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/photos/analyze-recipe")
@@ -683,6 +691,7 @@ describe("Photos Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(analyzeRecipePhoto).mockResolvedValue({
         title: "Pancakes",
         description: "Fluffy pancakes",
@@ -716,6 +725,7 @@ describe("Photos Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(analyzeRecipePhoto).mockRejectedValue(
         new Error("Vision API down"),
       );

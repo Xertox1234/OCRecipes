@@ -46,6 +46,7 @@ vi.mock("express-rate-limit");
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getUserProfile: vi.fn(),
     findMealPlanRecipeByExternalId: vi.fn(),
     createMealPlanRecipe: vi.fn(),
@@ -64,11 +65,13 @@ describe("recipe-catalog routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     // Default: premium user (most handlers require it).
     vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
       tier: "premium",
       expiresAt: null,
     });
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
     app = createApp();
   });
@@ -97,6 +100,7 @@ describe("recipe-catalog routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/meal-plan/catalog/search?query=chicken")
@@ -197,6 +201,7 @@ describe("recipe-catalog routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/meal-plan/catalog/123")
@@ -259,6 +264,7 @@ describe("recipe-catalog routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/meal-plan/catalog/123/save")

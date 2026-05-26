@@ -17,6 +17,7 @@ vi.mock("express-rate-limit");
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getDailyRecipeGenerationCount: vi.fn(),
     getUserProfile: vi.fn(),
     logRecipeGenerationWithLimitCheck: vi.fn(),
@@ -35,11 +36,13 @@ describe("POST /api/meal-plan/recipes/generate", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     // Default: premium user with available daily quota
     vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
       tier: "premium",
       expiresAt: null,
     });
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
     vi.mocked(storage.getDailyRecipeGenerationCount).mockResolvedValue(0);
     vi.mocked(storage.getUserProfile).mockResolvedValue(undefined);
     vi.mocked(storage.logRecipeGenerationWithLimitCheck).mockResolvedValue(
@@ -53,6 +56,7 @@ describe("POST /api/meal-plan/recipes/generate", () => {
       tier: "free",
       expiresAt: null,
     });
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
     const res = await request(app)
       .post("/api/meal-plan/recipes/generate")

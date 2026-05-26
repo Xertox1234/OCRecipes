@@ -35,6 +35,7 @@ const {
   createUserProfile,
   updateUserProfile,
   getSubscriptionStatus,
+  getEffectiveTierForUser,
   updateSubscription,
   getTransaction,
   createTransaction,
@@ -281,6 +282,49 @@ describe("users storage", () => {
       const status = await getSubscriptionStatus(testUser.id);
       expect(status).toBeDefined();
       expect(status!.tier).toBe("free");
+    });
+  });
+
+  describe("getEffectiveTierForUser", () => {
+    it("returns 'free' for a new user (default tier)", async () => {
+      const tier = await getEffectiveTierForUser(testUser.id);
+      expect(tier).toBe("free");
+    });
+
+    it("returns 'premium' for active premium (no expiry)", async () => {
+      await updateSubscription(testUser.id, "premium", null);
+      const tier = await getEffectiveTierForUser(testUser.id);
+      expect(tier).toBe("premium");
+    });
+
+    it("returns 'premium' for active premium (future expiry)", async () => {
+      const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      await updateSubscription(testUser.id, "premium", future);
+      const tier = await getEffectiveTierForUser(testUser.id);
+      expect(tier).toBe("premium");
+    });
+
+    it("downgrades to 'free' when premium has expired", async () => {
+      const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      await updateSubscription(testUser.id, "premium", past);
+      const tier = await getEffectiveTierForUser(testUser.id);
+      expect(tier).toBe("free");
+    });
+
+    it("returns 'free' for a non-existent user (fail-closed)", async () => {
+      const tier = await getEffectiveTierForUser(
+        "00000000-0000-0000-0000-000000000000",
+      );
+      expect(tier).toBe("free");
+    });
+
+    it("falls back to 'free' when stored tier is invalid", async () => {
+      await tx
+        .update(users)
+        .set({ subscriptionTier: "gold_ultra" })
+        .where(eq(users.id, testUser.id));
+      const tier = await getEffectiveTierForUser(testUser.id);
+      expect(tier).toBe("free");
     });
   });
 

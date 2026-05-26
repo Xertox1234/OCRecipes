@@ -15,6 +15,7 @@ import type { Glp1Insights } from "@shared/types/medication";
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getMedicationLogs: vi.fn(),
     createMedicationLog: vi.fn(),
     updateMedicationLog: vi.fn(),
@@ -45,6 +46,7 @@ function mockPremium() {
     tier: "premium",
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 const mockLog = createMockMedicationLog({
@@ -62,6 +64,7 @@ describe("Medication Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
 
@@ -80,6 +83,7 @@ describe("Medication Routes", () => {
 
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/medication/logs")

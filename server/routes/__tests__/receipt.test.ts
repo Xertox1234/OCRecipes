@@ -14,6 +14,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getMonthlyReceiptScanCount: vi.fn(),
     createReceiptScan: vi.fn(),
     createPantryItems: vi.fn(),
@@ -86,6 +87,7 @@ function setupPremiumMock() {
     tier: "premium",
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 function setupFreeMock() {
@@ -93,6 +95,7 @@ function setupFreeMock() {
     tier: "free",
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 }
 
 describe("Receipt Routes", () => {
@@ -100,6 +103,7 @@ describe("Receipt Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     mockFiles.current = [
       {
         buffer: Buffer.from("fake-image"),

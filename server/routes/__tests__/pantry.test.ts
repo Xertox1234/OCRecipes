@@ -9,6 +9,7 @@ import { createMockPantryItem } from "../../__tests__/factories";
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getPantryItems: vi.fn(),
     getPantryItemCount: vi.fn().mockResolvedValue(0),
     createPantryItem: vi.fn(),
@@ -34,6 +35,7 @@ function mockPremium() {
     tier: "premium",
     expiresAt: null,
   });
+  vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 }
 
 const mockItem = createMockPantryItem({
@@ -48,6 +50,7 @@ describe("Pantry Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
 
@@ -66,6 +69,7 @@ describe("Pantry Routes", () => {
 
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/pantry")
@@ -103,6 +107,7 @@ describe("Pantry Routes", () => {
 
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/pantry")
@@ -219,6 +224,7 @@ describe("Pantry Routes", () => {
 
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .get("/api/pantry/expiring")

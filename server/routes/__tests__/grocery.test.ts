@@ -17,6 +17,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getUser: vi.fn(),
     getUserProfile: vi.fn().mockResolvedValue(null),
     getGroceryListCount: vi.fn(),
@@ -81,6 +82,7 @@ describe("Grocery Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     streakCacheInternals.streakCache.clear();
     vi.mocked(storage.getUserVerificationStats).mockResolvedValue(
       noStreakStats,
@@ -377,7 +379,7 @@ describe("Grocery Routes", () => {
 
   describe("Error paths", () => {
     it("POST /api/meal-plan/grocery-lists returns 500 on storage error", async () => {
-      vi.mocked(storage.getSubscriptionStatus).mockRejectedValue(
+      vi.mocked(storage.getEffectiveTierForUser).mockRejectedValue(
         new Error("DB error"),
       );
 
@@ -508,6 +510,7 @@ describe("Grocery Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
       vi.mocked(storage.getGroceryLists).mockResolvedValue([]);
 
       const res = await request(app)
@@ -524,6 +527,7 @@ describe("Grocery Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
       vi.mocked(storage.getUserVerificationStats).mockResolvedValue({
         ...noStreakStats,
         count: 7,
@@ -552,6 +556,7 @@ describe("Grocery Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
       vi.mocked(storage.getUserVerificationStats).mockResolvedValue({
         ...noStreakStats,
         count: 6,
@@ -581,6 +586,7 @@ describe("Grocery Routes", () => {
   describe("POST /api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry", () => {
     it("returns 403 for free tier", async () => {
       vi.mocked(storage.getSubscriptionStatus).mockResolvedValue(undefined);
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists/1/items/1/add-to-pantry")
@@ -595,6 +601,7 @@ describe("Grocery Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
         ...mockList,
         items: [
@@ -622,6 +629,7 @@ describe("Grocery Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
 
       const res = await request(app)
         .post("/api/meal-plan/grocery-lists/abc/items/1/add-to-pantry")
@@ -635,6 +643,7 @@ describe("Grocery Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getGroceryListWithItems).mockResolvedValue(undefined);
 
       const res = await request(app)
@@ -649,6 +658,7 @@ describe("Grocery Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
         ...mockList,
         items: [createMockGroceryListItem({ name: "Milk" })],
@@ -666,6 +676,7 @@ describe("Grocery Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
         ...mockList,
         items: [createMockGroceryListItem({ name: "Milk" })],

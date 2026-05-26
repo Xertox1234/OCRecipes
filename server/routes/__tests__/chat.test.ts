@@ -21,6 +21,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getSubscriptionStatus: vi.fn(),
+    getEffectiveTierForUser: vi.fn(),
     getChatConversations: vi.fn(),
     createChatConversation: vi.fn(),
     getChatConversation: vi.fn(),
@@ -89,6 +90,7 @@ describe("Chat Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
 
@@ -324,6 +326,7 @@ describe("Chat Routes", () => {
         tier: "free",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
       vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
         null,
       );
@@ -346,6 +349,7 @@ describe("Chat Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
         null,
       );
@@ -367,6 +371,7 @@ describe("Chat Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({
           dailyCalorieGoal: 2000,
@@ -579,6 +584,7 @@ describe("Chat Routes", () => {
         tier: "premium",
         expiresAt: null,
       });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("premium");
       vi.mocked(storage.getUser).mockResolvedValue(undefined);
 
       const res = await request(app)
