@@ -143,7 +143,7 @@ export function register(app: Express): void {
         if (cached) {
           await storage.incrementMealSuggestionCacheHit(cached.id);
           const remaining = features.dailyAiSuggestions - dailyCount;
-          const cachedSuggestions = cached.suggestions as MealSuggestion[];
+          const cachedSuggestions = cached.suggestions;
           const popularPicks = await fetchDeduplicatedPopularPicks(
             req.userId,
             parsed.data.mealType,
