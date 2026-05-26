@@ -88,6 +88,7 @@ export function useSpeechToText() {
   }, []);
 
   const stopListening = useCallback(() => {
+    startedRef.current = false;
     ExpoSpeechRecognitionModule.stop();
   }, []);
 

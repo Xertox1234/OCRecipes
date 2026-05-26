@@ -272,9 +272,10 @@ export function useQuickLogSession({
 
   const { mutate: logAllMutate } = logAllMutation;
 
-  useEffect(() => {
-    isSubmittingRef.current = logAllMutation.isPending;
-  }, [logAllMutation.isPending]);
+  // Sync at render time (not via useEffect, which runs post-paint) so the
+  // removeItem guard has no one-frame lag when a submit starts — the freeze
+  // must hold from the exact render that begins the in-flight mutation.
+  isSubmittingRef.current = logAllMutation.isPending;
 
   const submitLog = useCallback(() => {
     if (parsedItems.length === 0) return;
