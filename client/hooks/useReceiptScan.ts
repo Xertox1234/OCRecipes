@@ -133,6 +133,9 @@ export function useReceiptScan() {
         }
         return parsed.data;
       } finally {
+        // Runs on success AND on AbortError (unmount-mid-scan): the abort
+        // rejects fetch, which propagates here; the temp compressed files must
+        // be cleaned regardless. TanStack Query catches the rejection internally.
         await Promise.all(compressedUris.map((uri) => cleanupImage(uri)));
       }
     },

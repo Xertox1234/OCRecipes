@@ -272,9 +272,12 @@ export function useQuickLogSession({
 
   const { mutate: logAllMutate } = logAllMutation;
 
-  // Sync at render time (not via useEffect, which runs post-paint) so the
-  // removeItem guard has no one-frame lag when a submit starts — the freeze
-  // must hold from the exact render that begins the in-flight mutation.
+  // DO NOT replace with `useEffect(() => { isSubmittingRef.current = ... }, [...])`.
+  // useEffect runs post-paint, leaving a one-frame window where the removeItem
+  // guard sees the stale value just as a submit starts — corrupting onError's
+  // failedIndices vs the submitted array. Assigning at render time is the
+  // React-sanctioned "store latest value" pattern (idempotent, deterministic,
+  // Strict-mode-safe). See docs/rules/hooks.md exception.
   isSubmittingRef.current = logAllMutation.isPending;
 
   const submitLog = useCallback(() => {
