@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
@@ -82,6 +82,18 @@ export function useSpeechToText() {
 
   const stopListening = useCallback(() => {
     ExpoSpeechRecognitionModule.stop();
+  }, []);
+
+  // Tear down the recognizer if the component unmounts mid-listen — otherwise
+  // the native module keeps recording and its events setState an unmounted hook.
+  // abort() (not stop()) ends immediately without a final-result event; gated on
+  // activeRef so an idle unmount doesn't fire a spurious aborted-error event.
+  useEffect(() => {
+    return () => {
+      if (activeRef.current) {
+        ExpoSpeechRecognitionModule.abort();
+      }
+    };
   }, []);
 
   return {

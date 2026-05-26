@@ -3,11 +3,13 @@ import { renderHook, act } from "@testing-library/react";
 
 import { useSpeechToText } from "../useSpeechToText";
 
-const { mockRequestPermissionsAsync, mockStart, mockStop } = vi.hoisted(() => ({
-  mockRequestPermissionsAsync: vi.fn(),
-  mockStart: vi.fn(),
-  mockStop: vi.fn(),
-}));
+const { mockRequestPermissionsAsync, mockStart, mockStop, mockAbort } =
+  vi.hoisted(() => ({
+    mockRequestPermissionsAsync: vi.fn(),
+    mockStart: vi.fn(),
+    mockStop: vi.fn(),
+    mockAbort: vi.fn(),
+  }));
 
 // Collect event listeners registered by useSpeechRecognitionEvent
 const eventListeners: Record<string, (event: unknown) => void> = {};
@@ -17,6 +19,7 @@ vi.mock("expo-speech-recognition", () => ({
     requestPermissionsAsync: () => mockRequestPermissionsAsync(),
     start: (opts: unknown) => mockStart(opts),
     stop: () => mockStop(),
+    abort: () => mockAbort(),
   },
   useSpeechRecognitionEvent: (
     eventName: string,
@@ -178,5 +181,23 @@ describe("useSpeechToText", () => {
       result.current.stopListening();
     });
     expect(mockStop).toHaveBeenCalledOnce();
+  });
+
+  it("aborts the recognizer on unmount while listening", () => {
+    const { result, unmount } = renderHook(() => useSpeechToText());
+
+    act(() => {
+      eventListeners["start"]?.(null);
+    });
+    expect(result.current.isListening).toBe(true);
+
+    unmount();
+    expect(mockAbort).toHaveBeenCalledOnce();
+  });
+
+  it("does not abort on unmount when idle", () => {
+    const { unmount } = renderHook(() => useSpeechToText());
+    unmount();
+    expect(mockAbort).not.toHaveBeenCalled();
   });
 });
