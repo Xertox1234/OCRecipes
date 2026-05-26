@@ -55,6 +55,16 @@ export function useQuickLogSession({
   // without this the effect re-parses on every mutation settle (isParsing toggle).
   const autoParsedTranscriptRef = useRef<string | null>(null);
 
+  // Bumped on reset() to invalidate any parse still in flight. A parse that
+  // resolves after the session was cleared must not repopulate dismissed items
+  // or fire a haptic for an abandoned session (TanStack v5 has no mutation cancel).
+  const sessionEpochRef = useRef(0);
+
+  // Mirror of logAllMutation.isPending so the zero-dep removeItem callback can
+  // freeze the list during a submit — onError computes failedIndices against the
+  // submitted array, so removing an item mid-flight corrupts the partial-retry set.
+  const isSubmittingRef = useRef(false);
+
   const {
     isListening,
     transcript,
@@ -90,14 +100,17 @@ export function useQuickLogSession({
       autoParsedTranscriptRef.current = transcript;
       setInputText(transcript);
       setParseError(null);
+      const epoch = sessionEpochRef.current;
       parseFoodTextMutate(transcript, {
         onSuccess: (data) => {
+          if (sessionEpochRef.current !== epoch) return;
           setParsedItems(
             data.items.map((item) => ({ ...item, sourceType: "voice" })),
           );
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
         onError: () => {
+          if (sessionEpochRef.current !== epoch) return;
           haptics.notification(Haptics.NotificationFeedbackType.Error);
           setParseError("Failed to parse food text. Please try again.");
         },
@@ -111,14 +124,17 @@ export function useQuickLogSession({
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     const source = pendingSourceRef.current;
     pendingSourceRef.current = "text";
+    const epoch = sessionEpochRef.current;
     parseFoodTextMutate(inputText.trim(), {
       onSuccess: (data) => {
+        if (sessionEpochRef.current !== epoch) return;
         setParsedItems(
           data.items.map((item) => ({ ...item, sourceType: source })),
         );
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
       onError: () => {
+        if (sessionEpochRef.current !== epoch) return;
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         setParseError("Failed to parse food text. Please try again.");
       },
@@ -135,6 +151,9 @@ export function useQuickLogSession({
   }, [isListening, startListening, stopListening, haptics]);
 
   const removeItem = useCallback((index: number) => {
+    // Frozen while a log submit is in flight (see isSubmittingRef) so the
+    // onError partial-retry handler's index math stays valid.
+    if (isSubmittingRef.current) return;
     setParsedItems((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
@@ -253,6 +272,14 @@ export function useQuickLogSession({
 
   const { mutate: logAllMutate } = logAllMutation;
 
+  // DO NOT replace with `useEffect(() => { isSubmittingRef.current = ... }, [...])`.
+  // useEffect runs post-paint, leaving a one-frame window where the removeItem
+  // guard sees the stale value just as a submit starts — corrupting onError's
+  // failedIndices vs the submitted array. Assigning at render time is the
+  // React-sanctioned "store latest value" pattern (idempotent, deterministic,
+  // Strict-mode-safe). See docs/rules/hooks.md exception.
+  isSubmittingRef.current = logAllMutation.isPending;
+
   const submitLog = useCallback(() => {
     if (parsedItems.length === 0) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
@@ -261,6 +288,7 @@ export function useQuickLogSession({
 
   const reset = useCallback(() => {
     if (isListening) stopListening();
+    sessionEpochRef.current += 1;
     setInputText("");
     setParsedItems([]);
     setParseError(null);

@@ -217,6 +217,41 @@ describe("favourite-recipes storage", () => {
         expect(result).toBe(true);
       }
     });
+
+    it("enforces the free-tier limit when premium has expired", async () => {
+      const { eq } = await import("drizzle-orm");
+      // Premium tier but expired yesterday → effective tier is free (limit 20)
+      await tx
+        .update(users)
+        .set({
+          subscriptionTier: "premium",
+          subscriptionExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        })
+        .where(eq(users.id, testUser.id));
+
+      for (let i = 0; i < 20; i++) {
+        const recipe = await createTestMealPlanRecipe(testUser.id, {
+          title: `Expired Recipe ${i}`,
+        });
+        const result = await toggleFavouriteRecipe(
+          testUser.id,
+          recipe.id,
+          "mealPlan",
+        );
+        expect(result).toBe(true);
+      }
+
+      // 21st is rejected: an expired-premium subscription downgrades to free.
+      const extra = await createTestMealPlanRecipe(testUser.id, {
+        title: "Expired Extra",
+      });
+      const result = await toggleFavouriteRecipe(
+        testUser.id,
+        extra.id,
+        "mealPlan",
+      );
+      expect(result).toBe(null);
+    });
   });
 
   // --------------------------------------------------------------------------

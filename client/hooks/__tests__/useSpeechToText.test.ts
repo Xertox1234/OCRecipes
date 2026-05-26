@@ -3,11 +3,13 @@ import { renderHook, act } from "@testing-library/react";
 
 import { useSpeechToText } from "../useSpeechToText";
 
-const { mockRequestPermissionsAsync, mockStart, mockStop } = vi.hoisted(() => ({
-  mockRequestPermissionsAsync: vi.fn(),
-  mockStart: vi.fn(),
-  mockStop: vi.fn(),
-}));
+const { mockRequestPermissionsAsync, mockStart, mockStop, mockAbort } =
+  vi.hoisted(() => ({
+    mockRequestPermissionsAsync: vi.fn(),
+    mockStart: vi.fn(),
+    mockStop: vi.fn(),
+    mockAbort: vi.fn(),
+  }));
 
 // Collect event listeners registered by useSpeechRecognitionEvent
 const eventListeners: Record<string, (event: unknown) => void> = {};
@@ -17,6 +19,7 @@ vi.mock("expo-speech-recognition", () => ({
     requestPermissionsAsync: () => mockRequestPermissionsAsync(),
     start: (opts: unknown) => mockStart(opts),
     stop: () => mockStop(),
+    abort: () => mockAbort(),
   },
   useSpeechRecognitionEvent: (
     eventName: string,
@@ -178,5 +181,25 @@ describe("useSpeechToText", () => {
       result.current.stopListening();
     });
     expect(mockStop).toHaveBeenCalledOnce();
+  });
+
+  it("aborts the recognizer on unmount after start() (incl. before the start event)", async () => {
+    mockRequestPermissionsAsync.mockResolvedValue({ granted: true });
+    const { result, unmount } = renderHook(() => useSpeechToText());
+
+    // Drive the real entry point: start() is called but we never fire the
+    // async "start" event — the window the unmount cleanup must still cover.
+    await act(async () => {
+      await result.current.startListening();
+    });
+
+    unmount();
+    expect(mockAbort).toHaveBeenCalledOnce();
+  });
+
+  it("does not abort on unmount when idle", () => {
+    const { unmount } = renderHook(() => useSpeechToText());
+    unmount();
+    expect(mockAbort).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,7 @@ import { sendError } from "../lib/api-errors";
 import {
   TIER_FEATURES,
   isValidSubscriptionTier,
+  resolveEffectiveTier,
   type PremiumFeatures,
 } from "@shared/types/premium";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -27,15 +28,21 @@ import { logger, toError } from "../lib/logger";
 
 /**
  * Resolve the current user's premium features object.
- * Looks up subscription status and safely validates the tier before indexing.
+ * Applies `resolveEffectiveTier` so an expired-premium subscription is
+ * downgraded to free before indexing — the raw stored tier is never reset on
+ * expiry and must not gate features directly.
  * Use this when you need the features object without gating on a specific boolean feature.
  */
 export async function getPremiumFeatures(
   req: AuthenticatedRequest,
 ): Promise<PremiumFeatures> {
   const subscription = await storage.getSubscriptionStatus(req.userId);
-  const tier = subscription?.tier || "free";
-  return TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
+  const storedTier = subscription?.tier ?? "free";
+  const { effectiveTier } = resolveEffectiveTier(
+    isValidSubscriptionTier(storedTier) ? storedTier : "free",
+    subscription?.expiresAt ?? null,
+  );
+  return TIER_FEATURES[effectiveTier];
 }
 
 /**

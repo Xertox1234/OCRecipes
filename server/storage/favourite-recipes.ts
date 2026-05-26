@@ -7,7 +7,11 @@ import {
   users,
   type ResolvedFavouriteRecipe,
 } from "@shared/schema";
-import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
+import {
+  TIER_FEATURES,
+  isValidSubscriptionTier,
+  resolveEffectiveTier,
+} from "@shared/types/premium";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { isUniqueViolation } from "../lib/db-errors";
 import { incrementRecipePopularity } from "./canonical-recipes";
@@ -77,14 +81,20 @@ export async function toggleFavouriteRecipe(
         .from(favouriteRecipes)
         .where(eq(favouriteRecipes.userId, userId)),
       tx
-        .select({ tier: users.subscriptionTier })
+        .select({
+          tier: users.subscriptionTier,
+          expiresAt: users.subscriptionExpiresAt,
+        })
         .from(users)
         .where(eq(users.id, userId)),
     ]);
     const count = countResult[0]?.count ?? 0;
     const tierValue = subRow?.tier || "free";
-    const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
-    const limit = TIER_FEATURES[tier].maxFavouriteRecipes;
+    const { effectiveTier } = resolveEffectiveTier(
+      isValidSubscriptionTier(tierValue) ? tierValue : "free",
+      subRow?.expiresAt ?? null,
+    );
+    const limit = TIER_FEATURES[effectiveTier].maxFavouriteRecipes;
 
     if (count >= limit) {
       return null;

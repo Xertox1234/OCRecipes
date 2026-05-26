@@ -117,6 +117,8 @@ export const storage = {
 - [ ] Navigation uses TypeScript navigation props from `@/types/navigation`
 - [ ] Theme system used via `useTheme()` hook for consistent styling
 - [ ] Reanimated 4 used for animations (avoid Animated API)
+- [ ] **Ref-mirror sync timing** — a ref backing a SYNCHRONOUS guard read in a user-event handler (`if (busyRef.current) return;`) must be assigned at RENDER time (`busyRef.current = isPending;` in the body), NOT via `useEffect` (which runs post-paint and leaves a one-frame stale window). The `useEffect`-mirror is only correct when the ref is read later in another effect/async callback. (Ref: `docs/rules/hooks.md`, 2026-05-25 audit Phase-6 review)
+- [ ] **Lifecycle teardown of owned native resources** — hooks owning a hardware/native resource (mic via `expo-speech-recognition`, camera) must tear it down on unmount (`useEffect(() => () => abort/stop, [])`); use `abort()` (immediate, no final-result event) over `stop()` for unmount, gated on an "is-active/started" flag so an idle unmount stays quiet. (Ref: 2026-05-25 audit H2)
 
 **React Native Specific Checks:**
 
@@ -250,6 +252,7 @@ if (cacheId) {
 - [ ] **JWT issuer/audience claims** — `jwt.sign()` must include `issuer` and `audience` options; `jwt.verify()` must validate them. Constants: `JWT_ISSUER = "ocrecipes-api"`, `JWT_AUDIENCE = "ocrecipes-client"`. (Ref: `server/middleware/auth.ts`)
 - [ ] **Client-to-DB numeric validation** — When OCR/AI/user-parsed numeric values flow into DB columns with CHECK constraints, validate at all layers: client parser (reject negative/absurd), server route (clamp before insert), DB schema (CHECK ≥ 0). Missing any layer risks silent 500 errors. (Ref: `docs/legacy-patterns/security.md` "Defense-in-Depth: Client-to-DB Numeric Validation Pipeline", audit M5/M7/M6/L8)
 - [ ] **Nutrition table CHECK constraints** — All tables storing nutrition values must have `>= 0` CHECK constraints on calories, protein, carbs, fat columns. (Ref: `docs/legacy-patterns/database.md` "Non-Negative CHECK Constraints on All Nutrition Tables")
+- [ ] **Expired-premium downgrade before TIER_FEATURES** — Any new `TIER_FEATURES[tier]` indexer for a USER subscription must resolve the effective tier first via `resolveEffectiveTier(validatedTier, expiresAt)` (selecting `subscriptionExpiresAt` alongside the tier). The raw stored `users.subscriptionTier` is not reset on expiry, so indexing it directly grants paid features/limits to lapsed subscribers (revenue leak). Flag any `TIER_FEATURES[rawTier]` where `rawTier` came straight from `getSubscriptionStatus`/`users.subscriptionTier` without `resolveEffectiveTier`. EXEMPTION: B2B `ApiTier` (api-key) sites — no expiry. (Ref: `docs/rules/security.md`, 2026-05-25 audit H3/H4)
 
 ### 11. Architecture Layering
 

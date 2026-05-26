@@ -8,6 +8,7 @@ import {
   TIER_FEATURES,
   isValidSubscriptionTier,
   applyStreakUnlocks,
+  resolveEffectiveTier,
 } from "@shared/types/premium";
 import { resolveVerificationStreak } from "../services/verification-streak-cache";
 import { isValidCalendarDate } from "../utils/date-validation";
@@ -107,8 +108,14 @@ export function register(app: Express): void {
           resolveVerificationStreak(req.userId),
         ]);
         const tierValue = subscription?.tier || "free";
-        const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
-        const features = applyStreakUnlocks(TIER_FEATURES[tier], streak);
+        const { effectiveTier } = resolveEffectiveTier(
+          isValidSubscriptionTier(tierValue) ? tierValue : "free",
+          subscription?.expiresAt ?? null,
+        );
+        const features = applyStreakUnlocks(
+          TIER_FEATURES[effectiveTier],
+          streak,
+        );
         const maxDays = features.extendedPlanRange ? 90 : 7;
         const start = new Date(parsed.data.startDate);
         const end = new Date(parsed.data.endDate);
@@ -119,7 +126,7 @@ export function register(app: Express): void {
           sendError(
             res,
             403,
-            `Date range limited to ${maxDays} days on ${tier} plan`,
+            `Date range limited to ${maxDays} days on ${effectiveTier} plan`,
             ErrorCode.DATE_RANGE_LIMIT,
           );
           return;
@@ -137,7 +144,7 @@ export function register(app: Express): void {
 
         // Optionally deduct pantry items (premium feature)
         if (parsed.data.deductPantry) {
-          if (TIER_FEATURES[tier].pantryTracking) {
+          if (TIER_FEATURES[effectiveTier].pantryTracking) {
             const userPantry = await storage.getPantryItems(req.userId);
             aggregated = deductPantryFromGrocery(aggregated, userPantry);
           }

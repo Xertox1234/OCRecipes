@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { z } from "zod";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
@@ -65,8 +66,21 @@ export interface ReceiptScanCount {
 }
 
 export function useReceiptScan() {
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Abort an in-flight scan if the consumer unmounts — the multi-MB upload and
+  // the server-side OpenAI vision call otherwise run to completion unread.
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   return useMutation<ReceiptAnalysisResult, Error, string[]>({
     mutationFn: async (photoUris: string[]) => {
+      // A new scan supersedes any previous in-flight one.
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       const formData = new FormData();
 
       // Compress and add each photo
@@ -95,6 +109,7 @@ export function useReceiptScan() {
             Authorization: `Bearer ${token}`,
           },
           body: formData,
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -118,6 +133,9 @@ export function useReceiptScan() {
         }
         return parsed.data;
       } finally {
+        // Runs on success AND on AbortError (unmount-mid-scan): the abort
+        // rejects fetch, which propagates here; the temp compressed files must
+        // be cleaned regardless. TanStack Query catches the rejection internally.
         await Promise.all(compressedUris.map((uri) => cleanupImage(uri)));
       }
     },
