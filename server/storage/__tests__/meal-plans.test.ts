@@ -184,13 +184,13 @@ describe("meal-plans storage", () => {
         title: "Find Me",
       });
 
-      const found = await getMealPlanRecipe(created.id);
+      const found = await getMealPlanRecipe(created.id, testUser.id);
       expect(found).toBeDefined();
       expect(found!.title).toBe("Find Me");
     });
 
     it("returns undefined for a non-existent id", async () => {
-      const found = await getMealPlanRecipe(999999);
+      const found = await getMealPlanRecipe(999999, testUser.id);
       expect(found).toBeUndefined();
     });
   });
@@ -199,7 +199,10 @@ describe("meal-plans storage", () => {
     it("returns recipe with empty ingredients array when none exist", async () => {
       const recipe = await createTestMealPlanRecipe(testUser.id);
 
-      const result = await getMealPlanRecipeWithIngredients(recipe.id);
+      const result = await getMealPlanRecipeWithIngredients(
+        recipe.id,
+        testUser.id,
+      );
       expect(result).toBeDefined();
       expect(result!.id).toBe(recipe.id);
       expect(result!.ingredients).toEqual([]);
@@ -225,7 +228,10 @@ describe("meal-plans storage", () => {
         },
       ]);
 
-      const result = await getMealPlanRecipeWithIngredients(recipe.id);
+      const result = await getMealPlanRecipeWithIngredients(
+        recipe.id,
+        testUser.id,
+      );
       expect(result!.ingredients).toHaveLength(3);
       expect(result!.ingredients.map((i) => i.name)).toEqual([
         "Flour",
@@ -235,7 +241,10 @@ describe("meal-plans storage", () => {
     });
 
     it("returns undefined for a non-existent recipe id", async () => {
-      const result = await getMealPlanRecipeWithIngredients(999999);
+      const result = await getMealPlanRecipeWithIngredients(
+        999999,
+        testUser.id,
+      );
       expect(result).toBeUndefined();
     });
   });
@@ -307,7 +316,10 @@ describe("meal-plans storage", () => {
       expect(recipe.title).toBe("Full Recipe");
 
       // Verify ingredients were created with correct recipeId
-      const withIngredients = await getMealPlanRecipeWithIngredients(recipe.id);
+      const withIngredients = await getMealPlanRecipeWithIngredients(
+        recipe.id,
+        testUser.id,
+      );
       expect(withIngredients!.ingredients).toHaveLength(2);
       expect(withIngredients!.ingredients[0].recipeId).toBe(recipe.id);
       expect(withIngredients!.ingredients[1].recipeId).toBe(recipe.id);
@@ -323,7 +335,10 @@ describe("meal-plans storage", () => {
         ],
       );
 
-      const withIngredients = await getMealPlanRecipeWithIngredients(recipe.id);
+      const withIngredients = await getMealPlanRecipeWithIngredients(
+        recipe.id,
+        testUser.id,
+      );
       expect(withIngredients!.ingredients[0].displayOrder).toBe(0);
       expect(withIngredients!.ingredients[1].displayOrder).toBe(1);
       expect(withIngredients!.ingredients[2].displayOrder).toBe(2);
@@ -378,7 +393,7 @@ describe("meal-plans storage", () => {
       expect(result).toBeUndefined();
 
       // Original should be unchanged
-      const original = await getMealPlanRecipe(recipe.id);
+      const original = await getMealPlanRecipe(recipe.id, testUser.id);
       expect(original!.title).toBe("Original");
     });
   });
@@ -390,7 +405,7 @@ describe("meal-plans storage", () => {
       const deleted = await deleteMealPlanRecipe(recipe.id, testUser.id);
       expect(deleted).toBe(true);
 
-      const found = await getMealPlanRecipe(recipe.id);
+      const found = await getMealPlanRecipe(recipe.id, testUser.id);
       expect(found).toBeUndefined();
     });
 
@@ -401,7 +416,7 @@ describe("meal-plans storage", () => {
       const deleted = await deleteMealPlanRecipe(recipe.id, otherUser.id);
       expect(deleted).toBe(false);
 
-      const found = await getMealPlanRecipe(recipe.id);
+      const found = await getMealPlanRecipe(recipe.id, testUser.id);
       expect(found).toBeDefined();
     });
 
@@ -533,8 +548,8 @@ describe("meal-plans storage", () => {
 
       expect(updated).toBe(2);
 
-      const ra = await getMealPlanRecipe(a.id);
-      const rb = await getMealPlanRecipe(b.id);
+      const ra = await getMealPlanRecipe(a.id, testUser.id);
+      const rb = await getMealPlanRecipe(b.id, testUser.id);
       expect(ra?.mealTypes).toEqual(["breakfast"]);
       expect(rb?.mealTypes).toEqual(["dinner"]);
     });
@@ -1217,7 +1232,7 @@ describe("meal-plans storage", () => {
       expect(result[0].mealPlanItemId).toBeDefined();
 
       // Verify recipe was created
-      const recipe = await getMealPlanRecipe(result[0].recipeId);
+      const recipe = await getMealPlanRecipe(result[0].recipeId, testUser.id);
       expect(recipe).toBeDefined();
       expect(recipe!.title).toBe("Chicken Rice");
 
@@ -1299,8 +1314,8 @@ describe("meal-plans storage", () => {
 
       expect(result).toHaveLength(2);
       // Verify both recipes exist
-      const recipe1 = await getMealPlanRecipe(result[0].recipeId);
-      const recipe2 = await getMealPlanRecipe(result[1].recipeId);
+      const recipe1 = await getMealPlanRecipe(result[0].recipeId, testUser.id);
+      const recipe2 = await getMealPlanRecipe(result[1].recipeId, testUser.id);
       expect(recipe1!.title).toBe("Meal 1");
       expect(recipe2!.title).toBe("Meal 2");
     });
