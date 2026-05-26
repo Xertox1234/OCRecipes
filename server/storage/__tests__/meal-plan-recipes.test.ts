@@ -194,12 +194,6 @@ describe("meal-plan-recipes storage", () => {
   // getMealPlanRecipe
   // ==========================================================================
   describe("getMealPlanRecipe", () => {
-    it("returns the recipe by id", async () => {
-      const recipe = await seedRecipe(testUser.id);
-      const result = await getMealPlanRecipe(recipe.id);
-      expect(result!.id).toBe(recipe.id);
-    });
-
     it("returns the recipe when userId matches", async () => {
       const recipe = await seedRecipe(testUser.id);
       const result = await getMealPlanRecipe(recipe.id, testUser.id);
@@ -214,7 +208,7 @@ describe("meal-plan-recipes storage", () => {
     });
 
     it("returns undefined for a nonexistent id", async () => {
-      const result = await getMealPlanRecipe(999999);
+      const result = await getMealPlanRecipe(999999, testUser.id);
       expect(result).toBeUndefined();
     });
   });
@@ -229,19 +223,28 @@ describe("meal-plan-recipes storage", () => {
         { recipeId: recipe.id, name: "Salt", displayOrder: 1 },
         { recipeId: recipe.id, name: "Sugar", displayOrder: 0 },
       ]);
-      const result = await getMealPlanRecipeWithIngredients(recipe.id);
+      const result = await getMealPlanRecipeWithIngredients(
+        recipe.id,
+        testUser.id,
+      );
       expect(result).toBeDefined();
       expect(result!.ingredients.map((i) => i.name)).toEqual(["Sugar", "Salt"]);
     });
 
     it("returns an empty ingredients array when the recipe has none", async () => {
       const recipe = await seedRecipe(testUser.id);
-      const result = await getMealPlanRecipeWithIngredients(recipe.id);
+      const result = await getMealPlanRecipeWithIngredients(
+        recipe.id,
+        testUser.id,
+      );
       expect(result!.ingredients).toEqual([]);
     });
 
     it("returns undefined for a nonexistent recipe", async () => {
-      const result = await getMealPlanRecipeWithIngredients(999999);
+      const result = await getMealPlanRecipeWithIngredients(
+        999999,
+        testUser.id,
+      );
       expect(result).toBeUndefined();
     });
 
@@ -430,7 +433,7 @@ describe("meal-plan-recipes storage", () => {
       const recipe = await seedRecipe(testUser.id);
       const deleted = await deleteMealPlanRecipe(recipe.id, testUser.id);
       expect(deleted).toBe(true);
-      expect(await getMealPlanRecipe(recipe.id)).toBeUndefined();
+      expect(await getMealPlanRecipe(recipe.id, testUser.id)).toBeUndefined();
       expect(searchIndex.removeFromIndex).toHaveBeenCalledWith(
         `personal:${recipe.id}`,
       );
@@ -488,7 +491,7 @@ describe("meal-plan-recipes storage", () => {
       const recipe = await seedRecipe(otherUser.id);
       const deleted = await deleteMealPlanRecipe(recipe.id, testUser.id);
       expect(deleted).toBe(false);
-      expect(await getMealPlanRecipe(recipe.id)).toBeDefined();
+      expect(await getMealPlanRecipe(recipe.id, otherUser.id)).toBeDefined();
     });
   });
 
