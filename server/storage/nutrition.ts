@@ -13,7 +13,11 @@ import {
   users,
 } from "@shared/schema";
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
-import { TIER_FEATURES, isValidSubscriptionTier } from "@shared/types/premium";
+import {
+  TIER_FEATURES,
+  isValidSubscriptionTier,
+  resolveEffectiveTier,
+} from "@shared/types/premium";
 import { db } from "../db";
 import { eq, desc, and, gte, lt, sql, isNull, inArray } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
@@ -452,12 +456,16 @@ export async function createSavedItem(
     const [subRow] = await tx
       .select({
         tier: users.subscriptionTier,
+        expiresAt: users.subscriptionExpiresAt,
       })
       .from(users)
       .where(eq(users.id, userId));
     const tierValue = subRow?.tier || "free";
-    const tier = isValidSubscriptionTier(tierValue) ? tierValue : "free";
-    const limit = TIER_FEATURES[tier].maxSavedItems;
+    const { effectiveTier } = resolveEffectiveTier(
+      isValidSubscriptionTier(tierValue) ? tierValue : "free",
+      subRow?.expiresAt ?? null,
+    );
+    const limit = TIER_FEATURES[effectiveTier].maxSavedItems;
 
     if (count >= limit) {
       return null; // Signal limit reached
