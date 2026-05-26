@@ -448,8 +448,17 @@ export async function createSavedItem(
   const effectiveTier = await getEffectiveTierForUser(userId);
   const limit = TIER_FEATURES[effectiveTier].maxSavedItems;
 
-  // Wrap the count + insert in a transaction to prevent TOCTOU race on the count.
   return db.transaction(async (tx) => {
+    // Serialize concurrent saved-item inserts for the same user so the count
+    // read and the limited insert are atomic. Without this lock, two parallel
+    // requests under READ COMMITTED can both see count = N, both pass the
+    // limit check, and both insert — landing the user above the tier cap.
+    // Mirrors `toggleFavouriteRecipe`; hashtextextended is the 64-bit form
+    // (eliminates the ~65k-user birthday-collision risk of 32-bit hashtext).
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`,
+    );
+
     const countResult = await tx
       .select({ count: sql<number>`count(*)::int` })
       .from(savedItems)

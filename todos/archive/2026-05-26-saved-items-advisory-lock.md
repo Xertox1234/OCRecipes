@@ -1,6 +1,6 @@
 ---
 title: "Add advisory lock to createSavedItem to close the saved-items limit-bypass race"
-status: backlog
+status: done
 priority: low
 created: 2026-05-26
 updated: 2026-05-26
