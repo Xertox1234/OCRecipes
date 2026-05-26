@@ -14,6 +14,10 @@ export function useSpeechToText() {
 
   // Track whether we initiated listening to ignore stale events
   const activeRef = useRef(false);
+  // True from the start() call until the session ends/errors — covers the
+  // window before the async "start" event sets activeRef, so unmount cleanup
+  // still aborts a recognizer that is spinning up.
+  const startedRef = useRef(false);
 
   useSpeechRecognitionEvent("start", () => {
     activeRef.current = true;
@@ -23,6 +27,7 @@ export function useSpeechToText() {
 
   useSpeechRecognitionEvent("end", () => {
     activeRef.current = false;
+    startedRef.current = false;
     setIsListening(false);
     setVolume(VOLUME_SILENT);
   });
@@ -36,6 +41,7 @@ export function useSpeechToText() {
 
   useSpeechRecognitionEvent("error", (event) => {
     activeRef.current = false;
+    startedRef.current = false;
     setIsListening(false);
     setVolume(VOLUME_SILENT);
 
@@ -71,6 +77,7 @@ export function useSpeechToText() {
       return;
     }
 
+    startedRef.current = true;
     ExpoSpeechRecognitionModule.start({
       lang: "en-US",
       interimResults: true,
@@ -84,13 +91,14 @@ export function useSpeechToText() {
     ExpoSpeechRecognitionModule.stop();
   }, []);
 
-  // Tear down the recognizer if the component unmounts mid-listen — otherwise
+  // Tear down the recognizer if the component unmounts mid-session — otherwise
   // the native module keeps recording and its events setState an unmounted hook.
-  // abort() (not stop()) ends immediately without a final-result event; gated on
-  // activeRef so an idle unmount doesn't fire a spurious aborted-error event.
+  // abort() (not stop()) ends immediately without a final-result event. Gated on
+  // startedRef (set synchronously at start()) so it also covers the window before
+  // the async "start" event fires, and stays quiet on a truly idle unmount.
   useEffect(() => {
     return () => {
-      if (activeRef.current) {
+      if (startedRef.current) {
         ExpoSpeechRecognitionModule.abort();
       }
     };

@@ -183,13 +183,15 @@ describe("useSpeechToText", () => {
     expect(mockStop).toHaveBeenCalledOnce();
   });
 
-  it("aborts the recognizer on unmount while listening", () => {
+  it("aborts the recognizer on unmount after start() (incl. before the start event)", async () => {
+    mockRequestPermissionsAsync.mockResolvedValue({ granted: true });
     const { result, unmount } = renderHook(() => useSpeechToText());
 
-    act(() => {
-      eventListeners["start"]?.(null);
+    // Drive the real entry point: start() is called but we never fire the
+    // async "start" event — the window the unmount cleanup must still cover.
+    await act(async () => {
+      await result.current.startListening();
     });
-    expect(result.current.isListening).toBe(true);
 
     unmount();
     expect(mockAbort).toHaveBeenCalledOnce();
