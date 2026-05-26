@@ -55,6 +55,11 @@ export function useQuickLogSession({
   // without this the effect re-parses on every mutation settle (isParsing toggle).
   const autoParsedTranscriptRef = useRef<string | null>(null);
 
+  // Bumped on reset() to invalidate any parse still in flight. A parse that
+  // resolves after the session was cleared must not repopulate dismissed items
+  // or fire a haptic for an abandoned session (TanStack v5 has no mutation cancel).
+  const sessionEpochRef = useRef(0);
+
   const {
     isListening,
     transcript,
@@ -90,14 +95,17 @@ export function useQuickLogSession({
       autoParsedTranscriptRef.current = transcript;
       setInputText(transcript);
       setParseError(null);
+      const epoch = sessionEpochRef.current;
       parseFoodTextMutate(transcript, {
         onSuccess: (data) => {
+          if (sessionEpochRef.current !== epoch) return;
           setParsedItems(
             data.items.map((item) => ({ ...item, sourceType: "voice" })),
           );
           haptics.notification(Haptics.NotificationFeedbackType.Success);
         },
         onError: () => {
+          if (sessionEpochRef.current !== epoch) return;
           haptics.notification(Haptics.NotificationFeedbackType.Error);
           setParseError("Failed to parse food text. Please try again.");
         },
@@ -111,14 +119,17 @@ export function useQuickLogSession({
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     const source = pendingSourceRef.current;
     pendingSourceRef.current = "text";
+    const epoch = sessionEpochRef.current;
     parseFoodTextMutate(inputText.trim(), {
       onSuccess: (data) => {
+        if (sessionEpochRef.current !== epoch) return;
         setParsedItems(
           data.items.map((item) => ({ ...item, sourceType: source })),
         );
         haptics.notification(Haptics.NotificationFeedbackType.Success);
       },
       onError: () => {
+        if (sessionEpochRef.current !== epoch) return;
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         setParseError("Failed to parse food text. Please try again.");
       },
@@ -261,6 +272,7 @@ export function useQuickLogSession({
 
   const reset = useCallback(() => {
     if (isListening) stopListening();
+    sessionEpochRef.current += 1;
     setInputText("");
     setParsedItems([]);
     setParseError(null);

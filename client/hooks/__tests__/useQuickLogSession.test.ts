@@ -346,6 +346,52 @@ describe("useQuickLogSession", () => {
     expect(result.current.submitError).toBeNull();
   });
 
+  it("does not repopulate items when a parse resolves after reset()", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    // Parse hangs until we resolve it manually
+    let resolveParse!: (v: unknown) => void;
+    mockApiRequest.mockReturnValueOnce(
+      new Promise((res) => {
+        resolveParse = res;
+      }),
+    );
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+
+    act(() => result.current.setInputText("2 eggs"));
+    act(() => result.current.handleTextSubmit());
+
+    // User abandons the session while the parse is still in flight
+    act(() => result.current.reset());
+
+    // The parse resolves — but its result belongs to a cleared session
+    await act(async () => {
+      resolveParse({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            items: [
+              {
+                name: "eggs",
+                quantity: 2,
+                unit: "large",
+                calories: 143,
+                protein: 12,
+                carbs: 1,
+                fat: 10,
+                servingSize: null,
+              },
+            ],
+          }),
+      });
+    });
+
+    // Dismissed session must not be repopulated by the stale parse
+    expect(result.current.parsedItems).toHaveLength(0);
+    expect(result.current.parseError).toBeNull();
+  });
+
   it("auto-parses when isFinal becomes true with a transcript", async () => {
     const { useSpeechToText } = await import("@/hooks/useSpeechToText");
     (useSpeechToText as ReturnType<typeof vi.fn>).mockReturnValue({
