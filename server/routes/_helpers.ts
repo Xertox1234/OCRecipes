@@ -10,13 +10,9 @@
 import type { Request, Response } from "express";
 import type { AuthenticatedRequest } from "../middleware/auth";
 import { ZodError } from "zod";
-import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
-import {
-  TIER_FEATURES,
-  isValidSubscriptionTier,
-  type PremiumFeatures,
-} from "@shared/types/premium";
+import { type PremiumFeatures } from "@shared/types/premium";
+import { resolveSubscriptionTierFeatures } from "../services/subscription-tier-cache";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { isAiConfigured } from "../lib/openai";
 import { logger, toError } from "../lib/logger";
@@ -27,15 +23,16 @@ import { logger, toError } from "../lib/logger";
 
 /**
  * Resolve the current user's premium features object.
- * Looks up subscription status and safely validates the tier before indexing.
+ * Delegates to the shared cached resolver so expired-premium downgrade
+ * (`resolveEffectiveTier`) and verification-streak unlocks (`applyStreakUnlocks`)
+ * are applied consistently with GET /api/subscription/status. The raw stored
+ * tier must never gate features directly — it is not reset on expiry.
  * Use this when you need the features object without gating on a specific boolean feature.
  */
 export async function getPremiumFeatures(
   req: AuthenticatedRequest,
 ): Promise<PremiumFeatures> {
-  const subscription = await storage.getSubscriptionStatus(req.userId);
-  const tier = subscription?.tier || "free";
-  return TIER_FEATURES[isValidSubscriptionTier(tier) ? tier : "free"];
+  return resolveSubscriptionTierFeatures(req.userId);
 }
 
 /**
