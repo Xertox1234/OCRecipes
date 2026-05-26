@@ -1,6 +1,6 @@
 ---
 title: "Move toggleFavouriteRecipe ownership check inside the advisory-locked tx"
-status: backlog
+status: done
 priority: low
 created: 2026-05-25
 updated: 2026-05-25

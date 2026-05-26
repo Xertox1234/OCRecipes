@@ -21,34 +21,6 @@ export async function toggleFavouriteRecipe(
   recipeId: number,
   recipeType: "mealPlan" | "community",
 ): Promise<boolean | null> {
-  // Verify recipe exists and user has access
-  if (recipeType === "mealPlan") {
-    const [recipe] = await db
-      .select({ id: mealPlanRecipes.id })
-      .from(mealPlanRecipes)
-      .where(
-        and(
-          eq(mealPlanRecipes.id, recipeId),
-          eq(mealPlanRecipes.userId, userId),
-        ),
-      );
-    if (!recipe) return false;
-  } else {
-    const [recipe] = await db
-      .select({ id: communityRecipes.id })
-      .from(communityRecipes)
-      .where(
-        and(
-          eq(communityRecipes.id, recipeId),
-          or(
-            eq(communityRecipes.isPublic, true),
-            eq(communityRecipes.authorId, userId),
-          ),
-        ),
-      );
-    if (!recipe) return false;
-  }
-
   const result = await db.transaction(async (tx) => {
     // Serialize concurrent toggles for the same user to prevent limit bypass.
     // hashtextextended returns a 64-bit bigint, eliminating the ~65k-user
@@ -56,6 +28,37 @@ export async function toggleFavouriteRecipe(
     await tx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`,
     );
+
+    // Verify recipe exists and user has access — inside the locked tx so the
+    // ownership/visibility check and the limited insert are atomic
+    // (defense-in-depth alignment with the recompute-aggregate-under-lock
+    // pattern; see docs/rules/database.md).
+    if (recipeType === "mealPlan") {
+      const [recipe] = await tx
+        .select({ id: mealPlanRecipes.id })
+        .from(mealPlanRecipes)
+        .where(
+          and(
+            eq(mealPlanRecipes.id, recipeId),
+            eq(mealPlanRecipes.userId, userId),
+          ),
+        );
+      if (!recipe) return false;
+    } else {
+      const [recipe] = await tx
+        .select({ id: communityRecipes.id })
+        .from(communityRecipes)
+        .where(
+          and(
+            eq(communityRecipes.id, recipeId),
+            or(
+              eq(communityRecipes.isPublic, true),
+              eq(communityRecipes.authorId, userId),
+            ),
+          ),
+        );
+      if (!recipe) return false;
+    }
 
     const [existing] = await tx
       .select({ id: favouriteRecipes.id })
