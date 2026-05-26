@@ -32,69 +32,11 @@ add_domain() {
     *) DOMAINS="${DOMAINS:+$DOMAINS,}$1" ;;
   esac
 }
+_add() { add_domain "$1"; }
+# shellcheck source=lib/domain-map.sh
+source "$SCRIPT_DIR/lib/domain-map.sh"
 
-# Independent if-blocks so multiple rows can match the same path (e.g. AI service + services + test)
-[[ "$FILE_PATH" == */server/routes/* || "$FILE_PATH" == server/routes/* ]] && \
-  { add_domain api; add_domain security; add_domain architecture; }
-
-[[ "$FILE_PATH" == */server/storage/* || "$FILE_PATH" == server/storage/* || \
-   "$FILE_PATH" == */shared/schema.ts  || "$FILE_PATH" == shared/schema.ts  || \
-   "$FILE_PATH" == */migrations/*      || "$FILE_PATH" == migrations/* ]] && \
-  { add_domain database; add_domain security; add_domain architecture; }
-
-[[ "$FILE_PATH" == */server/middleware/* || "$FILE_PATH" == server/middleware/* ]] && \
-  { add_domain security; add_domain api; }
-
-[[ "$FILE_PATH" == */server/services/photo-analysis.ts   || \
-   "$FILE_PATH" == */server/services/nutrition-coach.ts  || \
-   "$FILE_PATH" == */server/services/recipe-chat.ts      || \
-   "$FILE_PATH" == */server/services/recipe-generation.ts || \
-   "$FILE_PATH" == server/services/photo-analysis.ts     || \
-   "$FILE_PATH" == server/services/nutrition-coach.ts    || \
-   "$FILE_PATH" == server/services/recipe-chat.ts        || \
-   "$FILE_PATH" == server/services/recipe-generation.ts ]] && \
-  add_domain ai-prompting
-
-[[ "$FILE_PATH" == */evals/* || "$FILE_PATH" == evals/* ]] && \
-  { add_domain ai-prompting; add_domain testing; }
-
-# All server/services get architecture (including the AI ones above)
-[[ "$FILE_PATH" == */server/services/* || "$FILE_PATH" == server/services/* ]] && \
-  add_domain architecture
-
-[[ "$FILE_PATH" == */client/screens/*     || "$FILE_PATH" == client/screens/*     || \
-   "$FILE_PATH" == */client/components/*  || "$FILE_PATH" == client/components/* ]] && \
-  { add_domain react-native; add_domain design-system; add_domain accessibility; }
-
-[[ "$FILE_PATH" == */client/components/* || "$FILE_PATH" == client/components/* ]] && \
-  add_domain performance
-
-[[ "$FILE_PATH" == */client/navigation/* || "$FILE_PATH" == client/navigation/* ]] && \
-  { add_domain react-native; add_domain accessibility; }
-
-[[ "$FILE_PATH" == */client/hooks/* || "$FILE_PATH" == client/hooks/* ]] && \
-  { add_domain hooks; add_domain client-state; add_domain react-native; }
-
-[[ "$FILE_PATH" == */client/context/* || "$FILE_PATH" == client/context/* || \
-   "$FILE_PATH" == */client/lib/*     || "$FILE_PATH" == client/lib/* ]] && \
-  add_domain client-state
-
-[[ "$FILE_PATH" == */client/constants/theme.ts || "$FILE_PATH" == client/constants/theme.ts || \
-   "$FILE_PATH" == */design_guidelines.md      || "$FILE_PATH" == design_guidelines.md ]] && \
-  add_domain design-system
-
-[[ "$FILE_PATH" == */.github/workflows/* || "$FILE_PATH" == .github/workflows/* ]] && \
-  { add_domain architecture; add_domain testing; }
-
-[[ "$FILE_PATH" == */vitest.config.* || "$FILE_PATH" == vitest.config.* || \
-   "$FILE_PATH" == */eslint.config.* || "$FILE_PATH" == eslint.config.* ]] && \
-  { add_domain testing; add_domain typescript; }
-
-# Test files accumulate testing domain regardless of their enclosing directory
-[[ "$FILE_PATH" == */__tests__/* || "$FILE_PATH" == __tests__/* || \
-   "$FILE_PATH" == *.test.ts     || "$FILE_PATH" == *.test.tsx  || \
-   "$FILE_PATH" == *.spec.ts     || "$FILE_PATH" == *.spec.tsx ]] && \
-  add_domain testing
+apply_domain_map "$FILE_PATH"
 
 # Add typescript for .ts/.tsx files ONLY when no more-specific domain matched.
 # Rationale: typescript rules are mostly general knowledge; project-specific TS conventions

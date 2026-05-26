@@ -57,40 +57,12 @@ add_pattern() {
     *) PATTERNS="${PATTERNS:+$PATTERNS,}$1" ;;
   esac
 }
+_add() { add_pattern "$1"; }
+# shellcheck source=.claude/hooks/lib/domain-map.sh
+source ".claude/hooks/lib/domain-map.sh"
 
 while IFS= read -r file; do
-  case "$file" in
-    server/routes/*)
-      add_pattern api; add_pattern security; add_pattern architecture ;;
-    server/storage/*|shared/schema.ts|migrations/*)
-      add_pattern database; add_pattern security; add_pattern architecture ;;
-    server/middleware/*)
-      add_pattern security; add_pattern api ;;
-    server/services/photo-analysis.ts|server/services/nutrition-coach.ts|server/services/recipe-chat.ts|server/services/recipe-generation.ts)
-      add_pattern ai-prompting; add_pattern architecture ;;
-    evals/*)
-      add_pattern ai-prompting; add_pattern testing ;;
-    server/services/*)
-      add_pattern architecture ;;
-    client/screens/*|client/navigation/*)
-      add_pattern react-native; add_pattern design-system; add_pattern accessibility ;;
-    client/components/*)
-      add_pattern react-native; add_pattern design-system; add_pattern accessibility; add_pattern performance ;;
-    client/hooks/*)
-      add_pattern hooks; add_pattern client-state; add_pattern react-native; add_pattern accessibility ;;
-    client/context/*)
-      add_pattern client-state ;;
-    client/lib/*)
-      add_pattern client-state ;;
-    client/constants/theme.ts|design_guidelines.md)
-      add_pattern design-system ;;
-    .github/workflows/*)
-      add_pattern architecture; add_pattern testing ;;
-    vitest.config.*|eslint.config.*)
-      add_pattern testing; add_pattern typescript ;;
-    *.test.ts|*.test.tsx|*.spec.ts|*.spec.tsx|*/__tests__/*)
-      add_pattern testing ;;
-  esac
+  apply_domain_map "$file"
   case "$file" in
     *.ts|*.tsx) add_pattern typescript ;;
   esac
