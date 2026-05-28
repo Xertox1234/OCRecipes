@@ -7,6 +7,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import {
@@ -86,6 +87,7 @@ export const AdaptiveGoalCard = React.memo(function AdaptiveGoalCard({
 }: AdaptiveGoalCardProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { reducedMotion } = useAccessibility();
   const unit = useMeasurementUnit();
   const acceptMutation = useAcceptAdaptiveGoal();
@@ -93,13 +95,23 @@ export const AdaptiveGoalCard = React.memo(function AdaptiveGoalCard({
 
   const handleAccept = useCallback(() => {
     haptics.notification(Haptics.NotificationFeedbackType.Success);
-    acceptMutation.mutate();
-  }, [haptics, acceptMutation]);
+    acceptMutation.mutate(undefined, {
+      onError: () => {
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        toast.error("Couldn't apply the goal adjustment. Please try again.");
+      },
+    });
+  }, [haptics, toast, acceptMutation]);
 
   const handleDismiss = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    dismissMutation.mutate();
-  }, [haptics, dismissMutation]);
+    dismissMutation.mutate(undefined, {
+      onError: () => {
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        toast.error("Couldn't dismiss the suggestion. Please try again.");
+      },
+    });
+  }, [haptics, toast, dismissMutation]);
 
   const isLoading = acceptMutation.isPending || dismissMutation.isPending;
 

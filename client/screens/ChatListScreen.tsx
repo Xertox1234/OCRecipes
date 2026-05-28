@@ -152,10 +152,16 @@ export default function ChatListScreen() {
         message: `Delete "${title}"?`,
         confirmLabel: "Delete",
         destructive: true,
-        onConfirm: () => deleteConversationMutate(id),
+        onConfirm: () =>
+          deleteConversationMutate(id, {
+            onError: () => {
+              haptics.notification(Haptics.NotificationFeedbackType.Error);
+              toast.error("Couldn't delete the chat. Please try again.");
+            },
+          }),
       });
     },
-    [confirm, deleteConversationMutate],
+    [confirm, deleteConversationMutate, haptics, toast],
   );
 
   const renderItem = useCallback(

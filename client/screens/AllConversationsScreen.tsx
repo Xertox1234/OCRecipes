@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/context/ToastContext";
 import {
   useChatConversations,
   useDeleteConversation,
@@ -35,6 +36,7 @@ function formatRelativeDate(dateStr: string): string {
 
 export default function AllConversationsScreen() {
   const { theme } = useTheme();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<AllConversationsNavigationProp>();
 
@@ -73,12 +75,20 @@ export default function AllConversationsScreen() {
         );
         return;
       }
-      await pinConversation.mutateAsync({
-        id: conv.id,
-        isPinned: !conv.isPinned,
-      });
+      try {
+        await pinConversation.mutateAsync({
+          id: conv.id,
+          isPinned: !conv.isPinned,
+        });
+      } catch {
+        toast.error(
+          conv.isPinned
+            ? "Couldn't unpin the conversation. Please try again."
+            : "Couldn't pin the conversation. Please try again.",
+        );
+      }
     },
-    [conversations, pinConversation],
+    [conversations, pinConversation, toast],
   );
 
   const handleDelete = useCallback(
@@ -88,11 +98,17 @@ export default function AllConversationsScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteConversation.mutate(conv.id),
+          onPress: () =>
+            deleteConversation.mutate(conv.id, {
+              onError: () =>
+                toast.error(
+                  "Couldn't delete the conversation. Please try again.",
+                ),
+            }),
         },
       ]);
     },
-    [deleteConversation],
+    [deleteConversation, toast],
   );
 
   const renderRow = useCallback(

@@ -1,6 +1,6 @@
 ---
 title: "Mutations with no user-visible error feedback (failed save/delete/log/toggle looks like a no-op)"
-status: backlog
+status: done
 priority: high
 created: 2026-05-28
 updated: 2026-05-28
@@ -58,3 +58,10 @@ Silent-failures audit cluster 3 (`docs/audits/2026-05-28-silent-failures.md`, fi
 ### 2026-05-28
 
 - Created from silent-failures audit (themed-by-cluster triage). Mutation-no-onError pattern verified against `useDeleteCookbook`/`useDeleteConversation`; `mutateAsync` unhandled-rejection confirmed via TanStack Query v5 docs.
+
+### 2026-05-28 (implemented)
+
+- Implemented H9, M14–M24, L7, L8 via local `onError`/try-catch surfacing a visible `toast.error()` (matching ChatListScreen's established `useToast` convention) or, for HealthKitSettingsScreen sync, an inline `isError` banner. H10 and CoachRemindersScreen were already done on main and skipped.
+- M16 (RecipeGenerationModal): removed the now-redundant iOS-only `announceForAccessibility` effect — the existing cross-platform error banner (`accessibilityRole="alert"` + `accessibilityLiveRegion="assertive"`) already announces on both platforms; the kept `onError` haptic plus the banner satisfy the "visible cross-platform error UI" criterion.
+- M14 (NotebookEntryScreen) and M19 (AllConversationsScreen togglePin): wrapped `await mutateAsync` in try/catch so post-await `goBack()` is skipped on failure (user stays to retry) and the rejection can't go unhandled.
+- No global `MutationCache.onError` added (queries-only net per `docs/rules/client-state.md`); no `meta.silentError` (query-only mechanism). Verify/type/lint/test all clean (5505 tests pass).

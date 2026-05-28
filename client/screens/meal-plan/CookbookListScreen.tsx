@@ -9,6 +9,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useCookbooks, useDeleteCookbook } from "@/hooks/useCookbooks";
 import { useFavouriteRecipeIds } from "@/hooks/useFavouriteRecipes";
 import {
@@ -27,6 +28,7 @@ export default function CookbookListScreen() {
   const tabBarHeight = useSafeTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { data: cookbooks, isLoading, isError, refetch } = useCookbooks();
   const { mutate: deleteCookbook } = useDeleteCookbook();
   const { data: favouriteIds } = useFavouriteRecipeIds();
@@ -72,13 +74,18 @@ export default function CookbookListScreen() {
             style: "destructive",
             onPress: () => {
               haptics.impact();
-              deleteCookbook(id);
+              deleteCookbook(id, {
+                onError: () =>
+                  toast.error(
+                    "Couldn't delete the cookbook. Please try again.",
+                  ),
+              });
             },
           },
         ],
       );
     },
-    [haptics, deleteCookbook],
+    [haptics, toast, deleteCookbook],
   );
 
   const renderItem = useCallback(

@@ -17,6 +17,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import {
   useHealthKitSettings,
   useUpdateHealthKitSettings,
@@ -141,6 +142,7 @@ export default function HealthKitSettingsScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { isPremium } = usePremiumContext();
 
   const { data: settings = [], isLoading } = useHealthKitSettings();
@@ -164,9 +166,14 @@ export default function HealthKitSettingsScreen() {
   const handleToggle = useCallback(
     (dataType: string, enabled: boolean) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-      updateSettings.mutate([{ dataType, enabled }]);
+      updateSettings.mutate([{ dataType, enabled }], {
+        onError: () => {
+          haptics.notification(Haptics.NotificationFeedbackType.Error);
+          toast.error("Couldn't update your sync settings. Please try again.");
+        },
+      });
     },
-    [haptics, updateSettings],
+    [haptics, toast, updateSettings],
   );
 
   const handleSyncNow = useCallback(() => {
@@ -345,6 +352,21 @@ export default function HealthKitSettingsScreen() {
           }}
         >
           Sync complete
+        </ThemedText>
+      )}
+
+      {syncHealthKit.isError && (
+        <ThemedText
+          type="small"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+          style={{
+            textAlign: "center",
+            color: theme.error,
+            marginTop: Spacing.sm,
+          }}
+        >
+          Sync failed. Please try again.
         </ThemedText>
       )}
 

@@ -1,6 +1,5 @@
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
-  AccessibilityInfo,
   StyleSheet,
   View,
   Modal,
@@ -98,15 +97,10 @@ export function RecipeGenerationModal({
     },
   });
 
-  useEffect(() => {
-    if (Platform.OS === "ios" && generateMutation.isError) {
-      const msg =
-        generateMutation.error instanceof Error
-          ? generateMutation.error.message
-          : "Recipe generation failed";
-      AccessibilityInfo.announceForAccessibility(msg);
-    }
-  }, [generateMutation.isError, generateMutation.error]);
+  // The error banner below renders with accessibilityRole="alert" +
+  // accessibilityLiveRegion="assertive", which announces the failure on both
+  // iOS (alert role) and Android (live region). No separate iOS-only
+  // announceForAccessibility is needed — adding one double-announces on iOS.
 
   const handleGenerate = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);

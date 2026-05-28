@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import type { RouteProp } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 import Animated from "react-native-reanimated";
 import {
   BottomSheetModal,
@@ -32,6 +33,7 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import {
   Spacing,
   BorderRadius,
@@ -265,6 +267,7 @@ export default function RecipeBrowserScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { reducedMotion } = useAccessibility();
 
   const { scrollHandler, headerAnimatedStyle, isBarVisible } =
@@ -463,12 +466,21 @@ export default function RecipeBrowserScreen() {
         });
         navigation.goBack();
       } catch {
-        // Error handled by mutation
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        toast.error("Couldn't add the recipe to your plan. Please try again.");
       } finally {
         setAddingId(null);
       }
     },
-    [haptics, navigation, isBrowseOnly, addItemMutation, plannedDate, mealType],
+    [
+      haptics,
+      toast,
+      navigation,
+      isBrowseOnly,
+      addItemMutation,
+      plannedDate,
+      mealType,
+    ],
   );
 
   const handleFavourite = useCallback(

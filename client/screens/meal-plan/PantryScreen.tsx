@@ -21,6 +21,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -129,6 +130,7 @@ export default function PantryScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { features } = usePremiumContext();
   const { confirm, ConfirmationModal } = useConfirmationModal();
   const navigation =
@@ -152,8 +154,29 @@ export default function PantryScreen() {
     const name = newItemName.trim();
     if (!name) return;
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    createMutation.mutate({ name }, { onSuccess: () => setNewItemName("") });
-  }, [haptics, createMutation, newItemName]);
+    createMutation.mutate(
+      { name },
+      {
+        onSuccess: () => setNewItemName(""),
+        onError: () => {
+          haptics.notification(Haptics.NotificationFeedbackType.Error);
+          toast.error("Couldn't add the item. Please try again.");
+        },
+      },
+    );
+  }, [haptics, toast, createMutation, newItemName]);
+
+  const handleDeleteItem = useCallback(
+    (id: number) => {
+      deleteMutation.mutate(id, {
+        onError: () => {
+          haptics.notification(Haptics.NotificationFeedbackType.Error);
+          toast.error("Couldn't remove the item. Please try again.");
+        },
+      });
+    },
+    [haptics, toast, deleteMutation],
+  );
 
   const handleDelete = useCallback(
     (id: number) => {
@@ -162,10 +185,10 @@ export default function PantryScreen() {
         message: "Remove this item from your pantry?",
         confirmLabel: "Remove",
         destructive: true,
-        onConfirm: () => deleteMutation.mutate(id),
+        onConfirm: () => handleDeleteItem(id),
       });
     },
-    [confirm, deleteMutation],
+    [confirm, handleDeleteItem],
   );
 
   // Group by category
@@ -280,7 +303,7 @@ export default function PantryScreen() {
               backgroundColor: theme.success,
               onAction: () => {
                 haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-                deleteMutation.mutate(item.id);
+                handleDeleteItem(item.id);
               },
             }}
           >
