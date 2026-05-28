@@ -54,7 +54,7 @@ export default function GLP1CompanionScreen() {
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const unit = useMeasurementUnit();
-  const { data: logs, isLoading, refetch } = useMedicationLogs();
+  const { data: logs, isLoading, isError, refetch } = useMedicationLogs();
   const { data: insights } = useMedicationInsights();
   const logMedication = useLogMedication();
 
@@ -320,7 +320,17 @@ export default function GLP1CompanionScreen() {
               />
             </View>
           ))}
-          {(!logs || logs.length === 0) && (
+          {isError && (!logs || logs.length === 0) ? (
+            <ThemedText
+              style={[
+                styles.emptyText,
+                { color: theme.textSecondary, marginTop: Spacing.md },
+              ]}
+            >
+              Couldn&apos;t load your dose history. Pull down to refresh and try
+              again.
+            </ThemedText>
+          ) : !logs || logs.length === 0 ? (
             <ThemedText
               style={[
                 styles.emptyText,
@@ -329,7 +339,7 @@ export default function GLP1CompanionScreen() {
             >
               No doses logged yet. Tap + to log your first dose.
             </ThemedText>
-          )}
+          ) : null}
         </View>
       </ScrollView>
 

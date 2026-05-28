@@ -49,9 +49,19 @@ export default function CookbookCreateScreen() {
   const haptics = useHaptics();
   const createMutation = useCreateCookbook();
   const updateMutation = useUpdateCookbook();
-  const { data: existingCookbook } = useCookbookDetail(cookbookId ?? 0);
+  const {
+    data: existingCookbook,
+    isError: loadError,
+    isLoading: loadingExisting,
+    refetch: refetchExisting,
+  } = useCookbookDetail(cookbookId ?? 0);
 
   const mutation = isEditMode ? updateMutation : createMutation;
+
+  // In edit mode, the form is pre-populated from the fetched cookbook. If that
+  // fetch failed (or hasn't resolved), the form is empty — submitting would
+  // overwrite the cookbook with blank values, so block submit until it loads.
+  const editLoadBlocked = isEditMode && (loadError || !existingCookbook);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -68,7 +78,8 @@ export default function CookbookCreateScreen() {
   }, [isEditMode, existingCookbook, initialized]);
 
   const trimmedName = name.trim();
-  const canSubmit = trimmedName.length > 0 && !mutation.isPending;
+  const canSubmit =
+    trimmedName.length > 0 && !mutation.isPending && !editLoadBlocked;
 
   const handleSubmit = useCallback(() => {
     if (!trimmedName) return;
@@ -199,6 +210,22 @@ export default function CookbookCreateScreen() {
 
         <View style={styles.spacer} />
 
+        {isEditMode && loadError && !loadingExisting ? (
+          <View style={styles.loadErrorRow}>
+            <InlineError message="Couldn't load this cookbook to edit. Saving is disabled until it loads." />
+            <Pressable
+              onPress={() => {
+                void refetchExisting();
+              }}
+              style={[styles.retryButton, { borderColor: theme.link }]}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading cookbook"
+            >
+              <ThemedText style={{ color: theme.link }}>Try Again</ThemedText>
+            </Pressable>
+          </View>
+        ) : null}
+
         <Pressable
           onPress={handleSubmit}
           disabled={!canSubmit}
@@ -255,6 +282,19 @@ const styles = StyleSheet.create({
   },
   spacer: {
     flex: 1,
+  },
+  loadErrorRow: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  retryButton: {
+    alignSelf: "flex-start",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    minHeight: 44,
+    justifyContent: "center",
   },
   submitButton: {
     paddingVertical: Spacing.md,

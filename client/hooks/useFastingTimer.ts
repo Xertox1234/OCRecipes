@@ -77,7 +77,11 @@ export function useFastingTimer() {
   const [elapsedMinutes, setElapsedMinutes] = useState(0);
 
   const { data: schedule } = useFastingSchedule();
-  const { data: currentFast, refetch: refetchCurrent } = useCurrentFast();
+  const {
+    data: currentFast,
+    isError: currentFastIsError,
+    refetch: refetchCurrent,
+  } = useCurrentFast();
   const {
     data: historyData,
     isLoading: historyLoading,
@@ -283,6 +287,7 @@ export function useFastingTimer() {
     elapsedMinutes,
     schedule,
     currentFast,
+    currentFastIsError,
     historyData,
     historyLoading,
     updateSchedule,

@@ -64,7 +64,8 @@ export default function QuickLogScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { isPremium } = usePremiumContext();
-  const { data: adaptiveGoalData } = useAdaptiveGoals(isPremium);
+  const { data: adaptiveGoalData, isError: adaptiveGoalError } =
+    useAdaptiveGoals(isPremium);
   const [tip] = useState(randomTip);
   const [showCheckmark, setShowCheckmark] = useState(false);
 
@@ -218,7 +219,10 @@ export default function QuickLogScreen() {
           </View>
         </Card>
 
-        {adaptiveGoalData?.hasRecommendation &&
+        {/* Hide the recommendation card on a load error (distinct from "no
+            recommendation") — the global query-error toast surfaces the failure. */}
+        {!adaptiveGoalError &&
+          adaptiveGoalData?.hasRecommendation &&
           adaptiveGoalData.recommendation && (
             <AdaptiveGoalCard
               recommendation={adaptiveGoalData.recommendation}
