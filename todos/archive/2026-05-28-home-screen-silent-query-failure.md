@@ -1,6 +1,6 @@
 ---
 title: "HomeScreen content sections silently vanish on query failure"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-28
 updated: 2026-05-28

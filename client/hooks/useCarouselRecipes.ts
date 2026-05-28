@@ -9,6 +9,9 @@ export function useCarouselRecipes() {
   return useQuery<CarouselResponse>({
     queryKey: CAROUSEL_KEY,
     staleTime: 30 * 60 * 1000, // 30 minutes
+    // RecipeCarousel renders its own inline error + retry, so suppress the
+    // global error toast for this query to avoid double-reporting.
+    meta: { silentError: true },
     queryFn: async () => {
       const baseUrl = getApiUrl();
       const url = new URL("/api/carousel", baseUrl);
