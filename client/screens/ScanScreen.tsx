@@ -217,7 +217,7 @@ export default function ScanScreen() {
       setShowConfetti(true);
     }
 
-    const { barcode, nutritionImageUri, frontImageUri, ocrText } = scanPhase;
+    const { barcode } = scanPhase;
 
     if (returnAfterLog) {
       setConfirmCard(buildLoadingConfirmCard(barcode));
@@ -240,9 +240,6 @@ export default function ScanScreen() {
       void refreshScanCount();
       navigation.navigate("NutritionDetail", {
         barcode,
-        nutritionImageUri,
-        frontLabelImageUri: frontImageUri,
-        localOCRText: ocrText,
       });
     }, 700);
     return () => clearTimeout(timer);
@@ -423,7 +420,15 @@ export default function ScanScreen() {
         const ocrResult = await recognizeTextFromPhoto(photo.uri);
         ocrText = ocrResult.text ?? "";
       } catch (err) {
-        if (__DEV__) console.warn("[onShutterPress OCR]", err);
+        // OCR failure is non-fatal: the STEP2 photo is still captured and the
+        // session proceeds. We fall back to empty text intentionally — the
+        // reducer stores it, and no downstream screen requires the OCR result
+        // (NutritionDetail does its own lookup). Warn unconditionally so the
+        // failure is visible in production logs, not silently swallowed.
+        console.warn(
+          "[ScanScreen STEP2 OCR] recognition failed; proceeding with empty text",
+          err,
+        );
       }
       dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri, ocrText });
     } else {
