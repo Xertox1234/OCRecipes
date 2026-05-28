@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
   View,
   Switch,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Platform,
   Pressable,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -28,6 +29,8 @@ interface ReminderToggleConfig {
   label: string;
   description: string;
 }
+
+const READ_ERROR_MESSAGE = "Couldn't load your reminder settings.";
 
 const REMINDER_TYPES: ReminderToggleConfig[] = [
   {
@@ -103,6 +106,15 @@ export default function CoachRemindersScreen() {
     [haptics, updateMute],
   );
 
+  // The error text carries an Android live region; announce it on iOS too so
+  // the read-failure state is not silent for VoiceOver users. Gated to the
+  // false→true transition (deps [isError]) to avoid re-announcing on refetch.
+  useEffect(() => {
+    if (isError && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(READ_ERROR_MESSAGE);
+    }
+  }, [isError]);
+
   const mutes = data?.reminderMutes ?? {};
 
   return (
@@ -123,7 +135,7 @@ export default function CoachRemindersScreen() {
             style={[styles.errorText, { color: theme.textSecondary }]}
             accessibilityLiveRegion="assertive"
           >
-            {"Couldn't load your reminder settings."}
+            {READ_ERROR_MESSAGE}
           </ThemedText>
           <Pressable
             onPress={() => void refetch()}
