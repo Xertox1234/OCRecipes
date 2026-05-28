@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -93,20 +93,20 @@ export function RecipeGenerationModal({
       setShareToPublic(false);
       onComplete(recipe);
     },
-    onError: () => {
+    onError: (error) => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
+      // The error banner below uses accessibilityLiveRegion="assertive", which
+      // only announces on Android. iOS VoiceOver ignores live regions, so
+      // announce explicitly on iOS only (gated to avoid double-announcing on
+      // Android). Tied to onError so it fires once per failure, not on every
+      // isError render.
+      if (Platform.OS === "ios") {
+        const msg =
+          error instanceof Error ? error.message : "Recipe generation failed";
+        AccessibilityInfo.announceForAccessibility(msg);
+      }
     },
   });
-
-  useEffect(() => {
-    if (Platform.OS === "ios" && generateMutation.isError) {
-      const msg =
-        generateMutation.error instanceof Error
-          ? generateMutation.error.message
-          : "Recipe generation failed";
-      AccessibilityInfo.announceForAccessibility(msg);
-    }
-  }, [generateMutation.isError, generateMutation.error]);
 
   const handleGenerate = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);

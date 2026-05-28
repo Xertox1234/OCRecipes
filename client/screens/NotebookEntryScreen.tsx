@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/context/ToastContext";
 import {
   useNotebookEntries,
   useCreateNotebookEntry,
@@ -42,6 +43,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function NotebookEntryScreen() {
   const { theme } = useTheme();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NotebookEntryNavigationProp>();
   const route = useRoute<RouteProps>();
@@ -92,19 +94,26 @@ export default function NotebookEntryScreen() {
   const handleSave = useCallback(async () => {
     if (!content.trim()) return;
     let savedEntry: NotebookEntry | undefined;
-    if (isCreate) {
-      savedEntry = await createEntry.mutateAsync({
-        type,
-        content: content.trim(),
-        followUpDate,
-      });
-    } else if (entryId) {
-      savedEntry = await updateEntry.mutateAsync({
-        id: entryId,
-        type,
-        content: content.trim(),
-        followUpDate,
-      });
+    try {
+      if (isCreate) {
+        savedEntry = await createEntry.mutateAsync({
+          type,
+          content: content.trim(),
+          followUpDate,
+        });
+      } else if (entryId) {
+        savedEntry = await updateEntry.mutateAsync({
+          id: entryId,
+          type,
+          content: content.trim(),
+          followUpDate,
+        });
+      }
+    } catch {
+      // Surface the failure and keep the user on the screen to retry —
+      // do NOT navigate away on a failed save.
+      toast.error("Couldn't save the entry. Please try again.");
+      return;
     }
     if (savedEntry && savedEntry.type === "commitment") {
       if (savedEntry.followUpDate) {
@@ -129,6 +138,7 @@ export default function NotebookEntryScreen() {
     scheduleCommitmentReminder,
     cancelCommitmentReminder,
     navigation,
+    toast,
   ]);
 
   const handleMarkComplete = useCallback(() => {
@@ -139,14 +149,22 @@ export default function NotebookEntryScreen() {
         text: "Complete",
         onPress: () => {
           void (async () => {
-            await updateEntry.mutateAsync({ id: entryId, status: "completed" });
+            try {
+              await updateEntry.mutateAsync({
+                id: entryId,
+                status: "completed",
+              });
+            } catch {
+              toast.error("Couldn't update the entry. Please try again.");
+              return;
+            }
             await cancelCommitmentReminder(entryId);
             navigation.goBack();
           })();
         },
       },
     ]);
-  }, [entryId, updateEntry, cancelCommitmentReminder, navigation]);
+  }, [entryId, updateEntry, cancelCommitmentReminder, navigation, toast]);
 
   const handleArchive = useCallback(() => {
     if (!entryId) return;
@@ -156,14 +174,22 @@ export default function NotebookEntryScreen() {
         text: "Archive",
         onPress: () => {
           void (async () => {
-            await updateEntry.mutateAsync({ id: entryId, status: "archived" });
+            try {
+              await updateEntry.mutateAsync({
+                id: entryId,
+                status: "archived",
+              });
+            } catch {
+              toast.error("Couldn't archive the entry. Please try again.");
+              return;
+            }
             await cancelCommitmentReminder(entryId);
             navigation.goBack();
           })();
         },
       },
     ]);
-  }, [entryId, updateEntry, cancelCommitmentReminder, navigation]);
+  }, [entryId, updateEntry, cancelCommitmentReminder, navigation, toast]);
 
   const sourceLabel = isCreate
     ? "Added by you"

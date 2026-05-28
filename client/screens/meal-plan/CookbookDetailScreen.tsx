@@ -14,6 +14,7 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import {
   useCookbookDetail,
   useDeleteCookbook,
@@ -38,6 +39,7 @@ export default function CookbookDetailScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const {
     data: cookbook,
     isLoading,
@@ -60,13 +62,15 @@ export default function CookbookDetailScreen() {
           recipeType: recipe.recipeType,
         },
         {
+          onError: () =>
+            toast.error("Couldn't remove the recipe. Please try again."),
           onSettled: () => {
             isRemovingRef.current = false;
           },
         },
       );
     },
-    [cookbookId, removeRecipe],
+    [cookbookId, removeRecipe, toast],
   );
 
   const handleRecipePress = useCallback(
@@ -103,12 +107,14 @@ export default function CookbookDetailScreen() {
             haptics.impact();
             deleteCookbook(cookbookId, {
               onSuccess: () => navigation.goBack(),
+              onError: () =>
+                toast.error("Couldn't delete the cookbook. Please try again."),
             });
           },
         },
       ],
     );
-  }, [cookbook, haptics, deleteCookbook, cookbookId, navigation]);
+  }, [cookbook, haptics, deleteCookbook, cookbookId, navigation, toast]);
 
   const handleOverflowMenu = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);

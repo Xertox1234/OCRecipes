@@ -21,6 +21,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useUnifiedRecipes } from "@/hooks/useMealPlanRecipes";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import {
@@ -60,6 +61,7 @@ function QuickAddSheetInner({
 }: QuickAddSheetProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const sheetRef = useRef<BottomSheetModal>(null);
   const inputRef = useRef<TextInput>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -151,11 +153,12 @@ function QuickAddSheetInner({
         onDismiss();
       } catch {
         haptics.notification(NotificationFeedbackType.Error);
+        toast.error("Couldn't add the recipe to your plan. Please try again.");
       } finally {
         isAdding.current = false;
       }
     },
-    [mealType, plannedDate, haptics, addItemMutation, onDismiss],
+    [mealType, plannedDate, haptics, toast, addItemMutation, onDismiss],
   );
 
   const handleCreateRecipe = useCallback(() => {

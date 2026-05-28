@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
+import { useToast } from "@/context/ToastContext";
 import {
   useNotebookEntries,
   useUpdateNotebookEntry,
@@ -41,6 +42,7 @@ function typeColor(type: string): string {
 
 export default function NotebookScreen() {
   const { theme } = useTheme();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NotebookScreenNavigationProp>();
   const [filter, setFilter] = useState<Filter>("all");
@@ -63,11 +65,17 @@ export default function NotebookScreen() {
         {
           text: "Archive",
           onPress: () =>
-            updateEntryMutate({ id: entry.id, status: "archived" }),
+            updateEntryMutate(
+              { id: entry.id, status: "archived" },
+              {
+                onError: () =>
+                  toast.error("Couldn't archive the entry. Please try again."),
+              },
+            ),
         },
       ]);
     },
-    [updateEntryMutate],
+    [updateEntryMutate, toast],
   );
 
   const handleDelete = useCallback(
@@ -77,11 +85,15 @@ export default function NotebookScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => deleteEntryMutate(entry.id),
+          onPress: () =>
+            deleteEntryMutate(entry.id, {
+              onError: () =>
+                toast.error("Couldn't delete the entry. Please try again."),
+            }),
         },
       ]);
     },
-    [deleteEntryMutate],
+    [deleteEntryMutate, toast],
   );
 
   const renderEntry = useCallback(

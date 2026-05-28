@@ -33,6 +33,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { MealSuggestionsModal } from "@/components/MealSuggestionsModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
@@ -452,6 +453,7 @@ export default function MealPlanHomeScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const { features, isPremium } = usePremiumContext();
   const { reducedMotion } = useAccessibility();
@@ -650,9 +652,12 @@ export default function MealPlanHomeScreen() {
   const handleRemoveItem = useCallback(
     (id: number) => {
       haptics.selection();
-      removeMutation.mutate(id);
+      removeMutation.mutate(id, {
+        onError: () =>
+          toast.error("Couldn't remove the item. Please try again."),
+      });
     },
-    [removeMutation, haptics],
+    [removeMutation, haptics, toast],
   );
 
   const handleReorder = useCallback(
@@ -661,9 +666,12 @@ export default function MealPlanHomeScreen() {
         id: item.id,
         sortOrder: idx,
       }));
-      reorderMutation.mutate(updates);
+      reorderMutation.mutate(updates, {
+        onError: () =>
+          toast.error("Couldn't save the new order. Please try again."),
+      });
     },
-    [reorderMutation],
+    [reorderMutation, toast],
   );
 
   const handleToggleSection = useCallback(
@@ -834,9 +842,11 @@ export default function MealPlanHomeScreen() {
   const handleConfirmItem = useCallback(
     (id: number) => {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-      confirmMutation.mutate(id);
+      confirmMutation.mutate(id, {
+        onError: () => toast.error("Couldn't log the meal. Please try again."),
+      });
     },
-    [confirmMutation, haptics],
+    [confirmMutation, haptics, toast],
   );
 
   const handleBrowseRecipes = useCallback(() => {
