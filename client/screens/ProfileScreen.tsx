@@ -7,6 +7,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
+import { EmptyState } from "@/components/EmptyState";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ProfileCard } from "@/components/profile/ProfileCard";
 import { MiniWidgetRow } from "@/components/profile/MiniWidgetRow";
@@ -41,6 +42,8 @@ export default function ProfileScreen() {
     libraryCounts,
     verificationData,
     isInitialLoading,
+    isError,
+    refetch,
     handleThemeToggle,
     handleAvatarPress,
     handleGearPress,
@@ -84,6 +87,29 @@ export default function ProfileScreen() {
 
   if (isInitialLoading) {
     return <ProfileSkeleton theme={theme} />;
+  }
+
+  // Error gate: the primary widget/library queries failed and there is nothing
+  // to show. Surface a retry affordance instead of an empty profile.
+  if (isError) {
+    return (
+      <View
+        style={[
+          styles.root,
+          styles.errorRoot,
+          { backgroundColor: theme.backgroundRoot, paddingTop: insets.top },
+        ]}
+      >
+        <EmptyState
+          variant="temporary"
+          icon="alert-circle"
+          title="Couldn't load your profile"
+          description="Something went wrong fetching your profile data. Check your connection and try again."
+          actionLabel="Try Again"
+          onAction={refetch}
+        />
+      </View>
+    );
   }
 
   const displayName = user.displayName || user.username;
@@ -295,6 +321,9 @@ const COLLAPSED_AVATAR_SIZE = 24;
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  errorRoot: {
+    justifyContent: "center",
   },
   collapsedBar: {
     position: "absolute",

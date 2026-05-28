@@ -57,6 +57,7 @@ export function useHistoryData() {
     data: todaySummary,
     isLoading: summaryLoading,
     isFetching: summaryFetching,
+    isError: summaryError,
   } = useQuery<DailySummaryResponse>({
     queryKey: QUERY_KEYS.dailySummary,
     queryFn: async (): Promise<DailySummaryResponse> => {
@@ -85,6 +86,7 @@ export function useHistoryData() {
   const {
     data,
     isLoading: historyLoading,
+    isError: historyError,
     refetch,
     isRefetching,
     fetchNextPage,
@@ -138,6 +140,16 @@ export function useHistoryData() {
     : allItems.slice(0, DASHBOARD_ITEM_LIMIT);
 
   const isLoading = showAll ? historyLoading : historyLoading || summaryLoading;
+  // Error gate mirrors the loading gate: the dashboard depends on the daily
+  // summary (zero-defaulting its totals would present a fetch failure as
+  // legitimate "0 calories" data), the full-history view depends on the
+  // infinite scanned-items query. Only surface the error state when there is no
+  // cached data to show, so a background-refetch failure over stale data does
+  // not blank an otherwise-usable screen.
+  const isError = showAll
+    ? historyError && allItems.length === 0
+    : (summaryError && !todaySummary) ||
+      (historyError && allItems.length === 0);
   const isRefreshingDashboard = summaryFetching || isRefetching;
 
   // Coordinated pull-to-refresh for dashboard
@@ -323,6 +335,7 @@ export function useHistoryData() {
     // Data
     displayItems,
     isLoading,
+    isError,
     isRefetching,
     isRefreshingDashboard,
     isFetchingNextPage,

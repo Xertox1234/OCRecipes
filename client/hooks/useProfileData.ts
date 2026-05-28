@@ -30,8 +30,17 @@ export function useProfileData() {
     useAvatarUpload();
 
   // New aggregated hooks
-  const { data: widgetData, isLoading: widgetsLoading } = useProfileWidgets();
-  const { data: libraryCounts } = useLibraryCounts();
+  const {
+    data: widgetData,
+    isLoading: widgetsLoading,
+    isError: widgetsError,
+    refetch: refetchWidgets,
+  } = useProfileWidgets();
+  const {
+    data: libraryCounts,
+    isError: libraryCountsError,
+    refetch: refetchLibraryCounts,
+  } = useLibraryCounts();
 
   // Verification data (still separate — used for badge)
   const { data: verificationData } = useQuery<{
@@ -45,6 +54,15 @@ export function useProfileData() {
   });
 
   const isInitialLoading = widgetsLoading;
+  // Full-screen error gate: only the primary widget/library queries block the
+  // whole screen. The verification query feeds a single badge (compositeScore)
+  // and falls back to 0, so it is allowed to fail silently rather than hide the
+  // entire profile.
+  const isError = widgetsError || libraryCountsError;
+  const refetch = useCallback(() => {
+    void refetchWidgets();
+    void refetchLibraryCounts();
+  }, [refetchWidgets, refetchLibraryCounts]);
   const hasAnnouncedProfileRef = useRef(false);
   useEffect(() => {
     if (!isInitialLoading && user && !hasAnnouncedProfileRef.current) {
@@ -112,6 +130,8 @@ export function useProfileData() {
     libraryCounts,
     verificationData,
     isInitialLoading,
+    isError,
+    refetch,
     handleThemeToggle,
     handleAvatarPress,
 
