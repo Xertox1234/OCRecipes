@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AccessibilityInfo,
   InteractionManager,
@@ -593,6 +599,29 @@ export default function MealPlanHomeScreen() {
   } = useDailyBudget(selectedDateStr);
   const calorieGoal = budgetData?.calorieGoal ?? 2000;
 
+  // Suppress the 2000 default against a failed budget fetch, so we don't show a
+  // confident-wrong goal. This is the same condition that renders the error
+  // EmptyState below (not `budgetError` alone) — with stale cached data we keep
+  // showing the ring, so the announce must track the no-data error only.
+  const budgetErrorNoData = budgetError && !budgetData;
+
+  // Announce the error transition for screen readers. The EmptyState has no
+  // live region, so a cross-platform announce carries both VoiceOver and
+  // TalkBack with no double-announce. Skip the mount render so a screen that
+  // opens already-errored does not announce on top of focus.
+  const budgetErrorAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!budgetErrorAnnouncedRef.current) {
+      budgetErrorAnnouncedRef.current = true;
+      return;
+    }
+    if (budgetErrorNoData) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your calorie budget. Try again.",
+      );
+    }
+  }, [budgetErrorNoData]);
+
   const dailyTotals = useMemo(() => {
     let calories = 0;
     let protein = 0;
@@ -1099,7 +1128,7 @@ export default function MealPlanHomeScreen() {
 
         {/* Calorie Ring — suppress against the 2000 default when the budget
             fetch failed, so the user isn't shown a confident-wrong goal. */}
-        {budgetError && !budgetData ? (
+        {budgetErrorNoData ? (
           <EmptyState
             variant="temporary"
             icon="alert-circle"

@@ -1,6 +1,6 @@
 ---
 title: "Query-consumer error states don't announce on iOS (announceForAccessibility)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-28
 updated: 2026-05-28

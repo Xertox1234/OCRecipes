@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -74,6 +74,28 @@ export default function WeightTrackingScreen() {
   const logWeight = useLogWeight();
   const deleteLog = useDeleteWeightLog();
   const setGoalWeight = useSetGoalWeight();
+
+  // Same condition that renders the error EmptyState below (not `logsError`
+  // alone) — with stale cached entries we keep showing the list, so the
+  // announce must track the no-data error only.
+  const logsErrorNoData = logsError && logs.length === 0;
+
+  // Announce the error transition for screen readers. The EmptyState has no
+  // live region, so a cross-platform announce carries both VoiceOver and
+  // TalkBack with no double-announce. Skip the mount render so a screen that
+  // opens already-errored does not announce on top of focus.
+  const logsErrorAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!logsErrorAnnouncedRef.current) {
+      logsErrorAnnouncedRef.current = true;
+      return;
+    }
+    if (logsErrorNoData) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your weight history. Try again.",
+      );
+    }
+  }, [logsErrorNoData]);
 
   const handleRefresh = useCallback(() => {
     void Promise.all([refetchLogs(), refetchTrend()]);
@@ -423,7 +445,7 @@ export default function WeightTrackingScreen() {
             <ThemedText type="h4" style={styles.sectionTitle}>
               History
             </ThemedText>
-            {logsError && logs.length === 0 ? (
+            {logsErrorNoData ? (
               <EmptyState
                 variant="temporary"
                 icon="alert-circle"
