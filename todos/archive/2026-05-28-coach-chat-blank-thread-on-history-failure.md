@@ -1,6 +1,6 @@
 ---
 title: "CoachChat shows a blank thread when message-history load fails"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-28
 updated: 2026-05-28
@@ -43,3 +43,17 @@ Surfaced during a silent-failure investigation (unsolicited user report). A user
 ### 2026-05-28
 
 - Initial creation. Finding verified by reading CoachChat.tsx:181-195.
+
+### 2026-05-28 (resolved)
+
+- `useChatMessages` already returns the full `useQuery` result (it does NOT strip
+  `error`), so no hook-stripping fix was needed — the dependency on the
+  data-hooks-hide-query-error todo did not block this. Added an optional `meta`
+  param to `useChatMessages` so CoachChat alone opts into `silentError: true`
+  (the global QueryCache toast net), leaving the 3 other consumers (ChatScreen,
+  RecipeChatScreen, CoachOverlayContent) on the global toast backstop.
+- CoachChat now reads `isError`/`refetch` and renders an accessible error +
+  Retry in the FlatList `ListEmptyComponent`, gated on
+  `isError && messages.length === 0` so a brand-new empty conversation and a
+  stale-while-revalidate refetch failure both still render correctly (AC #2).
+- Added 4 render tests to CoachChat.branches.test.tsx covering the new branch.

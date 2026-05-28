@@ -33,6 +33,8 @@ const state = vi.hoisted(() => ({
   isStreaming: false,
   // useChat
   messages: [] as ChatMessage[],
+  isMessagesError: false,
+  refetchMessages: vi.fn(),
   deleteMutate: vi.fn().mockResolvedValue(undefined),
   // useSpeechToText
   speech: {
@@ -69,7 +71,11 @@ vi.mock("@/hooks/useCoachStream", () => ({
 }));
 
 vi.mock("@/hooks/useChat", () => ({
-  useChatMessages: () => ({ data: state.messages }),
+  useChatMessages: () => ({
+    data: state.messages,
+    isError: state.isMessagesError,
+    refetch: state.refetchMessages,
+  }),
   useDeleteChatMessageForRetry: () => ({ mutateAsync: state.deleteMutate }),
 }));
 
@@ -255,6 +261,8 @@ function resetState() {
   state.statusText = "";
   state.isStreaming = false;
   state.messages = [];
+  state.isMessagesError = false;
+  state.refetchMessages = vi.fn();
   state.deleteMutate = vi.fn().mockResolvedValue(undefined);
   state.speech = {
     isListening: false,
@@ -375,6 +383,46 @@ describe("CoachChat — stream error", () => {
       state.onError?.("500 server exploded");
     });
     expect(screen.getByTestId("streaming-error")).toBeTruthy();
+  });
+});
+
+// ── history-load error branch ────────────────────────────────────────────────
+describe("CoachChat — history load error", () => {
+  it("shows an error + retry when the history fetch fails on an empty thread", () => {
+    state.isMessagesError = true;
+    state.messages = [];
+    renderCoachChat({ conversationId: 7 });
+    expect(screen.getByText(/couldn.t load this conversation/i)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /retry loading conversation/i }),
+    ).toBeTruthy();
+  });
+
+  it("refetches when the retry button is pressed", () => {
+    state.isMessagesError = true;
+    state.messages = [];
+    renderCoachChat({ conversationId: 7 });
+    fireEvent.click(
+      screen.getByRole("button", { name: /retry loading conversation/i }),
+    );
+    expect(state.refetchMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not show the history error for a genuinely empty new conversation", () => {
+    state.isMessagesError = false;
+    state.messages = [];
+    renderCoachChat({ conversationId: 7 });
+    expect(screen.queryByText(/couldn.t load this conversation/i)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /retry loading conversation/i }),
+    ).toBeNull();
+  });
+
+  it("does not show the history error when cached messages exist despite an error", () => {
+    state.isMessagesError = true;
+    state.messages = [makeMessage({ id: 1, role: "user", content: "hi" })];
+    renderCoachChat({ conversationId: 7 });
+    expect(screen.queryByText(/couldn.t load this conversation/i)).toBeNull();
   });
 });
 

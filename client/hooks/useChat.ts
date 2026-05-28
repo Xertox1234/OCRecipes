@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { apiRequest, getApiUrl, type QueryErrorMeta } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { useCallback, useState, useRef } from "react";
 
@@ -59,10 +59,14 @@ export function useChatConversations(
   });
 }
 
-export function useChatMessages(conversationId: number | null) {
+export function useChatMessages(
+  conversationId: number | null,
+  meta?: QueryErrorMeta,
+) {
   return useQuery<ChatMessage[]>({
     queryKey: [`/api/chat/conversations/${conversationId}/messages`],
     enabled: !!conversationId,
+    meta,
   });
 }
 
