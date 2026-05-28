@@ -46,4 +46,15 @@ describe("usePendingReminders", () => {
 
     expect(result.current.hasPending).toBe(false);
   });
+
+  it("exposes isError/error so a failed pending-reminders read is distinguishable from 'no pending'", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockRejectedValue(new Error("500: server error"));
+
+    const { result } = renderHook(() => usePendingReminders(), { wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(Error);
+    expect(result.current.hasPending).toBe(false);
+  });
 });

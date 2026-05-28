@@ -25,5 +25,8 @@ export function useAcknowledgeReminders() {
   return {
     acknowledge: mutation.mutateAsync,
     coachContext,
+    isPending: mutation.isPending,
+    isError: mutation.isError,
+    error: mutation.error,
   };
 }
