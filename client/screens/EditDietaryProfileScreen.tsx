@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import {
   AccessibilityInfo,
   View,
@@ -13,6 +13,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
+import { EmptyState } from "@/components/EmptyState";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useDietaryProfileForm } from "@/hooks/useDietaryProfileForm";
@@ -170,6 +171,8 @@ export default function EditDietaryProfileScreen() {
 
   const {
     isLoading,
+    isError,
+    refetch,
     isSaving,
     saveError,
     selectedAllergen,
@@ -196,6 +199,23 @@ export default function EditDietaryProfileScreen() {
     haptics,
   } = useDietaryProfileForm();
 
+  // Announce the error transition for screen readers (cross-platform — the
+  // EmptyState container has no live region, so announceForAccessibility carries
+  // both VoiceOver and TalkBack with no double-announce). Skip the mount render
+  // so a screen that opens already-errored does not announce on top of focus.
+  const didMountRef = useRef(false);
+  React.useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (isError) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your dietary profile. Try again.",
+      );
+    }
+  }, [isError]);
+
   if (isLoading) {
     return (
       <View
@@ -206,6 +226,32 @@ export default function EditDietaryProfileScreen() {
         >
           <DietaryProfileSkeleton />
         </ScrollView>
+      </View>
+    );
+  }
+
+  // Error gate: the profile read failed. Block the form (and the Save button,
+  // which PUTs every field) — rendering the empty form would let the user
+  // overwrite their real server profile with blank defaults. Surface a retry
+  // affordance instead. See docs/rules/client-state.md (phantom-baseline-write).
+  if (isError) {
+    return (
+      <View
+        style={[
+          styles.container,
+          styles.errorContainer,
+          { backgroundColor: theme.backgroundRoot },
+        ]}
+        accessibilityViewIsModal
+      >
+        <EmptyState
+          variant="temporary"
+          icon="alert-circle"
+          title="Couldn't load your dietary profile"
+          description="Something went wrong fetching your profile. Check your connection and try again."
+          actionLabel="Try Again"
+          onAction={refetch}
+        />
       </View>
     );
   }
@@ -799,6 +845,9 @@ export default function EditDietaryProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  errorContainer: {
+    justifyContent: "center",
   },
   scrollView: {
     flex: 1,

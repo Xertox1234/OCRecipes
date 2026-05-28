@@ -48,7 +48,13 @@ export function useDietaryProfileForm() {
   >(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const { data: profile, isLoading } = useQuery<DietaryProfile>({
+  const {
+    data: profile,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<DietaryProfile>({
     queryKey: QUERY_KEYS.dietaryProfile,
   });
 
@@ -147,6 +153,9 @@ export function useDietaryProfileForm() {
 
   return {
     isLoading,
+    isError,
+    error,
+    refetch,
     isSaving,
     saveError,
     selectedAllergen,
