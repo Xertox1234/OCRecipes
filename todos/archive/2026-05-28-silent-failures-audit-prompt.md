@@ -1,6 +1,6 @@
 ---
 title: "Audit prompt: comprehensive silent-failure sweep"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-28
 updated: 2026-05-28
@@ -81,3 +81,7 @@ in this pass — this is discovery + manifest only.
 ### 2026-05-28
 
 - Saved the audit kickoff prompt so it survives across sessions.
+- Audit ran (discovery-only): 46 findings in `docs/audits/2026-05-28-silent-failures.md`,
+  deferred into 5 cluster todos. All 5 clusters + the 8 originally-filed todos are now
+  `status: done` and archived (commits #253–#266). Closing this kickoff prompt — its
+  purpose is fully served.
