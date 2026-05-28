@@ -1,6 +1,6 @@
 ---
 title: "Query-consumer screens/components hide query errors as empty/null/default (incl. confident-wrong data)"
-status: backlog
+status: done
 priority: high
 created: 2026-05-28
 updated: 2026-05-28

@@ -112,12 +112,16 @@ export default function SavedItemsScreen() {
   const {
     data: savedItems,
     isLoading,
+    isError: savedItemsError,
     refetch,
     isRefetching,
   } = useSavedItems();
-  const { data: countData } = useSavedItemCount();
+  const { data: countData, isError: countError } = useSavedItemCount();
 
+  // A failed count fetch must not render a confident "0" — surface it as unknown.
   const itemCount = countData?.count ?? 0;
+  const itemCountLabel =
+    countError && countData === undefined ? "—" : itemCount;
   const limit = isPremium ? null : features.maxSavedItems;
 
   const handleSwipeDelete = useCallback(
@@ -164,14 +168,26 @@ export default function SavedItemsScreen() {
     [],
   );
 
-  const renderEmpty = () => (
-    <EmptyState
-      variant="firstTime"
-      icon="bookmark"
-      title="No Saved Items"
-      description="Save recipes and activities from your scan history to access them here."
-    />
-  );
+  const renderEmpty = () =>
+    savedItemsError ? (
+      <EmptyState
+        variant="temporary"
+        icon="alert-circle"
+        title="Couldn't load your library"
+        description="Something went wrong loading your saved items. Pull down to refresh or tap below to try again."
+        actionLabel="Try Again"
+        onAction={() => {
+          void refetch();
+        }}
+      />
+    ) : (
+      <EmptyState
+        variant="firstTime"
+        icon="bookmark"
+        title="No Saved Items"
+        description="Save recipes and activities from your scan history to access them here."
+      />
+    );
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -179,11 +195,11 @@ export default function SavedItemsScreen() {
         <ThemedText type="h3">My Library</ThemedText>
         {limit !== null ? (
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {itemCount} / {limit} items
+            {itemCountLabel} / {limit} items
           </ThemedText>
         ) : (
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {itemCount} items
+            {itemCountLabel} items
           </ThemedText>
         )}
       </View>

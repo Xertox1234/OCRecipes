@@ -72,7 +72,16 @@ export default function HomeScreen() {
   const { sections, toggleSection, recentActions, recordAction, usageCounts } =
     useHomeActions();
   const queryClient = useQueryClient();
-  const { data: budget, refetch, isRefetching } = useDailyBudget();
+  // The `meta` flag must match DailySummaryHeader's call (same query key) — when
+  // two observers of one key disagree on meta, TanStack v5 picks the most-recent
+  // setup, making the global-toast suppression order-dependent. The Home tab
+  // renders its own inline error UI (DailySummaryHeader), so both opt out.
+  const {
+    data: budget,
+    refetch,
+    isRefetching,
+    isError: budgetIsError,
+  } = useDailyBudget(undefined, { meta: { silentError: true } });
 
   const {
     scrollHandler,
@@ -119,14 +128,25 @@ export default function HomeScreen() {
     [isPremium, haptics, recordAction, navigation],
   );
 
+  // Budget failed and nothing cached — the collapsed bar (a separate surface
+  // that appears on scroll, below the DailySummaryHeader's own error UI) must
+  // not show an empty "/ cal" string. Surface a recoverable affordance here too.
+  const budgetErrored = budgetIsError && !budget;
+
   const handleCalorieTap = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    if (budgetErrored) {
+      void refetch();
+      return;
+    }
     navigation.navigate("DailyNutritionDetail");
-  }, [haptics, navigation]);
+  }, [haptics, navigation, budgetErrored, refetch]);
 
   const calorieText = budget
     ? `${Math.round(budget.foodCalories).toLocaleString()} / ${Math.round(budget.calorieGoal).toLocaleString()} cal`
-    : "";
+    : budgetErrored
+      ? "Couldn't load — tap to retry"
+      : "";
 
   return (
     <>
@@ -147,7 +167,9 @@ export default function HomeScreen() {
           onPress={handleCalorieTap}
           style={styles.collapsedBarContent}
           accessibilityRole="button"
-          accessibilityLabel={`${calorieText}. Tap for details.`}
+          accessibilityLabel={
+            budgetErrored ? calorieText : `${calorieText}. Tap for details.`
+          }
         >
           <ThemedText style={[styles.collapsedBarText, { color: theme.text }]}>
             {calorieText}

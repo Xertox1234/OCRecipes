@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import * as Speech from "expo-speech";
 
+import { useToast } from "@/context/ToastContext";
+
 /**
  * Split text into sentences on `.`, `!`, `?` followed by whitespace or end-of-string.
  * Returns only non-empty prose sentences. Blocks (ActionCards, code fences, etc.)
@@ -43,6 +45,7 @@ export interface UseTTSReturn {
 }
 
 export function useTTS(): UseTTSReturn {
+  const toast = useToast();
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<number | null>(
     null,
@@ -89,9 +92,10 @@ export function useTTS(): UseTTSReturn {
         activeRef.current = false;
         setIsSpeaking(false);
         setSpeakingMessageId(null);
+        toast.error("Couldn't read this aloud. Please try again.");
       },
     });
-  }, []);
+  }, [toast]);
 
   const speak = useCallback(
     (messageId: number, text: string) => {

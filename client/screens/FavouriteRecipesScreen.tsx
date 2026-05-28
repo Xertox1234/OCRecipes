@@ -32,7 +32,8 @@ export default function FavouriteRecipesScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
 
-  const { data, isLoading, refetch, isRefetching } = useFavouriteRecipes();
+  const { data, isLoading, isError, refetch, isRefetching } =
+    useFavouriteRecipes();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
 
   const handleRecipePress = useCallback(
@@ -188,21 +189,53 @@ export default function FavouriteRecipesScreen() {
         onRefresh={refetch}
         refreshing={isRefetching}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons
-              name="heart-outline"
-              size={48}
-              color={withOpacity(theme.text, 0.2)}
-            />
-            <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-              No Favourites
-            </ThemedText>
-            <ThemedText
-              style={[styles.emptySubtitle, { color: theme.textSecondary }]}
-            >
-              Heart recipes to save them here for quick access.
-            </ThemedText>
-          </View>
+          isError ? (
+            <View style={styles.emptyState}>
+              <Ionicons
+                name="alert-circle-outline"
+                size={48}
+                color={withOpacity(theme.text, 0.2)}
+              />
+              <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
+                Couldn&apos;t load your favourites
+              </ThemedText>
+              <ThemedText
+                style={[styles.emptySubtitle, { color: theme.textSecondary }]}
+              >
+                Something went wrong. Pull down to refresh or tap below to try
+                again.
+              </ThemedText>
+              <Pressable
+                onPress={() => {
+                  haptics.impact();
+                  void refetch();
+                }}
+                style={[styles.retryButton, { backgroundColor: theme.link }]}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading favourites"
+              >
+                <ThemedText style={{ color: theme.buttonText }}>
+                  Try Again
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons
+                name="heart-outline"
+                size={48}
+                color={withOpacity(theme.text, 0.2)}
+              />
+              <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
+                No Favourites
+              </ThemedText>
+              <ThemedText
+                style={[styles.emptySubtitle, { color: theme.textSecondary }]}
+              >
+                Heart recipes to save them here for quick access.
+              </ThemedText>
+            </View>
+          )
         }
       />
     </View>
@@ -275,5 +308,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+    minHeight: 44,
+    justifyContent: "center",
   },
 });

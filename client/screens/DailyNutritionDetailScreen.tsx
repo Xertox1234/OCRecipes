@@ -1,7 +1,17 @@
-import React, { useMemo } from "react";
-import { StyleSheet, View, ScrollView, ActivityIndicator } from "react-native";
+import React, { useEffect, useMemo } from "react";
+import {
+  StyleSheet,
+  View,
+  ScrollView,
+  ActivityIndicator,
+  Pressable,
+  Text,
+  Platform,
+  AccessibilityInfo,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
+import { Feather } from "@expo/vector-icons";
 import Animated, {
   FadeInDown,
   useAnimatedStyle,
@@ -110,17 +120,50 @@ export default function DailyNutritionDetailScreen() {
   const { reducedMotion } = useAccessibility();
   const { isPremium } = usePremiumContext();
 
-  const { data: budget, isLoading: budgetLoading } = useDailyBudget();
-  const { data: summary, isLoading: summaryLoading } =
-    useQuery<DailySummaryResponse>({
-      queryKey: ["/api/daily-summary"],
-    });
-  const { data: goals, isLoading: goalsLoading } = useQuery<GoalsResponse>({
+  const {
+    data: budget,
+    isLoading: budgetLoading,
+    isError: budgetError,
+    refetch: refetchBudget,
+  } = useDailyBudget(undefined, { meta: { silentError: true } });
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useQuery<DailySummaryResponse>({
+    queryKey: ["/api/daily-summary"],
+    // No silentError here: this key is shared with useHistoryData (History
+    // dashboard, no own error UI), so opting out could suppress its global-toast
+    // backstop. This screen's error gate (summaryError, below) still catches it.
+  });
+  const {
+    data: goals,
+    isLoading: goalsLoading,
+    isError: goalsError,
+    refetch: refetchGoals,
+  } = useQuery<GoalsResponse>({
     queryKey: ["/api/goals"],
+    meta: { silentError: true },
   });
   const { data: adaptiveGoalData } = useAdaptiveGoals(isPremium);
 
   const isLoading = budgetLoading || summaryLoading || goalsLoading;
+  const isError = budgetError || summaryError || goalsError;
+
+  const handleRetry = React.useCallback(() => {
+    void Promise.all([refetchBudget(), refetchSummary(), refetchGoals()]);
+  }, [refetchBudget, refetchSummary, refetchGoals]);
+
+  // iOS pairs with the Android `accessibilityLiveRegion` on the error text;
+  // gating to iOS avoids a double-announce on Android (live region + announce).
+  useEffect(() => {
+    if (isError && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        "Unable to load nutrition data. Double tap retry to try again.",
+      );
+    }
+  }, [isError]);
 
   const consumed = summary?.totalCalories ?? 0;
   const calorieGoal = budget?.calorieGoal ?? goals?.calories ?? 0;
@@ -172,6 +215,57 @@ export default function DailyNutritionDetailScreen() {
           color={theme.link}
           accessibilityLabel="Loading nutrition data"
         />
+      </View>
+    );
+  }
+
+  // Error gate runs BEFORE the zero-defaulting render below so a failed
+  // /api/daily-summary never presents "0 consumed / 0 items logged" as real
+  // data. Genuinely-empty (200 with no items today) falls through to the
+  // normal render where 0 is a legitimate value.
+  if (isError) {
+    return (
+      <View
+        style={[
+          styles.errorContainer,
+          { backgroundColor: theme.backgroundRoot },
+        ]}
+        accessibilityViewIsModal
+      >
+        <Feather
+          name="alert-circle"
+          size={40}
+          color={theme.textSecondary}
+          accessible={false}
+        />
+        <Text
+          style={[styles.errorTitle, { color: theme.text }]}
+          accessibilityLiveRegion="assertive"
+        >
+          Unable to load nutrition data
+        </Text>
+        <Text style={[styles.errorMessage, { color: theme.textSecondary }]}>
+          Check your connection and try again.
+        </Text>
+        <Pressable
+          onPress={handleRetry}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading nutrition data"
+          style={({ pressed }) => [
+            styles.retryButton,
+            { backgroundColor: theme.link, opacity: pressed ? 0.8 : 1 },
+          ]}
+        >
+          <Feather
+            name="refresh-cw"
+            size={16}
+            color={theme.buttonText}
+            accessible={false}
+          />
+          <Text style={[styles.retryText, { color: theme.buttonText }]}>
+            Retry
+          </Text>
+        </Pressable>
       </View>
     );
   }
@@ -259,6 +353,39 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontFamily: FontFamily.semiBold,
+    textAlign: "center",
+    marginTop: Spacing.sm,
+  },
+  errorMessage: {
+    fontSize: 14,
+    fontFamily: FontFamily.medium,
+    textAlign: "center",
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing["2xl"],
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.button,
+    minHeight: 44,
+  },
+  retryText: {
+    fontSize: 15,
+    fontFamily: FontFamily.semiBold,
   },
   ringSection: {
     paddingTop: Spacing.xl * 2 + 40,

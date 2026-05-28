@@ -3,6 +3,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useAuthContext } from "@/context/AuthContext";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
 import { getApiUrl } from "@/lib/query-client";
@@ -11,6 +12,7 @@ import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 
 export function useAvatarUpload() {
   const haptics = useHaptics();
+  const toast = useToast();
   const { checkAuth } = useAuthContext();
   const [isUploading, setIsUploading] = useState(false);
 
@@ -75,10 +77,15 @@ export function useAvatarUpload() {
     } catch (error) {
       console.error("Avatar upload error:", error);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Failed to upload avatar. Please try again.",
+      );
     } finally {
       setIsUploading(false);
     }
-  }, [haptics, checkAuth]);
+  }, [haptics, toast, checkAuth]);
 
   return { isUploading, upload };
 }

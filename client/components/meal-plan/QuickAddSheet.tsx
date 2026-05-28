@@ -88,7 +88,7 @@ function QuickAddSheetInner({
     if (mealType) p.mealType = mealType;
     return Object.keys(p).length > 0 ? p : undefined;
   }, [debouncedQuery, mealType]);
-  const { data, isLoading } = useUnifiedRecipes(queryParams);
+  const { data, isLoading, isError } = useUnifiedRecipes(queryParams);
 
   const addItemMutation = useAddMealPlanItem();
   const isAdding = useRef(false);
@@ -300,10 +300,12 @@ function QuickAddSheetInner({
     }
     return (
       <ThemedText style={[styles.emptyText, { color: theme.textSecondary }]}>
-        No recipes found
+        {isError
+          ? "Couldn't load recipes. Check your connection and try again."
+          : "No recipes found"}
       </ThemedText>
     );
-  }, [isLoading, theme.textSecondary]);
+  }, [isLoading, isError, theme.textSecondary]);
 
   const ListFooter = useMemo(
     () => (

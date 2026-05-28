@@ -1,6 +1,6 @@
 ---
 title: "DailyNutritionDetailScreen shows confident wrong '0 consumed' data on partial query failure"
-status: backlog
+status: done
 priority: high
 created: 2026-05-28
 updated: 2026-05-28

@@ -27,7 +27,7 @@ export default function CookbookListScreen() {
   const tabBarHeight = useSafeTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const { data: cookbooks, isLoading, refetch } = useCookbooks();
+  const { data: cookbooks, isLoading, isError, refetch } = useCookbooks();
   const { mutate: deleteCookbook } = useDeleteCookbook();
   const { data: favouriteIds } = useFavouriteRecipeIds();
   const favouriteCount = favouriteIds?.ids.length ?? 0;
@@ -206,35 +206,67 @@ export default function CookbookListScreen() {
           </Pressable>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Feather
-              name="book"
-              size={48}
-              color={withOpacity(theme.text, 0.2)}
-            />
-            <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-              No Cookbooks
-            </ThemedText>
-            <ThemedText
-              style={[styles.emptySubtitle, { color: theme.textSecondary }]}
-            >
-              Create a cookbook to organize your favorite recipes.
-            </ThemedText>
-            <Pressable
-              onPress={() => {
-                haptics.impact();
-                navigation.navigate("CookbookCreate");
-              }}
-              style={[styles.createButton, { backgroundColor: theme.link }]}
-              accessibilityRole="button"
-              accessibilityLabel="Create cookbook"
-            >
-              <Feather name="plus" size={16} color={theme.buttonText} />
-              <ThemedText style={styles.createButtonText}>
-                Create Cookbook
+          isError ? (
+            <View style={styles.emptyState}>
+              <Feather
+                name="alert-circle"
+                size={48}
+                color={withOpacity(theme.text, 0.2)}
+              />
+              <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
+                Couldn&apos;t load your cookbooks
               </ThemedText>
-            </Pressable>
-          </View>
+              <ThemedText
+                style={[styles.emptySubtitle, { color: theme.textSecondary }]}
+              >
+                Something went wrong. Check your connection and try again.
+              </ThemedText>
+              <Pressable
+                onPress={() => {
+                  haptics.impact();
+                  void refetch();
+                }}
+                style={[styles.createButton, { backgroundColor: theme.link }]}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading cookbooks"
+              >
+                <Feather name="refresh-cw" size={16} color={theme.buttonText} />
+                <ThemedText style={styles.createButtonText}>
+                  Try Again
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Feather
+                name="book"
+                size={48}
+                color={withOpacity(theme.text, 0.2)}
+              />
+              <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
+                No Cookbooks
+              </ThemedText>
+              <ThemedText
+                style={[styles.emptySubtitle, { color: theme.textSecondary }]}
+              >
+                Create a cookbook to organize your favorite recipes.
+              </ThemedText>
+              <Pressable
+                onPress={() => {
+                  haptics.impact();
+                  navigation.navigate("CookbookCreate");
+                }}
+                style={[styles.createButton, { backgroundColor: theme.link }]}
+                accessibilityRole="button"
+                accessibilityLabel="Create cookbook"
+              >
+                <Feather name="plus" size={16} color={theme.buttonText} />
+                <ThemedText style={styles.createButtonText}>
+                  Create Cookbook
+                </ThemedText>
+              </Pressable>
+            </View>
+          )
         }
       />
     </View>

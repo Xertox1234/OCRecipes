@@ -39,6 +39,7 @@ import { useIsRecipeFavourited } from "@/hooks/useFavouriteRecipes";
 import { useServingAdjuster } from "@/hooks/useServingAdjuster";
 import { RecipeActionBar } from "@/components/RecipeActionBar";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { useToast } from "@/context/ToastContext";
 import { resolveImageUrl } from "@/lib/query-client";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
@@ -86,6 +87,7 @@ type NavProp = NativeStackNavigationProp<RootStackParamList>;
 export function RecipeDetailContent(props: RecipeDetailContentProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const navigation = useNavigation<NavProp>();
   const { isPremium } = usePremiumContext();
   const { width: screenWidth } = useWindowDimensions();
@@ -150,7 +152,11 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
     () => (props.ingredients ?? []).map((i) => i.name),
     [props.ingredients],
   );
-  const { data: allergenResult } = useAllergenCheck(ingredientNames);
+  const {
+    data: allergenResult,
+    isError: allergenCheckFailed,
+    refetch: refetchAllergenCheck,
+  } = useAllergenCheck(ingredientNames);
 
   const uniqueTags = useMemo(
     () => [...new Set(props.dietTags ?? [])],
@@ -343,6 +349,10 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
             <RecipeIngredientsList
               ingredients={scaledIngredients}
               allergenResult={allergenResult}
+              allergenCheckFailed={allergenCheckFailed}
+              onRetryAllergenCheck={() => {
+                void refetchAllergenCheck();
+              }}
             />
           )}
         </View>
@@ -424,7 +434,11 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
                         ? () => {
                             WebBrowser.openBrowserAsync(
                               tool.affiliateUrl!,
-                            ).catch(() => {});
+                            ).catch(() => {
+                              toast.error(
+                                "Couldn't open link. Please try again.",
+                              );
+                            });
                           }
                         : undefined
                     }

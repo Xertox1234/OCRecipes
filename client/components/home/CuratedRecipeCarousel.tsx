@@ -13,6 +13,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { FallbackImage } from "@/components/FallbackImage";
 import { CuratedBadge } from "@/components/CuratedBadge";
 import { CarouselSkeleton } from "./CarouselSkeleton";
+import { CarouselError } from "./CarouselError";
 import { CARD_WIDTH } from "./CarouselRecipeCard";
 import { useTheme } from "@/hooks/useTheme";
 import { useCuratedRecipes } from "@/hooks/useCuratedRecipes";
@@ -35,7 +36,7 @@ export const CuratedRecipeCarousel = React.memo(
   function CuratedRecipeCarousel() {
     const { theme } = useTheme();
     const navigation = useNavigation<HomeScreenNavigationProp>();
-    const { data, isLoading } = useCuratedRecipes();
+    const { data, isLoading, isError, refetch } = useCuratedRecipes();
 
     const recipes = data?.recipes ?? [];
 
@@ -131,6 +132,25 @@ export const CuratedRecipeCarousel = React.memo(
             Curated Recipes
           </ThemedText>
           <CarouselSkeleton />
+        </View>
+      );
+    }
+
+    // Distinguish a failed fetch (recoverable, show retry) from a genuinely
+    // empty list (render nothing).
+    if (isError && recipes.length === 0) {
+      return (
+        <View style={styles.container}>
+          <ThemedText
+            type="body"
+            style={[styles.header, { color: theme.text }]}
+          >
+            Curated Recipes
+          </ThemedText>
+          <CarouselError
+            label="curated recipes"
+            onRetry={() => void refetch()}
+          />
         </View>
       );
     }

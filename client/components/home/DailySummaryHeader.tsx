@@ -6,6 +6,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
+import { CarouselError } from "@/components/home/CarouselError";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
@@ -26,7 +27,12 @@ export function DailySummaryHeader({ onCalorieTap }: DailySummaryHeaderProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { user } = useAuthContext();
-  const { data: budget, isLoading } = useDailyBudget();
+  const {
+    data: budget,
+    isLoading,
+    isError,
+    refetch,
+  } = useDailyBudget(undefined, { meta: { silentError: true } });
 
   const displayName = user?.displayName || user?.username || "there";
 
@@ -86,6 +92,11 @@ export function DailySummaryHeader({ onCalorieTap }: DailySummaryHeaderProps) {
               accessible={false}
             />
           </Pressable>
+        ) : isError ? (
+          <CarouselError
+            label="your calorie summary"
+            onRetry={() => void refetch()}
+          />
         ) : null}
       </Animated.View>
     </View>

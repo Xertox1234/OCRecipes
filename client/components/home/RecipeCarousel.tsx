@@ -9,6 +9,7 @@ import { useNavigation } from "@react-navigation/native";
 
 import { CarouselRecipeCard, CARD_WIDTH } from "./CarouselRecipeCard";
 import { CarouselSkeleton } from "./CarouselSkeleton";
+import { CarouselError } from "./CarouselError";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -28,7 +29,7 @@ const SNAP_INTERVAL = CARD_WIDTH + Spacing.md;
 export const RecipeCarousel = React.memo(function RecipeCarousel() {
   const { theme } = useTheme();
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const { data, isLoading } = useCarouselRecipes();
+  const { data, isLoading, isError, refetch } = useCarouselRecipes();
   const { mutate: dismissRecipe } = useDismissCarouselRecipe();
   const { data: favouriteData } = useFavouriteRecipeIds();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
@@ -101,6 +102,19 @@ export const RecipeCarousel = React.memo(function RecipeCarousel() {
           For You
         </ThemedText>
         <CarouselSkeleton />
+      </View>
+    );
+  }
+
+  // Distinguish a failed fetch (recoverable, show retry) from a genuinely
+  // empty carousel (user dismissed all cards — render nothing).
+  if (isError && cards.length === 0) {
+    return (
+      <View style={styles.container}>
+        <ThemedText type="body" style={[styles.header, { color: theme.text }]}>
+          For You
+        </ThemedText>
+        <CarouselError label="recipes" onRetry={() => void refetch()} />
       </View>
     );
   }
