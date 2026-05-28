@@ -1,6 +1,6 @@
 ---
 title: "Swallowed client catches drop a result the user is waiting on (.catch(()=>{}) / console+haptic-only)"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-28
 updated: 2026-05-28

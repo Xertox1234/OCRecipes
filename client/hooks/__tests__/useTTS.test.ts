@@ -14,6 +14,16 @@ vi.mock("expo-speech", () => ({
   stop: () => mockStop(),
 }));
 
+// Mock toast — useTTS surfaces read-aloud failures via toast.error
+const mockToastError = vi.fn();
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    error: mockToastError,
+    success: vi.fn(),
+    info: vi.fn(),
+  }),
+}));
+
 // ─── splitSentences pure function tests ───────────────────────────────────────
 
 describe("splitSentences", () => {
@@ -174,5 +184,24 @@ describe("useTTS", () => {
     // Second sentence should now be spoken
     expect(mockSpeak).toHaveBeenCalledTimes(2);
     expect(mockSpeak.mock.calls[1][0]).toBe("Second sentence.");
+  });
+
+  it("surfaces a toast and resets state when speech errors", () => {
+    const { result } = renderHook(() => useTTS());
+
+    act(() => {
+      result.current.speak(1, "Hello world.");
+    });
+    expect(result.current.isSpeaking).toBe(true);
+
+    // Simulate the native onError callback firing
+    const options = mockSpeak.mock.calls[0][1] as { onError?: () => void };
+    act(() => {
+      options.onError?.();
+    });
+
+    expect(mockToastError).toHaveBeenCalledTimes(1);
+    expect(result.current.isSpeaking).toBe(false);
+    expect(result.current.speakingMessageId).toBeNull();
   });
 });

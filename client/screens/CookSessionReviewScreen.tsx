@@ -64,6 +64,7 @@ export default function CookSessionReviewScreen() {
   const [nutrition, setNutrition] =
     useState<CookSessionNutritionSummary | null>(null);
   const [isLoadingNutrition, setIsLoadingNutrition] = useState(false);
+  const [nutritionError, setNutritionError] = useState(false);
 
   const editIngredient = useEditIngredient(sessionId);
   const deleteIngredient = useDeleteIngredient(sessionId);
@@ -77,21 +78,27 @@ export default function CookSessionReviewScreen() {
     [session?.ingredients],
   );
 
+  const { mutateAsync: fetchNutritionAsync } = nutritionMutation;
+
+  const fetchNutrition = useCallback(() => {
+    setNutritionError(false);
+    setIsLoadingNutrition(true);
+    fetchNutritionAsync({})
+      .then((data) => {
+        setNutrition(data);
+      })
+      .catch(() => {
+        setNutritionError(true);
+      })
+      .finally(() => {
+        setIsLoadingNutrition(false);
+      });
+  }, [fetchNutritionAsync]);
+
   // Fetch nutrition on mount and when ingredients change
   useEffect(() => {
     if (ingredients.length > 0 && sessionId) {
-      setIsLoadingNutrition(true);
-      nutritionMutation
-        .mutateAsync({})
-        .then((data) => {
-          setNutrition(data);
-        })
-        .catch(() => {
-          // Nutrition lookup may fail silently
-        })
-        .finally(() => {
-          setIsLoadingNutrition(false);
-        });
+      fetchNutrition();
     }
     // Only re-fetch when ingredients change
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -268,6 +275,32 @@ export default function CookSessionReviewScreen() {
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
                 Calculating nutrition...
               </ThemedText>
+            </View>
+          ) : nutritionError ? (
+            <View style={styles.nutritionError}>
+              <ThemedText type="small" style={{ color: theme.error }}>
+                Unable to calculate nutrition.
+              </ThemedText>
+              <Pressable
+                onPress={fetchNutrition}
+                style={styles.nutritionRetry}
+                accessibilityRole="button"
+                accessibilityLabel="Retry nutrition calculation"
+                hitSlop={8}
+              >
+                <Feather
+                  name="refresh-cw"
+                  size={14}
+                  color={theme.link}
+                  accessible={false}
+                />
+                <ThemedText
+                  type="small"
+                  style={{ color: theme.link, fontWeight: "600" }}
+                >
+                  Retry
+                </ThemedText>
+              </Pressable>
             </View>
           ) : null
         }
@@ -566,6 +599,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: Spacing.sm,
     marginTop: Spacing.lg,
+  },
+  nutritionError: {
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.lg,
+  },
+  nutritionRetry: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
   },
   actionHub: {
     position: "absolute",
