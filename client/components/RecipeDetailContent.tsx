@@ -150,7 +150,11 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
     () => (props.ingredients ?? []).map((i) => i.name),
     [props.ingredients],
   );
-  const { data: allergenResult } = useAllergenCheck(ingredientNames);
+  const {
+    data: allergenResult,
+    isError: allergenCheckFailed,
+    refetch: refetchAllergenCheck,
+  } = useAllergenCheck(ingredientNames);
 
   const uniqueTags = useMemo(
     () => [...new Set(props.dietTags ?? [])],
@@ -343,6 +347,10 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
             <RecipeIngredientsList
               ingredients={scaledIngredients}
               allergenResult={allergenResult}
+              allergenCheckFailed={allergenCheckFailed}
+              onRetryAllergenCheck={() => {
+                void refetchAllergenCheck();
+              }}
             />
           )}
         </View>
