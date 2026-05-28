@@ -89,26 +89,22 @@ describe("front-label-analysis", () => {
       expect(result.confidence).toBe(0.2);
     });
 
-    it("returns fallback result on malformed API response", async () => {
+    it("throws on malformed API response", async () => {
       mockVisionResponse({
         unexpected: "data",
       });
 
-      const result = await analyzeFrontLabel("base64data");
-
-      expect(result.brand).toBeNull();
-      expect(result.productName).toBeNull();
-      expect(result.claims).toEqual([]);
-      expect(result.confidence).toBe(0);
+      await expect(analyzeFrontLabel("base64data")).rejects.toThrow(
+        "Front label extraction returned invalid data",
+      );
     });
 
-    it("returns fallback result on API error", async () => {
+    it("throws on API error", async () => {
       mockCreate.mockRejectedValueOnce(new Error("API timeout"));
 
-      const result = await analyzeFrontLabel("base64data");
-
-      expect(result.brand).toBeNull();
-      expect(result.confidence).toBe(0);
+      await expect(analyzeFrontLabel("base64data")).rejects.toThrow(
+        "Failed to analyze product front label. Please try again.",
+      );
     });
 
     it("truncates fields exceeding max length", async () => {

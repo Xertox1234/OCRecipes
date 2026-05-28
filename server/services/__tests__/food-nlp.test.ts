@@ -106,14 +106,25 @@ describe("Food NLP", () => {
       expect(result[1].name).toBe("butter");
     });
 
-    it("returns empty array when OpenAI returns no content", async () => {
+    it("throws when OpenAI returns no content", async () => {
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: null } }],
       } as any);
 
-      const result = await parseNaturalLanguageFood("some food");
+      await expect(parseNaturalLanguageFood("some food")).rejects.toThrow(
+        "No response from food parsing",
+      );
+    });
+
+    it("returns empty array when the AI parses no foods (valid empty result)", async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: JSON.stringify({ items: [] }) } }],
+      } as any);
+
+      const result = await parseNaturalLanguageFood("uhh");
 
       expect(result).toEqual([]);
+      expect(mockLookup).not.toHaveBeenCalled();
     });
 
     it("handles nutrition lookup failure gracefully", async () => {
@@ -188,25 +199,25 @@ describe("Food NLP", () => {
       expect(result[0].servingSize).toBe("1 cup cooked");
     });
 
-    it("returns empty array on OpenAI API error", async () => {
+    it("throws on OpenAI API error", async () => {
       mockCreate.mockRejectedValue(new Error("API timeout"));
 
-      const result = await parseNaturalLanguageFood("2 eggs");
-
-      expect(result).toEqual([]);
+      await expect(parseNaturalLanguageFood("2 eggs")).rejects.toThrow(
+        "Failed to parse food description. Please try again.",
+      );
     });
 
-    it("returns empty array when AI returns invalid JSON", async () => {
+    it("throws when AI returns invalid JSON", async () => {
       mockCreate.mockResolvedValue({
         choices: [{ message: { content: "not valid json {{{" } }],
       } as any);
 
-      const result = await parseNaturalLanguageFood("some food");
-
-      expect(result).toEqual([]);
+      await expect(parseNaturalLanguageFood("some food")).rejects.toThrow(
+        "Food parsing returned invalid data. Please try again.",
+      );
     });
 
-    it("returns empty array for invalid AI response", async () => {
+    it("throws for invalid AI response shape", async () => {
       mockCreate.mockResolvedValue({
         choices: [
           {
@@ -217,9 +228,9 @@ describe("Food NLP", () => {
         ],
       } as any);
 
-      const result = await parseNaturalLanguageFood("some food");
-
-      expect(result).toEqual([]);
+      await expect(parseNaturalLanguageFood("some food")).rejects.toThrow(
+        "Food parsing returned unexpected data. Please try again.",
+      );
     });
   });
 });

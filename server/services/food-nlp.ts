@@ -76,22 +76,29 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
     );
   } catch (error) {
     log.error({ err: toError(error) }, "food NLP parsing error");
-    return [];
+    throw new Error("Failed to parse food description. Please try again.");
   }
 
   const content = response.choices[0]?.message?.content;
-  if (!content) return [];
+  if (!content) {
+    throw new Error("No response from food parsing");
+  }
 
-  // Validate AI response against expected schema
+  // Validate AI response against expected schema. A failed call (invalid JSON
+  // or wrong shape) is a retryable failure and must throw so the route returns
+  // a 5xx — distinct from a successful parse that legitimately yields no items
+  // (handled below, returns an empty array).
   let rawJson;
   try {
     rawJson = JSON.parse(content);
   } catch {
     log.warn("food NLP: AI returned invalid JSON");
-    return [];
+    throw new Error("Food parsing returned invalid data. Please try again.");
   }
   const parsed = validateAiResponse(rawJson, foodNlpResponseSchema);
-  if (!parsed || !Array.isArray(parsed.items)) return [];
+  if (!parsed || !Array.isArray(parsed.items)) {
+    throw new Error("Food parsing returned unexpected data. Please try again.");
+  }
 
   // Look up nutrition for all parsed items in parallel (rate-limited)
   const settled = await Promise.allSettled(

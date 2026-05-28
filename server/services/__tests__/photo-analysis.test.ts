@@ -1,4 +1,43 @@
 import { z } from "zod";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  analyzePhoto,
+  analyzeLabelPhoto,
+  analyzeRecipePhoto,
+  classifyAndAnalyze,
+} from "../photo-analysis";
+import { openai } from "../../lib/openai";
+import { createMockChatCompletion } from "../../__tests__/factories";
+
+// Mock the OpenAI client; everything else (shared constants, cultural-food-map,
+// logger) is a pure collaborator and runs for real.
+vi.mock("../../lib/openai", () => ({
+  openai: {
+    chat: {
+      completions: {
+        create: vi.fn(),
+      },
+    },
+  },
+  MODEL_HEAVY: "gpt-4o",
+  MODEL_FAST: "gpt-4o-mini",
+  OPENAI_TIMEOUT_HEAVY_MS: 60_000,
+  OPENAI_TIMEOUT_FAST_MS: 15_000,
+}));
+
+const mockCreate = vi.mocked(openai.chat.completions.create);
+
+/** Queue a valid JSON vision response shaped like an OpenAI ChatCompletion. */
+function mockVisionResponse(content: object) {
+  mockCreate.mockResolvedValueOnce(
+    createMockChatCompletion(JSON.stringify(content)),
+  );
+}
+
+/** Queue a raw (possibly malformed/non-JSON) response body. */
+function mockRawResponse(content: string | null) {
+  mockCreate.mockResolvedValueOnce(createMockChatCompletion(content));
+}
 
 // Re-create the recipe photo schema here for isolated testing
 const recipeIngredientSchema = z.object({
@@ -529,5 +568,121 @@ describe("Recipe Photo Analysis Schema", () => {
       expect(result.data.ingredients).toHaveLength(5);
       expect(result.data.title).toBe("Grandma's Tomato Soup");
     }
+  });
+});
+
+// Failure-propagation tests for the live functions. These guard the contract
+// that an OpenAI outage or a Zod-invalid AI response must THROW (so the route
+// returns a 5xx the user can retry) — never resolve to a misleading
+// empty-but-valid result that the route would ship as a 200.
+describe("photo-analysis failure propagation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("analyzePhoto", () => {
+    it("throws on OpenAI API error", async () => {
+      mockCreate.mockRejectedValueOnce(new Error("Vision API down"));
+
+      await expect(analyzePhoto("base64data", "log")).rejects.toThrow(
+        "Failed to analyze photo. Please try again.",
+      );
+    });
+
+    it("throws on a Zod-invalid response", async () => {
+      mockVisionResponse({ notFoods: "wrong shape" });
+
+      await expect(analyzePhoto("base64data", "log")).rejects.toThrow(
+        "Photo analysis returned invalid data",
+      );
+    });
+
+    it("throws on malformed (non-JSON) response content", async () => {
+      mockRawResponse("not valid json {{{");
+
+      await expect(analyzePhoto("base64data", "log")).rejects.toThrow(
+        "Photo analysis returned invalid data",
+      );
+    });
+
+    it("returns a valid empty result without throwing (no food in frame)", async () => {
+      mockVisionResponse({
+        foods: [],
+        overallConfidence: 0,
+        followUpQuestions: [],
+      });
+
+      const result = await analyzePhoto("base64data", "log");
+
+      expect(result.foods).toEqual([]);
+      expect(result.overallConfidence).toBe(0);
+    });
+  });
+
+  describe("analyzeLabelPhoto", () => {
+    it("throws on OpenAI API error", async () => {
+      mockCreate.mockRejectedValueOnce(new Error("Vision API down"));
+
+      await expect(analyzeLabelPhoto("base64data")).rejects.toThrow(
+        "Failed to analyze nutrition label. Please try again.",
+      );
+    });
+
+    it("throws on a Zod-invalid response", async () => {
+      mockVisionResponse({ unexpected: "data" });
+
+      await expect(analyzeLabelPhoto("base64data")).rejects.toThrow(
+        "Nutrition label extraction returned invalid data",
+      );
+    });
+  });
+
+  describe("analyzeRecipePhoto", () => {
+    it("throws on OpenAI API error", async () => {
+      mockCreate.mockRejectedValueOnce(new Error("Vision API down"));
+
+      await expect(analyzeRecipePhoto("base64data")).rejects.toThrow(
+        "Failed to analyze recipe photo. Please try again.",
+      );
+    });
+
+    it("throws on a Zod-invalid response", async () => {
+      mockVisionResponse({ noTitle: true });
+
+      await expect(analyzeRecipePhoto("base64data")).rejects.toThrow(
+        "Recipe photo extraction returned invalid data",
+      );
+    });
+  });
+
+  describe("classifyAndAnalyze", () => {
+    it("throws on OpenAI API error instead of returning non_food", async () => {
+      mockCreate.mockRejectedValueOnce(new Error("Classification API down"));
+
+      await expect(classifyAndAnalyze("base64data")).rejects.toThrow(
+        "Failed to analyze photo. Please try again.",
+      );
+    });
+
+    it("throws on a Zod-invalid classification response", async () => {
+      mockVisionResponse({ notAContentType: "x" });
+
+      await expect(classifyAndAnalyze("base64data")).rejects.toThrow(
+        "Photo classification returned invalid data",
+      );
+    });
+
+    it("returns a genuine non_food classification without throwing", async () => {
+      mockVisionResponse({
+        contentType: "non_food",
+        confidence: 0.95,
+        barcode: null,
+      });
+
+      const result = await classifyAndAnalyze("base64data");
+
+      expect(result.contentType).toBe("non_food");
+      expect(result.analysisResult).toBeNull();
+    });
   });
 });
