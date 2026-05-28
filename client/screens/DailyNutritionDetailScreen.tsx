@@ -133,7 +133,9 @@ export default function DailyNutritionDetailScreen() {
     refetch: refetchSummary,
   } = useQuery<DailySummaryResponse>({
     queryKey: ["/api/daily-summary"],
-    meta: { silentError: true },
+    // No silentError here: this key is shared with useHistoryData (History
+    // dashboard, no own error UI), so opting out could suppress its global-toast
+    // backstop. This screen's error gate (summaryError, below) still catches it.
   });
   const {
     data: goals,
