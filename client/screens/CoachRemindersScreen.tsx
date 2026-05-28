@@ -61,9 +61,12 @@ function useReminderMutes() {
     select: (profile: { reminderMutes?: ReminderMutes }) => ({
       reminderMutes: (profile.reminderMutes ?? {}) as ReminderMutes,
     }),
-    // This screen renders its own error/retry UI on read failure, so suppress
-    // the global QueryCache toast to avoid double-reporting the same failure.
-    meta: { silentError: true },
+    // Intentionally NO meta.silentError here: this query shares
+    // QUERY_KEYS.dietaryProfile with RecipeChatScreen and useDietaryProfileForm,
+    // which render no error UI and rely on the global toast. In TanStack v5 meta
+    // lives on the shared cache entry, so opting out here would suppress their
+    // backstop (mount-order-dependent). The inline error/retry below is this
+    // screen's surface; a duplicate global toast is the accepted tradeoff.
   });
 }
 
