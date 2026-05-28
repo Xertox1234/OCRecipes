@@ -144,6 +144,26 @@ export function useFastingTimer() {
     prevPhaseRef.current = currentPhase.name;
   }, [currentPhase, haptics]);
 
+  // Announce the error transition for screen readers. FastingScreen renders an
+  // EmptyState (no live region) on `currentFastIsError && !currentFast`, so a
+  // cross-platform announce carries both VoiceOver and TalkBack with no
+  // double-announce. Key on the same composite (not `currentFastIsError`
+  // alone) — with stale cached data the timer still renders — and skip the
+  // mount render so an already-errored screen does not announce on top of focus.
+  const fastErrorNoData = currentFastIsError && !currentFast;
+  const fastErrorAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (!fastErrorAnnouncedRef.current) {
+      fastErrorAnnouncedRef.current = true;
+      return;
+    }
+    if (fastErrorNoData) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your fast. Try again.",
+      );
+    }
+  }, [fastErrorNoData]);
+
   // Random idle tip — stable per mount (LEARNINGS.md:59)
   const [idleTip] = useState(
     () => FASTING_TIPS[Math.floor(Math.random() * FASTING_TIPS.length)],
