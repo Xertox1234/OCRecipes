@@ -32,7 +32,7 @@ export function DailySummaryHeader({ onCalorieTap }: DailySummaryHeaderProps) {
     isLoading,
     isError,
     refetch,
-  } = useDailyBudget(undefined, { silentError: true });
+  } = useDailyBudget(undefined, { meta: { silentError: true } });
 
   const displayName = user?.displayName || user?.username || "there";
 
