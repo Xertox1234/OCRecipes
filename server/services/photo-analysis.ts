@@ -29,29 +29,6 @@ import type { FoodItem, AnalysisResult } from "@shared/types/photo-analysis";
 
 const log = createServiceLogger("photo-analysis");
 
-/** Default empty label result for validation failures and error cases */
-const EMPTY_LABEL_RESULT: LabelExtractionResult = {
-  servingSize: null,
-  servingsPerContainer: null,
-  calories: null,
-  totalFat: null,
-  saturatedFat: null,
-  transFat: null,
-  cholesterol: null,
-  sodium: null,
-  totalCarbs: null,
-  dietaryFiber: null,
-  totalSugars: null,
-  addedSugars: null,
-  protein: null,
-  vitaminD: null,
-  calcium: null,
-  iron: null,
-  potassium: null,
-  confidence: 0,
-  productName: null,
-};
-
 // Zod schemas for runtime validation (from institutional learning: unsafe-type-cast-zod-validation)
 const foodItemSchema = z.object({
   name: z.string(),
@@ -300,8 +277,9 @@ export async function analyzeRecipePhoto(
 ): Promise<RecipePhotoResult> {
   const startTime = Date.now();
 
+  let response;
   try {
-    const response = await openai.chat.completions.create(
+    response = await openai.chat.completions.create(
       {
         model: MODEL_HEAVY,
         max_completion_tokens: 2000,
@@ -332,42 +310,37 @@ export async function analyzeRecipePhoto(
       },
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
-
-    const content = response.choices[0]?.message?.content || "{}";
-    const parsed = recipePhotoResultSchema.safeParse(JSON.parse(content));
-
-    if (!parsed.success) {
-      log.warn(
-        { zodErrors: parsed.error.flatten() },
-        "recipe photo extraction validation failed",
-      );
-      throw new Error("Recipe photo extraction returned invalid data");
-    }
-
-    log.debug(
-      { duration: Date.now() - startTime },
-      "recipe photo extraction completed",
-    );
-    return parsed.data;
   } catch (error) {
     log.error({ err: toError(error) }, "recipe photo analysis error");
-    return {
-      title: "",
-      description: null,
-      ingredients: [],
-      instructions: null,
-      servings: null,
-      prepTimeMinutes: null,
-      cookTimeMinutes: null,
-      cuisine: null,
-      dietTags: [],
-      caloriesPerServing: null,
-      proteinPerServing: null,
-      carbsPerServing: null,
-      fatPerServing: null,
-      confidence: 0,
-    };
+    throw new Error("Failed to analyze recipe photo. Please try again.");
   }
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("No response from recipe photo analysis");
+  }
+
+  let rawJson;
+  try {
+    rawJson = JSON.parse(content);
+  } catch {
+    throw new Error("Recipe photo extraction returned invalid data");
+  }
+  const parsed = recipePhotoResultSchema.safeParse(rawJson);
+
+  if (!parsed.success) {
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "recipe photo extraction validation failed",
+    );
+    throw new Error("Recipe photo extraction returned invalid data");
+  }
+
+  log.debug(
+    { duration: Date.now() - startTime },
+    "recipe photo extraction completed",
+  );
+  return parsed.data;
 }
 
 /**
@@ -379,8 +352,9 @@ export async function analyzeLabelPhoto(
 ): Promise<LabelExtractionResult> {
   const startTime = Date.now();
 
+  let response;
   try {
-    const response = await openai.chat.completions.create(
+    response = await openai.chat.completions.create(
       {
         model: MODEL_HEAVY,
         max_completion_tokens: 800,
@@ -411,27 +385,34 @@ export async function analyzeLabelPhoto(
       },
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
-
-    const content = response.choices[0]?.message?.content || "{}";
-    const parsed = labelExtractionSchema.safeParse(JSON.parse(content));
-
-    if (!parsed.success) {
-      log.warn(
-        { zodErrors: parsed.error.flatten() },
-        "label extraction validation failed",
-      );
-      return { ...EMPTY_LABEL_RESULT };
-    }
-
-    log.debug(
-      { duration: Date.now() - startTime },
-      "label extraction completed",
-    );
-    return parsed.data;
   } catch (error) {
     log.error({ err: toError(error) }, "label analysis error");
-    return { ...EMPTY_LABEL_RESULT };
+    throw new Error("Failed to analyze nutrition label. Please try again.");
   }
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("No response from nutrition label analysis");
+  }
+
+  let rawJson;
+  try {
+    rawJson = JSON.parse(content);
+  } catch {
+    throw new Error("Nutrition label extraction returned invalid data");
+  }
+  const parsed = labelExtractionSchema.safeParse(rawJson);
+
+  if (!parsed.success) {
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "label extraction validation failed",
+    );
+    throw new Error("Nutrition label extraction returned invalid data");
+  }
+
+  log.debug({ duration: Date.now() - startTime }, "label extraction completed");
+  return parsed.data;
 }
 
 /** Get the system prompt and max completion tokens for a given intent */
@@ -464,8 +445,9 @@ export async function analyzePhoto(
   const startTime = Date.now();
   const { prompt, maxTokens } = getPromptForIntent(intent);
 
+  let response;
   try {
-    const response = await openai.chat.completions.create(
+    response = await openai.chat.completions.create(
       {
         model: MODEL_HEAVY,
         max_completion_tokens: maxTokens,
@@ -496,48 +478,47 @@ export async function analyzePhoto(
       },
       { timeout: OPENAI_TIMEOUT_HEAVY_MS },
     );
-
-    const content = response.choices[0]?.message?.content || "{}";
-
-    // Safe parsing with Zod
-    const parsed = analysisResultSchema.safeParse(JSON.parse(content));
-    if (!parsed.success) {
-      log.warn(
-        { zodErrors: parsed.error.flatten() },
-        "vision API response validation failed",
-      );
-      return {
-        foods: [],
-        overallConfidence: 0,
-        followUpQuestions: ["Could not analyze the image. Please try again."],
-      };
-    }
-
-    // Enrich with cultural food data
-    for (const food of parsed.data.foods) {
-      if (!food.cuisine) {
-        const detectedCuisine = getCuisineForFood(food.name);
-        if (detectedCuisine) {
-          food.cuisine = detectedCuisine;
-        }
-      }
-    }
-
-    log.debug(
-      { intent, duration: Date.now() - startTime },
-      "vision analysis completed",
-    );
-    return parsed.data;
   } catch (error) {
     log.error({ err: toError(error) }, "photo analysis error");
-    return {
-      foods: [],
-      overallConfidence: 0,
-      followUpQuestions: [
-        "An error occurred during analysis. Please try again.",
-      ],
-    };
+    throw new Error("Failed to analyze photo. Please try again.");
   }
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("No response from photo analysis");
+  }
+
+  // Safe parsing with Zod
+  let rawJson;
+  try {
+    rawJson = JSON.parse(content);
+  } catch {
+    throw new Error("Photo analysis returned invalid data");
+  }
+  const parsed = analysisResultSchema.safeParse(rawJson);
+  if (!parsed.success) {
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "vision API response validation failed",
+    );
+    throw new Error("Photo analysis returned invalid data");
+  }
+
+  // Enrich with cultural food data
+  for (const food of parsed.data.foods) {
+    if (!food.cuisine) {
+      const detectedCuisine = getCuisineForFood(food.name);
+      if (detectedCuisine) {
+        food.cuisine = detectedCuisine;
+      }
+    }
+  }
+
+  log.debug(
+    { intent, duration: Date.now() - startTime },
+    "vision analysis completed",
+  );
+  return parsed.data;
 }
 
 /**
@@ -697,9 +678,9 @@ export async function classifyAndAnalyze(
   const startTime = Date.now();
 
   // Step 1: Classify
-  let classification: ClassifiedResult;
+  let response;
   try {
-    const response = await openai.chat.completions.create(
+    response = await openai.chat.completions.create(
       {
         model: MODEL_FAST,
         max_completion_tokens: 150,
@@ -727,35 +708,33 @@ export async function classifyAndAnalyze(
       },
       { timeout: OPENAI_TIMEOUT_FAST_MS },
     );
-
-    const content = response.choices[0]?.message?.content || "{}";
-    const parsed = classifiedResultSchema.safeParse(JSON.parse(content));
-
-    if (!parsed.success) {
-      log.warn(
-        { zodErrors: parsed.error.flatten() },
-        "classification validation failed",
-      );
-      return {
-        contentType: "non_food",
-        confidence: 0,
-        resolvedIntent: null,
-        barcode: null,
-        analysisResult: null,
-      };
-    }
-
-    classification = parsed.data;
   } catch (error) {
     log.error({ err: toError(error) }, "classification error");
-    return {
-      contentType: "non_food",
-      confidence: 0,
-      resolvedIntent: null,
-      barcode: null,
-      analysisResult: null,
-    };
+    throw new Error("Failed to analyze photo. Please try again.");
   }
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("No response from photo classification");
+  }
+
+  let rawJson;
+  try {
+    rawJson = JSON.parse(content);
+  } catch {
+    throw new Error("Photo classification returned invalid data");
+  }
+  const parsed = classifiedResultSchema.safeParse(rawJson);
+
+  if (!parsed.success) {
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "classification validation failed",
+    );
+    throw new Error("Photo classification returned invalid data");
+  }
+
+  const classification: ClassifiedResult = parsed.data;
 
   // Validate barcode format if one was detected
   if (classification.barcode && !isValidBarcode(classification.barcode)) {

@@ -1,6 +1,6 @@
 ---
 title: "AI/vision services swallow OpenAI/Zod failures and return empty-but-valid results (misleading 200)"
-status: backlog
+status: done
 priority: high
 created: 2026-05-28
 updated: 2026-05-28

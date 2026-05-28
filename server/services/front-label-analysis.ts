@@ -57,8 +57,9 @@ export async function analyzeFrontLabel(
 ): Promise<FrontLabelExtractionResult> {
   const startTime = Date.now();
 
+  let response;
   try {
-    const response = await openai.chat.completions.create({
+    response = await openai.chat.completions.create({
       model: MODEL_HEAVY,
       max_completion_tokens: 300,
       temperature: 0.2,
@@ -86,49 +87,47 @@ export async function analyzeFrontLabel(
       ],
       response_format: { type: "json_object" },
     });
-
-    const content = response.choices[0]?.message?.content || "{}";
-    const parsed = frontLabelExtractionSchema.safeParse(JSON.parse(content));
-
-    if (!parsed.success) {
-      log.warn(
-        { zodErrors: parsed.error.flatten() },
-        "front label extraction validation failed",
-      );
-      return {
-        brand: null,
-        productName: null,
-        netWeight: null,
-        claims: [],
-        confidence: 0,
-      };
-    }
-
-    // Sanitize: truncate fields and cap claims count
-    const result: FrontLabelExtractionResult = {
-      brand: sanitizeField(parsed.data.brand),
-      productName: sanitizeField(parsed.data.productName),
-      netWeight: sanitizeField(parsed.data.netWeight),
-      claims: parsed.data.claims
-        .slice(0, MAX_CLAIMS)
-        .map((c) => c.slice(0, MAX_FIELD_LENGTH).trim())
-        .filter((c) => c.length > 0),
-      confidence: parsed.data.confidence,
-    };
-
-    log.debug(
-      { durationMs: Date.now() - startTime },
-      "front label extraction completed",
-    );
-    return result;
   } catch (error) {
     log.error({ err: toError(error) }, "front label analysis error");
-    return {
-      brand: null,
-      productName: null,
-      netWeight: null,
-      claims: [],
-      confidence: 0,
-    };
+    throw new Error("Failed to analyze product front label. Please try again.");
   }
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error("No response from front label analysis");
+  }
+
+  let rawJson;
+  try {
+    rawJson = JSON.parse(content);
+  } catch {
+    throw new Error("Front label extraction returned invalid data");
+  }
+  const parsed = frontLabelExtractionSchema.safeParse(rawJson);
+
+  if (!parsed.success) {
+    log.warn(
+      { zodErrors: parsed.error.flatten() },
+      "front label extraction validation failed",
+    );
+    throw new Error("Front label extraction returned invalid data");
+  }
+
+  // Sanitize: truncate fields and cap claims count
+  const result: FrontLabelExtractionResult = {
+    brand: sanitizeField(parsed.data.brand),
+    productName: sanitizeField(parsed.data.productName),
+    netWeight: sanitizeField(parsed.data.netWeight),
+    claims: parsed.data.claims
+      .slice(0, MAX_CLAIMS)
+      .map((c) => c.slice(0, MAX_FIELD_LENGTH).trim())
+      .filter((c) => c.length > 0),
+    confidence: parsed.data.confidence,
+  };
+
+  log.debug(
+    { durationMs: Date.now() - startTime },
+    "front label extraction completed",
+  );
+  return result;
 }
