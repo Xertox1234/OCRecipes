@@ -1,6 +1,6 @@
 ---
 title: "CoachRemindersScreen resets all toggles to ON and writes phantom state on read failure"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-28
 updated: 2026-05-28
