@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect } from "react";
+import React, { useCallback, useMemo, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -7,6 +7,8 @@ import {
   RefreshControl,
   ActivityIndicator,
   ScrollView,
+  AccessibilityInfo,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -653,6 +655,22 @@ export default function HistoryScreen() {
     handleScrollBeginDrag,
     handleEndReached,
   } = useHistoryData();
+
+  // Announce the error transition for screen readers on iOS (Android falls back
+  // to the EmptyState container's accessibilityLabel). Skip the mount render so
+  // a screen that opens already-errored does not double-announce with the label.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (isError && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your history. Try again.",
+      );
+    }
+  }, [isError]);
 
   // Memoised extraData so FlatList re-renders items when expand or mutation
   // state changes, even though renderItem itself is not recreated.
