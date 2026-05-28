@@ -5,10 +5,14 @@ import { apiRequest } from "@/lib/query-client";
 
 export const QUERY_KEY = ["/api/reminders/pending"] as const;
 
-export function usePendingReminders(): { hasPending: boolean } {
+export function usePendingReminders(): {
+  hasPending: boolean;
+  isError: boolean;
+  error: Error | null;
+} {
   const queryClient = useQueryClient();
 
-  const { data } = useQuery<{ hasPending: boolean }>({
+  const { data, isError, error } = useQuery<{ hasPending: boolean }>({
     queryKey: QUERY_KEY,
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/reminders/pending");
@@ -25,5 +29,5 @@ export function usePendingReminders(): { hasPending: boolean } {
     return () => sub.remove();
   }, [queryClient]);
 
-  return { hasPending: data?.hasPending ?? false };
+  return { hasPending: data?.hasPending ?? false, isError, error };
 }

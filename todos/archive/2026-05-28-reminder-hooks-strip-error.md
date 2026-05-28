@@ -1,6 +1,6 @@
 ---
 title: "Reminder hooks (useAcknowledgeReminders, usePendingReminders) strip error from their return"
-status: backlog
+status: done
 priority: low
 created: 2026-05-28
 updated: 2026-05-28

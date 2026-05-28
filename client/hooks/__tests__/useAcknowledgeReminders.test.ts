@@ -50,4 +50,23 @@ describe("useAcknowledgeReminders", () => {
 
     expect(result.current.coachContext).toEqual([]);
   });
+
+  it("exposes isPending/isError/error so a failed acknowledge is surfaceable", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockRejectedValue(new Error("500: server error"));
+
+    const { result } = renderHook(() => useAcknowledgeReminders(), { wrapper });
+
+    expect(result.current.isPending).toBe(false);
+
+    await act(async () => {
+      await expect(result.current.acknowledge()).rejects.toThrow(
+        "500: server error",
+      );
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(Error);
+    expect(result.current.isPending).toBe(false);
+  });
 });
