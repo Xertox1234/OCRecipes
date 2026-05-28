@@ -1,6 +1,6 @@
 ---
 title: "Add a global QueryCache/MutationCache onError net to the TanStack Query client"
-status: backlog
+status: done
 priority: high
 created: 2026-05-28
 updated: 2026-05-28
