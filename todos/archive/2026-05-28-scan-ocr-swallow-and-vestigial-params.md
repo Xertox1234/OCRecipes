@@ -1,6 +1,6 @@
 ---
 title: "ScanScreen STEP-flow swallows OCR errors and passes vestigial params NutritionDetail ignores (latent)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-28
 updated: 2026-05-28
@@ -51,3 +51,11 @@ Note: the genuine OCR consumer is the **label-mode** path (`ScanScreen:387-394` 
 ### 2026-05-28
 
 - Initial creation. Swallow verified at lines 422-428; param mismatch verified against NutritionDetailScreen route params and the navigator param type.
+
+### 2026-05-28 (resolved)
+
+- Decision: REMOVE the vestigial params (conservative cleanup). Confirmed via repo-wide grep that `nutritionImageUri` / `frontLabelImageUri` have zero readers and `localOCRText` readers live only in other routes (`MenuScanResultScreen`, `LabelAnalysisScreen`) — never in `NutritionDetail`.
+- Dropped `nutritionImageUri` / `frontLabelImageUri` / `localOCRText` from the `navigation.navigate("NutritionDetail", …)` call (`ScanScreen.tsx`) and from the `NutritionDetail` param type (`RootStackNavigator.tsx`). Simplified the SESSION_COMPLETE destructure to `const { barcode } = scanPhase;`.
+- Made the STEP2 OCR catch explicit: dropped the `if (__DEV__)` guard so the failure is logged unconditionally in production, and documented the empty-text fallback as intentional.
+- `NutritionDetailScreen.tsx` needed no change — its `RouteParams` already omitted the vestigial fields.
+- Out of scope (untouched): `useNutritionLookup.ts`, the label-mode OCR path (`ScanScreen` → `LabelAnalysis`), and the scan-phase reducer (still holds the fields as internal state).
