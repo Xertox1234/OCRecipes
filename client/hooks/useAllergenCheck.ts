@@ -30,5 +30,9 @@ export function useAllergenCheck(ingredientNames: string[]) {
     },
     enabled: ingredientNames.length > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes — allergy profile rarely changes
+    // The consumer renders a contextual cautionary banner on failure
+    // (RecipeIngredientsList), so opt out of the global query-error toast to
+    // avoid double-surfacing the same failure.
+    meta: { silentError: true },
   });
 }

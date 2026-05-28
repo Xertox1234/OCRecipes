@@ -87,15 +87,24 @@ export default function GLP1CompanionScreen() {
       return;
     }
     setValidationError(null);
-    await logMedication.mutateAsync({
-      medicationName: selectedMedication,
-      brandName: selectedBrand || undefined,
-      dosage,
-      sideEffects:
-        selectedSideEffects.length > 0 ? selectedSideEffects : undefined,
-      appetiteLevel,
-      notes: notes || undefined,
-    });
+    try {
+      await logMedication.mutateAsync({
+        medicationName: selectedMedication,
+        brandName: selectedBrand || undefined,
+        dosage,
+        sideEffects:
+          selectedSideEffects.length > 0 ? selectedSideEffects : undefined,
+        appetiteLevel,
+        notes: notes || undefined,
+      });
+    } catch {
+      // A medication-dose log must never fail silently. Keep the modal open
+      // with the entered data so the user sees the error and can retry.
+      setValidationError(
+        "Couldn't log your dose. Please check your connection and try again.",
+      );
+      return;
+    }
     resetForm();
     setShowLogModal(false);
   }, [
