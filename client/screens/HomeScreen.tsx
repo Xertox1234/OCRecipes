@@ -72,7 +72,15 @@ export default function HomeScreen() {
   const { sections, toggleSection, recentActions, recordAction, usageCounts } =
     useHomeActions();
   const queryClient = useQueryClient();
-  const { data: budget, refetch, isRefetching } = useDailyBudget();
+  // `silentError` must match DailySummaryHeader's call (same query key) — when
+  // two observers of one key disagree on meta, TanStack v5 picks the most-recent
+  // setup, making the global-toast suppression order-dependent. The Home tab
+  // renders its own inline error UI (DailySummaryHeader), so both opt out.
+  const {
+    data: budget,
+    refetch,
+    isRefetching,
+  } = useDailyBudget(undefined, { silentError: true });
 
   const {
     scrollHandler,

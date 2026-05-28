@@ -9,5 +9,8 @@ export function useCuratedRecipes() {
   return useQuery<CuratedRecipesResponse>({
     queryKey: ["/api/curated-recipes"],
     staleTime: 5 * 60 * 1000, // 5 minutes
+    // CuratedRecipeCarousel renders its own inline error + retry, so suppress
+    // the global error toast for this query to avoid double-reporting.
+    meta: { silentError: true },
   });
 }
