@@ -1,6 +1,6 @@
 ---
 title: "Shared data hooks (useProfileData, useHistoryData) don't expose query error to consumers"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-28
 updated: 2026-05-28

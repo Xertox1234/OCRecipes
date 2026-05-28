@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useEffect } from "react";
+import React, { useCallback, useMemo, useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   ScrollView,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -623,6 +624,7 @@ export default function HistoryScreen() {
     // Data
     displayItems,
     isLoading,
+    isError,
     isRefetching,
     isRefreshingDashboard,
     isFetchingNextPage,
@@ -652,6 +654,23 @@ export default function HistoryScreen() {
     handleScrollBeginDrag,
     handleEndReached,
   } = useHistoryData();
+
+  // Announce the error transition for screen readers (cross-platform — the
+  // EmptyState container has no live region, so announceForAccessibility carries
+  // both VoiceOver and TalkBack with no double-announce). Skip the mount render
+  // so a screen that opens already-errored does not announce on top of focus.
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (isError) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your history. Try again.",
+      );
+    }
+  }, [isError]);
 
   // Memoised extraData so FlatList re-renders items when expand or mutation
   // state changes, even though renderItem itself is not recreated.
@@ -725,6 +744,36 @@ export default function HistoryScreen() {
       >
         <DashboardSkeleton />
       </ScrollView>
+    );
+  }
+
+  // Error gate — placed before the zero-defaulting dashboard render. Without
+  // this, a failed daily-summary query would render "0 of goal calories, 0
+  // items scanned" against real goals, presenting a network failure as
+  // legitimate zero-intake data. Only fires when there is no cached data.
+  if (isError) {
+    return (
+      <View
+        style={[
+          styles.errorContainer,
+          {
+            backgroundColor: theme.backgroundRoot,
+            paddingTop: headerHeight + Spacing.xl,
+            paddingBottom: tabBarHeight + Spacing.xl + FAB_CLEARANCE,
+          },
+        ]}
+      >
+        <EmptyState
+          variant="temporary"
+          icon="alert-circle"
+          title="Couldn't load your history"
+          description="Something went wrong loading your scan history. Check your connection and try again."
+          actionLabel="Try Again"
+          onAction={() => {
+            void handleRefresh();
+          }}
+        />
+      </View>
     );
   }
 
@@ -905,6 +954,11 @@ const styles = StyleSheet.create({
   itemCalories: {
     alignItems: "flex-end",
     marginRight: Spacing.xs,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: Spacing.lg,
   },
   emptyContainer: {
     alignItems: "center",

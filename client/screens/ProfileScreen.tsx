@@ -1,5 +1,11 @@
 import React, { useRef } from "react";
-import { StyleSheet, View, Pressable, Image } from "react-native";
+import {
+  StyleSheet,
+  View,
+  Pressable,
+  Image,
+  AccessibilityInfo,
+} from "react-native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -7,6 +13,7 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
+import { EmptyState } from "@/components/EmptyState";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ProfileCard } from "@/components/profile/ProfileCard";
 import { MiniWidgetRow } from "@/components/profile/MiniWidgetRow";
@@ -41,6 +48,8 @@ export default function ProfileScreen() {
     libraryCounts,
     verificationData,
     isInitialLoading,
+    isError,
+    refetch,
     handleThemeToggle,
     handleAvatarPress,
     handleGearPress,
@@ -80,10 +89,50 @@ export default function ProfileScreen() {
     hasAnimated.current = true;
   }, []);
 
+  // Announce the error transition for screen readers (cross-platform — the
+  // EmptyState container has no live region, so announceForAccessibility carries
+  // both VoiceOver and TalkBack with no double-announce). Skip the mount render
+  // so a screen that opens already-errored does not announce on top of focus.
+  const didMountRef = useRef(false);
+  React.useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    if (isError) {
+      AccessibilityInfo.announceForAccessibility(
+        "Couldn't load your profile. Try again.",
+      );
+    }
+  }, [isError]);
+
   if (!user) return null;
 
   if (isInitialLoading) {
     return <ProfileSkeleton theme={theme} />;
+  }
+
+  // Error gate: the primary widget/library queries failed and there is nothing
+  // to show. Surface a retry affordance instead of an empty profile.
+  if (isError) {
+    return (
+      <View
+        style={[
+          styles.root,
+          styles.errorRoot,
+          { backgroundColor: theme.backgroundRoot, paddingTop: insets.top },
+        ]}
+      >
+        <EmptyState
+          variant="temporary"
+          icon="alert-circle"
+          title="Couldn't load your profile"
+          description="Something went wrong fetching your profile data. Check your connection and try again."
+          actionLabel="Try Again"
+          onAction={refetch}
+        />
+      </View>
+    );
   }
 
   const displayName = user.displayName || user.username;
@@ -295,6 +344,9 @@ const COLLAPSED_AVATAR_SIZE = 24;
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  errorRoot: {
+    justifyContent: "center",
   },
   collapsedBar: {
     position: "absolute",
