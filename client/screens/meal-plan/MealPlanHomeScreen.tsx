@@ -584,7 +584,11 @@ export default function MealPlanHomeScreen() {
   }, [itemsByMealType]);
 
   // Calorie ring data
-  const { data: budgetData } = useDailyBudget(selectedDateStr);
+  const {
+    data: budgetData,
+    isError: budgetError,
+    refetch: refetchBudget,
+  } = useDailyBudget(selectedDateStr);
   const calorieGoal = budgetData?.calorieGoal ?? 2000;
 
   const dailyTotals = useMemo(() => {
@@ -1083,14 +1087,28 @@ export default function MealPlanHomeScreen() {
           {getDayLabel(selectedDate)}
         </ThemedText>
 
-        {/* Calorie Ring */}
-        <CalorieRing
-          consumed={dailyTotals.calories}
-          goal={calorieGoal}
-          protein={dailyTotals.protein}
-          carbs={dailyTotals.carbs}
-          fat={dailyTotals.fat}
-        />
+        {/* Calorie Ring — suppress against the 2000 default when the budget
+            fetch failed, so the user isn't shown a confident-wrong goal. */}
+        {budgetError && !budgetData ? (
+          <EmptyState
+            variant="temporary"
+            icon="alert-circle"
+            title="Couldn't load your calorie budget"
+            description="We couldn't load your goal for this day. Pull down to refresh or tap below to try again."
+            actionLabel="Try Again"
+            onAction={() => {
+              void refetchBudget();
+            }}
+          />
+        ) : (
+          <CalorieRing
+            consumed={dailyTotals.calories}
+            goal={calorieGoal}
+            protein={dailyTotals.protein}
+            carbs={dailyTotals.carbs}
+            fat={dailyTotals.fat}
+          />
+        )}
 
         {selectedDayItems.length === 0 ? (
           <EmptyState

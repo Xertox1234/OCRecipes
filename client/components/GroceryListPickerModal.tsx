@@ -47,7 +47,7 @@ export function GroceryListPickerModal({
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
-  const { data: lists, isLoading } = useGroceryLists();
+  const { data: lists, isLoading, isError } = useGroceryLists();
   const { mutate: createListMutate, isPending: isCreating } =
     useCreateGroceryList();
   const { mutate: addItemMutate, isPending: isAdding } =
@@ -217,14 +217,16 @@ export function GroceryListPickerModal({
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Feather
-                  name="shopping-cart"
+                  name={isError ? "alert-circle" : "shopping-cart"}
                   size={40}
                   color={withOpacity(theme.text, 0.2)}
                 />
                 <ThemedText
                   style={[styles.emptyText, { color: theme.textSecondary }]}
                 >
-                  No grocery lists yet. Create one to get started.
+                  {isError
+                    ? "Couldn't load your grocery lists. Check your connection, or create a new one below."
+                    : "No grocery lists yet. Create one to get started."}
                 </ThemedText>
               </View>
             }

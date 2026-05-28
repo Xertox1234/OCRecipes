@@ -52,7 +52,11 @@ export default function CoachProScreen() {
   } = useCoachContext(contextEnabled);
   const createConversation = useCreateConversation();
   const [conversationId, setConversationId] = useState<number | null>(null);
-  const { data: coachConversations = [] } = useChatConversations("coach");
+  const {
+    data: coachConversations = [],
+    isError: conversationsError,
+    refetch: refetchConversations,
+  } = useChatConversations("coach");
   const warmUpHook = useCoachWarmUp(conversationId);
   const navigation = useNavigation<CoachChatNavigationProp>();
   const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
@@ -232,6 +236,28 @@ export default function CoachProScreen() {
         >
           <Text style={[styles.newThreadText, { color: theme.link }]}>New</Text>
         </Pressable>
+        {conversationsError && threadBarConversations.length === 0 ? (
+          <Pressable
+            onPress={() => refetchConversations()}
+            style={[styles.threadChip, { borderColor: theme.border }]}
+            accessibilityRole="button"
+            accessibilityLabel="Couldn't load conversations. Retry."
+          >
+            <Feather
+              name="alert-circle"
+              size={12}
+              color={theme.textSecondary}
+              style={styles.pinIcon}
+              accessible={false}
+            />
+            <Text
+              style={[styles.threadTitle, { color: theme.textSecondary }]}
+              numberOfLines={1}
+            >
+              Couldn&apos;t load · Retry
+            </Text>
+          </Pressable>
+        ) : null}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}

@@ -48,7 +48,7 @@ export function CookbookPickerModal({
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
-  const { data: cookbooks, isLoading } = useCookbooks();
+  const { data: cookbooks, isLoading, isError } = useCookbooks();
   const { mutate: createCookbookMutate, isPending: isCreating } =
     useCreateCookbook();
   const { mutate: addRecipeMutate, isPending: isAdding } =
@@ -215,14 +215,16 @@ export function CookbookPickerModal({
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Feather
-                  name="book"
+                  name={isError ? "alert-circle" : "book"}
                   size={40}
                   color={withOpacity(theme.text, 0.2)}
                 />
                 <ThemedText
                   style={[styles.emptyText, { color: theme.textSecondary }]}
                 >
-                  No cookbooks yet. Create one to save this recipe.
+                  {isError
+                    ? "Couldn't load your cookbooks. Check your connection, or create a new one below."
+                    : "No cookbooks yet. Create one to save this recipe."}
                 </ThemedText>
               </View>
             }

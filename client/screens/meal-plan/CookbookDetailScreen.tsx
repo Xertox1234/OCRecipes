@@ -38,7 +38,12 @@ export default function CookbookDetailScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const { data: cookbook, isLoading } = useCookbookDetail(cookbookId);
+  const {
+    data: cookbook,
+    isLoading,
+    isError,
+    refetch,
+  } = useCookbookDetail(cookbookId);
   const { mutate: deleteCookbook } = useDeleteCookbook();
   const { mutate: removeRecipe } = useRemoveRecipeFromCookbook();
   const isRemovingRef = useRef(false);
@@ -304,14 +309,27 @@ export default function CookbookDetailScreen() {
           </View>
         }
         ListEmptyComponent={
-          <EmptyState
-            variant="firstTime"
-            icon="book-open"
-            title="This cookbook is empty"
-            description="Browse recipes and save your favorites here."
-            actionLabel="Add Recipes"
-            onAction={handleAddRecipes}
-          />
+          isError ? (
+            <EmptyState
+              variant="temporary"
+              icon="alert-circle"
+              title="Couldn't load this cookbook"
+              description="Something went wrong loading the recipes. Tap below to try again."
+              actionLabel="Try Again"
+              onAction={() => {
+                void refetch();
+              }}
+            />
+          ) : (
+            <EmptyState
+              variant="firstTime"
+              icon="book-open"
+              title="This cookbook is empty"
+              description="Browse recipes and save your favorites here."
+              actionLabel="Add Recipes"
+              onAction={handleAddRecipes}
+            />
+          )
         }
       />
     </View>

@@ -141,6 +141,7 @@ export default function PantryScreen() {
   const {
     data: pantryItems,
     isLoading,
+    isError,
     isRefetching,
     refetch,
   } = usePantryItems();
@@ -352,16 +353,29 @@ export default function PantryScreen() {
           </View>
         }
         ListEmptyComponent={
-          <EmptyState
-            variant="firstTime"
-            icon="camera"
-            title="Your pantry is empty"
-            description="Scan a grocery receipt and we'll add every item to your pantry automatically."
-            actionLabel="Scan a Receipt"
-            onAction={() => navigation.navigate("ReceiptCapture")}
-            secondaryLabel="or add items manually"
-            onSecondaryAction={() => addItemInputRef.current?.focus()}
-          />
+          isError ? (
+            <EmptyState
+              variant="temporary"
+              icon="alert-circle"
+              title="Couldn't load your pantry"
+              description="Something went wrong loading your items. Pull down to refresh or tap below to try again."
+              actionLabel="Try Again"
+              onAction={() => {
+                void refetch();
+              }}
+            />
+          ) : (
+            <EmptyState
+              variant="firstTime"
+              icon="camera"
+              title="Your pantry is empty"
+              description="Scan a grocery receipt and we'll add every item to your pantry automatically."
+              actionLabel="Scan a Receipt"
+              onAction={() => navigation.navigate("ReceiptCapture")}
+              secondaryLabel="or add items manually"
+              onSecondaryAction={() => addItemInputRef.current?.focus()}
+            />
+          )
         }
         ListFooterComponent={
           <View style={styles.addItemRow}>

@@ -199,9 +199,16 @@ export default function GroceryListScreen() {
   const {
     data: list,
     isLoading,
+    isError,
+    error,
     isRefetching,
     refetch,
   } = useGroceryListDetail(listId);
+
+  // The detail queryFn throws `new Error("<status>")`; a real 404 is a genuine
+  // "not found", anything else (network, 5xx) is a transient error worth retrying.
+  const isNotFound =
+    isError && error instanceof Error && error.message === "404";
   const addItemMutation = useAddManualGroceryItem();
   const addToPantryMutation = useAddGroceryItemToPantry();
 
@@ -333,6 +340,33 @@ export default function GroceryListScreen() {
             ))}
           </View>
         </SkeletonProvider>
+      </View>
+    );
+  }
+
+  // Transient load failure (network/5xx) — offer a retry instead of a
+  // confident-wrong "not found".
+  if (!list && isError && !isNotFound) {
+    return (
+      <View
+        style={[
+          styles.container,
+          {
+            paddingTop: headerHeight + Spacing.lg,
+            backgroundColor: theme.backgroundRoot,
+          },
+        ]}
+      >
+        <EmptyState
+          variant="temporary"
+          icon="alert-circle"
+          title="Couldn't load this list"
+          description="Something went wrong. Check your connection and try again."
+          actionLabel="Try Again"
+          onAction={() => {
+            void refetch();
+          }}
+        />
       </View>
     );
   }

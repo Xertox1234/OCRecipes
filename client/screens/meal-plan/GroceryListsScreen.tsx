@@ -36,7 +36,7 @@ export default function GroceryListsScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { confirm, ConfirmationModal } = useConfirmationModal();
-  const { data: lists, isLoading } = useGroceryLists();
+  const { data: lists, isLoading, isError, refetch } = useGroceryLists();
   const { streakUnlocks } = usePremiumContext();
   const { mutate: createListMutate, isPending: isCreatingList } =
     useCreateGroceryList();
@@ -164,21 +164,52 @@ export default function GroceryListsScreen() {
           paddingBottom: tabBarHeight + Spacing.xl + 56,
         }}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Feather
-              name="shopping-cart"
-              size={48}
-              color={withOpacity(theme.text, 0.2)}
-            />
-            <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
-              No Grocery Lists
-            </ThemedText>
-            <ThemedText
-              style={[styles.emptySubtitle, { color: theme.textSecondary }]}
-            >
-              Generate a list from your planned meals.
-            </ThemedText>
-          </View>
+          isError ? (
+            <View style={styles.emptyState}>
+              <Feather
+                name="alert-circle"
+                size={48}
+                color={withOpacity(theme.text, 0.2)}
+              />
+              <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
+                Couldn&apos;t load your lists
+              </ThemedText>
+              <ThemedText
+                style={[styles.emptySubtitle, { color: theme.textSecondary }]}
+              >
+                Something went wrong. Check your connection and try again.
+              </ThemedText>
+              <Pressable
+                onPress={() => {
+                  haptics.impact();
+                  void refetch();
+                }}
+                style={[styles.generateButton, { backgroundColor: theme.link }]}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading grocery lists"
+              >
+                <ThemedText style={{ color: theme.buttonText }}>
+                  Try Again
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Feather
+                name="shopping-cart"
+                size={48}
+                color={withOpacity(theme.text, 0.2)}
+              />
+              <ThemedText style={[styles.emptyTitle, { color: theme.text }]}>
+                No Grocery Lists
+              </ThemedText>
+              <ThemedText
+                style={[styles.emptySubtitle, { color: theme.textSecondary }]}
+              >
+                Generate a list from your planned meals.
+              </ThemedText>
+            </View>
+          )
         }
         ListHeaderComponent={
           showDatePicker ? (

@@ -72,6 +72,7 @@ export default function FastingScreen() {
     elapsedMinutes,
     schedule,
     currentFast,
+    currentFastIsError,
     historyLoading,
     updateSchedule,
     startFast,
@@ -144,7 +145,16 @@ export default function FastingScreen() {
         }
       >
         <Card elevation={1} style={styles.timerCard}>
-          {isFasting && currentFast ? (
+          {currentFastIsError && !currentFast ? (
+            <EmptyState
+              variant="temporary"
+              icon="alert-circle"
+              title="Couldn't load your fast"
+              description="We couldn't check whether you have a fast in progress. Pull down to refresh or tap below to try again."
+              actionLabel="Try Again"
+              onAction={handleRefresh}
+            />
+          ) : isFasting && currentFast ? (
             <>
               <FastingTimer
                 startedAt={currentFast.startedAt}

@@ -16,9 +16,14 @@ import {
 export const HighProteinSuggestions = React.memo(
   function HighProteinSuggestions({ enabled = true }: { enabled?: boolean }) {
     const { theme } = useTheme();
-    const { data, isLoading } = useHighProteinSuggestions(enabled);
+    const { data, isLoading, isError } = useHighProteinSuggestions(enabled);
 
-    if (isLoading || !data?.suggestions?.length) return null;
+    // Distinguish error-empty from genuine-empty: a failed fetch is surfaced by
+    // the global query-error toast, so this supplementary widget stays hidden
+    // rather than rendering a confident "no suggestions" state.
+    if (isLoading) return null;
+    if (isError) return null;
+    if (!data?.suggestions?.length) return null;
 
     return (
       <View

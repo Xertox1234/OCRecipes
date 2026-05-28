@@ -7,6 +7,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   AccessibilityInfo,
 } from "react-native";
 import { InlineError } from "@/components/InlineError";
@@ -63,11 +64,20 @@ export default function WeightTrackingScreen() {
   const [weightError, setWeightError] = useState<string | null>(null);
   const [goalError, setGoalError] = useState<string | null>(null);
 
-  const { data: logs = [] } = useWeightLogs();
-  const { data: trend } = useWeightTrend();
+  const {
+    data: logs = [],
+    isError: logsError,
+    refetch: refetchLogs,
+    isRefetching: logsRefetching,
+  } = useWeightLogs();
+  const { data: trend, refetch: refetchTrend } = useWeightTrend();
   const logWeight = useLogWeight();
   const deleteLog = useDeleteWeightLog();
   const setGoalWeight = useSetGoalWeight();
+
+  const handleRefresh = useCallback(() => {
+    void Promise.all([refetchLogs(), refetchTrend()]);
+  }, [refetchLogs, refetchTrend]);
 
   const handleLogWeight = useCallback(() => {
     const entered = parseFloat(weightInput);
@@ -160,6 +170,14 @@ export default function WeightTrackingScreen() {
             paddingBottom: insets.bottom + Spacing.xl,
           }}
           keyboardDismissMode="on-drag"
+          refreshControl={
+            <RefreshControl
+              refreshing={logsRefetching}
+              onRefresh={handleRefresh}
+              progressViewOffset={headerHeight}
+              tintColor={theme.link}
+            />
+          }
         >
           {/* Log Weight Card */}
           <Card elevation={1} style={styles.inputCard}>
@@ -405,7 +423,16 @@ export default function WeightTrackingScreen() {
             <ThemedText type="h4" style={styles.sectionTitle}>
               History
             </ThemedText>
-            {logs.length === 0 ? (
+            {logsError && logs.length === 0 ? (
+              <EmptyState
+                variant="temporary"
+                icon="alert-circle"
+                title="Couldn't load your weight history"
+                description="Something went wrong loading your entries. Pull down to refresh or tap below to try again."
+                actionLabel="Try Again"
+                onAction={handleRefresh}
+              />
+            ) : logs.length === 0 ? (
               <EmptyState
                 variant="firstTime"
                 icon="trending-up"
