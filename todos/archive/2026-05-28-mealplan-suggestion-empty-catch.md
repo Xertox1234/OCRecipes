@@ -1,6 +1,6 @@
 ---
 title: "MealPlanHomeScreen handleSelectSuggestion swallows mutation errors (same class as M20)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-28
 updated: 2026-05-28

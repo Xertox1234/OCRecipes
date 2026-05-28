@@ -826,7 +826,10 @@ export default function MealPlanHomeScreen() {
         setSuggestModalVisible(false);
         invalidateMealPlanItems(queryClient);
       } catch {
-        // Mutation errors handled by React Query
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        toast.error(
+          "Couldn't add the suggestion to your plan. Please try again.",
+        );
       }
     },
     [
@@ -835,6 +838,7 @@ export default function MealPlanHomeScreen() {
       selectedDateStr,
       suggestMealType,
       haptics,
+      toast,
       queryClient,
     ],
   );
