@@ -1,6 +1,6 @@
 ---
 title: "useNutritionLookup can hang on a permanent spinner if the itemId query fails (latent)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-28
 updated: 2026-05-28

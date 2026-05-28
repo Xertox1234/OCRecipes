@@ -152,10 +152,11 @@ export function useNutritionLookup(params: {
     [effectivePer100g],
   );
 
-  const { data: existingItem } = useQuery<NutritionData>({
-    queryKey: ["/api/scanned-items", itemId],
-    enabled: !!itemId,
-  });
+  const { data: existingItem, isError: existingItemFailed } =
+    useQuery<NutritionData>({
+      queryKey: ["/api/scanned-items", itemId],
+      enabled: !!itemId,
+    });
 
   const { data: micronutrientData, isLoading: micronutrientsLoading } =
     useQuery<{ foodName: string; micronutrients: MicronutrientData[] }>({
@@ -390,6 +391,17 @@ export function useNutritionLookup(params: {
       return;
     }
 
+    // itemId was provided but its lookup failed — without this terminal branch
+    // the chain below falls through (barcode/imageUri are empty and !itemId is
+    // false), leaving isLoading stuck true forever (a permanent spinner with no
+    // error). Gate on isError, not !existingItem, so we don't fire while the
+    // query is still in-flight.
+    if (existingItemFailed) {
+      setError("Failed to load item");
+      setIsLoading(false);
+      return;
+    }
+
     if (barcode) {
       void fetchBarcodeData(barcode);
     } else if (imageUri) {
@@ -402,7 +414,14 @@ export function useNutritionLookup(params: {
       setError("No scan data provided");
       setIsLoading(false);
     }
-  }, [barcode, imageUri, itemId, existingItem, fetchBarcodeData]);
+  }, [
+    barcode,
+    imageUri,
+    itemId,
+    existingItem,
+    existingItemFailed,
+    fetchBarcodeData,
+  ]);
 
   const addToLogMutation = useMutation({
     mutationFn: async () => {
