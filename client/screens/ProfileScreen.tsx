@@ -5,7 +5,6 @@ import {
   Pressable,
   Image,
   AccessibilityInfo,
-  Platform,
 } from "react-native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -90,16 +89,17 @@ export default function ProfileScreen() {
     hasAnimated.current = true;
   }, []);
 
-  // Announce the error transition for screen readers on iOS (Android falls back
-  // to the EmptyState container's accessibilityLabel). Skip the mount render so
-  // a screen that opens already-errored does not double-announce with the label.
+  // Announce the error transition for screen readers (cross-platform — the
+  // EmptyState container has no live region, so announceForAccessibility carries
+  // both VoiceOver and TalkBack with no double-announce). Skip the mount render
+  // so a screen that opens already-errored does not announce on top of focus.
   const didMountRef = useRef(false);
   React.useEffect(() => {
     if (!didMountRef.current) {
       didMountRef.current = true;
       return;
     }
-    if (isError && Platform.OS === "ios") {
+    if (isError) {
       AccessibilityInfo.announceForAccessibility(
         "Couldn't load your profile. Try again.",
       );
