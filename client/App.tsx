@@ -28,6 +28,7 @@ import { ThemeProvider, useThemePreference } from "@/context/ThemeContext";
 import { ToastProvider } from "@/context/ToastContext";
 import { BatchScanProvider } from "@/context/BatchScanContext";
 import { OfflineBanner } from "@/components/OfflineBanner";
+import { QueryErrorToastBridge } from "@/components/QueryErrorToastBridge";
 import { setupNotificationChannel } from "@/lib/notifications";
 
 function AppContent() {
@@ -44,6 +45,7 @@ function AppContent() {
               </NavigationContainer>
             </BatchScanProvider>
             <OfflineBanner />
+            <QueryErrorToastBridge />
           </ToastProvider>
         </BottomSheetModalProvider>
         <StatusBar style={isDark ? "light" : "dark"} />

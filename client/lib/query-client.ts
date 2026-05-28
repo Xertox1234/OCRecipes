@@ -1,4 +1,4 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryCache, QueryFunction } from "@tanstack/react-query";
 import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
 
@@ -121,7 +121,84 @@ export function resolveImageUrl(
   return `${getApiUrl()}${imageUrl}`;
 }
 
+/**
+ * Per-query opt-out flag. Set `meta: { silentError: true }` on a query whose
+ * screen already renders its own error UI, to suppress the global toast and
+ * avoid double-reporting the same failure.
+ */
+export interface QueryErrorMeta extends Record<string, unknown> {
+  silentError?: boolean;
+}
+
+/**
+ * Decides whether a failed query should surface a global toast. Pure and
+ * exported so it can be unit-tested directly (the rest of this module has
+ * import-time side effects).
+ *
+ * Suppressed cases:
+ * - `meta.silentError === true` — the screen renders its own error state.
+ * - 4xx client errors — screens already branch on these (e.g. PREMIUM_REQUIRED,
+ *   404, validation). This also covers the `on401: "throw"` auth-redirect path,
+ *   whose ApiError message is `"401: ..."` and matches the 4xx regex below.
+ */
+export function shouldSurfaceQueryError(
+  error: unknown,
+  meta: QueryErrorMeta | undefined,
+): boolean {
+  if (meta?.silentError === true) return false;
+  // Mirrors the retry guard above: `${status}: ${text}` message shape.
+  if (error instanceof Error && /^4\d\d:/.test(error.message)) return false;
+  return true;
+}
+
+type QueryErrorListener = (message: string) => void;
+
+const queryErrorListeners = new Set<QueryErrorListener>();
+
+/**
+ * Subscribe to global query errors. A single top-level component
+ * (`QueryErrorToastBridge`) subscribes and renders a toast — `query-client.ts`
+ * is module-level code outside the React tree, so it cannot call the hook-based
+ * toast directly. Returns an unsubscribe function.
+ */
+export function subscribeToQueryErrors(
+  listener: QueryErrorListener,
+): () => void {
+  queryErrorListeners.add(listener);
+  return () => {
+    queryErrorListeners.delete(listener);
+  };
+}
+
+const GLOBAL_QUERY_ERROR_MESSAGE =
+  "Something went wrong loading your data. Please try again.";
+
+/**
+ * Global error net for the TanStack Query client.
+ *
+ * Mutation policy (documented per the acceptance criteria): the global net is
+ * scoped to **queries only**. Mutations keep their existing local `onError`
+ * handlers — a cache-level `onError` fires _in addition to_ each observer's
+ * local handler in TanStack Query v5, so a global mutation handler would
+ * double-toast against the many existing mutation handlers. See
+ * `docs/LEARNINGS.md` "mutate onError Missing cancelled Guard" for the local
+ * mutation-handler convention.
+ *
+ * Dedup is free: `ToastProvider.show` replaces the toast list (`setToasts([...])`)
+ * rather than appending, so an offline storm of failing queries collapses to a
+ * single visible toast. Do not reintroduce a queue here.
+ */
+const queryCache = new QueryCache({
+  onError: (error, query) => {
+    if (!shouldSurfaceQueryError(error, query.meta)) return;
+    queryErrorListeners.forEach((listener) => {
+      listener(GLOBAL_QUERY_ERROR_MESSAGE);
+    });
+  },
+});
+
 export const queryClient = new QueryClient({
+  queryCache,
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
