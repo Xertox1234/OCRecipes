@@ -19,6 +19,7 @@ import {
 import { useNavigation } from "@react-navigation/native";
 
 import { ChatBubble } from "@/components/ChatBubble";
+import { InlineError } from "@/components/InlineError";
 import { useTTS } from "@/hooks/useTTS";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
@@ -178,7 +179,23 @@ export default function CoachChat({
     }
   }, [streamingContent, isStreaming]);
 
-  const { data: messages } = useChatMessages(conversationId);
+  // `silentError` opts this query out of the global QueryCache toast net — the
+  // blank-thread error below is the contextual surface for a failed history load,
+  // so the global toast would double-report. Other useChatMessages consumers
+  // keep the global toast (they have no inline history-error UI yet).
+  const {
+    data: messages,
+    isError: isHistoryError,
+    refetch: refetchMessages,
+  } = useChatMessages(conversationId, { silentError: true });
+
+  // Distinguish a failed history fetch (show error + retry) from a genuinely
+  // empty conversation (render nothing): only surface the error when the query
+  // failed AND there are no messages to show. The `length === 0` guard is also
+  // deliberate for stale-while-revalidate — if a background refetch fails but
+  // we still hold cached messages, keep showing them rather than replacing a
+  // populated thread with an error screen.
+  const showHistoryError = isHistoryError && (messages?.length ?? 0) === 0;
 
   const chatItems = useMemo<ChatListItem[]>(() => {
     const items: ChatListItem[] = (messages ?? []).map((message) => ({
@@ -543,6 +560,29 @@ export default function CoachChat({
     ],
   );
 
+  // Shown in place of an empty thread when the history fetch failed, so a load
+  // failure reads as a recoverable error rather than a wiped conversation.
+  const historyErrorEmpty = useMemo(
+    () =>
+      showHistoryError ? (
+        <View style={styles.historyError}>
+          <InlineError message="Couldn’t load this conversation." />
+          <Pressable
+            onPress={() => void refetchMessages()}
+            style={styles.historyRetryButton}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading conversation"
+            hitSlop={8}
+          >
+            <Text style={[styles.historyRetryText, { color: theme.link }]}>
+              ↺ Retry
+            </Text>
+          </Pressable>
+        </View>
+      ) : null,
+    [showHistoryError, refetchMessages, theme.link],
+  );
+
   const handleContentSizeChange = useCallback(() => {
     listRef.current?.scrollToEnd({ animated: false });
   }, []);
@@ -632,6 +672,7 @@ export default function CoachChat({
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ListFooterComponent={streamingFooter}
+        ListEmptyComponent={historyErrorEmpty}
         style={styles.messageList}
         contentContainerStyle={styles.messageContent}
         keyboardShouldPersistTaps="handled"
@@ -656,6 +697,16 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   retryText: { fontSize: 12 },
+  historyError: {
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.lg,
+  },
+  historyRetryButton: {
+    paddingVertical: 12,
+    paddingHorizontal: Spacing.md,
+  },
+  historyRetryText: { fontSize: 14, fontWeight: "600" as const },
   limitBanner: {
     padding: Spacing.md,
     alignItems: "center" as const,
