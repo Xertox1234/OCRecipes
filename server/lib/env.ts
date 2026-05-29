@@ -25,7 +25,9 @@ const envSchema = z.object({
   SPOONACULAR_API_KEY: z.string().optional(),
   USDA_API_KEY: z.string().optional(),
   API_NINJAS_KEY: z.string().optional(),
+  RUNWARE_API_KEY: z.string().optional(),
   EXPO_PUBLIC_DOMAIN: z.string().optional(),
+  EXPO_ACCESS_TOKEN: z.string().optional(),
 
   // Apple IAP (optional — receipt validation uses stub mode without these)
   APPLE_ISSUER_ID: z.string().optional(),
@@ -85,6 +87,16 @@ export function validateEnv(): Env {
   if (!validated.USDA_API_KEY) {
     warnings.push(
       "USDA_API_KEY not set — using DEMO_KEY with severe rate limits",
+    );
+  }
+  if (!validated.RUNWARE_API_KEY) {
+    warnings.push(
+      "RUNWARE_API_KEY not set — recipe image generation falls back to DALL-E",
+    );
+  }
+  if (!validated.EXPO_ACCESS_TOKEN) {
+    warnings.push(
+      "EXPO_ACCESS_TOKEN not set — server-driven push notifications disabled",
     );
   }
   if (

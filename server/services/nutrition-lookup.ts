@@ -61,13 +61,31 @@ const usdaFoodSchema = z.object({
   foodNutrients: z.array(
     z.object({
       nutrientName: z.string(),
-      value: z.number().optional().default(0),
+      // USDA returns `value: null` for no-data nutrients; `.default(0)` only
+      // fires on `undefined`, so coerce null→0 (replicates the prior `|| 0`)
+      // — otherwise one sibling food with a null value fails the whole page.
+      value: z
+        .number()
+        .nullish()
+        .transform((v) => v ?? 0),
     }),
   ),
 });
 
 const usdaResponseSchema = z.object({
   foods: z.array(usdaFoodSchema),
+});
+
+// USDA branded-food (UPC) search returns the same food shape plus brand/gtin
+// fields. Validated so a malformed branded response can't poison the cache.
+const usdaUpcFoodSchema = usdaFoodSchema.extend({
+  gtinUpc: z.string().optional(),
+  brandOwner: z.string().optional(),
+  brandName: z.string().optional(),
+});
+
+const usdaUpcResponseSchema = z.object({
+  foods: z.array(usdaUpcFoodSchema),
 });
 
 export interface NutritionData {
@@ -206,11 +224,28 @@ interface CNFFood {
 }
 
 interface CNFNutrientAmount {
-  food_code: number;
+  food_code?: number | null;
   nutrient_value: number;
-  nutrient_name_id: number;
+  nutrient_name_id?: number | null;
   nutrient_web_name: string;
 }
+
+// Validate the Health Canada CNF responses before they feed the nutrition
+// pipeline — a malformed list/amount must skip CNF, not corrupt the cache.
+const cnfFoodListSchema = z.array(
+  z.object({ food_code: z.number(), food_description: z.string() }),
+);
+const cnfNutrientAmountListSchema = z.array(
+  z.object({
+    // Only nutrient_web_name + nutrient_value are read downstream; keep those
+    // strict but tolerate null/absent on the unused keys so an upstream null in
+    // a field we never touch can't drop an otherwise-valid nutrient set.
+    food_code: z.number().nullish(),
+    nutrient_value: z.number(),
+    nutrient_name_id: z.number().nullish(),
+    nutrient_web_name: z.string(),
+  }),
+);
 
 // In-memory cache for the CNF food list (EN + FR).
 // Loaded once on first use, ~60 ms from the government API.
@@ -227,17 +262,28 @@ async function ensureCNFFoods(): Promise<void> {
       const [enRes, frRes] = await Promise.all([
         fetch(
           "https://food-nutrition.canada.ca/api/canadian-nutrient-file/food/?lang=en&type=json",
+          { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
         ),
         fetch(
           "https://food-nutrition.canada.ca/api/canadian-nutrient-file/food/?lang=fr&type=json",
+          { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
         ),
       ]);
-      cnfFoodsEN = await enRes.json();
-      cnfFoodsFR = await frRes.json();
-      log.info(
-        { enCount: cnfFoodsEN?.length, frCount: cnfFoodsFR?.length },
-        "CNF food lists loaded",
-      );
+      const enParsed = cnfFoodListSchema.safeParse(await enRes.json());
+      const frParsed = cnfFoodListSchema.safeParse(await frRes.json());
+      if (enParsed.success && frParsed.success) {
+        cnfFoodsEN = enParsed.data;
+        cnfFoodsFR = frParsed.data;
+        log.info(
+          { enCount: cnfFoodsEN.length, frCount: cnfFoodsFR.length },
+          "CNF food lists loaded",
+        );
+      } else {
+        log.warn(
+          { enOk: enParsed.success, frOk: frParsed.success },
+          "CNF food list failed validation — CNF source unavailable",
+        );
+      }
     } catch (err) {
       log.warn({ err: toError(err) }, "failed to load CNF food lists");
     }
@@ -383,7 +429,14 @@ async function lookupCNF(query: string): Promise<NutritionData | null> {
       `https://food-nutrition.canada.ca/api/canadian-nutrient-file/nutrientamount/?lang=en&type=json&id=${matchCode}`,
       { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
-    const nutrients: CNFNutrientAmount[] = await nutRes.json();
+    const nutrientsParsed = cnfNutrientAmountListSchema.safeParse(
+      await nutRes.json(),
+    );
+    if (!nutrientsParsed.success) {
+      log.warn({ code: matchCode }, "CNF nutrient amounts failed validation");
+      return null;
+    }
+    const nutrients: CNFNutrientAmount[] = nutrientsParsed.data;
 
     const findNutrient = (names: string[]) =>
       findNutrientValue(
@@ -499,12 +552,12 @@ async function lookupUSDAByUPC(
       );
 
       if (!response.ok) continue;
-      const json = await response.json();
-      if (!json.foods || json.foods.length === 0) continue;
+      const parsed = usdaUpcResponseSchema.safeParse(await response.json());
+      if (!parsed.success || parsed.data.foods.length === 0) continue;
 
       // Check that the UPC actually matches (text search can return false positives)
-      const match = json.foods.find(
-        (f: Record<string, unknown>) =>
+      const match = parsed.data.foods.find(
+        (f) =>
           f.gtinUpc === variant ||
           f.gtinUpc === code ||
           f.gtinUpc === code.padStart(12, "0") ||
@@ -512,13 +565,12 @@ async function lookupUSDAByUPC(
       );
       if (!match) continue;
 
-      const nutrients: { nutrientName: string; value: number }[] =
-        match.foodNutrients || [];
+      const nutrients = match.foodNutrients;
       const findNutrient = (names: string[]) =>
         findNutrientValue(
           nutrients,
-          (n) => n.nutrientName ?? "",
-          (n) => n.value || 0,
+          (n) => n.nutrientName,
+          (n) => n.value,
           names,
         );
 

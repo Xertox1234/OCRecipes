@@ -22,6 +22,10 @@ import { storage } from "../storage";
 let expo: Expo | null = null;
 let loggedMissingToken = false;
 
+// Wall-clock timeout for a single push-send chunk. expo-server-sdk exposes no
+// per-call timeout, so without this a hung Expo endpoint would stall delivery.
+const PUSH_SEND_TIMEOUT_MS = 30_000;
+
 function getExpo(): Expo | null {
   if (expo) return expo;
   const token = process.env.EXPO_ACCESS_TOKEN;
@@ -76,11 +80,22 @@ export async function sendPushToUser(
   const tickets: ExpoPushTicket[] = [];
 
   for (const chunk of chunks) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const chunkTickets = await client.sendPushNotificationsAsync(chunk);
+      const chunkTickets = await Promise.race([
+        client.sendPushNotificationsAsync(chunk),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("push send timed out")),
+            PUSH_SEND_TIMEOUT_MS,
+          );
+        }),
+      ]);
       tickets.push(...chunkTickets);
     } catch (err) {
       logger.error({ err, userId }, "push-notifications: failed to send chunk");
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 

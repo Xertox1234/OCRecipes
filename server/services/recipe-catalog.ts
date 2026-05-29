@@ -8,7 +8,7 @@ import {
   type CatalogSearchResult,
   type CatalogSearchResponse,
 } from "@shared/types/recipe-catalog";
-import { createServiceLogger } from "../lib/logger";
+import { createServiceLogger, toError } from "../lib/logger";
 
 const log = createServiceLogger("recipe-catalog");
 
@@ -333,7 +333,11 @@ export async function getSpoonacularSubstitutes(
     if (!parsed.success) return [];
 
     return parsed.data.substitutes;
-  } catch {
+  } catch (err) {
+    log.warn(
+      { err: toError(err), ingredientName },
+      "Spoonacular substitutes fetch failed",
+    );
     return []; // network error — degrade gracefully
   }
 }

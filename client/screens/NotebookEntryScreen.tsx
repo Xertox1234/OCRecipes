@@ -48,9 +48,14 @@ export default function NotebookEntryScreen() {
   const navigation = useNavigation<NotebookEntryNavigationProp>();
   const route = useRoute<RouteProps>();
   const entryId = route.params?.entryId;
-  const isCreate = !entryId;
+  // `entryId` is omitted (undefined) for the in-app "new entry" flow; a deep
+  // link / notification always provides a value (a non-numeric one coerces to 0
+  // via linking's parseIntOrZero). "Create" is specifically the omitted case —
+  // NOT any falsy id — otherwise a malformed deep link silently opens a blank
+  // create form and saving spawns a duplicate entry.
+  const isCreate = entryId === undefined;
 
-  const { data: allEntries = [] } = useNotebookEntries();
+  const { data: allEntries = [], isLoading } = useNotebookEntries();
   const entry: NotebookEntry | undefined = allEntries.find(
     (e) => e.id === entryId,
   );
@@ -196,6 +201,38 @@ export default function NotebookEntryScreen() {
     : entry?.sourceConversationId
       ? "Extracted by Coach"
       : "Added by you";
+
+  // A non-create deep link / notification whose entryId doesn't resolve to a
+  // real entry (deleted, or a malformed link coerced to 0) must show not-found
+  // once entries have loaded — never a blank create form. Gate on !isLoading so
+  // a genuinely-still-loading state isn't mislabeled as not-found.
+  if (!isCreate && !isLoading && !entry) {
+    return (
+      <View
+        accessibilityViewIsModal
+        style={[
+          styles.notFound,
+          {
+            backgroundColor: theme.backgroundDefault,
+            paddingTop: insets.top + Spacing.xl,
+            paddingBottom: insets.bottom + Spacing.xl,
+          },
+        ]}
+      >
+        <Text style={[styles.notFoundText, { color: theme.textSecondary }]}>
+          This entry couldn&apos;t be found. It may have been deleted.
+        </Text>
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Text style={[styles.back, { color: theme.link }]}>← Back</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -373,6 +410,14 @@ export default function NotebookEntryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  notFound: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+  },
+  notFoundText: { fontSize: 15, textAlign: "center" },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
