@@ -568,6 +568,10 @@ def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None,
     except Exception:
         # Any unrecoverable verify failure: never propagate — fail safe toward
         # keeping the CRITICAL for human review (the user chose keep-on-deadline).
+        # Surface the cause to stderr so a genuine bug (typo, bad import) is
+        # visible in CI logs instead of vanishing silently into the worker pool.
+        import traceback
+        traceback.print_exc()
         return "keep_unverified"
 
 
