@@ -197,6 +197,81 @@ assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "abc"}) == 330, "
 PY
 }
 
+run_python_retry_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, types, time
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+def resp(content, fr="stop"):
+    msg = types.SimpleNamespace(content=content, tool_calls=None)
+    return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg, finish_reason=fr)])
+
+# validators
+assert m._draft_acceptable(resp("text")) is None, "non-empty draft accepted"
+assert m._draft_acceptable(resp("", fr="length")) is None, "length draft accepted (fast-fail downstream)"
+assert m._draft_acceptable(resp("")) is not None, "empty non-length draft rejected -> retry"
+assert m._verdict_acceptable(resp("{}")) is None
+assert m._verdict_acceptable(resp("")) is not None
+
+# (i) raises once, then succeeds
+class RaiseThenOK:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1: raise RuntimeError("boom")
+        return resp("ok")
+c = RaiseThenOK()
+r = m.call_with_retry(c, validate=None, retries=2, base_delay=0)
+assert r.choices[0].message.content == "ok" and c.calls == 2, c.calls
+
+# (ii) empty content retried until non-empty, using the draft validator
+class EmptyThenOK:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp("" if self.calls == 1 else "good")
+c2 = EmptyThenOK()
+r2 = m.call_with_retry(c2, validate=m._draft_acceptable, retries=2, base_delay=0)
+assert r2.choices[0].message.content == "good" and c2.calls == 2, c2.calls
+
+# (iii) deadline already passed -> BudgetExceeded, NO model call made
+class Counting:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; return resp("x")
+c3 = Counting()
+try:
+    m.call_with_retry(c3, validate=None, deadline=time.monotonic()-1, retries=2, base_delay=0)
+    raise AssertionError("expected BudgetExceeded")
+except m.BudgetExceeded:
+    pass
+assert c3.calls == 0, "no model call once budget exhausted"
+
+# (iv) length is NOT retried (accepted -> returned for the downstream fast-fail)
+class LengthEmpty:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; return resp("", fr="length")
+c4 = LengthEmpty()
+r4 = m.call_with_retry(c4, validate=m._draft_acceptable, retries=2, base_delay=0)
+assert c4.calls == 1, "length response must not be retried"
+assert r4.choices[0].finish_reason == "length"
+
+# (v) exhausts retries on persistent empty -> raises
+class AlwaysEmpty:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; return resp("")
+c5 = AlwaysEmpty()
+try:
+    m.call_with_retry(c5, validate=m._draft_acceptable, retries=2, base_delay=0)
+    raise AssertionError("expected raise after exhausting retries")
+except RuntimeError:
+    pass
+assert c5.calls == 3, "1 initial + 2 retries"
+PY
+}
+
 run_python_helper_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -662,6 +737,12 @@ else
   echo "FAIL: Python resolve_budget_seconds env parsing"; FAIL=$((FAIL+1))
 fi
 
+if run_python_retry_tests; then
+  echo "PASS: Python call_with_retry (deadline-aware, validators, no length retry)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python call_with_retry (deadline-aware, validators, no length retry)"; FAIL=$((FAIL+1))
+fi
+
 if run_python_helper_tests; then
   echo "PASS: Python render_changed_files + build_diff_ref helpers"
   PASS=$((PASS+1))
@@ -717,6 +798,7 @@ if [ -f "$CANON_ENGINE" ]; then
   if run_python_helper_tests "$CANON_TMP/kimi_review.py" \
      && run_python_credential_tests "$CANON_TMP/kimi_review.py" \
      && run_python_budget_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_retry_tests "$CANON_TMP/kimi_review.py" \
      && run_python_schema_tests "$CANON_TMP/kimi_review.py" \
      && run_python_monotonic_tests "$CANON_TMP/kimi_review.py" \
      && run_python_detverify_tests "$CANON_TMP/kimi_review.py" \

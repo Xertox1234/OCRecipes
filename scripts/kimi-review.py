@@ -13,6 +13,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 
 
 TIER_DEFINITIONS = {
@@ -211,6 +212,60 @@ def resolve_budget_seconds(env=os.environ):
     except (TypeError, ValueError):
         return 330
     return val if val > 0 else 330
+
+
+RETRY_BASE_DELAY_SECONDS = 1.0
+
+
+class BudgetExceeded(Exception):
+    """Raised by call_with_retry when the global deadline is reached before a
+    (re)try could start. Callers translate this into their fail-safe outcome
+    (draft: tool-error exit; verify: keep_unverified)."""
+
+
+def call_with_retry(client, *, validate=None, deadline=None, retries=2, base_delay=None, **kwargs):
+    """Call client.chat.completions.create with bounded, deadline-aware retry.
+
+    Retries on (a) any exception from the API call (connection/timeout/5xx/429
+    and the malformed-200-body JSONDecodeError the SDK raises), and (b) a
+    response the caller rejects via validate(resp) -> reason|None. Before each
+    attempt, if the global deadline has passed, raise BudgetExceeded rather than
+    starting another (possibly minute-long) call. After `retries` extra attempts
+    the last error is raised. base_delay defaults to RETRY_BASE_DELAY_SECONDS so
+    tests can pass 0 (or patch the module constant) and never sleep."""
+    if base_delay is None:
+        base_delay = RETRY_BASE_DELAY_SECONDS
+    last_error = None
+    for attempt in range(retries + 1):
+        if deadline is not None and time.monotonic() >= deadline:
+            raise BudgetExceeded("budget exhausted before model call")
+        try:
+            resp = client.chat.completions.create(**kwargs)
+        except Exception as error:
+            last_error = error
+        else:
+            reason = validate(resp) if validate else None
+            if reason is None:
+                return resp
+            last_error = RuntimeError(reason)
+        if attempt < retries:
+            time.sleep(base_delay * (2 ** attempt))
+    raise last_error if last_error else RuntimeError("call_with_retry: no attempts made")
+
+
+def _draft_acceptable(resp):
+    """Draft response is acceptable when it has content, OR it is a `length`
+    truncation. We do NOT retry `length`: main fast-fails it at the
+    finish_reason check, every retry re-bills the full prompt, and no observed
+    failure was a length truncation."""
+    ch = resp.choices[0]
+    return None if (ch.message.content or ch.finish_reason == "length") else "empty draft content"
+
+
+def _verdict_acceptable(resp):
+    """Verdict response is acceptable when it has content; an empty verdict is a
+    transient miss worth retrying (then keep_unverified if it persists)."""
+    return None if resp.choices[0].message.content else "empty verdict content"
 
 
 def render_changed_files(changed_files):
