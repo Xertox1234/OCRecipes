@@ -182,6 +182,96 @@ else:
 PY
 }
 
+run_python_budget_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+assert m.resolve_budget_seconds({}) == 330, "default budget is 330"
+assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "120"}) == 120, "explicit value honored"
+assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "0"}) == 330, "non-positive -> default"
+assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "-5"}) == 330, "negative -> default"
+assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "abc"}) == 330, "unparseable -> default"
+PY
+}
+
+run_python_retry_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, types, time
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+def resp(content, fr="stop"):
+    msg = types.SimpleNamespace(content=content, tool_calls=None)
+    return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg, finish_reason=fr)])
+
+# validators
+assert m._draft_acceptable(resp("text")) is None, "non-empty draft accepted"
+assert m._draft_acceptable(resp("", fr="length")) is None, "length draft accepted (fast-fail downstream)"
+assert m._draft_acceptable(resp("")) is not None, "empty non-length draft rejected -> retry"
+assert m._verdict_acceptable(resp("{}")) is None
+assert m._verdict_acceptable(resp("")) is not None
+
+# (i) raises once, then succeeds
+class RaiseThenOK:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1: raise RuntimeError("boom")
+        return resp("ok")
+c = RaiseThenOK()
+r = m.call_with_retry(c, validate=None, retries=2, base_delay=0)
+assert r.choices[0].message.content == "ok" and c.calls == 2, c.calls
+
+# (ii) empty content retried until non-empty, using the draft validator
+class EmptyThenOK:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp("" if self.calls == 1 else "good")
+c2 = EmptyThenOK()
+r2 = m.call_with_retry(c2, validate=m._draft_acceptable, retries=2, base_delay=0)
+assert r2.choices[0].message.content == "good" and c2.calls == 2, c2.calls
+
+# (iii) deadline already passed -> BudgetExceeded, NO model call made
+class Counting:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; return resp("x")
+c3 = Counting()
+try:
+    m.call_with_retry(c3, validate=None, deadline=time.monotonic()-1, retries=2, base_delay=0)
+    raise AssertionError("expected BudgetExceeded")
+except m.BudgetExceeded:
+    pass
+assert c3.calls == 0, "no model call once budget exhausted"
+
+# (iv) length is NOT retried (accepted -> returned for the downstream fast-fail)
+class LengthEmpty:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; return resp("", fr="length")
+c4 = LengthEmpty()
+r4 = m.call_with_retry(c4, validate=m._draft_acceptable, retries=2, base_delay=0)
+assert c4.calls == 1, "length response must not be retried"
+assert r4.choices[0].finish_reason == "length"
+
+# (v) exhausts retries on persistent empty -> raises
+class AlwaysEmpty:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; return resp("")
+c5 = AlwaysEmpty()
+try:
+    m.call_with_retry(c5, validate=m._draft_acceptable, retries=2, base_delay=0)
+    raise AssertionError("expected raise after exhausting retries")
+except RuntimeError:
+    pass
+assert c5.calls == 3, "1 initial + 2 retries"
+PY
+}
+
 run_python_helper_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -355,6 +445,119 @@ assert vs[1] == "keep", vs
 PY
 }
 
+run_python_verify_deadline_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, types, time, json
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.RETRY_BASE_DELAY_SECONDS = 0  # no real sleeps (fresh process per heredoc)
+
+def resp(content=None, tool_calls=None):
+    msg = types.SimpleNamespace(content=content, tool_calls=tool_calls)
+    return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg, finish_reason="stop")])
+
+f = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"x"}
+
+# (a) deadline already past at turn-top -> keep_unverified, NO model call
+class NeverCalled:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; return resp("x")
+nc = NeverCalled()
+assert m.verify_one_agentic(f, nc, model="x", root=".", max_turns=5, deadline=time.monotonic()-1) == "keep_unverified"
+assert nc.calls == 0, "no model call once deadline passed"
+
+# (b) pre-verdict deadline check (blocker D): tool-loop turn runs, but the
+# deadline trips before the verdict call -> keep_unverified, verdict call NOT made.
+# Drive m.time.monotonic deterministically: [turn-top<deadline, retry-precheck<deadline, pre-verdict>=deadline]
+real = m.time.monotonic
+class Clock:
+    def __init__(self, seq): self.seq=list(seq); self.i=0
+    def __call__(self):
+        v = self.seq[min(self.i, len(self.seq)-1)]; self.i += 1; return v
+m.time.monotonic = Clock([0, 0, 20])  # deadline = 10
+class NoToolThenVerdict:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        # first (and only expected) call: a turn with no tool_calls -> ready for verdict
+        return resp(content="ignored-at-this-stage")
+try:
+    ntv = NoToolThenVerdict()
+    out = m.verify_one_agentic(f, ntv, model="x", root=".", max_turns=5, deadline=10)
+    assert out == "keep_unverified", out
+    assert ntv.calls == 1, f"only the tool-loop turn ran; verdict call must be skipped, got {ntv.calls}"
+finally:
+    m.time.monotonic = real
+
+# (c) any persistent failure is swallowed -> keep_unverified (never propagates)
+class AlwaysRaise:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; raise RuntimeError("api down")
+assert m.verify_one_agentic(f, AlwaysRaise(), model="x", root=".", max_turns=5, deadline=None) == "keep_unverified"
+
+# (d) unparseable verdict -> keep_unverified (changed from legacy 'downgrade')
+class BadVerdict:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp(content="not json at all")
+assert m.verify_one_agentic(f, BadVerdict(), model="x", root=".", max_turns=5, deadline=None) == "keep_unverified"
+
+# (e) regression guard: a parsed 'refuted' verdict still downgrades; 'verified' still keeps
+class Refuted:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp(content=json.dumps({"verdict":"refuted","corrected_detail":"x","confidence":0.9}))
+assert m.verify_one_agentic(f, Refuted(), model="x", root=".", max_turns=5, deadline=None) == "downgrade"
+class Verified:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp(content=json.dumps({"verdict":"verified","corrected_detail":"x","confidence":0.9}))
+assert m.verify_one_agentic(f, Verified(), model="x", root=".", max_turns=5, deadline=None) == "keep"
+PY
+}
+
+run_python_verify_budget_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, time, concurrent.futures
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+# (a) blocker E harvest helper: a DONE future keeps its real verdict;
+#     a pending one is kept-unverified. Deterministic with real Futures.
+done = concurrent.futures.Future(); done.set_result("downgrade")
+pending = concurrent.futures.Future()
+assert m._harvest_verdict(done) == "downgrade", "done future must keep its real verdict"
+assert m._harvest_verdict(pending) == "keep_unverified", "pending future -> keep_unverified"
+
+# (b) deadline behavior + prompt return: a slow verify must NOT keep
+# verify_agentic blocked; the unfinished CRITICAL becomes keep_unverified.
+def slow_voa(finding, client, model, root, max_turns=5, tree_ref=None, deadline=None):
+    time.sleep(3); return "keep"
+m.verify_one_agentic = slow_voa
+f1 = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}
+t0 = time.monotonic()
+vs = m.verify_agentic([f1], client=None, model="x", root=".", jobs=2, deadline=time.monotonic()+0.2)
+elapsed = time.monotonic() - t0
+assert vs == ["keep_unverified"], vs
+assert elapsed < 2.5, f"verify_agentic must return promptly (shutdown wait=False), took {elapsed:.2f}s"
+
+# (c) non-CRITICAL is never targeted and stays 'keep'
+def keep_voa(finding, client, model, root, max_turns=5, tree_ref=None, deadline=None):
+    return "keep"
+m.verify_one_agentic = keep_voa
+fw = {"tier":"WARNING","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"w"}
+vs2 = m.verify_agentic([fw], client=None, model="x", root=".", deadline=time.monotonic()+5)
+assert vs2 == ["keep"], vs2
+PY
+}
+
 run_python_detverify_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -396,6 +599,14 @@ assert out2[0]["tier"] == "CRITICAL", "keep must preserve tier"
 warn = [{"tier":"WARNING","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}]
 out3 = m.apply_downgrades(warn, {0: "keep"})
 assert out3[0]["tier"] == "WARNING", "verify must never promote a tier"
+# keep_unverified: keeps CRITICAL but appends the budget-exhausted marker
+ku = m.apply_downgrades(findings, {0: "keep_unverified"})
+assert ku[0]["tier"] == "CRITICAL", "keep_unverified must keep CRITICAL"
+assert "budget exhausted" in ku[0]["detail"], ku
+# keep_unverified never promotes a WARNING and adds no marker to non-CRITICAL
+warn_ku = m.apply_downgrades(warn, {0: "keep_unverified"})
+assert warn_ku[0]["tier"] == "WARNING", "keep_unverified must not change a WARNING"
+assert "budget exhausted" not in warn_ku[0]["detail"], warn_ku
 PY
 }
 
@@ -641,6 +852,18 @@ else
   FAIL=$((FAIL+1))
 fi
 
+if run_python_budget_tests; then
+  echo "PASS: Python resolve_budget_seconds env parsing"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python resolve_budget_seconds env parsing"; FAIL=$((FAIL+1))
+fi
+
+if run_python_retry_tests; then
+  echo "PASS: Python call_with_retry (deadline-aware, validators, no length retry)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python call_with_retry (deadline-aware, validators, no length retry)"; FAIL=$((FAIL+1))
+fi
+
 if run_python_helper_tests; then
   echo "PASS: Python render_changed_files + build_diff_ref helpers"
   PASS=$((PASS+1))
@@ -687,6 +910,18 @@ else
   echo "FAIL: Python verify_one_agentic + verify_agentic bounded loop (Tier B)"; FAIL=$((FAIL+1))
 fi
 
+if run_python_verify_deadline_tests; then
+  echo "PASS: Python verify_one_agentic deadline + keep_unverified + swallow"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python verify_one_agentic deadline + keep_unverified + swallow"; FAIL=$((FAIL+1))
+fi
+
+if run_python_verify_budget_tests; then
+  echo "PASS: Python verify_agentic global budget + harvest gap (blocker E)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python verify_agentic global budget + harvest gap (blocker E)"; FAIL=$((FAIL+1))
+fi
+
 CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
 if [ -f "$CANON_ENGINE" ]; then
   # importlib requires a .py suffix to resolve the loader; the canonical engine is
@@ -695,12 +930,16 @@ if [ -f "$CANON_ENGINE" ]; then
   ln -s "$CANON_ENGINE" "$CANON_TMP/kimi_review.py"
   if run_python_helper_tests "$CANON_TMP/kimi_review.py" \
      && run_python_credential_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_budget_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_retry_tests "$CANON_TMP/kimi_review.py" \
      && run_python_schema_tests "$CANON_TMP/kimi_review.py" \
      && run_python_monotonic_tests "$CANON_TMP/kimi_review.py" \
      && run_python_detverify_tests "$CANON_TMP/kimi_review.py" \
      && run_python_pattern_resolution_tests "$CANON_TMP/kimi_review.py" \
      && run_python_tool_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py"; then
+     && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_verify_deadline_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_verify_budget_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
   else
     echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))

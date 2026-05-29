@@ -1,7 +1,8 @@
 # Kimi Review System — Architecture Reference
 
-**Last updated:** 2026-05-21
+**Last updated:** 2026-05-29
 **Design spec:** [docs/superpowers/specs/2026-05-18-kimi-false-positive-prevention-design.md](superpowers/specs/2026-05-18-kimi-false-positive-prevention-design.md)
+**Reliability design:** [docs/superpowers/specs/2026-05-29-kimi-ci-review-reliability-design.md](superpowers/specs/2026-05-29-kimi-ci-review-reliability-design.md) (global budget, `keep_unverified` verdict, two-layer timeout; gitignored/local-only)
 
 This document is the single source of truth for the Kimi code-review gate:
 how it runs, how it blocks, how to configure it, and what invariants must hold.
@@ -20,9 +21,11 @@ two-phase pipeline:
   `claim_type` (`absent_symbol`, `line_assertion`, or `semantic`) alongside the
   tier, file, line, symbol, and detail.
 - **Phase 2 (Verify):** An optional verification pass (selected by `--verify`)
-  examines draft CRITICAL findings and may downgrade them. Verification is
-  _monotonic_ — it only lowers tiers, never raises them, and never adds or drops
-  findings.
+  examines draft CRITICAL findings. Each is either downgraded to WARNING (a
+  completed `refuted`/`uncertain` verdict), kept as a blocking CRITICAL with a
+  `[kept: …]` marker when verification could not complete within the time budget
+  (`keep_unverified`), or passed through unchanged. Verification is _monotonic_ —
+  it never raises a tier, and never adds or drops findings.
 
 The engine signals the gate result via **exit code**: `0` = clean or non-blocking
 findings only; `2` = at least one CRITICAL survived verification (BLOCK); any other
@@ -115,15 +118,15 @@ requires editing engine code.
 The engine exposes pure functions that tests can import and call without a network
 or API key:
 
-| Function                               | What it does                                                                                          |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `parse_findings(json_str, tiers)`      | Parses structured JSON draft; normalises tier to uppercase; returns `[]` on malformed JSON            |
-| `findings_to_text(findings)`           | Renders findings to the human `[TIER] file:line — detail` format                                      |
-| `apply_downgrades(findings, verdicts)` | Monotonically lowers tiers based on verification verdicts; never raises a tier or adds/drops findings |
-| `load_profiles(path)`                  | Loads project profile data from a `kimi-profiles.json` file                                           |
-| `render_changed_files(changed_files)`  | Wraps `git diff --name-status` text in a `<changed-files>` XML block; returns `""` for empty/None     |
-| `build_diff_ref(base)`                 | Returns `"{base}...HEAD"` (three-dot merge-base) when base is given; `"HEAD~1"` otherwise             |
-| `resolve_client_config(env)`           | Resolves API key + base URL from env; validates `MOONSHOT_API_KEY` requires `WORKER_BASE_URL`         |
+| Function                               | What it does                                                                                                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `parse_findings(json_str, tiers)`      | Parses structured JSON draft; normalises tier to uppercase; returns `[]` on malformed JSON                                                                                     |
+| `findings_to_text(findings)`           | Renders findings to the human `[TIER] file:line — detail` format                                                                                                               |
+| `apply_downgrades(findings, verdicts)` | Applies verification verdicts: `downgrade` lowers CRITICAL→WARNING, `keep_unverified` keeps the CRITICAL with a marker; monotonic — never raises a tier or adds/drops findings |
+| `load_profiles(path)`                  | Loads project profile data from a `kimi-profiles.json` file                                                                                                                    |
+| `render_changed_files(changed_files)`  | Wraps `git diff --name-status` text in a `<changed-files>` XML block; returns `""` for empty/None                                                                              |
+| `build_diff_ref(base)`                 | Returns `"{base}...HEAD"` (three-dot merge-base) when base is given; `"HEAD~1"` otherwise                                                                                      |
+| `resolve_client_config(env)`           | Resolves API key + base URL from env; validates `MOONSHOT_API_KEY` requires `WORKER_BASE_URL`                                                                                  |
 
 ---
 
@@ -246,6 +249,44 @@ Both engine copies call the model with `temperature=0`. This collapses verdict-f
 where the same diff yielded a CRITICAL on one run and a clean pass on re-run.
 Confirmed accepted by DeepSeek V4 Flash via OpenRouter (no 400).
 
+### Timeouts and retry budget
+
+The engine bounds its own wall-clock time with one global soft budget rather than
+relying on the external CI `timeout`. At the start of `main()` it computes a single
+monotonic deadline (`time.monotonic() + budget`) and threads it through both the
+draft call and the agentic verify loop, so time a slow, retry-heavy draft spends
+shrinks the verify window rather than extending the clock.
+
+| Variable                      | Default | Layer      | Description                                                                                                                               |
+| ----------------------------- | ------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `KIMI_REVIEW_BUDGET_SECONDS`  | `330`   | Engine     | Global soft wall-clock budget for draft + agentic verify combined. One monotonic deadline = start + this. Non-positive/unparseable → 330. |
+| `KIMI_REVIEW_TIMEOUT_SECONDS` | `480`   | CI wrapper | Pure backstop in `scripts/ci-kimi-review.sh` — a SIGTERM fallback if the engine never returns. Not the primary limit.                     |
+
+**OpenAI client.** The client is constructed `timeout=90.0, max_retries=0`. The
+per-call timeout is deliberately left at 90 — lowering it would turn slow-but-valid
+calls into failures. The SDK's own retry is disabled (`max_retries=0`) because the
+engine owns retry via `call_with_retry`.
+
+**`call_with_retry`.** A deadline-aware retry wrapper around every model call
+(`RETRY_BASE_DELAY_SECONDS = 1.0`, exponential backoff). It retries on any exception
+from the API call (connection/timeout/5xx/429, and the malformed-200-body
+JSONDecodeError the SDK raises) and on a response the caller rejects via `validate`
+(empty draft or verdict content). It does **not** retry `finish_reason == "length"` —
+the existing fast-fail at the draft `finish_reason` check handles truncation, and
+each retry re-bills the full prompt. Before each attempt, if the deadline has
+passed it raises `BudgetExceeded` rather than starting another (possibly
+minute-long) call. The draft translates `BudgetExceeded`/retries-exhausted into a
+tool-error exit (CI fails closed); the verify phase translates it into
+`keep_unverified` (see §8).
+
+**Two-layer timeout invariant.** The internal budget (330) trips first and emits a
+real verdict and exit code; the external `timeout` (480) is only a SIGTERM fallback.
+The invariant is `backstop >= budget + client_timeout + margin` —
+`480 >= 330 + 90 + 60`. A single in-flight call can overrun the deadline by up to
+one client timeout (~90s) because the deadline is only checked _before_ each call;
+the backstop's margin absorbs that overrun. See §6 for the related exit-code
+behaviour.
+
 ---
 
 ## 6. Invariants
@@ -319,11 +360,14 @@ fail-open past a real CRITICAL).
 
 ### Monotonicity of verification
 
-The verification pass (`apply_downgrades`) is strictly monotonic: it only ever
-lowers a CRITICAL to WARNING, never raises a tier, never adds a finding, and never
-drops a finding entirely. This means a flaky or non-deterministic verify pass can
-only fail toward _keeping_ a finding (non-blocking downgrade missed), never toward
-_inventing_ a new blocking one.
+The verification pass (`apply_downgrades`) is strictly monotonic: it never raises a
+tier, never adds a finding, and never drops a finding entirely. It produces two
+outcomes for a CRITICAL: a `downgrade` verdict lowers it to WARNING, and a
+`keep_unverified` verdict keeps it as a blocking CRITICAL with an appended marker
+(see §8 for the three-token verdict model). Neither outcome raises a tier. This
+means a flaky or non-deterministic verify pass can only fail toward _keeping_ a
+finding (a non-blocking downgrade missed → the CRITICAL stays blocking), never
+toward _inventing_ a new blocking one.
 
 ### Read-only tools invariant (Tier B)
 
@@ -377,10 +421,12 @@ The draft call always uses `temperature=0`.
 
 **Phase 2 — Verify (runs when `--verify` is not `off`).**
 Selected findings (CRITICALs) are examined by the verify pass.
-`apply_downgrades()` applies the results: it only ever lowers CRITICAL→WARNING,
+`apply_downgrades()` applies the results: a `downgrade` lowers CRITICAL→WARNING, a
+`keep_unverified` keeps the CRITICAL (blocking) with an appended marker, and it
 never raises a tier, never adds or drops findings (monotonicity invariant). A
-flaky verify can only fail toward keeping a finding as a non-blocking WARNING;
-it cannot invent a new blocking CRITICAL.
+flaky verify can only fail toward keeping a finding — either downgraded to a
+non-blocking WARNING or kept as a marked CRITICAL — it cannot invent a new
+unfounded CRITICAL.
 
 ### `--verify` modes
 
@@ -431,12 +477,44 @@ Tier B runs in CI (`--verify agentic`) and (to be wired at install time) the
 manual `kimi-multi-review` panel. For each CRITICAL finding a bounded loop
 (max ~5 turns, `temperature=0`) gives the model read-only tools (`read_file`,
 `grep` — defined in `TOOL_DEFS`) to investigate the finding, then returns a
-structured verdict: `verified`, `refuted`, or `uncertain`.
+structured model verdict: `verified`, `refuted`, or `uncertain`.
 
-- `verified` → keep CRITICAL (blocks CI).
-- `refuted`, `uncertain`, turn-exhaustion, or malformed verdict → downgrade to WARNING.
+Tier B uses a **three-token internal verdict** — distinct from the model's
+verdict — that distinguishes a finding the verifier _completed_ from one whose
+verification _did not complete_:
 
-Per-finding loops run in parallel (`ThreadPoolExecutor`).
+- `keep` — the model returned `verified` (claim holds) → keep CRITICAL (blocks CI).
+- `downgrade` — the model returned `refuted` or `uncertain` (a _completed_ verdict)
+  → lower CRITICAL→WARNING (monotonic, non-blocking).
+- `keep_unverified` — verification **did not complete**: the global deadline/budget
+  was hit, retries were exhausted (`BudgetExceeded`), the turn limit was reached
+  without a verdict, or the verdict was unparseable / an unknown value. Keep the
+  CRITICAL (still blocks CI) and append the marker
+  `[kept: verification budget exhausted — re-run or review manually]` so a finding
+  that blocked because it could not be checked is unambiguous versus a
+  genuinely-verified one. This deliberately inverts the old fail-safe direction:
+  an un-checkable CRITICAL now blocks and notifies rather than silently downgrading.
+
+`keep_unverified` is Tier-B-only — `verify_deterministic` (Tier A) returns only
+`keep`/`downgrade`.
+
+`verify_one_agentic` is deadline-bounded (a turn-top check and a second pre-verdict
+re-check, since the verdict is a separate model call) and **never propagates an
+exception**: it swallows `BudgetExceeded` and any other exception → `keep_unverified`,
+printing a stderr traceback on an unexpected exception so a genuine bug (typo, bad
+import) is visible in CI logs instead of vanishing into the worker pool. Both model
+calls go through `call_with_retry`.
+
+Per-finding loops run in parallel (`ThreadPoolExecutor`). `verify_agentic` is bounded
+by the global deadline via `as_completed(timeout=remaining)`; on `TimeoutError` it
+harvests finished futures' real verdicts (`_harvest_verdict`) and marks unfinished
+CRITICALs `keep_unverified`, then `shutdown(wait=False, cancel_futures=True)` in a
+`finally` so it returns promptly. **Subtle invariant:** the harvest loop runs in the
+`except` block _before_ `finally`'s `cancel_futures=True`, so futures are never in a
+CANCELLED state when `_harvest_verdict` calls `.result()` — that is why `.result()`
+cannot raise `CancelledError`. Worker threads are non-daemon, so after `verify_agentic`
+returns and the verdict prints, the process may linger up to one in-flight call (~90s)
+while a worker drains — expected, not a hang; the §5 two-layer backstop absorbs it.
 
 **Tree discipline:** tools read the correct git tree per surface — working tree
 locally (`tree_ref=None`), and in CI the PR-head by SHA (`KIMI_REVIEW_HEAD_SHA`)

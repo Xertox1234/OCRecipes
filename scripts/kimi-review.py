@@ -13,6 +13,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 
 
 TIER_DEFINITIONS = {
@@ -198,6 +199,74 @@ def resolve_client_config(env=os.environ):
     return api_key, base_url
 
 
+def resolve_budget_seconds(env=os.environ):
+    """Global wall-clock budget (seconds) for draft + agentic verify combined.
+    Defaults to 330; a non-positive or unparseable value falls back to the
+    default. One shared deadline (see main) keeps total time bounded so a slow,
+    retry-heavy draft cannot push the verify phase past the CI backstop."""
+    raw = env.get("KIMI_REVIEW_BUDGET_SECONDS")
+    if raw is None:
+        return 330
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return 330
+    return val if val > 0 else 330
+
+
+RETRY_BASE_DELAY_SECONDS = 1.0
+
+
+class BudgetExceeded(Exception):
+    """Raised by call_with_retry when the global deadline is reached before a
+    (re)try could start. Callers translate this into their fail-safe outcome
+    (draft: tool-error exit; verify: keep_unverified)."""
+
+
+def call_with_retry(client, *, validate=None, deadline=None, retries=2, base_delay=None, **kwargs):
+    """Call client.chat.completions.create with bounded, deadline-aware retry.
+
+    Retries on (a) any exception from the API call (connection/timeout/5xx/429
+    and the malformed-200-body JSONDecodeError the SDK raises), and (b) a
+    response the caller rejects via validate(resp) -> reason|None. Before each
+    attempt, if the global deadline has passed, raise BudgetExceeded rather than
+    starting another (possibly minute-long) call. After `retries` extra attempts
+    the last error is raised. base_delay defaults to RETRY_BASE_DELAY_SECONDS so
+    tests can pass 0 (or patch the module constant) and never sleep."""
+    if base_delay is None:
+        base_delay = RETRY_BASE_DELAY_SECONDS
+    last_error = None
+    for attempt in range(retries + 1):
+        if deadline is not None and time.monotonic() >= deadline:
+            raise BudgetExceeded("budget exhausted before model call")
+        try:
+            resp = client.chat.completions.create(**kwargs)
+        except Exception as error:
+            last_error = error
+        else:
+            reason = validate(resp) if validate else None
+            if reason is None:
+                return resp
+            last_error = RuntimeError(reason)
+        if attempt < retries:
+            time.sleep(base_delay * (2 ** attempt))
+    raise last_error if last_error else RuntimeError("call_with_retry: no attempts made")
+
+
+def _draft_acceptable(resp):
+    """Draft response is acceptable when it has content, OR it is a `length`
+    truncation. We do NOT retry `length`: main fast-fails it at the
+    finish_reason check, every retry re-bills the full prompt, and no observed
+    failure was a length truncation."""
+    ch = resp.choices[0]
+    return None if (ch.message.content or ch.finish_reason == "length") else "empty draft content"
+
+
+def _verdict_acceptable(resp):
+    """Verdict response is acceptable when it has content; an empty verdict is a
+    transient miss worth retrying (then keep_unverified if it persists)."""
+    return None if resp.choices[0].message.content else "empty verdict content"
+
 
 def render_changed_files(changed_files):
     """Render a <changed-files> block from newline-delimited `git diff
@@ -294,14 +363,20 @@ def findings_to_text(findings):
 
 
 def apply_downgrades(findings, verdicts):
-    """Return a new findings list with CRITICAL→WARNING where verdicts say
-    'downgrade'. MONOTONIC: never raises a tier, never adds or drops a finding."""
+    """Return a new findings list. 'downgrade' lowers CRITICAL→WARNING;
+    'keep_unverified' keeps CRITICAL but appends a marker so a finding that
+    blocked because verification could not complete is unambiguous (vs a
+    genuinely-verified CRITICAL). MONOTONIC: never raises a tier, never adds or
+    drops a finding; keep/keep_unverified never lower a tier."""
     out = []
     for i, f in enumerate(findings):
         g = dict(f)
-        if verdicts.get(i) == "downgrade" and g["tier"].upper() == "CRITICAL":
+        verdict = verdicts.get(i)
+        if verdict == "downgrade" and g["tier"].upper() == "CRITICAL":
             g["tier"] = "WARNING"
             g["detail"] = g["detail"] + " [downgraded: unverified against code]"
+        elif verdict == "keep_unverified" and g["tier"].upper() == "CRITICAL":
+            g["detail"] = g["detail"] + " [kept: verification budget exhausted — re-run or review manually]"
         out.append(g)
     return out
 
@@ -427,60 +502,113 @@ VERIFY_SYSTEM = (
     "Use tools before deciding. Never assume; check."
 )
 
-def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None):
-    """Bounded read-only verify loop for one finding. Returns 'keep' (verified)
-    or 'downgrade' (refuted/uncertain). MONOTONIC: only ever downgrades.
-    tree_ref selects which git tree the tools read (None = working tree)."""
+def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None, deadline=None):
+    """Bounded read-only verify loop for one finding. Returns:
+      'keep'            verified (claim holds);
+      'downgrade'       refuted or uncertain (a completed verdict);
+      'keep_unverified' verification did not complete (deadline/budget hit,
+                        retries exhausted, turns exhausted, or unparseable/unknown
+                        verdict) — keep + notify.
+    MONOTONIC: 'downgrade' only lowers CRITICAL→WARNING; keep/keep_unverified
+    never lower. Never propagates an exception, so verify_agentic's fut.result()
+    cannot raise. tree_ref selects which git tree the read-only tools see."""
     messages = [
         {"role": "system", "content": VERIFY_SYSTEM},
         {"role": "user", "content": "Finding to verify:\n" + json.dumps(finding)},
     ]
-    for _ in range(max_turns):
-        resp = client.chat.completions.create(
-            model=model, messages=messages, temperature=0, tools=TOOL_DEFS)
-        msg = resp.choices[0].message
-        tool_calls = getattr(msg, "tool_calls", None)
-        if tool_calls:
-            messages.append({"role": "assistant", "content": msg.content or "",
-                             "tool_calls": [
-                                 {"id": tc.id, "type": "function",
-                                  "function": {"name": tc.function.name,
-                                               "arguments": tc.function.arguments}}
-                                 for tc in tool_calls]})
-            for tc in tool_calls:
-                try:
-                    a = json.loads(tc.function.arguments)
-                except ValueError:
-                    a = {}
-                result = run_tool(tc.function.name, a, root=root, tree_ref=tree_ref)
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-            continue
-        verdict_resp = client.chat.completions.create(
-            model=model, messages=messages + [
-                {"role": "user", "content": "Now return your verdict as JSON."}],
-            temperature=0,
-            response_format={"type": "json_schema",
-                             "json_schema": {"name": "verify", "strict": True, "schema": VERIFY_SCHEMA}})
-        try:
-            v = json.loads(verdict_resp.choices[0].message.content)
-        except (ValueError, TypeError):
-            return "downgrade"
-        return "keep" if v.get("verdict") == "verified" else "downgrade"
-    return "downgrade"
+    try:
+        for _ in range(max_turns):
+            if deadline is not None and time.monotonic() >= deadline:
+                return "keep_unverified"
+            resp = call_with_retry(
+                client, validate=None, deadline=deadline,
+                model=model, messages=messages, temperature=0, tools=TOOL_DEFS)
+            msg = resp.choices[0].message
+            tool_calls = getattr(msg, "tool_calls", None)
+            if tool_calls:
+                messages.append({"role": "assistant", "content": msg.content or "",
+                                 "tool_calls": [
+                                     {"id": tc.id, "type": "function",
+                                      "function": {"name": tc.function.name,
+                                                   "arguments": tc.function.arguments}}
+                                     for tc in tool_calls]})
+                for tc in tool_calls:
+                    try:
+                        a = json.loads(tc.function.arguments)
+                    except ValueError:
+                        a = {}
+                    result = run_tool(tc.function.name, a, root=root, tree_ref=tree_ref)
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+                continue
+            # Ready for the verdict — re-check the deadline first (blocker D: this
+            # is the second model call in the turn; a single turn-top check would
+            # let it overrun by ~2x the per-call timeout).
+            if deadline is not None and time.monotonic() >= deadline:
+                return "keep_unverified"
+            verdict_resp = call_with_retry(
+                client, validate=_verdict_acceptable, deadline=deadline,
+                model=model, messages=messages + [
+                    {"role": "user", "content": "Now return your verdict as JSON."}],
+                temperature=0,
+                response_format={"type": "json_schema",
+                                 "json_schema": {"name": "verify", "strict": True, "schema": VERIFY_SCHEMA}})
+            try:
+                v = json.loads(verdict_resp.choices[0].message.content)
+            except (ValueError, TypeError):
+                return "keep_unverified"
+            verdict = v.get("verdict")
+            if verdict == "verified":
+                return "keep"
+            if verdict in ("refuted", "uncertain"):
+                return "downgrade"
+            return "keep_unverified"  # unknown/missing verdict value
+        return "keep_unverified"  # turns exhausted without a verdict
+    except BudgetExceeded:
+        return "keep_unverified"
+    except Exception:
+        # Any unrecoverable verify failure: never propagate — fail safe toward
+        # keeping the CRITICAL for human review (the user chose keep-on-deadline).
+        # Surface the cause to stderr so a genuine bug (typo, bad import) is
+        # visible in CI logs instead of vanishing silently into the worker pool.
+        import traceback
+        traceback.print_exc()
+        return "keep_unverified"
 
 
-def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=None):
-    """Verify all CRITICAL findings in parallel; non-CRITICAL always 'keep'."""
+def _harvest_verdict(fut):
+    """Resolve a future's verdict after the waiter has timed out. A future that
+    already completed keeps its real result (blocker E: as_completed may time
+    out before yielding an already-done future); an unfinished one is
+    kept-unverified. fut.result() never raises here — verify_one_agentic always
+    returns a verdict string and swallows its own exceptions."""
+    return fut.result() if fut.done() else "keep_unverified"
+
+
+def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=None, deadline=None):
+    """Verify all CRITICAL findings in parallel; non-CRITICAL always 'keep'.
+    Bounded by the global `deadline`: when the waiter times out, finished futures
+    keep their real verdict (via _harvest_verdict) and unfinished CRITICALs become
+    'keep_unverified' (keep-on-deadline). shutdown(wait=False, cancel_futures=True)
+    lets this return promptly; the per-turn/pre-verdict deadline checks in
+    verify_one_agentic let the worker threads exit so the process can exit."""
     import concurrent.futures
     verdicts = ["keep"] * len(findings)
     targets = [i for i, f in enumerate(findings) if f["tier"].upper() == "CRITICAL"]
     if not targets:
         return verdicts
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
-        futs = {ex.submit(verify_one_agentic, findings[i], client, model, root, max_turns, tree_ref): i
-                for i in targets}
-        for fut in concurrent.futures.as_completed(futs):
-            verdicts[futs[fut]] = fut.result()
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs))
+    try:
+        futs = {ex.submit(verify_one_agentic, findings[i], client, model, root,
+                          max_turns, tree_ref, deadline): i for i in targets}
+        remaining = (deadline - time.monotonic()) if deadline is not None else None
+        try:
+            for fut in concurrent.futures.as_completed(futs, timeout=remaining):
+                verdicts[futs[fut]] = fut.result()
+        except concurrent.futures.TimeoutError:
+            for fut, i in futs.items():
+                verdicts[i] = _harvest_verdict(fut)
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
     return verdicts
 
 
@@ -511,8 +639,14 @@ def main():
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
-        timeout=90.0,
+        timeout=90.0,        # unchanged: lowering it would turn slow-but-valid calls into failures
+        max_retries=0,       # call_with_retry owns retry; avoid compounding SDK retries
     )
+
+    # One global wall-clock deadline for draft + verify combined. Time the draft
+    # spends on retries shrinks the verify window rather than extending the clock,
+    # so the total can never exceed the budget + one in-flight call.
+    deadline = time.monotonic() + resolve_budget_seconds()
 
     system_prompt = (
         "You are a senior code reviewer auditing a code change. "
@@ -566,7 +700,10 @@ def main():
     )
 
     try:
-        response = client.chat.completions.create(
+        response = call_with_retry(
+            client,
+            validate=_draft_acceptable,
+            deadline=deadline,
             model=args.model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -580,6 +717,8 @@ def main():
             },
         )
     except Exception as error:
+        # Includes BudgetExceeded and retries-exhausted: the draft could not
+        # complete -> tool-error exit (CI fails closed, which is correct).
         print(f"[ERROR: kimi-review request failed: {error}]", file=sys.stderr)
         sys.exit(1)
 
@@ -602,7 +741,7 @@ def main():
         # content is only reachable by sha. Local/manual runs leave it unset =>
         # working tree. This is the Tier B half of the spec's tree-discipline rule.
         head_ref = os.environ.get("KIMI_REVIEW_HEAD_SHA") or None
-        verdicts = verify_agentic(findings, client, args.model, root, tree_ref=head_ref)
+        verdicts = verify_agentic(findings, client, args.model, root, tree_ref=head_ref, deadline=deadline)
         findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
 
     text = findings_to_text(findings)
