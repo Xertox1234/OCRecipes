@@ -16,7 +16,8 @@
 #   KIMI_REVIEW_PATTERNS - comma-separated pattern list passed to kimi-review;
 #                          auto-derived from changed paths when unset
 #   KIMI_REVIEW_PATTERN_MAX_CHARS - per-pattern context cap, default 12000
-#   KIMI_REVIEW_TIMEOUT_SECONDS - timeout for the review command, default 300
+#   KIMI_REVIEW_TIMEOUT_SECONDS - hard-timeout backstop for the review command,
+#                          default 480 (the engine's internal budget trips first)
 
 set -uo pipefail
 
