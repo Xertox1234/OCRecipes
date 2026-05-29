@@ -91,7 +91,8 @@ Each cluster dispatch uses the standard discovery prompt template (see above) pl
 ## Phase 2: Discovery
 
 1. **Launch specialist agents in parallel** using the mapping table above:
-   - `full` or `pre-launch`: launch one agent invocation per domain row (7 total) in two batches — first 4 domains, then 3
+   - `full`: launch one agent invocation per structural domain row (7 total) in two batches — first 4 domains, then 3. `full` does NOT include `reliability`.
+   - `pre-launch`: the 7 structural-domain invocations **plus** the 4 `reliability` cluster dispatches (see "Reliability Scope") — 11 total, batched 4+4+3
    - Named scope (e.g., `security`): launch only the primary agent(s) for that domain
    - `reliability` scope: launch the 4 cluster dispatches from the "Reliability Scope" section (not per-domain); each prompt names the checklist classes for that cluster
    - Use the agent prompt template from the mapping section, specifying the domain and scope
@@ -111,7 +112,8 @@ Each cluster dispatch uses the standard discovery prompt template (see above) pl
 Validate the Phase 2 findings against current documentation before the user triages them. The orchestrator's training knowledge lags real-world docs by months; this phase catches stale false positives (a finding the docs contradict) and stale knowledge gaps (a current best practice no agent knew to flag).
 
 1. **Launch `docs-researcher` agents in parallel** — one per audit domain that has at least one finding:
-   - `full` or `pre-launch`: launch one `docs-researcher` per domain with findings, batched the same way Phase 2 batches its specialist agents (first 4 domains, then the rest)
+   - `full`: launch one `docs-researcher` per structural domain with findings, batched the same way Phase 2 batches its specialist agents (first 4 domains, then the rest)
+   - `pre-launch`: as `full`, **plus** one `docs-researcher` per `reliability` _cluster_ with findings (see the `reliability` bullet below)
    - Named scope: launch one `docs-researcher` for that domain
    - `reliability` scope: launch one `docs-researcher` per _cluster_ that has findings (1-4 researchers), batched the same way
    - **Skip rule:** a domain with zero findings gets no researcher; if Phase 2 produced no findings at all, skip Phase 2.5 entirely

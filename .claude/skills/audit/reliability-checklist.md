@@ -19,7 +19,7 @@ Two standing caveats for every class:
   or auth are never auto-fixed — surface them for manual, fully-verified handling
   per the project's never-delegate rule.
 
-## Cluster A — Server-side resilience
+## Cluster A — Server resilience
 
 ### Class 1 — Config / env fail-fast
 
@@ -47,7 +47,7 @@ Two standing caveats for every class:
 - Store server notifications (Apple S2S v2 / Google RTDN) are consumed and applied
   (refund, cancel, revoke, expire) — entitlement cannot drift.
 
-## Cluster B — Client-side reliability
+## Cluster B — Client reliability
 
 ### Class 4 — Network-state transitions
 
@@ -101,7 +101,7 @@ Two standing caveats for every class:
 - Numeric accumulation/scaling/rounding uses the central units module; no ad-hoc
   float math; unit fields from upstream are compared, not assumed.
 
-## Cluster D — Detection
+## Cluster D — Detection / observability
 
 ### Class 10 — Observability hooks in source
 
