@@ -521,6 +521,43 @@ assert m.verify_one_agentic(f, Verified(), model="x", root=".", max_turns=5, dea
 PY
 }
 
+run_python_verify_budget_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, time, concurrent.futures
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+# (a) blocker E harvest helper: a DONE future keeps its real verdict;
+#     a pending one is kept-unverified. Deterministic with real Futures.
+done = concurrent.futures.Future(); done.set_result("downgrade")
+pending = concurrent.futures.Future()
+assert m._harvest_verdict(done) == "downgrade", "done future must keep its real verdict"
+assert m._harvest_verdict(pending) == "keep_unverified", "pending future -> keep_unverified"
+
+# (b) deadline behavior + prompt return: a slow verify must NOT keep
+# verify_agentic blocked; the unfinished CRITICAL becomes keep_unverified.
+def slow_voa(finding, client, model, root, max_turns=5, tree_ref=None, deadline=None):
+    time.sleep(3); return "keep"
+m.verify_one_agentic = slow_voa
+f1 = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}
+t0 = time.monotonic()
+vs = m.verify_agentic([f1], client=None, model="x", root=".", jobs=2, deadline=time.monotonic()+0.2)
+elapsed = time.monotonic() - t0
+assert vs == ["keep_unverified"], vs
+assert elapsed < 2.5, f"verify_agentic must return promptly (shutdown wait=False), took {elapsed:.2f}s"
+
+# (c) non-CRITICAL is never targeted and stays 'keep'
+def keep_voa(finding, client, model, root, max_turns=5, tree_ref=None, deadline=None):
+    return "keep"
+m.verify_one_agentic = keep_voa
+fw = {"tier":"WARNING","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"w"}
+vs2 = m.verify_agentic([fw], client=None, model="x", root=".", deadline=time.monotonic()+5)
+assert vs2 == ["keep"], vs2
+PY
+}
+
 run_python_detverify_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -879,6 +916,12 @@ else
   echo "FAIL: Python verify_one_agentic deadline + keep_unverified + swallow"; FAIL=$((FAIL+1))
 fi
 
+if run_python_verify_budget_tests; then
+  echo "PASS: Python verify_agentic global budget + harvest gap (blocker E)"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python verify_agentic global budget + harvest gap (blocker E)"; FAIL=$((FAIL+1))
+fi
+
 CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
 if [ -f "$CANON_ENGINE" ]; then
   # importlib requires a .py suffix to resolve the loader; the canonical engine is
@@ -895,7 +938,8 @@ if [ -f "$CANON_ENGINE" ]; then
      && run_python_pattern_resolution_tests "$CANON_TMP/kimi_review.py" \
      && run_python_tool_tests "$CANON_TMP/kimi_review.py" \
      && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_verify_deadline_tests "$CANON_TMP/kimi_review.py"; then
+     && run_python_verify_deadline_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_verify_budget_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
   else
     echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))

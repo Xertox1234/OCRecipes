@@ -575,18 +575,40 @@ def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None,
         return "keep_unverified"
 
 
-def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=None):
-    """Verify all CRITICAL findings in parallel; non-CRITICAL always 'keep'."""
+def _harvest_verdict(fut):
+    """Resolve a future's verdict after the waiter has timed out. A future that
+    already completed keeps its real result (blocker E: as_completed may time
+    out before yielding an already-done future); an unfinished one is
+    kept-unverified. fut.result() never raises here — verify_one_agentic always
+    returns a verdict string and swallows its own exceptions."""
+    return fut.result() if fut.done() else "keep_unverified"
+
+
+def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=None, deadline=None):
+    """Verify all CRITICAL findings in parallel; non-CRITICAL always 'keep'.
+    Bounded by the global `deadline`: when the waiter times out, finished futures
+    keep their real verdict (via _harvest_verdict) and unfinished CRITICALs become
+    'keep_unverified' (keep-on-deadline). shutdown(wait=False, cancel_futures=True)
+    lets this return promptly; the per-turn/pre-verdict deadline checks in
+    verify_one_agentic let the worker threads exit so the process can exit."""
     import concurrent.futures
     verdicts = ["keep"] * len(findings)
     targets = [i for i, f in enumerate(findings) if f["tier"].upper() == "CRITICAL"]
     if not targets:
         return verdicts
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
-        futs = {ex.submit(verify_one_agentic, findings[i], client, model, root, max_turns, tree_ref): i
-                for i in targets}
-        for fut in concurrent.futures.as_completed(futs):
-            verdicts[futs[fut]] = fut.result()
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, jobs))
+    try:
+        futs = {ex.submit(verify_one_agentic, findings[i], client, model, root,
+                          max_turns, tree_ref, deadline): i for i in targets}
+        remaining = (deadline - time.monotonic()) if deadline is not None else None
+        try:
+            for fut in concurrent.futures.as_completed(futs, timeout=remaining):
+                verdicts[futs[fut]] = fut.result()
+        except concurrent.futures.TimeoutError:
+            for fut, i in futs.items():
+                verdicts[i] = _harvest_verdict(fut)
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
     return verdicts
 
 
