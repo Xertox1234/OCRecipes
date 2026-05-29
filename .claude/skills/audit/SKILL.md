@@ -11,19 +11,22 @@ This workflow enforces finding tracking, per-fix verification, and a persistent 
 
 Each audit domain maps to specialist agents in `.claude/agents/` that have deep knowledge of the project's patterns, conventions, and common pitfalls for that domain. Launch them as subagents during Phase 2 discovery.
 
-| Audit Domain     | Primary Agent(s)                                                      | What They Check                                                                                      |
-| ---------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `security`       | `security-auditor` + `ai-llm-specialist`                              | IDOR, rate limiting, JWT, SSRF, prompt injection, AI safety                                          |
-| `performance`    | `performance-specialist` + `database-specialist`                      | FlatList memoization, useCallback stability, streaming UI, Promise.all, N+1 queries, missing indexes |
-| `data-integrity` | `database-specialist` + `nutrition-domain-expert`                     | Soft deletes, polymorphic FK orphans, cache dedup, nutrition accuracy                                |
-| `architecture`   | `architecture-specialist` + `api-specialist`                          | Service/storage layering, dependency direction, route module structure, SSE patterns, singleton init |
-| `code-quality`   | `quality-specialist` + `typescript-specialist` + `testing-specialist` | Error handling, naming, type guards, Zod schemas, nav typing, test coverage gaps                     |
-| `camera`         | `camera-specialist` + `rn-ui-ux-specialist`                           | Permissions, scan debouncing, frame processors, lifecycle management                                 |
-| `accessibility`  | `accessibility-specialist` + `rn-ui-ux-specialist`                    | Modal focus trapping, VoiceOver/TalkBack announcements, touch targets, WCAG contrast, aria-invalid   |
+| Audit Domain     | Primary Agent(s)                                                      | What They Check                                                                                                                                                                                                            |
+| ---------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `security`       | `security-auditor` + `ai-llm-specialist`                              | IDOR, rate limiting, JWT, SSRF, prompt injection, AI safety                                                                                                                                                                |
+| `performance`    | `performance-specialist` + `database-specialist`                      | FlatList memoization, useCallback stability, streaming UI, Promise.all, N+1 queries, missing indexes                                                                                                                       |
+| `data-integrity` | `database-specialist` + `nutrition-domain-expert`                     | Soft deletes, polymorphic FK orphans, cache dedup, nutrition accuracy                                                                                                                                                      |
+| `architecture`   | `architecture-specialist` + `api-specialist`                          | Service/storage layering, dependency direction, route module structure, SSE patterns, singleton init                                                                                                                       |
+| `code-quality`   | `quality-specialist` + `typescript-specialist` + `testing-specialist` | Error handling, naming, type guards, Zod schemas, nav typing, test coverage gaps                                                                                                                                           |
+| `camera`         | `camera-specialist` + `rn-ui-ux-specialist`                           | Permissions, scan debouncing, frame processors, lifecycle management                                                                                                                                                       |
+| `accessibility`  | `accessibility-specialist` + `rn-ui-ux-specialist`                    | Modal focus trapping, VoiceOver/TalkBack announcements, touch targets, WCAG contrast, aria-invalid                                                                                                                         |
+| `reliability`    | _cluster dispatch — see "Reliability Scope" below_                    | 10 failure-mode classes (config fail-fast, network resilience, idempotency, offline, persistence, auth lifecycle, deep links, boundary validation, time/units, observability) — `pre-launch` + standalone only, NOT `full` |
 
-**For `full` or `pre-launch` scopes:** Launch **one agent invocation per domain row** (7 total). Batch in two groups — first 4 domains, then 3 — to avoid overwhelming context. The "Primary Agent(s)" column shows which agent type to use for each invocation; list both agents in the prompt when two are shown.
+**For `full` scope:** Launch **one agent invocation per structural domain row** (the 7 rows above `reliability`; 7 total). Batch in two groups — first 4 domains, then 3 — to avoid overwhelming context. The "Primary Agent(s)" column shows which agent type to use for each invocation; list both agents in the prompt when two are shown. `full` does **not** include `reliability`.
 
-**For named scopes:** Launch only the primary agent(s) for that domain.
+**For `pre-launch` scope:** Launch the 7 structural-domain invocations as for `full`, **plus** the `reliability` scope's 4 cluster dispatches (see "Reliability Scope" below) — 11 invocations total, batched 4+4+3.
+
+**For named scopes:** Launch only the primary agent(s) for that domain. **Exception:** `reliability` is dispatched per _cluster_ (4 dispatches), not per single domain — see "Reliability Scope" below.
 
 **Agent prompt template for discovery:**
 
@@ -41,6 +44,25 @@ For each finding, report:
 Do NOT fix anything — only report findings. Do NOT report issues that are already handled correctly.
 Focus on genuinely new issues, not style preferences.
 ```
+
+## Reliability Scope (cross-cutting failure-mode lens)
+
+`reliability` is an _operational_ lens (does the code survive bad conditions?), orthogonal to the seven _structural_ domains above. Its discovery is dispatched per **cluster** (4 dispatches), not per single domain. It is a standalone named scope and is included in `pre-launch`, but **not** in `full`.
+
+Each cluster dispatch uses the standard discovery prompt template (see above) plus: "apply `.claude/skills/audit/reliability-checklist.md` classes [N-M]", the genuine-empty-vs-error caveat, and the reachability requirement (trace the consumer; demote latent/dead findings).
+
+| Cluster                   | Classes | Agent(s)                                                                    |
+| ------------------------- | ------- | --------------------------------------------------------------------------- |
+| Server resilience         | 1-3     | `api-specialist` + `security-auditor` + `architecture-specialist`           |
+| Client reliability        | 4-7     | `rn-ui-ux-specialist` + `typescript-specialist`                             |
+| Cross-cutting correctness | 8-9     | `database-specialist` + `nutrition-domain-expert` + `typescript-specialist` |
+| Detection / observability | 10      | `architecture-specialist` + `quality-specialist`                            |
+
+**Human-in-the-loop:** findings in classes 3 (idempotency/money) and 6 (auth lifecycle) touch IAP/auth — never auto-fix; surface for manual, fully-verified handling per the never-delegate rule.
+
+**Dedup note:** dedup Class 9 timezone findings against `docs/superpowers/specs/2026-05-16-timestamp-timezone-consistency-design.md` and the audit CHANGELOG before reporting — that work may already partially address the day-boundary issue.
+
+**No new infrastructure:** reliability reuses the existing specialist agents and the 13 `docs/rules/` files. It does **not** add a `reliability-specialist` agent or a `docs/rules/reliability.md`.
 
 ## Phase 1: Setup
 
@@ -71,6 +93,7 @@ Focus on genuinely new issues, not style preferences.
 1. **Launch specialist agents in parallel** using the mapping table above:
    - `full` or `pre-launch`: launch one agent invocation per domain row (7 total) in two batches — first 4 domains, then 3
    - Named scope (e.g., `security`): launch only the primary agent(s) for that domain
+   - `reliability` scope: launch the 4 cluster dispatches from the "Reliability Scope" section (not per-domain); each prompt names the checklist classes for that cluster
    - Use the agent prompt template from the mapping section, specifying the domain and scope
    - Each agent runs as a subagent via the Agent tool with the corresponding `.claude/agents/*.md` agent type
 2. As each agent completes, **deduplicate** its findings against:
@@ -90,6 +113,7 @@ Validate the Phase 2 findings against current documentation before the user tria
 1. **Launch `docs-researcher` agents in parallel** — one per audit domain that has at least one finding:
    - `full` or `pre-launch`: launch one `docs-researcher` per domain with findings, batched the same way Phase 2 batches its specialist agents (first 4 domains, then the rest)
    - Named scope: launch one `docs-researcher` for that domain
+   - `reliability` scope: launch one `docs-researcher` per _cluster_ that has findings (1-4 researchers), batched the same way
    - **Skip rule:** a domain with zero findings gets no researcher; if Phase 2 produced no findings at all, skip Phase 2.5 entirely
    - Each agent runs as a subagent via the Agent tool with the `docs-researcher` agent type
 2. Use this dispatch prompt for each `docs-researcher` (fill in `[DOMAIN]` and the findings list):
@@ -160,15 +184,19 @@ For **each** finding the user wants fixed:
 
    Domain → `--patterns` mapping:
 
-   | Finding Domain | `--patterns` value |
-   | -------------- | ------------------ |
-   | security       | `security`         |
-   | performance    | `performance`      |
-   | data-integrity | `database`         |
-   | architecture   | `architecture`     |
-   | code-quality   | `typescript,api`   |
-   | camera / RN-UX | `react-native`     |
-   | accessibility  | `react-native`     |
+   | Finding Domain                                | `--patterns` value      |
+   | --------------------------------------------- | ----------------------- |
+   | security                                      | `security`              |
+   | performance                                   | `performance`           |
+   | data-integrity                                | `database`              |
+   | architecture                                  | `architecture`          |
+   | code-quality                                  | `typescript,api`        |
+   | camera / RN-UX                                | `react-native`          |
+   | accessibility                                 | `react-native`          |
+   | reliability — server resilience (1-3)         | `security,architecture` |
+   | reliability — client reliability (4-7)        | `react-native`          |
+   | reliability — cross-cutting correctness (8-9) | `typescript,database`   |
+   | reliability — detection/observability (10)    | `architecture`          |
 
    Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
@@ -253,15 +281,16 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    - Domain-specific check → **Specialist agent update** → add to the relevant `.claude/agents/*.md` checklist
 3. **Specialist agent update routing:** When a finding reveals a new domain-specific check, add it to the appropriate specialist agent's review checklist:
 
-   | Finding Domain | Update Agent(s)                                                              |
-   | -------------- | ---------------------------------------------------------------------------- |
-   | Security       | `security-auditor.md`, `ai-llm-specialist.md`                                |
-   | Performance    | `performance-specialist.md`, `database-specialist.md`                        |
-   | Data integrity | `database-specialist.md`, `nutrition-domain-expert.md`                       |
-   | Architecture   | `architecture-specialist.md`, `api-specialist.md`                            |
-   | Code quality   | `quality-specialist.md`, `typescript-specialist.md`, `testing-specialist.md` |
-   | Camera/vision  | `camera-specialist.md`, `rn-ui-ux-specialist.md`                             |
-   | Accessibility  | `accessibility-specialist.md`, `rn-ui-ux-specialist.md`                      |
+   | Finding Domain | Update Agent(s)                                                                                                                                                                                                                                                                           |
+   | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | Security       | `security-auditor.md`, `ai-llm-specialist.md`                                                                                                                                                                                                                                             |
+   | Performance    | `performance-specialist.md`, `database-specialist.md`                                                                                                                                                                                                                                     |
+   | Data integrity | `database-specialist.md`, `nutrition-domain-expert.md`                                                                                                                                                                                                                                    |
+   | Architecture   | `architecture-specialist.md`, `api-specialist.md`                                                                                                                                                                                                                                         |
+   | Code quality   | `quality-specialist.md`, `typescript-specialist.md`, `testing-specialist.md`                                                                                                                                                                                                              |
+   | Camera/vision  | `camera-specialist.md`, `rn-ui-ux-specialist.md`                                                                                                                                                                                                                                          |
+   | Accessibility  | `accessibility-specialist.md`, `rn-ui-ux-specialist.md`                                                                                                                                                                                                                                   |
+   | Reliability    | route by cluster to the agents in the "Reliability Scope" table (no `reliability-specialist`); rules go to the matching existing `docs/rules/{domain}.md` (e.g. Class 8 → `typescript.md`/`database.md`, Class 9 → `database.md`, Class 6 → `security.md`) — never a new `reliability.md` |
 
 4. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip standard fixes.
    - For **solutions**, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
