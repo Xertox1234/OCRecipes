@@ -21,9 +21,11 @@ two-phase pipeline:
   `claim_type` (`absent_symbol`, `line_assertion`, or `semantic`) alongside the
   tier, file, line, symbol, and detail.
 - **Phase 2 (Verify):** An optional verification pass (selected by `--verify`)
-  examines draft CRITICAL findings and may downgrade them. Verification is
-  _monotonic_ — it only lowers tiers, never raises them, and never adds or drops
-  findings.
+  examines draft CRITICAL findings. Each is either downgraded to WARNING (a
+  completed `refuted`/`uncertain` verdict), kept as a blocking CRITICAL with a
+  `[kept: …]` marker when verification could not complete within the time budget
+  (`keep_unverified`), or passed through unchanged. Verification is _monotonic_ —
+  it never raises a tier, and never adds or drops findings.
 
 The engine signals the gate result via **exit code**: `0` = clean or non-blocking
 findings only; `2` = at least one CRITICAL survived verification (BLOCK); any other
