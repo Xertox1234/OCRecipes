@@ -182,6 +182,21 @@ else:
 PY
 }
 
+run_python_budget_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+assert m.resolve_budget_seconds({}) == 330, "default budget is 330"
+assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "120"}) == 120, "explicit value honored"
+assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "0"}) == 330, "non-positive -> default"
+assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "-5"}) == 330, "negative -> default"
+assert m.resolve_budget_seconds({"KIMI_REVIEW_BUDGET_SECONDS": "abc"}) == 330, "unparseable -> default"
+PY
+}
+
 run_python_helper_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -641,6 +656,12 @@ else
   FAIL=$((FAIL+1))
 fi
 
+if run_python_budget_tests; then
+  echo "PASS: Python resolve_budget_seconds env parsing"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python resolve_budget_seconds env parsing"; FAIL=$((FAIL+1))
+fi
+
 if run_python_helper_tests; then
   echo "PASS: Python render_changed_files + build_diff_ref helpers"
   PASS=$((PASS+1))
@@ -695,6 +716,7 @@ if [ -f "$CANON_ENGINE" ]; then
   ln -s "$CANON_ENGINE" "$CANON_TMP/kimi_review.py"
   if run_python_helper_tests "$CANON_TMP/kimi_review.py" \
      && run_python_credential_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_budget_tests "$CANON_TMP/kimi_review.py" \
      && run_python_schema_tests "$CANON_TMP/kimi_review.py" \
      && run_python_monotonic_tests "$CANON_TMP/kimi_review.py" \
      && run_python_detverify_tests "$CANON_TMP/kimi_review.py" \

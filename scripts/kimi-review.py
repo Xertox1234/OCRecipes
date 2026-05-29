@@ -198,6 +198,20 @@ def resolve_client_config(env=os.environ):
     return api_key, base_url
 
 
+def resolve_budget_seconds(env=os.environ):
+    """Global wall-clock budget (seconds) for draft + agentic verify combined.
+    Defaults to 330; a non-positive or unparseable value falls back to the
+    default. One shared deadline (see main) keeps total time bounded so a slow,
+    retry-heavy draft cannot push the verify phase past the CI backstop."""
+    raw = env.get("KIMI_REVIEW_BUDGET_SECONDS")
+    if raw is None:
+        return 330
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return 330
+    return val if val > 0 else 330
+
 
 def render_changed_files(changed_files):
     """Render a <changed-files> block from newline-delimited `git diff
