@@ -639,8 +639,14 @@ def main():
     client = OpenAI(
         api_key=api_key,
         base_url=base_url,
-        timeout=90.0,
+        timeout=90.0,        # unchanged: lowering it would turn slow-but-valid calls into failures
+        max_retries=0,       # call_with_retry owns retry; avoid compounding SDK retries
     )
+
+    # One global wall-clock deadline for draft + verify combined. Time the draft
+    # spends on retries shrinks the verify window rather than extending the clock,
+    # so the total can never exceed the budget + one in-flight call.
+    deadline = time.monotonic() + resolve_budget_seconds()
 
     system_prompt = (
         "You are a senior code reviewer auditing a code change. "
@@ -694,7 +700,10 @@ def main():
     )
 
     try:
-        response = client.chat.completions.create(
+        response = call_with_retry(
+            client,
+            validate=_draft_acceptable,
+            deadline=deadline,
             model=args.model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -708,6 +717,8 @@ def main():
             },
         )
     except Exception as error:
+        # Includes BudgetExceeded and retries-exhausted: the draft could not
+        # complete -> tool-error exit (CI fails closed, which is correct).
         print(f"[ERROR: kimi-review request failed: {error}]", file=sys.stderr)
         sys.exit(1)
 
@@ -730,7 +741,7 @@ def main():
         # content is only reachable by sha. Local/manual runs leave it unset =>
         # working tree. This is the Tier B half of the spec's tree-discipline rule.
         head_ref = os.environ.get("KIMI_REVIEW_HEAD_SHA") or None
-        verdicts = verify_agentic(findings, client, args.model, root, tree_ref=head_ref)
+        verdicts = verify_agentic(findings, client, args.model, root, tree_ref=head_ref, deadline=deadline)
         findings = apply_downgrades(findings, {i: v for i, v in enumerate(verdicts)})
 
     text = findings_to_text(findings)
