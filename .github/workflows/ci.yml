@@ -57,6 +57,13 @@ jobs:
       - name: Verify .github/copilot-instructions.md is current
         run: npm run build:copilot-instructions:check
 
+      # Hermetic Python/bash tests for the Kimi review engine (scripts/kimi-review.py)
+      # and its wrappers. No DB, npm, API key, or network — python3 is preinstalled
+      # on ubuntu-latest. The canonical-engine parity block self-SKIPs when that
+      # engine is absent (it always is in CI), so only the vendored copy is tested.
+      - name: Kimi review engine tests
+        run: bash .claude/hooks/test-kimi-review.sh
+
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
