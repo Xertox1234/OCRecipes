@@ -486,6 +486,14 @@ assert out2[0]["tier"] == "CRITICAL", "keep must preserve tier"
 warn = [{"tier":"WARNING","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}]
 out3 = m.apply_downgrades(warn, {0: "keep"})
 assert out3[0]["tier"] == "WARNING", "verify must never promote a tier"
+# keep_unverified: keeps CRITICAL but appends the budget-exhausted marker
+ku = m.apply_downgrades(findings, {0: "keep_unverified"})
+assert ku[0]["tier"] == "CRITICAL", "keep_unverified must keep CRITICAL"
+assert "budget exhausted" in ku[0]["detail"], ku
+# keep_unverified never promotes a WARNING and adds no marker to non-CRITICAL
+warn_ku = m.apply_downgrades(warn, {0: "keep_unverified"})
+assert warn_ku[0]["tier"] == "WARNING", "keep_unverified must not change a WARNING"
+assert "budget exhausted" not in warn_ku[0]["detail"], warn_ku
 PY
 }
 

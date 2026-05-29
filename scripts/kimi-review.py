@@ -363,14 +363,20 @@ def findings_to_text(findings):
 
 
 def apply_downgrades(findings, verdicts):
-    """Return a new findings list with CRITICAL→WARNING where verdicts say
-    'downgrade'. MONOTONIC: never raises a tier, never adds or drops a finding."""
+    """Return a new findings list. 'downgrade' lowers CRITICAL→WARNING;
+    'keep_unverified' keeps CRITICAL but appends a marker so a finding that
+    blocked because verification could not complete is unambiguous (vs a
+    genuinely-verified CRITICAL). MONOTONIC: never raises a tier, never adds or
+    drops a finding; keep/keep_unverified never lower a tier."""
     out = []
     for i, f in enumerate(findings):
         g = dict(f)
-        if verdicts.get(i) == "downgrade" and g["tier"].upper() == "CRITICAL":
+        verdict = verdicts.get(i)
+        if verdict == "downgrade" and g["tier"].upper() == "CRITICAL":
             g["tier"] = "WARNING"
             g["detail"] = g["detail"] + " [downgraded: unverified against code]"
+        elif verdict == "keep_unverified" and g["tier"].upper() == "CRITICAL":
+            g["detail"] = g["detail"] + " [kept: verification budget exhausted — re-run or review manually]"
         out.append(g)
     return out
 
