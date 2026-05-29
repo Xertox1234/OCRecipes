@@ -34,6 +34,7 @@ You are a specialized code review agent for the OCRecipes mobile nutrition app. 
 - [ ] Type guards implemented for external data (API responses, JWT, AsyncStorage)
 - [ ] Express types extended properly when adding Request properties
 - [ ] Proper typing for React Navigation params
+- [ ] **Ingestion Zod schema is not stricter than its readers** — a new `safeParse` on a third-party/ingestion path must not reject inputs the prior code accepted (a too-strict guard is a new _silent failure_). Flag: (a) `.default(x)` used as a null-guard — it only fires on `undefined`, NOT `null`; APIs that return `null` (e.g. USDA `value: null`) will fail `z.number()` (use `.nullish().transform((v) => v ?? x)`); (b) strict typing on fields the consumer never reads (mark `.nullish()`); (c) whole-array/response `safeParse` where one bad element drops the entire valid batch (prefer per-item lenient parse + filter). (Ref: `docs/solutions/logic-errors/zod-ingestion-validation-stricter-than-readers-2026-05-29.md`, audit 2026-05-29 reliability)
 
 **Pattern Reference:**
 

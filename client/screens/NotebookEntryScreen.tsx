@@ -48,9 +48,19 @@ export default function NotebookEntryScreen() {
   const navigation = useNavigation<NotebookEntryNavigationProp>();
   const route = useRoute<RouteProps>();
   const entryId = route.params?.entryId;
-  const isCreate = !entryId;
+  // `entryId` is omitted (undefined) for the in-app "new entry" flow; a deep
+  // link / notification always provides a value (a non-numeric one coerces to 0
+  // via linking's parseIntOrZero). "Create" is specifically the omitted case —
+  // NOT any falsy id — otherwise a malformed deep link silently opens a blank
+  // create form and saving spawns a duplicate entry.
+  const isCreate = entryId === undefined;
 
-  const { data: allEntries = [] } = useNotebookEntries();
+  const {
+    data: allEntries = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useNotebookEntries();
   const entry: NotebookEntry | undefined = allEntries.find(
     (e) => e.id === entryId,
   );
@@ -73,8 +83,12 @@ export default function NotebookEntryScreen() {
           : null,
       );
     }
+    // Depend on entry?.id (not entryId) so a cold deep-link populates once the
+    // entry actually loads — entryId is set at mount but entry resolves later.
+    // A same-id background refetch keeps this dep stable, so in-progress edits
+    // are not clobbered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryId]);
+  }, [entry?.id]);
 
   const createEntry = useCreateNotebookEntry();
   const updateEntry = useUpdateNotebookEntry();
@@ -196,6 +210,51 @@ export default function NotebookEntryScreen() {
     : entry?.sourceConversationId
       ? "Extracted by Coach"
       : "Added by you";
+
+  // A non-create entry whose id doesn't resolve once loading settles is either
+  // a genuine not-found (deleted, or a malformed link coerced to 0) or a failed
+  // load — distinguish them (isError before empty) so a network failure is not
+  // mislabeled "deleted", and offer Retry. Gate on !isLoading so a still-loading
+  // state isn't mislabeled either.
+  if (!isCreate && !isLoading && !entry) {
+    return (
+      <View
+        accessibilityViewIsModal
+        style={[
+          styles.notFound,
+          {
+            backgroundColor: theme.backgroundDefault,
+            paddingTop: insets.top + Spacing.xl,
+            paddingBottom: insets.bottom + Spacing.xl,
+          },
+        ]}
+      >
+        <Text style={[styles.notFoundText, { color: theme.textSecondary }]}>
+          {isError
+            ? "Couldn't load this entry. Check your connection and try again."
+            : "This entry couldn't be found. It may have been deleted."}
+        </Text>
+        {isError ? (
+          <Pressable
+            onPress={() => void refetch()}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading the entry"
+          >
+            <Text style={[styles.back, { color: theme.link }]}>Retry</Text>
+          </Pressable>
+        ) : null}
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Text style={[styles.back, { color: theme.link }]}>← Back</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -373,6 +432,14 @@ export default function NotebookEntryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  notFound: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+  },
+  notFoundText: { fontSize: 15, textAlign: "center" },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",

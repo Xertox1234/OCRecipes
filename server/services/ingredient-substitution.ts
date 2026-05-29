@@ -395,7 +395,8 @@ Respond with JSON only:
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawContent);
-  } catch {
+  } catch (err) {
+    log.warn({ err: toError(err) }, "substitution response was not valid JSON");
     return [];
   }
 
