@@ -558,6 +558,76 @@ assert vs2 == ["keep"], vs2
 PY
 }
 
+run_python_main_deadline_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, types, json, contextlib, io
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+# main() must wire ONE shared wall-clock deadline into BOTH the draft call_with_retry
+# and the verify_agentic call. Guards three regressions: dropping deadline= on the
+# draft call, dropping it on the verify call, or recomputing the deadline per phase
+# instead of sharing one. Fake both call sites so each records the deadline it got,
+# and drive time.monotonic with a strictly-increasing clock so a per-phase recompute
+# is guaranteed to differ (a real clock could repeat a value at coarse resolution).
+seen = {}
+
+# Fake `openai` so `from openai import OpenAI` works without the package installed.
+fake_openai = types.ModuleType("openai")
+class _FakeOpenAI:
+    def __init__(self, **kw): pass
+fake_openai.OpenAI = _FakeOpenAI
+sys.modules["openai"] = fake_openai
+
+def _draft_response():
+    finding = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}
+    msg = types.SimpleNamespace(content=json.dumps({"findings":[finding]}), tool_calls=None)
+    usage = types.SimpleNamespace(prompt_tokens=1, completion_tokens=1,
+                                  prompt_tokens_details=types.SimpleNamespace(cached_tokens=0))
+    return types.SimpleNamespace(
+        choices=[types.SimpleNamespace(message=msg, finish_reason="stop")], usage=usage)
+
+def _fake_cwr(client, **kwargs):
+    seen["draft_deadline"] = kwargs.get("deadline")
+    return _draft_response()
+
+def _fake_va(findings, client, model, root, tree_ref=None, deadline=None, **kw):
+    seen["verify_deadline"] = deadline
+    return ["keep"] * len(findings)
+
+class _Clock:
+    def __init__(self): self.t = 1000.0
+    def __call__(self): self.t += 1.0; return self.t
+
+real_monotonic = m.time.monotonic
+try:
+    m.time.monotonic = _Clock()
+    m.git_root = lambda: "/tmp"
+    m.get_diff = lambda args, root: "diff --git a/a.ts b/a.ts\n+x\n"
+    m.detect_profile = lambda args, root: "generic"
+    m.resolve_client_config = lambda: ("k", "https://example.test/v1")
+    m.call_with_retry = _fake_cwr
+    m.verify_agentic = _fake_va
+    sys.argv = ["kimi-review", "--verify", "agentic"]
+    exit_code = None
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            m.main()
+    except SystemExit as e:
+        exit_code = e.code
+finally:
+    m.time.monotonic = real_monotonic
+
+assert seen.get("draft_deadline") is not None, "draft call_with_retry must receive deadline=deadline"
+assert seen.get("verify_deadline") is not None, "verify_agentic must receive deadline=deadline"
+assert seen["draft_deadline"] == seen["verify_deadline"], \
+    "draft and verify must share ONE deadline (not recomputed per phase)"
+assert exit_code == 2, f"a kept CRITICAL must exit 2, got {exit_code!r}"
+PY
+}
+
 run_python_detverify_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -922,6 +992,12 @@ else
   echo "FAIL: Python verify_agentic global budget + harvest gap (blocker E)"; FAIL=$((FAIL+1))
 fi
 
+if run_python_main_deadline_tests; then
+  echo "PASS: Python main() shares one deadline across draft + verify"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python main() shares one deadline across draft + verify"; FAIL=$((FAIL+1))
+fi
+
 CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
 if [ -f "$CANON_ENGINE" ]; then
   # importlib requires a .py suffix to resolve the loader; the canonical engine is
@@ -939,7 +1015,8 @@ if [ -f "$CANON_ENGINE" ]; then
      && run_python_tool_tests "$CANON_TMP/kimi_review.py" \
      && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py" \
      && run_python_verify_deadline_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_verify_budget_tests "$CANON_TMP/kimi_review.py"; then
+     && run_python_verify_budget_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_main_deadline_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
   else
     echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))

@@ -565,13 +565,19 @@ def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None,
         return "keep_unverified"  # turns exhausted without a verdict
     except BudgetExceeded:
         return "keep_unverified"
-    except Exception:
+    except Exception as error:
         # Any unrecoverable verify failure: never propagate — fail safe toward
         # keeping the CRITICAL for human review (the user chose keep-on-deadline).
-        # Surface the cause to stderr so a genuine bug (typo, bad import) is
-        # visible in CI logs instead of vanishing silently into the worker pool.
-        import traceback
-        traceback.print_exc()
+        # A persistent empty verdict (call_with_retry exhausted its retries on
+        # _verdict_acceptable) is an upstream/model hiccup, not an engine bug, so log
+        # one line for it. Surface anything else with a full traceback so a genuine
+        # bug (typo, bad import) is visible in CI instead of vanishing in the pool.
+        if isinstance(error, RuntimeError) and str(error).startswith("empty"):
+            print("[kimi verify: empty verdict after retries — keeping CRITICAL unverified]",
+                  file=sys.stderr)
+        else:
+            import traceback
+            traceback.print_exc()
         return "keep_unverified"
 
 
@@ -600,6 +606,9 @@ def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=
     try:
         futs = {ex.submit(verify_one_agentic, findings[i], client, model, root,
                           max_turns, tree_ref, deadline): i for i in targets}
+        # A negative `remaining` (deadline already past) is intentional: passing it as
+        # as_completed(timeout=negative) raises TimeoutError immediately -> the harvest
+        # loop runs -> every unfinished CRITICAL becomes keep_unverified.
         remaining = (deadline - time.monotonic()) if deadline is not None else None
         try:
             for fut in concurrent.futures.as_completed(futs, timeout=remaining):
