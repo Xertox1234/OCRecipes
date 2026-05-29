@@ -55,7 +55,12 @@ export default function NotebookEntryScreen() {
   // create form and saving spawns a duplicate entry.
   const isCreate = entryId === undefined;
 
-  const { data: allEntries = [], isLoading } = useNotebookEntries();
+  const {
+    data: allEntries = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useNotebookEntries();
   const entry: NotebookEntry | undefined = allEntries.find(
     (e) => e.id === entryId,
   );
@@ -78,8 +83,12 @@ export default function NotebookEntryScreen() {
           : null,
       );
     }
+    // Depend on entry?.id (not entryId) so a cold deep-link populates once the
+    // entry actually loads — entryId is set at mount but entry resolves later.
+    // A same-id background refetch keeps this dep stable, so in-progress edits
+    // are not clobbered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryId]);
+  }, [entry?.id]);
 
   const createEntry = useCreateNotebookEntry();
   const updateEntry = useUpdateNotebookEntry();
@@ -202,10 +211,11 @@ export default function NotebookEntryScreen() {
       ? "Extracted by Coach"
       : "Added by you";
 
-  // A non-create deep link / notification whose entryId doesn't resolve to a
-  // real entry (deleted, or a malformed link coerced to 0) must show not-found
-  // once entries have loaded — never a blank create form. Gate on !isLoading so
-  // a genuinely-still-loading state isn't mislabeled as not-found.
+  // A non-create entry whose id doesn't resolve once loading settles is either
+  // a genuine not-found (deleted, or a malformed link coerced to 0) or a failed
+  // load — distinguish them (isError before empty) so a network failure is not
+  // mislabeled "deleted", and offer Retry. Gate on !isLoading so a still-loading
+  // state isn't mislabeled either.
   if (!isCreate && !isLoading && !entry) {
     return (
       <View
@@ -220,8 +230,20 @@ export default function NotebookEntryScreen() {
         ]}
       >
         <Text style={[styles.notFoundText, { color: theme.textSecondary }]}>
-          This entry couldn&apos;t be found. It may have been deleted.
+          {isError
+            ? "Couldn't load this entry. Check your connection and try again."
+            : "This entry couldn't be found. It may have been deleted."}
         </Text>
+        {isError ? (
+          <Pressable
+            onPress={() => void refetch()}
+            hitSlop={12}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading the entry"
+          >
+            <Text style={[styles.back, { color: theme.link }]}>Retry</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={() => navigation.goBack()}
           hitSlop={12}

@@ -57,7 +57,9 @@ const apiNinjasResponseSchema = z.array(apiNinjasItemSchema);
 
 // Zod schema for USDA API response
 const usdaFoodSchema = z.object({
-  description: z.string(),
+  // Tolerate a missing/null description: the array is parsed as a whole but a
+  // bad sibling food must not fail the page; readers fall back to "Unknown".
+  description: z.string().nullish(),
   foodNutrients: z.array(
     z.object({
       nutrientName: z.string(),
@@ -508,7 +510,7 @@ async function lookupUSDA(query: string): Promise<NutritionData | null> {
       );
 
     return {
-      name: food.description,
+      name: food.description || "Unknown",
       calories: findNutrient(["Energy"]),
       protein: findNutrient(["Protein"]),
       carbs: findNutrient(["Carbohydrate"]),
