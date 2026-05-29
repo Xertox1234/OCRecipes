@@ -502,46 +502,73 @@ VERIFY_SYSTEM = (
     "Use tools before deciding. Never assume; check."
 )
 
-def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None):
-    """Bounded read-only verify loop for one finding. Returns 'keep' (verified)
-    or 'downgrade' (refuted/uncertain). MONOTONIC: only ever downgrades.
-    tree_ref selects which git tree the tools read (None = working tree)."""
+def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None, deadline=None):
+    """Bounded read-only verify loop for one finding. Returns:
+      'keep'            verified (claim holds);
+      'downgrade'       refuted or uncertain (a completed verdict);
+      'keep_unverified' verification did not complete (deadline/budget hit,
+                        retries exhausted, turns exhausted, or unparseable/unknown
+                        verdict) — keep + notify.
+    MONOTONIC: 'downgrade' only lowers CRITICAL→WARNING; keep/keep_unverified
+    never lower. Never propagates an exception, so verify_agentic's fut.result()
+    cannot raise. tree_ref selects which git tree the read-only tools see."""
     messages = [
         {"role": "system", "content": VERIFY_SYSTEM},
         {"role": "user", "content": "Finding to verify:\n" + json.dumps(finding)},
     ]
-    for _ in range(max_turns):
-        resp = client.chat.completions.create(
-            model=model, messages=messages, temperature=0, tools=TOOL_DEFS)
-        msg = resp.choices[0].message
-        tool_calls = getattr(msg, "tool_calls", None)
-        if tool_calls:
-            messages.append({"role": "assistant", "content": msg.content or "",
-                             "tool_calls": [
-                                 {"id": tc.id, "type": "function",
-                                  "function": {"name": tc.function.name,
-                                               "arguments": tc.function.arguments}}
-                                 for tc in tool_calls]})
-            for tc in tool_calls:
-                try:
-                    a = json.loads(tc.function.arguments)
-                except ValueError:
-                    a = {}
-                result = run_tool(tc.function.name, a, root=root, tree_ref=tree_ref)
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-            continue
-        verdict_resp = client.chat.completions.create(
-            model=model, messages=messages + [
-                {"role": "user", "content": "Now return your verdict as JSON."}],
-            temperature=0,
-            response_format={"type": "json_schema",
-                             "json_schema": {"name": "verify", "strict": True, "schema": VERIFY_SCHEMA}})
-        try:
-            v = json.loads(verdict_resp.choices[0].message.content)
-        except (ValueError, TypeError):
-            return "downgrade"
-        return "keep" if v.get("verdict") == "verified" else "downgrade"
-    return "downgrade"
+    try:
+        for _ in range(max_turns):
+            if deadline is not None and time.monotonic() >= deadline:
+                return "keep_unverified"
+            resp = call_with_retry(
+                client, validate=None, deadline=deadline,
+                model=model, messages=messages, temperature=0, tools=TOOL_DEFS)
+            msg = resp.choices[0].message
+            tool_calls = getattr(msg, "tool_calls", None)
+            if tool_calls:
+                messages.append({"role": "assistant", "content": msg.content or "",
+                                 "tool_calls": [
+                                     {"id": tc.id, "type": "function",
+                                      "function": {"name": tc.function.name,
+                                                   "arguments": tc.function.arguments}}
+                                     for tc in tool_calls]})
+                for tc in tool_calls:
+                    try:
+                        a = json.loads(tc.function.arguments)
+                    except ValueError:
+                        a = {}
+                    result = run_tool(tc.function.name, a, root=root, tree_ref=tree_ref)
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+                continue
+            # Ready for the verdict — re-check the deadline first (blocker D: this
+            # is the second model call in the turn; a single turn-top check would
+            # let it overrun by ~2x the per-call timeout).
+            if deadline is not None and time.monotonic() >= deadline:
+                return "keep_unverified"
+            verdict_resp = call_with_retry(
+                client, validate=_verdict_acceptable, deadline=deadline,
+                model=model, messages=messages + [
+                    {"role": "user", "content": "Now return your verdict as JSON."}],
+                temperature=0,
+                response_format={"type": "json_schema",
+                                 "json_schema": {"name": "verify", "strict": True, "schema": VERIFY_SCHEMA}})
+            try:
+                v = json.loads(verdict_resp.choices[0].message.content)
+            except (ValueError, TypeError):
+                return "keep_unverified"
+            verdict = v.get("verdict")
+            if verdict == "verified":
+                return "keep"
+            if verdict in ("refuted", "uncertain"):
+                return "downgrade"
+            return "keep_unverified"  # unknown/missing verdict value
+        return "keep_unverified"  # turns exhausted without a verdict
+    except BudgetExceeded:
+        return "keep_unverified"
+    except Exception:
+        # Any unrecoverable verify failure: never propagate — fail safe toward
+        # keeping the CRITICAL for human review (the user chose keep-on-deadline).
+        return "keep_unverified"
 
 
 def verify_agentic(findings, client, model, root, max_turns=5, jobs=4, tree_ref=None):

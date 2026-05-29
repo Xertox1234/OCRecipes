@@ -445,6 +445,82 @@ assert vs[1] == "keep", vs
 PY
 }
 
+run_python_verify_deadline_tests() {
+  local engine="${1:-$ROOT/scripts/kimi-review.py}"
+  command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
+  python3 - "$engine" <<'PY'
+import importlib.util, pathlib, sys, types, time, json
+spec = importlib.util.spec_from_file_location("kimi_review", pathlib.Path(sys.argv[1]))
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.RETRY_BASE_DELAY_SECONDS = 0  # no real sleeps (fresh process per heredoc)
+
+def resp(content=None, tool_calls=None):
+    msg = types.SimpleNamespace(content=content, tool_calls=tool_calls)
+    return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg, finish_reason="stop")])
+
+f = {"tier":"CRITICAL","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"x"}
+
+# (a) deadline already past at turn-top -> keep_unverified, NO model call
+class NeverCalled:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; return resp("x")
+nc = NeverCalled()
+assert m.verify_one_agentic(f, nc, model="x", root=".", max_turns=5, deadline=time.monotonic()-1) == "keep_unverified"
+assert nc.calls == 0, "no model call once deadline passed"
+
+# (b) pre-verdict deadline check (blocker D): tool-loop turn runs, but the
+# deadline trips before the verdict call -> keep_unverified, verdict call NOT made.
+# Drive m.time.monotonic deterministically: [turn-top<deadline, retry-precheck<deadline, pre-verdict>=deadline]
+real = m.time.monotonic
+class Clock:
+    def __init__(self, seq): self.seq=list(seq); self.i=0
+    def __call__(self):
+        v = self.seq[min(self.i, len(self.seq)-1)]; self.i += 1; return v
+m.time.monotonic = Clock([0, 0, 20])  # deadline = 10
+class NoToolThenVerdict:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        # first (and only expected) call: a turn with no tool_calls -> ready for verdict
+        return resp(content="ignored-at-this-stage")
+try:
+    ntv = NoToolThenVerdict()
+    out = m.verify_one_agentic(f, ntv, model="x", root=".", max_turns=5, deadline=10)
+    assert out == "keep_unverified", out
+    assert ntv.calls == 1, f"only the tool-loop turn ran; verdict call must be skipped, got {ntv.calls}"
+finally:
+    m.time.monotonic = real
+
+# (c) any persistent failure is swallowed -> keep_unverified (never propagates)
+class AlwaysRaise:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw): self.calls += 1; raise RuntimeError("api down")
+assert m.verify_one_agentic(f, AlwaysRaise(), model="x", root=".", max_turns=5, deadline=None) == "keep_unverified"
+
+# (d) unparseable verdict -> keep_unverified (changed from legacy 'downgrade')
+class BadVerdict:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp(content="not json at all")
+assert m.verify_one_agentic(f, BadVerdict(), model="x", root=".", max_turns=5, deadline=None) == "keep_unverified"
+
+# (e) regression guard: a parsed 'refuted' verdict still downgrades; 'verified' still keeps
+class Refuted:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp(content=json.dumps({"verdict":"refuted","corrected_detail":"x","confidence":0.9}))
+assert m.verify_one_agentic(f, Refuted(), model="x", root=".", max_turns=5, deadline=None) == "downgrade"
+class Verified:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp(content=json.dumps({"verdict":"verified","corrected_detail":"x","confidence":0.9}))
+assert m.verify_one_agentic(f, Verified(), model="x", root=".", max_turns=5, deadline=None) == "keep"
+PY
+}
+
 run_python_detverify_tests() {
   local engine="${1:-$ROOT/scripts/kimi-review.py}"
   command -v python3 >/dev/null 2>&1 || { echo "python3 not found"; return 1; }
@@ -797,6 +873,12 @@ else
   echo "FAIL: Python verify_one_agentic + verify_agentic bounded loop (Tier B)"; FAIL=$((FAIL+1))
 fi
 
+if run_python_verify_deadline_tests; then
+  echo "PASS: Python verify_one_agentic deadline + keep_unverified + swallow"; PASS=$((PASS+1))
+else
+  echo "FAIL: Python verify_one_agentic deadline + keep_unverified + swallow"; FAIL=$((FAIL+1))
+fi
+
 CANON_ENGINE="$HOME/.local/share/claude-coworker/tools/kimi-review"
 if [ -f "$CANON_ENGINE" ]; then
   # importlib requires a .py suffix to resolve the loader; the canonical engine is
@@ -812,7 +894,8 @@ if [ -f "$CANON_ENGINE" ]; then
      && run_python_detverify_tests "$CANON_TMP/kimi_review.py" \
      && run_python_pattern_resolution_tests "$CANON_TMP/kimi_review.py" \
      && run_python_tool_tests "$CANON_TMP/kimi_review.py" \
-     && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py"; then
+     && run_python_verifyloop_tests "$CANON_TMP/kimi_review.py" \
+     && run_python_verify_deadline_tests "$CANON_TMP/kimi_review.py"; then
     echo "PASS: canonical engine matches vendored behavior"; PASS=$((PASS+1))
   else
     echo "FAIL: canonical engine diverges from vendored behavior"; FAIL=$((FAIL+1))
