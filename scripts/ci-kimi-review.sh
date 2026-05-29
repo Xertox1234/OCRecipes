@@ -25,7 +25,10 @@ head_sha="${KIMI_REVIEW_HEAD_SHA:-}"
 review_scope="${KIMI_REVIEW_SCOPE:-CI PR diff}"
 review_patterns="${KIMI_REVIEW_PATTERNS:-}"
 pattern_max_chars="${KIMI_REVIEW_PATTERN_MAX_CHARS:-12000}"
-timeout_seconds="${KIMI_REVIEW_TIMEOUT_SECONDS:-300}"
+# Backstop only: the engine's internal global budget (KIMI_REVIEW_BUDGET_SECONDS,
+# default 330) trips first and emits a clean verdict. 480 >= 330 + 90 (one
+# in-flight call) + margin, so a slow verify ends gracefully instead of SIGTERM.
+timeout_seconds="${KIMI_REVIEW_TIMEOUT_SECONDS:-480}"
 
 if [[ -z "$base_sha" || -z "$head_sha" ]]; then
   echo "::error title=Missing diff range::KIMI_REVIEW_BASE_SHA and KIMI_REVIEW_HEAD_SHA are required."
