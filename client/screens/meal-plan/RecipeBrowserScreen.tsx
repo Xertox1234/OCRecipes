@@ -432,15 +432,7 @@ export default function RecipeBrowserScreen() {
       haptics.selection();
       const numericId = parseInt(item.id.split(":")[1], 10);
 
-      if (item.source === "community") {
-        navigation.navigate("FeaturedRecipeDetail", {
-          recipeId: numericId,
-          recipeType: "community",
-        });
-        return;
-      }
-
-      if (item.source === "spoonacular") {
+      if (item.source === "community" || item.source === "spoonacular") {
         navigation.navigate("FeaturedRecipeDetail", {
           recipeId: numericId,
           recipeType: "community",

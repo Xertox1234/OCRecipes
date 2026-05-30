@@ -269,6 +269,38 @@ export const recipePhotoResultSchema = z.object({
 export type RecipePhotoResult = z.infer<typeof recipePhotoResultSchema>;
 
 /**
+ * Parse and validate a vision-model JSON response. Centralizes the
+ * content-present → JSON.parse → Zod-validate → throw flow shared by every
+ * vision call. Takes the raw content string (not the SDK response object) so it
+ * has no OpenAI type coupling; each caller supplies its own domain messages so
+ * the existing error/log strings are preserved exactly.
+ */
+function parseVisionResponse<T extends z.ZodTypeAny>(
+  content: string | null | undefined,
+  schema: T,
+  msgs: { noResponse: string; invalid: string; validationFailed: string },
+): z.infer<T> {
+  if (!content) {
+    throw new Error(msgs.noResponse);
+  }
+
+  let rawJson;
+  try {
+    rawJson = JSON.parse(content);
+  } catch {
+    throw new Error(msgs.invalid);
+  }
+
+  const parsed = schema.safeParse(rawJson);
+  if (!parsed.success) {
+    log.warn({ zodErrors: parsed.error.flatten() }, msgs.validationFailed);
+    throw new Error(msgs.invalid);
+  }
+
+  return parsed.data;
+}
+
+/**
  * Analyze a recipe photo (cookbook page, recipe card, screenshot) to extract
  * structured recipe data. Uses detail: "high" for reading small text.
  */
@@ -315,32 +347,21 @@ export async function analyzeRecipePhoto(
     throw new Error("Failed to analyze recipe photo. Please try again.");
   }
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("No response from recipe photo analysis");
-  }
-
-  let rawJson;
-  try {
-    rawJson = JSON.parse(content);
-  } catch {
-    throw new Error("Recipe photo extraction returned invalid data");
-  }
-  const parsed = recipePhotoResultSchema.safeParse(rawJson);
-
-  if (!parsed.success) {
-    log.warn(
-      { zodErrors: parsed.error.flatten() },
-      "recipe photo extraction validation failed",
-    );
-    throw new Error("Recipe photo extraction returned invalid data");
-  }
+  const data = parseVisionResponse(
+    response.choices[0]?.message?.content,
+    recipePhotoResultSchema,
+    {
+      noResponse: "No response from recipe photo analysis",
+      invalid: "Recipe photo extraction returned invalid data",
+      validationFailed: "recipe photo extraction validation failed",
+    },
+  );
 
   log.debug(
     { duration: Date.now() - startTime },
     "recipe photo extraction completed",
   );
-  return parsed.data;
+  return data;
 }
 
 /**
@@ -390,29 +411,18 @@ export async function analyzeLabelPhoto(
     throw new Error("Failed to analyze nutrition label. Please try again.");
   }
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("No response from nutrition label analysis");
-  }
-
-  let rawJson;
-  try {
-    rawJson = JSON.parse(content);
-  } catch {
-    throw new Error("Nutrition label extraction returned invalid data");
-  }
-  const parsed = labelExtractionSchema.safeParse(rawJson);
-
-  if (!parsed.success) {
-    log.warn(
-      { zodErrors: parsed.error.flatten() },
-      "label extraction validation failed",
-    );
-    throw new Error("Nutrition label extraction returned invalid data");
-  }
+  const data = parseVisionResponse(
+    response.choices[0]?.message?.content,
+    labelExtractionSchema,
+    {
+      noResponse: "No response from nutrition label analysis",
+      invalid: "Nutrition label extraction returned invalid data",
+      validationFailed: "label extraction validation failed",
+    },
+  );
 
   log.debug({ duration: Date.now() - startTime }, "label extraction completed");
-  return parsed.data;
+  return data;
 }
 
 /** Get the system prompt and max completion tokens for a given intent */
@@ -483,29 +493,18 @@ export async function analyzePhoto(
     throw new Error("Failed to analyze photo. Please try again.");
   }
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("No response from photo analysis");
-  }
-
-  // Safe parsing with Zod
-  let rawJson;
-  try {
-    rawJson = JSON.parse(content);
-  } catch {
-    throw new Error("Photo analysis returned invalid data");
-  }
-  const parsed = analysisResultSchema.safeParse(rawJson);
-  if (!parsed.success) {
-    log.warn(
-      { zodErrors: parsed.error.flatten() },
-      "vision API response validation failed",
-    );
-    throw new Error("Photo analysis returned invalid data");
-  }
+  const data = parseVisionResponse(
+    response.choices[0]?.message?.content,
+    analysisResultSchema,
+    {
+      noResponse: "No response from photo analysis",
+      invalid: "Photo analysis returned invalid data",
+      validationFailed: "vision API response validation failed",
+    },
+  );
 
   // Enrich with cultural food data
-  for (const food of parsed.data.foods) {
+  for (const food of data.foods) {
     if (!food.cuisine) {
       const detectedCuisine = getCuisineForFood(food.name);
       if (detectedCuisine) {
@@ -518,7 +517,7 @@ export async function analyzePhoto(
     { intent, duration: Date.now() - startTime },
     "vision analysis completed",
   );
-  return parsed.data;
+  return data;
 }
 
 /**
@@ -713,28 +712,15 @@ export async function classifyAndAnalyze(
     throw new Error("Failed to analyze photo. Please try again.");
   }
 
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("No response from photo classification");
-  }
-
-  let rawJson;
-  try {
-    rawJson = JSON.parse(content);
-  } catch {
-    throw new Error("Photo classification returned invalid data");
-  }
-  const parsed = classifiedResultSchema.safeParse(rawJson);
-
-  if (!parsed.success) {
-    log.warn(
-      { zodErrors: parsed.error.flatten() },
-      "classification validation failed",
-    );
-    throw new Error("Photo classification returned invalid data");
-  }
-
-  const classification: ClassifiedResult = parsed.data;
+  const classification: ClassifiedResult = parseVisionResponse(
+    response.choices[0]?.message?.content,
+    classifiedResultSchema,
+    {
+      noResponse: "No response from photo classification",
+      invalid: "Photo classification returned invalid data",
+      validationFailed: "classification validation failed",
+    },
+  );
 
   // Validate barcode format if one was detected
   if (classification.barcode && !isValidBarcode(classification.barcode)) {
