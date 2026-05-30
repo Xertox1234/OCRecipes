@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { apiRequest, getApiUrl } from "@/lib/query-client";
+import {
+  apiRequest,
+  getApiUrl,
+  queryClient,
+  notifySessionExpired,
+} from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { User } from "@shared/types/auth";
 import { registerPushToken } from "@/lib/push-token-registration";
@@ -45,7 +51,14 @@ export function useAuth() {
             isAuthenticated: true,
           });
         } else {
-          // Token invalid/expired
+          // Token invalid/expired (e.g. detected on foreground resume). Route a
+          // 401 through the shared session-expiry signal so the
+          // SessionExpiryBridge shows the "session expired" toast instead of a
+          // silent drop. The bridge's isAuthenticated gate keeps a cold-launch
+          // expired token silent. Non-401 failures are not session death.
+          if (response.status === 401) {
+            notifySessionExpired();
+          }
           await tokenStorage.clear();
           await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
           setState({ user: null, isLoading: false, isAuthenticated: false });
@@ -53,9 +66,22 @@ export function useAuth() {
       } catch {
         // Network error - use cached data if available
         const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+        let cachedUser: User | null = null;
         if (stored) {
+          try {
+            cachedUser = JSON.parse(stored) as User;
+          } catch {
+            // Corrupt cache blob. This must NOT log the user out: the session
+            // token is still valid — only the convenience cache is unreadable.
+            // Drop the poison key so it stops re-throwing, then fall through to
+            // the no-cache path WITH the token preserved. The next foreground
+            // re-check / relaunch re-validates and restores the session.
+            await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+          }
+        }
+        if (cachedUser) {
           setState({
-            user: JSON.parse(stored),
+            user: cachedUser,
             isLoading: false,
             isAuthenticated: true,
           });
@@ -70,6 +96,39 @@ export function useAuth() {
 
   useEffect(() => {
     void checkAuth();
+  }, [checkAuth]);
+
+  // Re-validate auth when the app returns to the foreground, so a session that
+  // expired (or was revoked) while backgrounded is caught on resume rather than
+  // surfacing as a stale-looking failure on the next user action.
+  //
+  // A `hasBeenBackgrounded` latch — not a "previous === active" check — is the
+  // correct cross-platform guard. iOS resumes via `background → inactive →
+  // active` (two events), so a `prev === "background"` check would miss it; and
+  // both the spurious mount-time `active` (common on Android) and iOS
+  // `active → inactive → active` churn (control center, notification shade)
+  // must NOT trigger a re-check. The latch only fires after a real background.
+  // The in-flight guard collapses rapid app-switching into a single re-check.
+  useEffect(() => {
+    let hasBeenBackgrounded = false;
+    let recheckInFlight = false;
+    const subscription = AppState.addEventListener(
+      "change",
+      (nextState: AppStateStatus) => {
+        if (nextState === "background") {
+          hasBeenBackgrounded = true;
+          return;
+        }
+        if (nextState === "active" && hasBeenBackgrounded && !recheckInFlight) {
+          hasBeenBackgrounded = false;
+          recheckInFlight = true;
+          void checkAuth().finally(() => {
+            recheckInFlight = false;
+          });
+        }
+      },
+    );
+    return () => subscription.remove();
   }, [checkAuth]);
 
   const login = useCallback(async (username: string, password: string) => {
@@ -112,6 +171,35 @@ export function useAuth() {
     } catch {}
     await tokenStorage.clear();
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    setState({ user: null, isLoading: false, isAuthenticated: false });
+  }, []);
+
+  /**
+   * Local-only session teardown for an expired/revoked token (a token-bearing
+   * request came back 401). Distinct from `logout()`: it makes NO server call.
+   * The token is already dead, so POSTing `/api/auth/logout` with it would 401
+   * and re-trigger the global 401 interceptor — an expiry loop. We also clear
+   * the TanStack Query cache so a subsequent sign-in does not read another
+   * session's stale data. Local-cleanup failures are swallowed (never throw —
+   * this runs from the `SessionExpiryBridge` event handler).
+   *
+   * MUST stay idempotent: concurrent 401s can fire the bridge more than once
+   * (the bridge reads `isAuthenticated` from a render closure that hasn't yet
+   * updated), so this may be called repeatedly. All operations here are no-ops
+   * the second time, so the repeat is harmless.
+   */
+  const expireSession = useCallback(async () => {
+    try {
+      await tokenStorage.clear();
+    } catch {}
+    try {
+      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch {}
+    // Guarded: a throw here (unlikely) must not skip the setState below — that
+    // is the actual logout, and the function is contractually non-throwing.
+    try {
+      queryClient.clear();
+    } catch {}
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 
@@ -160,6 +248,7 @@ export function useAuth() {
     login,
     register,
     logout,
+    expireSession,
     deleteAccount,
     updateUser,
     checkAuth,

@@ -13,6 +13,7 @@ interface AuthContextType {
     ageConfirmed: boolean,
   ) => Promise<User>;
   logout: () => Promise<void>;
+  expireSession: () => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<User | undefined>;
   checkAuth: () => Promise<void>;

@@ -51,6 +51,94 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+type SessionExpiryListener = () => void;
+
+const sessionExpiryListeners = new Set<SessionExpiryListener>();
+
+/**
+ * Subscribe to session-expiry events, fired when an authed request (one that
+ * carried a Bearer token) is rejected with a 401 — the token is no longer valid
+ * (expired/revoked server-side). A single in-tree bridge (`SessionExpiryBridge`)
+ * subscribes and performs the local logout. Mirrors `subscribeToQueryErrors`:
+ * this module is constructed outside the React tree, so it cannot call the
+ * hook-based auth/toast systems directly. Returns an unsubscribe function.
+ */
+export function subscribeToSessionExpiry(
+  listener: SessionExpiryListener,
+): () => void {
+  sessionExpiryListeners.add(listener);
+  return () => {
+    sessionExpiryListeners.delete(listener);
+  };
+}
+
+/**
+ * Server error codes that mean the SESSION itself is dead. These are emitted
+ * ONLY by the JWT auth middleware (`server/middleware/auth.ts`); the union is
+ * mirrored from `shared/types/auth.ts`. A token-bearing 401 with any other code
+ * (or none) is a route-handler-level rejection — e.g. `UNAUTHORIZED` from a
+ * wrong confirmation password on `DELETE /api/auth/account` — and must NOT log
+ * the user out. (`NO_TOKEN` is omitted: it can't co-occur with a token attached.)
+ */
+const SESSION_EXPIRY_CODES = new Set<string>([
+  "TOKEN_EXPIRED",
+  "TOKEN_INVALID",
+  "TOKEN_REVOKED",
+]);
+
+/**
+ * Emit the session-expiry signal to all subscribers. Exported so the proactive
+ * auth check (`useAuth.checkAuth`) — which uses a raw `fetch` to `/api/auth/me`
+ * and therefore does NOT flow through the interceptor below — can route a 401 it
+ * detects through the same path, so a token that died while the app was
+ * backgrounded surfaces the "session expired" toast on foreground resume rather
+ * than a silent logout. (The bridge gates on `isAuthenticated`, so a cold-launch
+ * expired token stays silent.) Callers are responsible for deciding it's a real
+ * session-death 401 before calling this.
+ */
+export function notifySessionExpired(): void {
+  sessionExpiryListeners.forEach((listener) => listener());
+}
+
+/**
+ * Single chokepoint for the 401 → session-expiry signal. Both authed fetch
+ * paths (`apiRequest` and `getQueryFn`) call this immediately after `fetch` and
+ * before any status-based branching, so a dead token is detected regardless of
+ * the caller's `on401` behavior (including the `returnNull` short-circuit).
+ *
+ * Two guards must both hold to fire:
+ * 1. A Bearer token was attached — a 401 with no token is anonymous / bad
+ *    credentials (e.g. a wrong-password login), never session death.
+ * 2. The error body carries a session-token code (see `SESSION_EXPIRY_CODES`) —
+ *    so an authenticated route's own 401 (wrong password on account delete,
+ *    etc.) does not trigger a spurious logout.
+ *
+ * The body is read via `res.clone()` so the caller's own `res.text()`/`.json()`
+ * is left intact.
+ */
+async function notifyIfSessionExpired(
+  res: Response,
+  tokenAttached: boolean,
+): Promise<void> {
+  if (res.status !== 401 || !tokenAttached) return;
+  let code: string | undefined;
+  try {
+    const parsed: unknown = JSON.parse(await res.clone().text());
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      typeof (parsed as { code?: unknown }).code === "string"
+    ) {
+      code = (parsed as { code: string }).code;
+    }
+  } catch {
+    // Non-JSON / unreadable body — no session code, so not a token rejection.
+  }
+  if (code && SESSION_EXPIRY_CODES.has(code)) {
+    notifySessionExpired();
+  }
+}
+
 export async function apiRequest(
   method: string,
   route: string,
@@ -77,6 +165,7 @@ export async function apiRequest(
     body: data ? JSON.stringify(data) : undefined,
   });
 
+  await notifyIfSessionExpired(res, Boolean(token));
   await throwIfResNotOk(res);
   return res;
 }
@@ -99,6 +188,8 @@ export const getQueryFn: <T>(options: {
     const res = await fetch(url, {
       headers,
     });
+
+    await notifyIfSessionExpired(res, Boolean(token));
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { AppState, type AppStateStatus } from "react-native";
 
 import { useAuth } from "../useAuth";
 
@@ -10,6 +11,8 @@ const {
   mockApiRequest,
   mockGetApiUrl,
   mockFetch,
+  mockQueryClient,
+  mockNotifySessionExpired,
 } = vi.hoisted(() => {
   const mockAsyncStorage: Record<string, string> = {};
   return {
@@ -23,6 +26,8 @@ const {
     mockApiRequest: vi.fn(),
     mockGetApiUrl: vi.fn(() => "http://localhost:3000"),
     mockFetch: vi.fn(),
+    mockQueryClient: { clear: vi.fn() },
+    mockNotifySessionExpired: vi.fn(),
   };
 });
 
@@ -49,6 +54,8 @@ vi.mock("@/lib/token-storage", () => ({
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
   getApiUrl: () => mockGetApiUrl(),
+  queryClient: mockQueryClient,
+  notifySessionExpired: () => mockNotifySessionExpired(),
 }));
 
 vi.mock("@/lib/push-token-registration", () => ({
@@ -128,6 +135,35 @@ describe("useAuth", () => {
       expect(mockTokenStorage.clear).toHaveBeenCalled();
     });
 
+    it("fires the session-expiry emitter on a 401 from /me (so foreground-resume expiry is not silent)", async () => {
+      // The proactive /me check uses raw fetch (not the interceptor). Routing a
+      // 401 through the same emitter lets the SessionExpiryBridge show the
+      // 'session expired' toast on foreground resume; its isAuthenticated gate
+      // keeps a cold-launch expired token silent.
+      mockTokenStorage.get.mockResolvedValue("expired-token");
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(mockNotifySessionExpired).toHaveBeenCalled();
+      // Still clears locally too (covers cold-launch, where the bridge ignores).
+      expect(mockTokenStorage.clear).toHaveBeenCalled();
+    });
+
+    it("does NOT fire the session-expiry emitter on a non-401 /me failure", async () => {
+      // A 500 from /me is not session death — don't trigger the logout path.
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({ ok: false, status: 500 });
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(mockNotifySessionExpired).not.toHaveBeenCalled();
+    });
+
     it("falls back to cached user on network error", async () => {
       mockTokenStorage.get.mockResolvedValue("valid-token");
       mockFetch.mockRejectedValue(new Error("Network error"));
@@ -155,6 +191,166 @@ describe("useAuth", () => {
 
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
+    });
+
+    it("handles a corrupt cached blob WITHOUT a silent logout (token preserved, poison key dropped)", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockRejectedValue(new Error("Network error"));
+      // Unparseable JSON — today this throws out of the network-error catch and
+      // silently logs the user out.
+      mockAsyncStorage["@ocrecipes_auth"] = "{ corrupt-not-json";
+
+      const { result } = renderHook(() => useAuth());
+
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      // The session token MUST survive — the corrupt cache is the problem, not
+      // the token. This is what makes it not a "logout": the next foreground
+      // re-check / relaunch re-validates and restores the session.
+      expect(mockTokenStorage.clear).not.toHaveBeenCalled();
+      // The poison blob is removed so it stops re-throwing on later reads.
+      expect(mockAsyncStorage["@ocrecipes_auth"]).toBeUndefined();
+      // Offline + no usable cache → unauthenticated, but recoverable.
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.user).toBeNull();
+    });
+  });
+
+  describe("foreground re-check (AppState)", () => {
+    let appStateHandler: ((state: AppStateStatus) => void) | undefined;
+
+    beforeEach(() => {
+      appStateHandler = undefined;
+      // Capture the handler the hook registers so tests can drive lifecycle
+      // transitions. (The shared RN mock's addEventListener does not store it.)
+      vi.mocked(AppState.addEventListener).mockImplementation(
+        (_event, listener) => {
+          appStateHandler = listener;
+          return { remove: vi.fn() };
+        },
+      );
+    });
+
+    afterEach(() => {
+      // Restore default behavior so the captured-handler impl does not leak into
+      // other describe blocks (clearAllMocks resets call history, not impls).
+      vi.mocked(AppState.addEventListener).mockImplementation(() => ({
+        remove: vi.fn(),
+      }));
+    });
+
+    async function mountAuthenticated() {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+      const view = renderHook(() => useAuth());
+      await waitFor(() => expect(view.result.current.isLoading).toBe(false));
+      expect(mockFetch).toHaveBeenCalledTimes(1); // mount check
+      return view;
+    }
+
+    it("re-validates auth when the app returns to the foreground (background → active)", async () => {
+      await mountAuthenticated();
+
+      await act(async () => {
+        appStateHandler?.("background");
+        appStateHandler?.("active");
+      });
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    });
+
+    it("re-checks across the iOS background → inactive → active resume sequence", async () => {
+      await mountAuthenticated();
+
+      await act(async () => {
+        appStateHandler?.("background");
+        appStateHandler?.("inactive");
+        appStateHandler?.("active");
+      });
+
+      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    });
+
+    it("does NOT re-check on the spurious mount-time 'active' (no prior background)", async () => {
+      await mountAuthenticated();
+
+      await act(async () => {
+        appStateHandler?.("active");
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT re-check on iOS inactive → active churn (control center, no real background)", async () => {
+      await mountAuthenticated();
+
+      await act(async () => {
+        appStateHandler?.("inactive");
+        appStateHandler?.("active");
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("collapses rapid foreground cycles while a re-check is already in flight", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      let resolveSecond: (value: unknown) => void = () => {};
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(fakeUser),
+        }) // mount
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveSecond = resolve;
+            }), // first foreground re-check hangs
+        );
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        appStateHandler?.("background");
+        appStateHandler?.("active"); // fires re-check #1 (hangs)
+        appStateHandler?.("background");
+        appStateHandler?.("active"); // suppressed — #1 still in flight
+      });
+
+      // Only the first foreground re-check fired; the second was collapsed.
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      // Resolve the hung fetch so the test leaves no pending work.
+      await act(async () => {
+        resolveSecond({ ok: true, json: () => Promise.resolve(fakeUser) });
+      });
+    });
+
+    it("removes the AppState listener on unmount", async () => {
+      const remove = vi.fn();
+      vi.mocked(AppState.addEventListener).mockImplementation(
+        (_e, listener) => {
+          appStateHandler = listener;
+          return { remove };
+        },
+      );
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result, unmount } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      unmount();
+      expect(remove).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -271,6 +467,60 @@ describe("useAuth", () => {
 
       expect(mockTokenStorage.clear).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
+    });
+  });
+
+  describe("expireSession", () => {
+    it("clears local auth state WITHOUT calling the server logout endpoint", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      mockApiRequest.mockClear();
+
+      await act(async () => {
+        await result.current.expireSession();
+      });
+
+      // Local teardown happened...
+      expect(mockTokenStorage.clear).toHaveBeenCalled();
+      expect(mockAsyncStorage["@ocrecipes_auth"]).toBeUndefined();
+      expect(mockQueryClient.clear).toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.user).toBeNull();
+      // ...but NO server round-trip. The token is already dead — POSTing logout
+      // with it would 401 and re-trigger the interceptor (an expiry loop).
+      expect(mockApiRequest).not.toHaveBeenCalled();
+    });
+
+    it("still clears auth state (and never throws) if queryClient.clear() throws", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      mockQueryClient.clear.mockImplementationOnce(() => {
+        throw new Error("clear boom");
+      });
+
+      // Runs from the SessionExpiryBridge event handler → must never throw, and
+      // the logout setState must still run even if cache-clear blows up.
+      await act(async () => {
+        await expect(result.current.expireSession()).resolves.toBeUndefined();
+      });
+
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.user).toBeNull();
+      expect(mockTokenStorage.clear).toHaveBeenCalled();
     });
   });
 
