@@ -66,6 +66,26 @@ const confirmPhotoSchema = z.object({
   analysisIntent: photoIntentSchema.optional(),
 });
 
+/**
+ * Attach nutrition data to a set of analyzed foods, keyed by "<quantity> <name>".
+ * When `needsNutrition` is false, every food gets `nutrition: null` with no
+ * lookup; otherwise each food is matched to its `batchNutritionLookup` result.
+ * Generic over the food shape so callers keep their original field types.
+ */
+async function attachNutrition<F extends { name: string; quantity: string }>(
+  foods: F[],
+  needsNutrition: boolean,
+) {
+  const foodNames = foods.map((f) => `${f.quantity} ${f.name}`);
+  const nutritionMap = needsNutrition
+    ? await batchNutritionLookup(foodNames)
+    : null;
+  return foods.map((food, index) => ({
+    ...food,
+    nutrition: nutritionMap?.get(foodNames[index]) || null,
+  }));
+}
+
 export function register(app: Express): void {
   // Photo Analysis Endpoints
 
@@ -167,23 +187,10 @@ export function register(app: Express): void {
             const intentConfig = INTENT_CONFIG[intent];
             const analysisResult = classified.analysisResult;
 
-            let foodsWithNutrition;
-            if (intentConfig.needsNutrition) {
-              const foodNames = analysisResult.foods.map(
-                (f) => `${f.quantity} ${f.name}`,
-              );
-              const nutritionMap = await batchNutritionLookup(foodNames);
-              foodsWithNutrition = analysisResult.foods.map((food, index) => {
-                const query = foodNames[index];
-                const nutrition = nutritionMap.get(query);
-                return { ...food, nutrition: nutrition || null };
-              });
-            } else {
-              foodsWithNutrition = analysisResult.foods.map((food) => ({
-                ...food,
-                nutrition: null,
-              }));
-            }
+            const foodsWithNutrition = await attachNutrition(
+              analysisResult.foods,
+              intentConfig.needsNutrition,
+            );
 
             let sessionId: string;
             if (intentConfig.needsSession) {
@@ -262,23 +269,10 @@ export function register(app: Express): void {
         const analysisResult = await analyzePhoto(imageBase64, intent);
 
         // Conditionally look up nutrition data
-        let foodsWithNutrition;
-        if (intentConfig.needsNutrition) {
-          const foodNames = analysisResult.foods.map(
-            (f) => `${f.quantity} ${f.name}`,
-          );
-          const nutritionMap = await batchNutritionLookup(foodNames);
-          foodsWithNutrition = analysisResult.foods.map((food, index) => {
-            const query = foodNames[index];
-            const nutrition = nutritionMap.get(query);
-            return { ...food, nutrition: nutrition || null };
-          });
-        } else {
-          foodsWithNutrition = analysisResult.foods.map((food) => ({
-            ...food,
-            nutrition: null,
-          }));
-        }
+        const foodsWithNutrition = await attachNutrition(
+          analysisResult.foods,
+          intentConfig.needsNutrition,
+        );
 
         // Generate session ID — atomic check+create eliminates TOCTOU (L12 fix).
         let sessionId: string;
@@ -371,19 +365,10 @@ export function register(app: Express): void {
         storage.updateAnalysisSession(sessionId, refinedResult);
 
         // Re-lookup nutrition with refined data
-        const foodNames = refinedResult.foods.map(
-          (f) => `${f.quantity} ${f.name}`,
+        const foodsWithNutrition = await attachNutrition(
+          refinedResult.foods,
+          true,
         );
-        const nutritionMap = await batchNutritionLookup(foodNames);
-
-        const foodsWithNutrition = refinedResult.foods.map((food, index) => {
-          const query = foodNames[index];
-          const nutrition = nutritionMap.get(query);
-          return {
-            ...food,
-            nutrition: nutrition || null,
-          };
-        });
 
         res.json({
           sessionId,
