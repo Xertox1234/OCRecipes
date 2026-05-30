@@ -29,6 +29,7 @@ import { ToastProvider } from "@/context/ToastContext";
 import { BatchScanProvider } from "@/context/BatchScanContext";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { QueryErrorToastBridge } from "@/components/QueryErrorToastBridge";
+import { SessionExpiryBridge } from "@/components/SessionExpiryBridge";
 import { setupNotificationChannel } from "@/lib/notifications";
 
 function AppContent() {
@@ -46,6 +47,7 @@ function AppContent() {
             </BatchScanProvider>
             <OfflineBanner />
             <QueryErrorToastBridge />
+            <SessionExpiryBridge />
           </ToastProvider>
         </BottomSheetModalProvider>
         <StatusBar style={isDark ? "light" : "dark"} />
