@@ -24,8 +24,6 @@ Reliability audit Classes 3 (idempotency/money) and 6 (auth lifecycle):
 - **L1 (Low, mitigated):** duplicate-transaction check is non-atomic TOCTOU (`subscription.ts:117-126`), backstopped by the `transactionId` unique constraint (`shared/schema.ts:1329`).
 - **H3 (High):** no global 401→logout interceptor + no `AppState` foreground auth re-check; corrupt auth-blob `JSON.parse` silently logs out (`client/lib/query-client.ts`, `client/hooks/useAuth.ts:55-73`).
 
-This supersedes/overlaps the pre-existing `todos/2026-05-29-critical-reliability-findings.md` (on branch `chore/2026-05-29-reliability-findings`) for C1/C4 — reconcile the two.
-
 ## Acceptance Criteria
 
 - [x] **C1 (DONE — both `/restore` AND `/upgrade`):** entitlement is keyed on the validated receipt's `originalTransactionId` (Apple) / `purchaseToken` (Google), derived server-side (never client/random); the global `transactionId` unique constraint makes a second account's claim collide → 409 reject. Branch `fix/2026-05-29-iap-receipt-binding`. (Scope expanded to `/upgrade` because it had the same client-`transactionId`-replay hole.)
