@@ -39,6 +39,7 @@ const {
   updateSubscription,
   getTransaction,
   createTransaction,
+  claimTransactionAndUpgrade,
   upsertProfileWithOnboarding,
 } = await import("../users");
 
@@ -424,6 +425,140 @@ describe("users storage", () => {
       expect(result).toBeDefined();
       expect(result!.userId).toBe(otherUser.id);
       expect(result!.userId).not.toBe(testUser.id);
+    });
+  });
+
+  describe("claimTransactionAndUpgrade", () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    it("creates the transaction and upgrades the user on a first claim", async () => {
+      const result = await claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_claim_1",
+          userId: testUser.id,
+          receipt: "receipt_1",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+      );
+
+      expect(result.status).toBe("created");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(future.getTime());
+    });
+
+    it("rejects a claim whose transactionId is already owned by another user (anti-sharing)", async () => {
+      const other = await createTestUser(tx, { username: "iap_other_user" });
+      await claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_claim_2",
+          userId: other.id,
+          receipt: "receipt_owner",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+      );
+
+      const result = await claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_claim_2",
+          userId: testUser.id,
+          receipt: "receipt_attacker",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+      );
+
+      expect(result.status).toBe("conflict");
+      if (result.status === "conflict") {
+        expect(result.existingUserId).toBe(other.id);
+      }
+      // The second user must NOT have been upgraded.
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).not.toBe("premium");
+    });
+
+    it("renews and refreshes expiry when the same user re-claims the transactionId", async () => {
+      const early = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+      const later = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+
+      await claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_claim_3",
+          userId: testUser.id,
+          receipt: "receipt_initial",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        early,
+      );
+
+      const result = await claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_claim_3",
+          userId: testUser.id,
+          receipt: "receipt_renewed",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        later,
+      );
+
+      expect(result.status).toBe("renewed");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(later.getTime());
+    });
+
+    it("does not move expiry backward when a same-user re-claim carries an earlier expiry", async () => {
+      const later = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+      const earlier = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+
+      await claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_claim_4",
+          userId: testUser.id,
+          receipt: "receipt_late",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        later,
+      );
+
+      // A stale / out-of-order receipt (Apple emits the renewal txn ~24h before
+      // the period ends, so both validate in the overlap) carrying an EARLIER
+      // expiry must NOT shorten the subscription — renewals are monotonic.
+      const result = await claimTransactionAndUpgrade(
+        {
+          transactionId: "orig_claim_4",
+          userId: testUser.id,
+          receipt: "receipt_stale",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        earlier,
+      );
+
+      expect(result.status).toBe("renewed");
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionExpiresAt?.getTime()).toBe(later.getTime());
     });
   });
 

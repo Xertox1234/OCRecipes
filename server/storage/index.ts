@@ -67,7 +67,7 @@ export const storage = {
   updateSubscription: users.updateSubscription,
   getTransaction: users.getTransaction,
   createTransaction: users.createTransaction,
-  createTransactionAndUpgrade: users.createTransactionAndUpgrade,
+  claimTransactionAndUpgrade: users.claimTransactionAndUpgrade,
 
   // Nutrition (scanned items, daily logs, saved items)
   getScannedItems: nutrition.getScannedItems,

@@ -1,7 +1,8 @@
 import type { Express, Response } from "express";
-import { createHash, randomUUID } from "crypto";
+import { createHash } from "crypto";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
+import { createServiceLogger } from "../lib/logger";
 import {
   TIER_FEATURES,
   isValidSubscriptionTier,
@@ -12,10 +13,14 @@ import {
 } from "@shared/types/premium";
 import { resolveVerificationStreak } from "../services/verification-streak-cache";
 import { invalidateCache as invalidateTierCache } from "../services/subscription-tier-cache";
-import { validateReceipt } from "../services/receipt-validation";
+import {
+  validateReceipt,
+  type ReceiptValidationResult,
+} from "../services/receipt-validation";
 import {
   UpgradeRequestSchema,
   RestoreRequestSchema,
+  type Platform,
 } from "@shared/schemas/subscription";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -27,6 +32,77 @@ function compactReceipt(receipt: string): string {
   const hash = createHash("sha256").update(receipt).digest("hex");
   const prefix = receipt.slice(0, 64);
   return `${prefix}...sha256:${hash}`;
+}
+
+const log = createServiceLogger("subscription");
+
+/**
+ * Grant or refresh the premium entitlement from an already-validated receipt.
+ * Entitlement is keyed on the receipt's STABLE id (`originalTransactionId`,
+ * derived server-side) — never the client-supplied transactionId or a random
+ * one — so a replayed receipt cannot grant premium to a second account. Shared
+ * by /upgrade and /restore so the invariant holds at every write site.
+ */
+async function applyValidatedReceipt(
+  res: Response,
+  userId: string,
+  receipt: string,
+  platform: Platform,
+  validation: ReceiptValidationResult,
+): Promise<void> {
+  // Fail closed: a valid receipt with no stable id must NOT grant entitlement.
+  // Falling back to a synthetic/random id would re-open receipt sharing — the
+  // exact vulnerability this guards against.
+  if (!validation.originalTransactionId) {
+    log.error(
+      { platform, productId: validation.productId },
+      "valid receipt has no originalTransactionId — refusing to grant entitlement",
+    );
+    res.json({
+      success: false,
+      error:
+        "Could not verify the subscription. Please try again or contact support.",
+      code: "MISSING_TRANSACTION_ID",
+    });
+    return;
+  }
+
+  const expiresAt = validation.expiresAt || null;
+  const result = await storage.claimTransactionAndUpgrade(
+    {
+      userId,
+      transactionId: validation.originalTransactionId,
+      receipt: compactReceipt(receipt),
+      platform,
+      productId: validation.productId ?? "unknown",
+      status: "completed",
+    },
+    "premium",
+    expiresAt,
+  );
+
+  if (result.status === "conflict") {
+    log.warn(
+      { userId, existingUserId: result.existingUserId },
+      "subscription claim conflicts with an existing account binding",
+    );
+    sendError(
+      res,
+      409,
+      "This subscription is already linked to another account.",
+      "SUBSCRIPTION_ALREADY_LINKED",
+    );
+    return;
+  }
+
+  // created | renewed → entitlement granted/refreshed. Evict the cached tier so
+  // it takes effect immediately instead of after the 60s TTL.
+  invalidateTierCache(userId);
+  res.json({
+    success: true,
+    tier: "premium",
+    expiresAt: expiresAt?.toISOString() || null,
+  });
 }
 
 export function register(app: Express): void {
@@ -112,30 +188,15 @@ export function register(app: Express): void {
           );
         }
 
-        const { receipt, platform, productId, transactionId } = parsed.data;
+        // The client-supplied `transactionId` is intentionally NOT used as the
+        // stored key — entitlement is keyed on the validated receipt's
+        // originalTransactionId inside applyValidatedReceipt. Binding to the
+        // client value would let a replayed receipt with a fresh id grant
+        // premium to a second account.
+        const { receipt, platform, productId } = parsed.data;
 
-        // Check for duplicate transaction
-        const existing = await storage.getTransaction(transactionId);
-        if (existing) {
-          return sendError(
-            res,
-            409,
-            "Transaction already processed",
-            "ALREADY_OWNED",
-          );
-        }
-
-        // Validate receipt with platform store
         const validation = await validateReceipt(receipt, platform, productId);
         if (!validation.valid) {
-          await storage.createTransaction({
-            userId: req.userId,
-            transactionId,
-            receipt: compactReceipt(receipt),
-            platform,
-            productId,
-            status: "failed",
-          });
           return res.json({
             success: false,
             error: "Receipt validation failed",
@@ -143,30 +204,13 @@ export function register(app: Express): void {
           });
         }
 
-        // Atomically store transaction and upgrade user
-        const expiresAt = validation.expiresAt || null;
-        await storage.createTransactionAndUpgrade(
-          {
-            userId: req.userId,
-            transactionId,
-            receipt: compactReceipt(receipt),
-            platform,
-            productId,
-            status: "completed",
-          },
-          "premium",
-          expiresAt,
+        await applyValidatedReceipt(
+          res,
+          req.userId,
+          receipt,
+          platform,
+          validation,
         );
-
-        // Evict the cached tier so the upgrade takes effect immediately
-        // instead of after the 60s TTL.
-        invalidateTierCache(req.userId);
-
-        res.json({
-          success: true,
-          tier: "premium",
-          expiresAt: expiresAt?.toISOString() || null,
-        });
       } catch (error) {
         handleRouteError(res, error, "process upgrade");
       }
@@ -199,30 +243,13 @@ export function register(app: Express): void {
           });
         }
 
-        const restoreId = `restore-${randomUUID()}`;
-        const expiresAt = validation.expiresAt || null;
-        await storage.createTransactionAndUpgrade(
-          {
-            userId: req.userId,
-            transactionId: restoreId,
-            receipt: compactReceipt(receipt),
-            platform,
-            productId: "restore",
-            status: "completed",
-          },
-          "premium",
-          expiresAt,
+        await applyValidatedReceipt(
+          res,
+          req.userId,
+          receipt,
+          platform,
+          validation,
         );
-
-        // Evict the cached tier so the restored subscription takes effect
-        // immediately instead of after the 60s TTL.
-        invalidateTierCache(req.userId);
-
-        res.json({
-          success: true,
-          tier: "premium",
-          expiresAt: expiresAt?.toISOString() || null,
-        });
       } catch (error) {
         handleRouteError(res, error, "restore purchases");
       }

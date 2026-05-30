@@ -478,27 +478,89 @@ export async function createTransaction(
   return txn;
 }
 
+export type ClaimResult =
+  | { status: "created"; transaction: Transaction; user: User }
+  | { status: "renewed"; transaction: Transaction; user: User }
+  | { status: "conflict"; existingUserId: string };
+
 /**
- * Atomically record a transaction and update the user's subscription tier.
- * Both operations succeed or both are rolled back.
+ * Claim a subscription for a user, keyed by the validated receipt's STABLE id
+ * (`data.transactionId` = Apple `originalTransactionId` / Google purchaseToken,
+ * derived server-side — never client-supplied). The global unique constraint on
+ * `transactions.transactionId` enforces anti-sharing:
+ *  - first claim of an id        → `created` (insert + upgrade)
+ *  - same user re-claims the id  → `renewed` (a renewal carries the same id with
+ *                                  a later expiry; refresh receipt + tier/expiry)
+ *  - a different user claims it   → `conflict` (no writes; the caller rejects)
+ *
+ * Atomic: the transaction write and the user upgrade succeed or roll back
+ * together. `onConflictDoNothing()` (no target — the only non-PK unique is
+ * `transactionId`) makes the constraint the arbiter for concurrent claims.
  */
-export async function createTransactionAndUpgrade(
+export async function claimTransactionAndUpgrade(
   data: InsertTransaction,
   tier: SubscriptionTier,
   expiresAt: Date | null,
-): Promise<{ transaction: Transaction; user: User }> {
+): Promise<ClaimResult> {
   return db.transaction(async (tx) => {
-    const [txn] = await tx.insert(transactions).values(data).returning();
+    const [inserted] = await tx
+      .insert(transactions)
+      .values(data)
+      .onConflictDoNothing()
+      .returning();
+
+    if (inserted) {
+      const [user] = await tx
+        .update(users)
+        .set({ subscriptionTier: tier, subscriptionExpiresAt: expiresAt })
+        .where(eq(users.id, data.userId))
+        .returning();
+      if (!user) {
+        throw new Error(
+          `User ${data.userId} not found during subscription claim`,
+        );
+      }
+      return { status: "created", transaction: inserted, user };
+    }
+
+    // Conflict: a row already holds this transactionId.
+    const [existing] = await tx
+      .select()
+      .from(transactions)
+      .where(eq(transactions.transactionId, data.transactionId));
+
+    // Different account (or a vanished row) — never grant entitlement.
+    if (!existing || existing.userId !== data.userId) {
+      return { status: "conflict", existingUserId: existing?.userId ?? "" };
+    }
+
+    // Same user re-claiming — a renewal. Refresh the stored receipt and extend
+    // the user's expiry. GREATEST keeps expiry MONOTONIC so a stale / out-of-
+    // order receipt (Apple emits the renewal txn ~24h before the period ends,
+    // so both validate during the overlap) can never move expiry BACKWARD.
+    // GREATEST ignores a NULL incoming, so it never wipes an existing date.
+    const [txn] = await tx
+      .update(transactions)
+      .set({
+        receipt: data.receipt,
+        status: data.status ?? "completed",
+        updatedAt: new Date(),
+      })
+      .where(eq(transactions.transactionId, data.transactionId))
+      .returning();
     const [user] = await tx
       .update(users)
-      .set({ subscriptionTier: tier, subscriptionExpiresAt: expiresAt })
+      .set({
+        subscriptionTier: tier,
+        subscriptionExpiresAt: sql`GREATEST(${users.subscriptionExpiresAt}, ${expiresAt})`,
+      })
       .where(eq(users.id, data.userId))
       .returning();
     if (!user) {
       throw new Error(
-        `User ${data.userId} not found during subscription upgrade`,
+        `User ${data.userId} not found during subscription renewal`,
       );
     }
-    return { transaction: txn, user };
+    return { status: "renewed", transaction: txn, user };
   });
 }

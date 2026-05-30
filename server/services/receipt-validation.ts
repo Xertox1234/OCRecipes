@@ -73,7 +73,15 @@ export async function validateReceipt(
     log.warn("receipt validation is stubbed — auto-approving in dev");
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
-    return { valid: true, expiresAt };
+    // Derive a stable-per-receipt id so the dev stub still exercises the
+    // anti-sharing binding (a different receipt → a different id; the same
+    // receipt replayed by a second account → a collision).
+    const originalTransactionId = `stub-${crypto
+      .createHash("sha256")
+      .update(receipt)
+      .digest("hex")
+      .slice(0, 24)}`;
+    return { valid: true, expiresAt, originalTransactionId };
   }
 
   if (platform === "ios") {
@@ -379,5 +387,10 @@ async function validateGoogleReceipt(
     valid: true,
     productId: lineItem?.productId,
     expiresAt,
+    // Google has no Apple-style originalTransactionId. The purchaseToken is the
+    // stable handle both accounts would present, so it serves as the anti-
+    // sharing key. It can rotate on resubscribe → a later renewal may create a
+    // new row; that is row proliferation, not a sharing hole.
+    originalTransactionId: purchaseToken,
   };
 }
