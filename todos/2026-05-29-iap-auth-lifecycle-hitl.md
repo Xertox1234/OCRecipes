@@ -28,10 +28,10 @@ This supersedes/overlaps the pre-existing `todos/2026-05-29-critical-reliability
 
 ## Acceptance Criteria
 
-- [ ] **C1:** `/restore` binds the receipt's `originalTransactionId` and is idempotent so one subscription can't be claimed by multiple accounts (unique constraint, not read-then-write).
+- [x] **C1 (DONE — both `/restore` AND `/upgrade`):** entitlement is keyed on the validated receipt's `originalTransactionId` (Apple) / `purchaseToken` (Google), derived server-side (never client/random); the global `transactionId` unique constraint makes a second account's claim collide → 409 reject. Branch `fix/2026-05-29-iap-receipt-binding`. (Scope expanded to `/upgrade` because it had the same client-`transactionId`-replay hole.)
 - [ ] **C4:** consume Apple S2S v2 + Google RTDN (refund/cancel/revoke/expire) so entitlement cannot drift.
 - [ ] **H3:** a 401 triggers a clear logout/"session expired" path; auth re-checked on `AppState` foreground; corrupt persisted auth handled without a silent logout.
-- [ ] **L1:** confirm the unique-constraint backstop is sufficient or make the check atomic.
+- [x] **L1 (DONE):** the non-atomic read-then-write dedup is removed; `claimTransactionAndUpgrade` does insert-`onConflictDoNothing` + ownership re-check + upgrade atomically in one tx (the unique constraint is the concurrent-race backstop). Renewal expiry is monotonic (`GREATEST`, so a stale/out-of-order receipt can't shorten premium).
 
 ## Implementation Notes
 

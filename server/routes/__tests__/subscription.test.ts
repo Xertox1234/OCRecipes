@@ -18,7 +18,7 @@ vi.mock("../../storage", () => ({
     getTransaction: vi.fn(),
     createTransaction: vi.fn(),
     updateSubscription: vi.fn(),
-    createTransactionAndUpgrade: vi.fn(),
+    claimTransactionAndUpgrade: vi.fn(),
     getUserVerificationStats: vi.fn(),
   },
 }));
@@ -179,16 +179,18 @@ describe("Subscription Routes", () => {
       receipt: "valid-receipt-data",
       platform: "ios",
       productId: "com.ocrecipes.premium",
-      transactionId: "txn-123",
+      transactionId: "client-supplied-txn",
     };
 
-    it("upgrades to premium with valid receipt", async () => {
-      vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
+    it("upgrades to premium keyed by the receipt's originalTransactionId, not the client transactionId", async () => {
       vi.mocked(validateReceipt).mockResolvedValue({
         valid: true,
         expiresAt: new Date("2025-12-31"),
+        productId: "com.ocrecipes.premium",
+        originalTransactionId: "apple-original-txn-1",
       });
-      vi.mocked(storage.createTransactionAndUpgrade).mockResolvedValue({
+      vi.mocked(storage.claimTransactionAndUpgrade).mockResolvedValue({
+        status: "created",
         transaction: createMockTransaction(),
         user: createMockUser(),
       });
@@ -201,12 +203,42 @@ describe("Subscription Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.tier).toBe("premium");
+      // The stored key must be the validated receipt's stable id — NOT the
+      // client-supplied "client-supplied-txn" (the receipt-replay vector).
+      expect(storage.claimTransactionAndUpgrade).toHaveBeenCalledWith(
+        expect.objectContaining({ transactionId: "apple-original-txn-1" }),
+        "premium",
+        expect.any(Date),
+      );
     });
 
-    it("rejects duplicate transaction", async () => {
-      vi.mocked(storage.getTransaction).mockResolvedValue(
-        createMockTransaction({ id: 1 }),
-      );
+    it("fails closed when a valid receipt carries no originalTransactionId", async () => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: true,
+        expiresAt: new Date("2025-12-31"),
+        // no originalTransactionId — must NOT fall back to a synthetic id
+      });
+
+      const res = await request(app)
+        .post("/api/subscription/upgrade")
+        .set("Authorization", "Bearer token")
+        .send(validBody);
+
+      expect(res.body.success).toBe(false);
+      expect(res.body.tier).not.toBe("premium");
+      expect(storage.claimTransactionAndUpgrade).not.toHaveBeenCalled();
+    });
+
+    it("rejects with 409 when the subscription is already linked to another account", async () => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: true,
+        expiresAt: new Date("2025-12-31"),
+        originalTransactionId: "apple-original-txn-2",
+      });
+      vi.mocked(storage.claimTransactionAndUpgrade).mockResolvedValue({
+        status: "conflict",
+        existingUserId: "some-other-user",
+      });
 
       const res = await request(app)
         .post("/api/subscription/upgrade")
@@ -217,14 +249,10 @@ describe("Subscription Routes", () => {
     });
 
     it("handles invalid receipt", async () => {
-      vi.mocked(storage.getTransaction).mockResolvedValue(undefined);
       vi.mocked(validateReceipt).mockResolvedValue({
         valid: false,
         errorCode: "INVALID_RECEIPT",
       });
-      vi.mocked(storage.createTransaction).mockResolvedValue(
-        createMockTransaction(),
-      );
 
       const res = await request(app)
         .post("/api/subscription/upgrade")
@@ -233,6 +261,7 @@ describe("Subscription Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(false);
+      expect(storage.claimTransactionAndUpgrade).not.toHaveBeenCalled();
     });
 
     it("rejects invalid body", async () => {
@@ -246,12 +275,17 @@ describe("Subscription Routes", () => {
   });
 
   describe("POST /api/subscription/restore", () => {
-    it("restores premium subscription", async () => {
+    const validRestoreBody = { receipt: "receipt-data", platform: "ios" };
+
+    it("restores premium keyed by the receipt's originalTransactionId, not a random id", async () => {
       vi.mocked(validateReceipt).mockResolvedValue({
         valid: true,
         expiresAt: new Date("2025-12-31"),
+        productId: "com.ocrecipes.premium",
+        originalTransactionId: "apple-original-restore-1",
       });
-      vi.mocked(storage.createTransactionAndUpgrade).mockResolvedValue({
+      vi.mocked(storage.claimTransactionAndUpgrade).mockResolvedValue({
+        status: "created",
         transaction: createMockTransaction(),
         user: createMockUser(),
       });
@@ -259,11 +293,73 @@ describe("Subscription Routes", () => {
       const res = await request(app)
         .post("/api/subscription/restore")
         .set("Authorization", "Bearer token")
-        .send({ receipt: "receipt-data", platform: "ios" });
+        .send(validRestoreBody);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.tier).toBe("premium");
+      expect(storage.claimTransactionAndUpgrade).toHaveBeenCalledWith(
+        expect.objectContaining({ transactionId: "apple-original-restore-1" }),
+        "premium",
+        expect.any(Date),
+      );
+    });
+
+    it("succeeds when the same user re-claims (renewal)", async () => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: true,
+        expiresAt: new Date("2026-12-31"),
+        originalTransactionId: "apple-original-restore-2",
+      });
+      vi.mocked(storage.claimTransactionAndUpgrade).mockResolvedValue({
+        status: "renewed",
+        transaction: createMockTransaction(),
+        user: createMockUser(),
+      });
+
+      const res = await request(app)
+        .post("/api/subscription/restore")
+        .set("Authorization", "Bearer token")
+        .send(validRestoreBody);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.tier).toBe("premium");
+    });
+
+    it("fails closed when a valid receipt carries no originalTransactionId", async () => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: true,
+        expiresAt: new Date("2025-12-31"),
+      });
+
+      const res = await request(app)
+        .post("/api/subscription/restore")
+        .set("Authorization", "Bearer token")
+        .send(validRestoreBody);
+
+      expect(res.body.success).toBe(false);
+      expect(res.body.tier).not.toBe("premium");
+      expect(storage.claimTransactionAndUpgrade).not.toHaveBeenCalled();
+    });
+
+    it("rejects with 409 when the subscription is already linked to another account", async () => {
+      vi.mocked(validateReceipt).mockResolvedValue({
+        valid: true,
+        expiresAt: new Date("2025-12-31"),
+        originalTransactionId: "apple-original-restore-3",
+      });
+      vi.mocked(storage.claimTransactionAndUpgrade).mockResolvedValue({
+        status: "conflict",
+        existingUserId: "some-other-user",
+      });
+
+      const res = await request(app)
+        .post("/api/subscription/restore")
+        .set("Authorization", "Bearer token")
+        .send(validRestoreBody);
+
+      expect(res.status).toBe(409);
     });
 
     it("handles no valid subscription found", async () => {
@@ -275,7 +371,7 @@ describe("Subscription Routes", () => {
       const res = await request(app)
         .post("/api/subscription/restore")
         .set("Authorization", "Bearer token")
-        .send({ receipt: "receipt-data", platform: "ios" });
+        .send(validRestoreBody);
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(false);
