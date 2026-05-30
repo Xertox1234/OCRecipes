@@ -564,3 +564,64 @@ export async function claimTransactionAndUpgrade(
     return { status: "renewed", transaction: txn, user };
   });
 }
+
+/**
+ * Revoke a subscription identified by its stable transaction id (Apple
+ * `originalTransactionId` / Google `purchaseToken`) — used by the store
+ * refund/revoke/expire webhooks. Atomically downgrades the owning user to
+ * `free` and marks the transaction `revoked`. Idempotent: an unknown id is a
+ * no-op (returns `null`); re-revoking is a no-op. Returns the affected userId
+ * so the caller can evict the tier cache.
+ *
+ * Not user-scoped by design (idor-safe): the store calls the webhook, so there
+ * is no authenticated user to scope by. The route verifies the Apple JWS /
+ * Google OIDC signature BEFORE calling — the signature is the authorization, an
+ * external caller cannot reach this with an arbitrary id, and the globally
+ * unique transactionId is what resolves the owning user.
+ */
+export async function revokeSubscriptionByTransactionId( // idor-safe
+  transactionId: string,
+): Promise<{ userId: string } | null> {
+  return db.transaction(async (tx) => {
+    const [txn] = await tx
+      .select()
+      .from(transactions)
+      .where(eq(transactions.transactionId, transactionId));
+
+    if (!txn) return null;
+
+    await tx
+      .update(transactions)
+      .set({ status: "revoked", updatedAt: new Date() })
+      .where(eq(transactions.transactionId, transactionId));
+
+    // Downgrade the owning user ONLY if this transaction was their active
+    // entitlement source. Assumption: single-tier app, at most one active
+    // subscription at a time, so the newest non-revoked `completed` transaction
+    // is the source. If a NEWER completed transaction exists, the user
+    // re-subscribed — a stale refund of the old sub must NOT cut off a paying
+    // customer. (Residual: a newer-but-expired row briefly preserves premium —
+    // it fails safe and self-heals via that row's own EXPIRED event, since
+    // resolveEffectiveTier also downgrades expired-premium at read time.)
+    const [newerActive] = await tx
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, txn.userId),
+          eq(transactions.status, "completed"),
+          gt(transactions.createdAt, txn.createdAt),
+        ),
+      )
+      .limit(1);
+
+    if (!newerActive) {
+      await tx
+        .update(users)
+        .set({ subscriptionTier: "free", subscriptionExpiresAt: null })
+        .where(eq(users.id, txn.userId));
+    }
+
+    return { userId: txn.userId };
+  });
+}

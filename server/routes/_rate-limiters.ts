@@ -54,6 +54,14 @@ export const accountDeletionLimiter = createRateLimiter({
   keyByUser: false,
 });
 
+// --- Store webhooks (IP-keyed; called by Apple/Google stores, not users) ---
+export const webhookRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: "Too many webhook requests",
+  keyByUser: false,
+});
+
 // --- User-keyed rate limiters ---
 export const photoRateLimit = createRateLimiter({
   windowMs: 60 * 1000,

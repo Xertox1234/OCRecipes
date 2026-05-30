@@ -40,6 +40,7 @@ const {
   getTransaction,
   createTransaction,
   claimTransactionAndUpgrade,
+  revokeSubscriptionByTransactionId,
   upsertProfileWithOnboarding,
 } = await import("../users");
 
@@ -559,6 +560,94 @@ describe("users storage", () => {
       expect(result.status).toBe("renewed");
       const user = await getUser(testUser.id);
       expect(user!.subscriptionExpiresAt?.getTime()).toBe(later.getTime());
+    });
+  });
+
+  describe("revokeSubscriptionByTransactionId", () => {
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    it("revokes premium for the user owning the transaction", async () => {
+      await claimTransactionAndUpgrade(
+        {
+          transactionId: "txn_revoke_1",
+          userId: testUser.id,
+          receipt: "r",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+      );
+
+      const result = await revokeSubscriptionByTransactionId("txn_revoke_1");
+
+      expect(result).toEqual({ userId: testUser.id });
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+    });
+
+    it("returns null and changes nothing for an unknown transactionId", async () => {
+      const result =
+        await revokeSubscriptionByTransactionId("txn_does_not_exist");
+      expect(result).toBeNull();
+    });
+
+    it("is idempotent — a second revoke leaves the user free", async () => {
+      await claimTransactionAndUpgrade(
+        {
+          transactionId: "txn_revoke_2",
+          userId: testUser.id,
+          receipt: "r",
+          platform: "apple",
+          productId: "com.ocrecipes.premium.monthly",
+          status: "completed",
+        },
+        "premium",
+        future,
+      );
+
+      await revokeSubscriptionByTransactionId("txn_revoke_2");
+      const second = await revokeSubscriptionByTransactionId("txn_revoke_2");
+
+      expect(second).toEqual({ userId: testUser.id });
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("free");
+    });
+
+    it("keeps premium when an older transaction is refunded but a newer completed subscription is active", async () => {
+      // Distinct createdAt is required because CURRENT_TIMESTAMP returns the
+      // transaction-start time inside the test transaction.
+      const older = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      const newer = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000);
+      await createTransaction({
+        transactionId: "txn_old_A",
+        userId: testUser.id,
+        receipt: "rA",
+        platform: "apple",
+        productId: "com.ocrecipes.premium.monthly",
+        status: "completed",
+        createdAt: older,
+      });
+      await createTransaction({
+        transactionId: "txn_new_B",
+        userId: testUser.id,
+        receipt: "rB",
+        platform: "apple",
+        productId: "com.ocrecipes.premium.monthly",
+        status: "completed",
+        createdAt: newer,
+      });
+      // The user's active premium comes from the newer subscription B.
+      await updateSubscription(testUser.id, "premium", future);
+
+      const result = await revokeSubscriptionByTransactionId("txn_old_A");
+
+      // The old transaction is found, but the user keeps premium because the
+      // newer completed subscription is still active.
+      expect(result).toEqual({ userId: testUser.id });
+      const user = await getUser(testUser.id);
+      expect(user!.subscriptionTier).toBe("premium");
     });
   });
 

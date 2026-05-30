@@ -50,6 +50,7 @@ import { register as registerCuratedRecipes } from "./routes/curated-recipes";
 import { register as registerCoachCommitments } from "./routes/coach-commitments";
 import { register as registerTastePicks } from "./routes/taste-picks";
 import { register as registerExport } from "./routes/export";
+import { register as registerStoreWebhooks } from "./routes/store-webhooks";
 import { initSearchIndex } from "./services/recipe-search";
 import { startNotificationScheduler } from "./services/notification-scheduler";
 
@@ -58,6 +59,9 @@ export function registerRoutes(app: Express): Server {
   registerApiDocs(app);
   registerPublicApi(app);
   registerAdminApiKeys(app);
+  // Store webhooks (/webhooks/*) — unauthenticated (store-called); register
+  // before the auth-bearing modules.
+  registerStoreWebhooks(app);
 
   // Register all route modules
   registerAuth(app);

@@ -212,6 +212,42 @@ async function validateAppleReceipt(
   };
 }
 
+/** Normalized App Store Server Notification V2 (the fields the webhook needs). */
+export interface AppleNotification {
+  notificationType: string;
+  subtype?: string;
+  notificationUUID?: string;
+  /** Stable subscription key — present for transaction-bearing notifications. */
+  originalTransactionId?: string;
+}
+
+/**
+ * Verify + decode an App Store Server Notification V2. Reuses the same
+ * `SignedDataVerifier` as receipt validation — the JWS signature chaining to an
+ * Apple Root CA IS the authentication. Throws on an unverifiable payload.
+ */
+export async function verifyAppleNotification(
+  signedPayload: string,
+): Promise<AppleNotification> {
+  const verifier = getAppleVerifier();
+  const decoded = await verifier.verifyAndDecodeNotification(signedPayload);
+
+  let originalTransactionId: string | undefined;
+  if (decoded.data?.signedTransactionInfo) {
+    const txInfo = await verifier.verifyAndDecodeTransaction(
+      decoded.data.signedTransactionInfo,
+    );
+    originalTransactionId = txInfo.originalTransactionId;
+  }
+
+  return {
+    notificationType: String(decoded.notificationType ?? ""),
+    subtype: decoded.subtype ? String(decoded.subtype) : undefined,
+    notificationUUID: decoded.notificationUUID,
+    originalTransactionId,
+  };
+}
+
 // --- Google Play Developer API v3 ---
 
 /** Module-level cache for the Google OAuth access token. */
