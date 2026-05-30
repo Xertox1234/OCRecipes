@@ -1,7 +1,10 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
-// Imported AFTER the mock + fetch override so the real module wires through them.
+// Real module under test. `vi.mock("../token-storage")` below is hoisted above
+// this import, so query-client sees the mocked token-storage. The `globalThis.fetch`
+// override is resolved at call time (query-client calls `fetch` inside its fns,
+// not at import), so its textual position after this import is fine.
 import {
   apiRequest,
   getQueryFn,

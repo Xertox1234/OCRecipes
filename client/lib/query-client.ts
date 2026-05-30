@@ -79,6 +79,13 @@ export function subscribeToSessionExpiry(
  * (or none) is a route-handler-level rejection — e.g. `UNAUTHORIZED` from a
  * wrong confirmation password on `DELETE /api/auth/account` — and must NOT log
  * the user out. (`NO_TOKEN` is omitted: it can't co-occur with a token attached.)
+ *
+ * ⚠️ KEEP IN SYNC (manual): this list mirrors the token-death codes emitted by
+ * `server/middleware/auth.ts` / the `ApiError["code"]` union in
+ * `shared/types/auth.ts`. It is NOT derived from them (the server emits plain
+ * string literals via `sendError`, and there is no shared runtime constant), so
+ * if a new token-death code is added server-side it MUST be added here too —
+ * otherwise the client silently won't log out on that code.
  */
 const SESSION_EXPIRY_CODES = new Set<string>([
   "TOKEN_EXPIRED",

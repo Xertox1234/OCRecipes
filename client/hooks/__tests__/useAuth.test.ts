@@ -442,6 +442,9 @@ describe("useAuth", () => {
         {},
       );
       expect(mockTokenStorage.clear).toHaveBeenCalled();
+      // Clears the TanStack Query cache so a subsequent sign-in can't read the
+      // previous session's stale data (cross-session privacy).
+      expect(mockQueryClient.clear).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
     });
@@ -465,6 +468,63 @@ describe("useAuth", () => {
         await result.current.logout();
       });
 
+      expect(mockTokenStorage.clear).toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
+
+    it("still clears auth state if queryClient.clear() throws during logout", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      mockApiRequest.mockResolvedValue({});
+      mockQueryClient.clear.mockImplementationOnce(() => {
+        throw new Error("clear boom");
+      });
+
+      await act(async () => {
+        await result.current.logout();
+      });
+
+      // The guarded clear must not skip the logout setState.
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.user).toBeNull();
+      expect(mockTokenStorage.clear).toHaveBeenCalled();
+    });
+  });
+
+  describe("deleteAccount", () => {
+    it("clears the query cache so the next user can't read the deleted account's data", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      mockApiRequest.mockResolvedValue({});
+
+      await act(async () => {
+        await result.current.deleteAccount("correct-password");
+      });
+
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "DELETE",
+        "/api/auth/account",
+        {
+          password: "correct-password",
+        },
+      );
+      // Permanent deletion → the previous user's cached data must not survive
+      // for whoever signs in next on this device.
+      expect(mockQueryClient.clear).toHaveBeenCalled();
       expect(mockTokenStorage.clear).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
     });

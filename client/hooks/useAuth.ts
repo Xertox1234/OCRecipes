@@ -166,11 +166,19 @@ export function useAuth() {
   );
 
   const logout = useCallback(async () => {
+    // Edge: if the token already expired, this POST 401s with a TOKEN_* code →
+    // the global interceptor fires the session-expiry toast. Accepted by design
+    // — the user is logging out anyway, so "session expired" then Login is benign.
     try {
       await apiRequest("POST", "/api/auth/logout", {});
     } catch {}
     await tokenStorage.clear();
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    // Clear cached query data so the next sign-in can't read the previous
+    // session's data. Guarded so a throw can't skip the setState logout below.
+    try {
+      queryClient.clear();
+    } catch {}
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 
@@ -227,6 +235,12 @@ export function useAuth() {
     } catch {}
     try {
       await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch {}
+    // Drop the deleted account's cached query data so it can't be read by
+    // whoever signs in next on this device. Guarded so it can't skip the
+    // setState below (same non-throwing contract as the storage clears above).
+    try {
+      queryClient.clear();
     } catch {}
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
