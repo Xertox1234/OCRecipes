@@ -363,20 +363,32 @@ def findings_to_text(findings):
 
 
 def apply_downgrades(findings, verdicts):
-    """Return a new findings list. 'downgrade' lowers CRITICAL→WARNING;
-    'keep_unverified' keeps CRITICAL but appends a marker so a finding that
-    blocked because verification could not complete is unambiguous (vs a
-    genuinely-verified CRITICAL). MONOTONIC: never raises a tier, never adds or
-    drops a finding; keep/keep_unverified never lower a tier."""
+    """Return a new findings list. Verdict semantics:
+      'downgrade'            refuted/uncertain (parsed verdict) — lower
+                             CRITICAL→WARNING with the standard marker.
+      'downgrade_unverified' verifier could not produce a verdict (transient
+                             API error after retries, unparseable verdict, or
+                             unknown verdict value) — lower CRITICAL→WARNING
+                             with a marker that flags it as "verifier hiccup,
+                             treat as warning until manually verified".
+      'keep' / 'keep_unverified' — never lower a tier. 'keep_unverified' (the
+                             verifier deliberately stopped: budget deadline or
+                             turns exhausted) keeps CRITICAL and appends a
+                             marker so the cause is unambiguous.
+    MONOTONIC: never raises a tier, never adds or drops a finding."""
     out = []
     for i, f in enumerate(findings):
         g = dict(f)
         verdict = verdicts.get(i)
-        if verdict == "downgrade" and g["tier"].upper() == "CRITICAL":
+        is_crit = g["tier"].upper() == "CRITICAL"
+        if verdict == "downgrade" and is_crit:
             g["tier"] = "WARNING"
             g["detail"] = g["detail"] + " [downgraded: unverified against code]"
-        elif verdict == "keep_unverified" and g["tier"].upper() == "CRITICAL":
-            g["detail"] = g["detail"] + " [kept: verification budget exhausted — re-run or review manually]"
+        elif verdict == "downgrade_unverified" and is_crit:
+            g["tier"] = "WARNING"
+            g["detail"] = g["detail"] + " [downgraded: verifier could not complete (transient) — re-run for full check]"
+        elif verdict == "keep_unverified" and is_crit:
+            g["detail"] = g["detail"] + " [kept: verifier did not complete (budget or turns exhausted) — re-run or review manually]"
         out.append(g)
     return out
 
@@ -502,16 +514,32 @@ VERIFY_SYSTEM = (
     "Use tools before deciding. Never assume; check."
 )
 
+def _verify_cause(cause):
+    """Emit one stderr line per verify return so the gate's failure distribution
+    is observable in CI logs. Cheap: ≤ one line per CRITICAL per run. Required
+    for debugging which path produced a keep_unverified / downgrade_unverified
+    — the markers alone don't tell you whether the budget tripped, turns ran
+    out, or the API hiccupped."""
+    print(f"[kimi verify: {cause}]", file=sys.stderr)
+
+
 def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None, deadline=None):
     """Bounded read-only verify loop for one finding. Returns:
-      'keep'            verified (claim holds);
-      'downgrade'       refuted or uncertain (a completed verdict);
-      'keep_unverified' verification did not complete (deadline/budget hit,
-                        retries exhausted, turns exhausted, or unparseable/unknown
-                        verdict) — keep + notify.
-    MONOTONIC: 'downgrade' only lowers CRITICAL→WARNING; keep/keep_unverified
-    never lower. Never propagates an exception, so verify_agentic's fut.result()
-    cannot raise. tree_ref selects which git tree the read-only tools see."""
+      'keep'                 verified (claim holds);
+      'downgrade'            refuted or uncertain (a completed verdict);
+      'keep_unverified'      verifier deliberately stopped without a verdict —
+                             budget deadline reached or max_turns exhausted.
+                             CRITICAL is kept (block + notify).
+      'downgrade_unverified' verifier could not produce a verdict due to a
+                             transient cause — retries exhausted on an empty
+                             verdict, unparseable verdict JSON, or unknown
+                             verdict value. CRITICAL is downgraded to WARNING
+                             (no block, no email) because the verifier itself
+                             never reached a real conclusion.
+    MONOTONIC: 'downgrade' / 'downgrade_unverified' only lower CRITICAL→WARNING;
+    keep / keep_unverified never lower. Never propagates an exception, so
+    verify_agentic's fut.result() cannot raise. tree_ref selects which git tree
+    the read-only tools see."""
     messages = [
         {"role": "system", "content": VERIFY_SYSTEM},
         {"role": "user", "content": "Finding to verify:\n" + json.dumps(finding)},
@@ -519,6 +547,7 @@ def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None,
     try:
         for _ in range(max_turns):
             if deadline is not None and time.monotonic() >= deadline:
+                _verify_cause("budget_deadline_turn_top")
                 return "keep_unverified"
             resp = call_with_retry(
                 client, validate=None, deadline=deadline,
@@ -544,6 +573,7 @@ def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None,
             # is the second model call in the turn; a single turn-top check would
             # let it overrun by ~2x the per-call timeout).
             if deadline is not None and time.monotonic() >= deadline:
+                _verify_cause("budget_deadline_pre_verdict")
                 return "keep_unverified"
             verdict_resp = call_with_retry(
                 client, validate=_verdict_acceptable, deadline=deadline,
@@ -555,30 +585,40 @@ def verify_one_agentic(finding, client, model, root, max_turns=5, tree_ref=None,
             try:
                 v = json.loads(verdict_resp.choices[0].message.content)
             except (ValueError, TypeError):
-                return "keep_unverified"
+                _verify_cause("unparseable_verdict_json")
+                return "downgrade_unverified"
             verdict = v.get("verdict")
             if verdict == "verified":
+                _verify_cause("verified")
                 return "keep"
             if verdict in ("refuted", "uncertain"):
+                _verify_cause(f"parsed_{verdict}")
                 return "downgrade"
-            return "keep_unverified"  # unknown/missing verdict value
-        return "keep_unverified"  # turns exhausted without a verdict
+            _verify_cause(f"unknown_verdict_value:{verdict!r}")
+            return "downgrade_unverified"
+        _verify_cause("turns_exhausted")
+        return "keep_unverified"
     except BudgetExceeded:
+        _verify_cause("budget_exceeded_during_call")
         return "keep_unverified"
     except Exception as error:
-        # Any unrecoverable verify failure: never propagate — fail safe toward
-        # keeping the CRITICAL for human review (the user chose keep-on-deadline).
+        # Any unrecoverable verify failure: the verifier never reached a real
+        # conclusion, so we cannot trust the original CRITICAL claim either way.
+        # Downgrade to WARNING (with a marker) so a transient API hiccup does
+        # not block the PR and email the user — the finding still prints in the
+        # log for manual review.
         # A persistent empty verdict (call_with_retry exhausted its retries on
-        # _verdict_acceptable) is an upstream/model hiccup, not an engine bug, so log
-        # one line for it. Surface anything else with a full traceback so a genuine
-        # bug (typo, bad import) is visible in CI instead of vanishing in the pool.
+        # _verdict_acceptable) is an upstream/model hiccup, not an engine bug,
+        # so log one line for it. Surface anything else with a full traceback
+        # so a genuine bug (typo, bad import) is visible in CI instead of
+        # vanishing in the pool.
         if isinstance(error, RuntimeError) and str(error).startswith("empty"):
-            print("[kimi verify: empty verdict after retries — keeping CRITICAL unverified]",
-                  file=sys.stderr)
+            _verify_cause("retries_exhausted_empty_verdict")
         else:
+            _verify_cause(f"verifier_exception:{type(error).__name__}")
             import traceback
             traceback.print_exc()
-        return "keep_unverified"
+        return "downgrade_unverified"
 
 
 def _harvest_verdict(fut):

@@ -118,15 +118,15 @@ requires editing engine code.
 The engine exposes pure functions that tests can import and call without a network
 or API key:
 
-| Function                               | What it does                                                                                                                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `parse_findings(json_str, tiers)`      | Parses structured JSON draft; normalises tier to uppercase; returns `[]` on malformed JSON                                                                                     |
-| `findings_to_text(findings)`           | Renders findings to the human `[TIER] file:line — detail` format                                                                                                               |
-| `apply_downgrades(findings, verdicts)` | Applies verification verdicts: `downgrade` lowers CRITICAL→WARNING, `keep_unverified` keeps the CRITICAL with a marker; monotonic — never raises a tier or adds/drops findings |
-| `load_profiles(path)`                  | Loads project profile data from a `kimi-profiles.json` file                                                                                                                    |
-| `render_changed_files(changed_files)`  | Wraps `git diff --name-status` text in a `<changed-files>` XML block; returns `""` for empty/None                                                                              |
-| `build_diff_ref(base)`                 | Returns `"{base}...HEAD"` (three-dot merge-base) when base is given; `"HEAD~1"` otherwise                                                                                      |
-| `resolve_client_config(env)`           | Resolves API key + base URL from env; validates `MOONSHOT_API_KEY` requires `WORKER_BASE_URL`                                                                                  |
+| Function                               | What it does                                                                                                                                                                                                                                                                        |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parse_findings(json_str, tiers)`      | Parses structured JSON draft; normalises tier to uppercase; returns `[]` on malformed JSON                                                                                                                                                                                          |
+| `findings_to_text(findings)`           | Renders findings to the human `[TIER] file:line — detail` format                                                                                                                                                                                                                    |
+| `apply_downgrades(findings, verdicts)` | Applies verification verdicts: `downgrade` (refuted/uncertain) and `downgrade_unverified` (verifier hiccup) lower CRITICAL→WARNING with distinct markers; `keep_unverified` (budget/turns) keeps the CRITICAL with a marker; monotonic — never raises a tier or adds/drops findings |
+| `load_profiles(path)`                  | Loads project profile data from a `kimi-profiles.json` file                                                                                                                                                                                                                         |
+| `render_changed_files(changed_files)`  | Wraps `git diff --name-status` text in a `<changed-files>` XML block; returns `""` for empty/None                                                                                                                                                                                   |
+| `build_diff_ref(base)`                 | Returns `"{base}...HEAD"` (three-dot merge-base) when base is given; `"HEAD~1"` otherwise                                                                                                                                                                                           |
+| `resolve_client_config(env)`           | Resolves API key + base URL from env; validates `MOONSHOT_API_KEY` requires `WORKER_BASE_URL`                                                                                                                                                                                       |
 
 ---
 
@@ -362,9 +362,10 @@ fail-open past a real CRITICAL).
 
 The verification pass (`apply_downgrades`) is strictly monotonic: it never raises a
 tier, never adds a finding, and never drops a finding entirely. It produces two
-outcomes for a CRITICAL: a `downgrade` verdict lowers it to WARNING, and a
-`keep_unverified` verdict keeps it as a blocking CRITICAL with an appended marker
-(see §8 for the three-token verdict model). Neither outcome raises a tier. This
+outcomes for a CRITICAL: a `downgrade` or `downgrade_unverified` verdict lowers it
+to WARNING (with distinct markers), and a `keep_unverified` verdict keeps it as a
+blocking CRITICAL with an appended marker (see §8 for the four-token verdict
+model). No outcome raises a tier. This
 means a flaky or non-deterministic verify pass can only fail toward _keeping_ a
 finding (a non-blocking downgrade missed → the CRITICAL stays blocking), never
 toward _inventing_ a new blocking one.
@@ -421,8 +422,9 @@ The draft call always uses `temperature=0`.
 
 **Phase 2 — Verify (runs when `--verify` is not `off`).**
 Selected findings (CRITICALs) are examined by the verify pass.
-`apply_downgrades()` applies the results: a `downgrade` lowers CRITICAL→WARNING, a
-`keep_unverified` keeps the CRITICAL (blocking) with an appended marker, and it
+`apply_downgrades()` applies the results: a `downgrade` or `downgrade_unverified`
+lowers CRITICAL→WARNING (the second variant is the verifier-hiccup case — see §8),
+a `keep_unverified` keeps the CRITICAL (blocking) with an appended marker, and it
 never raises a tier, never adds or drops findings (monotonicity invariant). A
 flaky verify can only fail toward keeping a finding — either downgraded to a
 non-blocking WARNING or kept as a marked CRITICAL — it cannot invent a new
@@ -479,30 +481,44 @@ manual `kimi-multi-review` panel. For each CRITICAL finding a bounded loop
 `grep` — defined in `TOOL_DEFS`) to investigate the finding, then returns a
 structured model verdict: `verified`, `refuted`, or `uncertain`.
 
-Tier B uses a **three-token internal verdict** — distinct from the model's
-verdict — that distinguishes a finding the verifier _completed_ from one whose
-verification _did not complete_:
+Tier B uses a **four-token internal verdict** — distinct from the model's
+verdict — that distinguishes a finding the verifier _completed_ from one that
+hit its budget, from one where the verifier itself had a transient hiccup:
 
 - `keep` — the model returned `verified` (claim holds) → keep CRITICAL (blocks CI).
 - `downgrade` — the model returned `refuted` or `uncertain` (a _completed_ verdict)
   → lower CRITICAL→WARNING (monotonic, non-blocking).
-- `keep_unverified` — verification **did not complete**: the global deadline/budget
-  was hit, retries were exhausted (`BudgetExceeded`), the turn limit was reached
-  without a verdict, or the verdict was unparseable / an unknown value. Keep the
-  CRITICAL (still blocks CI) and append the marker
-  `[kept: verification budget exhausted — re-run or review manually]` so a finding
-  that blocked because it could not be checked is unambiguous versus a
-  genuinely-verified one. This deliberately inverts the old fail-safe direction:
-  an un-checkable CRITICAL now blocks and notifies rather than silently downgrading.
+- `keep_unverified` — verifier **deliberately stopped without a verdict**: the
+  global deadline/budget was hit (`BudgetExceeded`) or the turn limit was reached.
+  Keep the CRITICAL (still blocks CI) and append the marker
+  `[kept: verifier did not complete (budget or turns exhausted) — re-run or review manually]`.
+  This is the "had time and access but ran out" signal — a stronger reason to
+  notify than a transient hiccup.
+- `downgrade_unverified` — verifier **could not produce a verdict due to a
+  transient cause**: retries exhausted on an empty verdict, unparseable verdict
+  JSON, an unknown verdict value, or any other verifier exception. Lower
+  CRITICAL→WARNING with the marker
+  `[downgraded: verifier could not complete (transient) — re-run for full check]`.
+  Added 2026-05-30 to stop transient API hiccups from blocking PRs and emailing
+  the user — the original 2026-05-29 fix collapsed every verifier failure into
+  `keep_unverified`, which preserved the noise the spec set out to reduce. The
+  finding still prints in the log; only the gate stops blocking.
 
-`keep_unverified` is Tier-B-only — `verify_deterministic` (Tier A) returns only
-`keep`/`downgrade`.
+`keep_unverified` / `downgrade_unverified` are Tier-B-only — `verify_deterministic`
+(Tier A) returns only `keep`/`downgrade`.
 
 `verify_one_agentic` is deadline-bounded (a turn-top check and a second pre-verdict
 re-check, since the verdict is a separate model call) and **never propagates an
-exception**: it swallows `BudgetExceeded` and any other exception → `keep_unverified`,
-printing a stderr traceback on an unexpected exception so a genuine bug (typo, bad
-import) is visible in CI logs instead of vanishing into the worker pool. Both model
+exception**: it swallows `BudgetExceeded` → `keep_unverified` (real budget hit),
+and any other exception or unparseable verdict → `downgrade_unverified` (verifier
+hiccup), printing a stderr traceback on an unexpected exception so a genuine bug
+(typo, bad import) is visible in CI logs instead of vanishing into the worker pool.
+Every return site additionally emits a single `[kimi verify: <cause>]` line so the
+failure-mode distribution is observable in CI logs (causes:
+`budget_deadline_turn_top`, `budget_deadline_pre_verdict`, `budget_exceeded_during_call`,
+`turns_exhausted`, `verified`, `parsed_refuted`, `parsed_uncertain`,
+`unparseable_verdict_json`, `unknown_verdict_value:<v>`,
+`retries_exhausted_empty_verdict`, `verifier_exception:<ExcType>`). Both model
 calls go through `call_with_retry`.
 
 Per-finding loops run in parallel (`ThreadPoolExecutor`). `verify_agentic` is bounded

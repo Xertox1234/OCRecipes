@@ -491,19 +491,43 @@ try:
 finally:
     m.time.monotonic = real
 
-# (c) any persistent failure is swallowed -> keep_unverified (never propagates)
+# (c) any persistent failure is swallowed -> downgrade_unverified (verifier
+#     never reached a real conclusion, so a transient API hiccup must not
+#     block the PR or email the user). Never propagates.
 class AlwaysRaise:
     def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
     def create(self, **kw): self.calls += 1; raise RuntimeError("api down")
-assert m.verify_one_agentic(f, AlwaysRaise(), model="x", root=".", max_turns=5, deadline=None) == "keep_unverified"
+assert m.verify_one_agentic(f, AlwaysRaise(), model="x", root=".", max_turns=5, deadline=None) == "downgrade_unverified"
 
-# (d) unparseable verdict -> keep_unverified (changed from legacy 'downgrade')
+# (d) unparseable verdict -> downgrade_unverified (verifier hiccup, not budget)
 class BadVerdict:
     def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
     def create(self, **kw):
         self.calls += 1
         return resp(content="not json at all")
-assert m.verify_one_agentic(f, BadVerdict(), model="x", root=".", max_turns=5, deadline=None) == "keep_unverified"
+assert m.verify_one_agentic(f, BadVerdict(), model="x", root=".", max_turns=5, deadline=None) == "downgrade_unverified"
+
+# (d2) unknown verdict value -> downgrade_unverified
+class UnknownVerdict:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        return resp(content=json.dumps({"verdict":"maybe","corrected_detail":"x","confidence":0.5}))
+assert m.verify_one_agentic(f, UnknownVerdict(), model="x", root=".", max_turns=5, deadline=None) == "downgrade_unverified"
+
+# (d3) turns exhausted (verifier keeps calling tools, never returns a verdict) -> keep_unverified.
+#      This is the only non-budget keep_unverified path; without this test the matrix is unguarded.
+class AlwaysToolCalls:
+    def __init__(self): self.calls=0; self.chat=types.SimpleNamespace(completions=self)
+    def create(self, **kw):
+        self.calls += 1
+        tc = types.SimpleNamespace(id=f"t{self.calls}", function=types.SimpleNamespace(
+            name="grep", arguments=json.dumps({"pattern":"no_match_xyz"})))
+        msg_obj = types.SimpleNamespace(content=None, tool_calls=[tc])
+        return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg_obj, finish_reason="tool_calls")])
+atc = AlwaysToolCalls()
+assert m.verify_one_agentic(f, atc, model="x", root=".", max_turns=2, deadline=None) == "keep_unverified"
+assert atc.calls == 2, f"loop must run exactly max_turns times before turns_exhausted, got {atc.calls}"
 
 # (e) regression guard: a parsed 'refuted' verdict still downgrades; 'verified' still keeps
 class Refuted:
@@ -669,14 +693,22 @@ assert out2[0]["tier"] == "CRITICAL", "keep must preserve tier"
 warn = [{"tier":"WARNING","claim_type":"semantic","file":"a.ts","line":1,"symbol":None,"detail":"d"}]
 out3 = m.apply_downgrades(warn, {0: "keep"})
 assert out3[0]["tier"] == "WARNING", "verify must never promote a tier"
-# keep_unverified: keeps CRITICAL but appends the budget-exhausted marker
+# keep_unverified: keeps CRITICAL but appends the "verifier did not complete" marker
 ku = m.apply_downgrades(findings, {0: "keep_unverified"})
 assert ku[0]["tier"] == "CRITICAL", "keep_unverified must keep CRITICAL"
-assert "budget exhausted" in ku[0]["detail"], ku
+assert "verifier did not complete" in ku[0]["detail"], ku
 # keep_unverified never promotes a WARNING and adds no marker to non-CRITICAL
 warn_ku = m.apply_downgrades(warn, {0: "keep_unverified"})
 assert warn_ku[0]["tier"] == "WARNING", "keep_unverified must not change a WARNING"
-assert "budget exhausted" not in warn_ku[0]["detail"], warn_ku
+assert "verifier did not complete" not in warn_ku[0]["detail"], warn_ku
+# downgrade_unverified: lowers CRITICAL->WARNING with a "verifier could not complete" marker
+du = m.apply_downgrades(findings, {0: "downgrade_unverified"})
+assert du[0]["tier"] == "WARNING", "downgrade_unverified must lower CRITICAL to WARNING"
+assert "verifier could not complete" in du[0]["detail"], du
+# downgrade_unverified never alters a WARNING tier
+warn_du = m.apply_downgrades(warn, {0: "downgrade_unverified"})
+assert warn_du[0]["tier"] == "WARNING", "downgrade_unverified must not change a WARNING"
+assert "verifier could not complete" not in warn_du[0]["detail"], warn_du
 PY
 }
 
