@@ -44,6 +44,11 @@ const envSchema = z.object({
   GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   GOOGLE_SERVICE_ACCOUNT_KEY: z.string().optional(),
 
+  // Google Play RTDN Pub/Sub push verification (optional — RTDN webhook
+  // rejects all pushes until both are set)
+  GOOGLE_PUBSUB_AUDIENCE: z.string().optional(),
+  GOOGLE_PUBSUB_SA_EMAIL: z.string().optional(),
+
   // Admin
   ADMIN_USER_IDS: z.string().optional(),
 

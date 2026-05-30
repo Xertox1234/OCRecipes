@@ -68,6 +68,7 @@ export const storage = {
   getTransaction: users.getTransaction,
   createTransaction: users.createTransaction,
   claimTransactionAndUpgrade: users.claimTransactionAndUpgrade,
+  revokeSubscriptionByTransactionId: users.revokeSubscriptionByTransactionId,
 
   // Nutrition (scanned items, daily logs, saved items)
   getScannedItems: nutrition.getScannedItems,
