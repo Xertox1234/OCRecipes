@@ -29,7 +29,7 @@ This supersedes/overlaps the pre-existing `todos/2026-05-29-critical-reliability
 ## Acceptance Criteria
 
 - [x] **C1 (DONE — both `/restore` AND `/upgrade`):** entitlement is keyed on the validated receipt's `originalTransactionId` (Apple) / `purchaseToken` (Google), derived server-side (never client/random); the global `transactionId` unique constraint makes a second account's claim collide → 409 reject. Branch `fix/2026-05-29-iap-receipt-binding`. (Scope expanded to `/upgrade` because it had the same client-`transactionId`-replay hole.)
-- [ ] **C4:** consume Apple S2S v2 + Google RTDN (refund/cancel/revoke/expire) so entitlement cannot drift.
+- [x] **C4 (DONE):** Apple App Store Server Notifications V2 (`/webhooks/apple/notifications`) + Google Play RTDN (`/webhooks/google/rtdn`) revoke-class events (refund/revoke/expire) drop entitlement via `revokeSubscriptionByTransactionId`, keyed on the same stable id #270 stores. Apple = JWS-sig auth; Google = Pub/Sub OIDC auth (`google-auth-library`). Branch `feat/2026-05-29-iap-store-webhooks`. Revoke-class only (informational events make no change); the revoke payer-guard prevents downgrading a re-subscribed customer.
 - [ ] **H3:** a 401 triggers a clear logout/"session expired" path; auth re-checked on `AppState` foreground; corrupt persisted auth handled without a silent logout.
 - [x] **L1 (DONE):** the non-atomic read-then-write dedup is removed; `claimTransactionAndUpgrade` does insert-`onConflictDoNothing` + ownership re-check + upgrade atomically in one tx (the unique constraint is the concurrent-race backstop). Renewal expiry is monotonic (`GREATEST`, so a stale/out-of-order receipt can't shorten premium).
 
