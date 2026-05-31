@@ -24,7 +24,12 @@ module.exports = defineConfig([
     rules: {
       "import/no-unresolved": [
         "error",
-        { ignore: ["react-native-vision-camera-ocr-plus"] },
+        {
+          ignore: [
+            "react-native-vision-camera-ocr-plus",
+            "@sentry/react-native",
+          ],
+        },
       ],
     },
   },
