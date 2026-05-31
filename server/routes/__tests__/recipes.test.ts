@@ -3,7 +3,10 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import { generateFullRecipe } from "../../services/recipe-generation";
+import {
+  generateFullRecipe,
+  generateAndPatchRecipeImage,
+} from "../../services/recipe-generation";
 import {
   searchCatalogRecipes,
   getCatalogRecipeDetail,
@@ -46,6 +49,9 @@ vi.mock("../../storage", () => ({
 
 vi.mock("../../services/recipe-generation", () => ({
   generateFullRecipe: vi.fn(),
+  // Fired via fireAndForget after the generate response — must resolve a real
+  // promise so fireAndForget's `.catch()` does not throw on `undefined`.
+  generateAndPatchRecipeImage: vi.fn().mockResolvedValue(undefined),
   normalizeProductName: vi.fn((name: string) => name.toLowerCase()),
 }));
 
@@ -354,6 +360,8 @@ describe("Recipes Routes", () => {
         .send({ productName: "Pasta" });
 
       expect(res.status).toBe(201);
+      // Image generation is kicked off via fireAndForget after responding.
+      expect(vi.mocked(generateAndPatchRecipeImage)).toHaveBeenCalled();
     });
 
     it("returns 403 for free tier", async () => {
