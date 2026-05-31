@@ -342,10 +342,12 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 **If codifying:**
 
+**Where the artifacts live.** Solution files (`docs/solutions/`) are gitignored, so they have no branch to ride and cannot be committed. They live in the **main checkout** — read `MAIN_CHECKOUT` from the spawn prompt's `Main checkout:` line — so `git worktree remove` at orchestrator Phase 5 does not destroy them. Agent files (`.claude/agents/*.md`) and rules files (`docs/rules/*.md`) are tracked and live in the worktree like any other code change, riding the todo branch.
+
 1. Determine which reusable knowledge was produced. A single todo may update more than one target:
-   - **Solution** — a reusable rule (knowledge-track) or post-mortem (bug-track) written as one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. See `.claude/skills/codify/SKILL.md` Steps 5-6 for the canonical routing rubric and body template; see `docs/solutions/README.md` for the frontmatter schema.
-   - **Code reviewer update** — a new review rule for `.claude/agents/code-reviewer.md`
-   - **Specialist agent update** — a new domain-specific review rule for one or more specialist agents
+   - **Solution** — a reusable rule (knowledge-track) or post-mortem (bug-track) written as one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` (main checkout, not the worktree). See `.claude/skills/codify/SKILL.md` Steps 5-6 for the canonical routing rubric and body template; see `docs/solutions/README.md` for the frontmatter schema.
+   - **Code reviewer update** — a new review rule for `.claude/agents/code-reviewer.md` (tracked, in the worktree)
+   - **Specialist agent update** — a new domain-specific review rule for one or more specialist agents (tracked, in the worktree)
 
 2. Pick the solution category by **nature of the finding**, not by the todo's label. A `security`-labelled todo can produce a `runtime-errors/` crash post-mortem OR a `conventions/` rule depending on what was actually learned. Choose exactly one of the seven destinations:
 
@@ -376,32 +378,48 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 4. Compose a short description of what was learned: the non-obvious constraint, workaround, reusable rule, or review gap exposed by the todo or by `review_output`.
 
 5. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip routine fixes.
-   - For **solutions**, first check the `verified_solutions` note from Step 3: if a surfaced solution is in the same category and covers the same files/finding, **update that existing file** (extend its body, bump `last_updated`) instead of writing a duplicate. Only when no existing solution covers the finding, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
+   - For **solutions**, first check the `verified_solutions` note from Step 3: if a surfaced solution is in the same category and covers the same files/finding, **update that existing file** at `"$MAIN_CHECKOUT/docs/solutions/<category>/<existing-slug>.md"` (extend its body, bump `last_updated`) instead of writing a duplicate. Only when no existing solution covers the finding, create one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"`. Both paths are in the main checkout, not the worktree. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 
 5b. **Rules routing**: If the finding was CRITICAL or HIGH severity AND is a "never do X" class that can be stated in one bullet, append the rule to `docs/rules/{domain}.md`. The domain name is the rules file basename — `security` → `docs/rules/security.md`, `react-native` → `docs/rules/react-native.md`, `accessibility` → `docs/rules/accessibility.md`, etc. All 13 domain files exist: `api`, `architecture`, `database`, `security`, `react-native`, `accessibility`, `design-system`, `hooks`, `client-state`, `typescript`, `performance`, `testing`, `ai-prompting`. Include the updated rules file in the codification commit at step 7.
 
-6. Use `kimi-write` for each target file, passing the existing file as `--context` so it preserves and extends the file. Tailor the spec to the file type:
+6. Use `kimi-write` for each target file, passing the existing file as `--context` so it preserves and extends the file. For solution targets, both `--context` and `--target` are the `"$MAIN_CHECKOUT/docs/solutions/..."` path; for agent/rules targets, the path is the worktree-relative tracked path:
 
    ```bash
    kimi-write \
-     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. For new files at docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md, use the frontmatter schema in docs/solutions/README.md and the body template for the chosen track (bug or knowledge); create cleanly. For an existing solution file being updated via the dedup path, preserve its frontmatter and existing body, extend only the relevant section with the new knowledge, and bump last_updated. For existing agent files, preserve all existing content exactly and add checklist items to the review checklist; update Common Mistakes to Catch when the issue is a recurring failure mode." \
+     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. For new solution files at \$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md, use the frontmatter schema in docs/solutions/README.md and the body template for the chosen track (bug or knowledge); create cleanly. For an existing solution file being updated via the dedup path, preserve its frontmatter and existing body, extend only the relevant section with the new knowledge, and bump last_updated. For existing agent files, preserve all existing content exactly and add checklist items to the review checklist; update Common Mistakes to Catch when the issue is a recurring failure mode." \
      --context <target file> \
      --target <target file>
    ```
 
-7. Stage and commit all codification targets together:
+6b. **Sanity-check the solution file before declaring codify complete.** kimi-write output goes to a durable location (the main checkout), where future executors can read it back at Step 3a and short-circuit research onto it. A broken codification poisons the corpus. For each new or updated solution file, run two checks:
+
+1.  **Frontmatter completeness.** Re-read the file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>.md"`. Confirm every required field per `docs/solutions/README.md`: `name`, `description`, `applies_to`, `tags`, `last_updated`, plus the track-specific fields (bug-track or knowledge-track).
+2.  **Related-files validity.** Extract every backtick-quoted path containing `/` from the `## Related Files` section. `test -e "$MAIN_CHECKOUT/<path>"` each one. All must exist.
+
+On any check failure, **delete the file** (`rm "$MAIN_CHECKOUT/docs/solutions/<...>.md"` for new files; for an updated existing file, log the rejection but leave it — never destroy existing knowledge), log `codification rejected — <one-line reason>`, and report `CODIFICATION_COMMIT: rejected — <reason>` in Step 11. Codification rejection is non-blocking — the todo's implementation is still verified, reviewed, committed, and PR'd.
+
+Skip 6b entirely if no solution file was created or updated (codify only touched agent/rules files).
+
+7. **Solutions persist by location, not by commit.** A solution file lives at `"$MAIN_CHECKOUT/docs/solutions/..."` and `docs/solutions/` is gitignored — `git add` would silently no-op on it. Do **not** stage the solution file. Only tracked codification targets (`.claude/agents/*.md`, `docs/rules/*.md`) get staged and committed:
 
    ```bash
-   git add <target file(s)>
-   git commit -m "$(cat <<'EOF'
+   # Stage only tracked codification targets — never the solution file.
+   git add <tracked codification target(s)>
+
+   # If at least one tracked target was staged, commit it.
+   if ! git diff --cached --quiet; then
+     git commit -m "$(cat <<'EOF'
    docs: codify patterns and reviewer checks from <todo title>
 
    Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
    EOF
    )"
+   fi
    ```
+
+   If only a solution file was codified (no tracked targets), there is no commit — the codification persists by living in `$MAIN_CHECKOUT/docs/solutions/...` outside the worktree's lifecycle. Skipping the empty commit avoids a misleading "nothing to commit" failure.
 
    If `kimi-write` exits non-zero for any target, log "codification skipped — kimi-write failed" for that target and continue to Step 10. Codification failure is non-blocking.
 
@@ -490,7 +508,9 @@ STATUS: success
 COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "skipped-low-priority" | "null" if PR creation failed>
-CODIFICATION_COMMIT: <commit hash> | none
+CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
+SOLUTION_FILE: <"$MAIN_CHECKOUT/docs/solutions/<...>.md" path if a solution was codified and accepted, or "none">
+
 FILES_CHANGED: <list of modified files>
 SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (researcher skipped), or "none">
 REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
