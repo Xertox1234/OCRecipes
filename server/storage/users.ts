@@ -240,6 +240,32 @@ export async function getUserIdPage( // idor-safe
   return rows.map((r) => r.id);
 }
 
+/**
+ * Batch-fetch the raw `timezone` column for a set of user IDs in a single
+ * `WHERE id = ANY(...)` query (no N+1). Returns a Map keyed by user id whose
+ * value is the stored IANA string or `null` when the column was never written.
+ *
+ * The value is intentionally NOT validated/normalized here — callers pass it
+ * through `parseTimezone` (server/routes/_helpers.ts) to collapse
+ * null/undefined/invalid → `"UTC"`. Validating in storage would require
+ * importing from the routes layer, creating a `storage → routes → storage`
+ * import cycle (`_helpers` imports the storage barrel).
+ *
+ * idor-safe: only the notification scheduler (server-side cron) calls this; it
+ * is never reachable per-user via a route handler.
+ */
+export async function getUserTimezones( // idor-safe
+  userIds: string[],
+): Promise<Map<string, string | null>> {
+  // inArray(col, []) generates degenerate SQL — short-circuit empty input.
+  if (userIds.length === 0) return new Map();
+  const rows = await db
+    .select({ id: users.id, timezone: users.timezone })
+    .from(users)
+    .where(inArray(users.id, userIds));
+  return new Map(rows.map((r) => [r.id, r.timezone]));
+}
+
 // ============================================================================
 // USER PROFILES
 // ============================================================================

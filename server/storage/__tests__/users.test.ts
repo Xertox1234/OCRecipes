@@ -31,6 +31,7 @@ const {
   getUserByUsername,
   createUser,
   updateUser,
+  getUserTimezones,
   getUserProfile,
   createUserProfile,
   updateUserProfile,
@@ -125,6 +126,41 @@ describe("users storage", () => {
         displayName: "Ghost",
       });
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe("getUserTimezones", () => {
+    it("returns the stored timezone for a user who has one set", async () => {
+      await updateUser(testUser.id, { timezone: "America/Los_Angeles" });
+      const result = await getUserTimezones([testUser.id]);
+      expect(result.get(testUser.id)).toBe("America/Los_Angeles");
+    });
+
+    it("returns null for a user whose timezone was never written", async () => {
+      // createTestUser does not set timezone → column is NULL.
+      const result = await getUserTimezones([testUser.id]);
+      expect(result.get(testUser.id)).toBeNull();
+    });
+
+    it("batches multiple users in one query, keyed by id", async () => {
+      const second = await createTestUser(tx);
+      await updateUser(testUser.id, { timezone: "Europe/London" });
+      const result = await getUserTimezones([testUser.id, second.id]);
+      expect(result.get(testUser.id)).toBe("Europe/London");
+      expect(result.get(second.id)).toBeNull();
+      expect(result.size).toBe(2);
+    });
+
+    it("returns an empty map for empty input (no degenerate query)", async () => {
+      const result = await getUserTimezones([]);
+      expect(result.size).toBe(0);
+    });
+
+    it("omits unknown ids from the result map", async () => {
+      const result = await getUserTimezones([
+        "00000000-0000-0000-0000-000000000000",
+      ]);
+      expect(result.size).toBe(0);
     });
   });
 

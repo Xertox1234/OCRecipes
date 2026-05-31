@@ -22,6 +22,7 @@ import cron from "node-cron";
 import pLimit from "p-limit";
 import { logger } from "../lib/logger";
 import { storage } from "../storage";
+import { parseTimezone } from "../routes/_helpers";
 import { sendPushToUser } from "./push-notifications";
 import type { ReminderMutes } from "@shared/types/reminders";
 
@@ -76,12 +77,14 @@ export async function sendDueCommitmentReminders(): Promise<void> {
   );
 
   // Fetch each user's profile once (not once per entry) to avoid redundant DB
-  // round-trips when a user has multiple due commitments.
+  // round-trips when a user has multiple due commitments. Timezones are fetched
+  // in the same batch so day-bucketing aligns to each user's local midnight.
   const uniqueUserIds = [...new Set(entries.map((e) => e.userId))];
   let profileMap: Map<
     string,
     Awaited<ReturnType<typeof storage.getUserProfile>>
   >;
+  let tzMap: Map<string, string | null>;
   try {
     profileMap = new Map(
       await Promise.all(
@@ -90,6 +93,7 @@ export async function sendDueCommitmentReminders(): Promise<void> {
         ),
       ),
     );
+    tzMap = await storage.getUserTimezones(uniqueUserIds);
   } catch (err) {
     logger.error(
       { err },
@@ -103,10 +107,14 @@ export async function sendDueCommitmentReminders(): Promise<void> {
       const profile = profileMap.get(entry.userId);
       if (isMuted(profile?.reminderMutes, "commitment")) return;
 
-      // Write pending reminder (regardless of push success)
+      // Write pending reminder (regardless of push success). Day-bucket in the
+      // user's stored timezone (NULL/invalid → "UTC") so the dedup window
+      // matches their local calendar day, not server UTC midnight.
+      const tz = parseTimezone(tzMap.get(entry.userId));
       const alreadyPending = await storage.hasPendingReminderToday(
         entry.userId,
         "commitment",
+        tz,
       );
       if (!alreadyPending) {
         await storage.createPendingReminder({
@@ -179,6 +187,7 @@ export async function sendDailyCheckinReminders(): Promise<void> {
         string,
         Awaited<ReturnType<typeof storage.getUserProfile>>
       >;
+      let tzMap: Map<string, string | null>;
       try {
         profileMap = new Map(
           await Promise.all(
@@ -187,6 +196,7 @@ export async function sendDailyCheckinReminders(): Promise<void> {
             ),
           ),
         );
+        tzMap = await storage.getUserTimezones(userIds);
       } catch (err) {
         logger.error(
           { err },
@@ -200,9 +210,12 @@ export async function sendDailyCheckinReminders(): Promise<void> {
           const profile = profileMap.get(userId);
           if (isMuted(profile?.reminderMutes, "daily-checkin")) return;
 
+          // Day-bucket in the user's stored timezone (NULL/invalid → "UTC").
+          const tz = parseTimezone(tzMap.get(userId));
           const alreadyPending = await storage.hasPendingReminderToday(
             userId,
             "daily-checkin",
+            tz,
           );
           if (alreadyPending) return;
 
@@ -239,6 +252,7 @@ export async function sendMealLogReminders(): Promise<void> {
         string,
         Awaited<ReturnType<typeof storage.getUserProfile>>
       >;
+      let tzMap: Map<string, string | null>;
       try {
         profileMap = new Map(
           await Promise.all(
@@ -247,6 +261,7 @@ export async function sendMealLogReminders(): Promise<void> {
             ),
           ),
         );
+        tzMap = await storage.getUserTimezones(userIds);
       } catch (err) {
         logger.error(
           { err },
@@ -263,9 +278,12 @@ export async function sendMealLogReminders(): Promise<void> {
           const logs = await storage.getDailyLogs(userId, new Date());
           if (logs.length > 0) return;
 
+          // Day-bucket in the user's stored timezone (NULL/invalid → "UTC").
+          const tz = parseTimezone(tzMap.get(userId));
           const alreadyPending = await storage.hasPendingReminderToday(
             userId,
             "meal-log",
+            tz,
           );
           if (alreadyPending) return;
 

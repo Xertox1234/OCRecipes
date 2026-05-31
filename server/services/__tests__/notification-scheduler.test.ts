@@ -21,6 +21,7 @@ vi.mock("../../storage", () => ({
     getDueCommitmentsAllUsers: vi.fn(),
     updateNotebookEntryStatus: vi.fn(),
     getUserIdPage: vi.fn(),
+    getUserTimezones: vi.fn(),
     getUserProfile: vi.fn(),
     getDailyLogs: vi.fn(),
     getDailySummary: vi.fn(),
@@ -50,6 +51,11 @@ beforeEach(() => {
   vi.mocked(cron.schedule).mockReturnValue({
     stop: vi.fn(),
   } as unknown as ReturnType<typeof cron.schedule>);
+  // Default tz map is empty → every user falls back to "UTC" via parseTimezone.
+  // resetAllMocks would otherwise leave getUserTimezones returning undefined,
+  // which makes the scheduler's tzMap.get(...) throw. Tests that assert on a
+  // specific timezone override this per-test.
+  vi.mocked(storage.getUserTimezones).mockResolvedValue(new Map());
   stopNotificationScheduler();
 });
 
@@ -304,6 +310,70 @@ describe("sendDailyCheckinReminders", () => {
         type: "daily-checkin",
         context: { calories: 850 },
       }),
+    );
+  });
+
+  it("threads the user's stored timezone into hasPendingReminderToday", async () => {
+    // AC: a user with timezone "America/Los_Angeles" gets day-bucketing for
+    // their local date, not UTC. Storage is mocked, so we assert the tz is
+    // passed through (the local-vs-UTC boundary itself is covered by the
+    // getDayBounds / hasPendingReminderToday storage tests).
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["la-user"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getUserTimezones).mockResolvedValue(
+      new Map([["la-user", "America/Los_Angeles"]]),
+    );
+    vi.mocked(storage.getUserProfile).mockResolvedValue(
+      createMockUserProfile({ userId: "la-user", reminderMutes: {} }),
+    );
+    vi.mocked(storage.getDailySummary).mockResolvedValue({
+      totalCalories: 600,
+      totalProtein: 25,
+      totalCarbs: 70,
+      totalFat: 20,
+      itemCount: 2,
+    });
+    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
+    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
+
+    await sendDailyCheckinReminders();
+
+    expect(storage.getUserTimezones).toHaveBeenCalledWith(["la-user"]);
+    expect(storage.hasPendingReminderToday).toHaveBeenCalledWith(
+      "la-user",
+      "daily-checkin",
+      "America/Los_Angeles",
+    );
+  });
+
+  it("falls back to UTC when the stored timezone is null", async () => {
+    // NULL timezone (user who never sent X-Timezone) → parseTimezone → "UTC".
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["utc-user"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getUserTimezones).mockResolvedValue(
+      new Map([["utc-user", null]]),
+    );
+    vi.mocked(storage.getUserProfile).mockResolvedValue(
+      createMockUserProfile({ userId: "utc-user", reminderMutes: {} }),
+    );
+    vi.mocked(storage.getDailySummary).mockResolvedValue({
+      totalCalories: 600,
+      totalProtein: 25,
+      totalCarbs: 70,
+      totalFat: 20,
+      itemCount: 2,
+    });
+    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
+    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
+
+    await sendDailyCheckinReminders();
+
+    expect(storage.hasPendingReminderToday).toHaveBeenCalledWith(
+      "utc-user",
+      "daily-checkin",
+      "UTC",
     );
   });
 
