@@ -1,6 +1,6 @@
 ---
 title: "Validate Open Food Facts ingestion before it feeds the nutrition cache"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-29
 updated: 2026-05-29
