@@ -74,6 +74,8 @@ Establish a green baseline before touching any code.
    MAIN_CHECKOUT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
    ```
 
+   > **Important:** Shell state does not persist between tool calls — each Bash call runs in a fresh shell. Record the literal output of this command (e.g. `/Users/yourname/projects/OCRecipes`) and substitute it wherever `<MAIN_CHECKOUT>` appears in the spawn prompts below and in the executor's instructions. Do not re-run this command in later phases; use the saved value.
+
    Store as `MAIN_CHECKOUT` (e.g., `/Users/williamtower/projects/OCRecipes`). Pass it to every executor spawn in Phase 4 via the `Main checkout:` line in the prompt. Executors use it to write gitignored artifacts (`docs/solutions/...`) to the main checkout rather than to their own worktree (where `git worktree remove` would destroy them — same gitignore/worktree pitfall the `/audit` skill fixed).
 
 4. **Verify executor agent**: Confirm the file `.claude/agents/todo-executor.md` exists by running:

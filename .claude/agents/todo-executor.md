@@ -342,7 +342,9 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 **If codifying:**
 
-**Where the artifacts live.** Solution files (`docs/solutions/`) are gitignored, so they have no branch to ride and cannot be committed. They live in the **main checkout** — read `MAIN_CHECKOUT` from the spawn prompt's `Main checkout:` line — so `git worktree remove` at orchestrator Phase 5 does not destroy them. Agent files (`.claude/agents/*.md`) and rules files (`docs/rules/*.md`) are tracked and live in the worktree like any other code change, riding the todo branch.
+**Where the artifacts live.** Solution files (`docs/solutions/`) are gitignored, so they have no branch to ride and cannot be committed. They live in the **main checkout** — read the literal absolute path from the spawn prompt's `Main checkout:` line — so `git worktree remove` at orchestrator Phase 5 does not destroy them. Agent files (`.claude/agents/*.md`) and rules files (`docs/rules/*.md`) are tracked and live in the worktree like any other code change, riding the todo branch.
+
+> **Important:** Shell state does not persist between Bash tool calls — each call runs in a fresh shell, so a `MAIN_CHECKOUT=...` export in one call is empty in the next. Wherever `$MAIN_CHECKOUT` appears in the steps below, substitute the literal path you read from the spawn prompt (e.g. `/Users/yourname/projects/OCRecipes/docs/solutions/...`). Do not rely on a shell variable or re-derive the path with `git rev-parse` from inside the worktree — the orchestrator already captured it.
 
 1. Determine which reusable knowledge was produced. A single todo may update more than one target:
    - **Solution** — a reusable rule (knowledge-track) or post-mortem (bug-track) written as one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` (main checkout, not the worktree). See `.claude/skills/codify/SKILL.md` Steps 5-6 for the canonical routing rubric and body template; see `docs/solutions/README.md` for the frontmatter schema.
