@@ -1,6 +1,6 @@
 ---
 title: "Wire TanStack Query onlineManager + reconnect refetch / mutation resume"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-29
 updated: 2026-05-29

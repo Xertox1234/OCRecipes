@@ -1,4 +1,10 @@
-import { QueryClient, QueryCache, QueryFunction } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryCache,
+  QueryFunction,
+  onlineManager,
+} from "@tanstack/react-query";
+import NetInfo from "@react-native-community/netinfo";
 import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
 
@@ -314,4 +320,43 @@ export const queryClient = new QueryClient({
       retry: false,
     },
   },
+});
+
+/**
+ * Wire TanStack Query's onlineManager to NetInfo so the library's internal
+ * online flag reflects real React Native connectivity.
+ *
+ * Null-safe: NetInfo fires its initial callback with isConnected: null while
+ * it determines connectivity. We mirror the useNetworkStatus hook: treat null
+ * as "not offline" (i.e. online: true) to avoid pausing all initial queries
+ * on a cold start. Only explicit false values are treated as offline.
+ *
+ * With onlineManager wired:
+ *  - Queries that failed while offline refetch automatically on reconnect
+ *    (the existing refetchOnReconnect default of true activates).
+ *  - Paused mutations resume on reconnect via resumePausedMutations().
+ *    Note: mutations with retry:false are still paused (not failed) when
+ *    triggered offline; networkMode pauses before the first attempt.
+ *    Durable resume across app restarts requires the async-storage persister
+ *    (@tanstack/query-async-storage-persister) — deferred as a follow-up.
+ */
+onlineManager.setEventListener((setOnline) =>
+  NetInfo.addEventListener((state) => {
+    // Mirror useNetworkStatus: only explicit false is "offline"; null is
+    // indeterminate (cold-start) and must not mark the manager offline.
+    const isOnline = !(
+      state.isConnected === false || state.isInternetReachable === false
+    );
+    setOnline(isOnline);
+  }),
+);
+
+onlineManager.subscribe((isOnline) => {
+  if (isOnline) {
+    queryClient.resumePausedMutations().catch(() => {
+      // resumePausedMutations is best-effort — individual mutation onError
+      // handlers will surface failures to the user. Swallow here to avoid
+      // an uncaught rejection on the onlineManager subscription.
+    });
+  }
 });
