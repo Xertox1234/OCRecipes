@@ -748,3 +748,254 @@ describe("batchNutritionLookup", () => {
     expect(result.get("nonexistentfood123")).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PR #269 reliability-audit: failure-mode branches
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PR #269 — CNF safeParse failure branches", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("falls through to USDA when the CNF food list response is not a valid array", async () => {
+    // cnfFoodListSchema expects an array; returning an object fails safeParse →
+    // cnfFoodsEN/FR remain null → lookupCNF returns null → USDA runs.
+    setupFetchMock({
+      "food/?lang=en": () =>
+        Promise.resolve({ ok: true, json: async () => ({ error: "bad" }) }),
+      "food/?lang=fr": () =>
+        Promise.resolve({ ok: true, json: async () => ({ error: "bad" }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "Chicken Breast",
+                foodNutrients: [
+                  { nutrientName: "Energy", value: 165 },
+                  { nutrientName: "Protein", value: 31 },
+                  { nutrientName: "Carbohydrate, by difference", value: 0 },
+                  { nutrientName: "Total lipid (fat)", value: 3.6 },
+                  { nutrientName: "Fiber, total dietary", value: 0 },
+                  { nutrientName: "Sugars, total", value: 0 },
+                  { nutrientName: "Sodium, Na", value: 74 },
+                ],
+              },
+            ],
+          }),
+        }),
+    });
+
+    const result = await lookupNutrition("chicken breast");
+    expect(result).not.toBeNull();
+    // CNF was unavailable (invalid response) — USDA took over
+    expect(result!.source).toBe("usda");
+    expect(result!.calories).toBe(165);
+  });
+
+  it("falls through to USDA when CNF nutrient amounts fail validation (strict field missing)", async () => {
+    // CNF food list loads fine; the nutrient-amounts endpoint returns an object
+    // missing `nutrient_web_name` (strict field) → safeParse fails → null from
+    // lookupCNF → USDA fallback.
+    setupFetchMock({
+      "food/?lang=en": cnfWithSugarEN,
+      "food/?lang=fr": cnfWithSugarFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            // Missing required `nutrient_web_name`
+            { food_code: 4318, nutrient_value: 387 },
+          ],
+        }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "Granulated Sugar",
+                foodNutrients: [
+                  { nutrientName: "Energy", value: 387 },
+                  { nutrientName: "Protein", value: 0 },
+                  { nutrientName: "Carbohydrate, by difference", value: 100 },
+                  { nutrientName: "Total lipid (fat)", value: 0 },
+                ],
+              },
+            ],
+          }),
+        }),
+    });
+
+    const result = await lookupNutrition("sugar");
+    expect(result).not.toBeNull();
+    // CNF nutrient parse failed → USDA took over
+    expect(result!.source).toBe("usda");
+    expect(result!.calories).toBe(387);
+  });
+
+  it("tolerates null values in the CNF nullish fields (food_code, nutrient_name_id)", async () => {
+    // food_code and nutrient_name_id are `.nullish()` in cnfNutrientAmountListSchema.
+    // A null in those fields must not invalidate the nutrient entry.
+    setupFetchMock({
+      "food/?lang=en": cnfWithSugarEN,
+      "food/?lang=fr": cnfWithSugarFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: null,
+              nutrient_value: 387,
+              nutrient_name_id: null,
+              nutrient_web_name: "Energy (kcal)",
+            },
+            {
+              food_code: null,
+              nutrient_value: 99.98,
+              nutrient_name_id: null,
+              nutrient_web_name: "Carbohydrate",
+            },
+            {
+              food_code: null,
+              nutrient_value: 0,
+              nutrient_name_id: null,
+              nutrient_web_name: "Protein",
+            },
+            {
+              food_code: null,
+              nutrient_value: 0,
+              nutrient_name_id: null,
+              nutrient_web_name: "Total Fat",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupNutrition("sugar");
+    expect(result).not.toBeNull();
+    // Null nullish fields did not abort parse — CNF returned a valid result
+    expect(result!.source).toBe("cnf");
+    expect(result!.calories).toBe(387);
+  });
+});
+
+describe("PR #269 — USDA-UPC safeParse failure branches", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("tolerates a null `value` in USDA UPC food nutrients (coerces to 0, sibling food survives)", async () => {
+    // USDA UPC response with a null nutrient value — usdaUpcFoodSchema coerces
+    // null→0, so the food parses instead of failing the whole `foods` array.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "COFFEE WHITENER",
+                brandOwner: "Nestle",
+                gtinUpc: "006073114236",
+                foodNutrients: [
+                  { nutrientName: "Energy", nutrientId: 1008, value: 500 },
+                  { nutrientName: "Protein", nutrientId: 1003, value: null }, // null value
+                  {
+                    nutrientName: "Carbohydrate, by difference",
+                    nutrientId: 1005,
+                    value: 60,
+                  },
+                  {
+                    nutrientName: "Total lipid (fat)",
+                    nutrientId: 1004,
+                    value: 30,
+                  },
+                ],
+              },
+            ],
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("6073114236");
+    expect(result).not.toBeNull();
+    // Food parsed despite null value — coerced to 0
+    expect(result!.productName).toBe("COFFEE WHITENER");
+    expect(result!.per100g.calories).toBe(500);
+    // Protein coerced from null → 0
+    expect(result!.per100g.protein).toBe(0);
+  });
+
+  it("tolerates a null `description` in a USDA UPC food, falls back to 'Unknown'", async () => {
+    // usdaUpcFoodSchema allows description: null via `.nullish()`.
+    // When description is null the code falls back to "Unknown".
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: null,
+                brandOwner: "TestBrand",
+                gtinUpc: "012345678901",
+                foodNutrients: [
+                  { nutrientName: "Energy", nutrientId: 1008, value: 200 },
+                  { nutrientName: "Protein", nutrientId: 1003, value: 5 },
+                  {
+                    nutrientName: "Carbohydrate, by difference",
+                    nutrientId: 1005,
+                    value: 30,
+                  },
+                  {
+                    nutrientName: "Total lipid (fat)",
+                    nutrientId: 1004,
+                    value: 5,
+                  },
+                ],
+              },
+            ],
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("12345678901");
+    expect(result).not.toBeNull();
+    // null description tolerated; productName falls back to "Unknown"
+    expect(result!.productName).toBe("Unknown");
+    expect(result!.per100g.calories).toBe(200);
+  });
+
+  it("falls through when the entire USDA UPC response fails safeParse", async () => {
+    // Returning a non-object (bare string) causes the whole safeParse to fail →
+    // lookupUSDAByUPC returns null → no UPC fallback, no product found.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => "not-an-object",
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("0000000000000");
+    // Invalid UPC response → no data at all → null
+    expect(result).toBeNull();
+  });
+});

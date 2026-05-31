@@ -316,6 +316,7 @@ describe("ServiceName", () => {
 10. **`expect(result).toEqual([...result].sort())` as a "sorted" check** - Meta-assertion that passes trivially for length-1 results. Pin the concrete expected output instead.
 11. **`toContain` for sort/order/membership-set contracts** - `toContain` only checks one element; if the function leaks unrelated domain values, it would still pass. Use `toEqual` with a pinned array when the function's contract is "returns exactly X."
 12. **Hand-curated constant with no drift detector** - When a constant is seeded from a `grep` or external scan, pair it with a unit test that re-runs the scan and asserts the constant matches. See `docs/legacy-patterns/testing.md` "Drift-Detection Test for Empirically-Derived Constants."
+13. **Tautological test body logic** - `const hasAccess = item.userId === requestingUserId; expect(hasAccess).toBe(false)` re-implements the production predicate inline; `const mock = vi.fn().mockResolvedValue(x); const r = await mock(); expect(r).toEqual(x)` calls the mock directly — both exercise zero production code and give false CI confidence. Tests must call the real function under test and mock only its collaborators.
 
 ---
 
