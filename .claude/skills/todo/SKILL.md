@@ -96,16 +96,26 @@ Build the work queue from the `todos/` backlog.
 
    > **Stuck todos**: If any file has `status: in-progress`, it was left mid-run by a crashed executor and is being skipped. To re-queue it, manually edit its frontmatter to `status: backlog` and re-run `/todo`.
 
-4. Sort the actionable list:
+4. **Quality check.** Catching authoring problems here is much cheaper than spawning a researcher + executor only to have them fail on an incoherent spec. For each actionable todo, scan the body and record any flag that fires:
+   - **empty-AC** — the Acceptance Criteria section is missing or contains no `- [ ]` checkbox lines.
+   - **thin-IN** — the Implementation Notes section body (text between its heading and the next heading) is shorter than 50 characters after trimming whitespace.
+   - **no-files** — the body contains no file reference matching the patterns Phase 3 uses for extraction (`path/to/file.ts`, `path/to/file.ts:123-145`, or backtick-quoted paths).
+
+   Record each flagged todo with the comma-joined list of triggered flags. Multiple flags are possible.
+
+5. Sort the actionable list:
    - **Priority** descending: `critical` > `high` > `medium` > `low`
    - Within the same priority, **oldest `created` date first** (FIFO)
-5. Display the work queue as a markdown table:
+6. Display the work queue as a markdown table with a `Quality` column showing `OK` or the comma-joined flag list:
 
-   | #   | Priority | Title | Labels | Created |
-   | --- | -------- | ----- | ------ | ------- |
-   | 1   | high     | ...   | ...    | ...     |
+   | #   | Priority | Title | Quality | Labels | Created |
+   | --- | -------- | ----- | ------- | ------ | ------- |
+   | 1   | high     | ...   | OK      | ...    | ...     |
+   | 2   | medium   | ...   | thin-IN | ...    | ...     |
 
-   If the queue is empty, report "No actionable todos found" and exit.
+   **Default behavior:** only todos with `Quality = OK` proceed to Phase 3 and beyond. Flagged todos are dropped from this run's queue and surfaced again in the Phase 5 summary under "Skipped — quality flags" so the user can re-author them and re-run. The dropped set must be carried in orchestrator state for Phase 5.
+
+   If every actionable todo is flagged, report "All actionable todos failed quality checks — re-author and re-run." and exit. If the queue is empty (no actionable todos at all), report "No actionable todos found" and exit.
 
 ## Phase 3 — Dependency Analysis
 
@@ -230,6 +240,8 @@ After all batches have been executed (or after early termination):
    Short-circuited: SC (todos that reused a verified solution and skipped research; list the docs/solutions paths)
    Final test count: T (baseline was B)
    ```
+
+   Then **list quality-flagged todos that were skipped from this run.** Using the dropped set carried over from Phase 2 step 6, print them under the heading "Skipped — quality flags — re-author and re-run to include them:" with one line per todo (todo filename + comma-joined flag list). If none were dropped, omit the heading.
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
 
