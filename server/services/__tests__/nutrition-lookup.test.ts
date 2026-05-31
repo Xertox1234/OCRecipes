@@ -484,6 +484,84 @@ describe("lookupBarcode", () => {
     // All OFF variants fail, no USDA data either → null
     expect(result).toBeNull();
   });
+
+  it("parses a valid OFF product correctly (regression: schema must not drop real data)", async () => {
+    // CNF/USDA are empty so OFF values flow through unmodified by cross-validation.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Plain Oats",
+              serving_size: "40g",
+              nutriments: {
+                "energy-kcal_100g": 370,
+                proteins_100g: 13,
+                carbohydrates_100g: 60,
+                fat_100g: 7,
+                fiber_100g: 10,
+                sugars_100g: 1,
+                sodium_100g: 0.002,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("1111111111111");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(370);
+    expect(result!.per100g.protein).toBe(13);
+    expect(result!.per100g.carbs).toBe(60);
+    expect(result!.per100g.fat).toBe(7);
+    expect(result!.per100g.fiber).toBe(10);
+    expect(result!.per100g.sugar).toBe(1);
+    // sodium_100g: 0.002 g/100g → 0.002 * 1000 = 2mg, rounded to 1 decimal
+    expect(result!.per100g.sodium).toBe(2);
+  });
+
+  it("drops string/garbage OFF nutriments instead of poisoning the cache", async () => {
+    // CNF/USDA are empty so OFF values flow through unmodified by cross-validation.
+    // OFF returns "N/A" for sugars and a garbage string for fat — both must be dropped.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Weird Product",
+              serving_size: "30g",
+              nutriments: {
+                "energy-kcal_100g": 400,
+                proteins_100g: 10,
+                carbohydrates_100g: 50,
+                fat_100g: "N/A",
+                sugars_100g: "not reported",
+                sodium_100g: null,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("2222222222222");
+    expect(result).not.toBeNull();
+    // Valid numeric fields must survive
+    expect(result!.per100g.calories).toBe(400);
+    expect(result!.per100g.protein).toBe(10);
+    expect(result!.per100g.carbs).toBe(50);
+    // Garbage string fields must be dropped (undefined), not written as NaN/string/0
+    expect(result!.per100g.fat).toBeUndefined();
+    expect(result!.per100g.sugar).toBeUndefined();
+    expect(result!.per100g.sodium).toBeUndefined();
+  });
 });
 
 describe("lookupNutrition", () => {

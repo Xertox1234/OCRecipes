@@ -90,6 +90,34 @@ const usdaUpcResponseSchema = z.object({
   foods: z.array(usdaUpcFoodSchema),
 });
 
+// Zod schema for Open Food Facts nutriments validation.
+// OFF sometimes returns strings like "N/A" or null for unreported fields.
+// Use drop-not-coerce: an unreadable value becomes undefined (absence), not 0.
+// Never use z.coerce.number() here — it turns null/"N/A" → 0, poisoning the
+// monetized cache with false zeros. .passthrough() + .catch(() => ({})) isolate
+// one bad field from dropping the entire nutriments group.
+const offNumericField = z
+  .unknown()
+  .catch(undefined)
+  .transform((v) => {
+    const n = parseFloat(String(v));
+    return Number.isFinite(n) ? n : undefined;
+  });
+
+const offNutrimentsSchema = z
+  .object({
+    "energy-kcal_100g": offNumericField,
+    energy_100g: offNumericField,
+    proteins_100g: offNumericField,
+    carbohydrates_100g: offNumericField,
+    fat_100g: offNumericField,
+    fiber_100g: offNumericField,
+    sugars_100g: offNumericField,
+    sodium_100g: offNumericField,
+  })
+  .passthrough()
+  .catch(() => ({}));
+
 export interface NutritionData {
   name: string;
   calories: number;
@@ -924,7 +952,9 @@ export async function lookupBarcode(
     searchTermCandidates.find((t) => t.trim().length > 0)?.trim() || "";
 
   // ── Step 2: Extract OFF per-100g values ──────────────────────────
-  const nm = offProduct?.nutriments || {};
+  // Validate nutriments at the boundary: drop non-numeric/garbage values rather
+  // than writing them to the monetized cache (under-report is the safe direction).
+  const nm = offNutrimentsSchema.parse(offProduct?.nutriments ?? {});
   const offPer100g: BarcodePer100g = {
     calories:
       nm["energy-kcal_100g"] ??
