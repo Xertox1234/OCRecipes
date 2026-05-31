@@ -1,6 +1,6 @@
 ---
 title: "Decide image-guard vs checkAiConfigured precedence in cooking.ts (503-vs-400 edge)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31
@@ -44,3 +44,10 @@ Surfaced during the `photo-upload-helper` todo (branch `todo/2026-05-31-photo-up
 ### 2026-05-31
 
 - Created from the `photo-upload-helper` deferred warning during `/todo` deferred-warning triage (user chose to file rather than drop).
+
+### 2026-05-31 (resolved)
+
+- Decision: **503-first is intended.** The sibling `photos.ts` uses the identical order (`checkAiConfigured` before `requireValidImage`), so the `requireValidImage` extraction aligned `cooking.ts` with the established convention. Service-availability (is the feature even online?) is the most fundamental gate and runs first.
+- Left the guard order in `server/routes/cooking.ts` as-is; added an intentional-order code comment in the photos handler.
+- Parameterized `cooking.test.ts`: added hoisted `mockAiConfigured` (getter on the openai mock) and `mockFilePresent` (gates the multer mock's `req.file`), both reset in `beforeEach`. The unconditional multer mock previously made a file-toggle impossible — without `mockFilePresent`, the "missing file" combination could not be exercised and the test would have been vacuous (a file-present request returns 503 under both orderings).
+- Added two tests: missing-file + AI-unconfigured → 503; missing-file + AI-configured → 400. Confirmed they discriminate the ordering by temporarily swapping the two guards (the 503 test flipped to 400, then restored).

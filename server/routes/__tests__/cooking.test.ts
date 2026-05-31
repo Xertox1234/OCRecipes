@@ -48,8 +48,14 @@ vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
 
+const { mockAiConfigured } = vi.hoisted(() => ({
+  mockAiConfigured: { current: true },
+}));
+
 vi.mock("../../lib/openai", () => ({
-  isAiConfigured: true,
+  get isAiConfigured() {
+    return mockAiConfigured.current;
+  },
 }));
 
 // Mock only analyzeIngredientPhoto; let calculateSessionNutrition,
@@ -94,10 +100,15 @@ vi.mock("../../storage/canonical-recipes", () => ({
   incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
 }));
 
-const { mockFileBuffer } = vi.hoisted(() => ({
+const { mockFileBuffer, mockFilePresent } = vi.hoisted(() => ({
   mockFileBuffer: {
     current: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]),
   },
+  // When false, the multer mock leaves req.file undefined — simulates a
+  // request with no uploaded file. Reset to true in beforeEach (clearAllMocks
+  // does NOT reset a hoisted plain object, so a leaked false would break
+  // later photo tests).
+  mockFilePresent: { current: true },
 }));
 
 vi.mock("multer", () => {
@@ -109,12 +120,14 @@ vi.mock("multer", () => {
         _res: express.Response,
         next: express.NextFunction,
       ) => {
-        req.file = {
-          buffer: mockFileBuffer.current,
-          mimetype: "image/jpeg",
-          originalname: "test.jpg",
-          size: mockFileBuffer.current.length,
-        } as Express.Multer.File;
+        if (mockFilePresent.current) {
+          req.file = {
+            buffer: mockFileBuffer.current,
+            mimetype: "image/jpeg",
+            originalname: "test.jpg",
+            size: mockFileBuffer.current.length,
+          } as Express.Multer.File;
+        }
         next();
       },
   });
@@ -161,6 +174,10 @@ describe("Cooking Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset hoisted toggles — clearAllMocks does not reset a hoisted plain
+    // object, so a leaked false would break later photo tests.
+    mockFilePresent.current = true;
+    mockAiConfigured.current = true;
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     cookingSessionStore._internals.store.clear();
     cookingSessionStore._internals.userCount.clear();
@@ -363,6 +380,53 @@ describe("Cooking Routes", () => {
         .post(`/api/cooking/sessions/${sessionId}/photos`)
         .set("Authorization", "Bearer token")
         .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 503 (not 400) when file is missing and AI is unconfigured", async () => {
+      // Intentional precedence: checkAiConfigured (503) runs before
+      // requireValidImage (400). For the nonsensical "no file + AI offline"
+      // request the service-availability guard wins. See
+      // server/routes/cooking.ts photos handler comment.
+      mockFilePresent.current = false;
+      mockAiConfigured.current = false;
+
+      const sessionId = "no-file-no-ai-session";
+      cookingSessionStore._internals.store.set(sessionId, {
+        id: sessionId,
+        userId: "1",
+        ingredients: [],
+        photos: [],
+        createdAt: Date.now(),
+      });
+
+      const res = await request(app)
+        .post(`/api/cooking/sessions/${sessionId}/photos`)
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(503);
+    });
+
+    it("returns 400 when file is missing and AI is configured", async () => {
+      // Pins the ordering: with AI configured, the missing-file guard is
+      // reached and returns 400. Together with the 503 test above this proves
+      // the guard order is 503-first, not 400-first.
+      mockFilePresent.current = false;
+      mockAiConfigured.current = true;
+
+      const sessionId = "no-file-with-ai-session";
+      cookingSessionStore._internals.store.set(sessionId, {
+        id: sessionId,
+        userId: "1",
+        ingredients: [],
+        photos: [],
+        createdAt: Date.now(),
+      });
+
+      const res = await request(app)
+        .post(`/api/cooking/sessions/${sessionId}/photos`)
+        .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(400);
     });
