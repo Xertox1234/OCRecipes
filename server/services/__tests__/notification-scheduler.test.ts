@@ -60,6 +60,36 @@ beforeEach(() => {
 });
 
 describe("sendDueCommitmentReminders", () => {
+  it("threads the user's stored timezone into hasPendingReminderToday", async () => {
+    // AC: the commitment path buckets the dedup window in the user's local
+    // timezone, not UTC. Storage is mocked, so we assert the tz is passed
+    // through (the local-vs-UTC boundary itself is covered by the storage
+    // getDayBounds / hasPendingReminderToday tests).
+    const entry = createMockCoachNotebookEntry({
+      id: 10,
+      userId: "la-user",
+      content: "Stretch daily",
+      type: "commitment",
+    });
+    vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
+    vi.mocked(storage.getUserTimezones).mockResolvedValue(
+      new Map([["la-user", "America/Los_Angeles"]]),
+    );
+    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
+    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
+    vi.mocked(sendPushToUser).mockResolvedValue(true);
+    vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
+
+    await sendDueCommitmentReminders();
+
+    expect(storage.getUserTimezones).toHaveBeenCalledWith(["la-user"]);
+    expect(storage.hasPendingReminderToday).toHaveBeenCalledWith(
+      "la-user",
+      "commitment",
+      "America/Los_Angeles",
+    );
+  });
+
   it("does nothing when there are no due commitments", async () => {
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([]);
 
@@ -478,6 +508,34 @@ describe("sendDailyCheckinReminders", () => {
 });
 
 describe("sendMealLogReminders", () => {
+  it("threads the user's stored timezone into hasPendingReminderToday", async () => {
+    // AC: the meal-log path buckets the dedup window in the user's local
+    // timezone, not UTC. Storage is mocked, so we assert the tz is passed
+    // through (the local-vs-UTC boundary itself is covered by the storage
+    // getDayBounds / hasPendingReminderToday tests).
+    vi.mocked(storage.getUserIdPage)
+      .mockResolvedValueOnce(["la-user"])
+      .mockResolvedValueOnce([]);
+    vi.mocked(storage.getUserTimezones).mockResolvedValue(
+      new Map([["la-user", "America/Los_Angeles"]]),
+    );
+    vi.mocked(storage.getUserProfile).mockResolvedValue(
+      createMockUserProfile({ userId: "la-user", reminderMutes: {} }),
+    );
+    vi.mocked(storage.getDailyLogs).mockResolvedValue([]);
+    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
+    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
+
+    await sendMealLogReminders();
+
+    expect(storage.getUserTimezones).toHaveBeenCalledWith(["la-user"]);
+    expect(storage.hasPendingReminderToday).toHaveBeenCalledWith(
+      "la-user",
+      "meal-log",
+      "America/Los_Angeles",
+    );
+  });
+
   it("creates a meal-log reminder when no logs exist today", async () => {
     vi.mocked(storage.getUserIdPage)
       .mockResolvedValueOnce(["user-1"])
