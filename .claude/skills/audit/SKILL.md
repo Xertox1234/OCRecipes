@@ -79,27 +79,51 @@ Dispatched as a **single invocation** (not cluster-based — the lens is one min
 
 ## Phase 1: Setup
 
-1. Record the current baseline:
-   - Run `npm run test:run` — note pass count
-   - Run `npm run check:types` — note error count
-   - Run `npm run lint` — note error/warning count
-2. Check `docs/audits/CHANGELOG.md` for previous audit findings that may still be relevant
-3. Create a new manifest file: `docs/audits/YYYY-MM-DD-[scope].md` using the template from `docs/audits/TEMPLATE.md`
-4. Record the baseline in the manifest header
-5. Capture the current branch:
+The audit produces two classes of artifact:
+
+- **Tracked** — code fixes, `docs/rules/` edits, `.claude/agents/` edits. These live in the worktree and ride the audit branch.
+- **Gitignored** — manifest (`docs/audits/YYYY-MM-DD-<scope>.md`), `docs/audits/CHANGELOG.md` append, codified solution files (`docs/solutions/...`). These have no branch to persist on, so they live in the **main checkout** and survive when `git worktree remove` runs in Phase 9.
+
+Phase 1 sets up both correctly.
+
+1. **Capture the base branch** (for the Phase 9 PR base):
+
    ```bash
-   git branch --show-current
-   # If output is empty (detached HEAD), use: git rev-parse --abbrev-ref HEAD
+   BASE_BRANCH="$(git branch --show-current)"
+   # If output is empty (detached HEAD), use: BASE_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
    ```
-6. Create and enter an audit worktree — all subsequent phases run from it:
+
+2. **Capture the main checkout's absolute path.** Use `git rev-parse --git-common-dir`, **not** `pwd` — `pwd` resolves to wherever `/audit` was invoked from, which is wrong if it was invoked from inside another worktree. `--git-common-dir` is worktree-aware (it returns the shared `.git` regardless of which working tree you're in):
+
+   ```bash
+   MAIN_CHECKOUT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+   ```
+
+3. **Create and enter the audit worktree.** All subsequent phases (Phase 2 onward) run from here:
+
    ```bash
    git worktree add -b "audit/$(date +%Y-%m-%d)-<scope>" .worktrees/audit-$(date +%Y-%m-%d) HEAD
+   cd .worktrees/audit-$(date +%Y-%m-%d)
    ```
-   Or use `EnterWorktree` if available. All phases run from this worktree. The worktree is removed at the end of Phase 9 (after the PR is opened, or after the final commit if no PR was opened) with:
+
+   Or use `EnterWorktree` if available. Substitute the audit `<scope>` (e.g. `security`) — `-b` creates the branch the Phase 9 PR will push. The worktree is removed at the end of Phase 9 (after the PR is opened, or after the final commit if no PR was opened) with:
+
    ```bash
    git worktree remove .worktrees/audit-YYYY-MM-DD
    ```
-   (in the create command, substitute the audit `<scope>` — e.g. `security` — and note `-b` creates the branch the Phase 9 PR will push; replace `YYYY-MM-DD` with the date suffix used when creating it)
+
+4. **Record the baseline** (inside the worktree, which is at HEAD of the base branch):
+   - Run `npm run test:run` — note pass count
+   - Run `npm run check:types` — note error count
+   - Run `npm run lint` — note error/warning count
+
+5. **Check the main checkout's CHANGELOG** for previous audit findings that may still be relevant:
+
+   ```bash
+   cat "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"
+   ```
+
+6. **Create the manifest at the main checkout's path** — `"$MAIN_CHECKOUT/docs/audits/$(date +%Y-%m-%d)-<scope>.md"` — using the template from `"$MAIN_CHECKOUT/docs/audits/TEMPLATE.md"`. Record the baseline from step 4 in the manifest header.
 
 ## Phase 2: Discovery
 
@@ -249,7 +273,7 @@ For findings the user wants deferred:
    - `npm run check:types` — zero errors
    - `npm run lint` — zero errors
 2. Update the manifest summary table with final counts
-3. Append an entry to `docs/audits/CHANGELOG.md`
+3. Append an entry to the main checkout's CHANGELOG (`"$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"`) — the worktree's copy would vanish at Phase 9
 4. **Report the final summary to the user:**
    - Findings: X total (C/H/M/L breakdown)
    - Verified: N fixed with evidence
@@ -289,7 +313,7 @@ This phase intentionally keeps the deeper subagent-based review path. Audit work
 
 After code review is clean:
 
-1. Stage all changed files: code fixes + review fixes + any new todos. (The manifest and `docs/audits/CHANGELOG.md` are gitignored/local-only — they will not stage; keep them updated in the working tree but expect them absent from the commit and PR.)
+1. Stage all changed files: code fixes + review fixes + any new todos. (The manifest, `docs/audits/CHANGELOG.md`, and codified solution files live in the **main checkout** — `$MAIN_CHECKOUT/docs/audits/...` and `$MAIN_CHECKOUT/docs/solutions/...` — per Phase 1's setup. They are gitignored and never stage from the worktree; their persistence is by living outside the worktree, not by commit.)
 2. Commit with message format:
    ```
    fix: resolve [scope] audit findings ([N] verified, [M] deferred)
@@ -308,7 +332,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    - **Code reviewer updates** — New checks the code-reviewer agent should enforce going forward
    - **Specialist agent updates** — New domain-specific checks that a specialist agent should catch in future audits
 2. For each candidate, apply this decision matrix:
-   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor).
+   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` — in the main checkout, not the worktree (see Phase 1 setup). See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor).
    - New check needed → **Code reviewer update** → add to `.claude/agents/code-reviewer.md`
    - Domain-specific check → **Specialist agent update** → add to the relevant `.claude/agents/*.md` checklist
 3. **Specialist agent update routing:** When a finding reveals a new domain-specific check, add it to the appropriate specialist agent's review checklist:
@@ -326,7 +350,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    | Maintainability | reinforce `.claude/skills/audit/maintainability-checklist.md` itself (the mindset doc) — sharpen rule 0, the dedup guard, or the approval bar when a finding reveals a missing structural-quality lens. **Do NOT** add maintainability checks to specialist agents' checklists (they would dilute the specialist's defect focus). High-severity findings whose root cause is a "never do X" boundary or type-contract rule may also append a bullet to `docs/rules/architecture.md` or `docs/rules/typescript.md` per the Phase 5b criteria. |
 
 4. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip standard fixes.
-   - For **solutions**, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
+   - For **solutions**, create one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` (main checkout, not the worktree). Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 5. Review the codification diff for accuracy and scope. Keep it limited to the reusable knowledge extracted from the audit.
