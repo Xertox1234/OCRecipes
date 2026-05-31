@@ -429,21 +429,18 @@ export async function lookupBarcode(
   let resolvedProductName = productName;
   let resolvedBrandName = brandName;
 
-  // If OFF had no product but USDA found it by UPC, use that as primary.
-  // USDA-UPC primaries only ever gap-fill from the secondary; they are never
-  // replaced (preferSecondaryOnDiscrepancy=false). OFF primaries trust the
-  // secondary on a calorie discrepancy (preferSecondaryOnDiscrepancy=true).
+  // If OFF had no product but USDA found it by UPC, use the USDA-by-UPC data
+  // directly as authoritative — it is NOT cross-validated. The CNF/USDA
+  // secondary search terms (`secondaryPer100g`) are derived solely from the
+  // OFF product (product_name_en, categories, generic_name, …); with no OFF
+  // product those terms are all empty, so `secondaryPer100g` is structurally
+  // always null in this path and there is nothing to reconcile against.
+  // (OFF primaries, in the else branch, do cross-validate via reconcilePer100g.)
   if (!offProduct && usdaByUPC) {
     resolvedProductName = usdaByUPC.product.name;
     resolvedBrandName = usdaByUPC.brandName || undefined;
-    ({ per100g, source } = reconcilePer100g(
-      normalizeToPerHundredGrams(usdaByUPC.product),
-      secondaryPer100g,
-      secondarySource,
-      "usda",
-      false,
-      code,
-    ));
+    per100g = normalizeToPerHundredGrams(usdaByUPC.product);
+    source = "usda";
   } else {
     ({ per100g, source } = reconcilePer100g(
       offPer100g,
