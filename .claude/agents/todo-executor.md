@@ -163,6 +163,34 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 | `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`, `*/__tests__/*`                                                                               | testing                                    |
 | `*.ts`, `*.tsx`                                                                                                                                     | typescript                                 |
 
+## Step 3.5 — Advisor pre-check
+
+Before writing any code, call the `advisor` tool to validate the planned approach. The advisor automatically sees the executor's full transcript — which by this point includes the todo body, the research brief (or verified-solution citation from Step 3a), the `verified_solutions` note, and the source files you read in Step 3. No parameters are passed; the transcript is forwarded automatically.
+
+**Write a brief framing note immediately before calling `advisor()`.** The note scopes the advisor to _approach review_, not code-level critique (that is kimi-review's job at Step 6). It must cover:
+
+- Todo title and the specific Acceptance Criteria checkboxes to be satisfied
+- The planned approach (research brief summary, or the matched solution from Step 3a if short-circuited)
+- The `verified_solutions` note (up to 3 entries, one line each)
+- Affected source file **paths** — list them, do not paste their contents
+- The question: "Is the planned approach sound? Does it fit the project patterns? Are there architectural mismatches or project-specific constraints that would make this approach fail?"
+
+Then end the note with: "Please end your response with exactly one verdict line: `GREEN`, `YELLOW: <one-line reason>`, or `RED: <one-line reason>`."
+
+**Then call `advisor()`.** Parse the advisor's response for the verdict:
+
+| Verdict            | Executor behavior                                                                                                                                                                                                                  |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GREEN`            | Proceed silently. Record `ADVISOR: green` for Step 11.                                                                                                                                                                             |
+| `YELLOW: <reason>` | Proceed. Add the reason to your `DEFERRED_WARNINGS` (same field as kimi-review WARNINGs). Record `ADVISOR: yellow` for Step 11.                                                                                                    |
+| `RED: <reason>`    | **Do not write code.** Report `blocked: advisor red-flag: <reason>` to the orchestrator (Step 11 "On skip/block"). The todo remains at `backlog` — no status flip, no revert needed (Step 4.0's in-progress flip has not yet run). |
+
+**Fallback: unparseable response.** If the advisor's response contains no line starting with `GREEN`, `YELLOW:`, or `RED:`, treat it as `YELLOW: advisor returned prose without a verdict line` — proceed and record the note in `DEFERRED_WARNINGS`. Never block on an ambiguous response.
+
+**Fallback: advisor unavailable.** If the `advisor` tool throws an error or is not present in this session's environment, log "advisor unavailable — skipping Step 3.5" and proceed to Step 4. Record `ADVISOR: skipped` for Step 11. Never block on advisor unavailability — the gate is value-add, not load-bearing.
+
+---
+
 ## Step 4 — Implement
 
 Execute the todo:
@@ -516,7 +544,8 @@ SOLUTION_FILE: <"$MAIN_CHECKOUT/docs/solutions/<...>.md" path if a solution was 
 FILES_CHANGED: <list of modified files>
 SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (researcher skipped), or "none">
 REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
-DEFERRED_WARNINGS: <one line per unaddressed kimi-review WARNING (description + file path), or "none">
+ADVISOR: <green | yellow | red | skipped>
+DEFERRED_WARNINGS: <one line per unaddressed kimi-review WARNING or YELLOW advisor reason (description + file path), or "none">
 ```
 
 **On failure:**
@@ -531,7 +560,7 @@ ATTEMPT: <1 or 2>
 
 ```
 STATUS: skipped | blocked
-REASON: <status not eligible | list of blocking dependency filenames>
+REASON: <status not eligible | list of blocking dependency filenames | "advisor red-flag: <reason>">
 ```
 
 ---
