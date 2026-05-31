@@ -79,16 +79,20 @@ export const userProfiles = pgTable("user_profiles", {
     .references(() => users.id, { onDelete: "cascade" })
     .notNull()
     .unique(),
-  allergies: jsonb("allergies").$type<Allergy[]>().default([]),
-  healthConditions: jsonb("health_conditions").$type<string[]>().default([]),
+  allergies: jsonb("allergies").$type<Allergy[]>().default([]).notNull(),
+  healthConditions: jsonb("health_conditions")
+    .$type<string[]>()
+    .default([])
+    .notNull(),
   dietType: text("diet_type"),
-  foodDislikes: jsonb("food_dislikes").$type<string[]>().default([]),
+  foodDislikes: jsonb("food_dislikes").$type<string[]>().default([]).notNull(),
   primaryGoal: text("primary_goal"),
   activityLevel: text("activity_level"),
   householdSize: integer("household_size").default(1),
   cuisinePreferences: jsonb("cuisine_preferences")
     .$type<string[]>()
-    .default([]),
+    .default([])
+    .notNull(),
   cookingSkillLevel: text("cooking_skill_level"),
   cookingTimeAvailable: text("cooking_time_available"),
   glp1Mode: boolean("glp1_mode").default(false),
@@ -532,8 +536,8 @@ export const communityRecipes = pgTable(
     difficulty: text("difficulty"),
     timeEstimate: text("time_estimate"),
     servings: integer("servings").default(2),
-    dietTags: jsonb("diet_tags").$type<string[]>().default([]),
-    mealTypes: jsonb("meal_types").$type<string[]>().default([]),
+    dietTags: jsonb("diet_tags").$type<string[]>().default([]).notNull(),
+    mealTypes: jsonb("meal_types").$type<string[]>().default([]).notNull(),
     // Denormalized allergen cache derived from ingredient names via
     // `deriveRecipeAllergens` (shared/constants/allergens.ts). Type-only import
     // — erased at compile time, so no schema↔allergens runtime import cycle.
@@ -545,7 +549,8 @@ export const communityRecipes = pgTable(
     instructions: jsonb("instructions").$type<string[]>().notNull(),
     ingredients: jsonb("ingredients")
       .$type<{ name: string; quantity: string; unit: string }[]>()
-      .default([]),
+      .default([])
+      .notNull(),
     caloriesPerServing: decimal("calories_per_serving", {
       precision: 10,
       scale: 2,

@@ -27,6 +27,7 @@ vi.mock("../../db", () => ({
 
 // Import after mocking
 const {
+  createWeightLog,
   getWeightLogs,
   getLatestWeight,
   deleteWeightLog,
@@ -55,6 +56,52 @@ describe("health storage", () => {
   // ==========================================================================
   // WEIGHT LOGS
   // ==========================================================================
+
+  describe("createWeightLog", () => {
+    it("returns a validated, correctly-shaped weight log from the raw upsert", async () => {
+      const created = await createWeightLog({
+        userId: testUser.id,
+        weight: "70.5",
+        unit: "kg",
+        source: "manual",
+        note: "morning",
+      });
+
+      // Raw `execute(...RETURNING)` returns driver-native snake_case keys; the
+      // aliased RETURNING + Zod parse must yield camelCase fields with the right
+      // runtime types (regression guard for the `as WeightLog` cast removal).
+      expect(typeof created.id).toBe("number");
+      expect(created.userId).toBe(testUser.id);
+      expect(Number(created.weight)).toBeCloseTo(70.5, 1);
+      expect(created.unit).toBe("kg");
+      expect(created.source).toBe("manual");
+      expect(created.note).toBe("morning");
+      expect(created.loggedAt).toBeInstanceOf(Date);
+
+      // The row is actually persisted and readable back through the typed path.
+      const logs = await getWeightLogs(testUser.id);
+      expect(logs).toHaveLength(1);
+      expect(logs[0].id).toBe(created.id);
+    });
+
+    it("upserts same-day entries into a single row (ON CONFLICT)", async () => {
+      const first = await createWeightLog({
+        userId: testUser.id,
+        weight: "70.0",
+      });
+      // CURRENT_TIMESTAMP is fixed at transaction start, so both inserts land on
+      // the same calendar day and collapse to one row via the functional index.
+      const second = await createWeightLog({
+        userId: testUser.id,
+        weight: "71.0",
+      });
+
+      expect(second.id).toBe(first.id);
+      const logs = await getWeightLogs(testUser.id);
+      expect(logs).toHaveLength(1);
+      expect(Number(logs[0].weight)).toBeCloseTo(71, 1);
+    });
+  });
 
   describe("getWeightLogs", () => {
     it("returns empty array when no logs exist", async () => {

@@ -8,10 +8,25 @@ import {
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
+import { createSelectSchema } from "drizzle-zod";
+import { z } from "zod";
 
 // ============================================================================
 // WEIGHT LOGS
 // ============================================================================
+
+// Runtime validator for raw `db.execute(sql`...`)` weight-log rows. Drizzle gives
+// no runtime type safety for raw SQL results — `as WeightLog` and `execute<WeightLog>`
+// are compile-time-only assertions on `Record<string, unknown>`, so a schema
+// migration that adds/renames a column would silently yield a misshapen object.
+// The raw upserts below alias their `RETURNING` columns to the camelCase field
+// names this schema expects, because raw execute returns driver-native snake_case keys.
+// `loggedAt` is coerced because raw `execute` bypasses Drizzle's column parsers and
+// returns the `timestamptz` as an ISO string, not a `Date` (the typed query builder
+// would parse it). `z.coerce.date()` yields the `Date` that `WeightLog` expects.
+const weightLogSelectSchema = createSelectSchema(weightLogs, {
+  loggedAt: z.coerce.date(),
+});
 
 export async function getWeightLogs(
   userId: string,
@@ -40,7 +55,7 @@ export async function createWeightLog(
   // The unique index keys on (user_id, DATE(logged_at AT TIME ZONE 'UTC')) -- a functional index
   // that Drizzle's typed `target:` array cannot reference directly.
   // Use raw SQL so PostgreSQL resolves the conflict against the expression index.
-  const result = await db.execute<WeightLog>(
+  const result = await db.execute(
     sql`INSERT INTO weight_logs (user_id, weight, unit, source, note)
         VALUES (
           ${log.userId},
@@ -55,9 +70,15 @@ export async function createWeightLog(
           unit   = EXCLUDED.unit,
           source = EXCLUDED.source,
           note   = EXCLUDED.note
-        RETURNING *`,
+        RETURNING id,
+                  user_id   AS "userId",
+                  weight,
+                  unit,
+                  source,
+                  note,
+                  logged_at AS "loggedAt"`,
   );
-  return result.rows[0] as WeightLog;
+  return weightLogSelectSchema.parse(result.rows[0]);
 }
 
 /** Create weight log and update user's current weight atomically */
@@ -65,7 +86,7 @@ export async function createWeightLogAndUpdateUser(
   log: InsertWeightLog,
 ): Promise<WeightLog> {
   return db.transaction(async (tx) => {
-    const result = await tx.execute<WeightLog>(
+    const result = await tx.execute(
       sql`INSERT INTO weight_logs (user_id, weight, unit, source, note)
           VALUES (
             ${log.userId},
@@ -80,9 +101,15 @@ export async function createWeightLogAndUpdateUser(
             unit   = EXCLUDED.unit,
             source = EXCLUDED.source,
             note   = EXCLUDED.note
-          RETURNING *`,
+          RETURNING id,
+                    user_id   AS "userId",
+                    weight,
+                    unit,
+                    source,
+                    note,
+                    logged_at AS "loggedAt"`,
     );
-    const created = result.rows[0] as WeightLog;
+    const created = weightLogSelectSchema.parse(result.rows[0]);
     await tx
       .update(users)
       .set({ weight: log.weight })

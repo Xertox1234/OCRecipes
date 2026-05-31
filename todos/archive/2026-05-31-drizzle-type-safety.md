@@ -1,6 +1,6 @@
 ---
 title: "Fix Drizzle type safety: add .notNull() to jsonb defaults + validate raw execute() results"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31

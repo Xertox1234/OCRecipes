@@ -70,12 +70,17 @@ describe("createWeightLog (M9 — date-based dedup)", () => {
     expect(text).toContain("DO UPDATE SET");
   });
 
-  it("returns the first row from the execute result", async () => {
+  it("returns the validated first row from the execute result", async () => {
+    // The row must reflect the real `RETURNING` shape (all aliased columns
+    // present) — createWeightLog now Zod-parses the row, so a row missing
+    // `source`/`note` would (correctly) be rejected as schema drift.
     const row = {
       id: 42,
       userId: "user-1",
       weight: "75.50",
       unit: "kg",
+      source: "manual",
+      note: null,
       loggedAt: new Date(),
     };
     mockExecute.mockResolvedValueOnce({ rows: [row] });
