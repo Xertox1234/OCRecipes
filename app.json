@@ -57,8 +57,7 @@
           "speechRecognitionPermission": "OCRecipes uses speech recognition for voice food logging."
         }
       ],
-      "./plugins/strip-push-entitlement",
-      "@sentry/react-native"
+      "./plugins/strip-push-entitlement"
     ],
     "experiments": {
       "reactCompiler": true
