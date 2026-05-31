@@ -3,11 +3,9 @@ import express from "express";
 import request from "supertest";
 
 import { storage } from "../../storage";
-import {
-  lookupNutrition,
-  lookupBarcode,
-} from "../../services/nutrition-lookup";
-import type { BarcodeLookupResult } from "../../services/nutrition-lookup";
+import { lookupNutrition } from "../../services/nutrition-lookup";
+import { lookupBarcode } from "../../services/barcode-lookup";
+import type { BarcodeLookupResult } from "../../services/barcode-lookup";
 import { register } from "../nutrition";
 import {
   createMockScannedItem,
@@ -35,6 +33,9 @@ vi.mock("express-rate-limit");
 
 vi.mock("../../services/nutrition-lookup", () => ({
   lookupNutrition: vi.fn(),
+}));
+
+vi.mock("../../services/barcode-lookup", () => ({
   lookupBarcode: vi.fn(),
 }));
 
