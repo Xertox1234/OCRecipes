@@ -19,6 +19,16 @@ git rev-parse --show-toplevel
 - If `pwd` is **not** inside a `.claude/worktrees/agent-*` directory, report `blocked` with reason `"not running in an isolated worktree — pwd is <pwd>"` and stop. Do not edit files.
 - Every `Edit`, `Write`, and `MultiEdit` path must resolve **inside this worktree** (the directory `pwd` reported). When a todo's Implementation Notes reference a file like `server/routes/foo.ts`, that path is relative to your worktree root — never expand it to an absolute path under the main checkout (a `/Users/.../OCRecipes/...` path with no `.claude/worktrees/agent-*` segment). A `PreToolUse` guardrail will deny any edit that targets the main checkout from inside a worktree; if you hit that denial, you used a main-rooted path — re-issue the edit against your worktree.
 
+### LSP warm-up (mandatory)
+
+Before any other work, fire one throwaway `hover` call to prime the TypeScript LSP. The first symbol-navigation query of a session is otherwise degraded (e.g., `findReferences` returns only the definition). Discard the result — its purpose is to load the project graph into tsserver.
+
+```
+LSP({ operation: "hover", filePath: "client/constants/theme.ts", line: 210, character: 17 })
+```
+
+The target is the project's canonical stable symbol `withOpacity`. If the LSP tool is unavailable in this session (e.g., subagent without LSP access), log "LSP unavailable — skipping warm-up" and proceed. Never block on LSP availability.
+
 ---
 
 ## Step 1 — Parse
