@@ -6,6 +6,7 @@ import {
   parsePositiveIntParam,
   parseQueryInt,
   formatZodError,
+  parseTimezone,
 } from "../_helpers";
 
 vi.mock("../../storage", () => ({ storage: {} }));
@@ -290,5 +291,35 @@ describe("Route Helpers", () => {
       });
       expect(result.success).toBe(false);
     });
+  });
+});
+
+describe("parseTimezone", () => {
+  it("accepts a valid IANA timezone string", () => {
+    expect(parseTimezone("America/Los_Angeles")).toBe("America/Los_Angeles");
+  });
+
+  it("accepts UTC", () => {
+    expect(parseTimezone("UTC")).toBe("UTC");
+  });
+
+  it("accepts a half-hour offset zone", () => {
+    expect(parseTimezone("Asia/Kolkata")).toBe("Asia/Kolkata");
+  });
+
+  it("returns UTC for undefined", () => {
+    expect(parseTimezone(undefined)).toBe("UTC");
+  });
+
+  it("returns UTC for empty string", () => {
+    expect(parseTimezone("")).toBe("UTC");
+  });
+
+  it("returns UTC for an invalid timezone string", () => {
+    expect(parseTimezone("Not/ATimezone")).toBe("UTC");
+  });
+
+  it("returns UTC for a non-string value", () => {
+    expect(parseTimezone(42)).toBe("UTC");
   });
 });

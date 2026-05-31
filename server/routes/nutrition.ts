@@ -15,6 +15,7 @@ import {
   parseQueryInt,
   parseQueryDate,
   parseQueryString,
+  parseTimezone,
 } from "./_helpers";
 
 // Coerce literal "null" strings to actual null
@@ -299,9 +300,10 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const date = parseQueryDate(req.query.date) ?? new Date();
+        const tz = parseTimezone(req.headers["x-timezone"]);
 
         const [summary, confirmedIds] = await Promise.all([
-          storage.getDailySummary(req.userId, date),
+          storage.getDailySummary(req.userId, date, tz),
           storage.getConfirmedMealPlanItemIds(req.userId, date),
         ]);
         const planned = await storage.getPlannedNutritionSummary(

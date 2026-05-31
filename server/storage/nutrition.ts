@@ -339,6 +339,7 @@ export async function createScannedItemWithLog(
 export async function getDailySummary(
   userId: string,
   date: Date,
+  tz: string = "UTC",
 ): Promise<{
   totalCalories: number;
   totalProtein: number;
@@ -346,7 +347,7 @@ export async function getDailySummary(
   totalFat: number;
   itemCount: number;
 }> {
-  const { startOfDay, endOfDay } = getDayBounds(date);
+  const { startOfDay, endOfDay } = getDayBounds(date, tz);
 
   const result = await db
     .select({

@@ -178,12 +178,23 @@ export interface CoachChatParams {
    * token consumption immediately. (M8 — 2026-04-18)
    */
   abortSignal?: AbortSignal;
+  /** IANA timezone of the requesting user, e.g. "America/Los_Angeles". Defaults to UTC. */
+  tz?: string;
 }
 
-/** UTC day bucket — e.g. `"2026-04-18"`. Used to expire cached coach answers
- *  whose prompt includes today's numeric context (goals, intake, weight). */
-function getUtcDayBucket(d: Date = new Date()): string {
-  return d.toISOString().slice(0, 10);
+/**
+ * Day bucket string — e.g. `"2026-04-18"` — in the given IANA timezone.
+ * Used to expire cached coach answers whose prompt includes today's numeric
+ * context (goals, intake, weight). Defaults to UTC so callers that don't
+ * have a user timezone remain backward-compatible.
+ */
+function getDayBucketInTz(d: Date = new Date(), tz: string = "UTC"): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d); // en-CA produces "YYYY-MM-DD"
 }
 
 /**
@@ -209,7 +220,7 @@ export function hashCoachCacheKey(
   userId: string,
   content: string,
   isCoachPro: boolean,
-  dayBucket: string = getUtcDayBucket(),
+  dayBucket: string = getDayBucketInTz(),
   contextHash = "no-context",
   intent: CoachIntent = "personalized_advice",
 ): string {
@@ -354,6 +365,7 @@ export async function* handleCoachChat(
     warmUpId,
     turnKey,
     isCoachPro,
+    tz = "UTC",
     user,
     isAborted,
     abortSignal,
@@ -510,7 +522,7 @@ export async function* handleCoachChat(
         userId,
         content,
         isCoachPro,
-        getUtcDayBucket(today),
+        getDayBucketInTz(today, tz),
         hashCoachCacheContext(context, today),
         intent,
       )

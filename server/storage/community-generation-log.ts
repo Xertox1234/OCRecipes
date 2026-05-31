@@ -10,8 +10,9 @@ import { getDayBounds } from "./helpers";
 export async function getDailyRecipeGenerationCount(
   userId: string,
   date: Date,
+  tz: string = "UTC",
 ): Promise<number> {
-  const { startOfDay, endOfDay } = getDayBounds(date);
+  const { startOfDay, endOfDay } = getDayBounds(date, tz);
 
   const result = await db
     .select({ count: sql<number>`count(*)` })
@@ -48,9 +49,10 @@ export async function logRecipeGenerationWithLimitCheck(
   userId: string,
   dailyLimit: number,
   recipeId: number | null = null,
+  tz: string = "UTC",
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    const { startOfDay, endOfDay } = getDayBounds(new Date());
+    const { startOfDay, endOfDay } = getDayBounds(new Date(), tz);
     const result = await tx
       .select({ count: sql<number>`count(*)` })
       .from(recipeGenerationLog)

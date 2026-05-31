@@ -17,6 +17,7 @@ import {
   checkAiConfigured,
   handleRouteError,
   parseStringParam,
+  parseTimezone,
 } from "./_helpers";
 import {
   ingredientEditSchema,
@@ -519,9 +520,11 @@ export function register(app: Express): void {
         if (!features) return;
 
         // Early limit check (non-transactional fast path)
+        const tz = parseTimezone(req.headers["x-timezone"]);
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
           new Date(),
+          tz,
         );
         if (generationsToday >= features.dailyRecipeGenerations) {
           sendError(
@@ -568,6 +571,7 @@ export function register(app: Express): void {
           req.userId,
           features.dailyRecipeGenerations,
           null,
+          tz,
         );
         if (!allowed) {
           sendError(

@@ -25,6 +25,7 @@ import {
   parseStringParam,
   checkPremiumFeature,
   parseQueryString,
+  parseTimezone,
 } from "./_helpers";
 import { stripAuthorId, stripAuthorIdOne } from "./_recipe-helpers";
 import { recipeGenerationSchema } from "@shared/schemas/recipe";
@@ -100,9 +101,11 @@ export function register(app: Express): void {
       try {
         const features = await resolveSubscriptionTierFeatures(req.userId);
 
+        const tz = parseTimezone(req.headers["x-timezone"]);
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
           new Date(),
+          tz,
         );
 
         res.json({
@@ -135,9 +138,11 @@ export function register(app: Express): void {
         if (!features) return;
 
         // Early limit check (non-transactional fast path to avoid expensive AI call)
+        const tz = parseTimezone(req.headers["x-timezone"]);
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
           new Date(),
+          tz,
         );
 
         if (generationsToday >= features.dailyRecipeGenerations) {
@@ -232,6 +237,7 @@ export function register(app: Express): void {
             imageUrl: generatedRecipe.imageUrl,
             isPublic: shareToPublic ?? false,
           },
+          tz,
         );
 
         if (!recipe) {

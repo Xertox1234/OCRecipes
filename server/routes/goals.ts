@@ -9,7 +9,7 @@ import {
   userPhysicalProfileSchema,
 } from "../services/goal-calculator";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { handleRouteError, parseQueryDate } from "./_helpers";
+import { handleRouteError, parseQueryDate, parseTimezone } from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
@@ -141,9 +141,10 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const date = parseQueryDate(req.query.date) ?? new Date();
+        const tz = parseTimezone(req.headers["x-timezone"]);
         const [user, dailySummary] = await Promise.all([
           storage.getUser(req.userId),
-          storage.getDailySummary(req.userId, date),
+          storage.getDailySummary(req.userId, date, tz),
         ]);
         if (!user)
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);

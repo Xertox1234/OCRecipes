@@ -19,8 +19,9 @@ export async function createPendingReminder(data: {
 export async function hasPendingReminderToday(
   userId: string,
   type: ReminderType,
+  tz: string = "UTC",
 ): Promise<boolean> {
-  const { startOfDay, endOfDay } = getDayBounds(new Date());
+  const { startOfDay, endOfDay } = getDayBounds(new Date(), tz);
   const [existing] = await db
     .select({ id: pendingReminders.id })
     .from(pendingReminders)

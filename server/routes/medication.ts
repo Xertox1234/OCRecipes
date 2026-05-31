@@ -7,6 +7,7 @@ import {
   parsePositiveIntParam,
   parseQueryInt,
   parseQueryDate,
+  parseTimezone,
 } from "./_helpers";
 import { medicationRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
@@ -231,10 +232,12 @@ export function register(app: Express): void {
         if (!features) return;
 
         // Get user goals and daily summary to calculate remaining protein
+        const tz = parseTimezone(req.headers["x-timezone"]);
         const user = await storage.getUser(req.userId);
         const dailySummary = await storage.getDailySummary(
           req.userId,
           new Date(),
+          tz,
         );
         const proteinGoal =
           user?.dailyProteinGoal ?? DEFAULT_NUTRITION_GOALS.protein;

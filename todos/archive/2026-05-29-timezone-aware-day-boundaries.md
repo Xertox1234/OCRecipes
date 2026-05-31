@@ -1,6 +1,6 @@
 ---
 title: "Timezone-aware day boundaries (meal log, generation quota, coach cache, reminders)"
-status: backlog
+status: done
 priority: high
 created: 2026-05-29
 updated: 2026-05-29

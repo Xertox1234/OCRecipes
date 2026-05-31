@@ -115,6 +115,22 @@ export function parseQueryDate(value: unknown): Date | undefined {
 }
 
 /**
+ * Parse an IANA timezone string from a request header or query param.
+ * Returns the validated tz string, or `"UTC"` if missing or unrecognised.
+ * Validation uses `Intl.DateTimeFormat` which throws on invalid identifiers —
+ * the try/catch here keeps callers safe from malformed client-supplied values.
+ */
+export function parseTimezone(value: unknown): string {
+  if (typeof value !== "string" || !value) return "UTC";
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value });
+    return value;
+  } catch {
+    return "UTC";
+  }
+}
+
+/**
  * Parse a query string parameter as a trimmed string. Returns undefined if the
  * value is missing or not a string. Handles Express 5's `unknown` query type
  * without requiring an `as string` cast.
