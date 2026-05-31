@@ -18,6 +18,7 @@ import {
   handleRouteError,
   parseStringParam,
   parseTimezone,
+  requireValidImage,
 } from "./_helpers";
 import {
   ingredientEditSchema,
@@ -43,7 +44,6 @@ import {
   parseUserAllergies,
   type AllergenMatch,
 } from "@shared/constants/allergens";
-import { detectImageMimeType } from "../lib/image-mime";
 
 import { storage, type CookingSession } from "../storage";
 
@@ -217,35 +217,19 @@ export function register(app: Express): void {
           );
         }
 
-        if (!req.file) {
-          return sendError(
-            res,
-            400,
-            "No photo provided",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-
         if (!checkAiConfigured(res)) return;
 
-        // Validate image content via magic bytes (don't trust client mimetype)
-        if (!detectImageMimeType(req.file.buffer)) {
-          return sendError(
-            res,
-            400,
-            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
+        const imageBase64 = requireValidImage(req, res);
+        if (!imageBase64) return;
 
-        const imageBase64 = req.file.buffer.toString("base64");
         const photoId = crypto.randomUUID();
 
         let newIngredients: CookingSessionIngredient[];
         try {
+          // requireValidImage guaranteed req.file is present above.
           newIngredients = await analyzeIngredientPhoto(
             imageBase64,
-            req.file.mimetype,
+            req.file!.mimetype,
             session.photos.length,
           );
           // Set the real photoId on each detected ingredient

@@ -15,6 +15,7 @@ import { sendError } from "../lib/api-errors";
 import { TIER_FEATURES, type PremiumFeatures } from "@shared/types/premium";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { isAiConfigured } from "../lib/openai";
+import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 
 // ============================================================================
@@ -73,6 +74,38 @@ export async function checkPremiumFeature(
     return null;
   }
   return features;
+}
+
+/**
+ * Validate an uploaded image and return its base64 encoding.
+ *
+ * Performs the three-step upload guard shared by every photo endpoint:
+ *   1. null-file check     → 400 + null
+ *   2. magic-byte MIME check (don't trust client mimetype) → 400 + null
+ *   3. base64 conversion   → return the encoded string
+ *
+ * Returns the base64 string on success, or `null` (having already sent the
+ * error response) on failure. Callers use the early-return pattern:
+ *   `const imageBase64 = requireValidImage(req, res); if (!imageBase64) return;`
+ */
+export function requireValidImage(
+  req: AuthenticatedRequest,
+  res: Response,
+): string | null {
+  if (!req.file) {
+    sendError(res, 400, "No photo provided", ErrorCode.VALIDATION_ERROR);
+    return null;
+  }
+  if (!detectImageMimeType(req.file.buffer)) {
+    sendError(
+      res,
+      400,
+      "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+      ErrorCode.VALIDATION_ERROR,
+    );
+    return null;
+  }
+  return req.file.buffer.toString("base64");
 }
 
 /**
