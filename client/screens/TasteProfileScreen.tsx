@@ -16,6 +16,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "@/hooks/useTheme";
 import { useNavigation } from "@react-navigation/native";
 import { apiRequest } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { TasteProfileScreenNavigationProp } from "@/types/navigation";
 import type { RecipeCandidate } from "@shared/types/taste-picks";
@@ -46,13 +47,13 @@ export default function TasteProfileScreen() {
       const json = await res.json();
       const parsed = tastePicksResponseSchema.safeParse(json);
       if (!parsed.success) {
-        console.error("loadPicks: invalid response shape", parsed.error);
+        logger.error("loadPicks: invalid response shape", parsed.error);
         setLoadError(true);
         return;
       }
       setSelectedIds(new Set(parsed.data.picks.map((p) => p.recipeId)));
     } catch (err) {
-      console.error("loadPicks failed:", err);
+      logger.error("loadPicks failed:", err);
       setLoadError(true);
     }
   }, []);
@@ -75,7 +76,7 @@ export default function TasteProfileScreen() {
       const json = await res.json();
       const parsed = tastePickCandidatesResponseSchema.safeParse(json);
       if (!parsed.success) {
-        console.error("loadCandidates: invalid response shape", parsed.error);
+        logger.error("loadCandidates: invalid response shape", parsed.error);
         setLoadError(true);
         return;
       }
@@ -85,7 +86,7 @@ export default function TasteProfileScreen() {
       );
       setHasMore(body.candidates.length === PAGE_LIMIT);
     } catch (err) {
-      console.error("loadCandidates failed:", err);
+      logger.error("loadCandidates failed:", err);
       setLoadError(true);
     }
   }, []);
@@ -155,7 +156,7 @@ export default function TasteProfileScreen() {
       setIsDirty(false);
       navigation.goBack();
     } catch (err) {
-      console.error("handleSave failed:", err);
+      logger.error("handleSave failed:", err);
       Alert.alert("Something went wrong", "Please try again.");
     } finally {
       setIsSubmitting(false);

@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { logger } from "./logger";
 
 const TOKEN_KEY = "@ocrecipes_token";
 
@@ -12,7 +13,7 @@ export const tokenStorage = {
       try {
         cachedToken = await AsyncStorage.getItem(TOKEN_KEY);
       } catch (error) {
-        console.error("Failed to read token from storage:", error);
+        logger.error("Failed to read token from storage:", error);
         cachedToken = null;
       }
       cacheInitialized = true;
@@ -32,7 +33,7 @@ export const tokenStorage = {
       // The in-memory cache is already set, so the current session works; a
       // failed write only means the token won't survive a cold start. Surface
       // it rather than failing login on a transient storage hiccup.
-      console.error("Failed to persist token to storage:", error);
+      logger.error("Failed to persist token to storage:", error);
     }
   },
 
@@ -47,7 +48,7 @@ export const tokenStorage = {
       // session is still logged out (cache cleared), and a later set() overwrites
       // it. Hardening this (fully-cleared logout) is part of the deferred auth-
       // lifecycle work (todos/2026-05-29-iap-auth-lifecycle-hitl.md). Never throw.
-      console.error("Failed to clear token from storage:", error);
+      logger.error("Failed to clear token from storage:", error);
     }
   },
 

@@ -16,6 +16,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useOnboarding } from "@/context/OnboardingContext";
 import { useAuthContext } from "@/context/AuthContext";
 import { apiRequest } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import type { RecipeCandidate } from "@shared/types/taste-picks";
@@ -54,7 +55,7 @@ export default function TastePicksScreen() {
         const json = await res.json();
         const parsed = tastePickCandidatesResponseSchema.safeParse(json);
         if (!parsed.success) {
-          console.error("loadCandidates: invalid response shape", parsed.error);
+          logger.error("loadCandidates: invalid response shape", parsed.error);
           setLoadError(true);
           return;
         }
@@ -64,7 +65,7 @@ export default function TastePicksScreen() {
         );
         setHasMore(body.candidates.length === PAGE_LIMIT);
       } catch (err) {
-        console.error("loadCandidates failed:", err);
+        logger.error("loadCandidates failed:", err);
         setLoadError(true);
       }
     },
@@ -114,7 +115,7 @@ export default function TastePicksScreen() {
       // 3. Mark onboarding complete
       await updateUser({ onboardingCompleted: true });
     } catch (err) {
-      console.error("handleContinue failed:", err);
+      logger.error("handleContinue failed:", err);
       Alert.alert("Something went wrong", "Please try again.");
     } finally {
       setIsSubmitting(false);
@@ -127,7 +128,7 @@ export default function TastePicksScreen() {
       await apiRequest("POST", "/api/user/dietary-profile", data);
       await updateUser({ onboardingCompleted: true });
     } catch (err) {
-      console.error("handleSkip failed:", err);
+      logger.error("handleSkip failed:", err);
       Alert.alert("Something went wrong", "Please try again.");
     } finally {
       setIsSubmitting(false);

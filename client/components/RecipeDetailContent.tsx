@@ -41,6 +41,7 @@ import { RecipeActionBar } from "@/components/RecipeActionBar";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useToast } from "@/context/ToastContext";
 import { resolveImageUrl } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import {
   Spacing,
@@ -102,7 +103,7 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
         .then((v) => {
           if (!v) setHasShownHint(false);
         })
-        .catch((err) => console.error("Failed to read curated step hint", err));
+        .catch((err) => logger.error("Failed to read curated step hint", err));
     }
   }, [props.isCanonical]);
 

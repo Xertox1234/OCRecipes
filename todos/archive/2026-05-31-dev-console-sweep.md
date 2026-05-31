@@ -1,6 +1,6 @@
 ---
 title: "Sweep remaining __DEV__ console.* calls to logger (H7 follow-up)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31

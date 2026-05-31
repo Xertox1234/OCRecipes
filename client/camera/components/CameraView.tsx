@@ -25,6 +25,7 @@ import {
   type VisionCameraBarcodeType,
 } from "@shared/types/camera";
 import { Spacing } from "@/constants/theme";
+import { logger } from "@/lib/logger";
 import type {
   CameraViewProps,
   CameraRef,
@@ -111,7 +112,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       barcodeFormats: mapBarcodeTypes(barcodeTypes),
       onBarcodeScanned: handleBarcodeScanned,
       onError: (error) => {
-        console.warn("[CameraView] Barcode scanner error:", error.message);
+        logger.warn("[CameraView] Barcode scanner error:", error.message);
       },
     });
 
@@ -163,7 +164,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
         isActive={isActive}
         outputs={outputs}
         onError={(error) => {
-          console.warn("[CameraView] Camera error:", error.message);
+          logger.warn("[CameraView] Camera error:", error.message);
         }}
       />
     );

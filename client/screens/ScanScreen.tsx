@@ -424,9 +424,10 @@ export default function ScanScreen() {
         // OCR failure is non-fatal: the STEP2 photo is still captured and the
         // session proceeds. We fall back to empty text intentionally — the
         // reducer stores it, and no downstream screen requires the OCR result
-        // (NutritionDetail does its own lookup). Warn unconditionally so the
-        // failure is visible in production logs, not silently swallowed.
-        console.warn(
+        // (NutritionDetail does its own lookup). Log via logger.error so the
+        // failure is visible in production logs (routed to the reporter), not
+        // silently swallowed — logger.warn is dev-only and would hide it.
+        logger.error(
           "[ScanScreen STEP2 OCR] recognition failed; proceeding with empty text",
           err,
         );

@@ -9,6 +9,7 @@ import {
   initHomeActionsCache,
   type SectionKey,
 } from "@/lib/home-actions-storage";
+import { logger } from "@/lib/logger";
 
 export function useHomeActions() {
   const [sections, setSections] = useState(getSectionState);
@@ -24,7 +25,7 @@ export function useHomeActions() {
         setRecentActions(getRecentActions());
         setUsageCounts(getActionUsageCounts());
       })
-      .catch(console.error);
+      .catch((err) => logger.error("initHomeActionsCache failed", err));
   }, []);
 
   const toggleSection = useCallback((key: SectionKey) => {
@@ -38,10 +39,10 @@ export function useHomeActions() {
   const recordAction = useCallback((actionId: string) => {
     pushRecentAction(actionId)
       .then(() => setRecentActions(getRecentActions()))
-      .catch(console.error);
+      .catch((err) => logger.error("pushRecentAction failed", err));
     incrementActionUsage(actionId)
       .then(() => setUsageCounts(getActionUsageCounts()))
-      .catch(console.error);
+      .catch((err) => logger.error("incrementActionUsage failed", err));
   }, []);
 
   return { sections, toggleSection, recentActions, recordAction, usageCounts };

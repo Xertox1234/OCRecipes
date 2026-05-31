@@ -8,6 +8,7 @@ import {
   DISCOVERY_CARDS,
   type DiscoveryCard,
 } from "@/components/home/discovery-cards-config";
+import { logger } from "@/lib/logger";
 
 export function useDiscoveryCards(usageCounts: Record<string, number>): {
   cards: DiscoveryCard[];
@@ -22,7 +23,7 @@ export function useDiscoveryCards(usageCounts: Record<string, number>): {
       .then(() => {
         setDismissedIds((prev) => new Set([...getDismissedCardIds(), ...prev]));
       })
-      .catch((err) => console.error("Failed to init discovery cache", err));
+      .catch((err) => logger.error("Failed to init discovery cache", err));
   }, []);
 
   const visibleCards = DISCOVERY_CARDS.filter(

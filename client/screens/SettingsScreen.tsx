@@ -25,6 +25,7 @@ import { usePremiumContext } from "@/context/PremiumContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
 import type { MeasurementUnit } from "@shared/lib/units";
@@ -273,7 +274,7 @@ export default function SettingsScreen() {
       try {
         await Linking.openURL(url);
       } catch (error) {
-        console.warn("Failed to open legal URL", { url, error });
+        logger.warn("Failed to open legal URL", { url, error });
         Alert.alert(
           "Unable to open link",
           `Please visit ${fallbackLabel} in your browser: ${url}`,

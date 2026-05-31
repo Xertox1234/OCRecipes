@@ -32,6 +32,7 @@ import { QueryErrorToastBridge } from "@/components/QueryErrorToastBridge";
 import { SessionExpiryBridge } from "@/components/SessionExpiryBridge";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initReporter, reportError } from "@/lib/reporter";
+import { logger } from "@/lib/logger";
 
 initReporter();
 
@@ -65,7 +66,7 @@ export default function App() {
   // the relevant NotebookEntry screen.
   useEffect(() => {
     setupNotificationChannel().catch((err) =>
-      console.error("Failed to set up notification channels:", err),
+      logger.error("Failed to set up notification channels:", err),
     );
     const sub = Notifications.addNotificationResponseReceivedListener(
       (response) => {

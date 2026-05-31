@@ -23,6 +23,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useReceiptScanCount } from "@/hooks/useReceiptScan";
 import { Spacing, BorderRadius, CameraColors } from "@/constants/theme";
+import { logger } from "@/lib/logger";
 import {
   CameraView,
   useCameraPermissions,
@@ -77,7 +78,7 @@ export default function ReceiptCaptureScreen() {
         Alert.alert("Capture failed", "Try again or pick from your gallery.");
       }
     } catch (error) {
-      console.error("handleCapture failed:", error);
+      logger.error("handleCapture failed:", error);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Capture failed", "Try again or pick from your gallery.");
     } finally {

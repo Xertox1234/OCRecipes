@@ -15,6 +15,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius, Fonts } from "@/constants/theme";
+import { logger } from "@/lib/logger";
 import { formatErrorDetails } from "./error-fallback-utils";
 
 export type ErrorFallbackProps = {
@@ -32,7 +33,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
     try {
       await reloadAppAsync();
     } catch (restartError) {
-      console.error("Failed to restart app:", restartError);
+      logger.error("Failed to restart app:", restartError);
       resetError();
     }
   };
