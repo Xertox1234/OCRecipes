@@ -1,6 +1,7 @@
 import { uploadAsync, FileSystemUploadType } from "expo-file-system/legacy";
 import { tokenStorage } from "./token-storage";
 import { getApiUrl } from "./query-client";
+import { ApiError } from "./api-error";
 import { compressImage, cleanupImage } from "./image-compression";
 import type { PhotoIntent, FoodCategory } from "@shared/constants/preparation";
 import type {
@@ -77,6 +78,30 @@ function throwIfAborted(signal?: AbortSignal): void {
   const error = new Error("Upload aborted");
   error.name = "AbortError";
   throw error;
+}
+
+/**
+ * Build an `ApiError` for a non-200 `uploadAsync` response, preserving the
+ * machine-readable `code` from the standard error body (`{ error, code? }`) so
+ * screens can branch on `err.code` for code-specific copy. The message keeps
+ * the `Upload failed: <status>` shape and never leaks the raw server body to the
+ * user (the screen renders static copy).
+ */
+function uploadError(status: number, body: string): ApiError {
+  let code: string | undefined;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      typeof (parsed as { code?: unknown }).code === "string"
+    ) {
+      code = (parsed as { code: string }).code;
+    }
+  } catch {
+    // Non-JSON error body — no machine-readable code to extract.
+  }
+  return new ApiError(`Upload failed: ${status}`, code);
 }
 
 /**
@@ -203,7 +228,10 @@ export async function submitFollowUp(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Follow-up failed: ${response.status}`);
+    throw new ApiError(
+      errorData.error || `Follow-up failed: ${response.status}`,
+      errorData.code,
+    );
   }
 
   return response.json();
@@ -231,7 +259,10 @@ export async function confirmPhotoAnalysis(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Confirm failed: ${response.status}`);
+    throw new ApiError(
+      errorData.error || `Confirm failed: ${response.status}`,
+      errorData.code,
+    );
   }
 
   return response.json();
@@ -297,14 +328,7 @@ export async function uploadLabelForAnalysis(
     );
 
     if (uploadResult.status !== 200) {
-      try {
-        const errorData = JSON.parse(uploadResult.body);
-        throw new Error(
-          errorData.error || `Upload failed: ${uploadResult.status}`,
-        );
-      } catch {
-        throw new Error(`Upload failed: ${uploadResult.status}`);
-      }
+      throw uploadError(uploadResult.status, uploadResult.body);
     }
 
     return JSON.parse(uploadResult.body) as LabelAnalysisResponse;
@@ -337,7 +361,10 @@ export async function confirmLabelAnalysis(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Confirm failed: ${response.status}`);
+    throw new ApiError(
+      errorData.error || `Confirm failed: ${response.status}`,
+      errorData.code,
+    );
   }
 
   return response.json();
@@ -377,14 +404,7 @@ export async function uploadRecipePhotoForAnalysis(
     );
 
     if (uploadResult.status !== 200) {
-      try {
-        const errorData = JSON.parse(uploadResult.body);
-        throw new Error(
-          errorData.error || `Upload failed: ${uploadResult.status}`,
-        );
-      } catch {
-        throw new Error(`Upload failed: ${uploadResult.status}`);
-      }
+      throw uploadError(uploadResult.status, uploadResult.body);
     }
 
     return JSON.parse(uploadResult.body) as RecipePhotoResult;
@@ -481,14 +501,7 @@ export async function uploadFrontLabelPhoto(
     );
 
     if (uploadResult.status !== 200) {
-      try {
-        const errorData = JSON.parse(uploadResult.body);
-        throw new Error(
-          errorData.error || `Upload failed: ${uploadResult.status}`,
-        );
-      } catch {
-        throw new Error(`Upload failed: ${uploadResult.status}`);
-      }
+      throw uploadError(uploadResult.status, uploadResult.body);
     }
 
     return JSON.parse(uploadResult.body) as FrontLabelAnalysisResponse;
@@ -523,7 +536,10 @@ export async function confirmFrontLabel(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Confirm failed: ${response.status}`);
+    throw new ApiError(
+      errorData.error || `Confirm failed: ${response.status}`,
+      errorData.code,
+    );
   }
 
   return response.json();

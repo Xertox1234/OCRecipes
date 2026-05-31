@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   calculateTotals,
   uploadPhotoForAnalysis,
+  uploadFrontLabelPhoto,
+  confirmFrontLabel,
   lookupNutritionByPrep,
   submitFollowUp,
   confirmPhotoAnalysis,
@@ -10,6 +12,7 @@ import {
   type FoodItem,
   type RecipePhotoResult,
 } from "../photo-upload";
+import { ApiError } from "../api-error";
 import { uploadAsync } from "expo-file-system/legacy";
 import { tokenStorage } from "../token-storage";
 import { compressImage, cleanupImage } from "../image-compression";
@@ -285,6 +288,73 @@ describe("uploadPhotoForAnalysis", () => {
     await expect(uploadPhotoForAnalysis("file:///photo.jpg")).rejects.toThrow(
       "Upload failed: 502",
     );
+  });
+});
+
+describe("error code preservation", () => {
+  beforeEach(() => {
+    vi.mocked(tokenStorage.get).mockResolvedValue("test-token");
+    vi.mocked(compressImage).mockResolvedValue({
+      uri: "file:///compressed.jpg",
+      width: 800,
+      height: 600,
+      sizeKB: 450,
+    });
+  });
+
+  it("uploadFrontLabelPhoto throws ApiError carrying the server code on a non-200 response", async () => {
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 400,
+      body: JSON.stringify({
+        error: "You must verify the nutrition label first",
+        code: "VALIDATION_ERROR",
+      }),
+      headers: {},
+      mimeType: null,
+    });
+
+    const thrown = await uploadFrontLabelPhoto(
+      "file:///photo.jpg",
+      "0123456789012",
+    ).catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).code).toBe("VALIDATION_ERROR");
+    // Raw server message must NOT leak — static "Upload failed: <status>" only.
+    expect((thrown as ApiError).message).toBe("Upload failed: 400");
+  });
+
+  it("uploadFrontLabelPhoto throws ApiError with undefined code when body has no code", async () => {
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 500,
+      body: JSON.stringify({ error: "boom" }),
+      headers: {},
+      mimeType: null,
+    });
+
+    const thrown = await uploadFrontLabelPhoto(
+      "file:///photo.jpg",
+      "0123456789012",
+    ).catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).code).toBeUndefined();
+  });
+
+  it("confirmFrontLabel throws ApiError carrying the server code on a non-OK response", async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: () =>
+        Promise.resolve({
+          error: "Front-label session not found or expired",
+          code: "NOT_FOUND",
+        }),
+    });
+
+    const thrown = await confirmFrontLabel("sess-1", "0123456789012").catch(
+      (e: unknown) => e,
+    );
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).code).toBe("NOT_FOUND");
   });
 });
 

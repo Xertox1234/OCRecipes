@@ -1,6 +1,6 @@
 ---
 title: "Preserve server ApiError.code in client/lib/photo-upload.ts so FrontLabelConfirm copy map fires"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31
