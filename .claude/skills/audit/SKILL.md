@@ -99,6 +99,8 @@ Phase 1 sets up both correctly.
    MAIN_CHECKOUT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
    ```
 
+   > **Important:** Shell state does not persist between tool calls — each Bash call runs in a fresh shell. Record the literal output of this command (e.g. `/Users/yourname/projects/OCRecipes`) and substitute it wherever `$MAIN_CHECKOUT` appears in the steps below. Do not re-run this command in later phases; use the saved value.
+
 3. **Create and enter the audit worktree.** All subsequent phases (Phase 2 onward) run from here:
 
    ```bash
