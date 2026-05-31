@@ -1,6 +1,7 @@
 import { QueryClient, QueryCache, QueryFunction } from "@tanstack/react-query";
 import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
+import { reportError } from "./reporter";
 
 /**
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
@@ -289,6 +290,7 @@ const GLOBAL_QUERY_ERROR_MESSAGE =
 const queryCache = new QueryCache({
   onError: (error, query) => {
     if (!shouldSurfaceQueryError(error, query.meta)) return;
+    reportError(error, `QueryCache.onError [${String(query.queryKey)}]`);
     queryErrorListeners.forEach((listener) => {
       listener(GLOBAL_QUERY_ERROR_MESSAGE);
     });

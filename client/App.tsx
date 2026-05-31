@@ -31,6 +31,9 @@ import { OfflineBanner } from "@/components/OfflineBanner";
 import { QueryErrorToastBridge } from "@/components/QueryErrorToastBridge";
 import { SessionExpiryBridge } from "@/components/SessionExpiryBridge";
 import { setupNotificationChannel } from "@/lib/notifications";
+import { initReporter, reportError } from "@/lib/reporter";
+
+initReporter();
 
 function AppContent() {
   const { isDark } = useThemePreference();
@@ -94,7 +97,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
+      <ErrorBoundary onError={(err) => reportError(err, "ErrorBoundary")}>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <PremiumProvider>

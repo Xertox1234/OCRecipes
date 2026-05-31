@@ -104,6 +104,10 @@ export default defineConfig({
         "./test/mocks/gorhom-bottom-sheet.ts",
       ),
       "expo-haptics": path.resolve(__dirname, "./test/mocks/expo-haptics.ts"),
+      "@sentry/react-native": path.resolve(
+        __dirname,
+        "./test/mocks/sentry-react-native.ts",
+      ),
       "expo-blur": path.resolve(__dirname, "./test/mocks/expo-blur.ts"),
       "expo-linear-gradient": path.resolve(
         __dirname,
