@@ -37,22 +37,27 @@ type NavigationProp = NativeStackNavigationProp<
 >;
 type ScreenRoute = RouteProp<RootStackParamList, "FrontLabelConfirm">;
 
+/** Code-specific user-safe copy for known front-label `ApiError` codes. */
+const FRONT_LABEL_ERROR_COPY: Partial<Record<string, string>> = {
+  CONFLICT: "This product was already verified by another user.",
+};
+
 /**
  * Map a front-label upload/confirm error to user-safe static copy.
  *
- * Discriminates on `ApiError.code` rather than surfacing the raw server
- * message. `photo-upload.ts` (out of scope here) currently throws a plain
- * `Error` that discards the server's `code`, so the `instanceof ApiError`
- * branch is forward-compat for a future refactor of that module; today every
- * error falls through to the generic fallback. The real fix — preserving the
- * server `code` / throwing an `ApiError` — belongs in `photo-upload.ts`.
+ * Never surfaces the raw server `error.message` (which is `apiRequest`'s
+ * `"<status>: <body>"`). Discriminates on `ApiError.code` against a static
+ * copy map. NOTE: `photo-upload.ts` (out of scope here) currently throws a
+ * plain `Error` that discards the server's `code`, so in practice every error
+ * falls through to the generic fallback today; the code map takes effect once
+ * `photo-upload.ts` is refactored to throw a code-carrying `ApiError`.
  */
 function frontLabelErrorMessage(
   err: unknown,
   fallback = "Could not analyze front label. Please try again.",
 ): string {
-  if (err instanceof ApiError && err.code === "VALIDATION_ERROR") {
-    return "That photo couldn't be read. Try retaking it with better lighting.";
+  if (err instanceof ApiError && err.code) {
+    return FRONT_LABEL_ERROR_COPY[err.code] ?? fallback;
   }
   return fallback;
 }
