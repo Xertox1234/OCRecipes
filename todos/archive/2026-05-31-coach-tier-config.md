@@ -1,6 +1,6 @@
 ---
 title: "Replace scattered isCoachPro checks in handleCoachChat with CoachTierConfig object"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31

@@ -351,6 +351,35 @@ export async function tryArchiveNotebook(userId: string): Promise<void> {
 }
 
 /**
+ * Tier-specific capability flags for a single coach chat turn.
+ *
+ * Built once from `isCoachPro` before the generator runs, then consumed in
+ * place of scattered `if (isCoachPro)` checks so the tier contract is explicit
+ * and a future third tier (e.g. a "Basic" tier with a subset of Pro features)
+ * can be added by changing only the config construction.
+ *
+ * Each flag is `true` when the capability is enabled for the current tier:
+ *  - `fetchMealPatterns` — fetch 7 days of daily logs and inject a meal-pattern
+ *    summary into the coach context.
+ *  - `fetchNotebook` — fetch active notebook entries, inject them (plus the
+ *    blocks system prompt) into the coach context.
+ *  - `useCache` — allow serving/storing a cached coach answer for this turn.
+ *    Note this is enabled for the *non-Pro* tier: Pro responses inject
+ *    per-user notebook context and tool results that must not be cached
+ *    (H4 — 2026-04-18).
+ *  - `parseBlocks` — parse structured `CoachBlock`s out of the response text.
+ *  - `extractNotebook` — run fire-and-forget notebook extraction + archival
+ *    from the completed turn.
+ */
+interface CoachTierConfig {
+  fetchMealPatterns: boolean;
+  fetchNotebook: boolean;
+  useCache: boolean;
+  parseBlocks: boolean;
+  extractNotebook: boolean;
+}
+
+/**
  * Orchestrates the coach chat response — yields SSE events for the route
  * handler to write, handles persistence and side-effects internally.
  */
@@ -370,6 +399,17 @@ export async function* handleCoachChat(
     isAborted,
     abortSignal,
   } = params;
+
+  // Resolve the tier capability flags once from `isCoachPro`, then consume the
+  // config in place of scattered `if (isCoachPro)` checks below. Note `useCache`
+  // is intentionally inverted: caching is a non-Pro capability (H4 — 2026-04-18).
+  const tierConfig: CoachTierConfig = {
+    fetchMealPatterns: isCoachPro,
+    fetchNotebook: isCoachPro,
+    useCache: !isCoachPro,
+    parseBlocks: isCoachPro,
+    extractNotebook: isCoachPro,
+  };
 
   // Classify intent once at the top of the turn — fixed for the duration.
   // Safety wins all ties. No re-classification inside the tool loop.
@@ -393,12 +433,12 @@ export async function* handleCoachChat(
     storage.getDailySummary(userId, today),
     storage.getWeightLogs(userId, { limit: 14 }),
     storage.getChatMessages(conversationId, 20, userId),
-    isCoachPro
+    tierConfig.fetchMealPatterns
       ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
       : Promise.resolve(
           [] as Awaited<ReturnType<typeof storage.getDailyLogsInRange>>,
         ),
-    isCoachPro
+    tierConfig.fetchNotebook
       ? storage.getActiveNotebookEntries(userId)
       : Promise.resolve(
           [] as Awaited<ReturnType<typeof storage.getActiveNotebookEntries>>,
@@ -445,7 +485,7 @@ export async function* handleCoachChat(
   };
 
   // ── Coach Pro: meal pattern summary ────────────────
-  if (isCoachPro && recentLogsForPatterns.length > 0) {
+  if (tierConfig.fetchMealPatterns && recentLogsForPatterns.length > 0) {
     const mealPatternSummary = buildMealPatternSummary(recentLogsForPatterns);
     if (mealPatternSummary) {
       context.mealPatternSummary = mealPatternSummary;
@@ -453,7 +493,7 @@ export async function* handleCoachChat(
   }
 
   // ── Coach Pro: inject notebook context ──────────────
-  if (isCoachPro) {
+  if (tierConfig.fetchNotebook) {
     // Always provide blocks formatting instructions for Pro responses
     context.blocksPrompt = BLOCKS_SYSTEM_PROMPT;
 
@@ -516,7 +556,8 @@ export async function* handleCoachChat(
   // reference tool-call results — caching them would serve stale context to
   // the same user (and the cache key is too coarse to distinguish Pro vs
   // non-Pro prompts across users). See H4 — 2026-04-18.
-  const isCacheable = !screenContext && history.length <= 1 && !isCoachPro;
+  const isCacheable =
+    !screenContext && history.length <= 1 && tierConfig.useCache;
   const questionHash = isCacheable
     ? hashCoachCacheKey(
         userId,
@@ -606,7 +647,7 @@ export async function* handleCoachChat(
   // Parse blocks from response for Coach Pro
   let blocks: CoachBlock[] = [];
   let textContent = fullResponse;
-  if (isCoachPro && fullResponse) {
+  if (tierConfig.parseBlocks && fullResponse) {
     const parsedBlocks = parseBlocksFromContent(fullResponse);
     textContent = parsedBlocks.text;
     blocks = parsedBlocks.blocks;
@@ -672,7 +713,7 @@ export async function* handleCoachChat(
   }
 
   // Fire-and-forget notebook extraction + archival for Coach Pro
-  if (isCoachPro && fullResponse && !isAborted()) {
+  if (tierConfig.extractNotebook && fullResponse && !isAborted()) {
     fireAndForget(
       "coach-notebook-extraction",
       (async () => {
