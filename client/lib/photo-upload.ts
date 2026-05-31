@@ -147,15 +147,7 @@ export async function uploadPhotoForAnalysis(
     throwIfAborted(signal);
 
     if (uploadResult.status !== 200) {
-      // Try to parse error message from response
-      try {
-        const errorData = JSON.parse(uploadResult.body);
-        throw new Error(
-          errorData.error || `Upload failed: ${uploadResult.status}`,
-        );
-      } catch {
-        throw new Error(`Upload failed: ${uploadResult.status}`);
-      }
+      throw uploadError(uploadResult.status, uploadResult.body);
     }
 
     try {

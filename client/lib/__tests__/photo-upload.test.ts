@@ -302,6 +302,26 @@ describe("error code preservation", () => {
     });
   });
 
+  it("uploadPhotoForAnalysis throws ApiError carrying the server code on a non-200 response", async () => {
+    vi.mocked(uploadAsync).mockResolvedValue({
+      status: 503,
+      body: JSON.stringify({
+        error: "AI features are not available. Please try again later.",
+        code: "AI_NOT_CONFIGURED",
+      }),
+      headers: {},
+      mimeType: null,
+    });
+
+    const thrown = await uploadPhotoForAnalysis("file:///photo.jpg").catch(
+      (e: unknown) => e,
+    );
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).code).toBe("AI_NOT_CONFIGURED");
+    // Raw server message must NOT leak — static "Upload failed: <status>" only.
+    expect((thrown as ApiError).message).toBe("Upload failed: 503");
+  });
+
   it("uploadFrontLabelPhoto throws ApiError carrying the server code on a non-200 response", async () => {
     vi.mocked(uploadAsync).mockResolvedValue({
       status: 400,
