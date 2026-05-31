@@ -34,6 +34,7 @@ import { IngredientIcon } from "@/components/IngredientIcon";
 import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { ApiError } from "@/lib/api-error";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
   Spacing,
@@ -205,10 +206,12 @@ export default function GroceryListScreen() {
     refetch,
   } = useGroceryListDetail(listId);
 
-  // The detail queryFn throws `new Error("<status>")`; a real 404 is a genuine
-  // "not found", anything else (network, 5xx) is a transient error worth retrying.
+  // The detail queryFn throws an `ApiError` carrying the server's machine-readable
+  // `code`; a `NOT_FOUND` is a genuine "not found", anything else (network, 5xx) is
+  // a transient error worth retrying. Branching on `.code` rather than the message
+  // string avoids the fragile `"404"`-vs-`"404: …"` mismatch.
   const isNotFound =
-    isError && error instanceof Error && error.message === "404";
+    isError && error instanceof ApiError && error.code === "NOT_FOUND";
   const addItemMutation = useAddManualGroceryItem();
   const addToPantryMutation = useAddGroceryItemToPantry();
 

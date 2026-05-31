@@ -24,6 +24,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { ApiError } from "@/lib/api-error";
 import { uploadFrontLabelPhoto, confirmFrontLabel } from "@/lib/photo-upload";
 import { shouldReplaceWithAIFrontLabel } from "@/screens/front-label-confirm-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -35,6 +36,26 @@ type NavigationProp = NativeStackNavigationProp<
   "FrontLabelConfirm"
 >;
 type ScreenRoute = RouteProp<RootStackParamList, "FrontLabelConfirm">;
+
+/**
+ * Map a front-label upload/confirm error to user-safe static copy.
+ *
+ * Discriminates on `ApiError.code` rather than surfacing the raw server
+ * message. `photo-upload.ts` (out of scope here) currently throws a plain
+ * `Error` that discards the server's `code`, so the `instanceof ApiError`
+ * branch is forward-compat for a future refactor of that module; today every
+ * error falls through to the generic fallback. The real fix — preserving the
+ * server `code` / throwing an `ApiError` — belongs in `photo-upload.ts`.
+ */
+function frontLabelErrorMessage(
+  err: unknown,
+  fallback = "Could not analyze front label. Please try again.",
+): string {
+  if (err instanceof ApiError && err.code === "VALIDATION_ERROR") {
+    return "That photo couldn't be read. Try retaking it with better lighting.";
+  }
+  return fallback;
+}
 
 export default function FrontLabelConfirmScreen() {
   const navigation = useNavigation<NavigationProp>();
@@ -85,9 +106,7 @@ export default function FrontLabelConfirmScreen() {
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setUploadError(
-          err.message || "Could not analyze front label. Please try again.",
-        );
+        setUploadError(frontLabelErrorMessage(err));
       });
 
     return () => {
@@ -110,7 +129,9 @@ export default function FrontLabelConfirmScreen() {
     },
     onError: (err: Error) => {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setConfirmError(err.message || "Failed to save product details");
+      setConfirmError(
+        frontLabelErrorMessage(err, "Failed to save product details"),
+      );
     },
   });
 

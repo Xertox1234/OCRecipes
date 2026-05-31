@@ -176,9 +176,7 @@ export default function RecipeAIGenerateScreen() {
         {generateMutation.isError && (
           <Animated.View entering={FadeIn.duration(250)}>
             <ThemedText style={[styles.errorText, { color: theme.error }]}>
-              {generateMutation.error instanceof Error
-                ? generateMutation.error.message
-                : "Something went wrong. Please try again."}
+              Something went wrong. Please try again.
             </ThemedText>
           </Animated.View>
         )}

@@ -1,6 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type { GroceryList, GroceryListItem } from "@shared/schema";
+
+/**
+ * Throw a code-carrying ApiError from a status-only query failure.
+ *
+ * In production `apiRequest` already throws an `ApiError` (with the server's
+ * parsed `code`) before this runs, so this is exercised mainly by tests that
+ * mock `apiRequest`; throwing an `ApiError` here keeps the test and production
+ * error contracts aligned so screens can branch on `.code` instead of a fragile
+ * status-string message comparison.
+ */
+function throwStatusError(status: number): never {
+  const code = status === 404 ? ErrorCode.NOT_FOUND : ErrorCode.INTERNAL_ERROR;
+  throw new ApiError(status === 404 ? "Not found" : "Request failed", code);
+}
 
 type GroceryListWithItems = GroceryList & { items: GroceryListItem[] };
 
@@ -9,7 +25,7 @@ export function useGroceryLists() {
     queryKey: ["/api/meal-plan/grocery-lists"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/meal-plan/grocery-lists");
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
   });
@@ -23,7 +39,7 @@ export function useGroceryListDetail(listId: number) {
         "GET",
         `/api/meal-plan/grocery-lists/${listId}`,
       );
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
     enabled: listId > 0,

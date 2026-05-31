@@ -11,6 +11,7 @@ import {
   useAddGroceryItemToPantry,
 } from "../useGroceryList";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { ApiError } from "@/lib/api-error";
 
 const { mockApiRequest } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
@@ -74,6 +75,44 @@ describe("useGroceryListDetail", () => {
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(() => useGroceryListDetail(0), { wrapper });
     expect(result.current.fetchStatus).toBe("idle");
+  });
+
+  it("throws an ApiError with code NOT_FOUND on a 404", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    mockApiRequest.mockResolvedValue({
+      ok: false,
+      status: 404,
+    });
+
+    const { result } = renderHook(() => useGroceryListDetail(1), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    const err = result.current.error;
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).toBe("NOT_FOUND");
+  });
+
+  it("throws an ApiError without NOT_FOUND on a transient 5xx", async () => {
+    const { wrapper } = createQueryWrapper();
+
+    mockApiRequest.mockResolvedValue({
+      ok: false,
+      status: 500,
+    });
+
+    const { result } = renderHook(() => useGroceryListDetail(1), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    const err = result.current.error;
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).code).not.toBe("NOT_FOUND");
   });
 });
 
