@@ -40,6 +40,16 @@ If `Affected files` is empty or no file paths were provided, skip Step 1 and Ste
 
 If `Affected files` is non-empty but no paths match the table above (e.g., all files are in `docs/`), do NOT skip Step 2a entirely. Instead, read the first 60 lines of each affected file and extract external import statements (lines matching `import ... from '...'` or `require('...')`). Collect package names that do not start with `./`, `../`, `@/`, `~/`, or other internal prefixes. Use the top 3 most-referenced external packages as library families for Step 2a docs lookups. If no external packages are found after this scan, skip Step 2a and write "No library lookup performed — no external dependencies detected in affected files." in the Library Notes section.
 
+### LSP warm-up (mandatory, before Step 2)
+
+Before any context gathering, fire one throwaway `hover` call to prime the TypeScript LSP. The first symbol-navigation query of a session is otherwise degraded (e.g., `findReferences` returns only the definition). Discard the result — its purpose is to load the project graph into tsserver.
+
+```
+LSP({ operation: "hover", filePath: "client/constants/theme.ts", line: 210, character: 17 })
+```
+
+The target is the project's canonical stable symbol `withOpacity`. If the LSP tool is unavailable in this session, log "LSP unavailable — skipping warm-up" and proceed. Never block on LSP availability.
+
 ---
 
 ## Step 2: Gather context
