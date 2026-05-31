@@ -1,6 +1,6 @@
 ---
 title: "Client observability: off-device error reporter + client logger + wire QueryCache/background-work logging"
-status: backlog
+status: done
 priority: high
 created: 2026-05-29
 updated: 2026-05-29

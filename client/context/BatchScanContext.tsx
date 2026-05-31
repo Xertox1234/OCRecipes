@@ -7,6 +7,7 @@ import React, {
   useMemo,
 } from "react";
 import { apiRequest } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
 import type { BatchItem, ResolvedBatchItem } from "@shared/types/batch-scan";
 
 // ---------------------------------------------------------------------------
@@ -174,8 +175,9 @@ export function BatchScanProvider({ children }: { children: React.ReactNode }) {
         }
 
         dispatch({ type: "RESOLVE_ITEM" });
-      } catch {
+      } catch (err) {
         if (controller.signal.aborted) return;
+        logger.error("BatchScan: nutrition lookup failed", err);
 
         const idx = itemsRef.current.findIndex((i) => i.id === itemId);
         if (idx !== -1) {

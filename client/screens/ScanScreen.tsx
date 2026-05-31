@@ -55,6 +55,7 @@ import { getCoachMessage } from "@/camera/components/CoachHint-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import { logger } from "@/lib/logger";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import {
   getPremiumGate,
@@ -301,7 +302,7 @@ export default function ScanScreen() {
         },
       });
     } catch (err) {
-      if (__DEV__) console.warn("[fetchProductInfo]", err);
+      logger.error("[fetchProductInfo] product info fetch failed", err);
       // Non-critical — ProductChip renders without product data
     }
   }, []);

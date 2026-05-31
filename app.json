@@ -35,6 +35,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "@sentry/react-native/expo",
       [
         "expo-splash-screen",
         {
