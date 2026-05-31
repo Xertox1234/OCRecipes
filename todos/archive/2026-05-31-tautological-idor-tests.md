@@ -1,6 +1,6 @@
 ---
 title: "Replace tautological storage.test.ts IDOR tests with real production-code coverage"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-31
 updated: 2026-05-31
