@@ -743,8 +743,8 @@ export const mealPlanRecipes = pgTable(
       .$type<string[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
-    dietTags: jsonb("diet_tags").$type<string[]>().default([]),
-    mealTypes: jsonb("meal_types").$type<string[]>().default([]),
+    dietTags: jsonb("diet_tags").$type<string[]>().default([]).notNull(),
+    mealTypes: jsonb("meal_types").$type<string[]>().default([]).notNull(),
     // Denormalized allergen cache derived from ingredient names via
     // `deriveRecipeAllergens` (shared/constants/allergens.ts). Type-only import
     // — erased at compile time, so no schema↔allergens runtime import cycle.
