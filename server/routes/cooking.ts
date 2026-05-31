@@ -217,6 +217,13 @@ export function register(app: Express): void {
           );
         }
 
+        // Guard order is intentional: checkAiConfigured (503) runs BEFORE
+        // requireValidImage (400). For the nonsensical "missing file + AI
+        // unconfigured" request this returns 503 (the feature is genuinely
+        // offline), matching the sibling photos.ts ordering. No client ever
+        // produces a request with neither a file nor a configured AI backend;
+        // all real-world paths are unaffected. See
+        // todos/archive/2026-05-31-cooking-image-guard-precedence.md.
         if (!checkAiConfigured(res)) return;
 
         const imageBase64 = requireValidImage(req, res);
