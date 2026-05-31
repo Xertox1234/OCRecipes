@@ -171,7 +171,10 @@ export default function RootStackNavigator() {
   const needsOnboarding = isAuthenticated && !user?.onboardingCompleted;
 
   return (
-    <Stack.Navigator screenOptions={screenOptions}>
+    <Stack.Navigator
+      screenOptions={screenOptions}
+      UNSTABLE_routeNamesChangeBehavior="lastUnhandled"
+    >
       {!isAuthenticated ? (
         <Stack.Screen
           name="Login"
