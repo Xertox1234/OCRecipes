@@ -50,3 +50,20 @@ The JS-level wiring (`initReporter()`, `reportError()`, `logger.*`) works withou
 ### 2026-05-31
 
 - Created from PR #288 review deferred warning. Executor worktrees can't run prebuild.
+
+### 2026-05-31 (prebuild verified on main checkout — AC partially met)
+
+Ran `npx expo prebuild --platform ios --no-install` on the main checkout during a `/todo` follow-up:
+
+- ✅ `prebuild` exits 0 (`✔ Finished prebuild`), no errors.
+- ✅ **MLKit Podfile customization preserved** — `ios/Podfile` is byte-identical to the pre-prebuild backup (125 lines); the iOS-26 `patch-mlkit-simulator.py` `post_install` hook survives. This was the main risk (memory `project_ios26_simulator_fix`).
+- ✅ `package.json` unchanged (`✔ Updated package.json | no changes`).
+- ⚠️ Sentry plugin warns `Missing config for organization, project` — set Sentry org/project (or `EXPO_PUBLIC_SENTRY_DSN` + the SENTRY\_\* upload vars) before relying on source-map upload at build time.
+- ℹ️ Note: `@sentry/react-native` v7 initializes via JS `Sentry.init()` + an Xcode build phase, so don't expect a literal `SentrySDK.start` edit in `AppDelegate.swift` — confirm Sentry's Xcode build phase appears after `pod install` instead.
+
+**Remaining (needs a real machine + eyes — keep this todo open):**
+
+- [ ] `cd ios && pod install` (watch for MLKit fat-binary patch running) — was skipped here via `--no-install`.
+- [ ] `npx expo run:ios` builds and launches in the simulator without errors.
+- [ ] Trigger a test error and confirm it reaches Sentry (native crash capture + source maps).
+- [ ] Document `EXPO_PUBLIC_SENTRY_DSN` in `.env.example`.
