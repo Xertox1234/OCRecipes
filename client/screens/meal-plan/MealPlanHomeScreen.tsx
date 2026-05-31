@@ -67,6 +67,7 @@ import {
 } from "@/hooks/useMealPlan";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { apiRequest } from "@/lib/query-client";
+import { getDeviceTimezone } from "@/lib/timezone";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
 import { useExpiringPantryItems } from "@/hooks/usePantry";
 import { QuickAddSheet } from "@/components/meal-plan/QuickAddSheet";
@@ -513,13 +514,13 @@ export default function MealPlanHomeScreen() {
   const { data: dailySummaryData } = useQuery<DailySummaryResponse>({
     queryKey: ["/api/daily-summary", selectedDateStr],
     queryFn: async () => {
+      // apiRequest throws on non-2xx (throwIfResNotOk), so no manual !res.ok guard.
       const res = await apiRequest(
         "GET",
         `/api/daily-summary?date=${selectedDateStr}`,
+        undefined,
+        { headers: { "X-Timezone": getDeviceTimezone() } },
       );
-      if (!res.ok) {
-        throw new Error(`${res.status}: ${res.statusText}`);
-      }
       return res.json();
     },
   });
