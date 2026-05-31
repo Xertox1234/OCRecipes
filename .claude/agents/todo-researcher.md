@@ -46,11 +46,27 @@ If `Affected files` is non-empty but no paths match the table above (e.g., all f
 
 Context7 docs (2a) need a resolve→query sequence, so use up to three turns:
 
-- **Turn 1**: Fire all Step 2a `resolve-library-id` calls (one per prioritized library, in parallel with each other), one Step 2b `github_text_search`, and one Step 2c `mcp_github_search_code` call — all simultaneously in the same response turn.
-- **Turn 2**: Fire all Step 2a `query-docs` calls (parallel, one per library that resolved). If Step 2b keyword search was weak or empty, also run the fallback `github_repo` search against `xertox1234/OCRecipes` this turn.
+- **Turn 1**: Fire all Step 2a `resolve-library-id` calls (one per prioritized library, in parallel with each other), plus one Step 2b narrow-keyword `mcp__github__search_code` call and one Step 2c global-pattern `mcp__github__search_code` call — all simultaneously in the same response turn.
+- **Turn 2**: Fire all Step 2a `query-docs` calls (parallel, one per library that resolved). If Step 2b narrow-keyword search was weak or empty, also run a broader Step 2b `mcp__github__search_code` query scoped to `xertox1234/OCRecipes` this turn.
 - **Turn 3** (only if needed): `fetch_webpage` against the pinned URL for any library Context7 could not resolve or answer (see 2a fallback).
 
 Parallelize within each turn — the `resolve-library-id` calls fire together, and the `query-docs` calls fire together. The only sequencing is resolve → query. Never serialize independent calls into a single sequential chain.
+
+### Tool availability preamble (do this BEFORE Turn 1)
+
+Both Context7 and the GitHub MCP server expose deferred tools — load their schemas once before any call:
+
+```
+ToolSearch select:mcp__plugin_context7_context7__resolve-library-id,mcp__plugin_context7_context7__query-docs
+ToolSearch select:mcp__github__search_code
+```
+
+Inspect the responses:
+
+- **If the Context7 tools fail to load** → skip Step 2a entirely and use `fetch_webpage` against the pinned URLs in the table at the bottom of section 2a as a fallback for every prioritized library.
+- **If `mcp__github__search_code` fails to load** → GitHub MCP is not available in this session (intermittent — the PAT lives in `~/.zshenv`; sessions started outside a terminal lose it per MEMORY.md). Skip Steps 2b and 2c entirely and write `No repo or global search performed — GitHub MCP not available in this session.` as the body of the `## Project Context` and `## Global Patterns` sections.
+
+Neither failure is fatal — the brief still ships with the available data and explicit placeholders for the missing pieces. Do NOT invent results to fill the gaps.
 
 ### 2a — Library docs via Context7 (with `fetch_webpage` fallback)
 
@@ -81,26 +97,26 @@ Library → Context7 `libraryName` (and the `fetch_webpage` fallback URL):
 
 If a detected library is not in the table, resolve it by its official name; on failure use `fetch_webpage` against its official docs. If neither Context7 nor `fetch_webpage` yields a useful result for a library, note `No docs available for <library>.` in the brief.
 
-### 2b — Repo context via `github_text_search` and `github_repo`
+### 2b — Repo context via `mcp__github__search_code` (scoped to OCRecipes)
 
-Search the OCRecipes repo using the currently available repo-search tools:
+Search the OCRecipes repo using `mcp__github__search_code` with a `repo:` qualifier:
 
-1. Run `github_text_search` with `scope: xertox1234/OCRecipes` using keywords from the todo title, relevant labels, and any distinctive file or symbol names.
-2. If that keyword search is weak or empty, run `github_repo` with `repo: xertox1234/OCRecipes` for a semantic fallback.
+1. **Narrow keyword pass.** `mcp__github__search_code({ q: "<keywords> repo:xertox1234/OCRecipes" })` using keywords from the todo title, relevant labels, and any distinctive file or symbol names.
+2. **Broader fallback** (only if the narrow pass returns weak or empty results). Same tool with looser query terms — e.g. drop specific symbols, use feature-area names, broaden file-type filters.
 3. This environment does **not** currently expose a dedicated issue/PR search tool for the researcher. If issue or PR lookup would materially matter, say so in the brief instead of inventing results.
 
 Limit to the 5 most relevant results from each call.
 
-### 2c — Global pattern search via `mcp_github_search_code`
+### 2c — Global pattern search via `mcp__github__search_code` (no `repo:` qualifier)
 
-Search for how similar problems have been solved across public repositories using `mcp_github_search_code`.
+Search for how similar problems have been solved across public repositories using `mcp__github__search_code` without a `repo:` qualifier — that scopes the search to all public code.
 
 Examples of effective queries:
 
 - `"drizzle-orm" "onConflictDoNothing" expo`
 - `"react-navigation" "modal" "iOS" workaround`
 
-Omitting the `repo:` filter is sufficient to search all public repositories — do not add `site:github.com` which is a Google search modifier and has no effect on the GitHub API.
+Do not add `site:github.com` which is a Google search modifier and has no effect on the GitHub API.
 
 Limit to the 5 most relevant results from each search.
 
@@ -116,11 +132,11 @@ Return the brief using this exact structure (no wrapping code block):
 
 ## Project Context
 
-[Summarize what the repo issue/PR search found — any open issues tracking this problem, prior PRs that attempted a fix, or existing code patterns that are relevant. If nothing found, write "No related issues or code patterns found in this repo."]
+[Summarize what the repo code search found — any existing code patterns that are relevant. If nothing relevant was found, write "No related code patterns found in this repo." If GitHub MCP was not available this session, write "No repo or global search performed — GitHub MCP not available in this session." (Distinct messages — the executor uses them to tell "searched and found nothing" apart from "could not search.")]
 
 ## Global Patterns
 
-[Summarize what the global search found — how similar problems have been solved in other projects using the same stack. Prefer concrete code patterns over general advice. If nothing found, write "No relevant global patterns found."]
+[Summarize what the global search found — how similar problems have been solved in other projects using the same stack. Prefer concrete code patterns over general advice. If nothing relevant was found, write "No relevant global patterns found." If GitHub MCP was not available this session, write "No repo or global search performed — GitHub MCP not available in this session."]
 
 ---
 
