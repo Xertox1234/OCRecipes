@@ -7,6 +7,7 @@ import React, {
   ReactNode,
 } from "react";
 import { apiRequest } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
 import { useAuthContext } from "@/context/AuthContext";
 
 export interface Allergy {
@@ -94,7 +95,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     try {
       await checkAuth();
     } catch (resyncErr) {
-      console.warn("onboarding resync via checkAuth failed:", resyncErr);
+      logger.warn("onboarding resync via checkAuth failed:", resyncErr);
     }
   }, [checkAuth]);
 
@@ -106,7 +107,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       profileSaved = true;
       await updateUser({ onboardingCompleted: true });
     } catch (err) {
-      console.error(
+      logger.error(
         profileSaved
           ? "skipOnboarding: server saved but client sync failed (resyncing):"
           : "skipOnboarding: profile save failed:",
@@ -129,7 +130,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       profileSaved = true;
       await updateUser({ onboardingCompleted: true });
     } catch (err) {
-      console.error(
+      logger.error(
         profileSaved
           ? "completeOnboarding: server saved but client sync failed (resyncing):"
           : "completeOnboarding: profile save failed:",

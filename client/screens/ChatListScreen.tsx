@@ -35,6 +35,7 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
+import { logger } from "@/lib/logger";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { CompositeNavigationProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -86,7 +87,7 @@ export default function ChatListScreen() {
   useFocusEffect(
     useCallback(() => {
       acknowledge().catch((err) => {
-        if (__DEV__) console.warn("[ChatListScreen] acknowledge failed", err);
+        logger.warn("[ChatListScreen] acknowledge failed", err);
       });
     }, [acknowledge]),
   );

@@ -20,6 +20,7 @@ import {
 } from "react-native-vision-camera";
 import type { ExpoBarcodeType } from "@shared/types/camera";
 import { Spacing } from "@/constants/theme";
+import { logger } from "@/lib/logger";
 import type {
   CameraViewProps,
   CameraRef,
@@ -180,7 +181,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
         isActive={isActive}
         outputs={outputs}
         onError={(error) => {
-          console.warn("[CameraView] Camera error:", error.message);
+          logger.warn("[CameraView] Camera error:", error.message);
         }}
       />
     );

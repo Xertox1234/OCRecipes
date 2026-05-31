@@ -32,6 +32,7 @@ import CoachChat from "@/components/coach/CoachChat";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
+import { logger } from "@/lib/logger";
 import type { CoachChatNavigationProp } from "@/types/navigation";
 import type { ChatStackParamList } from "@/navigation/ChatStackNavigator";
 
@@ -65,7 +66,7 @@ export default function CoachProScreen() {
   useFocusEffect(
     useCallback(() => {
       acknowledge().catch((err) => {
-        if (__DEV__) console.warn("[CoachProScreen] acknowledge failed", err);
+        logger.warn("[CoachProScreen] acknowledge failed", err);
       });
     }, [acknowledge]),
   );
@@ -120,13 +121,13 @@ export default function CoachProScreen() {
       .filter((e) => e.type === "commitment")
       .map((e) => e.id);
     cancelStaleReminders(activeIds).catch((err) =>
-      console.error("Failed to cancel stale reminders", err),
+      logger.error("Failed to cancel stale reminders", err),
     );
 
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active")
         cancelStaleReminders(activeIds).catch((err) =>
-          console.error("Failed to cancel stale reminders", err),
+          logger.error("Failed to cancel stale reminders", err),
         );
     });
     return () => sub.remove();

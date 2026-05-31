@@ -3,6 +3,7 @@ import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
 
 import { useHaptics } from "@/hooks/useHaptics";
+import { logger } from "@/lib/logger";
 import { useToast } from "@/context/ToastContext";
 import { useAuthContext } from "@/context/AuthContext";
 import { compressImage, cleanupImage } from "@/lib/image-compression";
@@ -75,7 +76,7 @@ export function useAvatarUpload() {
         await cleanupImage(compressed.uri);
       }
     } catch (error) {
-      console.error("Avatar upload error:", error);
+      logger.error("Avatar upload error:", error);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       toast.error(
         error instanceof Error && error.message

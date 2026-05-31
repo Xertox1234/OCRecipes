@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { logger } from "@/lib/logger";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
 import type { MicronutrientData } from "@/components/MicronutrientSection";
@@ -262,7 +263,7 @@ export function useNutritionLookup(params: {
           }
         }
       } catch (err) {
-        console.warn(
+        logger.warn(
           "Server barcode lookup unavailable, falling back to OFF:",
           err,
         );

@@ -10,6 +10,7 @@ import { AppState, Platform } from "react-native";
 import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
 import { reportError } from "./reporter";
+import { logger } from "./logger";
 
 /**
  * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
@@ -20,7 +21,7 @@ export function getApiUrl(): string {
 
   if (!host) {
     // Fallback for development — set EXPO_PUBLIC_DOMAIN in .env
-    console.warn("EXPO_PUBLIC_DOMAIN not set, falling back to localhost:3000");
+    logger.warn("EXPO_PUBLIC_DOMAIN not set, falling back to localhost:3000");
     return "http://localhost:3000";
   }
 

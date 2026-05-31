@@ -27,6 +27,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { Spacing, BorderRadius, CameraColors } from "@/constants/theme";
+import { logger } from "@/lib/logger";
 import { CameraView, useCameraPermissions, type CameraRef } from "@/camera";
 import { useCreateCookSession, useAddCookPhoto } from "@/hooks/useCookSession";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -135,7 +136,7 @@ export default function CookSessionCaptureScreen() {
         Alert.alert("Capture failed", "Try again or pick from your gallery.");
       }
     } catch (error) {
-      console.error("handleCapture failed:", error);
+      logger.error("handleCapture failed:", error);
       Alert.alert("Capture failed", "Try again or pick from your gallery.");
     } finally {
       setIsCapturing(false);

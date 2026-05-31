@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { logger } from "./logger";
 
 // Stub implementation -- actual HealthKit native module (react-native-health or
 // expo-health-connect) must be installed separately. This provides the interface.
@@ -14,7 +15,7 @@ export interface HealthKitPermissions {
 export function requestPermissions(): Promise<HealthKitPermissions> {
   // In production, this would call the native HealthKit APIs
   // For now, return a stub indicating the feature is available but not connected
-  console.warn(
+  logger.warn(
     "HealthKit: native module not yet installed. Install react-native-health for full support.",
   );
   return Promise.resolve({

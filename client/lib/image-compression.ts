@@ -1,5 +1,6 @@
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { getInfoAsync, deleteAsync } from "expo-file-system/legacy";
+import { logger } from "./logger";
 
 export interface CompressionOptions {
   maxWidth?: number;
@@ -81,6 +82,6 @@ export async function cleanupImage(uri: string): Promise<void> {
     await deleteAsync(uri, { idempotent: true });
   } catch (error) {
     // Silently ignore cleanup errors
-    console.warn("Image cleanup failed:", error);
+    logger.warn("Image cleanup failed:", error);
   }
 }
