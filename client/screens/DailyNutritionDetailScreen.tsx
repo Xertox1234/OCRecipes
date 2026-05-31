@@ -29,6 +29,8 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { useAdaptiveGoals } from "@/hooks/useAdaptiveGoals";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { apiRequest } from "@/lib/query-client";
+import { getDeviceTimezone } from "@/lib/timezone";
 import type { DailySummaryResponse, GoalsResponse } from "@/types/api";
 import {
   Colors,
@@ -133,6 +135,16 @@ export default function DailyNutritionDetailScreen() {
     refetch: refetchSummary,
   } = useQuery<DailySummaryResponse>({
     queryKey: ["/api/daily-summary"],
+    // Custom queryFn (not the global getQueryFn) so the device timezone is sent
+    // as X-Timezone — without it, non-UTC users get UTC-bucketed day summaries.
+    // Key stays the bare ["/api/daily-summary"] (no { tz } segment) to keep the
+    // cache entry shared with useHistoryData, which sends the same header.
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/daily-summary", undefined, {
+        headers: { "X-Timezone": getDeviceTimezone() },
+      });
+      return res.json() as Promise<DailySummaryResponse>;
+    },
     // No silentError here: this key is shared with useHistoryData (History
     // dashboard, no own error UI), so opting out could suppress its global-toast
     // backstop. This screen's error gate (summaryError, below) still catches it.

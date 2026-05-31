@@ -1,20 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
 import type { QueryErrorMeta } from "@/lib/query-client";
+import { getDeviceTimezone } from "@/lib/timezone";
 
 export interface DailyBudget {
   calorieGoal: number;
   foodCalories: number;
   remaining: number;
-}
-
-/** Returns the device's IANA timezone string, e.g. "America/Los_Angeles". */
-function getDeviceTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return "UTC";
-  }
 }
 
 export function useDailyBudget(
