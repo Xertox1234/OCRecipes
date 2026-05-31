@@ -23,7 +23,7 @@ Each audit domain maps to specialist agents in `.claude/agents/` that have deep 
 | `reliability`     | _cluster dispatch — see "Reliability Scope" below_                    | 10 failure-mode classes (config fail-fast, network resilience, idempotency, offline, persistence, auth lifecycle, deep links, boundary validation, time/units, observability) — `pre-launch` + standalone only, NOT `full`                                                                                                                              |
 | `maintainability` | `code-reviewer` (with `maintainability-checklist.md` mindset)         | Structural-quality lens — missed code-judo simplifications, files crossing 600 lines, spaghetti growth into unrelated flows, thin wrappers, avoidable orchestration. Opportunity-finder, not violation-finder — overlaps with `architecture`/`code-quality` but selects different findings. `pre-launch` + `code-quality` + standalone only, NOT `full` |
 
-**For `full` scope:** Launch **one agent invocation per structural domain row** (the 7 rows above `reliability`; 7 total). Batch in two groups — first 4 domains, then 3 — to avoid overwhelming context. The "Primary Agent(s)" column shows which agent type to use for each invocation; list both agents in the prompt when two are shown. `full` does **not** include `reliability` or `maintainability`.
+**For `full` scope:** Launch **one agent invocation per structural domain row** (the 7 rows above `reliability`; 7 total). Batch in two groups — first 4 domains, then 3 — to avoid overwhelming context. The "Primary Agent(s)" column shows which agent type to use for each invocation. **When a row lists multiple agents, use the first-listed agent as the `subagent_type` and explicitly name each remaining agent's focus in the prompt body** (e.g., for `security`: "Apply both the security-auditor lens (IDOR, JWT, rate limiting, SSRF) and the ai-llm-specialist lens (prompt injection, AI safety)"). `full` does **not** include `reliability` or `maintainability`.
 
 **For `pre-launch` scope:** Launch the 7 structural-domain invocations as for `full`, **plus** the `reliability` scope's 4 cluster dispatches (see "Reliability Scope" below), **plus** the single `maintainability` dispatch (see "Maintainability Scope" below) — 12 invocations total, batched 4+4+4.
 
@@ -63,7 +63,7 @@ Each cluster dispatch uses the standard discovery prompt template (see above) pl
 
 **Dedup note:** dedup Class 9 timezone findings against `docs/superpowers/specs/2026-05-16-timestamp-timezone-consistency-design.md` and the audit CHANGELOG before reporting — that work may already partially address the day-boundary issue.
 
-**No new infrastructure:** reliability reuses the existing specialist agents and the 13 `docs/rules/` files. It does **not** add a `reliability-specialist` agent or a `docs/rules/reliability.md`.
+**No new infrastructure:** reliability reuses the existing specialist agents and the existing `docs/rules/` files. It does **not** add a `reliability-specialist` agent or a `docs/rules/reliability.md`.
 
 ## Maintainability Scope (structural-quality lens — opportunity finder)
 
@@ -226,19 +226,20 @@ For **each** finding the user wants fixed:
 
    Domain → `--patterns` mapping:
 
-   | Finding Domain                                | `--patterns` value      |
-   | --------------------------------------------- | ----------------------- |
-   | security                                      | `security`              |
-   | performance                                   | `performance`           |
-   | data-integrity                                | `database`              |
-   | architecture                                  | `architecture`          |
-   | code-quality                                  | `typescript,api`        |
-   | camera / RN-UX                                | `react-native`          |
-   | accessibility                                 | `react-native`          |
-   | reliability — server resilience (1-3)         | `security,architecture` |
-   | reliability — client reliability (4-7)        | `react-native`          |
-   | reliability — cross-cutting correctness (8-9) | `typescript,database`   |
-   | reliability — detection/observability (10)    | `architecture`          |
+   | Finding Domain                                | `--patterns` value        |
+   | --------------------------------------------- | ------------------------- |
+   | security                                      | `security`                |
+   | performance                                   | `performance`             |
+   | data-integrity                                | `database`                |
+   | architecture                                  | `architecture`            |
+   | code-quality                                  | `typescript,api`          |
+   | camera / RN-UX                                | `react-native`            |
+   | accessibility                                 | `react-native`            |
+   | reliability — server resilience (1-3)         | `security,architecture`   |
+   | reliability — client reliability (4-7)        | `react-native`            |
+   | reliability — cross-cutting correctness (8-9) | `typescript,database`     |
+   | reliability — detection/observability (10)    | `architecture`            |
+   | maintainability                               | `architecture,typescript` |
 
    Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
@@ -266,7 +267,7 @@ For findings the user wants deferred:
 3. Record the rationale in the Deferred Items table
 4. For low/deferred items that are straightforward boilerplate or test-only work with clear files and acceptance criteria, use `kimi-write` to generate a first pass — review the output before committing. For items requiring human judgment or broad architecture decisions, leave the todo local and note the rationale clearly in the Deferred Items table.
 
-## Phase 5: Close
+## Phase 5: Verify & Summarize
 
 1. Run the full verification suite:
    - `npm run test:run` — all tests must pass
@@ -307,7 +308,7 @@ This phase intentionally keeps the deeper subagent-based review path. Audit work
 2. For each CRITICAL or HIGH finding: fix immediately (follow Phase 3 rules — read, fix, verify, update manifest)
 3. For MEDIUM findings: use judgment — fix if quick, otherwise record in the manifest's Deferred Items table (do not auto-create a todo)
 4. For LOW findings: fix if a trivial one-liner, otherwise record in the manifest's Deferred Items table
-5. Re-run `npm run test:run` and `npm run check:types` after any review fixes
+5. Re-run `npm run test:run`, `npm run check:types`, and `npm run lint` after any review fixes
 
 ## Phase 7: Commit Fixes
 
