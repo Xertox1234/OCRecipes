@@ -386,13 +386,15 @@ describe("lookupBarcode", () => {
   });
 
   it("USDA-UPC-only primary does not cross-validate against CNF (keeps usda source)", async () => {
-    // OFF has no product → USDA-UPC supplies the primary. Even though CNF *has*
-    // matching data, the cross-validation search terms are built solely from the
-    // (absent) OFF product, so `secondaryPer100g` stays null and the primary is
-    // returned unchanged. This pins the real branch-1 behavior: USDA-UPC-only
-    // products are NOT cross-validated, and missing nutrients default to 0 (from
-    // findNutrientValue), not gap-filled from CNF. It is a regression guard: if a
-    // refactor accidentally cross-validates this branch, fiber flips 0 → 3.
+    // OFF has no product → USDA-UPC supplies the primary, used directly as
+    // authoritative (the call site bypasses `reconcilePer100g` entirely — there
+    // is no second source to reconcile against, because the cross-validation
+    // search terms are built solely from the absent OFF product). Even though
+    // CNF *has* matching data here, it is deliberately ignored. This pins the
+    // branch-1 behavior: USDA-UPC-only products are NOT cross-validated, and
+    // missing nutrients default to 0 (from findNutrientValue), not gap-filled
+    // from CNF. It is a regression guard: if a change ever cross-validates this
+    // branch, fiber flips 0 → 3.
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
