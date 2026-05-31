@@ -59,6 +59,8 @@ export const users = pgTable("users", {
   subscriptionExpiresAt: timestamp("subscription_expires_at", {
     withTimezone: true,
   }),
+  /** IANA timezone string e.g. "America/Los_Angeles". NULL = not yet captured (treated as UTC). */
+  timezone: text("timezone"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),

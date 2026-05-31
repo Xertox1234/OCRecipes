@@ -94,6 +94,7 @@ export type UpdatableUserFields = Pick<
   | "lastGoalAdjustmentAt"
   | "onboardingCompleted"
   | "measurementUnit"
+  | "timezone"
 >;
 
 export async function updateUser(

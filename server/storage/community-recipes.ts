@@ -86,10 +86,11 @@ export async function createRecipeWithLimitCheck(
   userId: string,
   dailyLimit: number,
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
+  tz: string = "UTC",
 ): Promise<CommunityRecipe | null> {
   const recipe = await db.transaction(async (tx) => {
     // Check daily limit inside transaction
-    const { startOfDay, endOfDay } = getDayBounds(new Date());
+    const { startOfDay, endOfDay } = getDayBounds(new Date(), tz);
     const result = await tx
       .select({ count: sql<number>`count(*)` })
       .from(recipeGenerationLog)

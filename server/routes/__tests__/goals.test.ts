@@ -15,6 +15,7 @@ vi.mock("../../storage", () => ({
     updateUserProfile: vi.fn(),
     upsertProfileWithOnboarding: vi.fn(),
     updateUserGoalsAndProfile: vi.fn(),
+    getDailySummary: vi.fn(),
   },
 }));
 
@@ -208,6 +209,67 @@ describe("Goals Routes", () => {
         .send({ dailyCalorieGoal: 2000 });
 
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("GET /api/daily-budget", () => {
+    const mockSummary = {
+      totalCalories: 1200,
+      totalProtein: 80,
+      totalCarbs: 150,
+      totalFat: 40,
+      itemCount: 3,
+    };
+
+    beforeEach(() => {
+      vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      vi.mocked(storage.getDailySummary).mockResolvedValue(mockSummary);
+    });
+
+    it("returns budget with correct remaining calories", async () => {
+      const res = await request(app)
+        .get("/api/daily-budget")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.calorieGoal).toBe(2000);
+      expect(res.body.foodCalories).toBe(1200);
+      expect(res.body.remaining).toBe(800);
+    });
+
+    it("passes the X-Timezone header as tz to getDailySummary (non-UTC user)", async () => {
+      // Regression test for C2: a non-UTC user's local midnight must not be
+      // misclassified as the next UTC calendar day.
+      const res = await request(app)
+        .get("/api/daily-budget?date=2026-05-29")
+        .set("Authorization", "Bearer token")
+        .set("X-Timezone", "America/Los_Angeles");
+
+      expect(res.status).toBe(200);
+      // The tz must be forwarded — third arg to getDailySummary is "America/Los_Angeles"
+      const callArgs = vi.mocked(storage.getDailySummary).mock.calls[0];
+      expect(callArgs[2]).toBe("America/Los_Angeles");
+    });
+
+    it("defaults to UTC when X-Timezone header is absent", async () => {
+      const res = await request(app)
+        .get("/api/daily-budget")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      const callArgs = vi.mocked(storage.getDailySummary).mock.calls[0];
+      expect(callArgs[2]).toBe("UTC");
+    });
+
+    it("falls back to UTC for an invalid X-Timezone value", async () => {
+      const res = await request(app)
+        .get("/api/daily-budget")
+        .set("Authorization", "Bearer token")
+        .set("X-Timezone", "Not/ATimezone");
+
+      expect(res.status).toBe(200);
+      const callArgs = vi.mocked(storage.getDailySummary).mock.calls[0];
+      expect(callArgs[2]).toBe("UTC");
     });
   });
 });

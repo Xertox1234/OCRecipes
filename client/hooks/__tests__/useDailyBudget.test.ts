@@ -15,7 +15,16 @@ describe("useDailyBudget", () => {
       foodCalories: 800,
       remaining: 1200,
     };
-    queryClient.setQueryData(["/api/daily-budget"], mockData);
+    // Query key now includes a { tz } segment for timezone-aware caching.
+    // Seed with the actual tz value the hook will use (UTC in test env).
+    const tz = (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone;
+      } catch {
+        return "UTC";
+      }
+    })();
+    queryClient.setQueryData(["/api/daily-budget", { tz }], mockData);
 
     const { result } = renderHook(() => useDailyBudget(), { wrapper });
 
@@ -29,7 +38,17 @@ describe("useDailyBudget", () => {
       foodCalories: 500,
       remaining: 1500,
     };
-    queryClient.setQueryData(["/api/daily-budget?date=2024-06-15"], mockData);
+    const tz = (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone;
+      } catch {
+        return "UTC";
+      }
+    })();
+    queryClient.setQueryData(
+      ["/api/daily-budget?date=2024-06-15", { tz }],
+      mockData,
+    );
 
     const { result } = renderHook(() => useDailyBudget("2024-06-15"), {
       wrapper,

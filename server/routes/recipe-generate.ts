@@ -3,7 +3,11 @@ import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { generateRecipeContent } from "../services/recipe-generation";
-import { checkPremiumFeature, handleRouteError } from "./_helpers";
+import {
+  checkPremiumFeature,
+  handleRouteError,
+  parseTimezone,
+} from "./_helpers";
 import { recipeGenerationRateLimit } from "./_rate-limiters";
 import { storage } from "../storage";
 import type {
@@ -32,9 +36,11 @@ export function register(app: Express): void {
 
         // Non-transactional fast-path quota check to avoid the expensive
         // AI call when clearly over limit. Re-checked atomically below.
+        const tz = parseTimezone(req.headers["x-timezone"]);
         const generationsToday = await storage.getDailyRecipeGenerationCount(
           req.userId,
           new Date(),
+          tz,
         );
         if (generationsToday >= features.dailyRecipeGenerations) {
           sendError(
@@ -75,6 +81,7 @@ export function register(app: Express): void {
           req.userId,
           features.dailyRecipeGenerations,
           null,
+          tz,
         );
         if (!logged) {
           sendError(

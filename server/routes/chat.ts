@@ -9,6 +9,7 @@ import {
   parseQueryInt,
   checkPremiumFeature,
   checkAiConfigured,
+  parseTimezone,
 } from "./_helpers";
 import { chatRateLimit } from "./_rate-limiters";
 import { fireAndForget } from "../lib/fire-and-forget";
@@ -527,6 +528,7 @@ export function register(app: Express): void {
                 dailyCarbsGoal: user.dailyCarbsGoal,
                 dailyFatGoal: user.dailyFatGoal,
               },
+              tz: parseTimezone(req.headers["x-timezone"]),
               isAborted: () => aborted,
               abortSignal: abortController.signal,
             })) {
