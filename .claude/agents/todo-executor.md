@@ -383,6 +383,15 @@ Decide inline whether this implementation produced knowledge worth preserving. U
      --target <target file>
    ```
 
+6b. **Sanity-check the solution file before declaring codify complete.** kimi-write output goes to a durable location (the main checkout), where future executors can read it back at Step 3a and short-circuit research onto it. A broken codification poisons the corpus. For each new or updated solution file, run two checks:
+
+1.  **Frontmatter completeness.** Re-read the file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>.md"`. Confirm every required field per `docs/solutions/README.md`: `name`, `description`, `applies_to`, `tags`, `last_updated`, plus the track-specific fields (bug-track or knowledge-track).
+2.  **Related-files validity.** Extract every backtick-quoted path containing `/` from the `## Related Files` section. `test -e "$MAIN_CHECKOUT/<path>"` each one. All must exist.
+
+On any check failure, **delete the file** (`rm "$MAIN_CHECKOUT/docs/solutions/<...>.md"` for new files; for an updated existing file, log the rejection but leave it — never destroy existing knowledge), log `codification rejected — <one-line reason>`, and report `CODIFICATION_COMMIT: rejected — <reason>` in Step 11. Codification rejection is non-blocking — the todo's implementation is still verified, reviewed, committed, and PR'd.
+
+Skip 6b entirely if no solution file was created or updated (codify only touched agent/rules files).
+
 7. **Solutions persist by location, not by commit.** A solution file lives at `"$MAIN_CHECKOUT/docs/solutions/..."` and `docs/solutions/` is gitignored — `git add` would silently no-op on it. Do **not** stage the solution file. Only tracked codification targets (`.claude/agents/*.md`, `docs/rules/*.md`) get staged and committed:
 
    ```bash
@@ -489,7 +498,9 @@ STATUS: success
 COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "skipped-low-priority" | "null" if PR creation failed>
-CODIFICATION_COMMIT: <commit hash> | none
+CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
+SOLUTION_FILE: <"$MAIN_CHECKOUT/docs/solutions/<...>.md" path if a solution was codified and accepted, or "none">
+
 FILES_CHANGED: <list of modified files>
 SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (researcher skipped), or "none">
 REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
