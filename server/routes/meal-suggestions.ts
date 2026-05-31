@@ -20,6 +20,7 @@ import {
   handleRouteError,
   checkPremiumFeature,
   checkAiConfigured,
+  parseTimezone,
 } from "./_helpers";
 
 async function fetchDeduplicatedPopularPicks(
@@ -175,9 +176,11 @@ export function register(app: Express): void {
         };
 
         // Use actual confirmed intake from daily summary (includes scans + confirmed meals)
+        const tz = parseTimezone(req.headers["x-timezone"]);
         const actualIntake = await storage.getDailySummary(
           req.userId,
           new Date(parsed.data.date),
+          tz,
         );
 
         let consumedCalories = Number(actualIntake.totalCalories) || 0;
