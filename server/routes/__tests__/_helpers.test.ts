@@ -1,5 +1,6 @@
 import { vi } from "vitest";
 import { z } from "zod";
+import type { Response } from "express";
 
 import { loginSchema, registerSchema, profileUpdateSchema } from "../_schemas";
 import {
@@ -7,9 +8,75 @@ import {
   parseQueryInt,
   formatZodError,
   parseTimezone,
+  requireValidImage,
 } from "../_helpers";
+import type { AuthenticatedRequest } from "../../middleware/auth";
 
 vi.mock("../../storage", () => ({ storage: {} }));
+
+/** Minimal Express Response stub capturing status + json for guard helpers. */
+function createMockResponse() {
+  const res = {
+    statusCode: 0,
+    body: undefined as unknown,
+    status(code: number) {
+      res.statusCode = code;
+      return res;
+    },
+    json(payload: unknown) {
+      res.body = payload;
+      return res;
+    },
+  };
+  return res;
+}
+
+// Valid JPEG magic-byte header (FF D8 FF ...) — passes detectImageMimeType.
+const VALID_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+describe("requireValidImage", () => {
+  it("returns the base64 string for a valid image", () => {
+    const req = {
+      file: { buffer: VALID_JPEG },
+    } as unknown as AuthenticatedRequest;
+    const res = createMockResponse();
+
+    const result = requireValidImage(req, res as unknown as Response);
+
+    expect(result).toBe(VALID_JPEG.toString("base64"));
+    expect(res.statusCode).toBe(0);
+  });
+
+  it("returns null and sends 400 when no file is present", () => {
+    const req = {} as AuthenticatedRequest;
+    const res = createMockResponse();
+
+    const result = requireValidImage(req, res as unknown as Response);
+
+    expect(result).toBeNull();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({
+      error: "No photo provided",
+      code: "VALIDATION_ERROR",
+    });
+  });
+
+  it("returns null and sends 400 for invalid image content", () => {
+    const req = {
+      file: { buffer: Buffer.from("not-an-image") },
+    } as unknown as AuthenticatedRequest;
+    const res = createMockResponse();
+
+    const result = requireValidImage(req, res as unknown as Response);
+
+    expect(result).toBeNull();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({
+      error: "Invalid image content. Only JPEG, PNG, and WebP allowed.",
+      code: "VALIDATION_ERROR",
+    });
+  });
+});
 
 describe("Route Helpers", () => {
   describe("parsePositiveIntParam", () => {

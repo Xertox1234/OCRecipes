@@ -33,10 +33,10 @@ import {
   checkAiConfigured,
   getPremiumFeatures,
   parseStringParam,
+  requireValidImage,
 } from "./_helpers";
 import { photoRateLimit, crudRateLimit } from "./_rate-limiters";
 import { upload, createImageUpload } from "./_upload";
-import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 
 // Higher file size limit for label photos (5MB for text readability)
@@ -122,24 +122,8 @@ export function register(app: Express): void {
           );
         }
 
-        if (!req.file) {
-          return sendError(
-            res,
-            400,
-            "No photo provided",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-
-        // Validate image content via magic bytes (don't trust client mimetype)
-        if (!detectImageMimeType(req.file.buffer)) {
-          return sendError(
-            res,
-            400,
-            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
+        const imageBase64 = requireValidImage(req, res);
+        if (!imageBase64) return;
 
         // Parse intent from multipart form parameters (default: "log")
         // Supports "auto" for smart scan classification
@@ -158,13 +142,11 @@ export function register(app: Express): void {
           req.body?.intent ?? "log",
         ) as PhotoIntentOrAuto;
 
-        // Convert buffer to base64
-        const imageBase64 = req.file.buffer.toString("base64");
-
         // ── Auto-classification flow ──────────────────────────────
         if (intentRaw === "auto") {
           // Validate session bounds BEFORE calling paid APIs to avoid wasted credits
-          if (req.file.buffer.length > MAX_IMAGE_SIZE_BYTES) {
+          // requireValidImage guaranteed req.file is present above.
+          if (req.file!.buffer.length > MAX_IMAGE_SIZE_BYTES) {
             return sendError(
               res,
               413,
@@ -249,8 +231,9 @@ export function register(app: Express): void {
         const intentConfig = INTENT_CONFIG[intent];
 
         // Validate session bounds BEFORE calling paid APIs to avoid wasted credits
+        // requireValidImage guaranteed req.file is present above.
         if (intentConfig.needsSession) {
-          if (req.file.buffer.length > MAX_IMAGE_SIZE_BYTES) {
+          if (req.file!.buffer.length > MAX_IMAGE_SIZE_BYTES) {
             return sendError(
               res,
               413,
@@ -463,25 +446,9 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        if (!req.file) {
-          return sendError(
-            res,
-            400,
-            "No photo provided",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
+        const imageBase64 = requireValidImage(req, res);
+        if (!imageBase64) return;
 
-        if (!detectImageMimeType(req.file.buffer)) {
-          return sendError(
-            res,
-            400,
-            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-
-        const imageBase64 = req.file.buffer.toString("base64");
         const result = await analyzeRecipePhoto(imageBase64);
 
         res.json(result);
@@ -529,25 +496,9 @@ export function register(app: Express): void {
           );
         }
 
-        if (!req.file) {
-          return sendError(
-            res,
-            400,
-            "No photo provided",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
+        const imageBase64 = requireValidImage(req, res);
+        if (!imageBase64) return;
 
-        if (!detectImageMimeType(req.file.buffer)) {
-          return sendError(
-            res,
-            400,
-            "Invalid image content. Only JPEG, PNG, and WebP allowed.",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
-
-        const imageBase64 = req.file.buffer.toString("base64");
         const barcodeRaw = req.body?.barcode as string | undefined;
         const barcode = barcodeRaw
           ? z
