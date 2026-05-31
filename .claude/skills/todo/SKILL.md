@@ -68,6 +68,14 @@ Establish a green baseline before touching any code.
 
    Store the branch name as `BASE_BRANCH` (e.g., `feat/nutrition-inline-drawers` or `main`). Pass it to every executor spawn in Phase 4 via the `Base branch:` line in the prompt.
 
+   **Then capture the main checkout's absolute path** using `git rev-parse --git-common-dir` (worktree-aware — `pwd` would be wrong if `/todo` is invoked from inside another worktree):
+
+   ```bash
+   MAIN_CHECKOUT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+   ```
+
+   Store as `MAIN_CHECKOUT` (e.g., `/Users/williamtower/projects/OCRecipes`). Pass it to every executor spawn in Phase 4 via the `Main checkout:` line in the prompt. Executors use it to write gitignored artifacts (`docs/solutions/...`) to the main checkout rather than to their own worktree (where `git worktree remove` would destroy them — same gitignore/worktree pitfall the `/audit` skill fixed).
+
 4. **Verify executor agent**: Confirm the file `.claude/agents/todo-executor.md` exists by running:
 
    ```bash
@@ -151,7 +159,7 @@ Work through the execution plan batch by batch.
 
 For each batch marked parallel, spawn one `todo-executor` agent per todo, each in an **isolated worktree**.
 
-Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` in the prompt string. Never pass the literal text `<BASE_BRANCH>`.
+Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` and the actual main checkout path (e.g., `/Users/williamtower/projects/OCRecipes`) for `<MAIN_CHECKOUT>` in the prompt string. Never pass the literal text `<BASE_BRANCH>` or `<MAIN_CHECKOUT>`.
 
 Use the Agent tool with these parameters:
 
@@ -160,7 +168,7 @@ Agent({
   description: "Execute todo: <todo title>",
   subagent_type: "general-purpose",
   isolation: "worktree",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\n\nExecute all steps in order and report the result."
+  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\nMain checkout: <MAIN_CHECKOUT>\n\nExecute all steps in order and report the result."
 })
 ```
 
@@ -170,7 +178,7 @@ Launch all agents in the batch simultaneously (up to 4). Wait for all to complet
 
 For each batch marked sequential, spawn a **single** `todo-executor` agent.
 
-Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` in the prompt string. Never pass the literal text `<BASE_BRANCH>`.
+Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` and the actual main checkout path (e.g., `/Users/williamtower/projects/OCRecipes`) for `<MAIN_CHECKOUT>` in the prompt string. Never pass the literal text `<BASE_BRANCH>` or `<MAIN_CHECKOUT>`.
 
 Run one at a time. Wait for each to complete before starting the next.
 
@@ -181,7 +189,7 @@ Agent({
   description: "Execute todo: <todo title>",
   subagent_type: "general-purpose",
   isolation: "worktree",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\n\nExecute all steps in order and report the result."
+  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\nMain checkout: <MAIN_CHECKOUT>\n\nExecute all steps in order and report the result."
 })
 ```
 
