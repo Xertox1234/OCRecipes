@@ -57,6 +57,7 @@ export const storage = {
   incrementTokenVersion: users.incrementTokenVersion,
   deleteUser: users.deleteUser,
   getUserIdPage: users.getUserIdPage,
+  getUserTimezones: users.getUserTimezones,
   getUserProfile: users.getUserProfile,
   createUserProfile: users.createUserProfile,
   updateUserProfile: users.updateUserProfile,
