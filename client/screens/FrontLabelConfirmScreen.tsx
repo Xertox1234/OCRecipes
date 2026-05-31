@@ -37,9 +37,20 @@ type NavigationProp = NativeStackNavigationProp<
 >;
 type ScreenRoute = RouteProp<RootStackParamList, "FrontLabelConfirm">;
 
-/** Code-specific user-safe copy for known front-label `ApiError` codes. */
+/**
+ * Code-specific user-safe copy for known front-label `ApiError` codes.
+ *
+ * Keys mirror the codes the front-label routes actually return via `sendError`
+ * (`server/routes/verification.ts`): the upload route emits `VALIDATION_ERROR`
+ * (no/invalid photo, bad barcode, back label not yet verified) and
+ * `AI_NOT_CONFIGURED`; the confirm route emits `NOT_FOUND` (expired session).
+ */
 const FRONT_LABEL_ERROR_COPY: Partial<Record<string, string>> = {
-  CONFLICT: "This product was already verified by another user.",
+  VALIDATION_ERROR:
+    "Verify the nutrition label first, then retake the front of the package.",
+  AI_NOT_CONFIGURED:
+    "AI analysis is temporarily unavailable. Please try again later.",
+  NOT_FOUND: "This scan expired. Please retake the photo.",
 };
 
 /**
@@ -47,10 +58,9 @@ const FRONT_LABEL_ERROR_COPY: Partial<Record<string, string>> = {
  *
  * Never surfaces the raw server `error.message` (which is `apiRequest`'s
  * `"<status>: <body>"`). Discriminates on `ApiError.code` against a static
- * copy map. NOTE: `photo-upload.ts` (out of scope here) currently throws a
- * plain `Error` that discards the server's `code`, so in practice every error
- * falls through to the generic fallback today; the code map takes effect once
- * `photo-upload.ts` is refactored to throw a code-carrying `ApiError`.
+ * copy map; unknown codes (and plain `Error`s) fall through to the generic
+ * fallback. `photo-upload.ts` now throws a code-carrying `ApiError`, so the
+ * map fires for the codes the front-label routes return.
  */
 function frontLabelErrorMessage(
   err: unknown,
