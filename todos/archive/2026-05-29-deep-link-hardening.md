@@ -1,6 +1,6 @@
 ---
 title: "Deep-link hardening: resume unauthenticated links after login; chat/recipe-chat invalid-id handling"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-29
 updated: 2026-05-29
@@ -22,8 +22,8 @@ Two deep-link edge cases from the 2026-05-29 reliability audit that were deferre
 
 ## Acceptance Criteria
 
-- [ ] **M2:** an unauthenticated deep link is resumed after login (lands on the intended screen, not dropped).
-- [ ] **L2 (optional):** a malformed chat/recipe-chat deep link shows a clear "conversation not found" affordance instead of silently opening a blank new chat — OR explicitly accept the current new-chat fallback and close L2 as won't-fix.
+- [x] **M2:** an unauthenticated deep link is resumed after login (lands on the intended screen, not dropped).
+- [x] **L2 (won't-fix):** the new-chat fallback for a malformed `chat/:id` or `recipe-chat/:id` link is explicitly accepted as correct UX — opening a new chat is a safe, non-destructive degradation path with no data-loss risk (unlike the H4 notebook case). No code change needed.
 
 ## Implementation Notes
 

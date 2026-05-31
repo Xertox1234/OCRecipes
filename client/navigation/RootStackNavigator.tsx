@@ -171,7 +171,13 @@ export default function RootStackNavigator() {
   const needsOnboarding = isAuthenticated && !user?.onboardingCompleted;
 
   return (
-    <Stack.Navigator screenOptions={screenOptions}>
+    <Stack.Navigator
+      screenOptions={screenOptions}
+      // UNSTABLE_ prefix is the React Navigation 7 backport of routeNamesChangeBehavior
+      // (stable in v8). Retries the last unhandled deep link once the authenticated
+      // screen set mounts — covers the logged-out → login → onboarding → main flow.
+      UNSTABLE_routeNamesChangeBehavior="lastUnhandled"
+    >
       {!isAuthenticated ? (
         <Stack.Screen
           name="Login"
