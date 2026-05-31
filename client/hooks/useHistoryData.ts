@@ -69,6 +69,12 @@ export function useHistoryData() {
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
+      try {
+        headers["X-Timezone"] =
+          Intl.DateTimeFormat().resolvedOptions().timeZone;
+      } catch {
+        headers["X-Timezone"] = "UTC";
+      }
 
       const res = await fetch(url, { headers });
       if (!res.ok) {

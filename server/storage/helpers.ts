@@ -4,19 +4,68 @@ export function escapeLike(str: string): string {
 }
 
 /**
+ * Read the UTC offset (in minutes) at a specific UTC timestamp in a given
+ * IANA timezone. Returns 0 for UTC or on parse failure.
+ *
+ * Intl produces strings like "GMT-07:00", "GMT+05:30", "GMT" (for UTC).
+ */
+function getOffsetMinutesAt(utcMs: number, tz: string): number {
+  const offsetStr =
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      timeZoneName: "longOffset",
+    })
+      .formatToParts(new Date(utcMs))
+      .find((p) => p.type === "timeZoneName")?.value ?? "GMT+0:00";
+
+  const match = offsetStr.match(/GMT([+-])(\d{1,2}):(\d{2})/);
+  if (!match) return 0;
+  const sign = match[1] === "+" ? 1 : -1;
+  return sign * (parseInt(match[2], 10) * 60 + parseInt(match[3], 10));
+}
+
+/**
+ * Compute the UTC instant that corresponds to local midnight on a given civil
+ * date in `tz`, correctly handling DST transitions.
+ *
+ * Algorithm (two-step offset correction):
+ * 1. Guess: treat `Date.UTC(y, m-1, d)` as a first approximation.
+ * 2. Read the tz offset at that guess → compute candidate midnight.
+ * 3. Re-read the tz offset at the candidate → if it differs from step 2,
+ *    one more correction produces the correct midnight.
+ *
+ * This handles the spring-forward edge case where the offset sampled at an
+ * arbitrary input time differs from the offset at civil midnight (e.g. a 1pm
+ * PDT reading gives -7h but midnight on the same spring-forward day is PST at
+ * -8h). Without this correction getDayBounds is off by 1h on transition days.
+ */
+function civilMidnightUtcMs(
+  year: number,
+  month: number, // 1-based
+  day: number,
+  tz: string,
+): number {
+  const guessMs = Date.UTC(year, month - 1, day);
+  const off1 = getOffsetMinutesAt(guessMs, tz);
+  const candidateMs = guessMs - off1 * 60_000;
+  const off2 = getOffsetMinutesAt(candidateMs, tz);
+  return off2 !== off1 ? guessMs - off2 * 60_000 : candidateMs;
+}
+
+/**
  * Returns the start (00:00:00.000) and end (23:59:59.999) of the given day,
  * computed in the specified IANA timezone (defaults to UTC).
  *
  * Using an optional `tz` param keeps all existing callers (which never passed
  * a tz) behaviorally identical — they continue to get UTC day bounds.
  *
- * Implementation uses Intl (built-in, no extra deps):
- *   1. Resolve the civil date (year/month/day) in the target tz.
- *   2. Read the UTC offset from the formatted long-offset timezone name.
- *   3. Compute start = UTC midnight of that civil date shifted by the offset.
+ * DST correctness: uses a two-step offset correction via `civilMidnightUtcMs`
+ * so that spring-forward / fall-back days are bounded correctly (not off by 1h).
+ * The "end of day" is the start of the *next* calendar day minus 1ms, which
+ * correctly handles 23h (spring-forward) and 25h (fall-back) days.
  *
- * The offset is sampled at `date` itself, which correctly captures DST — the
- * JS Date object already knows which wall-clock offset applies at that instant.
+ * To find "tomorrow", this adds 25 hours to the start (enough to always land
+ * in the next local day even on DST-transition days) and reads its civil date.
  */
 export function getDayBounds(
   date: Date,
@@ -25,38 +74,29 @@ export function getDayBounds(
   startOfDay: Date;
   endOfDay: Date;
 } {
-  // Step 1: civil date in the target timezone
-  const [localYear, localMonth, localDay] = new Intl.DateTimeFormat("en-CA", {
+  // Civil date in the target timezone
+  const civilFmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  })
+  });
+  const [localYear, localMonth, localDay] = civilFmt
     .format(date)
     .split("-")
     .map(Number) as [number, number, number];
 
-  // Step 2: UTC offset at this instant in the target tz, e.g. "GMT-07:00"
-  const offsetPart =
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      timeZoneName: "longOffset",
-    })
-      .formatToParts(date)
-      .find((p) => p.type === "timeZoneName")?.value ?? "GMT+0:00";
+  const startUtcMs = civilMidnightUtcMs(localYear, localMonth, localDay, tz);
 
-  const offsetMatch = offsetPart.match(/GMT([+-])(\d{1,2}):(\d{2})/);
-  let offsetMinutes = 0;
-  if (offsetMatch) {
-    const sign = offsetMatch[1] === "+" ? 1 : -1;
-    offsetMinutes =
-      sign * (parseInt(offsetMatch[2], 10) * 60 + parseInt(offsetMatch[3], 10));
-  }
+  // "Tomorrow" in the local tz: add 25h to the start so we always land in the
+  // next calendar day regardless of DST (shortest local day is 23h).
+  const tomorrowRef = new Date(startUtcMs + 25 * 60 * 60 * 1000);
+  const [nextYear, nextMonth, nextDay] = civilFmt
+    .format(tomorrowRef)
+    .split("-")
+    .map(Number) as [number, number, number];
 
-  // Step 3: midnight in tz = UTC midnight of local date minus the UTC offset
-  const startUtcMs =
-    Date.UTC(localYear, localMonth - 1, localDay) - offsetMinutes * 60_000;
-  const endUtcMs = startUtcMs + 24 * 60 * 60 * 1000 - 1;
+  const endUtcMs = civilMidnightUtcMs(nextYear, nextMonth, nextDay, tz) - 1;
 
   return { startOfDay: new Date(startUtcMs), endOfDay: new Date(endUtcMs) };
 }
@@ -73,7 +113,6 @@ export function getMonthBounds(
   startOfMonth: Date;
   endOfMonth: Date;
 } {
-  // Civil date in the target tz
   const [localYear, localMonth] = new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
     year: "numeric",
@@ -84,31 +123,13 @@ export function getMonthBounds(
     .split("-")
     .map(Number) as [number, number, number];
 
-  // UTC offset at this instant
-  const offsetPart =
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      timeZoneName: "longOffset",
-    })
-      .formatToParts(date)
-      .find((p) => p.type === "timeZoneName")?.value ?? "GMT+0:00";
+  const startUtcMs = civilMidnightUtcMs(localYear, localMonth, 1, tz);
 
-  const offsetMatch = offsetPart.match(/GMT([+-])(\d{1,2}):(\d{2})/);
-  let offsetMinutes = 0;
-  if (offsetMatch) {
-    const sign = offsetMatch[1] === "+" ? 1 : -1;
-    offsetMinutes =
-      sign * (parseInt(offsetMatch[2], 10) * 60 + parseInt(offsetMatch[3], 10));
-  }
-
-  const startUtcMs =
-    Date.UTC(localYear, localMonth - 1, 1) - offsetMinutes * 60_000;
-
-  // Last day of month: first day of next month minus 1ms
+  // Last day 23:59:59.999 = midnight of first day of next month - 1ms.
+  // Use start + enough days to cross into next month as a safe reference point.
   const nextMonthYear = localMonth === 12 ? localYear + 1 : localYear;
   const nextMonth = localMonth === 12 ? 1 : localMonth + 1;
-  const endUtcMs =
-    Date.UTC(nextMonthYear, nextMonth - 1, 1) - offsetMinutes * 60_000 - 1;
+  const endUtcMs = civilMidnightUtcMs(nextMonthYear, nextMonth, 1, tz) - 1;
 
   return { startOfMonth: new Date(startUtcMs), endOfMonth: new Date(endUtcMs) };
 }

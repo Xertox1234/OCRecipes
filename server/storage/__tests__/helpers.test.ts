@@ -115,6 +115,29 @@ describe("getDayBounds", () => {
     getDayBounds(date, "America/Los_Angeles");
     expect(date.getTime()).toBe(originalTime);
   });
+
+  // DST correctness — spring-forward regression
+  it("DST spring-forward: input at 1pm PDT gives correct midnight (PST, not PDT)", () => {
+    // 2026-03-08: LA springs forward at 2am. Midnight Mar 8 = PST (UTC-8) = 08:00Z.
+    // Sampling the offset at 1pm PDT (20:00Z, UTC-7) would give the wrong offset
+    // and compute 07:00Z. The two-step correction must produce 08:00Z.
+    const date = new Date("2026-03-08T20:00:00Z"); // 1pm PDT
+    const { startOfDay, endOfDay } = getDayBounds(date, "America/Los_Angeles");
+
+    expect(startOfDay.toISOString()).toBe("2026-03-08T08:00:00.000Z");
+    // Spring-forward day is 23h: ends at 2026-03-09T06:59:59.999Z (midnight PDT)
+    expect(endOfDay.toISOString()).toBe("2026-03-09T06:59:59.999Z");
+  });
+
+  it("DST fall-back: 25-hour day ends at the correct UTC instant", () => {
+    // 2026-11-01: LA falls back at 2am. Start = midnight PDT (07:00Z).
+    // End = midnight PST on Nov 2 - 1ms = 08:00:00Z - 1ms = 07:59:59.999Z.
+    const date = new Date("2026-11-01T10:00:00Z"); // some time Nov 1 LA
+    const { startOfDay, endOfDay } = getDayBounds(date, "America/Los_Angeles");
+
+    expect(startOfDay.toISOString()).toBe("2026-11-01T07:00:00.000Z");
+    expect(endOfDay.toISOString()).toBe("2026-11-02T07:59:59.999Z");
+  });
 });
 
 describe("getMonthBounds", () => {
