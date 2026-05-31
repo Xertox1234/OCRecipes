@@ -1,6 +1,6 @@
 ---
 title: "Implement /todo Gate 3 — per-todo advisor pre-check"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-30
 updated: 2026-05-30

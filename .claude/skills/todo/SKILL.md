@@ -208,7 +208,7 @@ Agent({
 ### After Each Batch
 
 1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`.
-2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, `skipped-low-priority`, or `null` if PR creation failed), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage.
+2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, `skipped-low-priority`, or `null` if PR creation failed), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
 
 Proceed to the next batch in the execution plan.
 
@@ -248,6 +248,7 @@ After all batches have been executed (or after early termination):
    Remaining: X (todos still in backlog after this session)
    Patterns codified: P
    Short-circuited: SC (todos that reused a verified solution and skipped research; list the docs/solutions paths)
+   Advisor: G green, Y yellow, R red, K skipped (not available)
    Final test count: T (baseline was B)
    ```
 
