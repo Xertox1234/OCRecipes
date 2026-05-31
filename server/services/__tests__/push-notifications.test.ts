@@ -146,5 +146,52 @@ describe("sendPushToUser", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PR #269 reliability-audit: per-chunk Promise.race send timeout
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("PR #269 — push send timeout via Promise.race", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns false and clears the timer when sendPushNotificationsAsync hangs past PUSH_SEND_TIMEOUT_MS", async () => {
+    vi.useFakeTimers();
+
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(VALID_TOKEN),
+    ]);
+    // Never resolves — simulates a hung Expo endpoint
+    expoMock.send.mockReturnValue(new Promise<never>(() => {}));
+
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+
+    const p = sendPushToUser("1", "title", "body");
+
+    // Advance past PUSH_SEND_TIMEOUT_MS (30_000 ms); advanceTimersByTimeAsync
+    // flushes microtasks so the race rejection propagates through the promise chain.
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(await p).toBe(false);
+    // The finally block must have called clearTimeout to clean up the timer
+    expect(clearSpy).toHaveBeenCalled();
+  });
+
+  it("resolves normally (no timeout fire) when send completes before the deadline", async () => {
+    vi.useFakeTimers();
+
+    vi.mocked(storage.getPushTokensForUser).mockResolvedValue([
+      mockToken(VALID_TOKEN),
+    ]);
+    expoMock.send.mockResolvedValue([{ status: "ok", id: "t1" }]);
+
+    const p = sendPushToUser("1", "title", "body");
+    // Let pending microtasks settle (send resolved synchronously in mock)
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(await p).toBe(true);
+  });
+});
+
 // The absent-EXPO_ACCESS_TOKEN path is covered in push-notifications-unconfigured.test.ts
 // (a dedicated file that imports the module without the env var set, giving a fresh singleton).

@@ -1,6 +1,6 @@
 ---
 title: "Test coverage for the reliability-audit fix branches (validation fallthrough, push timeout, deep-link not-found)"
-status: backlog
+status: done
 priority: low
 created: 2026-05-29
 updated: 2026-05-29
