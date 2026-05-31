@@ -23,7 +23,7 @@ Each audit domain maps to specialist agents in `.claude/agents/` that have deep 
 | `reliability`     | _cluster dispatch — see "Reliability Scope" below_                    | 10 failure-mode classes (config fail-fast, network resilience, idempotency, offline, persistence, auth lifecycle, deep links, boundary validation, time/units, observability) — `pre-launch` + standalone only, NOT `full`                                                                                                                              |
 | `maintainability` | `code-reviewer` (with `maintainability-checklist.md` mindset)         | Structural-quality lens — missed code-judo simplifications, files crossing 600 lines, spaghetti growth into unrelated flows, thin wrappers, avoidable orchestration. Opportunity-finder, not violation-finder — overlaps with `architecture`/`code-quality` but selects different findings. `pre-launch` + `code-quality` + standalone only, NOT `full` |
 
-**For `full` scope:** Launch **one agent invocation per structural domain row** (the 7 rows above `reliability`; 7 total). Batch in two groups — first 4 domains, then 3 — to avoid overwhelming context. The "Primary Agent(s)" column shows which agent type to use for each invocation; list both agents in the prompt when two are shown. `full` does **not** include `reliability` or `maintainability`.
+**For `full` scope:** Launch **one agent invocation per structural domain row** (the 7 rows above `reliability`; 7 total). Batch in two groups — first 4 domains, then 3 — to avoid overwhelming context. The "Primary Agent(s)" column shows which agent type to use for each invocation. **When a row lists multiple agents, use the first-listed agent as the `subagent_type` and explicitly name each remaining agent's focus in the prompt body** (e.g., for `security`: "Apply both the security-auditor lens (IDOR, JWT, rate limiting, SSRF) and the ai-llm-specialist lens (prompt injection, AI safety)"). `full` does **not** include `reliability` or `maintainability`.
 
 **For `pre-launch` scope:** Launch the 7 structural-domain invocations as for `full`, **plus** the `reliability` scope's 4 cluster dispatches (see "Reliability Scope" below), **plus** the single `maintainability` dispatch (see "Maintainability Scope" below) — 12 invocations total, batched 4+4+4.
 
@@ -63,7 +63,7 @@ Each cluster dispatch uses the standard discovery prompt template (see above) pl
 
 **Dedup note:** dedup Class 9 timezone findings against `docs/superpowers/specs/2026-05-16-timestamp-timezone-consistency-design.md` and the audit CHANGELOG before reporting — that work may already partially address the day-boundary issue.
 
-**No new infrastructure:** reliability reuses the existing specialist agents and the 13 `docs/rules/` files. It does **not** add a `reliability-specialist` agent or a `docs/rules/reliability.md`.
+**No new infrastructure:** reliability reuses the existing specialist agents and the existing `docs/rules/` files. It does **not** add a `reliability-specialist` agent or a `docs/rules/reliability.md`.
 
 ## Maintainability Scope (structural-quality lens — opportunity finder)
 
@@ -79,27 +79,51 @@ Dispatched as a **single invocation** (not cluster-based — the lens is one min
 
 ## Phase 1: Setup
 
-1. Record the current baseline:
-   - Run `npm run test:run` — note pass count
-   - Run `npm run check:types` — note error count
-   - Run `npm run lint` — note error/warning count
-2. Check `docs/audits/CHANGELOG.md` for previous audit findings that may still be relevant
-3. Create a new manifest file: `docs/audits/YYYY-MM-DD-[scope].md` using the template from `docs/audits/TEMPLATE.md`
-4. Record the baseline in the manifest header
-5. Capture the current branch:
+The audit produces two classes of artifact:
+
+- **Tracked** — code fixes, `docs/rules/` edits, `.claude/agents/` edits. These live in the worktree and ride the audit branch.
+- **Gitignored** — manifest (`docs/audits/YYYY-MM-DD-<scope>.md`), `docs/audits/CHANGELOG.md` append, codified solution files (`docs/solutions/...`). These have no branch to persist on, so they live in the **main checkout** and survive when `git worktree remove` runs in Phase 9.
+
+Phase 1 sets up both correctly.
+
+1. **Capture the base branch** (for the Phase 9 PR base):
+
    ```bash
-   git branch --show-current
-   # If output is empty (detached HEAD), use: git rev-parse --abbrev-ref HEAD
+   BASE_BRANCH="$(git branch --show-current)"
+   # If output is empty (detached HEAD), use: BASE_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
    ```
-6. Create and enter an audit worktree — all subsequent phases run from it:
+
+2. **Capture the main checkout's absolute path.** Use `git rev-parse --git-common-dir`, **not** `pwd` — `pwd` resolves to wherever `/audit` was invoked from, which is wrong if it was invoked from inside another worktree. `--git-common-dir` is worktree-aware (it returns the shared `.git` regardless of which working tree you're in):
+
+   ```bash
+   MAIN_CHECKOUT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+   ```
+
+3. **Create and enter the audit worktree.** All subsequent phases (Phase 2 onward) run from here:
+
    ```bash
    git worktree add -b "audit/$(date +%Y-%m-%d)-<scope>" .worktrees/audit-$(date +%Y-%m-%d) HEAD
+   cd .worktrees/audit-$(date +%Y-%m-%d)
    ```
-   Or use `EnterWorktree` if available. All phases run from this worktree. The worktree is removed at the end of Phase 9 (after the PR is opened, or after the final commit if no PR was opened) with:
+
+   Or use `EnterWorktree` if available. Substitute the audit `<scope>` (e.g. `security`) — `-b` creates the branch the Phase 9 PR will push. The worktree is removed at the end of Phase 9 (after the PR is opened, or after the final commit if no PR was opened) with:
+
    ```bash
    git worktree remove .worktrees/audit-YYYY-MM-DD
    ```
-   (in the create command, substitute the audit `<scope>` — e.g. `security` — and note `-b` creates the branch the Phase 9 PR will push; replace `YYYY-MM-DD` with the date suffix used when creating it)
+
+4. **Record the baseline** (inside the worktree, which is at HEAD of the base branch):
+   - Run `npm run test:run` — note pass count
+   - Run `npm run check:types` — note error count
+   - Run `npm run lint` — note error/warning count
+
+5. **Check the main checkout's CHANGELOG** for previous audit findings that may still be relevant:
+
+   ```bash
+   cat "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"
+   ```
+
+6. **Create the manifest at the main checkout's path** — `"$MAIN_CHECKOUT/docs/audits/$(date +%Y-%m-%d)-<scope>.md"` — using the template from `"$MAIN_CHECKOUT/docs/audits/TEMPLATE.md"`. Record the baseline from step 4 in the manifest header.
 
 ## Phase 2: Discovery
 
@@ -202,19 +226,20 @@ For **each** finding the user wants fixed:
 
    Domain → `--patterns` mapping:
 
-   | Finding Domain                                | `--patterns` value      |
-   | --------------------------------------------- | ----------------------- |
-   | security                                      | `security`              |
-   | performance                                   | `performance`           |
-   | data-integrity                                | `database`              |
-   | architecture                                  | `architecture`          |
-   | code-quality                                  | `typescript,api`        |
-   | camera / RN-UX                                | `react-native`          |
-   | accessibility                                 | `react-native`          |
-   | reliability — server resilience (1-3)         | `security,architecture` |
-   | reliability — client reliability (4-7)        | `react-native`          |
-   | reliability — cross-cutting correctness (8-9) | `typescript,database`   |
-   | reliability — detection/observability (10)    | `architecture`          |
+   | Finding Domain                                | `--patterns` value        |
+   | --------------------------------------------- | ------------------------- |
+   | security                                      | `security`                |
+   | performance                                   | `performance`             |
+   | data-integrity                                | `database`                |
+   | architecture                                  | `architecture`            |
+   | code-quality                                  | `typescript,api`          |
+   | camera / RN-UX                                | `react-native`            |
+   | accessibility                                 | `react-native`            |
+   | reliability — server resilience (1-3)         | `security,architecture`   |
+   | reliability — client reliability (4-7)        | `react-native`            |
+   | reliability — cross-cutting correctness (8-9) | `typescript,database`     |
+   | reliability — detection/observability (10)    | `architecture`            |
+   | maintainability                               | `architecture,typescript` |
 
    Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
@@ -242,14 +267,14 @@ For findings the user wants deferred:
 3. Record the rationale in the Deferred Items table
 4. For low/deferred items that are straightforward boilerplate or test-only work with clear files and acceptance criteria, use `kimi-write` to generate a first pass — review the output before committing. For items requiring human judgment or broad architecture decisions, leave the todo local and note the rationale clearly in the Deferred Items table.
 
-## Phase 5: Close
+## Phase 5: Verify & Summarize
 
 1. Run the full verification suite:
    - `npm run test:run` — all tests must pass
    - `npm run check:types` — zero errors
    - `npm run lint` — zero errors
 2. Update the manifest summary table with final counts
-3. Append an entry to `docs/audits/CHANGELOG.md`
+3. Append an entry to the main checkout's CHANGELOG (`"$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"`) — the worktree's copy would vanish at Phase 9
 4. **Report the final summary to the user:**
    - Findings: X total (C/H/M/L breakdown)
    - Verified: N fixed with evidence
@@ -283,13 +308,13 @@ This phase intentionally keeps the deeper subagent-based review path. Audit work
 2. For each CRITICAL or HIGH finding: fix immediately (follow Phase 3 rules — read, fix, verify, update manifest)
 3. For MEDIUM findings: use judgment — fix if quick, otherwise record in the manifest's Deferred Items table (do not auto-create a todo)
 4. For LOW findings: fix if a trivial one-liner, otherwise record in the manifest's Deferred Items table
-5. Re-run `npm run test:run` and `npm run check:types` after any review fixes
+5. Re-run `npm run test:run`, `npm run check:types`, and `npm run lint` after any review fixes
 
 ## Phase 7: Commit Fixes
 
 After code review is clean:
 
-1. Stage all changed files: code fixes + review fixes + any new todos. (The manifest and `docs/audits/CHANGELOG.md` are gitignored/local-only — they will not stage; keep them updated in the working tree but expect them absent from the commit and PR.)
+1. Stage all changed files: code fixes + review fixes + any new todos. (The manifest, `docs/audits/CHANGELOG.md`, and codified solution files live in the **main checkout** — `$MAIN_CHECKOUT/docs/audits/...` and `$MAIN_CHECKOUT/docs/solutions/...` — per Phase 1's setup. They are gitignored and never stage from the worktree; their persistence is by living outside the worktree, not by commit.)
 2. Commit with message format:
    ```
    fix: resolve [scope] audit findings ([N] verified, [M] deferred)
@@ -308,7 +333,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    - **Code reviewer updates** — New checks the code-reviewer agent should enforce going forward
    - **Specialist agent updates** — New domain-specific checks that a specialist agent should catch in future audits
 2. For each candidate, apply this decision matrix:
-   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor).
+   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` — in the main checkout, not the worktree (see Phase 1 setup). See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor).
    - New check needed → **Code reviewer update** → add to `.claude/agents/code-reviewer.md`
    - Domain-specific check → **Specialist agent update** → add to the relevant `.claude/agents/*.md` checklist
 3. **Specialist agent update routing:** When a finding reveals a new domain-specific check, add it to the appropriate specialist agent's review checklist:
@@ -326,7 +351,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    | Maintainability | reinforce `.claude/skills/audit/maintainability-checklist.md` itself (the mindset doc) — sharpen rule 0, the dedup guard, or the approval bar when a finding reveals a missing structural-quality lens. **Do NOT** add maintainability checks to specialist agents' checklists (they would dilute the specialist's defect focus). High-severity findings whose root cause is a "never do X" boundary or type-contract rule may also append a bullet to `docs/rules/architecture.md` or `docs/rules/typescript.md` per the Phase 5b criteria. |
 
 4. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip standard fixes.
-   - For **solutions**, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
+   - For **solutions**, create one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` (main checkout, not the worktree). Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
    - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
    - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
 5. Review the codification diff for accuracy and scope. Keep it limited to the reusable knowledge extracted from the audit.
