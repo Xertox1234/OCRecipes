@@ -248,7 +248,7 @@ After all batches have been executed (or after early termination):
    Remaining: X (todos still in backlog after this session)
    Patterns codified: P
    Short-circuited: SC (todos that reused a verified solution and skipped research; list the docs/solutions paths)
-   Advisor: G green, Y yellow, R red, K skipped (not available)
+   Advisor: G green, Y yellow, R red, S skipped (not available)
    Final test count: T (baseline was B)
    ```
 
