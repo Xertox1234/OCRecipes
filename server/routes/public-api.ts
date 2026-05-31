@@ -7,7 +7,7 @@ import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { TIER_FEATURES, type ApiTier } from "@shared/constants/api-tiers";
-import { barcodeVariants } from "../services/nutrition-lookup";
+import { barcodeVariants } from "../services/barcode-lookup";
 import type {
   BarcodeVerification,
   BarcodeNutrition,

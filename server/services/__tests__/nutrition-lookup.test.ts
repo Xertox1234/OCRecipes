@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import {
-  lookupBarcode,
   lookupNutrition,
   batchNutritionLookup,
   _resetCNFCacheForTesting,
 } from "../nutrition-lookup";
+import { lookupBarcode } from "../barcode-lookup";
 
 // Mock the db module so the cache functions don't hit a real database
 vi.mock("../../db", () => ({
@@ -383,6 +383,183 @@ describe("lookupBarcode", () => {
     expect(result!.brandName).toBe("Nestle");
     expect(result!.per100g.calories).toBe(500);
     expect(result!.source).toBe("usda");
+  });
+
+  it("USDA-UPC-only primary does not cross-validate against CNF (keeps usda source)", async () => {
+    // OFF has no product → USDA-UPC supplies the primary. Even though CNF *has*
+    // matching data, the cross-validation search terms are built solely from the
+    // (absent) OFF product, so `secondaryPer100g` stays null and the primary is
+    // returned unchanged. This pins the real branch-1 behavior: USDA-UPC-only
+    // products are NOT cross-validated, and missing nutrients default to 0 (from
+    // findNutrientValue), not gap-filled from CNF. It is a regression guard: if a
+    // refactor accidentally cross-validates this branch, fiber flips 0 → 3.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "Coffee Whitener",
+                brandOwner: "Nestle",
+                gtinUpc: "006073114236",
+                foodNutrients: [
+                  { nutrientName: "Energy", nutrientId: 1008, value: 500 },
+                  { nutrientName: "Protein", nutrientId: 1003, value: 1 },
+                  {
+                    nutrientName: "Carbohydrate, by difference",
+                    nutrientId: 1005,
+                    value: 60,
+                  },
+                  {
+                    nutrientName: "Total lipid (fat)",
+                    nutrientId: 1004,
+                    value: 30,
+                  },
+                  // No fiber/sugar/sodium → gaps to be filled from CNF.
+                ],
+              },
+            ],
+          }),
+        }),
+      // CNF food list matches the product name "Coffee Whitener".
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 5555, food_description: "Coffee Whitener" },
+          ],
+        }),
+      "food/?lang=fr": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 5555, food_description: "Colorant à café" },
+          ],
+        }),
+      // CNF nutrients: calories 480 (ratio 0.96 — close), plus the fields the
+      // USDA-UPC primary lacks (fiber/sugar/sodium).
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 5555,
+              nutrient_value: 480,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+            {
+              food_code: 5555,
+              nutrient_value: 2,
+              nutrient_name_id: 203,
+              nutrient_web_name: "Protein",
+            },
+            {
+              food_code: 5555,
+              nutrient_value: 55,
+              nutrient_name_id: 205,
+              nutrient_web_name: "Carbohydrate",
+            },
+            {
+              food_code: 5555,
+              nutrient_value: 28,
+              nutrient_name_id: 204,
+              nutrient_web_name: "Total Fat",
+            },
+            {
+              food_code: 5555,
+              nutrient_value: 3,
+              nutrient_name_id: 291,
+              nutrient_web_name: "Fibre, total dietary",
+            },
+            {
+              food_code: 5555,
+              nutrient_value: 7,
+              nutrient_name_id: 269,
+              nutrient_web_name: "Sugars, total",
+            },
+            {
+              food_code: 5555,
+              nutrient_value: 90,
+              nutrient_name_id: 307,
+              nutrient_web_name: "Sodium, Na",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("6073114236");
+    expect(result).not.toBeNull();
+    // Primary kept verbatim — no cross-validation suffix.
+    expect(result!.per100g.calories).toBe(500);
+    expect(result!.source).toBe("usda");
+    // Fields present on the primary are kept from the primary.
+    expect(result!.per100g.protein).toBe(1);
+    expect(result!.per100g.carbs).toBe(60);
+    expect(result!.per100g.fat).toBe(30);
+    // Fields absent from the USDA-UPC response default to 0 (findNutrientValue),
+    // and are NOT gap-filled from CNF — proving branch 1 skips cross-validation.
+    expect(result!.per100g.fiber).toBe(0);
+    expect(result!.per100g.sugar).toBe(0);
+    expect(result!.per100g.sodium).toBe(0);
+  });
+
+  it("keeps OFF data when the secondary source reports zero calories", async () => {
+    // Case C: OFF has positive calories but the secondary (CNF) reports 0 kcal.
+    // Current behavior keeps OFF (source "openfoodfacts") — the discrepancy
+    // branches require BOTH sides positive, and OFF-positive skips the
+    // "OFF-missing-calories → use secondary" arm. Pins the one branch-2 sub-case
+    // with no coverage and guards the reconcile helper's disagreement condition.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "sugar",
+              serving_size: "4g",
+              nutriments: {
+                "energy-kcal_100g": 400,
+                proteins_100g: 0,
+                carbohydrates_100g: 100,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": cnfWithSugarEN,
+      "food/?lang=fr": cnfWithSugarFR,
+      // CNF match for "sugar" but with 0 kcal — secondary calories === 0.
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 4318,
+              nutrient_value: 0,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+            {
+              food_code: 4318,
+              nutrient_value: 99.98,
+              nutrient_name_id: 205,
+              nutrient_web_name: "Carbohydrate",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("3333333333");
+    expect(result).not.toBeNull();
+    // CNF calories === 0 → lookupCNF returns null (0-calorie matches are
+    // discarded), so no secondary at all. OFF data is kept verbatim.
+    expect(result!.per100g.calories).toBe(400);
+    expect(result!.source).toBe("openfoodfacts");
   });
 
   it("uses secondary data when OFF has no calorie data", async () => {

@@ -1,6 +1,6 @@
 ---
 title: "Refactor nutrition-lookup.ts: extract reconciliation helper + barcode domain split"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31
@@ -65,3 +65,11 @@ The split is mechanical refactoring with no behavior change. The reconciliation 
 ### 2026-05-31
 
 - Created from `/audit code-quality` 2026-05-31 findings H2, M5, L6
+
+### 2026-05-31 — implemented
+
+- M5 (`mapUsdaFoodToNutrition`), H2 (`reconcilePer100g`), and L6 (`barcode-lookup.ts` split) all done. All 5612 tests pass; types + lint clean.
+- **AC "drops below 700 lines" NOT met** — `nutrition-lookup.ts` landed at **792** (down from 1284). Unreachable in-scope: the only block large enough to close the ~92-line gap is the CNF domain (~265 lines), which this todo explicitly keeps. The barcode domain was cleanly extracted; the `<700` figure traces to an imprecise estimate in the original audit.
+- **`reconcilePer100g` signature extended** beyond the literal AC spec to `(primary, secondary, secondarySource, primaryLabel, preferSecondaryOnDiscrepancy, code)`. The three Step-4 branches are NOT behaviourally identical (USDA-UPC primaries never replace on discrepancy; OFF primaries do), so the literal 3-arg signature could not preserve behaviour. The behaviour-unchanged AC outranks the literal-signature AC.
+- **Out-of-scope finding (Medium, surfaced not fixed):** the USDA-UPC-only primary branch (`!offProduct && usdaByUPC`) can never cross-validate — the CNF/USDA secondary search terms are built solely from the (absent) OFF product, so `secondaryPer100g` is always null there. Pre-existing dead branch; preserved faithfully by the refactor. Pinned by a new regression test.
+- Added 2 tests before refactoring to pin the untested branches: USDA-UPC-only-no-cross-validation, and the secondary-zero-calories "keep OFF" case.

@@ -6,7 +6,8 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { insertScannedItemSchema } from "@shared/schema";
 import { logger, toError } from "../lib/logger";
-import { lookupNutrition, lookupBarcode } from "../services/nutrition-lookup";
+import { lookupNutrition } from "../services/nutrition-lookup";
+import { lookupBarcode } from "../services/barcode-lookup";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { numericStringField } from "./_schemas";
 import {
