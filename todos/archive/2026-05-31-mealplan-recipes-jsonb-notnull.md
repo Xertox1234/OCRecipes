@@ -1,6 +1,6 @@
 ---
 title: "Add .notNull() to mealPlanRecipes.dietTags + mealTypes jsonb-default columns"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31
@@ -47,3 +47,5 @@ Surfaced as an out-of-scope observation during the `drizzle-type-safety` todo (b
 ### 2026-05-31
 
 - Created from the `drizzle-type-safety` out-of-scope observation during `/todo` deferred-warning triage.
+- Implemented: added `.notNull()` to `mealPlanRecipes.dietTags` and `mealPlanRecipes.mealTypes` in `shared/schema.ts` (mirrors merged PR #297, which applied the identical change to `communityRecipes`). `check:types`, lint, and 5619 tests pass.
+- DB constraint finding: the live dev DB columns `diet_tags`/`meal_types` are currently **nullable** (`is_nullable=YES`) with **0 NULL rows** — the `.default([])`-implies-NOT-NULL assumption was incorrect (confirmed by advisor + `information_schema` query). Applying the constraint is safe (no backfill needed) but was NOT applied: a targeted `ALTER TABLE meal_plan_recipes ALTER COLUMN diet_tags SET NOT NULL` (+ `meal_types`) was blocked by the migration classifier (needs explicit user approval), and `npm run db:push` aborts non-interactively on an unrelated `favourite_scanned_items` unique-constraint truncate prompt. AC #4 (DB constraint sync) remains pending user action; the type-only schema edit is shipped.
