@@ -113,6 +113,10 @@ export default defineConfig({
         __dirname,
         "./test/mocks/expo-linear-gradient.ts",
       ),
+      "@react-native-community/netinfo": path.resolve(
+        __dirname,
+        "./test/mocks/react-native-community-netinfo.ts",
+      ),
     },
   },
 });
