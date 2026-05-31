@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { throwStatusError } from "@/lib/throw-status-error";
 import type { GroceryList, GroceryListItem } from "@shared/schema";
 
 type GroceryListWithItems = GroceryList & { items: GroceryListItem[] };
@@ -9,7 +10,7 @@ export function useGroceryLists() {
     queryKey: ["/api/meal-plan/grocery-lists"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/meal-plan/grocery-lists");
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
   });
@@ -23,7 +24,7 @@ export function useGroceryListDetail(listId: number) {
         "GET",
         `/api/meal-plan/grocery-lists/${listId}`,
       );
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
     enabled: listId > 0,

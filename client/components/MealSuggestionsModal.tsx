@@ -280,7 +280,9 @@ export function MealSuggestionsModal({
         mutation.error instanceof ApiError &&
         mutation.error.code === "DAILY_LIMIT_REACHED";
       AccessibilityInfo.announceForAccessibility(
-        isLimit ? "Daily suggestion limit reached" : mutation.error.message,
+        isLimit
+          ? "Daily suggestion limit reached"
+          : "Something went wrong. Please try again.",
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- announce only on error state change
@@ -365,7 +367,7 @@ export function MealSuggestionsModal({
                   accessible={false}
                 />
                 <ThemedText style={[styles.errorText, { color: theme.error }]}>
-                  {mutation.error.message}
+                  Something went wrong. Please try again.
                 </ThemedText>
                 <Pressable
                   onPress={handleSuggestMore}

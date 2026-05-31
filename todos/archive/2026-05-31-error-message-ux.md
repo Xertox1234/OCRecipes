@@ -1,6 +1,6 @@
 ---
 title: "Replace raw server error strings with ApiError.code-driven static copy"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31

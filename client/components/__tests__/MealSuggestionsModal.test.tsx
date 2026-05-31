@@ -159,17 +159,21 @@ describe("MealSuggestionsModal", () => {
     expect(screen.getByText("5 suggestions remaining today")).toBeDefined();
   });
 
-  it("shows error state with Try Again button", () => {
+  it("shows static error copy with Try Again button (never the raw server message)", () => {
     mockUseMealSuggestions.mockReturnValue({
       mutate: mockMutate,
       reset: mockReset,
       isPending: false,
       isError: true,
       data: null,
-      error: new Error("Something went wrong"),
+      // Raw server-originated message must NOT reach the UI.
+      error: new Error("500: internal model timeout"),
     });
     renderComponent(<MealSuggestionsModal {...defaultProps} />);
-    expect(screen.getByText("Something went wrong")).toBeDefined();
+    expect(
+      screen.getByText("Something went wrong. Please try again."),
+    ).toBeDefined();
+    expect(screen.queryByText("500: internal model timeout")).toBeNull();
     expect(screen.getByLabelText("Try again")).toBeDefined();
   });
 

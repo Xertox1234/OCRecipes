@@ -24,6 +24,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { ApiError } from "@/lib/api-error";
 import { uploadFrontLabelPhoto, confirmFrontLabel } from "@/lib/photo-upload";
 import { shouldReplaceWithAIFrontLabel } from "@/screens/front-label-confirm-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -35,6 +36,31 @@ type NavigationProp = NativeStackNavigationProp<
   "FrontLabelConfirm"
 >;
 type ScreenRoute = RouteProp<RootStackParamList, "FrontLabelConfirm">;
+
+/** Code-specific user-safe copy for known front-label `ApiError` codes. */
+const FRONT_LABEL_ERROR_COPY: Partial<Record<string, string>> = {
+  CONFLICT: "This product was already verified by another user.",
+};
+
+/**
+ * Map a front-label upload/confirm error to user-safe static copy.
+ *
+ * Never surfaces the raw server `error.message` (which is `apiRequest`'s
+ * `"<status>: <body>"`). Discriminates on `ApiError.code` against a static
+ * copy map. NOTE: `photo-upload.ts` (out of scope here) currently throws a
+ * plain `Error` that discards the server's `code`, so in practice every error
+ * falls through to the generic fallback today; the code map takes effect once
+ * `photo-upload.ts` is refactored to throw a code-carrying `ApiError`.
+ */
+function frontLabelErrorMessage(
+  err: unknown,
+  fallback = "Could not analyze front label. Please try again.",
+): string {
+  if (err instanceof ApiError && err.code) {
+    return FRONT_LABEL_ERROR_COPY[err.code] ?? fallback;
+  }
+  return fallback;
+}
 
 export default function FrontLabelConfirmScreen() {
   const navigation = useNavigation<NavigationProp>();
@@ -85,9 +111,7 @@ export default function FrontLabelConfirmScreen() {
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setUploadError(
-          err.message || "Could not analyze front label. Please try again.",
-        );
+        setUploadError(frontLabelErrorMessage(err));
       });
 
     return () => {
@@ -110,7 +134,9 @@ export default function FrontLabelConfirmScreen() {
     },
     onError: (err: Error) => {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setConfirmError(err.message || "Failed to save product details");
+      setConfirmError(
+        frontLabelErrorMessage(err, "Failed to save product details"),
+      );
     },
   });
 

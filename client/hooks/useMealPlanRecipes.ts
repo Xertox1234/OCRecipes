@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { throwStatusError } from "@/lib/throw-status-error";
 import type {
   MealPlanRecipe,
   RecipeIngredient,
@@ -60,7 +61,7 @@ export function useUnifiedRecipes(params?: {
     queryFn: async () => {
       const url = qs ? `/api/recipes/browse?${qs}` : "/api/recipes/browse";
       const res = await apiRequest("GET", url);
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
   });
@@ -71,7 +72,7 @@ export function useMealPlanRecipeDetail(recipeId: number) {
     queryKey: ["/api/meal-plan/recipes", recipeId],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/meal-plan/recipes/${recipeId}`);
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
     enabled: recipeId > 0,
@@ -141,7 +142,7 @@ export function useCatalogSearch(params: CatalogSearchParams | null) {
         "GET",
         `/api/meal-plan/catalog/search?${qs}`,
       );
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
     enabled: !!params && !!params.query,
