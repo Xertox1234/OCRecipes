@@ -1,4 +1,5 @@
 import { ApiError } from "../api-error";
+import { appStateToFocus } from "../query-client";
 
 // Test the getApiUrl function logic
 describe("getApiUrl", () => {
@@ -277,6 +278,26 @@ describe("apiRequest init merge", () => {
     const body = data ? JSON.stringify(data) : undefined;
     const fetchArgs = { ...init, body };
     expect(fetchArgs.body).toBe(JSON.stringify(data));
+  });
+});
+
+describe("appStateToFocus", () => {
+  // Exercises the real focus-mapping helper used by the focusManager wiring in
+  // query-client.ts: on native, focused iff the app is "active"; on web it
+  // returns undefined so the caller skips the override and TanStack's default
+  // document-visibility focus check stays in effect.
+  it("treats the active state as focused on native", () => {
+    expect(appStateToFocus("ios", "active")).toBe(true);
+    expect(appStateToFocus("android", "active")).toBe(true);
+  });
+
+  it("treats background and inactive states as not focused on native", () => {
+    expect(appStateToFocus("ios", "background")).toBe(false);
+    expect(appStateToFocus("ios", "inactive")).toBe(false);
+  });
+
+  it("returns undefined on web so the focus override is skipped", () => {
+    expect(appStateToFocus("web", "active")).toBeUndefined();
   });
 });
 

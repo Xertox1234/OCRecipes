@@ -3,8 +3,10 @@ import {
   QueryCache,
   QueryFunction,
   onlineManager,
+  focusManager,
 } from "@tanstack/react-query";
 import NetInfo from "@react-native-community/netinfo";
+import { AppState, Platform } from "react-native";
 import { tokenStorage } from "./token-storage";
 import { ApiError } from "./api-error";
 import { reportError } from "./reporter";
@@ -361,4 +363,58 @@ onlineManager.subscribe((isOnline) => {
       // an uncaught rejection on the onlineManager subscription.
     });
   }
+});
+
+/**
+ * Wire TanStack Query's focusManager to React Native's AppState so the library's
+ * internal focus flag tracks foreground/background. This is the RN companion to
+ * the onlineManager/NetInfo wiring above (per the TanStack RN docs).
+ *
+ * Decision (todo 2026-05-31-focus-manager-foreground-refetch): we wire the focus
+ * SIGNAL but deliberately leave the global `refetchOnWindowFocus: false` default
+ * untouched. Rationale:
+ *  - Without this wiring, native has no window-focus events, so a query that
+ *    opts in with `refetchOnWindowFocus: true` (e.g. useHistoryData,
+ *    useCoachContext) silently never refetches on foreground. Wiring focusManager
+ *    makes those per-query opt-ins actually fire.
+ *  - The global default stays `false` on purpose: `staleTime: 5min` already
+ *    bounds freshness, `onlineManager` covers reconnect refetch, and `useAuth`
+ *    re-validates the session on foreground. Flipping the global default to true
+ *    would risk a refetch storm on every foreground event with no added benefit,
+ *    so foreground refetch remains strictly opt-in per query.
+ *
+ * Platform note: `focusManager.setEventListener` REPLACES TanStack's built-in
+ * focus listener on every platform (it does not layer on top of it). We gate the
+ * handler to native only, so on web focus detection is effectively a no-op rather
+ * than the default document-visibility check. That is acceptable here: the web
+ * target isn't built yet, and with the global `refetchOnWindowFocus: false` the
+ * only web impact would be the two per-query opt-ins losing focus refetch. The
+ * guard keeps native behavior unambiguous; revisit it if/when web ships.
+ */
+
+/**
+ * Maps a React Native AppState status to a TanStack focus value. Pure and
+ * exported so it can be unit-tested directly without triggering this module's
+ * import-time manager side effects.
+ *
+ * Returns `true`/`false` on native (focused iff the app is "active"), and
+ * `undefined` on web — the caller treats `undefined` as "skip calling
+ * handleFocus", so on web the focus signal is never updated (a no-op listener).
+ */
+export function appStateToFocus(
+  os: typeof Platform.OS,
+  status: string,
+): boolean | undefined {
+  if (os === "web") return undefined;
+  return status === "active";
+}
+
+focusManager.setEventListener((handleFocus) => {
+  const subscription = AppState.addEventListener("change", (state) => {
+    const focused = appStateToFocus(Platform.OS, state);
+    if (focused !== undefined) {
+      handleFocus(focused);
+    }
+  });
+  return () => subscription.remove();
 });
