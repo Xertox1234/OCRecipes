@@ -96,6 +96,17 @@ RUNWARE_API_KEY=your-runware-key
 # For iOS Simulator: use your Mac's local IP (find with: ipconfig getifaddr en0)
 # For tunneling: use the tunnel URL
 EXPO_PUBLIC_DOMAIN=http://192.168.x.x:3000
+
+# Sentry DSN for off-device error reporting (client/lib/reporter.ts). Leave empty
+# in dev/test — the reporter is a no-op until a DSN is set, so no traffic is sent
+# before deployment. As an EXPO_PUBLIC_* var it is inlined into the JS bundle at
+# build time (not read at server runtime), so set it before the production bundle
+# is built, not in a runtime/server env.
+EXPO_PUBLIC_SENTRY_DSN=
+# Source-map upload (production builds only) additionally needs SENTRY_ORG,
+# SENTRY_PROJECT, and SENTRY_AUTH_TOKEN (+ SENTRY_URL if self-hosted) — read by the
+# @sentry/react-native/expo build phase via sentry-cli. Without them native crashes
+# still report, but stack frames won't be symbolicated.
 ```
 
 #### Apple In-App Purchase (optional, receipt validation)
