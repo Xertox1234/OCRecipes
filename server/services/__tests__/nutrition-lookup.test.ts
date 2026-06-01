@@ -507,6 +507,12 @@ describe("lookupBarcode", () => {
     expect(result!.per100g.fiber).toBe(0);
     expect(result!.per100g.sugar).toBe(0);
     expect(result!.per100g.sodium).toBe(0);
+    // The `secondaryPer100g === null` INVARIANT guard in the USDA-by-UPC branch
+    // did not fire: even with CNF mocked to match, the secondary stays
+    // structurally null here (search terms are built from the absent OFF
+    // product). If a future refactor seeds a secondary into this path, the guard
+    // throws in non-production and this test (which already drives the branch)
+    // turns CI red — that is the self-enforcing regression tripwire.
   });
 
   it("keeps OFF data when the secondary source reports zero calories", async () => {
