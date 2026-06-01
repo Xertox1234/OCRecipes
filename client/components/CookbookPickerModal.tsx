@@ -30,6 +30,8 @@ import {
   useAddRecipeToCookbook,
 } from "@/hooks/useCookbooks";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type { CookbookWithCount } from "@shared/schema";
 
 interface CookbookPickerModalProps {
@@ -81,7 +83,7 @@ export function CookbookPickerModal({
           },
           onError: (err) => {
             setAddingToId(null);
-            if (err.message === "Recipe already in cookbook") {
+            if (err instanceof ApiError && err.code === ErrorCode.CONFLICT) {
               haptics.notification(Haptics.NotificationFeedbackType.Warning);
               Alert.alert(
                 "Already Saved",

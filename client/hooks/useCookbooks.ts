@@ -117,13 +117,8 @@ export function useAddRecipeToCookbook() {
         `/api/cookbooks/${cookbookId}/recipes`,
         { recipeId, recipeType },
       );
-      if (!res.ok) {
-        if (res.status === 409) {
-          throw new Error("Recipe already in cookbook");
-        }
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
+      // apiRequest throws ApiError on any non-ok response (incl. 409 with
+      // code CONFLICT for a duplicate add), so res is always ok here.
       return res.json();
     },
     onSuccess: (_data, { cookbookId }) => {
