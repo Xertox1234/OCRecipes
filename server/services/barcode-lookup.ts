@@ -437,6 +437,27 @@ export async function lookupBarcode(
   // always null in this path and there is nothing to reconcile against.
   // (OFF primaries, in the else branch, do cross-validate via reconcilePer100g.)
   if (!offProduct && usdaByUPC) {
+    // INVARIANT: `secondaryPer100g` MUST be null here. The CNF/USDA secondary
+    // search terms are derived solely from the (absent) OFF product, so with no
+    // OFF product `searchTermCandidates` is empty, `usdaSearchTerm` is "", and
+    // both Step-3 secondary lookups are skipped — leaving `secondaryPer100g`
+    // structurally null. USDA-by-UPC data therefore passes through as
+    // authoritative with no cross-validation. If a future refactor ever seeds a
+    // secondary source into this path, that contract is broken: this guard fails
+    // loudly (throw in non-prod so CI/tests catch the regression; log in prod so
+    // we never throw on a legitimate live lookup). It does NOT alter behaviour —
+    // USDA values still pass through unchanged whether or not it fires.
+    if (secondaryPer100g !== null) {
+      const message =
+        "INVARIANT VIOLATION: secondaryPer100g is non-null in the USDA-by-UPC " +
+        "authoritative path — USDA-by-UPC data is treated as authoritative with " +
+        "no cross-validation. Review the Step-3 secondary lookup and reconciliation " +
+        "semantics before relying on this path.";
+      if (process.env.NODE_ENV !== "production") {
+        throw new Error(message);
+      }
+      log.error({ barcode: code, secondarySource, secondaryPer100g }, message);
+    }
     resolvedProductName = usdaByUPC.product.name;
     resolvedBrandName = usdaByUPC.brandName || undefined;
     per100g = normalizeToPerHundredGrams(usdaByUPC.product);
