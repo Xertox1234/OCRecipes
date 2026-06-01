@@ -227,6 +227,10 @@ describe("Cookbook Routes", () => {
         .send({ recipeId: 10, recipeType: "mealPlan" });
 
       expect(res.status).toBe(409);
+      // Pin the machine-readable code the client branches on for the
+      // "Already Saved" UX (CookbookPickerModal). A generic VALIDATION_ERROR
+      // here would silently break that branch.
+      expect(res.body.code).toBe("CONFLICT");
     });
 
     it("returns 404 when cookbook not found", async () => {

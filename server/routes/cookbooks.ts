@@ -246,7 +246,7 @@ export function register(app: Express): void {
             res,
             409,
             "Recipe already exists in this cookbook",
-            ErrorCode.VALIDATION_ERROR,
+            ErrorCode.CONFLICT,
           );
           return;
         }
