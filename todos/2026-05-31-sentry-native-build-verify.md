@@ -26,7 +26,7 @@ The JS-level wiring (`initReporter()`, `reportError()`, `logger.*`) works withou
 - [ ] `npx expo prebuild` (without `--clean`) runs without error on main after PR #288 merge.
 - [ ] `ios/` and `android/` contain the Sentry native init hooks (`SentrySDK.start` in `AppDelegate`, Sentry Gradle plugin in `android/`).
 - [ ] `npx expo run:ios` builds and launches in the iOS Simulator without errors.
-- [ ] `EXPO_PUBLIC_SENTRY_DSN` is documented in `.env.example` (or equivalent) so it's not forgotten at first deployment.
+- [x] `EXPO_PUBLIC_SENTRY_DSN` is documented (in `docs/DEV_SETUP.md` "Mobile Client" — no `.env.example` exists in this repo; DEV_SETUP.md is the tracked env-var source) so it's not forgotten at first deployment.
 - [ ] The `--clean` flag is NOT used (it destroys Podfile customizations in the gitignored `ios/` directory — see memory `feedback_no_expo_prebuild_clean`).
 
 ## Implementation Notes
@@ -66,4 +66,21 @@ Ran `npx expo prebuild --platform ios --no-install` on the main checkout during 
 - [ ] `cd ios && pod install` (watch for MLKit fat-binary patch running) — was skipped here via `--no-install`.
 - [ ] `npx expo run:ios` builds and launches in the simulator without errors.
 - [ ] Trigger a test error and confirm it reaches Sentry (native crash capture + source maps).
-- [ ] Document `EXPO_PUBLIC_SENTRY_DSN` in `.env.example`.
+- [x] Document `EXPO_PUBLIC_SENTRY_DSN` (done — `docs/DEV_SETUP.md` "Mobile Client" section; see Updates 2026-05-31 below).
+
+### 2026-05-31 (`EXPO_PUBLIC_SENTRY_DSN` documented — doc AC met; native verification still pending)
+
+Completed via a `/todo` run on this file. The three native-build checkboxes above can't be done by an automated executor (no `ios/` in a worktree, no Xcode/Simulator, no live DSN to test against), so they stay open for a hands-on pass on the main checkout.
+
+- ✅ **Documented `EXPO_PUBLIC_SENTRY_DSN`** in `docs/DEV_SETUP.md` → "Mobile Client" block, as a documented-but-empty entry. Chose DEV_SETUP.md over a literal `.env.example` because no `.env.example` exists in this repo and no tooling copies one to `.env`; DEV_SETUP.md is the project's established tracked env-var documentation (avoids drift). The reporter (`client/lib/reporter.ts`) is a no-op until the DSN is set, so no traffic flows pre-deploy.
+- ➕ Also documented the source-map upload companion vars (`SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN`, `SENTRY_URL`) — names verified against the installed `@sentry/cli` package. Without them, native crashes still report but stack frames aren't symbolicated.
+
+**Still needs a real machine + eyes (keep this todo `backlog`):**
+
+```bash
+# Run from the main checkout (not a worktree — ios/ is gitignored):
+cd ios && pod install        # watch for the MLKit fat-binary patch (project_ios26_simulator_fix)
+cd .. && npx expo run:ios    # builds + launches in the Simulator
+# Then set EXPO_PUBLIC_SENTRY_DSN to a real DSN, trigger a test error,
+# and confirm it lands in Sentry (native crash capture + source maps).
+```
