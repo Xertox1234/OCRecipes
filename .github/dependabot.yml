@@ -1,0 +1,38 @@
+# Dependabot — SECURITY updates only (no version-update churn).
+#
+# Why this shape:
+#   - open-pull-requests-limit: 0 disables Dependabot VERSION updates (the
+#     "chase newest" PRs). Several deps are pinned below latest on purpose
+#     (see `ignore` below), so we never want unsolicited version-bump PRs.
+#   - Dependabot SECURITY updates stay active regardless of that limit. They
+#     fire only on a known CVE and bump to the minimum patched version.
+#   - The `groups` block batches all CVE-driven bumps into ONE pull request
+#     per run instead of one PR per package.
+#   - `ignore` protects intentional holds: a security bump is still blocked
+#     from crossing these version boundaries. The alert stays visible in the
+#     Dependabot tab; it just won't auto-open a PR that breaks a pin.
+#
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-security-updates/configuring-dependabot-security-updates
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      # Required field. Only governs version updates, which are disabled below,
+      # so this cadence is effectively inert — security updates run on detection.
+      interval: "weekly"
+    # 0 = no version-update PRs. Security updates are unaffected by this limit.
+    open-pull-requests-limit: 0
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    ignore:
+      # zod is held on 3.x. zod 4 forces drizzle-zod 0.8 (coupled upgrade,
+      # deferred). Allow 3.x security patches; block the jump to 4.
+      - dependency-name: "zod"
+        versions: [">=4.0.0"]
+      # drizzle-zod held at 0.7.x because 0.8 requires zod 4 (see above).
+      - dependency-name: "drizzle-zod"
+        versions: [">=0.8.0"]
