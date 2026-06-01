@@ -190,11 +190,13 @@ describe("ScanScreenConfirmOverlay-utils", () => {
 
   describe("isError and isLogging are mutually exclusive (state invariant)", () => {
     it("handleConfirmLog guard: isError=true prevents isLogging from being set", () => {
-      // Mirror of canLog() — the predicate used by handleConfirmLog and the disabled prop.
-      // Blocks when isLoading, isLogging, or isError is true.
-      function wouldProceed(card: ConfirmCardState | null): boolean {
-        return !!card && !card.isLoading && !card.isLogging && !card.isError;
-      }
+      // Exercise the REAL canLog() — the predicate used by handleConfirmLog
+      // (`if (!confirmCard || !canLog(confirmCard)) return;`) and the Log-It
+      // disabled prop. The null guard is composed exactly as ScanScreen.tsx does
+      // (`!!card && canLog(card)`), so canLog itself is not re-implemented here.
+      const wouldProceed = (card: ConfirmCardState | null): boolean =>
+        !!card && canLog(card);
+
       expect(wouldProceed(buildFetchErrorConfirmCard("x"))).toBe(false);
       expect(
         wouldProceed(

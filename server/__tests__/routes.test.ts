@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { isValidCalendarDate } from "../utils/date-validation";
+import { validateMealPlanDateRange } from "../routes/meal-plan";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 // Test the validation schemas used in routes
 const registerSchema = z.object({
@@ -369,99 +371,89 @@ describe("isValidCalendarDate", () => {
   });
 });
 
-describe("Meal Plan Date Range Validation", () => {
-  // Replicate the validation logic from the route handler for unit testing
-  const DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
-  const MAX_RANGE_DAYS = 90;
+describe("validateMealPlanDateRange", () => {
+  // Exercises the REAL validator exported from server/routes/meal-plan.ts —
+  // the GET /api/meal-plan handler delegates to this function, so the route's
+  // 400 responses are covered here without re-implementing the logic.
 
-  function validateDateRange(
-    start: string | undefined,
-    end: string | undefined,
-  ): { valid: true } | { valid: false; error: string } {
-    if (!start || !end || !DATE_FORMAT.test(start) || !DATE_FORMAT.test(end)) {
-      return {
-        valid: false,
-        error: "start and end query parameters required (YYYY-MM-DD)",
-      };
-    }
-
-    if (!isValidCalendarDate(start) || !isValidCalendarDate(end)) {
-      return { valid: false, error: "Invalid calendar date" };
-    }
-
-    if (start > end) {
-      return { valid: false, error: "start must be on or before end" };
-    }
-
-    const startMs = new Date(start + "T00:00:00Z").getTime();
-    const endMs = new Date(end + "T00:00:00Z").getTime();
-    const diffDays = (endMs - startMs) / (1000 * 60 * 60 * 24);
-    if (diffDays > MAX_RANGE_DAYS) {
-      return { valid: false, error: "Date range must not exceed 90 days" };
-    }
-
-    return { valid: true };
-  }
-
-  it("accepts a valid single-day range", () => {
-    expect(validateDateRange("2024-06-01", "2024-06-01")).toEqual({
+  it("accepts a valid single-day range and echoes the dates", () => {
+    expect(validateMealPlanDateRange("2024-06-01", "2024-06-01")).toEqual({
       valid: true,
+      start: "2024-06-01",
+      end: "2024-06-01",
     });
   });
 
   it("accepts a valid multi-day range", () => {
-    expect(validateDateRange("2024-06-01", "2024-06-30")).toEqual({
+    expect(validateMealPlanDateRange("2024-06-01", "2024-06-30")).toEqual({
       valid: true,
+      start: "2024-06-01",
+      end: "2024-06-30",
     });
   });
 
   it("accepts exactly 90-day range", () => {
-    expect(validateDateRange("2024-01-01", "2024-03-31")).toEqual({
+    expect(validateMealPlanDateRange("2024-01-01", "2024-03-31")).toEqual({
       valid: true,
+      start: "2024-01-01",
+      end: "2024-03-31",
     });
   });
 
-  it("rejects missing start", () => {
-    const result = validateDateRange(undefined, "2024-06-30");
+  it("rejects missing start with no error code (preserves route response shape)", () => {
+    const result = validateMealPlanDateRange(undefined, "2024-06-30");
     expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.error).toBe(
+        "start and end query parameters required (YYYY-MM-DD)",
+      );
+      // The route's missing/format branch sends sendError WITHOUT a code.
+      expect(result.code).toBeUndefined();
+    }
   });
 
   it("rejects missing end", () => {
-    const result = validateDateRange("2024-06-01", undefined);
+    const result = validateMealPlanDateRange("2024-06-01", undefined);
     expect(result.valid).toBe(false);
   });
 
-  it("rejects bad format", () => {
-    const result = validateDateRange("06/01/2024", "06/30/2024");
+  it("rejects bad format with no error code", () => {
+    const result = validateMealPlanDateRange("06/01/2024", "06/30/2024");
     expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBeUndefined();
+    }
   });
 
-  it("rejects invalid calendar dates", () => {
-    const result = validateDateRange("2024-13-45", "2024-14-50");
+  it("rejects invalid calendar dates with VALIDATION_ERROR code", () => {
+    const result = validateMealPlanDateRange("2024-13-45", "2024-14-50");
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.error).toBe("Invalid calendar date");
+      expect(result.code).toBe(ErrorCode.VALIDATION_ERROR);
     }
   });
 
-  it("rejects start after end", () => {
-    const result = validateDateRange("2024-06-30", "2024-06-01");
+  it("rejects start after end with VALIDATION_ERROR code", () => {
+    const result = validateMealPlanDateRange("2024-06-30", "2024-06-01");
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.error).toBe("start must be on or before end");
+      expect(result.code).toBe(ErrorCode.VALIDATION_ERROR);
     }
   });
 
-  it("rejects range exceeding 90 days", () => {
-    const result = validateDateRange("2024-01-01", "2024-07-01");
+  it("rejects range exceeding 90 days with VALIDATION_ERROR code", () => {
+    const result = validateMealPlanDateRange("2024-01-01", "2024-07-01");
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.error).toBe("Date range must not exceed 90 days");
+      expect(result.code).toBe(ErrorCode.VALIDATION_ERROR);
     }
   });
 
   it("rejects Feb 30 as invalid calendar date", () => {
-    const result = validateDateRange("2024-02-30", "2024-03-01");
+    const result = validateMealPlanDateRange("2024-02-30", "2024-03-01");
     expect(result.valid).toBe(false);
     if (!result.valid) {
       expect(result.error).toBe("Invalid calendar date");

@@ -1,267 +1,217 @@
-import { describe, it, expect } from "vitest";
+// @vitest-environment jsdom
+import { renderHook, act } from "@testing-library/react";
+import React from "react";
 
-/**
- * Tests for OnboardingContext logic.
- * Following established pattern (PremiumContext.test.ts): test logic inline
- * without React rendering since vitest runs in node environment.
- */
+import {
+  OnboardingProvider,
+  useOnboarding,
+  type Allergy,
+} from "../OnboardingContext";
 
-// Reproduce the types and defaults from OnboardingContext
-interface Allergy {
-  name: string;
-  severity: "mild" | "moderate" | "severe";
+// Exercise the REAL OnboardingProvider / useOnboarding rather than
+// re-declaring the types/defaults and re-implementing updateData/nextStep/
+// prevStep inline. Only the provider's collaborators are mocked.
+
+const { mockUpdateUser, mockCheckAuth, mockApiRequest } = vi.hoisted(() => ({
+  mockUpdateUser: vi.fn(),
+  mockCheckAuth: vi.fn(),
+  mockApiRequest: vi.fn(),
+}));
+
+vi.mock("@/context/AuthContext", () => ({
+  useAuthContext: () => ({
+    updateUser: mockUpdateUser,
+    checkAuth: mockCheckAuth,
+  }),
+}));
+
+vi.mock("@/lib/query-client", () => ({
+  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+}));
+
+vi.mock("@/lib/logger", () => ({
+  logger: { warn: vi.fn(), error: vi.fn() },
+}));
+
+function createWrapper() {
+  return function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(OnboardingProvider, null, children);
+  };
 }
 
-interface OnboardingData {
-  allergies: Allergy[];
-  healthConditions: string[];
-  dietType: string | null;
-  foodDislikes: string[];
-  primaryGoal: string | null;
-  activityLevel: string | null;
-  householdSize: number;
-  cuisinePreferences: string[];
-  cookingSkillLevel: string | null;
-  cookingTimeAvailable: string | null;
-  healthDataConsent: boolean;
+function renderOnboarding() {
+  return renderHook(() => useOnboarding(), { wrapper: createWrapper() });
 }
 
-const defaultData: OnboardingData = {
-  allergies: [],
-  healthConditions: [],
-  dietType: null,
-  foodDislikes: [],
-  primaryGoal: null,
-  activityLevel: null,
-  householdSize: 1,
-  cuisinePreferences: [],
-  cookingSkillLevel: null,
-  cookingTimeAvailable: null,
-  healthDataConsent: false,
-};
-
-describe("OnboardingContext", () => {
-  describe("default data", () => {
-    it("should have empty arrays for list fields", () => {
-      expect(defaultData.allergies).toEqual([]);
-      expect(defaultData.healthConditions).toEqual([]);
-      expect(defaultData.foodDislikes).toEqual([]);
-      expect(defaultData.cuisinePreferences).toEqual([]);
-    });
-
-    it("should have null for selection fields", () => {
-      expect(defaultData.dietType).toBeNull();
-      expect(defaultData.primaryGoal).toBeNull();
-      expect(defaultData.activityLevel).toBeNull();
-      expect(defaultData.cookingSkillLevel).toBeNull();
-      expect(defaultData.cookingTimeAvailable).toBeNull();
-    });
-
-    it("should have householdSize defaulting to 1", () => {
-      expect(defaultData.householdSize).toBe(1);
-    });
-
-    it("should have exactly 11 fields", () => {
-      expect(Object.keys(defaultData)).toHaveLength(11);
-    });
-
-    it("should have healthDataConsent false by default", () => {
-      expect(defaultData.healthDataConsent).toBe(false);
-    });
-  });
-
-  describe("updateData logic (partial merge)", () => {
-    it("should merge partial updates into existing data", () => {
-      const current = { ...defaultData };
-      const updates: Partial<OnboardingData> = {
-        dietType: "vegan",
-        householdSize: 3,
-      };
-      const merged = { ...current, ...updates };
-
-      expect(merged.dietType).toBe("vegan");
-      expect(merged.householdSize).toBe(3);
-      // Other fields untouched
-      expect(merged.allergies).toEqual([]);
-      expect(merged.primaryGoal).toBeNull();
-    });
-
-    it("should overwrite arrays when updated", () => {
-      const current = { ...defaultData };
-      const allergies: Allergy[] = [
-        { name: "Peanuts", severity: "severe" },
-        { name: "Shellfish", severity: "moderate" },
-      ];
-      const merged = { ...current, allergies };
-
-      expect(merged.allergies).toHaveLength(2);
-      expect(merged.allergies[0].name).toBe("Peanuts");
-      expect(merged.allergies[0].severity).toBe("severe");
-    });
-
-    it("should allow updating multiple fields at once", () => {
-      const current = { ...defaultData };
-      const merged = {
-        ...current,
-        primaryGoal: "lose_weight",
-        activityLevel: "moderate",
-        cookingSkillLevel: "intermediate",
-        cookingTimeAvailable: "30-60min",
-        cuisinePreferences: ["Italian", "Japanese"],
-      };
-
-      expect(merged.primaryGoal).toBe("lose_weight");
-      expect(merged.activityLevel).toBe("moderate");
-      expect(merged.cookingSkillLevel).toBe("intermediate");
-      expect(merged.cookingTimeAvailable).toBe("30-60min");
-      expect(merged.cuisinePreferences).toEqual(["Italian", "Japanese"]);
-    });
-
-    it("should allow setting fields back to null", () => {
-      const withValues = {
-        ...defaultData,
-        dietType: "vegetarian",
-        primaryGoal: "gain_muscle",
-      };
-      const reset = { ...withValues, dietType: null, primaryGoal: null };
-
-      expect(reset.dietType).toBeNull();
-      expect(reset.primaryGoal).toBeNull();
-    });
-  });
-
-  describe("step navigation logic", () => {
-    const totalSteps = 8;
-
-    it("should have 8 total steps", () => {
-      expect(totalSteps).toBe(8);
-    });
-
-    it("nextStep should increment within bounds", () => {
-      let currentStep = 0;
-
-      // nextStep logic from context
-      const nextStep = () => {
-        if (currentStep < totalSteps - 1) {
-          currentStep += 1;
-        }
-      };
-
-      nextStep();
-      expect(currentStep).toBe(1);
-
-      nextStep();
-      expect(currentStep).toBe(2);
-    });
-
-    it("nextStep should not exceed totalSteps - 1", () => {
-      let currentStep = totalSteps - 1; // last step
-
-      const nextStep = () => {
-        if (currentStep < totalSteps - 1) {
-          currentStep += 1;
-        }
-      };
-
-      nextStep();
-      expect(currentStep).toBe(totalSteps - 1); // should not change
-
-      nextStep();
-      expect(currentStep).toBe(totalSteps - 1); // still capped
-    });
-
-    it("prevStep should decrement within bounds", () => {
-      let currentStep = 3;
-
-      const prevStep = () => {
-        if (currentStep > 0) {
-          currentStep -= 1;
-        }
-      };
-
-      prevStep();
-      expect(currentStep).toBe(2);
-
-      prevStep();
-      expect(currentStep).toBe(1);
-    });
-
-    it("prevStep should not go below 0", () => {
-      let currentStep = 0;
-
-      const prevStep = () => {
-        if (currentStep > 0) {
-          currentStep -= 1;
-        }
-      };
-
-      prevStep();
-      expect(currentStep).toBe(0); // should not change
-    });
-
-    it("should be able to navigate through all steps", () => {
-      let currentStep = 0;
-
-      const nextStep = () => {
-        if (currentStep < totalSteps - 1) {
-          currentStep += 1;
-        }
-      };
-
-      for (let i = 0; i < totalSteps - 1; i++) {
-        nextStep();
-      }
-      expect(currentStep).toBe(totalSteps - 1);
-    });
-
-    it("should be able to navigate back through all steps", () => {
-      let currentStep = totalSteps - 1;
-
-      const prevStep = () => {
-        if (currentStep > 0) {
-          currentStep -= 1;
-        }
-      };
-
-      for (let i = 0; i < totalSteps; i++) {
-        prevStep();
-      }
-      expect(currentStep).toBe(0);
-    });
-  });
-
-  describe("allergy model", () => {
-    it("should support mild severity", () => {
-      const allergy: Allergy = { name: "Dairy", severity: "mild" };
-      expect(allergy.severity).toBe("mild");
-    });
-
-    it("should support moderate severity", () => {
-      const allergy: Allergy = { name: "Eggs", severity: "moderate" };
-      expect(allergy.severity).toBe("moderate");
-    });
-
-    it("should support severe severity", () => {
-      const allergy: Allergy = { name: "Peanuts", severity: "severe" };
-      expect(allergy.severity).toBe("severe");
-    });
+describe("useOnboarding hook", () => {
+  it("throws when used outside an OnboardingProvider", () => {
+    expect(() => renderHook(() => useOnboarding())).toThrow(
+      "useOnboarding must be used within an OnboardingProvider",
+    );
   });
 });
 
-describe("useOnboarding hook", () => {
-  it("should throw error when used outside OnboardingProvider", () => {
-    const context = null; // Simulates being outside provider
-    const useOnboarding = () => {
-      if (!context) {
-        throw new Error(
-          "useOnboarding must be used within an OnboardingProvider",
-        );
-      }
-      return context;
-    };
+describe("OnboardingProvider default data", () => {
+  it("has empty arrays for list fields", () => {
+    const { result } = renderOnboarding();
+    expect(result.current.data.allergies).toEqual([]);
+    expect(result.current.data.healthConditions).toEqual([]);
+    expect(result.current.data.foodDislikes).toEqual([]);
+    expect(result.current.data.cuisinePreferences).toEqual([]);
+  });
 
-    expect(() => useOnboarding()).toThrow(
-      "useOnboarding must be used within an OnboardingProvider",
-    );
+  it("has null for selection fields", () => {
+    const { result } = renderOnboarding();
+    expect(result.current.data.dietType).toBeNull();
+    expect(result.current.data.primaryGoal).toBeNull();
+    expect(result.current.data.activityLevel).toBeNull();
+    expect(result.current.data.cookingSkillLevel).toBeNull();
+    expect(result.current.data.cookingTimeAvailable).toBeNull();
+  });
+
+  it("defaults householdSize to 1", () => {
+    const { result } = renderOnboarding();
+    expect(result.current.data.householdSize).toBe(1);
+  });
+
+  it("defaults healthDataConsent to false", () => {
+    const { result } = renderOnboarding();
+    expect(result.current.data.healthDataConsent).toBe(false);
+  });
+
+  it("exposes exactly 11 onboarding-data fields", () => {
+    const { result } = renderOnboarding();
+    expect(Object.keys(result.current.data)).toHaveLength(11);
+  });
+
+  it("starts at step 0 with the provider's totalSteps", () => {
+    const { result } = renderOnboarding();
+    expect(result.current.currentStep).toBe(0);
+    expect(result.current.totalSteps).toBe(8);
+  });
+});
+
+describe("OnboardingProvider updateData (partial merge)", () => {
+  it("merges partial updates into existing data, leaving other fields untouched", () => {
+    const { result } = renderOnboarding();
+
+    act(() => {
+      result.current.updateData({ dietType: "vegan", householdSize: 3 });
+    });
+
+    expect(result.current.data.dietType).toBe("vegan");
+    expect(result.current.data.householdSize).toBe(3);
+    expect(result.current.data.allergies).toEqual([]);
+    expect(result.current.data.primaryGoal).toBeNull();
+  });
+
+  it("overwrites arrays when updated", () => {
+    const { result } = renderOnboarding();
+    const allergies: Allergy[] = [
+      { name: "Peanuts", severity: "severe" },
+      { name: "Shellfish", severity: "moderate" },
+    ];
+
+    act(() => {
+      result.current.updateData({ allergies });
+    });
+
+    expect(result.current.data.allergies).toHaveLength(2);
+    expect(result.current.data.allergies[0]).toEqual({
+      name: "Peanuts",
+      severity: "severe",
+    });
+  });
+
+  it("applies multiple successive updates", () => {
+    const { result } = renderOnboarding();
+
+    act(() => {
+      result.current.updateData({
+        primaryGoal: "lose_weight",
+        activityLevel: "moderate",
+      });
+    });
+    act(() => {
+      result.current.updateData({
+        cookingSkillLevel: "intermediate",
+        cuisinePreferences: ["Italian", "Japanese"],
+      });
+    });
+
+    expect(result.current.data.primaryGoal).toBe("lose_weight");
+    expect(result.current.data.activityLevel).toBe("moderate");
+    expect(result.current.data.cookingSkillLevel).toBe("intermediate");
+    expect(result.current.data.cuisinePreferences).toEqual([
+      "Italian",
+      "Japanese",
+    ]);
+  });
+
+  it("allows setting fields back to null", () => {
+    const { result } = renderOnboarding();
+
+    act(() => {
+      result.current.updateData({
+        dietType: "vegetarian",
+        primaryGoal: "gain_muscle",
+      });
+    });
+    act(() => {
+      result.current.updateData({ dietType: null, primaryGoal: null });
+    });
+
+    expect(result.current.data.dietType).toBeNull();
+    expect(result.current.data.primaryGoal).toBeNull();
+  });
+});
+
+describe("OnboardingProvider step navigation", () => {
+  it("nextStep increments within bounds and caps at totalSteps - 1", () => {
+    const { result } = renderOnboarding();
+    const last = result.current.totalSteps - 1;
+
+    act(() => {
+      result.current.nextStep();
+    });
+    expect(result.current.currentStep).toBe(1);
+
+    // Walk to the final step.
+    for (let i = result.current.currentStep; i < last; i++) {
+      act(() => {
+        result.current.nextStep();
+      });
+    }
+    expect(result.current.currentStep).toBe(last);
+
+    // Further calls are capped.
+    act(() => {
+      result.current.nextStep();
+    });
+    expect(result.current.currentStep).toBe(last);
+  });
+
+  it("prevStep decrements within bounds and does not go below 0", () => {
+    const { result } = renderOnboarding();
+
+    act(() => {
+      result.current.nextStep();
+      result.current.nextStep();
+      result.current.nextStep();
+    });
+    expect(result.current.currentStep).toBe(3);
+
+    act(() => {
+      result.current.prevStep();
+    });
+    expect(result.current.currentStep).toBe(2);
+
+    // Walk back past 0 — should clamp.
+    for (let i = 0; i < 5; i++) {
+      act(() => {
+        result.current.prevStep();
+      });
+    }
+    expect(result.current.currentStep).toBe(0);
   });
 });

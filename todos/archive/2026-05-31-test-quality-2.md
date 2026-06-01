@@ -1,6 +1,6 @@
 ---
 title: "Test quality round 2 — 5 tautological test files + 1 unmocked fire-and-forget"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-31
 updated: 2026-05-31
@@ -43,3 +43,24 @@ Found in the 2026-05-31 code-quality re-run (H1, H2, M7, M8, M9, M10). A test th
 ### 2026-05-31
 
 - Filed from the 2026-05-31 code-quality re-run, manifest H1, H2, M7, M8, M9, M10.
+
+### 2026-06-01
+
+- Implemented all 6 items. H1/H2/M7 rewritten to exercise the real hook/providers
+  via `renderHook` (jsdom + @testing-library/react) per the ThemeContext.test
+  template. M8: extracted `validateMealPlanDateRange` (exported from
+  `server/routes/meal-plan.ts`, preserving per-branch error-code parity — the
+  missing/format branch sends no code) and the route now delegates to it; the
+  test imports + calls the real export. M9: replaced the inline `wouldProceed`
+  with the real `canLog()`, composing the null guard exactly as ScanScreen.tsx
+  (`!!card && canLog(card)`). M10: added an async-factory
+  `vi.mock("../../services/coach-pro-chat")` that keeps the real `handleCoachChat`
+  (streaming tests for-await over it) and stubs `tryArchiveNotebook`.
+- Verified: full suite 5596 passed (379 files), `check:types` clean, lint clean,
+  kimi-review (testing,typescript) — no findings.
+- Out of scope, surfaced for triage (round 3 candidates): the
+  `canScanToday calculation` and `isLoading state` describe blocks in
+  `PremiumContext.test.ts` still derive their predicate inline (tautological);
+  the `usePremiumContext hook` and `Subscription expiry edge cases` blocks
+  likewise re-implement the throw guard / isPremium derivation. Left untouched
+  per the todo's named scope (lines 11-46 only).

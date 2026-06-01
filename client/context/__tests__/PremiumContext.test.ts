@@ -1,49 +1,118 @@
+// @vitest-environment jsdom
+import { renderHook, waitFor } from "@testing-library/react";
+import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   TIER_FEATURES,
   UNLIMITED_SCANS,
   type SubscriptionStatus,
 } from "@shared/types/premium";
 
-// Test the PremiumContext logic directly without React
+import { PremiumProvider, usePremiumContext } from "../PremiumContext";
+
+// The `default values` block exercises the REAL PremiumProvider / derivation
+// (tier, features, isPremium, dailyScanCount) instead of re-deriving it inline.
+// Uses the real TanStack Query (matching client/hooks/__tests__ pattern): each
+// provider query key is pre-seeded into the QueryClient cache so useQuery
+// resolves from cache without a network fetch. `useAuthContext` is mocked to an
+// authenticated user. The other describe blocks below still assert pure
+// TIER_FEATURES / constant facts.
+
+// Mock path resolves to the same module ID as PremiumContext's `./AuthContext`
+// import (vitest applies the `@/` → client alias). Mocking via the relative
+// `./AuthContext` here would target client/context/__tests__/AuthContext and
+// silently NOT apply, loading the real AuthContext → query-client → Expo.
+vi.mock("@/context/AuthContext", () => ({
+  useAuthContext: () => ({ isAuthenticated: true }),
+}));
+
+/** Build a wrapper whose QueryClient cache is pre-seeded per query key. */
+function renderPremium(values: {
+  subscription?: SubscriptionStatus;
+  scanCount?: { count: number };
+}) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+  });
+  if (values.subscription !== undefined) {
+    queryClient.setQueryData(["/api/subscription/status"], values.subscription);
+  }
+  if (values.scanCount !== undefined) {
+    queryClient.setQueryData(
+      ["/api/subscription/scan-count"],
+      values.scanCount,
+    );
+  }
+
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(PremiumProvider, null, children),
+    );
+  }
+  return renderHook(() => usePremiumContext(), { wrapper: Wrapper });
+}
+
 describe("PremiumContext", () => {
   describe("default values", () => {
-    it("should default to free tier when no subscription data", () => {
-      const subscriptionData: SubscriptionStatus | undefined = undefined;
-      const tier =
-        (subscriptionData as SubscriptionStatus | undefined)?.tier ?? "free";
-
-      expect(tier).toBe("free");
+    it("defaults to the free tier when no subscription data", () => {
+      const { result } = renderPremium({});
+      expect(result.current.tier).toBe("free");
     });
 
-    it("should default to free features when no subscription data", () => {
-      const subscriptionData: SubscriptionStatus | undefined = undefined;
-      const features =
-        (subscriptionData as SubscriptionStatus | undefined)?.features ??
-        TIER_FEATURES.free;
-
-      expect(features).toEqual(TIER_FEATURES.free);
-      expect(features.maxDailyScans).toBe(3);
-      expect(features.advancedBarcodes).toBe(true);
+    it("defaults to free features when no subscription data", () => {
+      const { result } = renderPremium({});
+      expect(result.current.features).toEqual(TIER_FEATURES.free);
+      expect(result.current.features.maxDailyScans).toBe(3);
+      expect(result.current.features.advancedBarcodes).toBe(true);
     });
 
-    it("should default to 0 scan count when no data", () => {
-      const scanCountData: { count: number } | undefined = undefined;
-      const dailyScanCount =
-        (scanCountData as { count: number } | undefined)?.count ?? 0;
-
-      expect(dailyScanCount).toBe(0);
+    it("defaults to 0 scan count when no data", () => {
+      const { result } = renderPremium({});
+      expect(result.current.dailyScanCount).toBe(0);
     });
 
-    it("should default isPremium to false when no subscription", () => {
-      const subscriptionData: SubscriptionStatus | undefined = undefined;
-      const tier =
-        (subscriptionData as SubscriptionStatus | undefined)?.tier ?? "free";
-      const isPremium =
-        tier === "premium" &&
-        ((subscriptionData as SubscriptionStatus | undefined)?.isActive ??
-          false);
+    it("defaults isPremium to false when no subscription", () => {
+      const { result } = renderPremium({});
+      expect(result.current.isPremium).toBe(false);
+    });
 
-      expect(isPremium).toBe(false);
+    it("derives premium tier + features + isPremium from an active subscription", async () => {
+      const { result } = renderPremium({
+        subscription: {
+          tier: "premium",
+          expiresAt: new Date(
+            Date.now() + 30 * 24 * 60 * 60 * 1000,
+          ).toISOString(),
+          features: TIER_FEATURES.premium,
+          isActive: true,
+          streakUnlocks: [],
+        },
+        scanCount: { count: 5 },
+      });
+      await waitFor(() => {
+        expect(result.current.tier).toBe("premium");
+      });
+      expect(result.current.features).toEqual(TIER_FEATURES.premium);
+      expect(result.current.isPremium).toBe(true);
+      expect(result.current.dailyScanCount).toBe(5);
+    });
+
+    it("treats an expired premium subscription (isActive=false) as not premium", async () => {
+      const { result } = renderPremium({
+        subscription: {
+          tier: "premium",
+          expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          features: TIER_FEATURES.premium,
+          isActive: false,
+          streakUnlocks: [],
+        },
+      });
+      await waitFor(() => {
+        expect(result.current.tier).toBe("premium");
+      });
+      expect(result.current.isPremium).toBe(false);
     });
   });
 

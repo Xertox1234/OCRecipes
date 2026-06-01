@@ -88,6 +88,69 @@ const addMealPlanItemSchema = z.object({
   servings: numericStringField,
 });
 
+/** YYYY-MM-DD format guard for meal-plan date-range query params. */
+const MEAL_PLAN_DATE_FORMAT = /^\d{4}-\d{2}-\d{2}$/;
+/** Maximum span (inclusive of both endpoints) allowed for a meal-plan query. */
+const MEAL_PLAN_MAX_RANGE_DAYS = 90;
+
+/**
+ * Validate a meal-plan date range (GET /api/meal-plan `start`/`end` params).
+ *
+ * Exported so the validator is unit-tested against the real implementation
+ * instead of a tautological re-implementation in the test body. The route
+ * handler maps a failure to `sendError(res, 400, error, code)` — `code` is
+ * `undefined` for the missing/format case (no machine code, preserving the
+ * original response shape) and `ErrorCode.VALIDATION_ERROR` for the calendar,
+ * ordering, and range-length cases.
+ */
+export function validateMealPlanDateRange(
+  start: string | undefined,
+  end: string | undefined,
+):
+  | { valid: true; start: string; end: string }
+  | { valid: false; error: string; code?: ErrorCode } {
+  if (
+    !start ||
+    !end ||
+    !MEAL_PLAN_DATE_FORMAT.test(start) ||
+    !MEAL_PLAN_DATE_FORMAT.test(end)
+  ) {
+    return {
+      valid: false,
+      error: "start and end query parameters required (YYYY-MM-DD)",
+    };
+  }
+
+  if (!isValidCalendarDate(start) || !isValidCalendarDate(end)) {
+    return {
+      valid: false,
+      error: "Invalid calendar date",
+      code: ErrorCode.VALIDATION_ERROR,
+    };
+  }
+
+  if (start > end) {
+    return {
+      valid: false,
+      error: "start must be on or before end",
+      code: ErrorCode.VALIDATION_ERROR,
+    };
+  }
+
+  const startMs = new Date(start + "T00:00:00Z").getTime();
+  const endMs = new Date(end + "T00:00:00Z").getTime();
+  const diffDays = (endMs - startMs) / (1000 * 60 * 60 * 24);
+  if (diffDays > MEAL_PLAN_MAX_RANGE_DAYS) {
+    return {
+      valid: false,
+      error: "Date range must not exceed 90 days",
+      code: ErrorCode.VALIDATION_ERROR,
+    };
+  }
+
+  return { valid: true, start, end };
+}
+
 export function register(app: Express): void {
   // GET /api/meal-plan/recipes - Get user's meal plan recipes
   app.get(
@@ -324,57 +387,17 @@ export function register(app: Express): void {
         const start = parseQueryString(req.query.start);
         const end = parseQueryString(req.query.end);
 
-        if (
-          !start ||
-          !end ||
-          !/^\d{4}-\d{2}-\d{2}$/.test(start) ||
-          !/^\d{4}-\d{2}-\d{2}$/.test(end)
-        ) {
-          sendError(
-            res,
-            400,
-            "start and end query parameters required (YYYY-MM-DD)",
-          );
+        const validation = validateMealPlanDateRange(start, end);
+        if (!validation.valid) {
+          sendError(res, 400, validation.error, validation.code);
           return;
         }
 
-        // Validate that the strings represent real calendar dates
-        if (!isValidCalendarDate(start) || !isValidCalendarDate(end)) {
-          sendError(
-            res,
-            400,
-            "Invalid calendar date",
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-
-        // Validate start <= end
-        if (start > end) {
-          sendError(
-            res,
-            400,
-            "start must be on or before end",
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-
-        // Validate max range of 90 days
-        const startMs = new Date(start + "T00:00:00Z").getTime();
-        const endMs = new Date(end + "T00:00:00Z").getTime();
-        const diffDays = (endMs - startMs) / (1000 * 60 * 60 * 24);
-        if (diffDays > 90) {
-          sendError(
-            res,
-            400,
-            "Date range must not exceed 90 days",
-            ErrorCode.VALIDATION_ERROR,
-          );
-          return;
-        }
-
-        const items = await storage.getMealPlanItems(req.userId, start, end);
+        const items = await storage.getMealPlanItems(
+          req.userId,
+          validation.start,
+          validation.end,
+        );
         res.json(items);
       } catch (error) {
         handleRouteError(res, error, "fetch meal plan");

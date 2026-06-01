@@ -1,429 +1,212 @@
-// Mock React hooks
-const mockUseRef = vi.fn();
-const mockUseCallback = vi.fn((fn: Function) => fn) as any;
-const mockUseState = vi.fn();
-const mockUseEffect = vi.fn();
+// @vitest-environment jsdom
+import { renderHook, act } from "@testing-library/react";
 
-vi.mock("react", () => ({
-  useRef: (initial: any) => mockUseRef(initial),
-  useCallback: (fn: Function, deps: any[]) => mockUseCallback(fn, deps),
-  useState: (initial: any) => mockUseState(initial),
-  useEffect: (fn: Function, deps: any[]) => mockUseEffect(fn, deps),
-}));
+import { useCamera } from "../useCamera";
 
-// Test the debouncing logic by simulating the hook behavior
-describe("useCamera debouncing logic", () => {
+// Exercises the REAL useCamera hook (client/camera/hooks/useCamera.ts) rather
+// than re-implementing handleBarcodeScanned/resetScanning inline. The hook only
+// imports `react` + type-only `../types`, so it runs under jsdom.
+//
+// Every call that drives the hook's state (handleBarcodeScanned, resetScanning)
+// and every timer advance is wrapped in act() — the real hook calls setState
+// inside both the handler and the debounce timer callback.
+
+describe("useCamera — single-scan debouncing", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.clearAllMocks();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  describe("barcode scan debouncing", () => {
-    it("should call onBarcodeScanned on first scan", () => {
-      const onBarcodeScanned = vi.fn();
-      const isScanningRef = { current: false };
-      const lastScannedRef = { current: null as string | null };
-      const scanTimeoutRef = {
-        current: null as ReturnType<typeof setTimeout> | null,
-      };
-      const setIsScanning = vi.fn();
-      const setLastScannedData = vi.fn();
-      const debounceMs = 2000;
+  it("calls onBarcodeScanned on first scan and sets scanning state", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() => useCamera({ onBarcodeScanned }));
 
-      // Simulate handleBarcodeScanned logic
-      const handleBarcodeScanned = (result: { data: string; type: string }) => {
-        if (isScanningRef.current) return;
-        if (lastScannedRef.current === result.data) return;
-
-        isScanningRef.current = true;
-        lastScannedRef.current = result.data;
-        setLastScannedData(result.data);
-        setIsScanning(true);
-
-        if (scanTimeoutRef.current) {
-          clearTimeout(scanTimeoutRef.current);
-        }
-
-        onBarcodeScanned(result);
-
-        scanTimeoutRef.current = setTimeout(() => {
-          isScanningRef.current = false;
-          setIsScanning(false);
-          lastScannedRef.current = null;
-        }, debounceMs);
-      };
-
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
-
-      expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
-      expect(onBarcodeScanned).toHaveBeenCalledWith({
-        data: "123456789",
-        type: "ean13",
-      });
-      expect(setIsScanning).toHaveBeenCalledWith(true);
-      expect(setLastScannedData).toHaveBeenCalledWith("123456789");
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
     });
 
-    it("should block rapid duplicate scans while isScanning is true", () => {
-      const onBarcodeScanned = vi.fn();
-      const isScanningRef = { current: false };
-      const lastScannedRef = { current: null as string | null };
-      const scanTimeoutRef = {
-        current: null as ReturnType<typeof setTimeout> | null,
-      };
-      const setIsScanning = vi.fn();
-      const setLastScannedData = vi.fn();
-      const debounceMs = 2000;
-
-      const handleBarcodeScanned = (result: { data: string; type: string }) => {
-        if (isScanningRef.current) return;
-        if (lastScannedRef.current === result.data) return;
-
-        isScanningRef.current = true;
-        lastScannedRef.current = result.data;
-        setLastScannedData(result.data);
-        setIsScanning(true);
-
-        if (scanTimeoutRef.current) {
-          clearTimeout(scanTimeoutRef.current);
-        }
-
-        onBarcodeScanned(result);
-
-        scanTimeoutRef.current = setTimeout(() => {
-          isScanningRef.current = false;
-          setIsScanning(false);
-          lastScannedRef.current = null;
-        }, debounceMs);
-      };
-
-      // First scan
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
-      // Rapid subsequent scans (should be blocked)
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
-      handleBarcodeScanned({ data: "987654321", type: "ean13" }); // Different barcode, still blocked
-
-      expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+    expect(onBarcodeScanned).toHaveBeenCalledWith({
+      data: "123456789",
+      type: "ean13",
     });
-
-    it("should allow new scan after debounce period", () => {
-      const onBarcodeScanned = vi.fn();
-      const isScanningRef = { current: false };
-      const lastScannedRef = { current: null as string | null };
-      const scanTimeoutRef = {
-        current: null as ReturnType<typeof setTimeout> | null,
-      };
-      const setIsScanning = vi.fn();
-      const setLastScannedData = vi.fn();
-      const debounceMs = 2000;
-
-      const handleBarcodeScanned = (result: { data: string; type: string }) => {
-        if (isScanningRef.current) return;
-        if (lastScannedRef.current === result.data) return;
-
-        isScanningRef.current = true;
-        lastScannedRef.current = result.data;
-        setLastScannedData(result.data);
-        setIsScanning(true);
-
-        if (scanTimeoutRef.current) {
-          clearTimeout(scanTimeoutRef.current);
-        }
-
-        onBarcodeScanned(result);
-
-        scanTimeoutRef.current = setTimeout(() => {
-          isScanningRef.current = false;
-          setIsScanning(false);
-          lastScannedRef.current = null;
-        }, debounceMs);
-      };
-
-      // First scan
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
-      expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
-
-      // Fast forward past debounce period
-      vi.advanceTimersByTime(2000);
-
-      // New scan should work
-      handleBarcodeScanned({ data: "987654321", type: "ean13" });
-      expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
-    });
-
-    it("should block same barcode even after debounce if lastScannedRef not cleared", () => {
-      const onBarcodeScanned = vi.fn();
-      const isScanningRef = { current: false };
-      const lastScannedRef = { current: null as string | null };
-      const scanTimeoutRef = {
-        current: null as ReturnType<typeof setTimeout> | null,
-      };
-      const setIsScanning = vi.fn();
-      const setLastScannedData = vi.fn();
-      const debounceMs = 2000;
-
-      // Modified handler that doesn't clear lastScannedRef (bug scenario)
-      const handleBarcodeScannedBuggy = (result: {
-        data: string;
-        type: string;
-      }) => {
-        if (isScanningRef.current) return;
-        if (lastScannedRef.current === result.data) return;
-
-        isScanningRef.current = true;
-        lastScannedRef.current = result.data;
-        setLastScannedData(result.data);
-        setIsScanning(true);
-
-        onBarcodeScanned(result);
-
-        scanTimeoutRef.current = setTimeout(() => {
-          isScanningRef.current = false;
-          setIsScanning(false);
-          // Note: lastScannedRef not cleared
-        }, debounceMs);
-      };
-
-      handleBarcodeScannedBuggy({ data: "123456789", type: "ean13" });
-      vi.advanceTimersByTime(2000);
-
-      // Same barcode should still be blocked because lastScannedRef wasn't cleared
-      handleBarcodeScannedBuggy({ data: "123456789", type: "ean13" });
-      expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
-    });
+    expect(result.current.isScanning).toBe(true);
+    expect(result.current.lastScannedData).toBe("123456789");
   });
 
-  describe("resetScanning", () => {
-    it("should clear all scanning state", () => {
-      const isScanningRef = { current: true };
-      const lastScannedRef = { current: "123456789" };
-      const scanTimeoutRef = {
-        current: setTimeout(() => {}, 1000) as ReturnType<
-          typeof setTimeout
-        > | null,
-      };
-      const setIsScanning = vi.fn();
-      const setLastScannedData = vi.fn();
+  it("blocks rapid duplicate scans while isScanning is true", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() => useCamera({ onBarcodeScanned }));
 
-      const resetScanning = () => {
-        if (scanTimeoutRef.current) {
-          clearTimeout(scanTimeoutRef.current);
-          scanTimeoutRef.current = null;
-        }
-        isScanningRef.current = false;
-        setIsScanning(false);
-        setLastScannedData(null);
-        lastScannedRef.current = null as any;
-      };
-
-      resetScanning();
-
-      expect(isScanningRef.current).toBe(false);
-      expect(lastScannedRef.current).toBeNull();
-      expect(scanTimeoutRef.current).toBeNull();
-      expect(setIsScanning).toHaveBeenCalledWith(false);
-      expect(setLastScannedData).toHaveBeenCalledWith(null);
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
+      // Subsequent scans within the debounce window are blocked by the global
+      // single-scan lock — even a different barcode.
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
+      result.current.handleBarcodeScanned({ data: "987654321", type: "ean13" });
     });
 
-    it("should allow new scan after reset", () => {
-      const onBarcodeScanned = vi.fn();
-      const isScanningRef = { current: false };
-      const lastScannedRef = { current: null as string | null };
-      const scanTimeoutRef = {
-        current: null as ReturnType<typeof setTimeout> | null,
-      };
-      const setIsScanning = vi.fn();
-      const setLastScannedData = vi.fn();
-      const debounceMs = 2000;
-
-      const handleBarcodeScanned = (result: { data: string; type: string }) => {
-        if (isScanningRef.current) return;
-        if (lastScannedRef.current === result.data) return;
-
-        isScanningRef.current = true;
-        lastScannedRef.current = result.data;
-        setLastScannedData(result.data);
-        setIsScanning(true);
-
-        onBarcodeScanned(result);
-
-        scanTimeoutRef.current = setTimeout(() => {
-          isScanningRef.current = false;
-          setIsScanning(false);
-          lastScannedRef.current = null;
-        }, debounceMs);
-      };
-
-      const resetScanning = () => {
-        if (scanTimeoutRef.current) {
-          clearTimeout(scanTimeoutRef.current);
-          scanTimeoutRef.current = null;
-        }
-        isScanningRef.current = false;
-        setIsScanning(false);
-        setLastScannedData(null);
-        lastScannedRef.current = null;
-      };
-
-      // Scan
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
-      expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
-
-      // Reset immediately (before debounce)
-      resetScanning();
-
-      // Should allow same barcode scan again
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
-      expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
-    });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
   });
 
-  describe("timeout cleanup", () => {
-    it("should clear existing timeout when new scan starts", () => {
-      const clearTimeoutSpy = vi.spyOn(global, "clearTimeout");
-      const onBarcodeScanned = vi.fn();
-      const isScanningRef = { current: false };
-      const lastScannedRef = { current: null as string | null };
-      const scanTimeoutRef = {
-        current: null as ReturnType<typeof setTimeout> | null,
-      };
-      const setIsScanning = vi.fn();
-      const setLastScannedData = vi.fn();
-      const debounceMs = 2000;
+  it("allows a new scan after the debounce period elapses", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() => useCamera({ onBarcodeScanned }));
 
-      const handleBarcodeScanned = (result: { data: string; type: string }) => {
-        if (isScanningRef.current) return;
-        if (lastScannedRef.current === result.data) return;
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
+    });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
 
-        isScanningRef.current = true;
-        lastScannedRef.current = result.data;
-        setLastScannedData(result.data);
-        setIsScanning(true);
-
-        if (scanTimeoutRef.current) {
-          clearTimeout(scanTimeoutRef.current);
-        }
-
-        onBarcodeScanned(result);
-
-        scanTimeoutRef.current = setTimeout(() => {
-          isScanningRef.current = false;
-          setIsScanning(false);
-          lastScannedRef.current = null;
-        }, debounceMs);
-      };
-
-      // First scan sets timeout
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
-      // Wait for debounce, allow new scan
+    // Fast-forward past the 2000ms default debounce — the timer callback resets
+    // the scanning state.
+    act(() => {
       vi.advanceTimersByTime(2000);
-
-      // Second scan should clear the previous timeout (even though it already fired)
-      handleBarcodeScanned({ data: "987654321", type: "ean13" });
-
-      // clearTimeout should have been called
-      expect(clearTimeoutSpy).toHaveBeenCalled();
-
-      clearTimeoutSpy.mockRestore();
     });
+
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "987654321", type: "ean13" });
+    });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
   });
-});
 
-describe("useCamera callback handling", () => {
-  it("should not call callback when onBarcodeScanned is undefined", () => {
-    const isScanningRef = { current: false };
-    const lastScannedRef = { current: null as string | null };
-    const scanTimeoutRef = {
-      current: null as ReturnType<typeof setTimeout> | null,
-    };
-    const setIsScanning = vi.fn();
-    const setLastScannedData = vi.fn();
-    const onBarcodeScanned: undefined | ((r: any) => void) = undefined;
-    const debounceMs = 2000;
+  it("clears scanning state when the debounce timer fires", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() => useCamera({ onBarcodeScanned }));
 
-    const handleBarcodeScanned = (result: { data: string; type: string }) => {
-      if (isScanningRef.current) return;
-      if (lastScannedRef.current === result.data) return;
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
+    });
+    expect(result.current.isScanning).toBe(true);
 
-      isScanningRef.current = true;
-      lastScannedRef.current = result.data;
-      setLastScannedData(result.data);
-      setIsScanning(true);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(result.current.isScanning).toBe(false);
+  });
 
-      if (scanTimeoutRef.current) {
-        clearTimeout(scanTimeoutRef.current);
-      }
+  it("honors a custom debounceMs", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, debounceMs: 500 }),
+    );
 
-      (onBarcodeScanned as any)?.(result);
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
+    });
 
-      scanTimeoutRef.current = setTimeout(() => {
-        isScanningRef.current = false;
-        setIsScanning(false);
-        lastScannedRef.current = null;
-      }, debounceMs);
-    };
+    // Still locked just before the custom window closes.
+    act(() => {
+      vi.advanceTimersByTime(499);
+      result.current.handleBarcodeScanned({ data: "987654321", type: "ean13" });
+    });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
 
-    // Should not throw
+    // Lock releases at 500ms.
+    act(() => {
+      vi.advanceTimersByTime(1);
+      result.current.handleBarcodeScanned({ data: "987654321", type: "ean13" });
+    });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not throw when onBarcodeScanned is undefined but still updates state", () => {
+    const { result } = renderHook(() => useCamera());
+
     expect(() => {
-      handleBarcodeScanned({ data: "123456789", type: "ean13" });
+      act(() => {
+        result.current.handleBarcodeScanned({
+          data: "123456789",
+          type: "ean13",
+        });
+      });
     }).not.toThrow();
 
-    // State should still be updated
-    expect(setIsScanning).toHaveBeenCalledWith(true);
+    expect(result.current.isScanning).toBe(true);
+    expect(result.current.lastScannedData).toBe("123456789");
   });
 });
 
-describe("batch mode debouncing", () => {
+describe("useCamera — resetScanning", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.clearAllMocks();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  function createBatchHandler(options?: { debounceMs?: number }) {
-    const debounceMs = options?.debounceMs ?? 2000;
+  it("clears all scanning state", () => {
     const onBarcodeScanned = vi.fn();
-    const scannedBarcodesRef = { current: new Map<string, number>() };
-    const isActiveRef = { current: true };
-    const setIsScanning = vi.fn();
-    const setLastScannedData = vi.fn();
+    const { result } = renderHook(() => useCamera({ onBarcodeScanned }));
 
-    const handleBarcodeScanned = (result: { data: string; type: string }) => {
-      if (!isActiveRef.current) return;
-      const now = Date.now();
-      const lastTime = scannedBarcodesRef.current.get(result.data);
-      if (lastTime !== undefined && now - lastTime < debounceMs) return;
-      const isRepeat = lastTime !== undefined;
-      scannedBarcodesRef.current.set(result.data, now);
-      setLastScannedData(result.data);
-      setIsScanning(true);
-      onBarcodeScanned(result, isRepeat);
-    };
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
+    });
+    expect(result.current.isScanning).toBe(true);
+    expect(result.current.lastScannedData).toBe("123456789");
 
-    return {
-      handleBarcodeScanned,
-      onBarcodeScanned,
-      scannedBarcodesRef,
-      isActiveRef,
-      setIsScanning,
-      setLastScannedData,
-    };
-  }
+    act(() => {
+      result.current.resetScanning();
+    });
 
-  it("allows different barcodes immediately without global lock", () => {
-    const { handleBarcodeScanned, onBarcodeScanned } = createBatchHandler();
+    expect(result.current.isScanning).toBe(false);
+    expect(result.current.lastScannedData).toBeNull();
+  });
 
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
-    handleBarcodeScanned({ data: "9876543210987", type: "ean13" });
-    handleBarcodeScanned({ data: "1111111111111", type: "ean13" });
+  it("allows the same barcode to be scanned again immediately after reset", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() => useCamera({ onBarcodeScanned }));
+
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
+    });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+
+    // Reset before the debounce window closes.
+    act(() => {
+      result.current.resetScanning();
+    });
+
+    act(() => {
+      result.current.handleBarcodeScanned({ data: "123456789", type: "ean13" });
+    });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useCamera — batch mode", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("allows different barcodes immediately without a global lock", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+      result.current.handleBarcodeScanned({
+        data: "9876543210987",
+        type: "ean13",
+      });
+      result.current.handleBarcodeScanned({
+        data: "1111111111111",
+        type: "ean13",
+      });
+    });
 
     expect(onBarcodeScanned).toHaveBeenCalledTimes(3);
     expect(onBarcodeScanned).toHaveBeenNthCalledWith(
@@ -443,34 +226,61 @@ describe("batch mode debouncing", () => {
     );
   });
 
-  it("ignores same barcode within 2s debounce window", () => {
-    const { handleBarcodeScanned, onBarcodeScanned } = createBatchHandler();
+  it("ignores the same barcode within the 2s debounce window", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
 
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
-    // Advance 500ms (within debounce window)
-    vi.advanceTimersByTime(500);
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
-    // Advance another 1000ms (still within 2s from first scan)
-    vi.advanceTimersByTime(1000);
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+    act(() => {
+      vi.advanceTimersByTime(1000);
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
 
     expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
   });
 
-  it("fires callback with isRepeat=true for same barcode after debounce", () => {
-    const { handleBarcodeScanned, onBarcodeScanned } = createBatchHandler();
+  it("fires callback with isRepeat=true for the same barcode after the debounce window", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
 
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
-    expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
     expect(onBarcodeScanned).toHaveBeenLastCalledWith(
       { data: "1234567890123", type: "ean13" },
       false,
     );
 
-    // Advance past the 2s debounce window
-    vi.advanceTimersByTime(2000);
+    act(() => {
+      vi.advanceTimersByTime(2000);
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
 
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
     expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
     expect(onBarcodeScanned).toHaveBeenLastCalledWith(
       { data: "1234567890123", type: "ean13" },
@@ -478,28 +288,34 @@ describe("batch mode debouncing", () => {
     );
   });
 
-  it("ignores events when isActiveRef is false", () => {
-    const { handleBarcodeScanned, onBarcodeScanned, isActiveRef } =
-      createBatchHandler();
+  it("clears the batch barcode map on resetScanning", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
 
-    isActiveRef.current = false;
-
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
-    handleBarcodeScanned({ data: "9876543210987", type: "ean13" });
-
-    expect(onBarcodeScanned).not.toHaveBeenCalled();
-  });
-
-  it("resumes processing when isActiveRef is set back to true", () => {
-    const { handleBarcodeScanned, onBarcodeScanned, isActiveRef } =
-      createBatchHandler();
-
-    isActiveRef.current = false;
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
-    expect(onBarcodeScanned).not.toHaveBeenCalled();
-
-    isActiveRef.current = true;
-    handleBarcodeScanned({ data: "1234567890123", type: "ean13" });
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
     expect(onBarcodeScanned).toHaveBeenCalledTimes(1);
+
+    // After reset, the same barcode is treated as new (isRepeat=false) within
+    // the debounce window because the map was cleared.
+    act(() => {
+      result.current.resetScanning();
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(2);
+    expect(onBarcodeScanned).toHaveBeenLastCalledWith(
+      { data: "1234567890123", type: "ean13" },
+      false,
+    );
   });
 });
