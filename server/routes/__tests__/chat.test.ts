@@ -64,6 +64,22 @@ vi.mock("../../services/notebook-extraction", () => ({
   extractNotebookEntries: vi.fn().mockResolvedValue([]),
 }));
 
+// Keep the real `handleCoachChat` (the streaming tests `for await` over its
+// async generator) but stub `tryArchiveNotebook` — GET /messages fires it via
+// `fireAndForget`, so the real service would run its storage import graph on the
+// microtask queue after each test resolves and mutate shared mocks for the next
+// test (cross-file flakiness). See docs/rules/testing.md (fire-and-forget rule)
+// + the vi-mock-mix solution. Async factory because vi.mock is hoisted.
+vi.mock("../../services/coach-pro-chat", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../services/coach-pro-chat")
+  >("../../services/coach-pro-chat");
+  return {
+    ...actual,
+    tryArchiveNotebook: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
 vi.mock("../../lib/openai", () => ({
   isAiConfigured: true,
   openai: {},
