@@ -36,3 +36,8 @@ updates:
       # drizzle-zod held at 0.7.x because 0.8 requires zod 4 (see above).
       - dependency-name: "drizzle-zod"
         versions: [">=0.8.0"]
+      # Pinned to Expo SDK 54. A transitive CVE must NOT drag expo to a new SDK
+      # major (a multi-day native migration); fix such CVEs via `overrides`
+      # instead. Allow 54.x patches; block the SDK 55/56 jump. See PR #312.
+      - dependency-name: "expo"
+        versions: [">=55.0.0"]

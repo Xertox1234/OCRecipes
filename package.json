@@ -166,6 +166,9 @@
     "typescript-eslint": "^8.59.4",
     "vitest": "^4.1.7"
   },
+  "overrides": {
+    "postcss": "^8.5.10"
+  },
   "lint-staged": {
     "*.{ts,tsx}": [
       "env ESLINT_NO_TYPE_AWARE=1 eslint --fix",
