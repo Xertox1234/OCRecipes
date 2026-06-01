@@ -1,50 +1,5 @@
 import { escapeLike } from "../storage/helpers";
 
-describe("Date Range Calculations", () => {
-  it("calculates start of day correctly", () => {
-    const date = new Date("2024-03-15T14:30:00");
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    expect(startOfDay.getHours()).toBe(0);
-    expect(startOfDay.getMinutes()).toBe(0);
-    expect(startOfDay.getSeconds()).toBe(0);
-    expect(startOfDay.getMilliseconds()).toBe(0);
-    expect(startOfDay.getDate()).toBe(15);
-  });
-
-  it("calculates end of day correctly", () => {
-    const date = new Date("2024-03-15T14:30:00");
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    expect(endOfDay.getHours()).toBe(23);
-    expect(endOfDay.getMinutes()).toBe(59);
-    expect(endOfDay.getSeconds()).toBe(59);
-    expect(endOfDay.getMilliseconds()).toBe(999);
-    expect(endOfDay.getDate()).toBe(15);
-  });
-
-  it("handles month boundaries", () => {
-    const date = new Date("2024-01-31T12:00:00");
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    expect(startOfDay.getMonth()).toBe(0); // January
-    expect(startOfDay.getDate()).toBe(31);
-  });
-
-  it("handles year boundaries", () => {
-    const date = new Date("2024-12-31T23:59:59");
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    expect(startOfDay.getFullYear()).toBe(2024);
-    expect(startOfDay.getMonth()).toBe(11); // December
-    expect(startOfDay.getDate()).toBe(31);
-  });
-});
-
 // Real production-code coverage for the storage layer lives in
 // server/storage/__tests__/*.test.ts, which import and call the actual
 // functions against a Postgres test-transaction fixture: user functions
@@ -56,6 +11,15 @@ describe("Date Range Calculations", () => {
 // `vi.fn()` describe blocks here ("Storage Interface Contract", "IDOR
 // Protection", "Saved Items") asserted only their own stubs' return values
 // and exercised zero production code, so they were removed.
+//
+// A "Date Range Calculations" describe block was also removed: it
+// re-implemented day-boundary math inline (`new Date(d); d.setHours(0,0,0,0)`)
+// and then asserted that same computation, exercising no production code. The
+// real day-boundary helper is `getDayBounds` in server/storage/helpers.ts; its
+// behaviour is covered against the real-DB fixture in nutrition.test.ts
+// (getDailyLogs "does not return logs from a different date", getDailyScanCount
+// "returns 0 when no scans exist for the date", and the getDailySummary suite,
+// all of which route through getDayBounds).
 
 describe("escapeLike", () => {
   it("should return plain strings unchanged", () => {
