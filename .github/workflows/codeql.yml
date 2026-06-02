@@ -1,0 +1,72 @@
+name: CodeQL
+
+# Static analysis (SAST) for the TypeScript codebase. Findings land in the repo's
+# Security tab — code scanning is free on public repos, so no GitHub Advanced
+# Security toggle is required here.
+#
+# This check is intentionally NOT one of main's required status checks (see branch
+# protection). That alone makes it non-blocking: a finding or setup failure shows a
+# visible red X on the PR without gating the merge while noise is triaged. We avoid
+# `continue-on-error: true` on purpose — it would mask genuine setup/upload errors as
+# a green check. Promote to a required check once the initial findings are triaged.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "todos/**"
+  pull_request:
+    branches: ["**"]
+  schedule:
+    # Weekly scan (Mondays 03:27 UTC) catches newly-published rules against unchanged code.
+    - cron: "27 3 * * 1"
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-extended surfaces more than the default security-and-quality suite.
+          queries: security-extended
+          # Scope ANALYSIS to our TS source dirs. This is CodeQL config-level scoping
+          # (what gets analyzed) — distinct from on.push.paths above (which only gates
+          # WHEN the workflow runs, not what CodeQL extracts).
+          config: |
+            paths:
+              - client
+              - server
+              - shared
+            paths-ignore:
+              - node_modules
+              - server_dist
+              - ios
+              - android
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
