@@ -1,6 +1,6 @@
 ---
 title: "Error-message UX round 2 — 4 more screens leak raw ApiError message"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-31
 updated: 2026-05-31

@@ -26,9 +26,36 @@ export function charsToRelease(
   return buffer.slice(0, charsPerTick);
 }
 
+/**
+ * Extract the machine-readable `code` from a non-200 stream response body.
+ * The server's `sendError` returns `{ error, code }`; a pre-stream 429
+ * (daily limit) is delivered this way before the SSE stream starts. Returns
+ * undefined when the body is non-JSON or carries no string `code`.
+ */
+export function parseErrorCode(responseText: string): string | undefined {
+  try {
+    const parsed: unknown = JSON.parse(responseText);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { code?: unknown }).code === "string"
+    ) {
+      return (parsed as { code: string }).code;
+    }
+  } catch {
+    // Non-JSON body — no machine-readable code to extract.
+  }
+  return undefined;
+}
+
 interface UseCoachStreamOptions {
   onDone?: (fullText: string, blocks?: CoachBlock[]) => void;
-  onError?: (msg: string) => void;
+  // `code` is the machine-readable ApiError code parsed from a non-200 stream
+  // response body (e.g. "DAILY_LIMIT_REACHED"); undefined for SSE-level errors
+  // and network/token failures that carry no code. Consumers should branch on
+  // `code`, never on the raw `msg` (which is the raw "<status>: <body>" wire
+  // format).
+  onError?: (msg: string, code?: string) => void;
 }
 
 export interface UseCoachStreamReturn {
@@ -238,7 +265,10 @@ export function useCoachStream({
               stopDrain();
               setIsStreaming(false);
               setStatusText("");
-              onErrorRef.current?.(`${xhr.status}: ${xhr.responseText}`);
+              onErrorRef.current?.(
+                `${xhr.status}: ${xhr.responseText}`,
+                parseErrorCode(xhr.responseText),
+              );
             }
           };
 

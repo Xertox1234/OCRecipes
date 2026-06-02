@@ -27,7 +27,7 @@ const state = vi.hoisted(() => ({
   startStream: vi.fn(),
   abortStream: vi.fn(),
   onDone: null as ((fullText: string, blocks?: unknown[]) => void) | null,
-  onError: null as ((message: string) => void) | null,
+  onError: null as ((message: string, code?: string) => void) | null,
   streamingContent: "",
   statusText: "",
   isStreaming: false,
@@ -56,7 +56,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: (opts: {
     onDone: (fullText: string, blocks?: unknown[]) => void;
-    onError: (message: string) => void;
+    onError: (message: string, code?: string) => void;
   }) => {
     state.onDone = opts.onDone;
     state.onError = opts.onError;
@@ -375,14 +375,18 @@ describe("CoachChat — handleChangeText", () => {
   });
 });
 
-// ── streamingError branch via onError (non-429) ──────────────────────────────
+// ── streamingError branch via onError (non-limit) ────────────────────────────
 describe("CoachChat — stream error", () => {
-  it("renders streamingError for a non-429 stream error", () => {
+  it("renders static copy (never the raw message) for a non-limit stream error", () => {
     renderCoachChat();
     act(() => {
-      state.onError?.("500 server exploded");
+      // Raw server body must NOT reach the UI — only static copy is rendered.
+      state.onError?.("500: server exploded", "INTERNAL_ERROR");
     });
-    expect(screen.getByTestId("streaming-error")).toBeTruthy();
+    const banner = screen.getByTestId("streaming-error");
+    expect(banner).toBeTruthy();
+    expect(banner.textContent).toBe("Something went wrong. Please try again.");
+    expect(banner.textContent).not.toContain("server exploded");
   });
 });
 

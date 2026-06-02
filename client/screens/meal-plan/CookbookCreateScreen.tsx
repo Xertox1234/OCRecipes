@@ -20,6 +20,8 @@ import { ThemedText } from "@/components/ThemedText";
 import { InlineError } from "@/components/InlineError";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import {
   useCreateCookbook,
   useCookbookDetail,
@@ -97,10 +99,17 @@ export default function CookbookCreateScreen() {
 
     const onError = (err: Error) => {
       haptics.notification(NotificationFeedbackType.Error);
-      const msg =
-        err instanceof Error
-          ? err.message
-          : `Failed to ${isEditMode ? "update" : "create"} cookbook`;
+      // Never surface the raw error.message — apiRequest throws
+      // ApiError("<status>: <body>"), so the message is the raw server
+      // response. Show static copy and branch on .code for specific cases.
+      let msg = `Couldn't ${isEditMode ? "update" : "create"} this cookbook. Please try again.`;
+      if (err instanceof ApiError) {
+        if (err.code === ErrorCode.VALIDATION_ERROR) {
+          msg = "Please check the name and try again.";
+        } else if (err.code === ErrorCode.RATE_LIMITED) {
+          msg = "Too many requests. Please wait a moment and try again.";
+        }
+      }
       setError(msg);
       if (Platform.OS === "ios") {
         AccessibilityInfo.announceForAccessibility(`Error: ${msg}`);

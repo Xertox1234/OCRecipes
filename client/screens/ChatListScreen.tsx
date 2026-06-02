@@ -36,6 +36,8 @@ import {
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { logger } from "@/lib/logger";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { CompositeNavigationProp } from "@react-navigation/native";
 import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -118,11 +120,20 @@ export default function ChatListScreen() {
       const conversation = await createConversationAsync(undefined);
       navigation.navigate("Chat", { conversationId: conversation.id });
     } catch (e) {
+      // Branch on the machine-readable ApiError.code, not a fragile message
+      // prefix — apiRequest throws ApiError("<status>: <body>", code), so a
+      // `msg.startsWith("429:")` check is coupled to the wire format.
+      const code = e instanceof ApiError ? e.code : undefined;
       const msg = e instanceof Error ? e.message : "";
       let userMessage: string;
-      if (msg.startsWith("401:")) {
+      if (
+        code === ErrorCode.UNAUTHORIZED ||
+        code === "TOKEN_EXPIRED" ||
+        code === "TOKEN_INVALID" ||
+        code === "TOKEN_REVOKED"
+      ) {
         userMessage = "Session expired. Please log in again.";
-      } else if (msg.startsWith("429:")) {
+      } else if (code === ErrorCode.RATE_LIMITED) {
         userMessage = "Too many requests. Please wait a moment.";
       } else if (msg.includes("Network") || msg.includes("fetch")) {
         userMessage = "Unable to reach server. Check your connection.";

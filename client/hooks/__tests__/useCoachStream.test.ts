@@ -4,6 +4,7 @@ import { renderHook, act } from "@testing-library/react";
 
 import {
   charsToRelease,
+  parseErrorCode,
   HOLD_GATE_MS,
   CHARS_PER_TICK,
   DRAIN_INTERVAL_MS,
@@ -33,6 +34,27 @@ describe("charsToRelease", () => {
 
   it("returns empty string for empty buffer regardless of elapsed", () => {
     expect(charsToRelease("", 5000, 700, CHARS_PER_TICK)).toBe("");
+  });
+});
+
+describe("parseErrorCode", () => {
+  it("extracts the code from a standard error body", () => {
+    expect(
+      parseErrorCode('{"error":"Daily limit","code":"DAILY_LIMIT_REACHED"}'),
+    ).toBe("DAILY_LIMIT_REACHED");
+  });
+
+  it("returns undefined when the body has no code field", () => {
+    expect(parseErrorCode('{"error":"oops"}')).toBeUndefined();
+  });
+
+  it("returns undefined for a non-JSON body", () => {
+    expect(parseErrorCode("Internal Server Error")).toBeUndefined();
+    expect(parseErrorCode("")).toBeUndefined();
+  });
+
+  it("returns undefined when code is not a string", () => {
+    expect(parseErrorCode('{"code":123}')).toBeUndefined();
   });
 });
 
