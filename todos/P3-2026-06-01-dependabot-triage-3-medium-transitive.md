@@ -43,7 +43,7 @@ Per-alert (from `npm ls`, 2026-06-01):
   `minimatch@10` (2.x/5.x) consumers. A _scoped nested_ override could bump just the 1.x
   instance, but value is near-zero for a dev-only linter.
 
-- **#1 `esbuild` (GHSA-67mh-4wv8-2f99) — the one actionable item, but it's a lockfile fix.**
+- **#1 `esbuild` (GHSA-67mh-4wv8-2f99) — lockfile hygiene, but blocked on upstream (see 2026-06-02 update).**
   The dev-server CORS CVE needs `esbuild serve`, which vite/vitest/drizzle-kit do not use.
   The _real_ signal is the `npm ls` `ELSPROBLEMS`: **`vite@8.0.14` declares `esbuild ^0.27||^0.28`
   but resolved to `0.18.20`** — because the deprecated `@esbuild-kit/*` chain (under `drizzle-kit`)
@@ -55,7 +55,7 @@ Per-alert (from `npm ls`, 2026-06-01):
 
 - [ ] **uuid (#4):** confirm `@expo/ngrok` and/or `xcode` (via `@expo/config-plugins`) have bumped their `uuid` dep (likely on the next Expo SDK upgrade); re-check `npm ls uuid`. Do NOT force `uuid@^11` via overrides.
 - [ ] **brace-expansion (#2):** re-check `npm ls brace-expansion` after the next `eslint` upgrade — newer eslint drops the ancient `minimatch@3`. Only if it persists AND becomes worth it, add a _scoped nested_ override for the 1.x instance (first verify the GHSA's full affected ranges so a single scoped bump is actually complete). Do NOT blanket-override.
-- [ ] **esbuild (#1):** fix the `vite@8`→`esbuild@0.18.20` mis-resolution as a **lockfile/hygiene** task — try `npm dedupe` and/or bumping `drizzle-kit` to drop the deprecated `@esbuild-kit/*` chain. **Verify** `npm ls esbuild` resolves cleanly (no `ELSPROBLEMS`, vite gets `^0.27||^0.28`) AND `npm run test:run` still passes before asserting the fix works. Fold this into `todos/2026-05-31-postcss-override-bundler-verify.md` (same bundler/lockfile neighborhood) rather than doing it in isolation.
+- [ ] **esbuild (#1) — blocked on upstream (re-verified 2026-06-02):** the `vite@8`→`esbuild@0.18.20` mis-resolution can't be cleanly fixed yet. `drizzle-kit@0.31.10` is already the latest published version and **still** declares `@esbuild-kit/esm-loader: ^2.5.5`, so there is no newer release to bump to; and `npm dedupe --dry-run` proposes churning ~63 packages without re-nesting vite's esbuild. **Revisit when `drizzle-kit` drops `@esbuild-kit`** (watch its changelog/releases) — then re-check `npm ls esbuild` resolves cleanly (no `ELSPROBLEMS`, vite gets `^0.27||^0.28`) AND `npm run test:run` still passes before asserting the fix works. Do NOT blunt-override (vite wants `^0.27||^0.28`, the `@esbuild-kit` chain wants `~0.18` — no single pin satisfies both). Fold the eventual fix into the postcss bundler-verify todo (same bundler/lockfile neighborhood).
 - [ ] **Pre-launch gate:** before the first production build/deploy, re-triage all three against the _shipped_ artifact (RN bundle + bundled Express server) — production-reachability is the assumption that makes "not urgent" true.
 - [ ] Optionally dismiss #4 and #2 in the GitHub Dependabot UI as "no production exposure / dev-tooling only" to clear the default-branch noise (keep #1 open as the actionable lockfile item).
 
@@ -81,3 +81,9 @@ Per-alert (from `npm ls`, 2026-06-01):
 ### 2026-06-01
 
 - Filed after triaging the 3 default-branch Dependabot alerts surfaced by the PR #317/#318 merges. Recommendation: leave for Dependabot/upstream; track here so they aren't lost. Advisor-reviewed triage.
+
+### 2026-06-02
+
+- Attempted to pick up the esbuild item; **it is not cleanly actionable yet.** Live re-verification confirmed the `ELSPROBLEMS` persists: `vite@8.0.14` still resolves to the root-hoisted `esbuild@0.18.20` (from `drizzle-kit → @esbuild-kit/esm-loader@2.6.5 → @esbuild-kit/core-utils@3.3.2`), against vite's `^0.27 || ^0.28` peer range.
+- **Both proposed fixes are dead today:** (1) `drizzle-kit` is already on the latest published version (`0.31.10`) and still declares `@esbuild-kit/esm-loader: ^2.5.5` — there is no newer release that drops the deprecated chain; (2) `npm dedupe --dry-run` proposes changing ~63 packages (and re-adding many nested copies) without cleanly re-nesting vite's esbuild — too broad a churn to the test toolchain for a harmless dev-only issue.
+- **Reclassified the esbuild item from "the one actionable item" to "blocked on upstream"** — revisit when `drizzle-kit` drops `@esbuild-kit`. Updated the Background bullet and AC accordingly.
