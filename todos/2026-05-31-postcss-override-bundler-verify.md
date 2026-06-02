@@ -3,7 +3,7 @@ title: "Verify postcss override under the metro bundler (web export) + revisit w
 status: backlog
 priority: low
 created: 2026-05-31
-updated: 2026-05-31
+updated: 2026-06-01
 assignee:
 labels: [deferred, dependencies, build-tooling]
 github_issue:
