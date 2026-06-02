@@ -166,25 +166,42 @@ async function getCachedNutrition(
 }
 
 /**
- * Cache nutrition data
+ * Write nutrition data to the cache (best-effort — catches + logs, never throws).
+ *
+ * `allowOverwrite` selects the storage policy:
+ *  - `true`  → `setNutritionCache` (upsert via onConflictDoUpdate) for
+ *              guaranteed-fresh lookup results from trusted sources.
+ *  - `false` → `setNutritionCacheIfAbsent` (insert-or-ignore via
+ *              onConflictDoNothing) for seeding from user-provided data
+ *              (e.g. label scans keyed by an arbitrary barcode), which must
+ *              never clobber an existing entry — guards against cache poisoning.
  */
-async function cacheNutrition(
+async function writeNutritionCache(
   query: string,
   data: NutritionData,
+  { allowOverwrite }: { allowOverwrite: boolean },
 ): Promise<void> {
   const key = normalizeForCache(query);
   const expiresAt = new Date(Date.now() + CACHE_EXPIRY_MS);
+  const source = data.source === "cache" ? "usda" : data.source;
 
   try {
-    await storage.setNutritionCache(
-      key,
-      data.name,
-      data.source === "cache" ? "usda" : data.source,
-      data,
-      expiresAt,
-    );
+    if (allowOverwrite) {
+      await storage.setNutritionCache(key, data.name, source, data, expiresAt);
+    } else {
+      await storage.setNutritionCacheIfAbsent(
+        key,
+        data.name,
+        source,
+        data,
+        expiresAt,
+      );
+    }
   } catch (error) {
-    log.error({ err: toError(error) }, "cache write error");
+    log.error(
+      { err: toError(error) },
+      allowOverwrite ? "cache write error" : "cache seed write error",
+    );
   }
 }
 
@@ -637,21 +654,21 @@ export async function lookupNutrition(
   // Primary: Canadian Nutrient File (bilingual, supports French product names)
   const cnfResult = await lookupCNF(effectiveQuery);
   if (cnfResult && cnfResult.calories > 0) {
-    await cacheNutrition(query, cnfResult);
+    await writeNutritionCache(query, cnfResult, { allowOverwrite: true });
     return cnfResult;
   }
 
   // Secondary: USDA FoodData Central (reliable government data)
   const usdaResult = await lookupUSDA(effectiveQuery);
   if (usdaResult) {
-    await cacheNutrition(query, usdaResult);
+    await writeNutritionCache(query, usdaResult, { allowOverwrite: true });
     return usdaResult;
   }
 
   // Last-resort fallback: API Ninjas
   const apiNinjasResult = await lookupAPINinjas(effectiveQuery);
   if (apiNinjasResult) {
-    await cacheNutrition(query, apiNinjasResult);
+    await writeNutritionCache(query, apiNinjasResult, { allowOverwrite: true });
   }
   return apiNinjasResult;
 }
@@ -684,7 +701,7 @@ export async function batchNutritionLookup(
     limit(async () => {
       const data = await lookupNutrition(item);
       if (data) {
-        await cacheNutrition(item, data);
+        await writeNutritionCache(item, data, { allowOverwrite: true });
       }
       return { item, data };
     }),
@@ -752,35 +769,11 @@ export function mapLabelToNutritionData(labelData: {
 
 /**
  * Cache nutrition data (exported for use by label endpoints).
+ * Pass `{ allowOverwrite: false }` when seeding from user-provided data
+ * (e.g. a label scan keyed by an arbitrary barcode) so an existing entry is
+ * never clobbered — guards against cache poisoning.
  */
-export { cacheNutrition };
-
-/**
- * Cache nutrition data only if no entry exists for this query key.
- * Uses onConflictDoNothing to prevent overwrites of existing data,
- * guarding against cache poisoning via arbitrary barcode strings.
- */
-async function cacheNutritionIfAbsent(
-  query: string,
-  data: NutritionData,
-): Promise<void> {
-  const key = normalizeForCache(query);
-  const expiresAt = new Date(Date.now() + CACHE_EXPIRY_MS);
-
-  try {
-    await storage.setNutritionCacheIfAbsent(
-      key,
-      data.name,
-      data.source === "cache" ? "usda" : data.source,
-      data,
-      expiresAt,
-    );
-  } catch (error) {
-    log.error({ err: toError(error) }, "cache seed write error");
-  }
-}
-
-export { cacheNutritionIfAbsent };
+export { writeNutritionCache };
 
 /**
  * Reset the in-memory CNF food list cache. Used by tests only.
