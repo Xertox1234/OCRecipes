@@ -5,11 +5,18 @@ This folder contains structured todo items for tracking project work.
 ## File Naming Convention
 
 ```
-NNN-short-description.md
+P{0-3}-YYYY-MM-DD-short-description.md
 ```
 
-- `NNN` - Three-digit sequential number (001, 002, 003...)
+- `P{0-3}` - Priority prefix, **derived from the `priority:` frontmatter field**
+  (the field stays the source of truth; the prefix is for at-a-glance scanning and
+  sorts highest-priority-first in `ls`): `P0`=critical, `P1`=high, `P2`=medium, `P3`=low
+- `YYYY-MM-DD` - Creation date (used for FIFO ordering within a priority)
 - `short-description` - Kebab-case summary (e.g., `auth-migration`, `add-dark-mode`)
+
+> Keep the prefix in sync with `priority:`. If a todo's priority changes, rename the
+> file to match. The overnight automation selects work by the frontmatter field, not
+> the filename — see `docs/todo-automation-runbook.md`.
 
 ## Status Values
 
