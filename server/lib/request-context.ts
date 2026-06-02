@@ -30,8 +30,10 @@ export function requestContextMiddleware(
   res: Response,
   next: NextFunction,
 ): void {
-  // Read the request ID already generated/validated by pino-http's genReqId
-  const requestId = (req as { id?: string }).id!;
+  // Read the request ID already generated/validated by pino-http's genReqId.
+  // pino-http globally augments req.id to ReqId (number | string | object);
+  // our genReqId always returns a UUID string, so String() is a runtime no-op.
+  const requestId = String(req.id);
 
   // Set request ID on response header for client-side correlation
   res.setHeader("X-Request-Id", requestId);

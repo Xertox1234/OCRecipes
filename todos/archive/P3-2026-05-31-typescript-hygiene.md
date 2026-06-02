@@ -1,6 +1,6 @@
 ---
 title: "TypeScript hygiene — theme: any + redundant req.id cast"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31
