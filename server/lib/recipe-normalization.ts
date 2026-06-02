@@ -151,3 +151,70 @@ export function normalizeIngredient(ing: IngredientInput): IngredientInput {
     unit: normalizeUnit(unit),
   };
 }
+
+// ── Recipe fields (aggregate) ─────────────────────────────────────────────────
+
+interface RawIngredient {
+  name: string;
+  quantity?: string | null;
+  unit?: string | null;
+}
+
+export interface RecipeFieldsInput {
+  title: string;
+  description?: string | null;
+  difficulty?: string | null;
+  instructions?: string[] | null;
+  ingredients?: RawIngredient[] | null;
+}
+
+export interface NormalizedRecipeFields {
+  title: string;
+  description?: string | null;
+  difficulty?: string | null;
+  instructions?: string[] | null;
+  ingredients?: IngredientInput[];
+}
+
+/**
+ * Normalize the common recipe fields in one place. Pure function over a plain
+ * object — no Express/req coupling. Only the keys present in the input appear in
+ * the output, so the result is spread-friendly and preserves each caller's
+ * presence semantics (e.g. an absent `instructions` stays absent rather than
+ * becoming `[]`).
+ *
+ * Callers retain their own post-normalization fallback policy (`?? ""`,
+ * `?? original`, store `null`) — the helper centralizes the normalization, not
+ * the per-caller fallback.
+ */
+export function normalizeRecipeFields(
+  data: RecipeFieldsInput,
+): NormalizedRecipeFields {
+  const result: NormalizedRecipeFields = {
+    title: normalizeTitle(data.title),
+  };
+
+  if ("description" in data) {
+    result.description = normalizeDescription(data.description);
+  }
+  if ("difficulty" in data) {
+    result.difficulty = normalizeDifficulty(data.difficulty);
+  }
+  if ("instructions" in data) {
+    result.instructions =
+      data.instructions == null
+        ? data.instructions
+        : normalizeInstructions(data.instructions);
+  }
+  if ("ingredients" in data && data.ingredients != null) {
+    result.ingredients = data.ingredients.map((ing) =>
+      normalizeIngredient({
+        name: ing.name,
+        quantity: ing.quantity ?? "",
+        unit: ing.unit ?? "",
+      }),
+    );
+  }
+
+  return result;
+}

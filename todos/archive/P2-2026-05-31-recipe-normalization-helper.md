@@ -1,6 +1,6 @@
 ---
 title: "Extract normalizeRecipeFields() helper — dedupe 5-tuple across 3 route files"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-31
 updated: 2026-05-31
