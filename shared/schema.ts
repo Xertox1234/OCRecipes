@@ -592,14 +592,19 @@ export const communityRecipes = pgTable(
     }),
 
     // Canonical content (only populated after enrichment)
-    canonicalImages: jsonb("canonical_images").$type<string[]>().default([]),
+    canonicalImages: jsonb("canonical_images")
+      .$type<string[]>()
+      .default([])
+      .notNull(),
     instructionDetails: jsonb("instruction_details")
       .$type<(string | null)[]>()
-      .default([]),
+      .default([])
+      .notNull(),
     toolsRequired: jsonb("tools_required")
       .$type<{ name: string; affiliateUrl?: string }[]>()
-      .default([]),
-    chefTips: jsonb("chef_tips").$type<string[]>().default([]),
+      .default([])
+      .notNull(),
+    chefTips: jsonb("chef_tips").$type<string[]>().default([]).notNull(),
     cuisineOrigin: text("cuisine_origin"),
     videoUrl: text("video_url"),
   },
