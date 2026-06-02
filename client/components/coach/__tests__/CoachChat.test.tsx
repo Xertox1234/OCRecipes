@@ -3,10 +3,11 @@
  * Render-test harness for CoachChat — covers the daily-limit banner / upgrade
  * CTA wiring added by the 2026-05-16 unfinished-features audit (finding H1).
  *
- * Scope: this exercises CoachChat's *wiring* only — a 429 stream error flips
- * `isAtDailyLimit`, which renders the banner; the banner CTA opens UpgradeModal;
- * a successful `onUpgrade` clears the limit. It does not exercise real network,
- * streaming, or IAP behavior (UpgradeModal is mocked as a thin double).
+ * Scope: this exercises CoachChat's *wiring* only — a DAILY_LIMIT_REACHED stream
+ * error (code-driven, not message-prefix) flips `isAtDailyLimit`, which renders
+ * the banner; the banner CTA opens UpgradeModal; a successful `onUpgrade` clears
+ * the limit. It does not exercise real network, streaming, or IAP behavior
+ * (UpgradeModal is mocked as a thin double).
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -19,12 +20,14 @@ import CoachChat from "../CoachChat";
 // because vi.mock factories are hoisted above imports.
 const { coachStreamRef } = vi.hoisted(() => ({
   coachStreamRef: {
-    onError: null as ((message: string) => void) | null,
+    onError: null as ((message: string, code?: string) => void) | null,
   },
 }));
 
 vi.mock("@/hooks/useCoachStream", () => ({
-  useCoachStream: (opts: { onError: (message: string) => void }) => {
+  useCoachStream: (opts: {
+    onError: (message: string, code?: string) => void;
+  }) => {
     coachStreamRef.onError = opts.onError;
     return {
       startStream: vi.fn(),
@@ -107,10 +110,10 @@ function renderCoachChat() {
   );
 }
 
-/** Flip CoachChat into the daily-limit state via a 429 stream error. */
+/** Flip CoachChat into the daily-limit state via a DAILY_LIMIT_REACHED error. */
 function triggerDailyLimit() {
   act(() => {
-    coachStreamRef.onError?.("429 daily limit reached");
+    coachStreamRef.onError?.("429: …", "DAILY_LIMIT_REACHED");
   });
 }
 
@@ -128,10 +131,11 @@ describe("CoachChat — daily-limit banner / upgrade CTA", () => {
     ).toBeNull();
   });
 
-  it("does not render the limit banner for a non-429 stream error", () => {
+  it("does not render the limit banner for a non-limit stream error", () => {
     renderCoachChat();
     act(() => {
-      coachStreamRef.onError?.("500 internal server error");
+      // No DAILY_LIMIT_REACHED code → must not flip the limit banner.
+      coachStreamRef.onError?.("500: internal server error", "INTERNAL_ERROR");
     });
 
     expect(screen.queryByText(/reached today.s coaching limit/i)).toBeNull();

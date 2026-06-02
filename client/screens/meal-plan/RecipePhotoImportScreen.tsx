@@ -26,10 +26,32 @@ import {
 import { useRecipePhotoImport } from "@/hooks/useRecipePhotoImport";
 import { mapPhotoResultToImportedRecipeData } from "@/lib/photo-upload";
 import type { RecipePhotoResult } from "@/lib/photo-upload";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipePhotoImportScreenNavigationProp } from "@/types/navigation";
 
 type ScreenState = "analyzing" | "review" | "error";
+
+/**
+ * Map an import failure to static, user-safe copy. Never returns the raw
+ * error.message — the upload helper throws ApiError("Upload failed: <status>",
+ * code), so the message is not user-friendly. Branch on .code instead.
+ */
+function importErrorCopy(error: unknown): string {
+  if (error instanceof ApiError) {
+    switch (error.code) {
+      case ErrorCode.PREMIUM_REQUIRED:
+        return "Recipe photo import is a premium feature.";
+      case ErrorCode.VALIDATION_ERROR:
+      case ErrorCode.IMAGE_TOO_LARGE:
+        return "That image couldn't be used. Try a clearer photo.";
+      case ErrorCode.RATE_LIMITED:
+        return "Too many requests. Please wait a moment and try again.";
+    }
+  }
+  return "Couldn't import this recipe. Please try again.";
+}
 
 type RecipePhotoImportRouteProp = RouteProp<
   MealPlanStackParamList,
@@ -71,8 +93,7 @@ export default function RecipePhotoImportScreen() {
         }
       } catch (error) {
         if (cancelled) return;
-        const msg = error instanceof Error ? error.message : "Analysis failed";
-        setErrorMessage(msg);
+        setErrorMessage(importErrorCopy(error));
         setState("error");
       }
     }
@@ -126,8 +147,7 @@ export default function RecipePhotoImportScreen() {
         }
       },
       (error) => {
-        const msg = error instanceof Error ? error.message : "Analysis failed";
-        setErrorMessage(msg);
+        setErrorMessage(importErrorCopy(error));
         setState("error");
       },
     );

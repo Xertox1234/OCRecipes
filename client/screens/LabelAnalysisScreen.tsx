@@ -35,6 +35,8 @@ import {
   type LabelExtractionResult,
 } from "@/lib/photo-upload";
 import { apiRequest } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
 import type { VerificationSubmitResponse } from "@shared/types/verification";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -138,8 +140,12 @@ export default function LabelAnalysisScreen() {
         if (cancelled) return;
         // If we have local data, keep showing it; only set error if no data at all
         if (!labelDataRef.current) {
+          // Never surface the raw error.message — the upload helper throws
+          // ApiError("Upload failed: <status>", code). Show static copy.
           setError(
-            err instanceof Error ? err.message : "Failed to analyze label",
+            err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED
+              ? "Too many requests. Please wait a moment and try again."
+              : "Couldn't read this label. Try again with better lighting.",
           );
         }
       } finally {
@@ -166,7 +172,18 @@ export default function LabelAnalysisScreen() {
       navigation.goBack();
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to log");
+      // Never surface the raw error.message — confirmLabelAnalysis throws a
+      // code-carrying ApiError. Branch on the codes /api/photos/confirm-label
+      // actually emits: NOT_FOUND (session expired) and RATE_LIMITED.
+      let msg = "Couldn't log this item. Please try again.";
+      if (err instanceof ApiError) {
+        if (err.code === ErrorCode.NOT_FOUND) {
+          msg = "This scan expired. Please scan the label again.";
+        } else if (err.code === ErrorCode.RATE_LIMITED) {
+          msg = "Too many requests. Please wait a moment and try again.";
+        }
+      }
+      setError(msg);
     },
   });
 
@@ -186,7 +203,13 @@ export default function LabelAnalysisScreen() {
       setVerificationResult(data);
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : "Verification failed");
+      // Never surface the raw error.message — apiRequest throws ApiError.
+      // Show static copy and branch on .code for the already-verified case.
+      setError(
+        err instanceof ApiError && err.code === ErrorCode.CONFLICT
+          ? "You've already verified this product."
+          : "Couldn't submit verification. Please try again.",
+      );
     },
   });
 

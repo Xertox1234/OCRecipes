@@ -45,6 +45,7 @@ import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import StreamingBubble from "@/components/coach/StreamingBubble";
 import { apiRequest } from "@/lib/query-client";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type { useCoachWarmUp } from "@/hooks/useCoachWarmUp";
 import type {
   CoachChatNavigationProp,
@@ -132,11 +133,14 @@ export default function CoachChat({
         });
       }
     },
-    onError: (message) => {
-      if (message.startsWith("429")) {
+    onError: (_message, code) => {
+      // Branch on the machine-readable code, not a `message.startsWith("429")`
+      // prefix (the raw "<status>: <body>" wire format). Never render the raw
+      // message — it leaks the server response body into the UI / VoiceOver.
+      if (code === ErrorCode.DAILY_LIMIT_REACHED) {
         setIsAtDailyLimit(true);
       } else {
-        setStreamingError(message);
+        setStreamingError("Something went wrong. Please try again.");
       }
       setOptimisticMessage(null);
     },

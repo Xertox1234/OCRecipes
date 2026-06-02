@@ -30,6 +30,8 @@ import {
   useLogWeight,
 } from "@/hooks/useWeightLogs";
 import { weightFromKg, weightToKg, weightUnitLabel } from "@shared/lib/units";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import {
   Spacing,
   BorderRadius,
@@ -155,7 +157,12 @@ export function WeightLogDrawer({ action }: WeightLogDrawerProps) {
         },
         onError: (err) => {
           haptics.notification(Haptics.NotificationFeedbackType.Error);
-          const msg = (err as Error).message || "Failed to log weight";
+          // Never surface the raw error.message — apiRequest throws
+          // ApiError("<status>: <body>"). Show static copy and branch on .code.
+          let msg = "Couldn't log your weight. Please try again.";
+          if (err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED) {
+            msg = "Too many requests. Please wait a moment and try again.";
+          }
           setInputError(msg);
         },
       },
