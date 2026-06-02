@@ -9,13 +9,7 @@ import {
   generateAndPatchRecipeImage,
   normalizeProductName,
 } from "../services/recipe-generation";
-import {
-  normalizeTitle,
-  normalizeDescription,
-  normalizeDifficulty,
-  normalizeInstructions,
-  normalizeIngredient,
-} from "../lib/recipe-normalization";
+import { normalizeRecipeFields } from "../lib/recipe-normalization";
 import { recipeGenerationRateLimit, crudRateLimit } from "./_rate-limiters";
 import {
   formatZodError,
@@ -190,24 +184,22 @@ export function register(app: Express): void {
         });
 
         // Normalize generated recipe data
-        generatedRecipe.title = normalizeTitle(generatedRecipe.title);
+        const normalized = normalizeRecipeFields({
+          title: generatedRecipe.title,
+          description: generatedRecipe.description,
+          difficulty: generatedRecipe.difficulty,
+          instructions: generatedRecipe.instructions,
+          ingredients: generatedRecipe.ingredients,
+        });
+        generatedRecipe.title = normalized.title;
+        // Keep the AI-provided original when normalization yields null.
         generatedRecipe.description =
-          normalizeDescription(generatedRecipe.description) ??
-          generatedRecipe.description;
+          normalized.description ?? generatedRecipe.description;
         generatedRecipe.difficulty =
-          normalizeDifficulty(generatedRecipe.difficulty) ??
-          generatedRecipe.difficulty;
-        generatedRecipe.instructions = normalizeInstructions(
-          generatedRecipe.instructions,
-        );
-        if (generatedRecipe.ingredients) {
-          generatedRecipe.ingredients = generatedRecipe.ingredients.map((ing) =>
-            normalizeIngredient({
-              name: ing.name,
-              quantity: ing.quantity,
-              unit: ing.unit,
-            }),
-          );
+          normalized.difficulty ?? generatedRecipe.difficulty;
+        generatedRecipe.instructions = normalized.instructions ?? [];
+        if (generatedRecipe.ingredients && normalized.ingredients) {
+          generatedRecipe.ingredients = normalized.ingredients;
         }
 
         // Compute meal types at the route layer (storage-layer purity — M4)

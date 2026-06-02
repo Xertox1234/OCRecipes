@@ -30,13 +30,7 @@ import {
 } from "../services/pantry-meal-plan";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { validateRecipeQuality } from "../lib/recipe-validation";
-import {
-  normalizeTitle,
-  normalizeDescription,
-  normalizeDifficulty,
-  normalizeInstructions,
-  normalizeIngredient,
-} from "../lib/recipe-normalization";
+import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
 // Zod schemas for meal plan endpoints
 const createMealPlanRecipeSchema = z.object({
@@ -233,24 +227,19 @@ export function register(app: Express): void {
         }
 
         // Normalize data
-        const normalizedTitle = normalizeTitle(recipeData.title);
-        const normalizedDescription = normalizeDescription(
-          recipeData.description ?? null,
-        );
-        const normalizedDifficulty = normalizeDifficulty(
-          recipeData.difficulty ?? null,
-        );
-        const normalizedInstructions = recipeData.instructions
-          ? normalizeInstructions(recipeData.instructions)
-          : recipeData.instructions;
-
-        const normalizedIngredients = ingredients?.map((ing) =>
-          normalizeIngredient({
-            name: ing.name,
-            quantity: ing.quantity ?? "",
-            unit: ing.unit ?? "",
-          }),
-        );
+        const {
+          title: normalizedTitle,
+          description: normalizedDescription,
+          difficulty: normalizedDifficulty,
+          instructions: normalizedInstructions,
+          ingredients: normalizedIngredients,
+        } = normalizeRecipeFields({
+          title: recipeData.title,
+          description: recipeData.description ?? null,
+          difficulty: recipeData.difficulty ?? null,
+          instructions: recipeData.instructions,
+          ingredients,
+        });
 
         // Infer meal types from title + ingredients (moved from storage layer to maintain layering)
         const mealTypes = inferMealTypes(
@@ -263,7 +252,9 @@ export function register(app: Express): void {
             title: normalizedTitle,
             description: normalizedDescription,
             difficulty: normalizedDifficulty,
-            instructions: normalizedInstructions,
+            // recipeData.instructions is `string[] | undefined` (never null), so
+            // the helper's nullable instructions return is never null here.
+            instructions: normalizedInstructions ?? undefined,
             userId: req.userId,
             sourceType,
             mealTypes,

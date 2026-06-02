@@ -6,6 +6,7 @@ import {
   normalizeInstructions,
   normalizeIngredient,
   normalizeUnit,
+  normalizeRecipeFields,
 } from "../recipe-normalization";
 
 describe("normalizeTitle", () => {
@@ -194,5 +195,100 @@ describe("normalizeIngredient", () => {
     expect(result.quantity).toBe("3");
     expect(result.unit).toBe("tbsp");
     expect(result.name).toBe("2 Cups Flour");
+  });
+});
+
+describe("normalizeRecipeFields", () => {
+  it("normalizes title (always present)", () => {
+    expect(normalizeRecipeFields({ title: "chicken parmesan" }).title).toBe(
+      "Chicken Parmesan",
+    );
+  });
+
+  it("returns null description when the input is empty/null (caller applies fallback)", () => {
+    expect(
+      normalizeRecipeFields({ title: "x", description: null }).description,
+    ).toBeNull();
+    expect(
+      normalizeRecipeFields({ title: "x", description: "" }).description,
+    ).toBeNull();
+  });
+
+  it("normalizes a non-empty description", () => {
+    expect(
+      normalizeRecipeFields({ title: "x", description: "a tasty meal" })
+        .description,
+    ).toBe("A tasty meal.");
+  });
+
+  it("omits the description key entirely when not provided", () => {
+    const result = normalizeRecipeFields({ title: "x" });
+    expect("description" in result).toBe(false);
+  });
+
+  it("returns null difficulty for an unknown value (caller applies fallback)", () => {
+    expect(
+      normalizeRecipeFields({ title: "x", difficulty: "nonsense" }).difficulty,
+    ).toBeNull();
+    expect(
+      normalizeRecipeFields({ title: "x", difficulty: "simple" }).difficulty,
+    ).toBe("Easy");
+  });
+
+  it("preserves an absent instructions value as null (does not coerce to [])", () => {
+    // meal-plan's no-instructions path relies on this: instructions undefined
+    // must stay undefined, not become [].
+    expect(
+      normalizeRecipeFields({ title: "x", instructions: undefined })
+        .instructions,
+    ).toBeUndefined();
+    expect(
+      normalizeRecipeFields({ title: "x", instructions: null }).instructions,
+    ).toBeNull();
+  });
+
+  it("omits the instructions key entirely when not provided", () => {
+    const result = normalizeRecipeFields({ title: "x" });
+    expect("instructions" in result).toBe(false);
+  });
+
+  it("normalizes a provided instructions array", () => {
+    expect(
+      normalizeRecipeFields({
+        title: "x",
+        instructions: ["1. preheat oven", "2. season chicken"],
+      }).instructions,
+    ).toEqual(["Preheat oven", "Season chicken"]);
+  });
+
+  it("normalizes ingredients, defaulting missing quantity/unit to empty strings", () => {
+    const result = normalizeRecipeFields({
+      title: "x",
+      ingredients: [
+        { name: "chicken breast", quantity: "2", unit: "pounds" },
+        { name: "1/2 tsp salt" },
+      ],
+    });
+    expect(result.ingredients).toEqual([
+      { name: "Chicken Breast", quantity: "2", unit: "lb" },
+      { name: "Salt", quantity: "1/2", unit: "tsp" },
+    ]);
+  });
+
+  it("omits the ingredients key when ingredients is null/undefined", () => {
+    expect("ingredients" in normalizeRecipeFields({ title: "x" })).toBe(false);
+    expect(
+      "ingredients" in
+        normalizeRecipeFields({ title: "x", ingredients: undefined }),
+    ).toBe(false);
+    expect(
+      "ingredients" in normalizeRecipeFields({ title: "x", ingredients: null }),
+    ).toBe(false);
+  });
+
+  it("returns an empty ingredients array for an empty input array", () => {
+    expect(
+      normalizeRecipeFields({ title: "x", ingredients: [] }).ingredients,
+    ).toEqual([]);
   });
 });

@@ -7,12 +7,7 @@ import { generateRecipeImage } from "../services/recipe-generation";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { inferMealTypes } from "../services/meal-type-inference";
 import { importRecipeFromUrl } from "../services/recipe-import";
-import {
-  normalizeTitle,
-  normalizeDescription,
-  normalizeInstructions,
-  normalizeIngredient,
-} from "../lib/recipe-normalization";
+import { normalizeRecipeFields } from "../lib/recipe-normalization";
 import { urlImportRateLimit } from "./_rate-limiters";
 import {
   checkPremiumFeature,
@@ -74,10 +69,15 @@ export function register(app: Express): void {
         }
 
         // Normalize imported data before returning to client
-        data.title = normalizeTitle(data.title);
-        data.description = normalizeDescription(data.description ?? null) ?? "";
+        const normalized = normalizeRecipeFields({
+          title: data.title,
+          description: data.description ?? null,
+          instructions: data.instructions,
+        });
+        data.title = normalized.title;
+        data.description = normalized.description ?? "";
         if (data.instructions) {
-          data.instructions = normalizeInstructions(data.instructions);
+          data.instructions = normalized.instructions ?? data.instructions;
         }
 
         res.status(200).json(data);
@@ -149,28 +149,29 @@ export function register(app: Express): void {
         }
 
         // Normalize imported data
-        data.title = normalizeTitle(data.title);
-        data.description = normalizeDescription(data.description ?? null) ?? "";
+        const normalized = normalizeRecipeFields({
+          title: data.title,
+          description: data.description ?? null,
+          instructions: data.instructions,
+          ingredients: data.ingredients,
+        });
+        data.title = normalized.title;
+        data.description = normalized.description ?? "";
         if (data.instructions) {
-          data.instructions = normalizeInstructions(data.instructions);
+          data.instructions = normalized.instructions ?? data.instructions;
         }
 
         // Save to DB
-        const ingredientData = data.ingredients.map((ing, idx) => {
-          const normalized = normalizeIngredient({
-            name: ing.name,
-            quantity: ing.quantity ?? "",
-            unit: ing.unit ?? "",
-          });
-          return {
+        const ingredientData = (normalized.ingredients ?? []).map(
+          (ing, idx) => ({
             recipeId: 0,
-            name: normalized.name,
-            quantity: normalized.quantity,
-            unit: normalized.unit,
+            name: ing.name,
+            quantity: ing.quantity,
+            unit: ing.unit,
             category: "other" as const,
             displayOrder: idx,
-          };
-        });
+          }),
+        );
         const recipe = await storage.createMealPlanRecipe(
           {
             userId: req.userId,
