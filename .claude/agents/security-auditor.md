@@ -350,6 +350,7 @@ When auditing a route file or service, check every item:
 - [ ] JWT includes issuer + audience claims
 - [ ] Token versioning checked after JWT verification
 - [ ] Update functions use Pick type whitelist
+- [ ] External error/telemetry reporters (Sentry et al.) pin `sendDefaultPii: false` explicitly AND scrub `Authorization`/token headers in a `beforeSend` hook — the SDK default is safe but unpinned, and a future error message or query-param URL could carry a bearer JWT off-device. (Ref: audit 2026-06-02 S1; `client/lib/reporter.ts`)
 
 ### Error Handling
 
