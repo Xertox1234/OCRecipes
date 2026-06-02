@@ -25,7 +25,7 @@ import {
   batchNutritionLookup,
   countNonNullNutritionFields,
   mapLabelToNutritionData,
-  cacheNutritionIfAbsent,
+  writeNutritionCache,
 } from "../services/nutrition-lookup";
 import {
   handleRouteError,
@@ -620,7 +620,9 @@ export function register(app: Express): void {
             const labelNutrition = mapLabelToNutritionData(labelData);
             const labelFieldCount = countNonNullNutritionFields(labelNutrition);
             if (labelFieldCount >= 4) {
-              await cacheNutritionIfAbsent(barcode, labelNutrition);
+              await writeNutritionCache(barcode, labelNutrition, {
+                allowOverwrite: false,
+              });
             }
           } catch {
             // Cache seeding is best-effort

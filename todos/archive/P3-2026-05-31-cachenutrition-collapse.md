@@ -1,6 +1,6 @@
 ---
 title: "Collapse cacheNutrition + cacheNutritionIfAbsent into one writer"
-status: backlog
+status: done
 priority: low
 created: 2026-05-31
 updated: 2026-05-31
