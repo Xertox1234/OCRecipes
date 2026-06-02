@@ -39,5 +39,13 @@ updates:
       # Pinned to Expo SDK 54. A transitive CVE must NOT drag expo to a new SDK
       # major (a multi-day native migration); fix such CVEs via `overrides`
       # instead. Allow 54.x patches; block the SDK 55/56 jump. See PR #312.
+      #
+      # NOTE: when you intentionally lift this SDK pin, re-evaluate the
+      # `overrides.postcss` pin in package.json. Check whether the new
+      # @expo/metro-config ships postcss >= 8.5.10 natively and, if so, DROP the
+      # override (then re-run `npm ls postcss`). The override is only a
+      # resolution floor — metro doesn't call postcss unless a postcss.config
+      # exists; lightningcss is the web CSS transformer. See the closure note in
+      # docs/solutions/best-practices (metro-postcss-gating-…).
       - dependency-name: "expo"
         versions: [">=55.0.0"]

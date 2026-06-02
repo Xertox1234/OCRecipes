@@ -37,16 +37,16 @@ under the **metro bundler** was never exercised. This todo closes that gap.
 
 ## Acceptance Criteria
 
-- [ ] When `react-native-web` is added (web frontend work), run
+- [x] When `react-native-web` is added (web frontend work), run
       `npx expo export --platform web` and confirm the bundle builds with **no
       postcss-related errors** and CSS is emitted correctly.
-- [ ] Re-run `npm ls postcss` and confirm every instance still resolves to
+- [x] Re-run `npm ls postcss` and confirm every instance still resolves to
       ≥ 8.5.10 (the override survived any interim `expo`/metro-config patch).
 - [ ] On the next Expo SDK upgrade: check whether `@expo/metro-config` now ships
       postcss ≥ 8.5.10 natively. If so, **remove** the `overrides.postcss` entry
       in `package.json` (don't carry a now-redundant pin) and drop the matching
       note. Re-verify `npm ls postcss` afterward.
-- [ ] Confirm the `expo >=55.0.0` ignore in `.github/dependabot.yml` is still the
+- [x] Confirm the `expo >=55.0.0` ignore in `.github/dependabot.yml` is still the
       desired guard (remove/adjust if/when an intentional SDK upgrade happens).
 
 ## Implementation Notes
@@ -92,6 +92,24 @@ under the **metro bundler** was never exercised. This todo closes that gap.
   of today (every instance resolves to 8.5.15). AC #1 remains blocked —
   `react-native-web` is still absent from the tree, so `expo export --platform
 web` can't be run yet.
+
+### 2026-06-02
+
+- **Closed (AC #1 satisfied by analysis).** Code-read of `@expo/metro-config@54.0.15`:
+  a web export would not exercise postcss in this project regardless of
+  `react-native-web`. `transform-worker.js → transformCss()` invokes postcss only via
+  `transformPostCssModule()`, which early-returns `hasPostcss:false` when no
+  `postcss.config.*` exists at the project root (none does; `resolvePostcssConfig` reads
+  the project root, so installing react-native-web can't add one). The web CSS transformer
+  is **lightningcss**. The `overrides.postcss` pin is a dependency-resolution floor, not a
+  live bundler code path; its API compat is exercised every CI run via
+  `vitest → vite → postcss@8.5.15`.
+- **AC #2 passes:** `npm ls postcss` → 8.5.15 on both paths, single dedupe.
+- **AC #4 confirmed:** `expo@54.0.34`; the `expo >=55.0.0` dependabot guard is still wanted.
+- **AC #3 deferred; trigger made durable:** the override-removal reminder now lives as a
+  comment in `.github/dependabot.yml` (edited whenever the SDK pin is lifted).
+- Finding codified in `docs/solutions/best-practices/metro-postcss-gating-overrides-resolution-floor-2026-06-02.md`
+  (local-only). Archiving this todo.
 
 ## Copilot Delegation
 
