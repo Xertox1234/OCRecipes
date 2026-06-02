@@ -1,6 +1,6 @@
 ---
 title: "Cover useCamera post-unmount batch guard + BATCH_MAP_MAX_SIZE eviction"
-status: backlog
+status: done
 priority: low
 created: 2026-06-01
 updated: 2026-06-01

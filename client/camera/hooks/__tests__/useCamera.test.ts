@@ -319,3 +319,78 @@ describe("useCamera — batch mode", () => {
     );
   });
 });
+
+describe("useCamera — defensive branches", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("ignores batch scans after unmount (post-unmount guard, useCamera.ts:76)", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    // Capture the handler before unmount — result.current is no longer driven
+    // once the hook unmounts. Refs are stable, so the captured callback closes
+    // over the same internal isActiveRef the cleanup effect flips to false.
+    const handler = result.current.handleBarcodeScanned;
+
+    unmount();
+
+    // Calling the captured handler after unmount must hit the `if
+    // (!isActiveRef.current) return` guard before any setState runs. No act()
+    // wrapper: the guard early-returns, so no state update is queued. The
+    // load-bearing assertion is that the callback does NOT fire — if the guard
+    // were removed, the callback would run (and setState on the unmounted hook).
+    // React 19 emits no setState-after-unmount warning, so callback-not-called
+    // is the assertion that actually catches a regression here.
+    handler({ data: "1234567890123", type: "ean13" });
+
+    expect(onBarcodeScanned).not.toHaveBeenCalled();
+  });
+
+  it("evicts the oldest entry when the batch map hits BATCH_MAP_MAX_SIZE (useCamera.ts:87-97)", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    // BATCH_MAP_MAX_SIZE is 200 (module-private). Scan 201 distinct barcodes
+    // with the clock frozen so none of them debounce each other. The 201st
+    // distinct insert trips the eviction branch and deletes the oldest key —
+    // the very first barcode scanned ("barcode-0").
+    const firstBarcode = "barcode-0";
+    act(() => {
+      for (let i = 0; i < 201; i++) {
+        result.current.handleBarcodeScanned({
+          data: `barcode-${i}`,
+          type: "ean13",
+        });
+      }
+    });
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(201);
+
+    // Re-scan the first barcode WITHOUT advancing the clock. Because its map
+    // entry was evicted, lastTime is undefined → it is treated as new
+    // (isRepeat=false) and the callback fires. If the entry still existed it
+    // would be debounced (now - lastTime = 0 < debounceMs) and NOT fire, so
+    // isRepeat=false here uniquely proves the eviction happened.
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: firstBarcode,
+        type: "ean13",
+      });
+    });
+
+    expect(onBarcodeScanned).toHaveBeenCalledTimes(202);
+    expect(onBarcodeScanned).toHaveBeenLastCalledWith(
+      { data: firstBarcode, type: "ean13" },
+      false,
+    );
+  });
+});
