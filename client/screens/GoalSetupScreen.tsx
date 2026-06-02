@@ -35,20 +35,16 @@ import {
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type {
+  Gender,
+  ActivityLevel,
+  PrimaryGoal,
+} from "@shared/types/user-goals";
 
 type GoalSetupScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "GoalSetup"
 >;
-
-type Gender = "male" | "female" | "other";
-type ActivityLevel = "sedentary" | "light" | "moderate" | "active" | "athlete";
-type PrimaryGoal =
-  | "lose_weight"
-  | "gain_muscle"
-  | "maintain"
-  | "eat_healthier"
-  | "manage_condition";
 
 interface CalculatedGoals {
   dailyCalories: number;

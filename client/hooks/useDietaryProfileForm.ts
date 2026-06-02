@@ -6,6 +6,12 @@ import * as Haptics from "expo-haptics";
 import { useHaptics } from "@/hooks/useHaptics";
 import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import {
+  isPrimaryGoal,
+  isActivityLevel,
+  type PrimaryGoal,
+  type ActivityLevel,
+} from "@shared/types/user-goals";
 
 interface Allergy {
   name: string;
@@ -36,8 +42,10 @@ export function useDietaryProfileForm() {
   const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [healthConditions, setHealthConditions] = useState<string[]>([]);
   const [dietType, setDietType] = useState<string | null>(null);
-  const [primaryGoal, setPrimaryGoal] = useState<string | null>(null);
-  const [activityLevel, setActivityLevel] = useState<string | null>(null);
+  const [primaryGoal, setPrimaryGoal] = useState<PrimaryGoal | null>(null);
+  const [activityLevel, setActivityLevel] = useState<ActivityLevel | null>(
+    null,
+  );
   const [foodDislikes, setFoodDislikes] = useState<string[]>([]);
   const [cuisinePreferences, setCuisinePreferences] = useState<string[]>([]);
   const [cookingSkillLevel, setCookingSkillLevel] = useState<string | null>(
@@ -64,8 +72,18 @@ export function useDietaryProfileForm() {
       setAllergies(profile.allergies || []);
       setHealthConditions(profile.healthConditions || []);
       setDietType(profile.dietType || null);
-      setPrimaryGoal(profile.primaryGoal || null);
-      setActivityLevel(profile.activityLevel || null);
+      // Wire values arrive as `string | null`; narrow to the union with a type
+      // guard (not a cast) — an unrecognized stored value becomes `null`.
+      setPrimaryGoal(
+        profile.primaryGoal && isPrimaryGoal(profile.primaryGoal)
+          ? profile.primaryGoal
+          : null,
+      );
+      setActivityLevel(
+        profile.activityLevel && isActivityLevel(profile.activityLevel)
+          ? profile.activityLevel
+          : null,
+      );
       setFoodDislikes(profile.foodDislikes || []);
       setCuisinePreferences(profile.cuisinePreferences || []);
       setCookingSkillLevel(profile.cookingSkillLevel || null);
