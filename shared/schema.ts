@@ -1139,7 +1139,7 @@ export const medicationLogs = pgTable(
     takenAt: timestamp("taken_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
-    sideEffects: jsonb("side_effects").$type<string[]>().default([]),
+    sideEffects: jsonb("side_effects").$type<string[]>().default([]).notNull(),
     appetiteLevel: integer("appetite_level"), // 1-5
     notes: text("notes"),
   },
@@ -1184,7 +1184,8 @@ export const menuScans = pgTable(
           fat?: number;
         }[]
       >()
-      .default([]),
+      .default([])
+      .notNull(),
     imageUrl: text("image_url"),
     scannedAt: timestamp("scanned_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)

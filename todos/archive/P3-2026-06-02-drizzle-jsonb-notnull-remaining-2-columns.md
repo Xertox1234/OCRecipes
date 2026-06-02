@@ -1,6 +1,6 @@
 ---
 title: "Drizzle jsonb .notNull() — finish remaining 2 columns (sideEffects, menuItems)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-02
 updated: 2026-06-02
