@@ -40,12 +40,16 @@ under the **metro bundler** was never exercised. This todo closes that gap.
 - [x] When `react-native-web` is added (web frontend work), run
       `npx expo export --platform web` and confirm the bundle builds with **no
       postcss-related errors** and CSS is emitted correctly.
+      _(N/A — resolved by analysis 2026-06-02: a web export can't reach postcss in
+      this project; the export was not run. See the 2026-06-02 Updates entry.)_
 - [x] Re-run `npm ls postcss` and confirm every instance still resolves to
       ≥ 8.5.10 (the override survived any interim `expo`/metro-config patch).
 - [ ] On the next Expo SDK upgrade: check whether `@expo/metro-config` now ships
       postcss ≥ 8.5.10 natively. If so, **remove** the `overrides.postcss` entry
       in `package.json` (don't carry a now-redundant pin) and drop the matching
       note. Re-verify `npm ls postcss` afterward.
+      _(Open by design — this trigger is now mirrored as a comment in
+      `.github/dependabot.yml` and fires at the next SDK-pin lift.)_
 - [x] Confirm the `expo >=55.0.0` ignore in `.github/dependabot.yml` is still the
       desired guard (remove/adjust if/when an intentional SDK upgrade happens).
 
