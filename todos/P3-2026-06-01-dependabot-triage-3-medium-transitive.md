@@ -1,9 +1,9 @@
 ---
 title: "Track 3 transitive Dependabot alerts (uuid / brace-expansion / esbuild) — triaged not-urgent"
-status: backlog
+status: blocked
 priority: low
 created: 2026-06-01
-updated: 2026-06-01
+updated: 2026-06-02
 assignee:
 labels: [deferred, dependencies, security]
 github_issue:
