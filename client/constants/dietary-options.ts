@@ -1,6 +1,8 @@
 import { ComponentProps } from "react";
 import { Feather } from "@expo/vector-icons";
 
+import type { PrimaryGoal, ActivityLevel } from "@shared/types/user-goals";
+
 type FeatherIconName = ComponentProps<typeof Feather>["name"];
 
 export interface AllergenOption {
@@ -30,14 +32,14 @@ export interface HealthConditionOption {
 }
 
 export interface GoalOption {
-  id: string;
+  id: PrimaryGoal;
   name: string;
   icon: FeatherIconName;
   color: string;
 }
 
 export interface ActivityLevelOption {
-  id: string;
+  id: ActivityLevel;
   name: string;
   description: string;
 }

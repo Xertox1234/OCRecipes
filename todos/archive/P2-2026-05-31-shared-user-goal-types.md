@@ -1,6 +1,6 @@
 ---
 title: "Move ActivityLevel/PrimaryGoal/Gender to shared/ (defined in 3 places)"
-status: backlog
+status: done
 priority: medium
 created: 2026-05-31
 updated: 2026-05-31

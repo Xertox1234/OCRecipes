@@ -1,42 +1,34 @@
 import { z } from "zod";
 
-// Define strict union types for Record keys (prevents typos at compile time)
-export type ActivityLevel =
-  | "sedentary"
-  | "light"
-  | "moderate"
-  | "active"
-  | "athlete";
+// Canonical user-goal enums live in shared/ (single source of truth, consumed by
+// client and server). Import the types for internal use (Record keys, BMR formula)
+// and the Zod enums to derive the physical-profile schema; re-export the types so
+// existing consumers of this module keep working.
+import {
+  activityLevelSchema,
+  primaryGoalSchema,
+  genderSchema,
+} from "@shared/types/user-goals";
+import type {
+  ActivityLevel,
+  PrimaryGoal,
+  Gender,
+} from "@shared/types/user-goals";
 
-export type PrimaryGoal =
-  | "lose_weight"
-  | "gain_muscle"
-  | "maintain"
-  | "eat_healthier"
-  | "manage_condition";
+export type {
+  ActivityLevel,
+  PrimaryGoal,
+  Gender,
+} from "@shared/types/user-goals";
 
-export type Gender = "male" | "female" | "other";
-
-// Validate user input with Zod
+// Validate user input with Zod (enums derived from the shared source of truth)
 export const userPhysicalProfileSchema = z.object({
   weight: z.number().min(20).max(500), // kg, reasonable bounds
   height: z.number().min(50).max(300), // cm, reasonable bounds
   age: z.number().int().min(13).max(120),
-  gender: z.enum(["male", "female", "other"]),
-  activityLevel: z.enum([
-    "sedentary",
-    "light",
-    "moderate",
-    "active",
-    "athlete",
-  ]),
-  primaryGoal: z.enum([
-    "lose_weight",
-    "gain_muscle",
-    "maintain",
-    "eat_healthier",
-    "manage_condition",
-  ]),
+  gender: genderSchema,
+  activityLevel: activityLevelSchema,
+  primaryGoal: primaryGoalSchema,
 });
 
 export type UserPhysicalProfile = z.infer<typeof userPhysicalProfileSchema>;
