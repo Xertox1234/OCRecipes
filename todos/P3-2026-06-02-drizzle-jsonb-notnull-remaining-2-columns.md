@@ -43,12 +43,18 @@ latent-type-smell class as the parent — consumers guard defensively today (`??
 
 - Mirror exactly what PR #324 did for the 4 `communityRecipes` columns: append `.notNull()`
   after `.default([])`.
-- **DB-constraint sync stays deferred (same as the parent + the prior rounds).** Adding
-  `.notNull()` is a schema-level _type_ assertion only — the live DB columns remain
-  `is_nullable=YES` (0 NULL rows). The closing `ALTER TABLE … ALTER COLUMN … SET NOT NULL`
-  is migration-classifier-blocked and `db:push` aborts non-interactively, so it remains a
-  pending manual user action. Do NOT attempt the ALTER from an executor. Coordinate it with
-  the parent rounds' pending ALTER when the user runs the migration.
+- **DB-constraint sync for these 2 columns is the only ALTER still outstanding.** Adding
+  `.notNull()` is a schema-level _type_ assertion only — these 2 DB columns are still
+  `is_nullable=YES` (0 NULL rows). After the schema change, the DB needs
+  `ALTER TABLE "medication_logs" ALTER COLUMN "side_effects" SET NOT NULL;` and
+  `ALTER TABLE "menu_scans" ALTER COLUMN "menu_items" SET NOT NULL;` (verify 0 NULL rows
+  first). Do NOT attempt the ALTER from an executor worktree.
+- **Note (2026-06-02):** the parent rounds' ALTER is **already applied** — the 11 columns
+  that previously asserted `.notNull()` in the schema without DB enforcement were synced on
+  2026-06-02 (see archived `P2-2026-05-31-drizzle-jsonb-notnull-2.md` → final Update). So
+  this todo's ALTER is a standalone 2-column change, not "coordinate with a pending parent
+  batch" — that batch is done. Tooling: no `psql` is installed locally; run ad-hoc SQL via
+  `NODE_PATH=node_modules node` with a `pg` Client against `DATABASE_URL` (dev DB `nutricam`).
 
 ## Dependencies
 
