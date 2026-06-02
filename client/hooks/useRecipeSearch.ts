@@ -25,7 +25,6 @@ export function useRecipeSearch(params: RecipeSearchParams | null) {
     queryFn: async ({ pageParam }) => {
       const qs = buildQueryString(params!, pageParam as number);
       const res = await apiRequest("GET", `/api/recipes/search?${qs}`);
-      if (!res.ok) throw new Error(`${res.status}`);
       const json = await res.json();
       const parsed = recipeSearchResponseSchema.safeParse(json);
       if (!parsed.success) {

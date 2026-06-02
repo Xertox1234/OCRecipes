@@ -7,7 +7,6 @@ export function usePantryItems() {
     queryKey: ["/api/pantry"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/pantry");
-      if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
   });
@@ -18,7 +17,6 @@ export function useExpiringPantryItems(enabled = true) {
     queryKey: ["/api/pantry/expiring"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/pantry/expiring");
-      if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
     enabled,
@@ -37,10 +35,6 @@ export function useCreatePantryItem() {
       expiresAt?: string | null;
     }): Promise<PantryItem> => {
       const res = await apiRequest("POST", "/api/pantry", item);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
     onSuccess: () => {
@@ -68,10 +62,6 @@ export function useUpdatePantryItem() {
       expiresAt?: string | null;
     }): Promise<PantryItem> => {
       const res = await apiRequest("PUT", `/api/pantry/${id}`, updates);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
     onSuccess: () => {

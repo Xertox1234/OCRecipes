@@ -13,7 +13,6 @@ export function useCookbooks() {
     queryKey: ["/api/cookbooks"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/cookbooks");
-      if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
     // Recipe counts change from other screens — always refetch when
@@ -27,7 +26,6 @@ export function useCookbookDetail(id: number) {
     queryKey: ["/api/cookbooks", id],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/cookbooks/${id}`);
-      if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
     enabled: id > 0,
@@ -44,10 +42,6 @@ export function useCreateCookbook() {
       description?: string;
     }): Promise<Cookbook> => {
       const res = await apiRequest("POST", "/api/cookbooks", params);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
     onSuccess: () => {
@@ -69,10 +63,6 @@ export function useUpdateCookbook() {
       description?: string | null;
     }): Promise<Cookbook> => {
       const res = await apiRequest("PATCH", `/api/cookbooks/${id}`, data);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
     onSuccess: (_data, { id }) => {

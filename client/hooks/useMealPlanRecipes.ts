@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
-import { throwStatusError } from "@/lib/throw-status-error";
 import type {
   MealPlanRecipe,
   RecipeIngredient,
@@ -61,7 +60,6 @@ export function useUnifiedRecipes(params?: {
     queryFn: async () => {
       const url = qs ? `/api/recipes/browse?${qs}` : "/api/recipes/browse";
       const res = await apiRequest("GET", url);
-      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
   });
@@ -72,7 +70,6 @@ export function useMealPlanRecipeDetail(recipeId: number) {
     queryKey: ["/api/meal-plan/recipes", recipeId],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/meal-plan/recipes/${recipeId}`);
-      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
     enabled: recipeId > 0,
@@ -111,10 +108,6 @@ export function useCreateMealPlanRecipe() {
       sourceCommunityRecipeId?: number;
     }) => {
       const res = await apiRequest("POST", "/api/meal-plan/recipes", recipe);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json() as Promise<MealPlanRecipe>;
     },
     onSuccess: () => {
@@ -142,7 +135,6 @@ export function useCatalogSearch(params: CatalogSearchParams | null) {
         "GET",
         `/api/meal-plan/catalog/search?${qs}`,
       );
-      if (!res.ok) throwStatusError(res.status);
       return res.json();
     },
     enabled: !!params && !!params.query,
@@ -158,10 +150,6 @@ export function useSaveCatalogRecipe() {
         "POST",
         `/api/meal-plan/catalog/${spoonacularId}/save`,
       );
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
     onSuccess: () => {
@@ -185,10 +173,6 @@ export function useImportRecipeFromUrl() {
           url,
         },
       );
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
     onSuccess: () => {
@@ -206,10 +190,6 @@ export function useParseRecipeFromUrl() {
       const res = await apiRequest("POST", "/api/meal-plan/recipes/parse-url", {
         url,
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
   });

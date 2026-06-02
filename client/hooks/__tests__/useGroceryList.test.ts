@@ -80,10 +80,11 @@ describe("useGroceryListDetail", () => {
   it("throws an ApiError with code NOT_FOUND on a 404", async () => {
     const { wrapper } = createQueryWrapper();
 
-    mockApiRequest.mockResolvedValue({
-      ok: false,
-      status: 404,
-    });
+    // apiRequest throws a code-carrying ApiError on non-ok before returning,
+    // so the mock rejects (matching production) rather than resolving non-ok.
+    mockApiRequest.mockRejectedValue(
+      new ApiError("404: Not found", "NOT_FOUND"),
+    );
 
     const { result } = renderHook(() => useGroceryListDetail(1), { wrapper });
 
@@ -99,10 +100,11 @@ describe("useGroceryListDetail", () => {
   it("throws an ApiError without NOT_FOUND on a transient 5xx", async () => {
     const { wrapper } = createQueryWrapper();
 
-    mockApiRequest.mockResolvedValue({
-      ok: false,
-      status: 500,
-    });
+    // apiRequest throws a code-carrying ApiError on non-ok before returning,
+    // so the mock rejects (matching production) rather than resolving non-ok.
+    mockApiRequest.mockRejectedValue(
+      new ApiError("500: Request failed", "INTERNAL_ERROR"),
+    );
 
     const { result } = renderHook(() => useGroceryListDetail(1), { wrapper });
 
@@ -162,11 +164,9 @@ describe("useCreateGroceryList", () => {
   it("throws on non-ok response", async () => {
     const { wrapper } = createQueryWrapper();
 
-    mockApiRequest.mockResolvedValue({
-      ok: false,
-      status: 422,
-      text: () => Promise.resolve("Invalid dates"),
-    });
+    // apiRequest throws on non-ok before returning, so the mock rejects
+    // (matching production) rather than resolving a non-ok response.
+    mockApiRequest.mockRejectedValue(new Error("422: Invalid dates"));
 
     const { result } = renderHook(() => useCreateGroceryList(), { wrapper });
 
