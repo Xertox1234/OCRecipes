@@ -55,11 +55,9 @@ describe("usePantry", () => {
     it("throws on non-ok response", async () => {
       const { wrapper } = createQueryWrapper();
 
-      mockApiRequest.mockResolvedValue({
-        ok: false,
-        status: 400,
-        text: () => Promise.resolve("Validation error"),
-      });
+      // apiRequest throws on non-ok before returning, so the mock rejects
+      // (matching production) rather than resolving a non-ok response.
+      mockApiRequest.mockRejectedValue(new Error("400: Validation error"));
 
       const { result } = renderHook(() => useCreatePantryItem(), { wrapper });
 

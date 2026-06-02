@@ -203,11 +203,9 @@ describe("useMealPlanRecipes", () => {
     it("throws on non-ok response with error text", async () => {
       const { wrapper } = createQueryWrapper();
 
-      mockApiRequest.mockResolvedValue({
-        ok: false,
-        status: 422,
-        text: () => Promise.resolve("Title is required"),
-      });
+      // apiRequest throws on non-ok before returning, so the mock rejects
+      // (matching production) rather than resolving a non-ok response.
+      mockApiRequest.mockRejectedValue(new Error("422: Title is required"));
 
       const { result } = renderHook(() => useCreateMealPlanRecipe(), {
         wrapper,

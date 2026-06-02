@@ -40,11 +40,7 @@ export function useDismissCarouselRecipe() {
 
   return useMutation({
     mutationFn: async (params: { recipeId: number }) => {
-      const res = await apiRequest("POST", "/api/carousel/dismiss", params);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
+      await apiRequest("POST", "/api/carousel/dismiss", params);
     },
     onMutate: async ({ recipeId }) => {
       // Optimistically remove the card from the carousel

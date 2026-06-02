@@ -26,7 +26,6 @@ export function useMealPlanItems(startDate: string, endDate: string) {
         "GET",
         `/api/meal-plan?start=${startDate}&end=${endDate}`,
       );
-      if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
     enabled: !!startDate && !!endDate,
@@ -45,10 +44,6 @@ export function useAddMealPlanItem() {
       servings?: string | number;
     }) => {
       const res = await apiRequest("POST", "/api/meal-plan/items", item);
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json() as Promise<MealPlanItem>;
     },
     onSuccess: () => {
@@ -83,10 +78,6 @@ export function useConfirmMealPlanItem() {
         "POST",
         `/api/meal-plan/items/${id}/confirm`,
       );
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
     onSuccess: () => {
@@ -104,10 +95,6 @@ export function useReorderMealPlanItems() {
       const res = await apiRequest("PATCH", "/api/meal-plan/reorder", {
         items,
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`${res.status}: ${text}`);
-      }
       return res.json();
     },
     onSuccess: () => {
