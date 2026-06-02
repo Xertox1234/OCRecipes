@@ -102,8 +102,8 @@ function serializeCuratedRecipe(row: CommunityRecipe): CuratedRecipeResponse {
     difficulty: row.difficulty ?? null,
     timeEstimate: row.timeEstimate ?? null,
     servings: row.servings ?? null,
-    dietTags: (row.dietTags as string[]) ?? [],
-    mealTypes: (row.mealTypes as string[]) ?? [],
+    dietTags: row.dietTags,
+    mealTypes: row.mealTypes,
     caloriesPerServing: toNum(row.caloriesPerServing),
     protein: toNum(row.proteinPerServing),
     carbs: toNum(row.carbsPerServing),
@@ -115,11 +115,10 @@ function serializeCuratedRecipe(row: CommunityRecipe): CuratedRecipeResponse {
         unit: string;
       }[]) ?? [],
     instructions: (row.instructions as string[]) ?? [],
-    instructionDetails: (row.instructionDetails as (string | null)[]) ?? [],
-    toolsRequired:
-      (row.toolsRequired as { name: string; affiliateUrl?: string }[]) ?? [],
-    chefTips: (row.chefTips as string[]) ?? [],
-    canonicalImages: (row.canonicalImages as string[]) ?? [],
+    instructionDetails: row.instructionDetails,
+    toolsRequired: row.toolsRequired,
+    chefTips: row.chefTips,
+    canonicalImages: row.canonicalImages,
     videoUrl: row.videoUrl ?? null,
     canonicalizedAt: row.canonicalizedAt?.toISOString() ?? null,
   };
