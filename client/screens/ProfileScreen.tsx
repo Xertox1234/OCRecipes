@@ -24,11 +24,14 @@ import { useProfileData } from "@/hooks/useProfileData";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { resolveImageUrl } from "@/lib/query-client";
 import {
+  Colors,
   Spacing,
   FAB_CLEARANCE,
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+
+type Theme = (typeof Colors)["light"] | (typeof Colors)["dark"];
 
 const PROFILE_HEADER_EXPANDED = 120;
 const PROFILE_HEADER_COLLAPSED = 52;
@@ -259,7 +262,7 @@ export default function ProfileScreen() {
 }
 
 /** Skeleton loading state matching hub layout */
-function ProfileSkeleton({ theme }: { theme: any }) {
+function ProfileSkeleton({ theme }: { theme: Theme }) {
   const insets = useSafeAreaInsets();
   return (
     <SkeletonProvider>
