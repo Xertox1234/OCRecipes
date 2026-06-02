@@ -20,8 +20,8 @@ No sleeping human is in the loop, so five independent filters stand in:
    touches a path outside the known-safe set (catches a mislabeled-severity todo).
 4. **Bounded stop conditions** — the `/goal` condition halts on N merges / token cap /
    2 reds, so a systemic mistake can't merge many bad PRs before you wake.
-5. **`strict: true`** (see gate below) — forces each PR to re-pass CI against current
-   main, closing the stale-merge hole.
+5. **In-loop `update-branch`** — the loop runs `gh pr update-branch` right before each
+   merge, re-passing CI against current main and closing the stale-merge hole (see gate).
 
 ## Rollout: debut attended, graduate to asleep
 
@@ -34,21 +34,31 @@ one most likely to surface an unmodeled edge.
 
 ### Pre-unattended gate (all must be true)
 
-- [ ] `main` branch protection `strict: true` (currently **`false`** — see below).
+- [ ] Stale-merge gap closed. The `/goal` block already runs `gh pr update-branch`
+      immediately before each merge (the surgical, automation-only fix). Branch
+      protection `strict: true` is an OPTIONAL belt-and-suspenders — see below.
 - [ ] Guard script proven on a few real PRs (HOLDs the right things).
-- [ ] Auto-mode permissions cover `gh pr create/merge/checks`, `git push`, `npm` —
-      else the run stalls at a prompt at 2am (two-layer: `permissions.allow` +
-      `autoMode.allow`).
+- [ ] Auto-mode coverage confirmed by an attended run. **Already in place:** the
+      scoped `gh pr merge --squash --delete-branch` rule, `Bash(git:*)` /
+      `Bash(gh pr:*)` / `Bash(npm run *)`, and `Bash(scripts/todo-automerge-guard.sh:*)`.
+      **Unconfirmed until the debut:** whether the classifier waves through `git push`
+      of feature branches and `gh pr create` under `$defaults` (low-impact, likely
+      fine). If either blocks while you watch, add a tightly-scoped `autoMode.allow`
+      entry then — do NOT pre-widen blind.
 
-### Closing the `strict: false` stale-merge hole
+### The stale-merge gap (why the loop runs `update-branch`)
 
 With `strict: false`, PR-B can pass CI against an _old_ main, merge stale, and redden
-main even with zero file overlap with PR-A — nothing re-runs B's checks. Two fixes:
+main even with zero file overlap with PR-A — nothing re-runs B's checks. The `/goal`
+block closes this **in-loop**: `gh pr update-branch <pr>` immediately before merge
+re-runs CI against current main. For a sequential overnight run (no concurrent merger
+while you sleep) this is sufficient — the only way main goes stale mid-merge is a
+second merger, and there isn't one.
 
-- **Preferred:** set required-checks `strict: true` for unattended runs. GitHub then
-  forces each PR up-to-date with main and re-passes CI against the combined state.
-- **Or in-loop:** before each merge, `gh pr update-branch <pr>` then re-watch; halt if
-  main CI reddens post-merge.
+Optional server-side enforcement: set required-checks `strict: true`. GitHub then
+forces _every_ PR up-to-date before merge — but it applies to ALL your PRs, adding an
+update-branch step to your normal manual merges too. Skip it unless you want the
+guarantee enforced outside the automation.
 
 ## The `/goal` completion condition (paste this)
 
