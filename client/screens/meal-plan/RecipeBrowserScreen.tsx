@@ -256,9 +256,12 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
 
 // ── Main Screen ──────────────────────────────────────────────────────
 
+// Reanimated 4.3 tightened createAnimatedComponent's return type so it no longer
+// directly overlaps with `typeof FlatList`; cast through `unknown` (the type stays
+// FlatList for all downstream usage — only the assertion form changed).
 const AnimatedFlatList = Animated.createAnimatedComponent(
   FlatList,
-) as typeof FlatList;
+) as unknown as typeof FlatList;
 
 export default function RecipeBrowserScreen() {
   const navigation = useNavigation<RecipeBrowserScreenNavigationProp>();
