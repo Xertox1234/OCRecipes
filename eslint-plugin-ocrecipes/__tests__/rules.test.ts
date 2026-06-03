@@ -4,7 +4,7 @@ import * as tsParser from "@typescript-eslint/parser";
 
 const require = createRequire(import.meta.url);
 const plugin = require("../index.js") as {
-  rules: Record<string, object>;
+  rules: Record<string, import("eslint").Rule.RuleModule>;
 };
 
 const tester = new RuleTester({
