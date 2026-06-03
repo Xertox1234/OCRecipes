@@ -1,5 +1,6 @@
 // Load .env so integration tests can connect to the real dev database
 import "dotenv/config";
+import { createRequire } from "node:module";
 
 import {
   impactAsync,
@@ -7,6 +8,29 @@ import {
   selectionAsync,
 } from "./mocks/expo-haptics";
 import { useReducedMotion } from "./mocks/react-native-reanimated";
+
+// Stub binary static assets (images/fonts) so components that `require(...)` them
+// (e.g. `<Image source={require("...png")} />`) can render under jsdom. vite-node
+// executes those requires through Node's native `require` (createRequire), which
+// bypasses Vite's resolver, aliases, and plugins — so the hook must live at the
+// Node module-loader layer. Returns a numeric handle, mirroring Metro's bundler.
+const nodeRequire = createRequire(import.meta.url);
+for (const ext of [
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+  ".ttf",
+  ".otf",
+  ".woff",
+  ".woff2",
+]) {
+  nodeRequire.extensions[ext] = (module) => {
+    module.exports = 1;
+  };
+}
 
 // Guard against accidentally running tests on a production database
 const dbUrl = process.env.DATABASE_URL;

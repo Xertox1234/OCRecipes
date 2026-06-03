@@ -167,7 +167,17 @@ export function UpgradeModal({
                 <Feather name="star" size={32} color={accentColor} />
               )}
             </View>
-            <ThemedText type="h3" style={styles.title}>
+            <ThemedText
+              type="h3"
+              style={styles.title}
+              // Android parity with the iOS-only success announce: the title
+              // carries an assertive live region while it reads "Welcome to
+              // Premium!" so TalkBack confirms the upgrade. Gated to success so
+              // the idle "Upgrade to Premium" title is not announced.
+              accessibilityLiveRegion={
+                state.status === "success" ? "assertive" : "none"
+              }
+            >
               {state.status === "success"
                 ? "Welcome to Premium!"
                 : "Upgrade to Premium"}

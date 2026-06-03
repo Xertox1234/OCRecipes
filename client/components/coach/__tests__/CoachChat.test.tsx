@@ -10,8 +10,9 @@
  * (UpgradeModal is mocked as a thin double).
  */
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, screen, fireEvent } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
 
@@ -200,5 +201,45 @@ describe("CoachChat — daily-limit banner / upgrade CTA", () => {
     expect(
       screen.getByRole("button", { name: /upgrade to coach pro/i }),
     ).toBeTruthy();
+  });
+});
+
+/**
+ * C1 (2026-06-03 full audit): the daily-limit banner already carries
+ * accessibilityLiveRegion="assertive" (Android), so the imperative
+ * announceForAccessibility must be gated to iOS — otherwise Android double-announces
+ * (TYPE_ANNOUNCEMENT + live region). See docs/rules/accessibility.md.
+ */
+describe("CoachChat — daily-limit announce gating (C1)", () => {
+  const originalPlatformOS = RN.Platform.OS;
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    coachStreamRef.onError = null;
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+  });
+
+  afterEach(() => {
+    RN.Platform.OS = originalPlatformOS;
+    announceSpy.mockRestore();
+  });
+
+  it("announces the limit to VoiceOver on iOS", () => {
+    RN.Platform.OS = "ios";
+    renderCoachChat();
+    triggerDailyLimit();
+
+    expect(announceSpy).toHaveBeenCalledWith("Daily coaching limit reached");
+  });
+
+  it("does not announce on Android (the banner's live region handles it)", () => {
+    RN.Platform.OS = "android";
+    renderCoachChat();
+    triggerDailyLimit();
+
+    expect(announceSpy).not.toHaveBeenCalledWith(
+      "Daily coaching limit reached",
+    );
   });
 });
