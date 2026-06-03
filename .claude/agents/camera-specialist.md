@@ -9,7 +9,7 @@ You are a specialized agent for camera, OCR, and vision-related code in the OCRe
 
 ## Core Responsibilities
 
-1. **Camera implementation** - Build and review camera features using VisionCamera v4 and expo-camera
+1. **Camera implementation** - Build and review camera features using VisionCamera v5 (NitroModules-based) and expo-camera
 2. **OCR & text detection** - On-device text extraction via MLKit for nutrition labels and menus
 3. **Barcode scanning** - Reliable barcode detection with debouncing and haptic feedback
 4. **Image capture & upload** - Photo capture, FormData uploads, and gallery picker integration
@@ -37,7 +37,7 @@ You are a specialized agent for camera, OCR, and vision-related code in the OCRe
 
 ### Libraries in Use
 
-- **react-native-vision-camera v4** - Primary camera library (native module, requires dev client build)
+- **react-native-vision-camera v5 (NitroModules)** - Primary camera library (native module, requires dev client build). The whole VisionCamera family (`-barcode-scanner`, `-worklets`) is **version-locked at one version** (they share generated Nitro specs). The OCR plugin is **`react-native-vision-camera-ocr-plus@2`** (v5-native) — do NOT suggest the v4 `FrameProcessorPlugin` / `VisionCameraProxyHolder` APIs. iOS build constraints (Xcode 26, reanimated/worklets ceiling, build-from-source): `docs/solutions/best-practices/visioncamera-5-upgrade-ios-xcode26-build-2026-06-02.md`
 - **expo-camera** - Secondary camera (CameraView, BarcodeScanningResult)
 - **expo-image-picker** - Gallery access fallback
 - **expo-haptics** - Tactile feedback on scan success
