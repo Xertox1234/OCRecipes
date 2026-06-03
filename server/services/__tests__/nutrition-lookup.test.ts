@@ -709,6 +709,39 @@ describe("lookupBarcode", () => {
     expect(result!.per100g.sodium).toBe(2);
   });
 
+  it("converts kJ to kcal using International Table factor (4.1868) when energy-kcal_100g is absent", async () => {
+    // 1676 kJ / 4.1868 = 400.37… → rounds to 400 kcal (Codex Alimentarius / OFF label value).
+    // With the old thermochemical factor (÷ 4.184) the same value rounds to 401 — wrong.
+    // This discriminator confirms the factor is correct and provides a regression guard.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "kJ-only Product",
+              serving_size: "100g",
+              nutriments: {
+                // energy-kcal_100g deliberately absent; only kJ supplied
+                energy_100g: 1676,
+                proteins_100g: 5,
+                carbohydrates_100g: 70,
+                fat_100g: 10,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("9999999999999");
+    expect(result).not.toBeNull();
+    // Must be 400, not 401 (which the old ÷4.184 factor would yield)
+    expect(result!.per100g.calories).toBe(400);
+  });
+
   it("drops string/garbage OFF nutriments instead of poisoning the cache", async () => {
     // CNF/USDA are empty so OFF values flow through unmodified by cross-validation.
     // OFF returns "N/A" for sugars and a garbage string for fat — both must be dropped.
