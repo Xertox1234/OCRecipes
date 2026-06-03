@@ -334,7 +334,7 @@ export async function lookupBarcode(
     calories:
       nm["energy-kcal_100g"] ??
       (nm.energy_100g !== undefined
-        ? Math.round(nm.energy_100g / 4.184)
+        ? Math.round(nm.energy_100g / 4.1868)
         : undefined),
     protein: nm.proteins_100g,
     carbs: nm.carbohydrates_100g,

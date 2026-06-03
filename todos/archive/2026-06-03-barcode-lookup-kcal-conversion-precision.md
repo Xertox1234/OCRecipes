@@ -1,6 +1,6 @@
 ---
 title: "Fix kJ-to-kcal conversion in barcode-lookup to use Codex Alimentarius factor"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
