@@ -242,7 +242,7 @@ export default function ReceiptMealPlanScreen() {
             >
               <Feather name="alert-circle" size={16} color={theme.error} />
               <ThemedText style={[styles.errorText, { color: theme.error }]}>
-                {generateMutation.error.message}
+                Failed to generate meal plan. Please try again.
               </ThemedText>
             </View>
           )}

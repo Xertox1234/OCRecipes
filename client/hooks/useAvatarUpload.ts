@@ -78,11 +78,7 @@ export function useAvatarUpload() {
     } catch (error) {
       logger.error("Avatar upload error:", error);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      toast.error(
-        error instanceof Error && error.message
-          ? error.message
-          : "Failed to upload avatar. Please try again.",
-      );
+      toast.error("Failed to upload avatar. Please try again.");
     } finally {
       setIsUploading(false);
     }

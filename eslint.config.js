@@ -99,4 +99,14 @@ module.exports = defineConfig([
           rules: { "@typescript-eslint/require-await": "off" },
         },
       ]),
+  {
+    files: ["client/**/*.{ts,tsx}"],
+    plugins: {
+      ocrecipes: ocrecipesPlugin,
+    },
+    rules: {
+      "ocrecipes/no-error-message-in-ui": "error",
+      "ocrecipes/no-dead-apiRequest-guard": "error",
+    },
+  },
 ]);

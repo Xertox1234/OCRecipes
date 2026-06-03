@@ -101,9 +101,9 @@ export function RecipeGenerationModal({
       // Android). Tied to onError so it fires once per failure, not on every
       // isError render.
       if (Platform.OS === "ios") {
-        const msg =
-          error instanceof Error ? error.message : "Recipe generation failed";
-        AccessibilityInfo.announceForAccessibility(msg);
+        AccessibilityInfo.announceForAccessibility(
+          "Failed to generate recipe. Please try again.",
+        );
       }
     },
   });
@@ -452,9 +452,7 @@ export function RecipeGenerationModal({
                 type="small"
                 style={{ color: theme.error, marginLeft: Spacing.sm, flex: 1 }}
               >
-                {generateMutation.error instanceof Error
-                  ? generateMutation.error.message
-                  : "Failed to generate recipe. Please try again."}
+                Failed to generate recipe. Please try again.
               </ThemedText>
             </View>
           )}
