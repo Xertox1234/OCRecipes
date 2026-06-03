@@ -245,7 +245,7 @@ export const AdaptiveGoalCard = React.memo(function AdaptiveGoalCard({
             style={[styles.trendInfo, { color: theme.textSecondary }]}
           >
             Weekly weight trend:{" "}
-            {formatWeightTrend(recommendation.weightTrendRate!, unit)}
+            {formatWeightTrend(recommendation.weightTrendRate, unit)}
           </ThemedText>
         )}
 
