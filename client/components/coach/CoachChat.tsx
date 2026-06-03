@@ -529,8 +529,6 @@ export default function CoachChat({
       lastAssistantMessageId,
       messageBlocks,
       theme.textSecondary,
-      quickReplyVersion,
-      commitmentVersion,
     ],
   );
 
@@ -675,6 +673,7 @@ export default function CoachChat({
         data={chatItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        extraData={[quickReplyVersion, commitmentVersion]}
         ListFooterComponent={streamingFooter}
         ListEmptyComponent={historyErrorEmpty}
         style={styles.messageList}
