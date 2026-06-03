@@ -40,6 +40,7 @@ The JS-level wiring (`initReporter()`, `reportError()`, `logger.*`) works withou
 
 - PR #288 merged ✓
 - Must be done on the main checkout (not a worktree) — `ios/` and `android/` are gitignored.
+- **Blocked by [[P1-2026-06-02-ios-build-nitromodules-jsi-failure]]** — AC #3 (`expo run:ios` builds) and the live-DSN error test cannot complete until the iOS native build is fixed (discovered 2026-06-02; unrelated to Sentry).
 
 ## Risks
 
@@ -84,3 +85,27 @@ cd .. && npx expo run:ios    # builds + launches in the Simulator
 # Then set EXPO_PUBLIC_SENTRY_DSN to a real DSN, trigger a test error,
 # and confirm it lands in Sentry (native crash capture + source maps).
 ```
+
+### 2026-06-02 (read-only native-edit audit on main checkout — AC #2 splits iOS ✅ / Android ❌)
+
+`/todo` run on the main checkout (`ios/` + `android/` present from the earlier prebuild). Inspected the on-disk native dirs **without** a build or DSN:
+
+- ✅ **iOS config-plugin edits present.** `ios/OCRecipes.xcodeproj/project.pbxproj` has both Sentry build phases: the RN bundling phase wraps `react-native-xcode.sh` with `@sentry/react-native/scripts/sentry-xcode.sh` (source-map upload at build time), plus a dedicated **"Upload Debug Symbols to Sentry"** phase (`sentry-xcode-debug-files.sh`). `ios/sentry.properties` exists. No `SentrySDK.start` in `AppDelegate` — **expected** for `@sentry/react-native` v7.2.0 (installed version confirmed); v7 uses JS `Sentry.init()` + the Xcode build phase, not a native AppDelegate edit.
+- ❌ **Android config-plugin edits MISSING.** No Sentry refs in `android/build.gradle`, `android/app/build.gradle`, `android/settings.gradle`, `android/gradle.properties`, or `android/app/src/main`; no `android/sentry.properties`. Root cause: the earlier prebuild was `--platform ios` only (see Update above), so `android/` never received the Sentry Gradle integration. **Fix:** run `npx expo prebuild --platform android` (NO `--clean`) on the main checkout, then re-verify the Sentry Gradle plugin lands.
+- ℹ️ Hard blocker unchanged: the "trigger a test error → reaches Sentry" AC needs a **live `EXPO_PUBLIC_SENTRY_DSN`** (none configured anywhere; `client/lib/reporter.ts` is a no-op until set). Cannot close this todo until a real Sentry project/DSN exists. This is deploy-gated observability infra (no prod deployment yet).
+
+**Not dispatched to an executor:** worktrees are gitignored-blind to `ios/`/`android/`, have no `.env`, no Xcode, no Simulator — an executor could only report "blocked." The remaining work is main-checkout + hands-on only.
+
+### 2026-06-02 (Android prebuild + iOS `pod install` done; `expo run:ios` FAILED on unrelated NitroModules/JSI error)
+
+Advanced on the main checkout (user chose "go as far as possible"):
+
+- ✅ **Android Sentry integration applied.** `npx expo prebuild --platform android --no-install` added `apply from: …/sentry.gradle` to `android/app/build.gradle:84` + generated `android/sentry.properties`. Diffed vs. a pre-run backup — only that line changed; root `build.gradle`/`settings.gradle`/`gradle.properties` byte-identical. AC #2 Android half ✅.
+- ✅ **iOS `pod install` done.** Installed `RNSentry (7.2.0)` + native `Sentry (8.56.1)` pods → iOS Sentry integration now fully materialized at the CocoaPods level (was the gap from the earlier `--no-install` run). Xcode recognized both Sentry build phases (warned they run every build — benign). MLKit fat-binary patch confirmed wired as a build-phase Run Script. **Note:** this `pod install` also bumped several Expo pods to match current `node_modules` (`ExpoModulesCore 3.0.29→3.0.30`, `ExpoSpeech 13.1.7→14.0.8`, `ExpoImage 3.0.10→3.0.11`, etc.).
+- ❌ **`npx expo run:ios` FAILED** (iPhone 16e sim, `--no-bundler`). `xcodebuild` error 65, 3 errors — all in RN's JSI/Nitro C++ layer: `ios/Pods/Headers/Private/NitroModules/JSIConverter.hpp:8` (`unknown type name 'namespace'`, i.e. a C++ header compiled outside an Objective-C++/C++20 context) and `React-jsi/jsi/jsi.h:10` (`<cassert> file not found`). **Sentry compiled clean** (SentryError.mm et al.) — the break is UNRELATED to Sentry. Possible contributor: the Expo pod bumps above (JSI/Nitro version skew). AC #3 (`expo run:ios` builds & launches) NOT met — blocked on this JSI build break, not on Sentry.
+
+**To close this todo (all hands-on, main checkout):**
+
+1. **Fix the iOS build** — resolve the NitroModules/React-jsi C++ error (error 65). Separate from Sentry; likely a pod/JSI version-skew or C++ standard / Objective-C++ compile-context issue. Try `pod deintegrate && pod install` or align Expo SDK pod versions; worst case `npx pod-install` after a clean `node_modules`.
+2. **Set Sentry env** in `.env` (main checkout): `EXPO_PUBLIC_SENTRY_DSN` (public, bundled into client), plus build-time `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` (secret — NO `EXPO_PUBLIC_` prefix) for dSYM/source-map upload. Both `sentry.properties` files fall back to these env vars.
+3. **Build + trigger a test error** → confirm it lands in Sentry (native crash capture + symbolicated frames). `client/lib/reporter.ts` is a no-op until `EXPO_PUBLIC_SENTRY_DSN` is set; it has no `__DEV__` guard, so a DSN in local `.env` activates Sentry in dev too — remove it after the test (or keep it only in the production/EAS build env) to avoid dev-noise issues in Sentry.
