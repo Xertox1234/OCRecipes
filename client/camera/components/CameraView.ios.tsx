@@ -11,6 +11,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Camera,
+  useCameraDevice,
   usePhotoOutput,
   useObjectOutput,
   isScannedCode,
@@ -119,6 +120,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     ref,
   ) => {
     const cameraRef = useRef<VisionCameraRef>(null);
+    const device = useCameraDevice(facing);
 
     const photoOutput = usePhotoOutput({
       qualityPrioritization: mapQualityPrioritization(photoQuality),
@@ -173,11 +175,15 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     const outputs =
       barcodeTypes.length > 0 ? [photoOutput, objectOutput] : [photoOutput];
 
+    // No usable camera for this position (e.g. iOS Simulator) — render the
+    // fallback instead of letting VisionCamera throw "no back Cameras".
+    if (!device) return <CameraUnavailable />;
+
     return (
       <Camera
         ref={cameraRef}
         style={[StyleSheet.absoluteFill, style]}
-        device={facing}
+        device={device}
         isActive={isActive}
         outputs={outputs}
         onError={(error) => {

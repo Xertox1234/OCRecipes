@@ -5,11 +5,6 @@ import React, {
   useRef,
   useState,
 } from "react";
-import Animated, {
-  useSharedValue,
-  withTiming,
-  useAnimatedStyle,
-} from "react-native-reanimated";
 import ConfettiCannon from "react-native-confetti-cannon";
 import {
   AccessibilityInfo,
@@ -114,31 +109,6 @@ export default function ScanScreen() {
   }));
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-
-  // Corner glow for OCR text detection feedback (label mode only)
-  const cornerGlow = useSharedValue(0);
-
-  const handleTextDetected = useCallback(
-    (detected: boolean) => {
-      if (reducedMotion) {
-        cornerGlow.value = detected ? 1 : 0;
-      } else {
-        cornerGlow.value = detected
-          ? withTiming(1, { duration: 300 })
-          : withTiming(0, { duration: 500 });
-      }
-    },
-    [cornerGlow, reducedMotion],
-  );
-
-  const successColor = theme.success;
-  const glowStyle = useAnimatedStyle(() => ({
-    shadowColor: successColor,
-    shadowRadius: cornerGlow.value * 8,
-    shadowOpacity: cornerGlow.value * 0.6,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: cornerGlow.value * 4,
-  }));
 
   const [confirmCard, setConfirmCard] = useState<ConfirmCardState | null>(null);
 
@@ -381,12 +351,23 @@ export default function ScanScreen() {
       }
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Label mode: skip smart classification, go directly to LabelAnalysis
+      // Label mode: skip smart classification, go directly to LabelAnalysis.
+      // On-device snapshot OCR pre-fills an instant preview; the server does the
+      // authoritative analysis, so OCR failure here is non-fatal (preview absent).
       if (isLabelMode) {
-        const ocrResult = cameraRef.current?.getLatestOCRResult?.();
+        let localOCRText: string | undefined;
+        try {
+          const ocrResult = await recognizeTextFromPhoto(photo.uri);
+          localOCRText = ocrResult.text || undefined;
+        } catch (err) {
+          logger.error(
+            "[ScanScreen label OCR] recognition failed; navigating without preview",
+            err,
+          );
+        }
         navigation.navigate("LabelAnalysis", {
           imageUri: photo.uri,
-          localOCRText: ocrResult?.resultText ?? undefined,
+          localOCRText,
         });
         return;
       }
@@ -523,20 +504,9 @@ export default function ScanScreen() {
         }
         enableTorch={torchEnabled}
         isActive={isFocused && !confirmCard}
-        enableOCR={isLabelMode}
-        onTextDetected={isLabelMode ? handleTextDetected : undefined}
       />
 
-      {isLabelMode ? (
-        <Animated.View
-          style={[styles.reticleGlowWrapper, glowStyle]}
-          pointerEvents="none"
-        >
-          <ScanReticle phase={scanPhase} reducedMotion={reducedMotion} />
-        </Animated.View>
-      ) : (
-        <ScanReticle phase={scanPhase} reducedMotion={reducedMotion} />
-      )}
+      <ScanReticle phase={scanPhase} reducedMotion={reducedMotion} />
 
       {sonarVisible && (
         <ScanSonarRing
@@ -829,9 +799,6 @@ export default function ScanScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" }, // hardcoded — camera background must always be black
-  reticleGlowWrapper: {
-    ...StyleSheet.absoluteFillObject,
-  },
   topOverlay: {
     position: "absolute",
     top: 0,

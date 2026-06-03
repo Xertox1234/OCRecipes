@@ -2,7 +2,7 @@
 export * from "./types";
 export * from "./types/scan-phase";
 
-// OCR types (LocalNutritionData for consumers; OCRText already re-exported via "./types")
+// Parsed nutrition (for the instant label preview) for consumers
 export type { LocalNutritionData } from "@/lib/nutrition-ocr-parser";
 
 // Hooks

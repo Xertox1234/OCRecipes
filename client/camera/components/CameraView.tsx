@@ -11,6 +11,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Camera,
+  useCameraDevice,
   usePhotoOutput,
   type CameraRef as VisionCameraRef,
 } from "react-native-vision-camera";
@@ -34,7 +35,6 @@ import type {
   BarcodeResult,
   ExpoBarcodeType,
 } from "../types";
-import { useOCRDetection } from "../hooks/useOCRDetection";
 
 /**
  * Maps a 0-1 quality value to V5's qualityPrioritization option.
@@ -86,13 +86,11 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       isActive = true,
       photoQuality,
       style,
-      enableOCR = false,
-      onTextDetected,
-      onOCRResult,
     },
     ref,
   ) => {
     const cameraRef = useRef<VisionCameraRef>(null);
+    const device = useCameraDevice(facing);
 
     const photoOutput = usePhotoOutput({
       qualityPrioritization: mapQualityPrioritization(photoQuality),
@@ -114,13 +112,6 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       onError: (error) => {
         logger.warn("[CameraView] Barcode scanner error:", error.message);
       },
-    });
-
-    // OCR frame processor (label mode only — mutually exclusive with barcode scanning)
-    const { frameOutput, latestOCRResult } = useOCRDetection({
-      enabled: enableOCR && barcodeTypes.length === 0,
-      onTextDetected,
-      onOCRResult,
     });
 
     // Torch is imperative in V5 — drive it via controller ref
@@ -146,21 +137,22 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
           return null;
         }
       },
-      getLatestOCRResult: () => latestOCRResult.current,
     }));
 
-    // Frame output for OCR (label mode) — mutually exclusive with barcode scanner
-    const outputs = frameOutput
-      ? [photoOutput, frameOutput]
-      : barcodeTypes.length > 0
+    const outputs =
+      barcodeTypes.length > 0
         ? [photoOutput, barcodeScannerOutput]
         : [photoOutput];
+
+    // No usable camera for this position (e.g. iOS Simulator) — render the
+    // fallback instead of letting VisionCamera throw "no back Cameras".
+    if (!device) return <CameraUnavailable />;
 
     return (
       <Camera
         ref={cameraRef}
         style={[StyleSheet.absoluteFill, style]}
-        device={facing}
+        device={device}
         isActive={isActive}
         outputs={outputs}
         onError={(error) => {
