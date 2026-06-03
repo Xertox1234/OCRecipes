@@ -109,4 +109,11 @@ module.exports = defineConfig([
       "ocrecipes/no-dead-apiRequest-guard": "error",
     },
   },
+  {
+    files: ["client/**/*.test.{ts,tsx}"],
+    rules: {
+      "ocrecipes/no-dead-apiRequest-guard": "off",
+      "ocrecipes/no-error-message-in-ui": "off",
+    },
+  },
 ]);

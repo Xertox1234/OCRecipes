@@ -97,10 +97,12 @@ export default function LoginScreen() {
         await register(username.trim(), password, ageConfirmed);
       }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Authentication failed";
-      setError(message);
+    } catch {
+      setError(
+        mode === "login"
+          ? "Incorrect username or password. Please try again."
+          : "Registration failed. Please try again.",
+      );
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsLoading(false);

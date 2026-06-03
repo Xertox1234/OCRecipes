@@ -13,6 +13,7 @@ interface Props {
 export function CoachHint({ message }: Props) {
   const opacity = useSharedValue(message ? 1 : 0);
   const displayedMessage = useRef(message);
+  const isFirstRenderRef = useRef(true);
   const [rendered, setRendered] = React.useState(message);
 
   useEffect(() => {
@@ -30,6 +31,10 @@ export function CoachHint({ message }: Props) {
   }, [message, opacity]);
 
   useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
     if (message && Platform.OS === "ios") {
       AccessibilityInfo.announceForAccessibility(message);
     }

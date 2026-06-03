@@ -6,6 +6,8 @@ import {
   Pressable,
   ScrollView,
   ActivityIndicator,
+  Platform,
+  AccessibilityInfo,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -59,6 +61,9 @@ export function UpgradeModal({
   useEffect(() => {
     if (state.status === "success") {
       haptics.notification(Haptics.NotificationFeedbackType.Success);
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility("Welcome to Premium!");
+      }
       autoCloseTimer.current = setTimeout(() => {
         onUpgrade?.();
         onClose();
@@ -71,6 +76,16 @@ export function UpgradeModal({
       }
     };
   }, [state.status, onUpgrade, onClose, reset, haptics]);
+
+  // Announce error to VoiceOver on iOS (live region handles Android)
+  useEffect(() => {
+    if (state.status === "error" && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(
+        upgradeErrorMessage ??
+          "Could not complete the upgrade. Please try again.",
+      );
+    }
+  }, [state.status, upgradeErrorMessage]);
 
   // Reset cancelled immediately; reset error when modal re-opens
   useEffect(() => {
@@ -235,6 +250,7 @@ export function UpgradeModal({
                 <ThemedText
                   type="small"
                   style={[styles.errorText, { color: theme.error }]}
+                  accessibilityLiveRegion="assertive"
                 >
                   {upgradeErrorMessage}
                 </ThemedText>
