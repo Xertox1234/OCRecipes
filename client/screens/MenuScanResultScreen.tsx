@@ -285,12 +285,10 @@ export default function MenuScanResultScreen() {
         dataSourceRef.current = "ai";
         setIsAnalyzing(false);
       },
-      onError: (err) => {
+      onError: (_err) => {
         if (cancelled) return;
         if (dataSourceRef.current !== "local") {
-          setError(
-            err instanceof Error ? err.message : "Could not analyse menu",
-          );
+          setError("Could not analyse menu.");
         }
         setIsAnalyzing(false);
       },
