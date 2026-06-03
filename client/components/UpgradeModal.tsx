@@ -26,6 +26,19 @@ interface UpgradeModalProps {
   onUpgrade?: () => void;
 }
 
+function getUpgradeErrorMessage(code: string | undefined): string {
+  switch (code) {
+    case "NETWORK":
+      return "Network error. Check your connection and try again.";
+    case "ALREADY_OWNED":
+      return "You already own this subscription.";
+    case "STORE_UNAVAILABLE":
+      return "The store is currently unavailable. Try again later.";
+    default:
+      return "Could not complete the upgrade. Please try again.";
+  }
+}
+
 export function UpgradeModal({
   visible,
   onClose,
@@ -36,6 +49,8 @@ export function UpgradeModal({
   const haptics = useHaptics();
   const { state, purchase, restore, reset } = usePurchase();
   const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const upgradeErrorMessage =
+    state.status === "error" ? getUpgradeErrorMessage(state.error.code) : null;
 
   const accentColor = theme.success;
   const inProgress = isPurchaseInProgress(state);
@@ -221,7 +236,7 @@ export function UpgradeModal({
                   type="small"
                   style={[styles.errorText, { color: theme.error }]}
                 >
-                  Could not complete the upgrade. Please try again.
+                  {upgradeErrorMessage}
                 </ThemedText>
                 <Pressable
                   onPress={handleUpgrade}

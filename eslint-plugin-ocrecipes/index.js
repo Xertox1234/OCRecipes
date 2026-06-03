@@ -246,14 +246,6 @@ function unwrapExpression(node) {
   return current;
 }
 
-function unwrapCallee(node) {
-  let current = unwrapExpression(node);
-  while (current && current.type === "MemberExpression") {
-    current = unwrapExpression(current.property);
-  }
-  return current;
-}
-
 function isApiRequestAwait(expr) {
   const init = unwrapExpression(expr);
   if (!init || init.type !== "AwaitExpression") return false;
@@ -377,8 +369,17 @@ function isErrorLikeReference(node) {
     return isErrorLikeName(expr.name);
   }
   if (expr.type === "MemberExpression") {
+    if (isPropertyNamed(expr, "error")) {
+      const owner = unwrapExpression(expr.object);
+      return (
+        owner &&
+        owner.type === "Identifier" &&
+        (owner.name.endsWith("Mutation") ||
+          owner.name.endsWith("Query") ||
+          isErrorLikeName(owner.name))
+      );
+    }
     return (
-      isPropertyNamed(expr, "error") ||
       (expr.property.type === "Identifier" &&
         isErrorLikeName(expr.property.name)) ||
       isErrorLikeReference(expr.object)
@@ -454,6 +455,9 @@ const noErrorMessageInUi = {
 
     return {
       JSXExpressionContainer(node) {
+        if (node.parent && node.parent.type === "JSXAttribute") {
+          return;
+        }
         if (containsErrorMessageMember(node.expression)) {
           report(node.expression);
         }

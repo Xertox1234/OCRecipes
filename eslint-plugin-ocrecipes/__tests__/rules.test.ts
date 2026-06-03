@@ -29,6 +29,9 @@ tester.run("no-error-message-in-ui", plugin.rules["no-error-message-in-ui"], {
     {
       code: 'toast.error("Something went wrong. Please try again.")',
     },
+    {
+      code: "<Widget helperText={error.message} />",
+    },
   ],
   invalid: [
     {
@@ -40,7 +43,7 @@ tester.run("no-error-message-in-ui", plugin.rules["no-error-message-in-ui"], {
       errors: [{ messageId: "noErrorMessageInUi" }],
     },
     {
-      code: "<Text>{state.error.message}</Text>",
+      code: "<Text>{generateMutation.error.message}</Text>",
       errors: [{ messageId: "noErrorMessageInUi" }],
     },
     {
