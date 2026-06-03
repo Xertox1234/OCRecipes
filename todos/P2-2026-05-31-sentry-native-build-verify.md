@@ -40,7 +40,7 @@ The JS-level wiring (`initReporter()`, `reportError()`, `logger.*`) works withou
 
 - PR #288 merged ✓
 - Must be done on the main checkout (not a worktree) — `ios/` and `android/` are gitignored.
-- **Blocked by [[P1-2026-06-02-ios-build-nitromodules-jsi-failure]]** — AC #3 (`expo run:ios` builds) and the live-DSN error test cannot complete until the iOS native build is fixed (discovered 2026-06-02; unrelated to Sentry).
+- ~~Blocked by [[P1-2026-06-02-ios-build-nitromodules-jsi-failure]]~~ **RESOLVED 2026-06-03 (PR #340)** — the iOS build now compiles, launches, and renders on the simulator. Remaining here is device-only: the live-DSN error test (and a hands-on OCR scan), not a build blocker.
 
 ## Risks
 

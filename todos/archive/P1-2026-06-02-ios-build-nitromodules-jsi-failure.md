@@ -1,9 +1,9 @@
 ---
 title: "Fix iOS build failure — NitroModules/React-jsi C++ error (xcodebuild 65)"
-status: backlog
+status: done
 priority: high
 created: 2026-06-02
-updated: 2026-06-02
+updated: 2026-06-03
 assignee:
 labels: [reliability, ios, build, native]
 github_issue:
@@ -59,3 +59,16 @@ The exact errors (from the build log):
 ### 2026-06-02
 
 - Created from the Sentry native-build verification session. `npx expo run:ios` (iPhone 16e sim, `--no-bundler`) failed with `xcodebuild` error 65 on NitroModules/React-jsi C++ errors. Sentry pods compiled clean — failure is unrelated to Sentry. Transient build log was at `/tmp/expo-run-ios.log`.
+
+### 2026-06-03 — RESOLVED (PR #340, merged)
+
+Root cause was not a single error but four stacked, pre-existing blockers (each masked the next):
+
+1. `react-native-vision-camera-ocr-plus@1.2.4` is a VisionCamera-v4 plugin → upgraded to **2.0.0** (v5-native/Nitro). Cleared the original `JSIConverter.hpp` "namespace"/`<cassert>` errors **and** the follow-on `FrameProcessorPlugin` "cannot find type" error.
+2. VisionCamera family version drift caused a barcode-scanner Xcode-26 swift-frontend ICE → aligned `vision-camera` + `-barcode-scanner` + `-worklets` at **5.0.11**.
+3. RN 0.81 prebuilt `React.framework` (device-tagged arm64) wouldn't link to the arm64 simulator → set `ios.buildReactNativeFromSource: true` in `ios/Podfile.properties.json` (gitignored; documented in `docs/DEV_SETUP.md`).
+4. ocr-plus v2 needs `worklets >=0.8.0` → bumped `reanimated ~4.1.1 → ~4.3.1` + `worklets → ~0.8.3` (the RN-0.81 ceiling; 4.4.0/0.9.x need RN 0.83+).
+
+Verified: `Build Succeeded`, app installs + launches + renders Home with live data on the iPhone 16e simulator; `check:types` clean; full CI green on #340. Codified in `docs/solutions/best-practices/visioncamera-5-upgrade-ios-xcode26-build-2026-06-02.md`.
+
+**Remaining (separate, device-only — NOT this todo):** live OCR text-detection check + the Sentry error test ([[P2-2026-05-31-sentry-native-build-verify]]); iOS Run Script "ambiguous dependencies" hygiene ([[P3-2026-06-02-ios-build-script-phase-ambiguous-deps]]).
