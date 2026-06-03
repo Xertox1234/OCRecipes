@@ -2,9 +2,11 @@
  * Custom ESLint plugin for OCRecipes server pattern enforcement.
  *
  * Rules:
- * - no-bare-error-response:  Ban `res.status(N).json({ error: ... })` — use `sendError()`.
- * - no-parseint-req:         Ban `parseInt(req.params.*` / `parseInt(req.query.*` — use helpers.
- * - no-as-string-req:        Ban `as string` casts on `req.params.*` / `req.query.*`.
+ * - no-bare-error-response:   Ban `res.status(N).json({ error: ... })` — use `sendError()`.
+ * - no-parseint-req:          Ban `parseInt(req.params.*` / `parseInt(req.query.*` — use helpers.
+ * - no-as-string-req:         Ban `as string` casts on `req.params.*` / `req.query.*`.
+ * - no-error-message-in-ui:   Ban direct user-facing `error.message` rendering in client UI.
+ * - no-dead-apiRequest-guard: Ban unreachable `if (!res.ok)` checks after `await apiRequest(...)`.
  */
 
 "use strict";
@@ -213,11 +215,303 @@ const noAsStringReq = {
   },
 };
 
+function isIdentifier(node, name) {
+  return node && node.type === "Identifier" && node.name === name;
+}
+
+function isPropertyNamed(node, name) {
+  if (!node) return false;
+  if (!node.computed && node.property.type === "Identifier") {
+    return node.property.name === name;
+  }
+  if (node.computed && node.property.type === "Literal") {
+    return node.property.value === name;
+  }
+  return false;
+}
+
+function unwrapExpression(node) {
+  let current = node;
+  while (
+    current &&
+    (current.type === "TSAsExpression" ||
+      current.type === "TSTypeAssertion" ||
+      current.type === "ChainExpression")
+  ) {
+    current =
+      current.type === "ChainExpression"
+        ? current.expression
+        : current.expression;
+  }
+  return current;
+}
+
+function unwrapCallee(node) {
+  let current = unwrapExpression(node);
+  while (current && current.type === "MemberExpression") {
+    current = unwrapExpression(current.property);
+  }
+  return current;
+}
+
+function isApiRequestAwait(expr) {
+  const init = unwrapExpression(expr);
+  if (!init || init.type !== "AwaitExpression") return false;
+  const argument = unwrapExpression(init.argument);
+  if (!argument || argument.type !== "CallExpression") return false;
+  const callee = unwrapExpression(argument.callee);
+  if (isIdentifier(callee, "apiRequest")) return true;
+  if (
+    callee &&
+    callee.type === "MemberExpression" &&
+    isPropertyNamed(callee, "apiRequest")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function getNodeRangeStart(node) {
+  return Array.isArray(node && node.range) ? node.range[0] : -1;
+}
+
+function isBefore(left, right) {
+  return (
+    getNodeRangeStart(left) !== -1 &&
+    getNodeRangeStart(left) < getNodeRangeStart(right)
+  );
+}
+
+function getVariableFromScope(scopeManager, scope, name) {
+  let currentScope = scope;
+  while (currentScope) {
+    if (currentScope.set && currentScope.set.has(name)) {
+      return currentScope.set.get(name) || null;
+    }
+    currentScope = currentScope.upper;
+  }
+  return null;
+}
+
+function findLastWriteBefore(variable, targetNode) {
+  let lastWrite = null;
+  for (const reference of variable.references) {
+    if (!reference.isWrite() || !isBefore(reference.identifier, targetNode)) {
+      continue;
+    }
+    if (
+      !lastWrite ||
+      getNodeRangeStart(reference.identifier) >
+        getNodeRangeStart(lastWrite.identifier)
+    ) {
+      lastWrite = reference;
+    }
+  }
+
+  if (lastWrite) {
+    return lastWrite.writeExpr;
+  }
+
+  for (const def of variable.defs) {
+    if (def.type !== "Variable" || !isBefore(def.name, targetNode)) continue;
+    const declarator = def.node;
+    if (declarator.init) {
+      return declarator.init;
+    }
+  }
+
+  return null;
+}
+
+function resolveIdentifierValue(
+  scopeManager,
+  scope,
+  identifier,
+  targetNode,
+  seen,
+) {
+  if (!identifier || identifier.type !== "Identifier") return null;
+  if (seen.has(identifier.name)) return null;
+  seen.add(identifier.name);
+
+  const variable = getVariableFromScope(scopeManager, scope, identifier.name);
+  if (!variable) return null;
+
+  const writeExpr = findLastWriteBefore(variable, targetNode);
+  if (!writeExpr) return null;
+
+  const expr = unwrapExpression(writeExpr);
+  if (isApiRequestAwait(expr)) {
+    return { type: "apiRequest", node: expr };
+  }
+  if (expr && expr.type === "Identifier") {
+    return resolveIdentifierValue(scopeManager, scope, expr, targetNode, seen);
+  }
+  return { type: "other", node: expr };
+}
+
+function getGuardedOkIdentifier(node) {
+  if (
+    !node ||
+    node.type !== "MemberExpression" ||
+    !isPropertyNamed(node, "ok")
+  ) {
+    return null;
+  }
+  const object = unwrapExpression(node.object);
+  return object && object.type === "Identifier" ? object : null;
+}
+
+// ─── no-error-message-in-ui ────────────────────────────────────────────────
+const noErrorMessageInUi = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Disallow direct user-facing error.message rendering in client UI",
+    },
+    messages: {
+      noErrorMessageInUi:
+        "Do not render error.message in the UI — show static copy and branch on error.code instead. See docs/rules/client-state.md.",
+    },
+    schema: [],
+  },
+  create(context) {
+    function isErrorNamedIdentifier(node) {
+      return (
+        node &&
+        node.type === "Identifier" &&
+        (node.name === "error" ||
+          node.name === "err" ||
+          (node.name.endsWith("Error") && node.name.length > "Error".length))
+      );
+    }
+
+    function isErrorMessageMember(node) {
+      const expr = unwrapExpression(node);
+      return (
+        expr &&
+        expr.type === "MemberExpression" &&
+        isPropertyNamed(expr, "message") &&
+        isErrorNamedIdentifier(unwrapExpression(expr.object))
+      );
+    }
+
+    function report(node) {
+      context.report({
+        node,
+        messageId: "noErrorMessageInUi",
+      });
+    }
+
+    return {
+      JSXExpressionContainer(node) {
+        if (isErrorMessageMember(node.expression)) {
+          report(node.expression);
+        }
+      },
+      CallExpression(node) {
+        const firstArg = node.arguments[0];
+        if (!firstArg || !isErrorMessageMember(firstArg)) return;
+
+        const callee = unwrapExpression(node.callee);
+        if (
+          callee &&
+          callee.type === "Identifier" &&
+          callee.name.startsWith("set")
+        ) {
+          report(firstArg);
+          return;
+        }
+
+        if (
+          callee &&
+          callee.type === "MemberExpression" &&
+          callee.object.type === "Identifier" &&
+          callee.property.type === "Identifier"
+        ) {
+          const objectName = callee.object.name;
+          const propertyName = callee.property.name;
+          if (
+            (objectName === "toast" &&
+              (propertyName === "error" || propertyName === "warning")) ||
+            (objectName === "AccessibilityInfo" &&
+              propertyName === "announceForAccessibility")
+          ) {
+            report(firstArg);
+          }
+        }
+      },
+    };
+  },
+};
+
+// ─── no-dead-apiRequest-guard ──────────────────────────────────────────────
+const noDeadApiRequestGuard = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Disallow unreachable !res.ok guards after awaited apiRequest calls",
+    },
+    messages: {
+      noDeadApiRequestGuard:
+        "Dead guard — apiRequest always throws on non-ok, so this if(!x.ok) block is unreachable. Delete it and branch on error.code in onError instead. See docs/rules/client-state.md.",
+    },
+    schema: [],
+  },
+  create(context) {
+    const sourceCode = context.sourceCode;
+
+    function resolveGuardIdentifier(node) {
+      if (node.type === "UnaryExpression" && node.operator === "!") {
+        return getGuardedOkIdentifier(unwrapExpression(node.argument));
+      }
+      if (
+        node.type === "BinaryExpression" &&
+        node.operator === "===" &&
+        node.right.type === "Literal" &&
+        node.right.value === false
+      ) {
+        return getGuardedOkIdentifier(unwrapExpression(node.left));
+      }
+      return null;
+    }
+
+    return {
+      IfStatement(node) {
+        const identifier = resolveGuardIdentifier(unwrapExpression(node.test));
+        if (!identifier) return;
+
+        const scope = sourceCode.getScope(node);
+        if (!scope) return;
+
+        const resolved = resolveIdentifierValue(
+          sourceCode.scopeManager,
+          scope,
+          identifier,
+          node,
+          new Set(),
+        );
+
+        if (resolved && resolved.type === "apiRequest") {
+          context.report({
+            node,
+            messageId: "noDeadApiRequestGuard",
+          });
+        }
+      },
+    };
+  },
+};
+
 // ─── Plugin export ──────────────────────────────────────────────────────────
 module.exports = {
   rules: {
     "no-bare-error-response": noBareErrorResponse,
     "no-parseint-req": noParseIntReq,
     "no-as-string-req": noAsStringReq,
+    "no-error-message-in-ui": noErrorMessageInUi,
+    "no-dead-apiRequest-guard": noDeadApiRequestGuard,
   },
 };
