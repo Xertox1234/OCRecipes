@@ -345,6 +345,14 @@ export async function deleteCommunityRecipe(
             eq(favouriteRecipes.recipeType, "community"),
           ),
         ),
+      tx
+        .delete(recipeDismissals)
+        .where(
+          and(
+            eq(recipeDismissals.recipeIdentifier, String(recipeId)),
+            eq(recipeDismissals.source, "community"),
+          ),
+        ),
     ]);
     return true;
   });

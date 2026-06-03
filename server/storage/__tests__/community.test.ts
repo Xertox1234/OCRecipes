@@ -16,6 +16,8 @@ import {
 } from "../../../test/db-test-utils";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
+import { recipeDismissals } from "@shared/schema";
+import { eq, and } from "drizzle-orm";
 
 // Mock the db import so the storage functions use our test transaction
 vi.mock("../../db", () => ({
@@ -425,6 +427,30 @@ describe("community storage", () => {
     it("returns false when recipe does not exist", async () => {
       const deleted = await deleteCommunityRecipe(999999, testUser.id);
       expect(deleted).toBe(false);
+    });
+
+    it("cleans up recipeDismissals rows on delete", async () => {
+      const otherUser = await createTestUser(tx);
+      const recipe = await createTestRecipe(testUser.id);
+
+      // Both users dismiss the recipe
+      await dismissRecipe(testUser.id, recipe.id);
+      await dismissRecipe(otherUser.id, recipe.id);
+
+      const deleted = await deleteCommunityRecipe(recipe.id, testUser.id);
+      expect(deleted).toBe(true);
+
+      // No orphaned dismissal rows should remain for this recipe
+      const remaining = await tx
+        .select()
+        .from(recipeDismissals)
+        .where(
+          and(
+            eq(recipeDismissals.recipeIdentifier, String(recipe.id)),
+            eq(recipeDismissals.source, "community"),
+          ),
+        );
+      expect(remaining).toHaveLength(0);
     });
   });
 
