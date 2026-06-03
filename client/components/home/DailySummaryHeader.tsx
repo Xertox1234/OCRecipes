@@ -23,7 +23,9 @@ interface DailySummaryHeaderProps {
   onCalorieTap: () => void;
 }
 
-export function DailySummaryHeader({ onCalorieTap }: DailySummaryHeaderProps) {
+export const DailySummaryHeader = React.memo(function DailySummaryHeader({
+  onCalorieTap,
+}: DailySummaryHeaderProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { user } = useAuthContext();
@@ -101,7 +103,7 @@ export function DailySummaryHeader({ onCalorieTap }: DailySummaryHeaderProps) {
       </Animated.View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

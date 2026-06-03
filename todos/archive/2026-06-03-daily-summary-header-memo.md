@@ -1,6 +1,6 @@
 ---
 title: "Wrap DailySummaryHeader in React.memo — used as ListHeaderComponent"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
