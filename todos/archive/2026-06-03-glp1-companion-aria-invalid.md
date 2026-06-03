@@ -1,6 +1,6 @@
 ---
 title: "Add aria-invalid to GLP1CompanionScreen dosage input on validation error"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
