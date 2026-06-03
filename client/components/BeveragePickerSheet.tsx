@@ -1,10 +1,11 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   View,
   Pressable,
   AccessibilityInfo,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import {
   BottomSheetModal,
@@ -78,6 +79,13 @@ export function BeveragePickerSheet({
   const [isLogging, setIsLogging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isActioning = useRef(false);
+
+  // iOS only — Android gets the announcement via accessibilityLiveRegion="assertive" on the error View
+  useEffect(() => {
+    if (error && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(error);
+    }
+  }, [error]);
 
   const resetState = useCallback(() => {
     setStep("beverage");
@@ -345,6 +353,7 @@ export function BeveragePickerSheet({
                 styles.errorContainer,
                 { backgroundColor: withOpacity(theme.error, 0.1) },
               ]}
+              accessibilityLiveRegion="assertive"
             >
               <ThemedText type="caption" style={{ color: theme.error }}>
                 {error}

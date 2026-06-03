@@ -54,6 +54,7 @@ function mockComponent(
         accessibilityLabel,
         accessibilityHint,
         accessibilityState,
+        accessibilityLiveRegion,
         ...rest
       },
       ref,
@@ -67,6 +68,9 @@ function mockComponent(
           role: accessibilityRole,
           "aria-label": accessibilityLabel,
           "aria-hint": accessibilityHint,
+          // RN's Android-only live region maps to the ARIA equivalent so tests
+          // can assert it; `undefined` is omitted by React when not set.
+          "aria-live": accessibilityLiveRegion,
           ...(a11y?.disabled != null && {
             "aria-disabled": a11y.disabled,
           }),

@@ -628,9 +628,11 @@ export default function CoachChat({
   const prevIsAtDailyLimitRef = useRef(false);
   useEffect(() => {
     if (isAtDailyLimit && !prevIsAtDailyLimitRef.current) {
-      AccessibilityInfo.announceForAccessibility(
-        "Daily coaching limit reached",
-      );
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(
+          "Daily coaching limit reached",
+        );
+      }
     }
     prevIsAtDailyLimitRef.current = isAtDailyLimit;
   }, [isAtDailyLimit]);
