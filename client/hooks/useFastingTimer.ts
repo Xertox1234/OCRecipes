@@ -238,7 +238,7 @@ export function useFastingTimer() {
       },
       onError: (err) => {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
-        toast.error(err.message || "Failed to start fast");
+        toast.error("Failed to start fast");
       },
     });
   }, [haptics, toast, startFast, schedule]);
@@ -267,7 +267,7 @@ export function useFastingTimer() {
           },
           onError: (err) => {
             haptics.notification(Haptics.NotificationFeedbackType.Error);
-            toast.error(err.message || "Failed to end fast");
+            toast.error("Failed to end fast");
           },
         });
       },
@@ -292,7 +292,7 @@ export function useFastingTimer() {
         },
         onError: (err) => {
           haptics.notification(Haptics.NotificationFeedbackType.Error);
-          toast.error(err.message || "Failed to save schedule");
+          toast.error("Failed to save schedule");
         },
       });
     },

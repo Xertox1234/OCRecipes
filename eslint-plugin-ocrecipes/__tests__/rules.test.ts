@@ -40,6 +40,18 @@ tester.run("no-error-message-in-ui", plugin.rules["no-error-message-in-ui"], {
       errors: [{ messageId: "noErrorMessageInUi" }],
     },
     {
+      code: "<Text>{state.error.message}</Text>",
+      errors: [{ messageId: "noErrorMessageInUi" }],
+    },
+    {
+      code: [
+        "AccessibilityInfo.announceForAccessibility(",
+        '  error instanceof Error ? error.message : "Recipe generation failed"',
+        ")",
+      ].join("\n"),
+      errors: [{ messageId: "noErrorMessageInUi" }],
+    },
+    {
       code: "<View>{uploadError.message}</View>",
       errors: [{ messageId: "noErrorMessageInUi" }],
     },

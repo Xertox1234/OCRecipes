@@ -221,7 +221,7 @@ export function UpgradeModal({
                   type="small"
                   style={[styles.errorText, { color: theme.error }]}
                 >
-                  {state.error.message}
+                  Could not complete the upgrade. Please try again.
                 </ThemedText>
                 <Pressable
                   onPress={handleUpgrade}

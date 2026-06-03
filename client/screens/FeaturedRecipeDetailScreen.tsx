@@ -85,7 +85,6 @@ export default function FeaturedRecipeDetailScreen() {
     queryKey: ["/api/meal-plan/recipes", recipeId],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/meal-plan/recipes/${recipeId}`);
-      if (!res.ok) throw new Error(`${res.status}`);
       return res.json();
     },
     enabled: resolvedRecipeType === "mealPlan" && recipeId > 0,

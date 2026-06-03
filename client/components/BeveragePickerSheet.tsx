@@ -183,16 +183,7 @@ export function BeveragePickerSheet({
       }
 
       try {
-        const res = await apiRequest("POST", "/api/beverages/log", body);
-
-        if (!res.ok) {
-          const data = await res.json();
-          setError(data.error || "Failed to log beverage");
-          setIsLogging(false);
-          isActioning.current = false;
-          haptics.notification(NotificationFeedbackType.Error);
-          return;
-        }
+        await apiRequest("POST", "/api/beverages/log", body);
 
         // Success
         haptics.notification(NotificationFeedbackType.Success);

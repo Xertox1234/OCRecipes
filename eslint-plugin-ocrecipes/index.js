@@ -362,6 +362,74 @@ function getGuardedOkIdentifier(node) {
   return object && object.type === "Identifier" ? object : null;
 }
 
+function isErrorLikeName(name) {
+  return (
+    name === "error" ||
+    name === "err" ||
+    (name.endsWith("Error") && name.length > "Error".length)
+  );
+}
+
+function isErrorLikeReference(node) {
+  const expr = unwrapExpression(node);
+  if (!expr) return false;
+  if (expr.type === "Identifier") {
+    return isErrorLikeName(expr.name);
+  }
+  if (expr.type === "MemberExpression") {
+    return (
+      isPropertyNamed(expr, "error") ||
+      (expr.property.type === "Identifier" &&
+        isErrorLikeName(expr.property.name)) ||
+      isErrorLikeReference(expr.object)
+    );
+  }
+  return false;
+}
+
+function containsErrorMessageMember(node) {
+  const seen = new Set();
+
+  function visit(value) {
+    const expr = unwrapExpression(value);
+    if (!expr || typeof expr !== "object") return false;
+    if (seen.has(expr)) return false;
+    seen.add(expr);
+
+    if (
+      expr.type === "MemberExpression" &&
+      isPropertyNamed(expr, "message") &&
+      isErrorLikeReference(expr.object)
+    ) {
+      return true;
+    }
+
+    for (const key of Object.keys(expr)) {
+      if (
+        key === "parent" ||
+        key === "loc" ||
+        key === "range" ||
+        key === "tokens" ||
+        key === "comments"
+      ) {
+        continue;
+      }
+      const child = expr[key];
+      if (Array.isArray(child)) {
+        for (const item of child) {
+          if (visit(item)) return true;
+        }
+      } else if (visit(child)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  return visit(node);
+}
+
 // ─── no-error-message-in-ui ────────────────────────────────────────────────
 const noErrorMessageInUi = {
   meta: {
@@ -377,26 +445,6 @@ const noErrorMessageInUi = {
     schema: [],
   },
   create(context) {
-    function isErrorNamedIdentifier(node) {
-      return (
-        node &&
-        node.type === "Identifier" &&
-        (node.name === "error" ||
-          node.name === "err" ||
-          (node.name.endsWith("Error") && node.name.length > "Error".length))
-      );
-    }
-
-    function isErrorMessageMember(node) {
-      const expr = unwrapExpression(node);
-      return (
-        expr &&
-        expr.type === "MemberExpression" &&
-        isPropertyNamed(expr, "message") &&
-        isErrorNamedIdentifier(unwrapExpression(expr.object))
-      );
-    }
-
     function report(node) {
       context.report({
         node,
@@ -406,13 +454,13 @@ const noErrorMessageInUi = {
 
     return {
       JSXExpressionContainer(node) {
-        if (isErrorMessageMember(node.expression)) {
+        if (containsErrorMessageMember(node.expression)) {
           report(node.expression);
         }
       },
       CallExpression(node) {
         const firstArg = node.arguments[0];
-        if (!firstArg || !isErrorMessageMember(firstArg)) return;
+        if (!firstArg || !containsErrorMessageMember(firstArg)) return;
 
         const callee = unwrapExpression(node.callee);
         if (
