@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   StyleSheet,
   View,
@@ -243,6 +243,8 @@ export default function GoalSetupScreen() {
   const [manualCarbs, setManualCarbs] = useState("");
   const [manualFat, setManualFat] = useState("");
 
+  const scrollViewRef = useRef<ScrollView>(null);
+
   const isFormComplete =
     age && weight && height && gender && activityLevel && primaryGoal;
 
@@ -269,6 +271,11 @@ export default function GoalSetupScreen() {
     },
     onError: () => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
+      // Scroll to bottom so the InlineError below the button is visible.
+      // Deferred one frame so the error layout has committed before measuring.
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: !reducedMotion });
+      });
     },
   });
 
@@ -314,6 +321,7 @@ export default function GoalSetupScreen() {
   return (
     <ThemedView style={styles.container} accessibilityViewIsModal>
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
