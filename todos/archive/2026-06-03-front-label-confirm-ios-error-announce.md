@@ -1,6 +1,6 @@
 ---
 title: "Add iOS-gated announceForAccessibility on FrontLabelConfirmScreen error views"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
