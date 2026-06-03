@@ -6,3 +6,4 @@
 - FlatList components must spread `FLATLIST_DEFAULTS` from `@/constants/performance` — missing `removeClippedSubviews`, `maxToRenderPerBatch`, `windowSize` degrades scroll performance
 - Mutations objects passed as `useCallback` deps are new refs every render — destructure `.mutate`, `.isPending`, `.isError` individually
 - Expensive derived values computed inside render (not memoized) at high tick rates (30s interval, streaming) should be wrapped in `useMemo`
+- When FlatList rows track ref-based state (e.g., `useRef<Set>` for used/accepted items), never include version counter state in `renderItem`'s `useCallback` deps — pass counters via `extraData` instead; the `data` prop change already drives re-renders for new items, `extraData` drives re-renders for changed display state on existing items
