@@ -420,7 +420,10 @@ export default function GLP1CompanionScreen() {
             >
               Medication
             </ThemedText>
-            <View accessibilityRole="radiogroup">
+            <View
+              accessibilityRole="radiogroup"
+              aria-invalid={!!validationError && !selectedMedication}
+            >
               {COMMON_MEDICATIONS.map((med) => (
                 <Pressable
                   key={med.name}
@@ -553,6 +556,9 @@ export default function GLP1CompanionScreen() {
               placeholder="e.g., 0.25mg"
               placeholderTextColor={theme.textSecondary}
               accessibilityLabel="Dosage"
+              aria-invalid={
+                !!validationError && !!selectedMedication && !dosage
+              }
               style={[
                 styles.input,
                 {
