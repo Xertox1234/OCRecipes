@@ -4,6 +4,7 @@ import {
   View,
   ScrollView,
   Image,
+  Platform,
   AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -121,7 +122,11 @@ export default function FrontLabelConfirmScreen() {
       })
       .catch((err: Error) => {
         if (cancelled) return;
-        setUploadError(frontLabelErrorMessage(err));
+        const message = frontLabelErrorMessage(err);
+        setUploadError(message);
+        if (Platform.OS === "ios") {
+          AccessibilityInfo.announceForAccessibility(message);
+        }
       });
 
     return () => {
@@ -144,9 +149,14 @@ export default function FrontLabelConfirmScreen() {
     },
     onError: (err: Error) => {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setConfirmError(
-        frontLabelErrorMessage(err, "Failed to save product details"),
+      const message = frontLabelErrorMessage(
+        err,
+        "Failed to save product details",
       );
+      setConfirmError(message);
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(message);
+      }
     },
   });
 
