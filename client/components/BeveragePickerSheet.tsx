@@ -290,13 +290,13 @@ export function BeveragePickerSheet({
       maxDynamicContentSize={MAX_DYNAMIC_HEIGHT}
       backdropComponent={renderBackdrop}
       onDismiss={handleDismiss}
-      accessibilityViewIsModal
       handleIndicatorStyle={{ display: "none" }}
       backgroundStyle={{ backgroundColor: theme.backgroundDefault }}
       animationConfigs={animationConfigs}
     >
       <BottomSheetView>
         <View
+          accessibilityViewIsModal
           style={[
             styles.content,
             { paddingBottom: Math.max(insets.bottom, Spacing.lg) },
