@@ -155,8 +155,8 @@ export function useOCRDetection(
             frame.dispose();
             return;
           }
-          // scanText is a VisionCamera plugin worklet; cast frame to satisfy
-          // the OCR library's V4-typed parameter (same underlying object at runtime)
+          // scanText (ocr-plus v2 Nitro plugin) is a worklet that accepts the V5
+          // Frame directly; the cast insulates the call if its typing shifts again.
           const result = scanText(frame as Parameters<typeof scanText>[0]);
           frame.dispose();
           handleOCRResultJS(result);

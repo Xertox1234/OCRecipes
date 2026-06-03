@@ -225,6 +225,15 @@ npx expo run:ios
 
 Requires Xcode to be installed. See CLAUDE.md's "iOS Simulator Setup" section for detailed first-time setup instructions and troubleshooting.
 
+> **⚠️ Xcode 26 / arm64 simulator — one-time local config.** RN 0.81 ships a _prebuilt_ React core whose arm64 slice is device-tagged; combined with this project's iOS-26 MLKit `EXCLUDED_ARCHS` workaround, it fails to link into the arm64 simulator (`ld: building for 'iOS-simulator', but linking in dylib built for 'iOS'`). Because `ios/` is gitignored, this setting is **not committed** — apply it once after any `expo prebuild` / fresh checkout:
+>
+> ```jsonc
+> // ios/Podfile.properties.json — add this key
+> "ios.buildReactNativeFromSource": "true"
+> ```
+>
+> Then `cd ios && pod install` before `npx expo run:ios`. (Builds RN core from source — no prebuilt framework; first build is slower, then caches.) Full context — VisionCamera 5 / Nitro family-version-lock, reanimated/worklets ceiling — is in the local solutions KB: `docs/solutions/best-practices/visioncamera-5-upgrade-ios-xcode26-build-2026-06-02.md`.
+
 ### Android Emulator / Device
 
 ```bash
