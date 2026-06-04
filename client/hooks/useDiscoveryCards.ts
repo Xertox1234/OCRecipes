@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   initDiscoveryCache,
   getDismissedCardIds,
@@ -26,8 +26,13 @@ export function useDiscoveryCards(usageCounts: Record<string, number>): {
       .catch((err) => logger.error("Failed to init discovery cache", err));
   }, []);
 
-  const visibleCards = DISCOVERY_CARDS.filter(
-    (card) => (usageCounts[card.id] ?? 0) === 0 && !dismissedIds.has(card.id),
+  const visibleCards = useMemo(
+    () =>
+      DISCOVERY_CARDS.filter(
+        (card) =>
+          (usageCounts[card.id] ?? 0) === 0 && !dismissedIds.has(card.id),
+      ),
+    [dismissedIds, usageCounts],
   );
 
   const dismiss = useCallback(async (id: string) => {
