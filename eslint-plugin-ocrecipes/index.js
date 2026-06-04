@@ -499,6 +499,32 @@ const noErrorMessageInUi = {
 };
 
 // ─── no-dead-apiRequest-guard ──────────────────────────────────────────────
+//
+// Known coverage gaps (patterns that bypass this rule):
+//
+// 1. Destructured `ok` binding — the guard is a bare Identifier (`!ok`), not a
+//    MemberExpression (`!x.ok`), so getGuardedOkIdentifier returns null and the
+//    IfStatement visitor exits before scope resolution occurs:
+//
+//      const { ok } = await apiRequest("GET", "/api/items");
+//      if (!ok) { throw new Error("..."); }  // NOT flagged
+//
+//    Note: destructuring another field and checking `.ok` on it
+//    (`const { data } = await apiRequest(...); if (!data.ok)`) IS flagged
+//    because scope resolution follows the VariableDeclarator init back to the
+//    apiRequest call.
+//
+// 2. Renamed import alias — isApiRequestAwait matches the callee name
+//    "apiRequest" literally; an import alias is not resolved:
+//
+//      import { apiRequest as makeRequest } from "../lib/api";
+//      const res = await makeRequest("GET", "/api/items");
+//      if (!res.ok) { throw new Error("..."); }  // NOT flagged
+//
+// These gaps are documented and accepted. Both patterns are rare in this
+// codebase; fixing them would require import-binding resolution (alias) and
+// binding-type discrimination (destructuring) that significantly complicate
+// the rule for marginal coverage gain.
 const noDeadApiRequestGuard = {
   meta: {
     type: "problem",

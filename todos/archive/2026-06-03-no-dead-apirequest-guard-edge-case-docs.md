@@ -1,6 +1,6 @@
 ---
 title: "Document and test no-dead-apiRequest-guard coverage gaps (destructured + renamed imports)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
