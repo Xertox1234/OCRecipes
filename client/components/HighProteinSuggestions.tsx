@@ -41,9 +41,9 @@ export const HighProteinSuggestions = React.memo(
         </View>
 
         <View style={styles.cardsRow}>
-          {data.suggestions.map((suggestion) => (
+          {data.suggestions.map((suggestion, index) => (
             <Card
-              key={suggestion.title}
+              key={`${suggestion.title}-${index}`}
               elevation={1}
               style={styles.suggestionCard}
               accessibilityLabel={`${suggestion.title}: ${suggestion.proteinGrams}g protein, ${suggestion.calories} calories`}

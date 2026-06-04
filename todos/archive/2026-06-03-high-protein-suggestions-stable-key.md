@@ -1,6 +1,6 @@
 ---
 title: "Use stable key for HighProteinSuggestions list items instead of suggestion.title"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
