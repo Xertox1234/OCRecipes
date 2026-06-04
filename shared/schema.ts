@@ -25,46 +25,67 @@ import type { CarouselRecipeCard } from "./types/carousel";
 import type { ReminderMutes, ReminderType } from "./types/reminders";
 import type { MeasurementUnit } from "./lib/units";
 
-export const users = pgTable("users", {
-  id: varchar("id")
-    .primaryKey()
-    .default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  displayName: text("display_name"),
-  avatarUrl: text("avatar_url"),
-  dailyCalorieGoal: integer("daily_calorie_goal").default(
-    DEFAULT_NUTRITION_GOALS.calories,
-  ),
-  dailyProteinGoal: integer("daily_protein_goal"),
-  dailyCarbsGoal: integer("daily_carbs_goal"),
-  dailyFatGoal: integer("daily_fat_goal"),
-  weight: decimal("weight", { precision: 5, scale: 2 }),
-  height: decimal("height", { precision: 5, scale: 2 }),
-  age: integer("age"),
-  gender: text("gender"),
-  goalWeight: decimal("goal_weight", { precision: 6, scale: 2 }),
-  goalsCalculatedAt: timestamp("goals_calculated_at", { withTimezone: true }),
-  adaptiveGoalsEnabled: boolean("adaptive_goals_enabled").default(false),
-  lastGoalAdjustmentAt: timestamp("last_goal_adjustment_at", {
-    withTimezone: true,
+export const users = pgTable(
+  "users",
+  {
+    id: varchar("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    username: text("username").notNull().unique(),
+    password: text("password").notNull(),
+    displayName: text("display_name"),
+    avatarUrl: text("avatar_url"),
+    dailyCalorieGoal: integer("daily_calorie_goal").default(
+      DEFAULT_NUTRITION_GOALS.calories,
+    ),
+    dailyProteinGoal: integer("daily_protein_goal"),
+    dailyCarbsGoal: integer("daily_carbs_goal"),
+    dailyFatGoal: integer("daily_fat_goal"),
+    weight: decimal("weight", { precision: 5, scale: 2 }),
+    height: decimal("height", { precision: 5, scale: 2 }),
+    age: integer("age"),
+    gender: text("gender"),
+    goalWeight: decimal("goal_weight", { precision: 6, scale: 2 }),
+    goalsCalculatedAt: timestamp("goals_calculated_at", { withTimezone: true }),
+    adaptiveGoalsEnabled: boolean("adaptive_goals_enabled").default(false),
+    lastGoalAdjustmentAt: timestamp("last_goal_adjustment_at", {
+      withTimezone: true,
+    }),
+    onboardingCompleted: boolean("onboarding_completed").default(false),
+    measurementUnit: text("measurement_unit")
+      .$type<MeasurementUnit>()
+      .default("metric")
+      .notNull(),
+    tokenVersion: integer("token_version").default(0).notNull(),
+    subscriptionTier: text("subscription_tier").default("free"),
+    subscriptionExpiresAt: timestamp("subscription_expires_at", {
+      withTimezone: true,
+    }),
+    /** IANA timezone string e.g. "America/Los_Angeles". NULL = not yet captured (treated as UTC). */
+    timezone: text("timezone"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => ({
+    dailyCalorieGoalNonNeg: check(
+      "users_daily_calorie_goal_gte0",
+      sql`${table.dailyCalorieGoal} >= 0`,
+    ),
+    dailyProteinGoalNonNeg: check(
+      "users_daily_protein_goal_gte0",
+      sql`${table.dailyProteinGoal} >= 0`,
+    ),
+    dailyCarbsGoalNonNeg: check(
+      "users_daily_carbs_goal_gte0",
+      sql`${table.dailyCarbsGoal} >= 0`,
+    ),
+    dailyFatGoalNonNeg: check(
+      "users_daily_fat_goal_gte0",
+      sql`${table.dailyFatGoal} >= 0`,
+    ),
   }),
-  onboardingCompleted: boolean("onboarding_completed").default(false),
-  measurementUnit: text("measurement_unit")
-    .$type<MeasurementUnit>()
-    .default("metric")
-    .notNull(),
-  tokenVersion: integer("token_version").default(0).notNull(),
-  subscriptionTier: text("subscription_tier").default("free"),
-  subscriptionExpiresAt: timestamp("subscription_expires_at", {
-    withTimezone: true,
-  }),
-  /** IANA timezone string e.g. "America/Los_Angeles". NULL = not yet captured (treated as UTC). */
-  timezone: text("timezone"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .default(sql`CURRENT_TIMESTAMP`)
-    .notNull(),
-});
+);
 
 export const allergySchema = z.object({
   name: z.string().max(100),
