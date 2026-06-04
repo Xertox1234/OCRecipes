@@ -1,6 +1,6 @@
 ---
 title: "Fix ScanScreen nested accessibilityViewIsModal on root View and confirmCard overlay"
-status: backlog
+status: blocked
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
@@ -43,3 +43,10 @@ Use conditional: `accessibilityViewIsModal={!confirmCardVisible}` on the root Vi
 ### 2026-06-03
 
 - Initial creation (deferred from full audit L17)
+
+### 2026-06-03 (automated executor)
+
+- Blocked: the acceptance criteria require removing `accessibilityViewIsModal` from the root View when the confirm overlay is shown, but `docs/rules/accessibility.md` requires all `fullScreenModal`/`modal` screens to always have `accessibilityViewIsModal={true}` on the root container. The toggle was implemented, flagged CRITICAL by kimi-review, and reverted.
+- Root cause of misdiagnosis: `accessibilityViewIsModal` is sibling-scoped, not screen-scoped. The confirmCard overlay is an inline child of root (not portal-rendered), so both having the prop concurrently governs different sibling-sets at different tree levels — this is correct and non-ambiguous. The documented ambiguity is only for portal-rendered modals (e.g. BottomSheetModal placed as a sibling outside the container).
+- Original code is correct: root always-on prevents VoiceOver from reaching navigator-behind screens; overlay always-on (when visible) prevents VoiceOver from reaching the camera behind the card. The overlay unmounts when null, so there is no stuck-focus issue.
+- Manual intervention needed: VoiceOver device verification (per the todo's own risk note) to confirm behavior is acceptable as-is, or a human decision to accept the rule violation.
