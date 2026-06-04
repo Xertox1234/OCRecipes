@@ -1,6 +1,6 @@
 ---
 title: "Mark pinned bookmark icon in CoachProScreen thread chips accessible={false}"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
