@@ -1,6 +1,14 @@
 // client/camera/components/ProductChip.tsx
-import React, { useEffect, useState } from "react";
-import { StyleSheet, View, Text, TouchableOpacity, Image } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  Platform,
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  Image,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useSharedValue,
@@ -46,16 +54,32 @@ export function ProductChip({
   const translateY = useSharedValue(200);
   const variant = getProductChipVariant(phase);
   const [shouldRender, setShouldRender] = useState(variant !== null);
+  const prevVariantRef = useRef<typeof variant>(null);
 
   useEffect(() => {
     if (variant !== null) {
       setShouldRender(true);
       translateY.value = withSpring(0, CHIP_SPRING);
+      // Announce only on null→non-null transition (chip sliding in for the first time or after hide).
+      // accessibilityLiveRegion on the container handles Android; gate iOS here to avoid double-announce.
+      if (prevVariantRef.current === null && Platform.OS === "ios") {
+        const announceText: Record<NonNullable<typeof variant>, string> = {
+          barcode_lock: "Product found, tap to view details",
+          step2_review: "Nutrition label scanned, review values",
+          step2_confirmed: "Nutrition values confirmed",
+          step3_review: "Front label scanned, review values",
+          session_complete: "Scan complete",
+          smart_photo: "Photo analyzed, tap to confirm",
+          smart_error: "Couldn't identify this food, try again",
+        };
+        AccessibilityInfo.announceForAccessibility(announceText[variant]);
+      }
     } else {
       translateY.value = withSpring(200, CHIP_SPRING, () => {
         runOnJS(setShouldRender)(false);
       });
     }
+    prevVariantRef.current = variant;
   }, [variant]);
 
   const animStyle = useAnimatedStyle(() => ({
@@ -70,6 +94,7 @@ export function ProductChip({
     <Animated.View
       style={[styles.chip, { paddingBottom: 20 + insets.bottom }, animStyle]}
       accessibilityViewIsModal
+      accessibilityLiveRegion="polite"
     >
       {/* Product info row */}
       <View style={styles.productRow}>
