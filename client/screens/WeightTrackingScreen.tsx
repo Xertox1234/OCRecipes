@@ -130,7 +130,6 @@ export default function WeightTrackingScreen() {
         onError: () => {
           setWeightError("Couldn't save your weight. Please try again.");
           haptics.notification(Haptics.NotificationFeedbackType.Error);
-          AccessibilityInfo.announceForAccessibility("Failed to log weight");
         },
       },
     );
@@ -173,7 +172,6 @@ export default function WeightTrackingScreen() {
       onError: () => {
         setGoalError("Couldn't save your goal. Please try again.");
         haptics.notification(Haptics.NotificationFeedbackType.Error);
-        AccessibilityInfo.announceForAccessibility("Failed to save goal");
       },
     });
   }, [goalInput, haptics, setGoalWeight, unit]);
