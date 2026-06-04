@@ -3,7 +3,6 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { generateRecipeImage } from "../services/recipe-generation";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { incrementRecipePopularity } from "../storage/canonical-recipes";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -269,7 +268,10 @@ export function register(app: Express): void {
         if (sourceCommunityRecipeId) {
           fireAndForget(
             "meal plan recipe popularity increment",
-            incrementRecipePopularity(sourceCommunityRecipeId, "mealPlan"),
+            storage.incrementRecipePopularity(
+              sourceCommunityRecipeId,
+              "mealPlan",
+            ),
           );
         }
 

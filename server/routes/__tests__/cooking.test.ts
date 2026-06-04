@@ -4,7 +4,6 @@ import request from "supertest";
 
 import { storage } from "../../storage";
 import { register, MAX_PHOTOS_PER_SESSION } from "../cooking";
-import { incrementRecipePopularity } from "../../storage/canonical-recipes";
 import {
   cookingSessionStore,
   COOKING_MAX_PER_USER,
@@ -39,6 +38,7 @@ vi.mock("../../storage", async () => {
       createScannedItemWithLog: vi.fn(),
       getDailyRecipeGenerationCount: vi.fn().mockResolvedValue(0),
       logRecipeGenerationWithLimitCheck: vi.fn().mockResolvedValue(true),
+      incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
       cookingSessionStore: sessions.cookingSessionStore,
     },
   };
@@ -94,10 +94,6 @@ vi.mock("../../services/recipe-generation", () => ({
 
 vi.mock("../../services/ingredient-substitution", () => ({
   getSubstitutions: vi.fn(),
-}));
-
-vi.mock("../../storage/canonical-recipes", () => ({
-  incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
 }));
 
 const { mockFileBuffer, mockFilePresent } = vi.hoisted(() => ({
@@ -1199,7 +1195,10 @@ describe("Cooking Routes", () => {
         .set("Authorization", "Bearer token")
         .send({ mealType: "dinner" });
 
-      expect(incrementRecipePopularity).toHaveBeenCalledWith(55, "cookSession");
+      expect(vi.mocked(storage.incrementRecipePopularity)).toHaveBeenCalledWith(
+        55,
+        "cookSession",
+      );
     });
 
     it("does not increment popularity when no source recipe", async () => {
@@ -1222,7 +1221,9 @@ describe("Cooking Routes", () => {
         .set("Authorization", "Bearer token")
         .send({ mealType: "dinner" });
 
-      expect(incrementRecipePopularity).not.toHaveBeenCalled();
+      expect(
+        vi.mocked(storage.incrementRecipePopularity),
+      ).not.toHaveBeenCalled();
     });
   });
 

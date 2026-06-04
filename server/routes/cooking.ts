@@ -3,7 +3,6 @@ import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { incrementRecipePopularity } from "../storage/canonical-recipes";
 import { fireAndForget } from "../lib/fire-and-forget";
 import {
   crudRateLimit,
@@ -484,7 +483,10 @@ export function register(app: Express): void {
         if (sourceCommunityRecipeId) {
           fireAndForget(
             "cook session recipe popularity increment",
-            incrementRecipePopularity(sourceCommunityRecipeId, "cookSession"),
+            storage.incrementRecipePopularity(
+              sourceCommunityRecipeId,
+              "cookSession",
+            ),
           );
         }
 

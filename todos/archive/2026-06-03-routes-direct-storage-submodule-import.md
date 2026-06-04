@@ -1,6 +1,6 @@
 ---
 title: "Fix cooking.ts and meal-plan.ts direct storage sub-module imports"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
