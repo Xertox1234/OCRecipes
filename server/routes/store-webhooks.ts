@@ -14,6 +14,17 @@ const appleNotificationBodySchema = z.object({
   signedPayload: z.string().min(1),
 });
 
+const googleRtdnBodySchema = z.object({
+  message: z
+    .object({
+      data: z.string().optional(),
+      messageId: z.string().optional(),
+      attributes: z.record(z.string()).optional(),
+    })
+    .optional(),
+  subscription: z.string().optional(),
+});
+
 /**
  * Store server-notification webhooks — UNAUTHENTICATED. The stores (not a
  * logged-in user) call these; authenticity is established by the payload
@@ -65,7 +76,16 @@ export function register(app: Express): void {
             ErrorCode.UNAUTHORIZED,
           );
         }
-        await handleGoogleNotification(req.body);
+        const parsed = googleRtdnBodySchema.safeParse(req.body);
+        if (!parsed.success) {
+          return sendError(
+            res,
+            400,
+            "Invalid Pub/Sub message shape",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        await handleGoogleNotification(parsed.data);
         res.json({ received: true });
       } catch (error) {
         handleRouteError(res, error, "google rtdn");
