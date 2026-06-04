@@ -100,8 +100,13 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     const handleBarcodeScanned = useCallback(
       (barcodes: Barcode[]) => {
         if (!onBarcodeScanned || barcodes.length === 0) return;
-        const result = mapBarcodeToResult(barcodes[0]);
-        if (result) onBarcodeScanned(result);
+        for (const barcode of barcodes) {
+          const result = mapBarcodeToResult(barcode);
+          if (result) {
+            onBarcodeScanned(result);
+            return;
+          }
+        }
       },
       [onBarcodeScanned],
     );

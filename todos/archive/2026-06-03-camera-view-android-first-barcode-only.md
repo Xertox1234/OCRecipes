@@ -1,6 +1,6 @@
 ---
 title: "Fix CameraView Android to loop all barcodes instead of only checking barcodes[0]"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
