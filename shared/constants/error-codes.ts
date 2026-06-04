@@ -31,6 +31,9 @@ export const ErrorCode = {
   NO_RECIPE_DATA: "NO_RECIPE_DATA",
   PARSE_ERROR: "PARSE_ERROR",
   RESPONSE_TOO_LARGE: "RESPONSE_TOO_LARGE",
+  // Subscription / IAP entitlement errors
+  MISSING_TRANSACTION_ID: "MISSING_TRANSACTION_ID",
+  SUBSCRIPTION_ALREADY_LINKED: "SUBSCRIPTION_ALREADY_LINKED",
 } as const;
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare -- intentional: merging value + type

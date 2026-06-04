@@ -62,7 +62,7 @@ async function applyValidatedReceipt(
       success: false,
       error:
         "Could not verify the subscription. Please try again or contact support.",
-      code: "MISSING_TRANSACTION_ID",
+      code: ErrorCode.MISSING_TRANSACTION_ID,
     });
     return;
   }
@@ -90,7 +90,7 @@ async function applyValidatedReceipt(
       res,
       409,
       "This subscription is already linked to another account.",
-      "SUBSCRIPTION_ALREADY_LINKED",
+      ErrorCode.SUBSCRIPTION_ALREADY_LINKED,
     );
     return;
   }
