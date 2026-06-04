@@ -121,6 +121,7 @@ export default function ScanScreen() {
   const sessionNavigatedRef = useRef(false);
   const scanPhaseRef = useRef(scanPhase);
   const reducedMotionRef = useRef(reducedMotion);
+  const isCapturingRef = useRef(false);
 
   const { permission, requestPermission } = useCameraPermissions();
 
@@ -343,80 +344,92 @@ export default function ScanScreen() {
     )
       return;
 
-    if (phase.type === "HUNTING") {
-      const photo = await cameraRef.current?.takePicture();
-      if (!photo) {
-        Alert.alert("Capture failed", "Try again or use the gallery.");
+    // Guard against duplicate captures from rapid taps — ref check is synchronous
+    // and avoids the re-render cycle that makes `disabled` lag behind fast input.
+    if (isCapturingRef.current) return;
+    isCapturingRef.current = true;
+
+    try {
+      if (phase.type === "HUNTING") {
+        const photo = await cameraRef.current?.takePicture();
+        if (!photo) {
+          Alert.alert("Capture failed", "Please try again.");
+          return;
+        }
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+        // Label mode: skip smart classification, go directly to LabelAnalysis.
+        // On-device snapshot OCR pre-fills an instant preview; the server does the
+        // authoritative analysis, so OCR failure here is non-fatal (preview absent).
+        if (isLabelMode) {
+          let localOCRText: string | undefined;
+          try {
+            const ocrResult = await recognizeTextFromPhoto(photo.uri);
+            localOCRText = ocrResult.text || undefined;
+          } catch (err) {
+            logger.error(
+              "[ScanScreen label OCR] recognition failed; navigating without preview",
+              err,
+            );
+          }
+          navigation.navigate("LabelAnalysis", {
+            imageUri: photo.uri,
+            localOCRText,
+          });
+          return;
+        }
+
+        dispatch({ type: "SMART_PHOTO_INITIATED", imageUri: photo.uri });
+        try {
+          const result = await uploadPhotoForAnalysis(photo.uri, "auto");
+          dispatch({
+            type: "CLASSIFICATION_SUCCEEDED",
+            classification: result,
+          });
+        } catch (err) {
+          // Stale dispatch is safe — reducer no-ops CLASSIFICATION_FAILED when state !== CLASSIFYING
+          dispatch({
+            type: "CLASSIFICATION_FAILED",
+            error: err instanceof Error ? err.message : "Unknown error",
+          });
+        }
         return;
       }
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Label mode: skip smart classification, go directly to LabelAnalysis.
-      // On-device snapshot OCR pre-fills an instant preview; the server does the
-      // authoritative analysis, so OCR failure here is non-fatal (preview absent).
-      if (isLabelMode) {
-        let localOCRText: string | undefined;
+      const photo = await cameraRef.current?.takePicture();
+      if (!photo) {
+        Alert.alert("Capture failed", "Please try again.");
+        return;
+      }
+
+      // Haptic + flash immediately after capture, before async OCR
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setFlashCount((c) => c + 1);
+
+      if (phase.type === "STEP2_CAPTURING") {
+        let ocrText = "";
         try {
           const ocrResult = await recognizeTextFromPhoto(photo.uri);
-          localOCRText = ocrResult.text || undefined;
+          ocrText = ocrResult.text ?? "";
         } catch (err) {
+          // OCR failure is non-fatal: the STEP2 photo is still captured and the
+          // session proceeds. We fall back to empty text intentionally — the
+          // reducer stores it, and no downstream screen requires the OCR result
+          // (NutritionDetail does its own lookup). Log via logger.error so the
+          // failure is visible in production logs (routed to the reporter), not
+          // silently swallowed — logger.warn is dev-only and would hide it.
           logger.error(
-            "[ScanScreen label OCR] recognition failed; navigating without preview",
+            "[ScanScreen STEP2 OCR] recognition failed; proceeding with empty text",
             err,
           );
         }
-        navigation.navigate("LabelAnalysis", {
-          imageUri: photo.uri,
-          localOCRText,
-        });
-        return;
+        dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri, ocrText });
+      } else {
+        // STEP3_CAPTURING — no OCR needed
+        dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri });
       }
-
-      dispatch({ type: "SMART_PHOTO_INITIATED", imageUri: photo.uri });
-      try {
-        const result = await uploadPhotoForAnalysis(photo.uri, "auto");
-        dispatch({ type: "CLASSIFICATION_SUCCEEDED", classification: result });
-      } catch (err) {
-        // Stale dispatch is safe — reducer no-ops CLASSIFICATION_FAILED when state !== CLASSIFYING
-        dispatch({
-          type: "CLASSIFICATION_FAILED",
-          error: err instanceof Error ? err.message : "Unknown error",
-        });
-      }
-      return;
-    }
-
-    const photo = await cameraRef.current?.takePicture();
-    if (!photo) {
-      Alert.alert("Capture failed", "Try again or use the gallery.");
-      return;
-    }
-
-    // Haptic + flash immediately after capture, before async OCR
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setFlashCount((c) => c + 1);
-
-    if (phase.type === "STEP2_CAPTURING") {
-      let ocrText = "";
-      try {
-        const ocrResult = await recognizeTextFromPhoto(photo.uri);
-        ocrText = ocrResult.text ?? "";
-      } catch (err) {
-        // OCR failure is non-fatal: the STEP2 photo is still captured and the
-        // session proceeds. We fall back to empty text intentionally — the
-        // reducer stores it, and no downstream screen requires the OCR result
-        // (NutritionDetail does its own lookup). Log via logger.error so the
-        // failure is visible in production logs (routed to the reporter), not
-        // silently swallowed — logger.warn is dev-only and would hide it.
-        logger.error(
-          "[ScanScreen STEP2 OCR] recognition failed; proceeding with empty text",
-          err,
-        );
-      }
-      dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri, ocrText });
-    } else {
-      // STEP3_CAPTURING — no OCR needed
-      dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri });
+    } finally {
+      isCapturingRef.current = false;
     }
   }, [isLabelMode, navigation]);
 

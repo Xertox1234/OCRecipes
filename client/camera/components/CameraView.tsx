@@ -185,7 +185,7 @@ export function CameraUnavailable() {
         type="body"
         style={[styles.unavailableSubtitle, { color: theme.textSecondary }]}
       >
-        Try using the gallery to upload a photo
+        Camera is not available on this device
       </ThemedText>
     </View>
   );

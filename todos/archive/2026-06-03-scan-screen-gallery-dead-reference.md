@@ -1,6 +1,6 @@
 ---
 title: "Wire expo-image-picker gallery flow or remove gallery references in ScanScreen"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03

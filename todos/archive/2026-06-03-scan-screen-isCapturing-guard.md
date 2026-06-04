@@ -1,6 +1,6 @@
 ---
 title: "Add isCapturingRef guard to ScanScreen.onShutterPress to prevent duplicate captures"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
