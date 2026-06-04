@@ -61,7 +61,7 @@ function MacroRow({
         {unit}
       </ThemedText>
       <Feather
-        name={isIncrease ? "arrow-right" : "arrow-right"}
+        name={isIncrease ? "arrow-up" : "arrow-down"}
         size={12}
         color={theme.textSecondary}
       />
@@ -90,30 +90,31 @@ export const AdaptiveGoalCard = React.memo(function AdaptiveGoalCard({
   const toast = useToast();
   const { reducedMotion } = useAccessibility();
   const unit = useMeasurementUnit();
-  const acceptMutation = useAcceptAdaptiveGoal();
-  const dismissMutation = useDismissAdaptiveGoal();
+  const { mutate: accept, isPending: acceptPending } = useAcceptAdaptiveGoal();
+  const { mutate: dismiss, isPending: dismissPending } =
+    useDismissAdaptiveGoal();
 
   const handleAccept = useCallback(() => {
     haptics.notification(Haptics.NotificationFeedbackType.Success);
-    acceptMutation.mutate(undefined, {
+    accept(undefined, {
       onError: () => {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         toast.error("Couldn't apply the goal adjustment. Please try again.");
       },
     });
-  }, [haptics, toast, acceptMutation]);
+  }, [haptics, toast, accept]);
 
   const handleDismiss = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    dismissMutation.mutate(undefined, {
+    dismiss(undefined, {
       onError: () => {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         toast.error("Couldn't dismiss the suggestion. Please try again.");
       },
     });
-  }, [haptics, toast, dismissMutation]);
+  }, [haptics, toast, dismiss]);
 
-  const isLoading = acceptMutation.isPending || dismissMutation.isPending;
+  const isLoading = acceptPending || dismissPending;
 
   const { diff: calorieDiff, isIncrease: isCalorieIncrease } = calculateDiff(
     recommendation.previousCalories,
@@ -262,7 +263,7 @@ export const AdaptiveGoalCard = React.memo(function AdaptiveGoalCard({
             accessibilityRole="button"
             accessibilityLabel="Dismiss suggestion"
           >
-            {dismissMutation.isPending ? (
+            {dismissPending ? (
               <ActivityIndicator size="small" color={theme.textSecondary} />
             ) : (
               <ThemedText
@@ -285,7 +286,7 @@ export const AdaptiveGoalCard = React.memo(function AdaptiveGoalCard({
             accessibilityRole="button"
             accessibilityLabel="Accept goal adjustment"
           >
-            {acceptMutation.isPending ? (
+            {acceptPending ? (
               <ActivityIndicator size="small" color={theme.buttonText} />
             ) : (
               <ThemedText
