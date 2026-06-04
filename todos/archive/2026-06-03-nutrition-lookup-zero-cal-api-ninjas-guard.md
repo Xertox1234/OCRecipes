@@ -1,6 +1,6 @@
 ---
 title: "Guard calories > 0 before writing API Ninjas results to nutrition cache"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03

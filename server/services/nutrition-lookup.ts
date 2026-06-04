@@ -633,6 +633,36 @@ export async function lookupUSDAByUPC(
 }
 
 /**
+ * Fetch nutrition data from external sources (CNF → USDA → API Ninjas) without
+ * touching the cache. Used by both the single-item and batch lookup paths so
+ * the batch can avoid a redundant per-item cache read (already a batch miss)
+ * and a redundant cache write (batch writes once after this returns).
+ *
+ * CNF 0-calorie results fall through to USDA, matching the original guard at
+ * the write site. USDA and API Ninjas results are returned as-is; callers
+ * apply the `calories > 0` write guard themselves.
+ */
+async function fetchNutritionFromSources(
+  query: string,
+): Promise<NutritionData | null> {
+  // Resolve cultural food names to standardized lookup terms
+  const standardizedQuery = getStandardizedFoodName(query);
+  const effectiveQuery =
+    standardizedQuery !== query ? standardizedQuery : query;
+
+  // Primary: Canadian Nutrient File (bilingual, supports French product names)
+  const cnfResult = await lookupCNF(effectiveQuery);
+  if (cnfResult && cnfResult.calories > 0) return cnfResult;
+
+  // Secondary: USDA FoodData Central (reliable government data)
+  const usdaResult = await lookupUSDA(effectiveQuery);
+  if (usdaResult) return usdaResult;
+
+  // Last-resort fallback: API Ninjas
+  return lookupAPINinjas(effectiveQuery);
+}
+
+/**
  * Lookup nutrition data for a single item.
  * Canadian Nutrient File is tried first (bilingual, ideal for Canadian products).
  * USDA FoodData Central is the secondary source.
@@ -646,31 +676,11 @@ export async function lookupNutrition(
   const cachedResult = cached.get(query);
   if (cachedResult) return cachedResult;
 
-  // Resolve cultural food names to standardized lookup terms
-  const standardizedQuery = getStandardizedFoodName(query);
-  const effectiveQuery =
-    standardizedQuery !== query ? standardizedQuery : query;
-
-  // Primary: Canadian Nutrient File (bilingual, supports French product names)
-  const cnfResult = await lookupCNF(effectiveQuery);
-  if (cnfResult && cnfResult.calories > 0) {
-    await writeNutritionCache(query, cnfResult, { allowOverwrite: true });
-    return cnfResult;
+  const result = await fetchNutritionFromSources(query);
+  if (result && result.calories > 0) {
+    await writeNutritionCache(query, result, { allowOverwrite: true });
   }
-
-  // Secondary: USDA FoodData Central (reliable government data)
-  const usdaResult = await lookupUSDA(effectiveQuery);
-  if (usdaResult) {
-    await writeNutritionCache(query, usdaResult, { allowOverwrite: true });
-    return usdaResult;
-  }
-
-  // Last-resort fallback: API Ninjas
-  const apiNinjasResult = await lookupAPINinjas(effectiveQuery);
-  if (apiNinjasResult) {
-    await writeNutritionCache(query, apiNinjasResult, { allowOverwrite: true });
-  }
-  return apiNinjasResult;
+  return result;
 }
 
 /**
@@ -696,11 +706,14 @@ export async function batchNutritionLookup(
     return results;
   }
 
-  // Parallel lookup with rate limiting
+  // Parallel lookup with rate limiting. Call fetchNutritionFromSources directly
+  // to skip the per-item cache read (already proven a miss above) and to write
+  // to cache exactly once per item (not twice as the previous lookupNutrition
+  // call would have done).
   const lookupPromises = uncached.map((item) =>
     limit(async () => {
-      const data = await lookupNutrition(item);
-      if (data) {
+      const data = await fetchNutritionFromSources(item);
+      if (data && data.calories > 0) {
         await writeNutritionCache(item, data, { allowOverwrite: true });
       }
       return { item, data };
