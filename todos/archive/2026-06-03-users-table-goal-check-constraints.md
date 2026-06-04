@@ -1,6 +1,6 @@
 ---
 title: "Add >= 0 CHECK constraints on users table daily goal columns"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
