@@ -1,6 +1,6 @@
 ---
 title: "Replace ad-hoc string literals in subscription.ts with ErrorCode constants"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
