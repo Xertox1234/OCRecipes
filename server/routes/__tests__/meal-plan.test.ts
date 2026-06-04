@@ -39,6 +39,7 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     reorderMealPlanItems: vi.fn(),
     createMealPlanFromSuggestions: vi.fn(),
+    incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -59,10 +60,6 @@ vi.mock("../../services/pantry-meal-plan", async () => {
     EmptyPantryError: actual.EmptyPantryError,
   };
 });
-
-vi.mock("../../storage/canonical-recipes", () => ({
-  incrementRecipePopularity: vi.fn().mockResolvedValue(undefined),
-}));
 
 // POST /api/meal-plan/recipes fires `generateRecipeImage` as a fire-and-forget
 // background promise whenever the created recipe has no imageUrl (the factory
@@ -259,9 +256,6 @@ describe("Meal Plan Routes", () => {
 
     it("increments popularity when sourceCommunityRecipeId is provided", async () => {
       vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
-      const { incrementRecipePopularity } = await import(
-        "../../storage/canonical-recipes"
-      );
 
       await request(app)
         .post("/api/meal-plan/recipes")
@@ -272,7 +266,7 @@ describe("Meal Plan Routes", () => {
           ingredients: [{ name: "Chicken", quantity: "200", unit: "g" }],
         });
 
-      expect(vi.mocked(incrementRecipePopularity)).toHaveBeenCalledWith(
+      expect(vi.mocked(storage.incrementRecipePopularity)).toHaveBeenCalledWith(
         99,
         "mealPlan",
       );
@@ -280,9 +274,6 @@ describe("Meal Plan Routes", () => {
 
     it("does not increment popularity when sourceCommunityRecipeId is absent", async () => {
       vi.mocked(storage.createMealPlanRecipe).mockResolvedValue(mockRecipe);
-      const { incrementRecipePopularity } = await import(
-        "../../storage/canonical-recipes"
-      );
 
       await request(app)
         .post("/api/meal-plan/recipes")
@@ -292,7 +283,9 @@ describe("Meal Plan Routes", () => {
           ingredients: [{ name: "Chicken", quantity: "200", unit: "g" }],
         });
 
-      expect(vi.mocked(incrementRecipePopularity)).not.toHaveBeenCalled();
+      expect(
+        vi.mocked(storage.incrementRecipePopularity),
+      ).not.toHaveBeenCalled();
     });
   });
 
