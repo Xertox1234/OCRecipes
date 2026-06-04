@@ -95,4 +95,29 @@ describe("Store webhooks — Google RTDN", () => {
     expect(res.status).toBe(401);
     expect(handleGoogleNotification).not.toHaveBeenCalled();
   });
+
+  it("rejects 400 when body is not an object (non-object body)", async () => {
+    vi.mocked(verifyGooglePushToken).mockResolvedValue(true);
+
+    const res = await request(app)
+      .post("/webhooks/google/rtdn")
+      .set("Authorization", "Bearer valid")
+      .send([{ message: { data: "eyJ9" } }]);
+
+    expect(res.status).toBe(400);
+    expect(handleGoogleNotification).not.toHaveBeenCalled();
+  });
+
+  it("acks 200 on a Pub/Sub test push with no message data (no-op)", async () => {
+    vi.mocked(verifyGooglePushToken).mockResolvedValue(true);
+    vi.mocked(handleGoogleNotification).mockResolvedValue(undefined);
+
+    const res = await request(app)
+      .post("/webhooks/google/rtdn")
+      .set("Authorization", "Bearer valid")
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(handleGoogleNotification).toHaveBeenCalledWith({});
+  });
 });
