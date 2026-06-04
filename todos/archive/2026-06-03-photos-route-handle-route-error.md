@@ -1,6 +1,6 @@
 ---
 title: "Replace manual catch blocks in photos.ts with canonical handleRouteError"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03

@@ -37,7 +37,6 @@ import {
 } from "./_helpers";
 import { photoRateLimit, crudRateLimit } from "./_rate-limiters";
 import { upload, createImageUpload } from "./_upload";
-import { logger, toError } from "../lib/logger";
 
 // Higher file size limit for label photos (5MB for text readability)
 const labelUpload = createImageUpload(5 * 1024 * 1024);
@@ -288,13 +287,7 @@ export function register(app: Express): void {
 
         res.json(response);
       } catch (error) {
-        logger.error({ err: toError(error) }, "photo analysis error");
-        sendError(
-          res,
-          500,
-          "Failed to analyze photo",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "analyze photo");
       }
     },
   );
@@ -361,13 +354,7 @@ export function register(app: Express): void {
           followUpQuestions: getFollowUpQuestions(refinedResult),
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "follow-up error");
-        sendError(
-          res,
-          500,
-          "Failed to process follow-up",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "process follow-up");
       }
     },
   );
@@ -453,13 +440,7 @@ export function register(app: Express): void {
 
         res.json(result);
       } catch (error) {
-        logger.error({ err: toError(error) }, "recipe photo analysis error");
-        sendError(
-          res,
-          500,
-          "Failed to analyze recipe photo",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "analyze recipe photo");
       }
     },
   );
@@ -545,13 +526,7 @@ export function register(app: Express): void {
           barcode,
         });
       } catch (error) {
-        logger.error({ err: toError(error) }, "label analysis error");
-        sendError(
-          res,
-          500,
-          "Failed to analyze label",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "analyze label");
       }
     },
   );
