@@ -1,6 +1,6 @@
 ---
 title: "Remove duplicate useEffect in CoachProScreen with identical deps and body"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03

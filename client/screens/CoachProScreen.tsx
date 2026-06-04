@@ -71,16 +71,6 @@ export default function CoachProScreen() {
     }, [acknowledge]),
   );
 
-  // Apply selectedConversationId from navigation param (set by AllConversationsScreen).
-  // Runs before the default-selection effect so the explicit selection always wins.
-  // The param is cleared after reading to avoid re-applying on subsequent back-navigations.
-  useEffect(() => {
-    const selected = route.params?.selectedConversationId;
-    if (selected == null) return;
-    setConversationId(selected);
-    navigation.setParams({ selectedConversationId: undefined });
-  }, [route.params?.selectedConversationId, navigation]);
-
   const pinnedConversations = useMemo(
     () => coachConversations.filter((c) => c.isPinned),
     [coachConversations],
@@ -232,6 +222,7 @@ export default function CoachProScreen() {
                 : theme.backgroundDefault,
             },
           ]}
+          hitSlop={{ top: 4, bottom: 4 }}
           accessibilityRole="button"
           accessibilityLabel="Start a new coach conversation"
         >
@@ -279,9 +270,10 @@ export default function CoachProScreen() {
                       : theme.backgroundDefault,
                   },
                 ]}
+                hitSlop={{ top: 4, bottom: 4 }}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={`Open coach conversation ${conversation.title}`}
+                accessibilityLabel={`${conversation.isPinned ? "Pinned. " : ""}Open coach conversation ${conversation.title}`}
               >
                 {conversation.isPinned && (
                   <Feather
@@ -289,6 +281,7 @@ export default function CoachProScreen() {
                     size={10}
                     color={theme.link}
                     style={styles.pinIcon}
+                    accessible={false}
                   />
                 )}
                 <Text
