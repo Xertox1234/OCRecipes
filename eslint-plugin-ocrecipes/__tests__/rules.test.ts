@@ -113,6 +113,33 @@ tester.run(
           "}",
         ].join("\n"),
       },
+      // Known coverage gap: destructured `ok` binding. The guard is a bare Identifier
+      // (`!ok`), not a MemberExpression (`!x.ok`), so getGuardedOkIdentifier returns
+      // null and the visitor exits before scope resolution.
+      {
+        code: [
+          "async function load() {",
+          '  const { ok } = await apiRequest("GET", "/api/items");',
+          "  if (!ok) {",
+          '    throw new Error("Request failed");',
+          "  }",
+          "}",
+        ].join("\n"),
+      },
+      // Known coverage gap: renamed import. isApiRequestAwait only matches the
+      // callee name "apiRequest" literally, so an import alias (`apiRequest as
+      // makeRequest`) is not recognised and the call is not flagged.
+      {
+        code: [
+          'import { apiRequest as makeRequest } from "../lib/api";',
+          "async function load() {",
+          '  const res = await makeRequest("GET", "/api/items");',
+          "  if (!res.ok) {",
+          '    throw new Error("Request failed");',
+          "  }",
+          "}",
+        ].join("\n"),
+      },
     ],
     invalid: [
       {
