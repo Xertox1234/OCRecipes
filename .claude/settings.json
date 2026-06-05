@@ -75,6 +75,10 @@
       },
       {
         "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/branch-preflight.sh", "timeout": 10, "statusMessage": "Checking branch before commit..." }]
+      },
+      {
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",

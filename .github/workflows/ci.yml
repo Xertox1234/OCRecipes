@@ -66,6 +66,8 @@ jobs:
 
       - name: Commit-verify hook tests
         run: bash .claude/hooks/test-commit-verify.sh
+      - name: Branch-preflight hook tests
+        run: bash .claude/hooks/test-branch-preflight.sh
 
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
