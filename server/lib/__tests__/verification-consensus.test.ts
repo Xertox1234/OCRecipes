@@ -4,6 +4,7 @@ import {
   valuesMatch,
   nutritionMatches,
   compareWithVerifications,
+  computeConsensus,
 } from "../verification-consensus";
 
 /** Build a VerificationNutrition with all fields null, overriding as needed. */
@@ -61,6 +62,40 @@ describe("valuesMatch", () => {
     // 0.5 and 1.6 are both < 2: |0.5 - 1.6| = 1.1 > 1
     expect(valuesMatch(0.5, 1.6)).toBe(false);
   });
+
+  it("rejects a small value against a large value where only one side is <2 (5,0)", () => {
+    // Kills line-73 mutants `if (b === 0)` and `if (a !== 0 && b === 0)`:
+    // 5 vs 0 -> relative branch: |5-0|/5 = 1 > 0.05 -> false.
+    expect(valuesMatch(5, 0)).toBe(false);
+  });
+
+  it("does not treat the small-value branch as reachable when only b is <2 (1.5,2.4)", () => {
+    // Kills line-75 `||` and `a<2 && true`: |2.4|<2 is false so original uses the
+    // relative branch: |1.5-2.4|/2.4 = 0.375 > 0.05 -> false.
+    expect(valuesMatch(1.5, 2.4)).toBe(false);
+  });
+
+  it("does not treat the small-value branch as reachable when only a is <2 (2.4,1.5)", () => {
+    // Kills line-75 `true && b<2`: |2.4|<2 false -> relative -> 0.375 > 0.05 -> false.
+    expect(valuesMatch(2.4, 1.5)).toBe(false);
+  });
+
+  it("treats abs(b)===2 as NOT a small value (1,2)", () => {
+    // Kills line-75 `Math.abs(b) <= 2`: |2| is not < 2, so relative branch:
+    // |1-2|/2 = 0.5 > 0.05 -> false.
+    expect(valuesMatch(1, 2)).toBe(false);
+  });
+
+  it("treats abs(a)===2 as NOT a small value (2,1)", () => {
+    // Kills line-75 `Math.abs(a) <= 2`: relative branch -> |2-1|/2 = 0.5 > 0.05 -> false.
+    expect(valuesMatch(2, 1)).toBe(false);
+  });
+
+  it("matches at exactly the 5% relative boundary using max (100,95)", () => {
+    // Kills line-79 `<= 0.05` -> `< 0.05` AND line-78 `Math.max` -> `Math.min`:
+    // |100-95|/max(100,95) = 5/100 = 0.05 -> true (<=). With min: 5/95 = 0.0526 > 0.05 -> would be false.
+    expect(valuesMatch(100, 95)).toBe(true);
+  });
 });
 
 describe("nutritionMatches", () => {
@@ -102,6 +137,42 @@ describe("nutritionMatches", () => {
     const a = nutrition({ calories: 200 });
     const b = nutrition({ protein: 10 });
     expect(nutritionMatches(a, b)).toBe(false);
+  });
+});
+
+describe("computeConsensus", () => {
+  it("averages all-present values: rounds calories to int, macros to 1dp", () => {
+    const result = computeConsensus([
+      nutrition({ calories: 100, protein: 10, totalCarbs: 20, totalFat: 5 }),
+      nutrition({ calories: 101, protein: 11, totalCarbs: 21, totalFat: 6 }),
+    ]);
+    expect(result.calories).toBe(101); // round(100.5); kills round-removal, +/-, /*, sum/count
+    expect(result.protein).toBe(10.5);
+    expect(result.carbs).toBe(20.5);
+    expect(result.fat).toBe(5.5);
+  });
+
+  it("counts only non-null entries per field (mixed nulls)", () => {
+    const result = computeConsensus([
+      nutrition({
+        calories: null,
+        protein: null,
+        totalCarbs: 20,
+        totalFat: null,
+      }),
+      nutrition({ calories: 200, protein: 10, totalCarbs: null, totalFat: 4 }),
+    ]);
+    // calories: one present (200) -> 200; protein: one -> 10; carbs: one -> 20; fat: one -> 4
+    // Exercises each field's `!= null` guard with a null AND a present value,
+    // including calories=null to kill the `if (v.calories != null) -> if (true)` mutant.
+    expect(result).toEqual({ calories: 200, protein: 10, carbs: 20, fat: 4 });
+  });
+
+  it("returns 0 (not NaN) for a field when every value is null", () => {
+    const result = computeConsensus([nutrition(), nutrition()]);
+    // counts.x === 0 -> the `counts.x > 0 ? avg : 0` ternary must yield 0.
+    // Kills the >0 boundary/conditional mutants (>=0, <=0, true, false).
+    expect(result).toEqual({ calories: 0, protein: 0, carbs: 0, fat: 0 });
   });
 });
 

@@ -69,7 +69,9 @@ const COMPARISON_FIELDS = [
  * Handles edge cases: both zero, one zero, very small values.
  */
 export function valuesMatch(a: number, b: number): boolean {
+  // Stryker disable next-line ConditionalExpression: equivalent for finite inputs — equal values also pass the downstream relative branch
   if (a === b) return true;
+  // Stryker disable next-line ConditionalExpression,BooleanLiteral: dead branch — line is only reached when a !== b, so a===0 && b===0 is impossible (line above handles 0/0)
   if (a === 0 && b === 0) return true;
   // For very small values (< 2), use absolute tolerance of 1
   if (Math.abs(a) < 2 && Math.abs(b) < 2) {
