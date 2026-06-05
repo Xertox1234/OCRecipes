@@ -106,3 +106,7 @@ evals/results/
 
 # Python bytecode cache (from scripts/kimi-review.py)
 __pycache__/
+
+# Mutation testing (Stryker) — runtime outputs only; baselines live in docs/mutation-testing/
+.stryker-tmp/
+reports/mutation/
