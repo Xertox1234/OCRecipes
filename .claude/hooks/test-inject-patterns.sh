@@ -255,6 +255,53 @@ fi
 check "storage edit → architecture still delivered (inline or spill)" \
   "$STORAGE_INPUT" "RULES — architecture"
 
+# --- Session-scoped dedup ---
+# Each domain's full rules are injected only the first time it appears in a session; later
+# edits get a one-line pointer. Requires a real session_id; absent it (or with the escape
+# hatch) dedup is OFF. "getEffectiveTierForUser" is a security-body sentinel present only when
+# full rules are injected.
+DEDUP_SESS_A='{"session_id":"itest-dedup-A","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+DEDUP_SESS_B='{"session_id":"itest-dedup-B","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+rm -f /tmp/ocrecipes-pattern-inject-itest-dedup-A /tmp/ocrecipes-pattern-inject-itest-dedup-B
+
+first=$(inline_ctx "$DEDUP_SESS_A")
+if echo "$first" | grep -qF "getEffectiveTierForUser" && ! echo "$first" | grep -qF "already injected"; then
+  echo "PASS: dedup → first edit in a session injects full rules"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → first edit in a session injects full rules"; FAIL=$((FAIL + 1))
+fi
+
+second=$(inline_ctx "$DEDUP_SESS_A")
+if echo "$second" | grep -qF "already injected" && ! echo "$second" | grep -qF "getEffectiveTierForUser"; then
+  echo "PASS: dedup → repeat edit emits pointer, not full rules"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → repeat edit emits pointer, not full rules"; FAIL=$((FAIL + 1))
+fi
+
+other=$(inline_ctx "$DEDUP_SESS_B")
+if echo "$other" | grep -qF "getEffectiveTierForUser"; then
+  echo "PASS: dedup → a different session re-injects full rules"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → a different session re-injects full rules"; FAIL=$((FAIL + 1))
+fi
+
+forced=$(echo "$DEDUP_SESS_A" | PATTERN_INJECT_NO_DEDUP=1 bash "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext')
+if echo "$forced" | grep -qF "getEffectiveTierForUser"; then
+  echo "PASS: dedup → PATTERN_INJECT_NO_DEDUP=1 forces full rules on a used session"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → PATTERN_INJECT_NO_DEDUP=1 forces full rules on a used session"; FAIL=$((FAIL + 1))
+fi
+
+NOSESS='{"tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+ns1=$(inline_ctx "$NOSESS"); ns2=$(inline_ctx "$NOSESS")
+if echo "$ns1" | grep -qF "getEffectiveTierForUser" && echo "$ns2" | grep -qF "getEffectiveTierForUser" && ! echo "$ns2" | grep -qF "already injected"; then
+  echo "PASS: dedup → session-less edits always get full rules (back-compat)"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → session-less edits always get full rules (back-compat)"; FAIL=$((FAIL + 1))
+fi
+
+rm -f /tmp/ocrecipes-pattern-inject-itest-dedup-A /tmp/ocrecipes-pattern-inject-itest-dedup-B
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

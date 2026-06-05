@@ -101,6 +101,20 @@ domain_rank() {
   esac
 }
 
+# Per-session dedup: inject each domain's full rules + solution refs only the FIRST time that
+# domain appears in a session; on later edits emit a one-line pointer instead. This bounds the
+# repeated cost of editing many files in one domain over a long session (e.g. a /todo loop).
+# Requires a real session_id — when it's absent (or PATTERN_INJECT_NO_DEDUP=1) dedup is OFF and
+# full rules are always injected (fail-safe: more context, not less; also keeps session-less
+# test runs deterministic). Mirrors the per-session state-file pattern in lsp-nudge.sh.
+# `// empty` is load-bearing: `jq -r '.session_id'` emits the literal "null" for an absent
+# key (and -e only changes the exit code, not the output), which would make session-less
+# callers share a "/tmp/...-null" state file and wrongly dedup. `// empty` yields "" instead.
+SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+DEDUP=1
+{ [ -z "$SESSION" ] || [ "${PATTERN_INJECT_NO_DEDUP:-0}" = "1" ]; } && DEDUP=0
+DEDUP_STATE="/tmp/ocrecipes-pattern-inject-${SESSION}"
+
 # Domain section (skipped if no domains matched — preamble still emitted above)
 if [ -n "$DOMAINS" ]; then
   IFS=',' read -ra DOMAIN_LIST <<< "$DOMAINS"
@@ -112,6 +126,12 @@ if [ -n "$DOMAINS" ]; then
   DOMAIN_LIST=($(for d in "${DOMAIN_LIST[@]}"; do printf '%s\t%s\n' "$(domain_rank "$d")" "$d"; done | sort -n | cut -f2))
   for DOMAIN in "${DOMAIN_LIST[@]}"; do
     RULES_FILE="$RULES_DIR/${DOMAIN}.md"
+
+    # Already injected this session? Emit a one-line pointer and skip the full payload.
+    if [ "$DEDUP" = "1" ] && grep -qxF "$DOMAIN" "$DEDUP_STATE" 2>/dev/null; then
+      printf '\n[RULES — %s] already injected earlier this session — re-read docs/rules/%s.md if the rules are no longer in context.\n' "$DOMAIN" "$DOMAIN" >> "$TMPFILE"
+      continue
+    fi
 
     # Inject full rules file (short by design) — docs/rules/ is NOT being retired.
     if [ -f "$RULES_FILE" ]; then
@@ -144,6 +164,9 @@ if [ -n "$DOMAINS" ]; then
         done <<< "$MATCHES"
       fi
     fi
+
+    # Record this domain as injected so later edits in the session get the one-line pointer.
+    [ "$DEDUP" = "1" ] && printf '%s\n' "$DOMAIN" >> "$DEDUP_STATE"
   done
 fi
 
