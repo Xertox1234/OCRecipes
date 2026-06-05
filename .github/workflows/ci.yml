@@ -68,6 +68,8 @@ jobs:
         run: bash .claude/hooks/test-commit-verify.sh
       - name: Branch-preflight hook tests
         run: bash .claude/hooks/test-branch-preflight.sh
+      - name: Batch-size guard hook tests
+        run: bash .claude/hooks/test-batch-size-guard.sh
 
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
