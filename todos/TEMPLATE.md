@@ -1,4 +1,7 @@
+<!-- Filename: P{0-3}-YYYY-MM-DD-short-description.md  (P0=critical … P3=low) -->
+
 ---
+
 title: "Brief descriptive title"
 status: backlog
 priority: low
@@ -7,6 +10,7 @@ updated: YYYY-MM-DD
 assignee:
 labels: []
 github_issue:
+
 ---
 
 # Title
@@ -46,22 +50,9 @@ Technical details, approach suggestions, or constraints to consider.
 
 - Initial creation
 
-## Copilot Delegation
-
-Eligible low/deferred docs, tests, code-quality, simple performance, and simple refactor todos can be delegated to GitHub Copilot after safety checks:
-
-```bash
-npm run copilot:delegate:dry-run -- todos/YYYY-MM-DD-slug.md
-npm run copilot:delegate -- todos/YYYY-MM-DD-slug.md
-```
-
-When delegation succeeds, paste the created GitHub Issue URL into `github_issue`. Copilot must work by pull request only; do not auto-merge or allow direct commits to `main`.
-
-Do not delegate todos involving JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture without a human-approved plan.
-
 <!--
 Add dated entries as work progresses:
-### 2024-01-15
+### 2026-01-15
 - Started implementation
 - Discovered issue with X, need to research Y
 -->
