@@ -1,6 +1,6 @@
 ---
 title: "Add Platform.OS announce-gating test for BeveragePickerSheet (H4)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03
