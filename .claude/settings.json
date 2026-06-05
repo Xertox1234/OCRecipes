@@ -85,6 +85,10 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/batch-size-guard.sh", "timeout": 10, "statusMessage": "" }]
+      },
+      {
         "matcher": "Edit",
         "hooks": [
           {
