@@ -11,7 +11,7 @@
 - Storage update fns must accept an explicit field whitelist — never `Partial<User>` or a spread of arbitrary input (mass-assignment).
 - All route request bodies must be Zod-validated before any field access (`schema.safeParse(req.body)`) — never `req.body.x` raw.
 - `req.userId` is a UUID string — never `parseInt` it (returns `NaN`, silently bypasses ownership checks).
-- Sanitize ALL prompt roles (`user`, `assistant`, `system`) before sending to OpenAI — never only `user`. Never trust parameters that "look server-generated" in AI prompt inputs.
+- Sanitize ALL prompt roles (`user`, `assistant`, `system`) before sending to OpenAI — never only `user`. Never trust parameters that "look server-generated" in AI prompt inputs — sanitize at the prompt boundary.
 - Rate-limit every AI/OpenAI endpoint — apply a limiter from `server/middleware/rate-limiter.ts` before the handler.
 - Safety/classifier regexes consuming across newlines must bound every `.*`/`[\s\S]*` gap. For a safety/injection detector the bound VALUE must be ≥ the upstream input-length cap (e.g. `[\s\S]{0,2000}` against a 2000-char limit) — a smaller bound is itself a bypass. Routing-only heuristics may use a tighter bound.
 - Premium-gate BOTH the read AND write endpoints of a premium feature — gating only writes leaves data readable for free.
