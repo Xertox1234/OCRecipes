@@ -154,6 +154,10 @@
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/commit-verify.sh", "timeout": 10, "statusMessage": "Verifying commit landed..." }]
       },
       {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-verify.sh", "timeout": 15, "statusMessage": "Verifying PR state..." }]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
