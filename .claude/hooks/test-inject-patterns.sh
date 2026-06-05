@@ -232,13 +232,16 @@ sec_inline_bytes() {
 
 STORAGE_INPUT='{"tool_name":"Edit","tool_input":{"file_path":"server/storage/recipes.ts"}}'
 
-# security.md is the largest rules file (~8 KB). On a 3-domain storage edit it must take the
-# inline budget rather than being truncated to a sliver. Threshold: 6000 of its ~8000 B.
+# On a 3-domain storage edit, security (highest priority) is emitted first and must survive
+# inline essentially in full — never truncated to a sliver by match order. The threshold
+# scales with the file so trimming security.md doesn't break this assertion.
+SEC_FULL=$(wc -c < "$(cd "$(dirname "$0")/../.." && pwd)/docs/rules/security.md" | tr -d ' ')
+SEC_MIN=$((SEC_FULL * 90 / 100))
 SEC_BYTES=$(sec_inline_bytes "$STORAGE_INPUT")
-if [ "${SEC_BYTES:-0}" -ge 6000 ]; then
-  echo "PASS: storage edit → security rules majority-inline (${SEC_BYTES} B)"; PASS=$((PASS + 1))
+if [ "${SEC_BYTES:-0}" -ge "$SEC_MIN" ]; then
+  echo "PASS: storage edit → security rules near-fully inline (${SEC_BYTES}/${SEC_FULL} B)"; PASS=$((PASS + 1))
 else
-  echo "FAIL: storage edit → security rules majority-inline (got ${SEC_BYTES} B, want >=6000)"; FAIL=$((FAIL + 1))
+  echo "FAIL: storage edit → security rules near-fully inline (got ${SEC_BYTES} B, want >=${SEC_MIN})"; FAIL=$((FAIL + 1))
 fi
 
 # security header must survive inline...
