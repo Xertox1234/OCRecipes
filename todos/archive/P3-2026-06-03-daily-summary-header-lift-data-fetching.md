@@ -1,6 +1,6 @@
 ---
 title: "Lift useDailyBudget out of DailySummaryHeader into HomeScreen"
-status: backlog
+status: done
 priority: low
 created: 2026-06-03
 updated: 2026-06-03

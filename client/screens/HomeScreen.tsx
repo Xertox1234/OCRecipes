@@ -72,14 +72,14 @@ export default function HomeScreen() {
   const { sections, toggleSection, recentActions, recordAction, usageCounts } =
     useHomeActions();
   const queryClient = useQueryClient();
-  // The `meta` flag must match DailySummaryHeader's call (same query key) — when
-  // two observers of one key disagree on meta, TanStack v5 picks the most-recent
-  // setup, making the global-toast suppression order-dependent. The Home tab
-  // renders its own inline error UI (DailySummaryHeader), so both opt out.
+  // DailySummaryHeader receives budget data as props — there is one observer of
+  // this query key. The `meta` flag suppresses the global error toast so the
+  // inline CarouselError in DailySummaryHeader is the only error surface.
   const {
     data: budget,
     refetch,
     isRefetching,
+    isLoading: budgetIsLoading,
     isError: budgetIsError,
   } = useDailyBudget(undefined, { meta: { silentError: true } });
 
@@ -195,7 +195,13 @@ export default function HomeScreen() {
         }
       >
         <Animated.View style={[styles.expandableHeader, headerAnimatedStyle]}>
-          <DailySummaryHeader onCalorieTap={handleCalorieTap} />
+          <DailySummaryHeader
+            onCalorieTap={handleCalorieTap}
+            budget={budget}
+            isLoading={budgetIsLoading}
+            isError={budgetIsError}
+            refetch={refetch}
+          />
         </Animated.View>
 
         <DiscoveryCarousel

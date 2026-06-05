@@ -9,10 +9,11 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { CarouselError } from "@/components/home/CarouselError";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { useAuthContext } from "@/context/AuthContext";
 import { resolveImageUrl } from "@/lib/query-client";
 import { Spacing, FontFamily } from "@/constants/theme";
+import type { DailyBudget } from "@/hooks/useDailyBudget";
+
 function formatCalorieSummary(consumed: number, goal: number): string {
   return `${Math.round(consumed).toLocaleString()} / ${Math.round(goal).toLocaleString()} cal today`;
 }
@@ -21,20 +22,22 @@ const AVATAR_SIZE = 28;
 
 interface DailySummaryHeaderProps {
   onCalorieTap: () => void;
+  budget: DailyBudget | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
 }
 
 export const DailySummaryHeader = React.memo(function DailySummaryHeader({
   onCalorieTap,
+  budget,
+  isLoading,
+  isError,
+  refetch,
 }: DailySummaryHeaderProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { user } = useAuthContext();
-  const {
-    data: budget,
-    isLoading,
-    isError,
-    refetch,
-  } = useDailyBudget(undefined, { meta: { silentError: true } });
 
   const displayName = user?.displayName || user?.username || "there";
 
