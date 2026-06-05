@@ -209,6 +209,49 @@ check_no_match "AI service → no security rules" \
   '{"tool_name":"Edit","tool_input":{"file_path":"server/services/photo-analysis.ts"}}' \
   "RULES — security"
 
+# --- Priority-ordering / inline-budget regression ---
+# A 3-domain storage edit (database+security+architecture) overflows the inline cap.
+# When it does, the highest-stakes domain (security) must take the inline budget rather
+# than being truncated to a sliver by accident of match order. These assertions look at
+# the INLINE additionalContext only (NOT the combined stdout+spill the other checks use),
+# because the whole point is what survives truncation vs what gets pushed to /tmp.
+
+# inline_ctx: decode ONLY the inline additionalContext the agent receives (excludes spill).
+inline_ctx() {
+  local input="$1"
+  rm -f "$SPILL_FILE"
+  echo "$input" | bash "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null || true
+}
+
+# sec_inline_bytes: bytes of the security RULES section that survived INLINE for an input.
+sec_inline_bytes() {
+  inline_ctx "$1" \
+    | awk '/^\[RULES — security\]/{f=1;next} /^\[(RULES|SOLUTIONS|TRUNCATED|NOTE)/{f=0} f' \
+    | wc -c | tr -d ' '
+}
+
+STORAGE_INPUT='{"tool_name":"Edit","tool_input":{"file_path":"server/storage/recipes.ts"}}'
+
+# security.md is the largest rules file (~8 KB). On a 3-domain storage edit it must take the
+# inline budget rather than being truncated to a sliver. Threshold: 6000 of its ~8000 B.
+SEC_BYTES=$(sec_inline_bytes "$STORAGE_INPUT")
+if [ "${SEC_BYTES:-0}" -ge 6000 ]; then
+  echo "PASS: storage edit → security rules majority-inline (${SEC_BYTES} B)"; PASS=$((PASS + 1))
+else
+  echo "FAIL: storage edit → security rules majority-inline (got ${SEC_BYTES} B, want >=6000)"; FAIL=$((FAIL + 1))
+fi
+
+# security header must survive inline...
+if inline_ctx "$STORAGE_INPUT" | grep -q '\[RULES — security\]'; then
+  echo "PASS: storage edit → security present inline"; PASS=$((PASS + 1))
+else
+  echo "FAIL: storage edit → security present inline"; FAIL=$((FAIL + 1))
+fi
+
+# ...while architecture (lowest priority) may spill, but must remain available in the spill.
+check "storage edit → architecture still delivered (inline or spill)" \
+  "$STORAGE_INPUT" "RULES — architecture"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

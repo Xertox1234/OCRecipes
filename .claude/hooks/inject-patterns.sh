@@ -77,9 +77,39 @@ domain_tag_pattern() {
   esac
 }
 
+# Emission priority (lower = emitted earlier = fills the inline budget first). When a
+# multi-domain edit overflows the inline cap, the LOWEST-priority domains are the ones
+# that spill to the temp file — instead of the truncation victim being decided by accident
+# of match order. security is highest-stakes and must take the inline budget first; the
+# most general domains (typescript, architecture) spill first. Unknown domains sort middle.
+domain_rank() {
+  case "$1" in
+    security)      echo 10 ;;
+    database)      echo 20 ;;
+    accessibility) echo 30 ;;
+    api)           echo 40 ;;
+    ai-prompting)  echo 50 ;;
+    react-native)  echo 60 ;;
+    hooks)         echo 70 ;;
+    performance)   echo 80 ;;
+    design-system) echo 90 ;;
+    client-state)  echo 100 ;;
+    testing)       echo 110 ;;
+    typescript)    echo 120 ;;
+    architecture)  echo 130 ;;
+    *)             echo 75 ;;
+  esac
+}
+
 # Domain section (skipped if no domains matched — preamble still emitted above)
 if [ -n "$DOMAINS" ]; then
   IFS=',' read -ra DOMAIN_LIST <<< "$DOMAINS"
+  # Reorder by emission priority so security fills the inline budget first and the most
+  # general domains spill last (see domain_rank). Domain names are whitespace-free single
+  # tokens, so word-splitting the newline-separated, rank-sorted list is safe (bash 3.2
+  # compatible — no mapfile).
+  # shellcheck disable=SC2207
+  DOMAIN_LIST=($(for d in "${DOMAIN_LIST[@]}"; do printf '%s\t%s\n' "$(domain_rank "$d")" "$d"; done | sort -n | cut -f2))
   for DOMAIN in "${DOMAIN_LIST[@]}"; do
     RULES_FILE="$RULES_DIR/${DOMAIN}.md"
 
