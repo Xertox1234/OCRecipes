@@ -64,6 +64,9 @@ jobs:
       - name: Kimi review engine tests
         run: bash .claude/hooks/test-kimi-review.sh
 
+      - name: Branch-preflight hook tests
+        run: bash .claude/hooks/test-branch-preflight.sh
+
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
