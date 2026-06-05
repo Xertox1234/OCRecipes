@@ -18,6 +18,14 @@ const config = {
     configFile: "vitest.mutation.config.ts",
   },
   coverageAnalysis: "perTest",
+  // Stryker sandboxes by COPYING the project. Exclude gitignored native/build dirs:
+  // copying ios/Pods (CocoaPods hermes.framework) hits ENOTSUP on socket files, and
+  // these dirs are irrelevant to the pure server-lib unit targets.
+  ignorePatterns: ["ios", "android", ".expo", "server_dist", "coverage"],
+  // Skip Stryker's babel-based type-check stripper: it conflicts with the Expo
+  // babel.config.js ("decorators" + "decorators-legacy" together). The vitest runner
+  // transpiles via esbuild (no type-check), so type-invalid mutants run regardless.
+  disableTypeChecks: false,
   mutate,
   incremental: true,
   incrementalFile: `reports/mutation/incremental-${targetName}.json`,
