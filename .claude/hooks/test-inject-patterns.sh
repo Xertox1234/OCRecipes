@@ -209,6 +209,99 @@ check_no_match "AI service → no security rules" \
   '{"tool_name":"Edit","tool_input":{"file_path":"server/services/photo-analysis.ts"}}' \
   "RULES — security"
 
+# --- Priority-ordering / inline-budget regression ---
+# A 3-domain storage edit (database+security+architecture) overflows the inline cap.
+# When it does, the highest-stakes domain (security) must take the inline budget rather
+# than being truncated to a sliver by accident of match order. These assertions look at
+# the INLINE additionalContext only (NOT the combined stdout+spill the other checks use),
+# because the whole point is what survives truncation vs what gets pushed to /tmp.
+
+# inline_ctx: decode ONLY the inline additionalContext the agent receives (excludes spill).
+inline_ctx() {
+  local input="$1"
+  rm -f "$SPILL_FILE"
+  echo "$input" | bash "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null || true
+}
+
+# sec_inline_bytes: bytes of the security RULES section that survived INLINE for an input.
+sec_inline_bytes() {
+  inline_ctx "$1" \
+    | awk '/^\[RULES — security\]/{f=1;next} /^\[(RULES|SOLUTIONS|TRUNCATED|NOTE)/{f=0} f' \
+    | wc -c | tr -d ' '
+}
+
+STORAGE_INPUT='{"tool_name":"Edit","tool_input":{"file_path":"server/storage/recipes.ts"}}'
+
+# On a 3-domain storage edit, security (highest priority) is emitted first and must survive
+# inline essentially in full — never truncated to a sliver by match order. The threshold
+# scales with the file so trimming security.md doesn't break this assertion.
+SEC_FULL=$(wc -c < "$(cd "$(dirname "$0")/../.." && pwd)/docs/rules/security.md" | tr -d ' ')
+SEC_MIN=$((SEC_FULL * 90 / 100))
+SEC_BYTES=$(sec_inline_bytes "$STORAGE_INPUT")
+if [ "${SEC_BYTES:-0}" -ge "$SEC_MIN" ]; then
+  echo "PASS: storage edit → security rules near-fully inline (${SEC_BYTES}/${SEC_FULL} B)"; PASS=$((PASS + 1))
+else
+  echo "FAIL: storage edit → security rules near-fully inline (got ${SEC_BYTES} B, want >=${SEC_MIN})"; FAIL=$((FAIL + 1))
+fi
+
+# security header must survive inline...
+if inline_ctx "$STORAGE_INPUT" | grep -q '\[RULES — security\]'; then
+  echo "PASS: storage edit → security present inline"; PASS=$((PASS + 1))
+else
+  echo "FAIL: storage edit → security present inline"; FAIL=$((FAIL + 1))
+fi
+
+# ...while architecture (lowest priority) may spill, but must remain available in the spill.
+check "storage edit → architecture still delivered (inline or spill)" \
+  "$STORAGE_INPUT" "RULES — architecture"
+
+# --- Session-scoped dedup ---
+# Each domain's full rules are injected only the first time it appears in a session; later
+# edits get a one-line pointer. Requires a real session_id; absent it (or with the escape
+# hatch) dedup is OFF. "getEffectiveTierForUser" is a security-body sentinel present only when
+# full rules are injected.
+DEDUP_SESS_A='{"session_id":"itest-dedup-A","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+DEDUP_SESS_B='{"session_id":"itest-dedup-B","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+rm -f /tmp/ocrecipes-pattern-inject-itest-dedup-A /tmp/ocrecipes-pattern-inject-itest-dedup-B
+
+first=$(inline_ctx "$DEDUP_SESS_A")
+if echo "$first" | grep -qF "getEffectiveTierForUser" && ! echo "$first" | grep -qF "already injected"; then
+  echo "PASS: dedup → first edit in a session injects full rules"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → first edit in a session injects full rules"; FAIL=$((FAIL + 1))
+fi
+
+second=$(inline_ctx "$DEDUP_SESS_A")
+if echo "$second" | grep -qF "already injected" && ! echo "$second" | grep -qF "getEffectiveTierForUser"; then
+  echo "PASS: dedup → repeat edit emits pointer, not full rules"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → repeat edit emits pointer, not full rules"; FAIL=$((FAIL + 1))
+fi
+
+other=$(inline_ctx "$DEDUP_SESS_B")
+if echo "$other" | grep -qF "getEffectiveTierForUser"; then
+  echo "PASS: dedup → a different session re-injects full rules"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → a different session re-injects full rules"; FAIL=$((FAIL + 1))
+fi
+
+forced=$(echo "$DEDUP_SESS_A" | PATTERN_INJECT_NO_DEDUP=1 bash "$HOOK" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext')
+if echo "$forced" | grep -qF "getEffectiveTierForUser"; then
+  echo "PASS: dedup → PATTERN_INJECT_NO_DEDUP=1 forces full rules on a used session"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → PATTERN_INJECT_NO_DEDUP=1 forces full rules on a used session"; FAIL=$((FAIL + 1))
+fi
+
+NOSESS='{"tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+ns1=$(inline_ctx "$NOSESS"); ns2=$(inline_ctx "$NOSESS")
+if echo "$ns1" | grep -qF "getEffectiveTierForUser" && echo "$ns2" | grep -qF "getEffectiveTierForUser" && ! echo "$ns2" | grep -qF "already injected"; then
+  echo "PASS: dedup → session-less edits always get full rules (back-compat)"; PASS=$((PASS + 1))
+else
+  echo "FAIL: dedup → session-less edits always get full rules (back-compat)"; FAIL=$((FAIL + 1))
+fi
+
+rm -f /tmp/ocrecipes-pattern-inject-itest-dedup-A /tmp/ocrecipes-pattern-inject-itest-dedup-B
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
