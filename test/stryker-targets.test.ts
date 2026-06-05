@@ -26,13 +26,31 @@ describe("mutation target registry", () => {
     expect(() => resolveTarget("nope")).toThrow(/macro-gap-context/);
   });
 
+  const FORBIDDEN =
+    /(^|\/)auth\.ts|api-key-auth|goal-calculator|adaptive-goals|receipt-validation|healthkit|(^|\/)health\.ts|jwt-|shared\/schema\.ts|(^|\/)migrations\//i;
+
   it("never registers a Hard-Exclusion module (policy guard)", () => {
     const paths = Object.values(MUTATION_TARGETS).flatMap((t) => [
       ...t.mutate,
       ...t.testInclude,
     ]);
-    const forbidden =
-      /(^|\/)auth\.ts|api-key-auth|goal-calculator|adaptive-goals|receipt-validation|healthkit|(^|\/)health\.ts|jwt-/i;
-    for (const p of paths) expect(p).not.toMatch(forbidden);
+    for (const p of paths) expect(p).not.toMatch(FORBIDDEN);
+  });
+
+  it("policy guard regex actually matches known Hard-Exclusion paths", () => {
+    const forbiddenExamples = [
+      "server/middleware/auth.ts",
+      "server/routes/auth.ts",
+      "server/middleware/api-key-auth.ts",
+      "server/services/goal-calculator.ts",
+      "server/services/adaptive-goals.ts",
+      "server/services/receipt-validation.ts",
+      "server/services/healthkit-sync.ts",
+      "server/storage/health.ts",
+      "server/lib/jwt-verify.ts",
+      "shared/schema.ts",
+      "migrations/0001_init.ts",
+    ];
+    for (const p of forbiddenExamples) expect(p).toMatch(FORBIDDEN);
   });
 });

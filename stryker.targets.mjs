@@ -32,6 +32,13 @@ export const MUTATION_TARGETS = {
 
 export const DEFAULT_TARGET = "macro-gap-context";
 
+// Fail fast at import time if DEFAULT_TARGET drifts out of the registry.
+if (!MUTATION_TARGETS[DEFAULT_TARGET]) {
+  throw new Error(
+    `DEFAULT_TARGET "${DEFAULT_TARGET}" is not in MUTATION_TARGETS`,
+  );
+}
+
 /**
  * Resolve a target by name, throwing a clear, listing error on a miss.
  * @param {string} [name]
