@@ -67,6 +67,16 @@ git commit ...`) does NOT reach the hook. The hook is a PreToolUse hook in
   the CI workflow step or use the `KIMI_REVIEW_TIMEOUT_SECONDS=1` env to
   force a timeout-skip.
 
+### SKIP_BRANCH_PREFLIGHT semantics
+
+`SKIP_BRANCH_PREFLIGHT=1` bypasses the branch-preflight PreToolUse hook. Like
+`SKIP_KIMI_REVIEW`, an inline prefix (`SKIP_BRANCH_PREFLIGHT=1 git commit ...`)
+**does NOT reach** the Claude Code PreToolUse hook — it must be set in the shell
+that launched Claude Code before the session started.
+
+Use this only when intentionally working directly on `main` in a context where
+branch protection is disabled (e.g. a fresh local repo, a non-OCRecipes project).
+
 ---
 
 ## 3. Engine
