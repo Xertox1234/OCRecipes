@@ -13,11 +13,28 @@ Targets are defined once in `stryker.targets.mjs`. Default target:
 
 ## Scope & policy
 
-Only non-excluded, logic-dense modules are targeted. Auth, goal-safety, IAP,
-health-data, secrets, and schema/migrations are Hard Exclusions
-(`.github/copilot-instructions.md`) and require a separate human-authored plan.
+Non-excluded, logic-dense modules are targeted freely. Hard Exclusions (auth,
+goal-safety, IAP, health-data, secrets, schema/migrations;
+`.github/copilot-instructions.md`) may be targeted ONLY under a human-authored plan
+with a `HUMAN_APPROVED_EXCLUSIONS` entry in `stryker.targets.mjs`, and ONLY read-only:
+their **source is never edited** (no inline `// Stryker disable`, no dead-code
+removal). See the gated-protocol solution doc.
+
+### Approved Hard-Exclusion targets
+
+| Module                               | Approved   | Plan                                 |
+| ------------------------------------ | ---------- | ------------------------------------ |
+| `server/services/goal-calculator.ts` | 2026-06-05 | Goal-safety gated read-only protocol |
+| `server/services/adaptive-goals.ts`  | 2026-06-05 | Goal-safety gated read-only protocol |
 
 ## Baselines
 
-See `baselines.md` for the tracked mutation scores. Equivalent mutants are
-suppressed inline in source with `// Stryker disable next-line <mutator> -- <reason>`.
+See `baselines.md` for the tracked mutation scores. Equivalent-mutant handling
+depends on the module:
+
+- **Non-excluded** modules: suppress inline in source with
+  `// Stryker disable next-line <mutator> -- <reason>`.
+- **Hard-Exclusion** modules (read-only): NEVER suppress in source — record the
+  equivalent in `accepted-equivalents.json` (`file:line:mutator` + reason). The
+  target's CI `break` is set to its achieved score (below 100) to account for the
+  immovable equivalent.
