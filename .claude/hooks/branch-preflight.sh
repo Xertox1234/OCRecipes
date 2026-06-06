@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# PreToolUse(Bash) — block git commit when HEAD is on main/master or detached.
-# Commits on main are rejected by branch protection at push time; catching them
-# here prevents a confusing local commit that then fails to push.
-# Hard-blocks (permissionDecision: deny) — this is never correct in this project.
+# PreToolUse(Bash) — block git commit only when HEAD is detached.
+# A detached-HEAD commit is unreachable (silent data loss), so we hard-block it.
+# Committing on main/master is ALLOWED: enforce_admins is off, so the repo owner
+# can push directly to main (branch protection no longer rejects owner pushes).
 # Escape: set SKIP_BRANCH_PREFLIGHT=1 in the shell that launched Claude Code.
 set -uo pipefail
 
@@ -27,8 +27,6 @@ BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
 
 if [ -z "$BRANCH" ]; then
   REASON="HEAD is detached (at ${HEAD_SHA}) — committing here creates an unreachable commit. Create a named branch first: git switch -c <branch-name>"
-elif [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
-  REASON="Refusing to commit on \`${BRANCH}\` — branch protection will reject the push. Switch to a feature branch first: git switch -c <branch-name> (current HEAD: ${HEAD_SHA})"
 else
   exit 0
 fi

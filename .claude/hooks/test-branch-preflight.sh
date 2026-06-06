@@ -49,22 +49,20 @@ INITIAL_BRANCH=$(git -C "$REPO" symbolic-ref --short HEAD 2>/dev/null || echo "m
 export GIT_DIR="$REPO/.git"
 export GIT_WORK_TREE="$REPO"
 
-# Test 1: on main → deny
-OUT=$(run_hook "git commit -m 'oops'")
-assert_deny "commit on main is denied" "$OUT"
+# Test 1: on main → silent (enforce_admins off; owner pushes to main directly)
+OUT=$(run_hook "git commit -m 'ok'")
+assert_silent "commit on main is allowed" "$OUT"
 
-# Test 2: deny message mentions the actual branch name
-if printf '%s' "$OUT" | grep -q "$INITIAL_BRANCH"; then
-  echo "PASS: deny message mentions branch name ($INITIAL_BRANCH)"; PASS=$((PASS+1))
-else
-  echo "FAIL: deny message should mention branch name ($INITIAL_BRANCH)"
-  FAIL=$((FAIL+1))
-fi
-
-# Test 3: detached HEAD → deny
+# Test 3: detached HEAD → deny, message mentions the detached state
 git -C "$REPO" checkout --detach HEAD -q 2>/dev/null
 OUT=$(run_hook "git commit -m 'oops'")
 assert_deny "commit on detached HEAD is denied" "$OUT"
+if printf '%s' "$OUT" | grep -qi "detached"; then
+  echo "PASS: deny message mentions detached HEAD"; PASS=$((PASS+1))
+else
+  echo "FAIL: deny message should mention detached HEAD"
+  FAIL=$((FAIL+1))
+fi
 
 # Test 4: feature branch → silent
 git -C "$REPO" switch -c fix/my-feature -q 2>/dev/null
@@ -84,12 +82,12 @@ assert_silent "SKIP_BRANCH_PREFLIGHT=1 bypasses deny on main" "$OUT"
 OUT=$(env -u GIT_DIR -u GIT_WORK_TREE bash -c 'cd /tmp && echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m test\"}}" | bash "$1" 2>/dev/null' _ "$HOOK")
 assert_silent "outside a git repo fails open (silent)" "$OUT"
 
-# Test 8: compound form (git add && git commit) on main → deny
+# Test 8: compound form (git add && git commit) on detached HEAD → deny
 export GIT_DIR="$REPO/.git"
 export GIT_WORK_TREE="$REPO"
-git -C "$REPO" switch "$INITIAL_BRANCH" -q 2>/dev/null
+git -C "$REPO" checkout --detach HEAD -q 2>/dev/null
 OUT=$(run_hook "git add -A && git commit -m 'oops'")
-assert_deny "compound 'git add && git commit' on main is denied" "$OUT"
+assert_deny "compound 'git add && git commit' on detached HEAD is denied" "$OUT"
 
 unset GIT_DIR GIT_WORK_TREE
 
