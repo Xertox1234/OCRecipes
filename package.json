@@ -34,6 +34,7 @@
     "test:integration": "vitest run server/storage/__tests__/",
     "test:coverage": "vitest run --coverage",
     "test:coverage:ci": "vitest run --coverage --coverage.thresholds.autoUpdate=false",
+    "coverage:ratchet": "tsx scripts/coverage-ratchet.ts",
     "test:mutation": "stryker run",
     "prepare": "husky",
     "android": "expo run:android",
