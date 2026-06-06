@@ -15,21 +15,17 @@ import type { ProfileWidgetsResponse } from "@shared/schemas/profile-hub";
 
 interface MiniWidgetRowProps {
   widgets: ProfileWidgetsResponse;
-  weightUnlocked: boolean;
   onCaloriePress: () => void;
   onFastingPress: () => void;
-  onWeightPress: () => void;
 }
 
 export const MiniWidgetRow = React.memo(function MiniWidgetRow({
   widgets,
-  weightUnlocked,
   onCaloriePress,
   onFastingPress,
-  onWeightPress,
 }: MiniWidgetRowProps) {
   const { theme } = useTheme();
-  const { dailyBudget, fasting, latestWeight } = widgets;
+  const { dailyBudget, fasting } = widgets;
 
   const calorieProgress =
     dailyBudget.calorieGoal > 0
@@ -76,50 +72,6 @@ export const MiniWidgetRow = React.memo(function MiniWidgetRow({
 
       {/* Fasting Widget */}
       <FastingWidget fasting={fasting} onPress={onFastingPress} />
-
-      {/* Weight Widget */}
-      <Pressable
-        onPress={onWeightPress}
-        accessibilityRole="button"
-        accessibilityLabel={
-          !weightUnlocked
-            ? "Weight tracking. Premium feature, locked"
-            : latestWeight
-              ? `Current weight: ${latestWeight.value} ${latestWeight.unit}`
-              : "Weight: no data"
-        }
-        accessibilityHint={
-          !weightUnlocked ? "Opens upgrade screen" : "Opens weight history"
-        }
-        style={[
-          styles.widget,
-          { backgroundColor: withOpacity(theme.textSecondary, 0.06) },
-        ]}
-      >
-        <View
-          importantForAccessibility="no-hide-descendants"
-          accessible={false}
-        >
-          {!weightUnlocked ? (
-            <Feather name="lock" size={22} color={theme.textSecondary} />
-          ) : (
-            <Feather name="trending-down" size={22} color={theme.text} />
-          )}
-          <ThemedText
-            style={[
-              styles.widgetValue,
-              { color: weightUnlocked ? theme.text : theme.textSecondary },
-            ]}
-          >
-            {weightUnlocked && latestWeight ? `${latestWeight.value}` : "--"}
-          </ThemedText>
-          <ThemedText
-            style={[styles.widgetLabel, { color: theme.textSecondary }]}
-          >
-            {weightUnlocked && latestWeight ? latestWeight.unit : "kg"}
-          </ThemedText>
-        </View>
-      </Pressable>
     </View>
   );
 });

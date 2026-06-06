@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
-// Widget data (calorie budget, fasting status, weight trend)
+// Widget data (calorie budget, fasting status)
 // ---------------------------------------------------------------------------
 
 const dailyBudgetSchema = z.object({
@@ -35,19 +35,12 @@ const fastingLogSchema = z.object({
   note: z.string().nullable(),
 });
 
-const latestWeightSchema = z.object({
-  value: z.number(),
-  unit: z.string(),
-  date: z.string(),
-});
-
 export const profileWidgetsSchema = z.object({
   dailyBudget: dailyBudgetSchema,
   fasting: z.object({
     schedule: fastingScheduleSchema.nullable(),
     currentFast: fastingLogSchema.nullable(),
   }),
-  latestWeight: latestWeightSchema.nullable(),
 });
 
 export type ProfileWidgetsResponse = z.infer<typeof profileWidgetsSchema>;

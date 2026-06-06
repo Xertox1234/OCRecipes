@@ -24,7 +24,6 @@ import { useTTS } from "@/hooks/useTTS";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
-import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import {
