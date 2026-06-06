@@ -63,9 +63,10 @@ describe("valuesMatch", () => {
     expect(valuesMatch(0.5, 1.6)).toBe(false);
   });
 
-  it("rejects a small value against a large value where only one side is <2 (5,0)", () => {
-    // Kills line-73 mutants `if (b === 0)` and `if (a !== 0 && b === 0)`:
-    // 5 vs 0 -> relative branch: |5-0|/5 = 1 > 0.05 -> false.
+  it("rejects an asymmetric zero pair via the relative branch (5,0)", () => {
+    // 5 vs 0: not equal, not both <2 -> relative branch with max(5,0)=5:
+    // |5-0|/5 = 1 > 0.05 -> false. Mirror of the (0,5) case; guards that Math.max
+    // (not Math.min) picks the non-zero operand as the denominator.
     expect(valuesMatch(5, 0)).toBe(false);
   });
 
