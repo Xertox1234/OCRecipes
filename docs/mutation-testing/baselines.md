@@ -7,4 +7,4 @@ threshold is enforced until a target has a stable baseline here.
 | ---------- | ------------------------------- | ------ | ------ | -------- | ----------- | ------- |
 | 2026-06-05 | macro-gap-context               | 88.37% | 38     | 5        | 0           | 0       |
 | 2026-06-05 | verification-consensus (before) | 48.74% | 58     | 11       | 50          | 0       |
-| 2026-06-05 | verification-consensus (after)  | 100%   | 112    | 0        | 0           | 0       |
+| 2026-06-05 | verification-consensus (after)  | 100%   | 109    | 0        | 0           | 0       |
