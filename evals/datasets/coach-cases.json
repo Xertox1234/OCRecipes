@@ -7,7 +7,6 @@
     "context": {
       "goals": { "calories": 2000, "protein": 120, "carbs": 250, "fat": 65 },
       "todayIntake": { "calories": 0, "protein": 0, "carbs": 0, "fat": 0 },
-      "weightTrend": { "currentWeight": 90, "weeklyRate": null },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -31,7 +30,6 @@
         "carbs": 150,
         "fat": 40
       },
-      "weightTrend": { "currentWeight": 75, "weeklyRate": -0.8 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -56,7 +54,6 @@
     "context": {
       "goals": { "calories": 2200, "protein": 130, "carbs": 275, "fat": 70 },
       "todayIntake": { "calories": 500, "protein": 30, "carbs": 60, "fat": 15 },
-      "weightTrend": { "currentWeight": 85, "weeklyRate": -0.3 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -84,7 +81,6 @@
         "carbs": 350,
         "fat": 110
       },
-      "weightTrend": { "currentWeight": 65, "weeklyRate": 0.1 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -109,7 +105,6 @@
         "carbs": 100,
         "fat": 30
       },
-      "weightTrend": { "currentWeight": 80, "weeklyRate": null },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -133,7 +128,6 @@
     "context": {
       "goals": { "calories": 1800, "protein": 100, "carbs": 200, "fat": 60 },
       "todayIntake": { "calories": 400, "protein": 20, "carbs": 50, "fat": 10 },
-      "weightTrend": { "currentWeight": 95, "weeklyRate": -1.2 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -158,7 +152,6 @@
         "carbs": 120,
         "fat": 35
       },
-      "weightTrend": { "currentWeight": 64, "weeklyRate": -0.3 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -186,7 +179,6 @@
         "carbs": 170,
         "fat": 45
       },
-      "weightTrend": { "currentWeight": 92, "weeklyRate": -0.4 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -220,7 +212,6 @@
         "carbs": 160,
         "fat": 45
       },
-      "weightTrend": { "currentWeight": 72, "weeklyRate": 0 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -248,7 +239,6 @@
         "carbs": 190,
         "fat": 50
       },
-      "weightTrend": { "currentWeight": 78, "weeklyRate": -0.1 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -275,7 +265,6 @@
     "context": {
       "goals": { "calories": 2000, "protein": 120, "carbs": 250, "fat": 65 },
       "todayIntake": { "calories": 600, "protein": 35, "carbs": 80, "fat": 20 },
-      "weightTrend": { "currentWeight": 83, "weeklyRate": null },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -304,7 +293,6 @@
         "carbs": 180,
         "fat": 45
       },
-      "weightTrend": { "currentWeight": 81.6, "weeklyRate": 0.2 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -320,7 +308,6 @@
     "context": {
       "goals": { "calories": 1800, "protein": 100, "carbs": 150, "fat": 80 },
       "todayIntake": { "calories": 900, "protein": 50, "carbs": 75, "fat": 35 },
-      "weightTrend": { "currentWeight": 70, "weeklyRate": -0.3 },
       "dietaryProfile": {
         "dietType": "low-carb",
         "allergies": [],
@@ -341,7 +328,6 @@
         "carbs": 230,
         "fat": 58
       },
-      "weightTrend": { "currentWeight": 78, "weeklyRate": -0.4 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -362,7 +348,6 @@
         "carbs": 160,
         "fat": 30
       },
-      "weightTrend": { "currentWeight": 62, "weeklyRate": 0 },
       "dietaryProfile": {
         "dietType": "vegetarian",
         "allergies": [],
@@ -383,7 +368,6 @@
         "carbs": 150,
         "fat": 38
       },
-      "weightTrend": { "currentWeight": 74, "weeklyRate": -0.2 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -406,7 +390,6 @@
         "carbs": 210,
         "fat": 52
       },
-      "weightTrend": { "currentWeight": 76, "weeklyRate": 0 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -427,7 +410,6 @@
         "carbs": 18,
         "fat": 105
       },
-      "weightTrend": { "currentWeight": 84, "weeklyRate": -0.5 },
       "dietaryProfile": {
         "dietType": "keto",
         "allergies": [],
@@ -448,7 +430,6 @@
         "carbs": 180,
         "fat": 45
       },
-      "weightTrend": { "currentWeight": 75, "weeklyRate": -0.3 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -469,7 +450,6 @@
         "carbs": 190,
         "fat": 48
       },
-      "weightTrend": { "currentWeight": 72, "weeklyRate": -0.2 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -485,7 +465,6 @@
     "context": {
       "goals": { "calories": 1800, "protein": 100, "carbs": 220, "fat": 60 },
       "todayIntake": { "calories": 600, "protein": 30, "carbs": 80, "fat": 20 },
-      "weightTrend": { "currentWeight": 68, "weeklyRate": null },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -501,7 +480,6 @@
     "context": {
       "goals": { "calories": 2000, "protein": 120, "carbs": 250, "fat": 65 },
       "todayIntake": { "calories": 0, "protein": 0, "carbs": 0, "fat": 0 },
-      "weightTrend": { "currentWeight": 80, "weeklyRate": -0.5 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -522,7 +500,6 @@
         "carbs": 175,
         "fat": 53
       },
-      "weightTrend": { "currentWeight": 79, "weeklyRate": 0 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -543,7 +520,6 @@
         "carbs": 310,
         "fat": 78
       },
-      "weightTrend": { "currentWeight": 75, "weeklyRate": 0.3 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -564,7 +540,6 @@
         "carbs": 180,
         "fat": 52
       },
-      "weightTrend": { "currentWeight": 78, "weeklyRate": 0.1 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -585,7 +560,6 @@
         "carbs": 25,
         "fat": 90
       },
-      "weightTrend": { "currentWeight": 82, "weeklyRate": -0.6 },
       "dietaryProfile": {
         "dietType": "keto",
         "allergies": ["tree nuts", "peanuts"],
@@ -617,7 +591,6 @@
         "carbs": 220,
         "fat": 65
       },
-      "weightTrend": { "currentWeight": 88, "weeklyRate": -0.1 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -638,7 +611,6 @@
         "carbs": 130,
         "fat": 35
       },
-      "weightTrend": { "currentWeight": 70, "weeklyRate": 0 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -662,7 +634,6 @@
         "carbs": 150,
         "fat": 40
       },
-      "weightTrend": { "currentWeight": 68, "weeklyRate": -0.2 },
       "dietaryProfile": {
         "dietType": "vegan",
         "allergies": ["tree nuts", "peanuts", "gluten"],
@@ -703,7 +674,6 @@
         "carbs": 198,
         "fat": 57
       },
-      "weightTrend": { "currentWeight": 80, "weeklyRate": -0.4 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -726,7 +696,6 @@
         "carbs": 145,
         "fat": 42
       },
-      "weightTrend": { "currentWeight": 82, "weeklyRate": -0.3 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -749,7 +718,6 @@
         "carbs": 190,
         "fat": 48
       },
-      "weightTrend": { "currentWeight": 80, "weeklyRate": 0.2 },
       "dietaryProfile": {
         "dietType": "vegetarian",
         "allergies": [],
@@ -768,7 +736,6 @@
     "context": {
       "goals": null,
       "todayIntake": { "calories": 0, "protein": 0, "carbs": 0, "fat": 0 },
-      "weightTrend": { "currentWeight": null, "weeklyRate": null },
       "dietaryProfile": { "dietType": null, "allergies": [], "dislikes": [] }
     }
   },
@@ -785,7 +752,6 @@
         "carbs": 140,
         "fat": 38
       },
-      "weightTrend": { "currentWeight": 76, "weeklyRate": -0.3 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -806,7 +772,6 @@
         "carbs": 120,
         "fat": 30
       },
-      "weightTrend": { "currentWeight": 74, "weeklyRate": -0.2 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],
@@ -837,7 +802,6 @@
         "carbs": 230,
         "fat": 62
       },
-      "weightTrend": { "currentWeight": 71, "weeklyRate": -0.2 },
       "dietaryProfile": {
         "dietType": "balanced",
         "allergies": [],

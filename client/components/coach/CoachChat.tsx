@@ -24,7 +24,6 @@ import { useTTS } from "@/hooks/useTTS";
 import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
-import { CoachStatusRow } from "@/components/coach/CoachStatusRow";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -379,9 +378,6 @@ export default function CoachChat({
             break;
           case "DailyNutritionDetail":
             navigation.navigate("DailyNutritionDetail");
-            break;
-          case "WeightTracking":
-            navigation.navigate("WeightTracking");
             break;
           case "GoalSetup":
             navigation.navigate("GoalSetup");

@@ -3,7 +3,6 @@ import type { CoachChatEvent, CoachChatParams } from "../coach-pro-chat";
 import type { CoachNotebookEntry, UserProfile } from "@shared/schema";
 import {
   createMockUserProfile,
-  createMockWeightLog,
   createMockChatMessage,
   createMockCoachNotebookEntry,
 } from "../../__tests__/factories";
@@ -34,7 +33,6 @@ vi.mock("../../storage", () => ({
   storage: {
     getUserProfile: vi.fn(),
     getDailySummary: vi.fn(),
-    getWeightLogs: vi.fn(),
     getChatMessages: vi.fn(),
     getDailyLogsInRange: vi.fn(),
     getActiveNotebookEntries: vi.fn(),
@@ -167,9 +165,6 @@ function setupDefaultStorage() {
     totalFat: 30,
     itemCount: 0,
   });
-  vi.mocked(storage.getWeightLogs).mockResolvedValue([
-    createMockWeightLog({ weight: "75.0" }),
-  ]);
   vi.mocked(storage.getChatMessages).mockResolvedValue([]);
   vi.mocked(storage.getDailyLogsInRange).mockResolvedValue([]);
   vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([]);
@@ -235,7 +230,6 @@ describe("handleCoachChat", () => {
         {
           goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
           todayIntake: { calories: 800, protein: 40, carbs: 100, fat: 30 },
-          weightTrend: { currentWeight: 75, weeklyRate: -0.5 },
           dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
         },
         morning,
@@ -244,7 +238,6 @@ describe("handleCoachChat", () => {
         {
           goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
           todayIntake: { calories: 1200, protein: 80, carbs: 130, fat: 45 },
-          weightTrend: { currentWeight: 75, weeklyRate: -0.5 },
           dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
         },
         morning,

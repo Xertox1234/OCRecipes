@@ -27,18 +27,13 @@ export interface PremiumFeatures {
   dailyAiSuggestions: number;
   pantryTracking: boolean;
   mealConfirmation: boolean;
-  weightTrend: boolean;
   exerciseAnalytics: boolean;
   voiceLogging: boolean;
   dailyNlpLogs: number;
-  healthKitSync: boolean;
-  adaptiveGoals: boolean;
   aiCoach: boolean;
   dailyCoachMessages: number;
   coachPro: boolean;
   coachProDailyMessages: number;
-  advancedFasting: boolean;
-  glp1Companion: boolean;
   menuScanner: boolean;
   micronutrientTracking: boolean;
   receiptScanner: boolean;
@@ -75,18 +70,13 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     dailyAiSuggestions: 0,
     pantryTracking: false,
     mealConfirmation: false,
-    weightTrend: false,
     exerciseAnalytics: false,
     voiceLogging: false,
     dailyNlpLogs: 5,
-    healthKitSync: false,
-    adaptiveGoals: false,
     aiCoach: true,
     dailyCoachMessages: 3,
     coachPro: false,
     coachProDailyMessages: 0,
-    advancedFasting: false,
-    glp1Companion: false,
     menuScanner: false,
     micronutrientTracking: false,
     receiptScanner: false,
@@ -114,18 +104,13 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     dailyAiSuggestions: 10,
     pantryTracking: true,
     mealConfirmation: true,
-    weightTrend: true,
     exerciseAnalytics: true,
     voiceLogging: true,
     dailyNlpLogs: 999999,
-    healthKitSync: true,
-    adaptiveGoals: true,
     aiCoach: true,
     dailyCoachMessages: 999999,
     coachPro: true,
     coachProDailyMessages: 999999,
-    advancedFasting: true,
-    glp1Companion: true,
     menuScanner: true,
     micronutrientTracking: true,
     receiptScanner: true,

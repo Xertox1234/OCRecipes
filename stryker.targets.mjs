@@ -34,18 +34,6 @@ export const MUTATION_TARGETS = {
     testInclude: ["server/services/__tests__/goal-calculator.test.ts"],
     breakThreshold: 100, // all survivors killed (Task 3); no equivalents
   },
-  "adaptive-goals": {
-    mutate: ["server/services/adaptive-goals.ts"],
-    testInclude: ["server/services/__tests__/adaptive-goals.test.ts"],
-    // Achieved 99.35% (152/153 killed). The 1 residual survivor is a verified
-    // equivalent mutant (`"maintain"` -> `""`, see accepted-equivalents.json) that
-    // cannot be killed (no input distinguishes it) and is not suppressed in source
-    // (read-only on Hard-Exclusion modules). break=99 leaves margin: any NEW survivor
-    // drops the score to ~98.7, below the threshold. No *test* can swap the
-    // equivalent for a new gap at the same count; a future refactor of line 203
-    // could, so re-triage when the source changes (the CI gate runs exactly then).
-    breakThreshold: 99,
-  },
 };
 
 export const DEFAULT_TARGET = "macro-gap-context";
@@ -82,11 +70,6 @@ export function resolveTarget(name = DEFAULT_TARGET) {
  */
 export const HUMAN_APPROVED_EXCLUSIONS = {
   "server/services/goal-calculator.ts": {
-    approvedOn: "2026-06-05",
-    planPath: "docs/mutation-testing/README.md",
-    note: "Goal-safety mutation testing under the gated read-only protocol (tests only; source never edited). See README 'Approved Hard-Exclusion targets'.",
-  },
-  "server/services/adaptive-goals.ts": {
     approvedOn: "2026-06-05",
     planPath: "docs/mutation-testing/README.md",
     note: "Goal-safety mutation testing under the gated read-only protocol (tests only; source never edited). See README 'Approved Hard-Exclusion targets'.",

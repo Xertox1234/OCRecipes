@@ -65,7 +65,6 @@ vi.mock("../../lib/logger", () => ({
 const DEFAULT_CONTEXT: CoachContext = {
   goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
   todayIntake: { calories: 800, protein: 40, carbs: 100, fat: 30 },
-  weightTrend: { currentWeight: 75, weeklyRate: -0.5 },
   dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
 };
 

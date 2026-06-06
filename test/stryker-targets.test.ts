@@ -118,11 +118,8 @@ describe("mutation target registry", () => {
     ).not.toThrow();
   });
 
-  it("the two goal-safety modules are approved with provenance", () => {
-    for (const src of [
-      "server/services/goal-calculator.ts",
-      "server/services/adaptive-goals.ts",
-    ]) {
+  it("the goal-safety module is approved with provenance", () => {
+    for (const src of ["server/services/goal-calculator.ts"]) {
       expect(isApprovedExclusion(src)).toBe(true);
       expect(HUMAN_APPROVED_EXCLUSIONS[src].planPath.trim()).not.toBe("");
       expect(HUMAN_APPROVED_EXCLUSIONS[src].note.trim()).not.toBe("");

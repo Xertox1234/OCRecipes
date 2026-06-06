@@ -16,8 +16,6 @@ import * as pantry from "./pantry";
 import * as chat from "./chat";
 import * as cache from "./cache";
 import * as community from "./community";
-import * as medication from "./medication";
-import * as fasting from "./fasting";
 import * as menu from "./menu";
 import * as receipt from "./receipt";
 import * as cookbooksStorage from "./cookbooks";
@@ -31,7 +29,6 @@ import * as carousel from "./carousel";
 import * as profileHub from "./profile-hub";
 import * as coachNotebook from "./coach-notebook";
 import * as recipeFromChat from "./recipe-from-chat";
-import * as health from "./health";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
 import * as canonicalRecipesStorage from "./canonical-recipes";
@@ -141,16 +138,6 @@ export const storage = {
   getAllMealPlanRecipes: mealPlans.getAllMealPlanRecipes,
   getAllRecipeIngredients: mealPlans.getAllRecipeIngredients,
 
-  // Weight & HealthKit
-  getWeightLogs: health.getWeightLogs,
-  createWeightLog: health.createWeightLog,
-  createWeightLogAndUpdateUser: health.createWeightLogAndUpdateUser,
-  deleteWeightLog: health.deleteWeightLog,
-  getLatestWeight: health.getLatestWeight,
-  getHealthKitSyncSettings: health.getHealthKitSyncSettings,
-  upsertHealthKitSyncSetting: health.upsertHealthKitSyncSetting,
-  updateHealthKitLastSync: health.updateHealthKitLastSync,
-
   // Chat
   getChatConversation: chat.getChatConversation,
   getChatConversations: chat.getChatConversations,
@@ -209,24 +196,6 @@ export const storage = {
   batchUpdateCommunityMealTypes: community.batchUpdateCommunityMealTypes,
   deleteCommunityRecipe: community.deleteCommunityRecipe,
   getUserRecipes: community.getUserRecipes,
-
-  // Medication & goal adjustment logs
-  getMedicationLogs: medication.getMedicationLogs,
-  createMedicationLog: medication.createMedicationLog,
-  updateMedicationLog: medication.updateMedicationLog,
-  deleteMedicationLog: medication.deleteMedicationLog,
-  createGoalAdjustmentLog: medication.createGoalAdjustmentLog,
-  applyAdaptiveGoalsAtomically: medication.applyAdaptiveGoalsAtomically,
-  dismissAdaptiveGoalsAtomically: medication.dismissAdaptiveGoalsAtomically,
-  getGoalAdjustmentLogs: medication.getGoalAdjustmentLogs,
-
-  // Fasting
-  getFastingSchedule: fasting.getFastingSchedule,
-  upsertFastingSchedule: fasting.upsertFastingSchedule,
-  getActiveFastingLog: fasting.getActiveFastingLog,
-  getFastingLogs: fasting.getFastingLogs,
-  createFastingLog: fasting.createFastingLog,
-  endFastingLog: fasting.endFastingLog,
 
   // Menu scans
   getMenuScans: menu.getMenuScans,

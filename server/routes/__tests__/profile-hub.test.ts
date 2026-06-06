@@ -9,9 +9,6 @@ vi.mock("../../storage", () => ({
   storage: {
     getUser: vi.fn(),
     getDailySummary: vi.fn(),
-    getFastingSchedule: vi.fn(),
-    getActiveFastingLog: vi.fn(),
-    getLatestWeight: vi.fn(),
     getLibraryCounts: vi.fn(),
     getSubscriptionStatus: vi.fn(),
   },
@@ -56,9 +53,6 @@ describe("profile-hub routes", () => {
     it("returns widget data for authenticated user", async () => {
       vi.mocked(storage.getUser).mockResolvedValue(mockUser as any);
       vi.mocked(storage.getDailySummary).mockResolvedValue(mockSummary as any);
-      vi.mocked(storage.getFastingSchedule).mockResolvedValue(undefined);
-      vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
 
       const res = await request(app).get("/api/profile/widgets");
 
@@ -67,64 +61,6 @@ describe("profile-hub routes", () => {
         calorieGoal: 2000,
         foodCalories: 850,
         remaining: 1150,
-      });
-      expect(res.body.fasting.schedule).toBeNull();
-      expect(res.body.fasting.currentFast).toBeNull();
-      expect(res.body.latestWeight).toBeNull();
-    });
-
-    it("returns fasting data when schedule exists", async () => {
-      const mockSchedule = {
-        id: 1,
-        userId: "1",
-        protocol: "16:8",
-        fastingHours: 16,
-        eatingHours: 8,
-        eatingWindowStart: "12:00",
-        eatingWindowEnd: "20:00",
-        isActive: true,
-        notifyEatingWindow: false,
-        notifyMilestones: false,
-        notifyCheckIns: false,
-      };
-
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as any);
-      vi.mocked(storage.getDailySummary).mockResolvedValue(mockSummary as any);
-      vi.mocked(storage.getFastingSchedule).mockResolvedValue(
-        mockSchedule as any,
-      );
-      vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
-
-      const res = await request(app).get("/api/profile/widgets");
-
-      expect(res.status).toBe(200);
-      expect(res.body.fasting.schedule).toEqual(mockSchedule);
-    });
-
-    it("returns weight data when log exists", async () => {
-      const mockWeight = {
-        id: 1,
-        userId: "1",
-        weight: "158.5",
-        source: "manual",
-        note: null,
-        loggedAt: new Date("2026-04-01T10:00:00Z"),
-      };
-
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as any);
-      vi.mocked(storage.getDailySummary).mockResolvedValue(mockSummary as any);
-      vi.mocked(storage.getFastingSchedule).mockResolvedValue(undefined);
-      vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(mockWeight as any);
-
-      const res = await request(app).get("/api/profile/widgets");
-
-      expect(res.status).toBe(200);
-      expect(res.body.latestWeight).toEqual({
-        value: 158.5,
-        unit: "kg",
-        date: "2026-04-01T10:00:00.000Z",
       });
     });
 
@@ -140,9 +76,6 @@ describe("profile-hub routes", () => {
         totalFat: 0,
         itemCount: 0,
       } as any);
-      vi.mocked(storage.getFastingSchedule).mockResolvedValue(undefined);
-      vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
 
       const res = await request(app).get("/api/profile/widgets");
 
@@ -160,9 +93,6 @@ describe("profile-hub routes", () => {
         totalFat: 0,
         itemCount: 0,
       } as any);
-      vi.mocked(storage.getFastingSchedule).mockResolvedValue(undefined);
-      vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
 
       const res = await request(app).get("/api/profile/widgets");
 
@@ -172,15 +102,6 @@ describe("profile-hub routes", () => {
     it("returns 500 on storage error", async () => {
       vi.mocked(storage.getUser).mockRejectedValue(new Error("DB error"));
       vi.mocked(storage.getDailySummary).mockRejectedValue(
-        new Error("DB error"),
-      );
-      vi.mocked(storage.getFastingSchedule).mockRejectedValue(
-        new Error("DB error"),
-      );
-      vi.mocked(storage.getActiveFastingLog).mockRejectedValue(
-        new Error("DB error"),
-      );
-      vi.mocked(storage.getLatestWeight).mockRejectedValue(
         new Error("DB error"),
       );
 

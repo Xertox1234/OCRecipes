@@ -116,10 +116,6 @@ const macroGoalsSchema = z.object({
 const coachContextSchema = z.object({
   goals: macroGoalsSchema.nullable(),
   todayIntake: macroGoalsSchema,
-  weightTrend: z.object({
-    currentWeight: z.number().nullable(),
-    weeklyRate: z.number().nullable(),
-  }),
   dietaryProfile: z.object({
     dietType: z.string().nullable(),
     allergies: z.array(z.string()),

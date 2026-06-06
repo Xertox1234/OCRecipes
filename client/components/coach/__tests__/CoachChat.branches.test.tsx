@@ -657,7 +657,6 @@ describe("CoachChat — handleBlockAction", () => {
     ["RecipeBrowserModal", undefined, ["RecipeBrowserModal", undefined]],
     ["QuickLog", undefined, ["QuickLog"]],
     ["DailyNutritionDetail", undefined, ["DailyNutritionDetail"]],
-    ["WeightTracking", undefined, ["WeightTracking"]],
     ["GoalSetup", undefined, ["GoalSetup"]],
     ["GroceryListsModal", undefined, ["GroceryListsModal"]],
     ["PantryModal", undefined, ["PantryModal"]],

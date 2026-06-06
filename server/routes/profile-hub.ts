@@ -14,7 +14,7 @@ const hubRateLimit = createRateLimiter({
 });
 
 export function register(app: Express): void {
-  // ── Widget data (calorie budget, fasting status, weight trend) ──────────
+  // ── Widget data (calorie budget) ─────────────────────────────────────────
   app.get(
     "/api/profile/widgets",
     requireAuth,

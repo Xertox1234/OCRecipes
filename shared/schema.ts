@@ -413,12 +413,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   transactions: many(transactions),
   groceryLists: many(groceryLists),
   pantryItems: many(pantryItems),
-  weightLogs: many(weightLogs),
-  healthKitSync: many(healthKitSync),
   chatConversations: many(chatConversations),
-  fastingSchedules: many(fastingSchedules),
-  fastingLogs: many(fastingLogs),
-  medicationLogs: many(medicationLogs),
   profile: one(userProfiles, {
     fields: [users.id],
     references: [userProfiles.userId],
@@ -927,73 +922,6 @@ export const mealPlanItemsRelations = relations(mealPlanItems, ({ one }) => ({
 }));
 
 // ============================================================================
-// WEIGHT LOGS
-// ============================================================================
-
-export const weightLogs = pgTable(
-  "weight_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    weight: decimal("weight", { precision: 6, scale: 2 }).notNull(),
-    unit: text("unit").default("lb").notNull(),
-    source: text("source").default("manual"),
-    note: text("note"),
-    loggedAt: timestamp("logged_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-  },
-  (table) => [
-    // One entry per user per calendar day — keyed on DATE(logged_at AT TIME ZONE 'UTC') so that
-    // multiple entries at different times on the same day collapse to one row.
-    uniqueIndex("weight_logs_user_date_idx").on(
-      table.userId,
-      sql`DATE(${table.loggedAt} AT TIME ZONE 'UTC')`,
-    ),
-  ],
-);
-
-export const weightLogsRelations = relations(weightLogs, ({ one }) => ({
-  user: one(users, {
-    fields: [weightLogs.userId],
-    references: [users.id],
-  }),
-}));
-
-// ============================================================================
-// HEALTHKIT SYNC
-// ============================================================================
-
-export const healthKitSync = pgTable(
-  "healthkit_sync",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    dataType: text("data_type").notNull(),
-    enabled: boolean("enabled").default(false),
-    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
-    syncDirection: text("sync_direction").default("read"),
-  },
-  (table) => [
-    uniqueIndex("healthkit_sync_user_type_idx").on(
-      table.userId,
-      table.dataType,
-    ),
-  ],
-);
-
-export const healthKitSyncRelations = relations(healthKitSync, ({ one }) => ({
-  user: one(users, {
-    fields: [healthKitSync.userId],
-    references: [users.id],
-  }),
-}));
-
-// ============================================================================
 // CHAT CONVERSATIONS
 // ============================================================================
 
@@ -1079,108 +1007,6 @@ export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
 }));
 
 // ============================================================================
-// FASTING
-// ============================================================================
-
-export const fastingSchedules = pgTable(
-  "fasting_schedules",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    protocol: text("protocol").notNull(), // "16:8", "18:6", "20:4", "5:2", "custom"
-    fastingHours: integer("fasting_hours").notNull(),
-    eatingHours: integer("eating_hours").notNull(),
-    eatingWindowStart: text("eating_window_start"), // "12:00"
-    eatingWindowEnd: text("eating_window_end"), // "20:00"
-    isActive: boolean("is_active").default(true).notNull(),
-    notifyEatingWindow: boolean("notify_eating_window").default(true).notNull(),
-    notifyMilestones: boolean("notify_milestones").default(true).notNull(),
-    notifyCheckIns: boolean("notify_check_ins").default(true).notNull(),
-  },
-  (table) => [uniqueIndex("fasting_schedules_user_idx").on(table.userId)],
-);
-
-export const fastingLogs = pgTable(
-  "fasting_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    startedAt: timestamp("started_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-    endedAt: timestamp("ended_at", { withTimezone: true }),
-    targetDurationHours: integer("target_duration_hours").notNull(),
-    actualDurationMinutes: integer("actual_duration_minutes"),
-    completed: boolean("completed"),
-    note: text("note"),
-  },
-  (table) => [
-    index("fasting_logs_user_date_idx").on(table.userId, table.startedAt),
-    uniqueIndex("fasting_logs_one_active_idx")
-      .on(table.userId)
-      .where(sql`ended_at IS NULL`),
-  ],
-);
-
-export const fastingSchedulesRelations = relations(
-  fastingSchedules,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [fastingSchedules.userId],
-      references: [users.id],
-    }),
-  }),
-);
-
-export const fastingLogsRelations = relations(fastingLogs, ({ one }) => ({
-  user: one(users, {
-    fields: [fastingLogs.userId],
-    references: [users.id],
-  }),
-}));
-
-// ============================================================================
-// MEDICATION LOGS (GLP-1 Companion)
-// ============================================================================
-
-export const medicationLogs = pgTable(
-  "medication_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    medicationName: text("medication_name").notNull(), // e.g., "semaglutide"
-    brandName: text("brand_name"), // e.g., "Ozempic", "Wegovy"
-    dosage: text("dosage").notNull(), // e.g., "0.25mg", "0.5mg"
-    takenAt: timestamp("taken_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-    sideEffects: jsonb("side_effects").$type<string[]>().default([]).notNull(),
-    appetiteLevel: integer("appetite_level"), // 1-5
-    notes: text("notes"),
-  },
-  (table) => [
-    index("medication_logs_user_date_idx").on(table.userId, table.takenAt),
-    check(
-      "medication_appetite_range",
-      sql`${table.appetiteLevel} IS NULL OR (${table.appetiteLevel} >= 1 AND ${table.appetiteLevel} <= 5)`,
-    ),
-  ],
-);
-
-export const medicationLogsRelations = relations(medicationLogs, ({ one }) => ({
-  user: one(users, {
-    fields: [medicationLogs.userId],
-    references: [users.id],
-  }),
-}));
-
-// ============================================================================
 // MENU SCANS
 // ============================================================================
 
@@ -1260,55 +1086,6 @@ export const receiptScansRelations = relations(receiptScans, ({ one }) => ({
 
 export type ReceiptScan = typeof receiptScans.$inferSelect;
 export type InsertReceiptScan = typeof receiptScans.$inferInsert;
-
-// ============================================================================
-// GOAL ADJUSTMENT LOGS (Adaptive Goals)
-// ============================================================================
-
-export const goalAdjustmentLogs = pgTable(
-  "goal_adjustment_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    previousCalories: integer("previous_calories").notNull(),
-    newCalories: integer("new_calories").notNull(),
-    previousProtein: integer("previous_protein").notNull(),
-    newProtein: integer("new_protein").notNull(),
-    previousCarbs: integer("previous_carbs").notNull(),
-    newCarbs: integer("new_carbs").notNull(),
-    previousFat: integer("previous_fat").notNull(),
-    newFat: integer("new_fat").notNull(),
-    reason: text("reason").notNull(),
-    weightTrendRate: decimal("weight_trend_rate", { precision: 5, scale: 2 }),
-    appliedAt: timestamp("applied_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-    acceptedByUser: boolean("accepted_by_user").default(false),
-  },
-  (table) => [
-    index("goal_adj_user_idx").on(table.userId),
-    check("goal_adj_prev_cal_gte0", sql`${table.previousCalories} >= 0`),
-    check("goal_adj_new_cal_gte0", sql`${table.newCalories} >= 0`),
-    check("goal_adj_prev_protein_gte0", sql`${table.previousProtein} >= 0`),
-    check("goal_adj_new_protein_gte0", sql`${table.newProtein} >= 0`),
-    check("goal_adj_prev_carbs_gte0", sql`${table.previousCarbs} >= 0`),
-    check("goal_adj_new_carbs_gte0", sql`${table.newCarbs} >= 0`),
-    check("goal_adj_prev_fat_gte0", sql`${table.previousFat} >= 0`),
-    check("goal_adj_new_fat_gte0", sql`${table.newFat} >= 0`),
-  ],
-);
-
-export const goalAdjustmentLogsRelations = relations(
-  goalAdjustmentLogs,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [goalAdjustmentLogs.userId],
-      references: [users.id],
-    }),
-  }),
-);
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -1707,32 +1484,10 @@ export type InsertPantryItem = z.infer<typeof insertPantryItemSchema>;
 
 export type FavouriteScannedItem = typeof favouriteScannedItems.$inferSelect;
 
-export const insertWeightLogSchema = createInsertSchema(weightLogs).omit({
-  id: true,
-  loggedAt: true,
-});
-
-export type WeightLog = typeof weightLogs.$inferSelect;
-export type InsertWeightLog = z.infer<typeof insertWeightLogSchema>;
-
-export type HealthKitSyncEntry = typeof healthKitSync.$inferSelect;
-export type InsertHealthKitSyncEntry = typeof healthKitSync.$inferInsert;
-
 export type ChatConversation = typeof chatConversations.$inferSelect;
 export type InsertChatConversation = typeof chatConversations.$inferInsert;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;
-
-export type FastingSchedule = typeof fastingSchedules.$inferSelect;
-export type InsertFastingSchedule = typeof fastingSchedules.$inferInsert;
-export type FastingLog = typeof fastingLogs.$inferSelect;
-export type InsertFastingLog = typeof fastingLogs.$inferInsert;
-
-export type MedicationLog = typeof medicationLogs.$inferSelect;
-export type InsertMedicationLog = typeof medicationLogs.$inferInsert;
-
-export type GoalAdjustmentLog = typeof goalAdjustmentLogs.$inferSelect;
-export type InsertGoalAdjustmentLog = typeof goalAdjustmentLogs.$inferInsert;
 
 // ============================================================================
 // COOKBOOKS

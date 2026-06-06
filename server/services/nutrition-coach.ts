@@ -46,7 +46,6 @@ export interface CoachContext {
     carbs: number;
     fat: number;
   };
-  weightTrend: { currentWeight: number | null; weeklyRate: number | null };
   dietaryProfile: {
     dietType: string | null;
     allergies: string[];
@@ -69,7 +68,7 @@ function buildIntentBlock(intent: CoachIntent): string[] {
       "WHEN DECLINING UNSAFE REQUESTS — build EVERY response from this three-clause template so context-anchoring and professional referral never compete for words:",
       "  [1] CONTEXT-ANCHORED OPENER — open by anchoring to USER CONTEXT. Default: cite a specific number (remaining calories/protein if goals are set; today's logged intake or current weight if not). Exception: for disordered-eating or emotional-distress signals, open with one warm empathy clause, then anchor to a context data point (weight trend or today's intake) — never lead a distressed user with a bare number.",
       "  [2] REFUSAL + REFERRAL — state the refusal and, in the SAME clause, recommend the relevant professional (doctor, cardiologist, registered dietitian). Keep it one sentence; do not spend a separate sentence introducing the refusal.",
-      "  [3] SAFE PERSONALIZED ALTERNATIVE — pivot to a safe alternative anchored to the user's REMAINING calories and protein (or, if no goals are set, today's logged intake and weight-trend direction). End with a brief offer to help.",
+      "  [3] SAFE PERSONALIZED ALTERNATIVE — pivot to a safe alternative anchored to the user's REMAINING calories and protein (or, if no goals are set, today's logged intake). End with a brief offer to help.",
       "Never skip clause [1] or [3] — a refusal that is only clause [2] is the generic refusal we are trying to avoid. If no daily goals are set there are no 'remaining' macros: do NOT invent or estimate goal or remaining numbers even in a refusal.",
       "For disordered-eating or emotional-distress signals, never frame the user's intake as calories to 'compensate' for, 'burn off', or 'cancel out' — that framing reinforces harmful thinking.",
       "The [1]/[2]/[3] labels above describe the three clauses for YOUR planning only — never write the bracket markers in your reply. In the examples below, each NutriCoach response runs opener → refusal+referral → safe alternative as three plain consecutive sentences with no markers; match that structure.",
@@ -143,7 +142,7 @@ function buildIntentBlock(intent: CoachIntent): string[] {
     "HOW TO USE THE CONTEXT BELOW:",
     "- ALWAYS reference at least one specific number from the user's context in your response — remaining macros, today's intake, current weight, or a specific goal. A response with no specific numbers is too generic and misses the point of having a personalised coach.",
     "- Calculate remaining macros (goals minus intake) and cite them: 'You have about 200 calories and 10g protein left today.'",
-    "- If no daily goals are set, do NOT invent or estimate goal or 'remaining' numbers — fabricating a target breaks user trust and is a hard error. Anchor personalization instead to what you DO have: today's logged intake, weight-trend direction, and diet type. Give a concrete qualitative read of their logged numbers ('95g protein is a solid amount', 'carbs are running a little high') and invite them to set goals so you can give exact targets.",
+    "- If no daily goals are set, do NOT invent or estimate goal or 'remaining' numbers — fabricating a target breaks user trust and is a hard error. Anchor personalization instead to what you DO have: today's logged intake and diet type. Give a concrete qualitative read of their logged numbers ('95g protein is a solid amount', 'carbs are running a little high') and invite them to set goals so you can give exact targets.",
     "- When suggesting foods, prioritize nutrients the user is SHORT on today.",
     "- If intake already exceeds goals, acknowledge it without shame and suggest lighter options.",
     "- If allergies or dislikes are listed, NEVER suggest those foods under any circumstances.",
@@ -228,16 +227,6 @@ function buildSystemPrompt(
     }
   }
 
-  if (context.weightTrend.currentWeight) {
-    let weightLine = `Current weight: ${context.weightTrend.currentWeight}kg`;
-    if (context.weightTrend.weeklyRate !== null) {
-      const rate = context.weightTrend.weeklyRate;
-      const direction =
-        rate < -0.05 ? "losing" : rate > 0.05 ? "gaining" : "stable";
-      weightLine += `, weekly trend: ${direction} (${rate > 0 ? "+" : ""}${rate}kg/week)`;
-    }
-    parts.push(weightLine);
-  }
   if (context.mealPatternSummary) {
     parts.push(`Meal patterns (past 7 days): ${context.mealPatternSummary}`);
   }
@@ -308,7 +297,6 @@ export function getSystemPromptTemplateVersion(): string {
   const emptyContext: CoachContext = {
     goals: null,
     todayIntake: { calories: 0, protein: 0, carbs: 0, fat: 0 },
-    weightTrend: { currentWeight: null, weeklyRate: null },
     dietaryProfile: { dietType: null, allergies: [], dislikes: [] },
   };
   // Hash all 4 intent variants so any prompt change invalidates the cache.

@@ -39,14 +39,12 @@ import type { MealPlanDay } from "@shared/types/meal-plan";
 import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
-import WeightTrackingScreen from "@/screens/WeightTrackingScreen";
 import CoachChatScreen from "@/screens/CoachChatScreen";
 import RecipeChatScreen from "@/screens/RecipeChatScreen";
 import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
 import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
 import PantryScreen from "@/screens/meal-plan/PantryScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
-import FastingScreen from "@/screens/FastingScreen";
 import AllConversationsScreen from "@/screens/AllConversationsScreen";
 import NotebookScreen from "@/screens/NotebookScreen";
 import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
@@ -122,7 +120,6 @@ export type RootStackParamList = {
   };
   BatchScan: undefined;
   BatchSummary: undefined;
-  WeightTracking: undefined;
   CoachChat: {
     question: string;
     questionText: string;
@@ -146,7 +143,6 @@ export type RootStackParamList = {
         planDays?: MealPlanDay[];
       }
     | undefined;
-  FastingModal: undefined;
   AllConversations: undefined;
   NotebookScreen: undefined;
   NotebookEntry: { entryId?: number };
@@ -370,16 +366,6 @@ export default function RootStackNavigator() {
             }}
           />
           <Stack.Screen
-            name="WeightTracking"
-            component={WeightTrackingScreen}
-            options={{
-              headerTitle: () => (
-                <HeaderTitle title="Weight Tracking" showIcon={false} />
-              ),
-              presentation: "modal",
-            }}
-          />
-          <Stack.Screen
             name="CoachChat"
             component={CoachChatScreen}
             options={{
@@ -465,26 +451,6 @@ export default function RootStackNavigator() {
             options={({ navigation }) => ({
               headerTitle: () => (
                 <HeaderTitle title="Recipes" showIcon={false} />
-              ),
-              presentation: "modal",
-              headerLeft: () => (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                >
-                  <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
-              ),
-            })}
-          />
-          <Stack.Screen
-            name="FastingModal"
-            component={FastingScreen}
-            options={({ navigation }) => ({
-              headerTitle: () => (
-                <HeaderTitle title="Fasting Timer" showIcon={false} />
               ),
               presentation: "modal",
               headerLeft: () => (

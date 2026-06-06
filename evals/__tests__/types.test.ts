@@ -7,7 +7,6 @@ import { evalTestCaseSchema, evalTestCasesSchema } from "../types";
 const validContext = {
   goals: { calories: 2000, protein: 120, carbs: 250, fat: 65 },
   todayIntake: { calories: 0, protein: 0, carbs: 0, fat: 0 },
-  weightTrend: { currentWeight: 80, weeklyRate: null },
   dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
 };
 

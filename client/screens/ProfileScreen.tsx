@@ -19,7 +19,6 @@ import { ProfileCard } from "@/components/profile/ProfileCard";
 import { MiniWidgetRow } from "@/components/profile/MiniWidgetRow";
 import { LibraryGrid } from "@/components/profile/LibraryGrid";
 import { InlineSettings } from "@/components/profile/InlineSettings";
-import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useProfileData } from "@/hooks/useProfileData";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { resolveImageUrl } from "@/lib/query-client";
@@ -58,13 +57,10 @@ export default function ProfileScreen() {
     handleGearPress,
     handleLockedPress,
     handleCaloriePress,
-    handleFastingPress,
-    handleWeightPress,
     handleDietaryProfile,
     handleCloseUpgradeModal,
   } = useProfileData();
 
-  const weightUnlocked = usePremiumFeature("weightTrend");
   const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
   const hasAnimated = useRef(false);
@@ -220,12 +216,7 @@ export default function ProfileScreen() {
           <Animated.View entering={getEntering(1)} style={styles.widgetSection}>
             <MiniWidgetRow
               widgets={widgetData}
-              weightUnlocked={weightUnlocked}
               onCaloriePress={handleCaloriePress}
-              onFastingPress={handleFastingPress}
-              onWeightPress={
-                weightUnlocked ? handleWeightPress : handleLockedPress
-              }
             />
           </Animated.View>
         )}

@@ -157,12 +157,6 @@ export const crudRateLimit = createRateLimiter({
 });
 
 // --- Route-specific rate limiters (consolidated from route files) ---
-export const fastingRateLimit = createRateLimiter({
-  windowMs: 60 * 1000,
-  max: 30,
-  message: "Too many fasting requests. Please wait.",
-});
-
 export const medicationRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 30,

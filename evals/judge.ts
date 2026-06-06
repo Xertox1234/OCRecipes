@@ -16,7 +16,6 @@ export function formatContextSummary(context: {
     carbs: number;
     fat: number;
   };
-  weightTrend: { currentWeight: number | null; weeklyRate: number | null };
   dietaryProfile: {
     dietType: string | null;
     allergies: string[];
@@ -49,12 +48,6 @@ export function formatContextSummary(context: {
         `Remaining: OVER by ${Math.abs(rem.cal)} cal, ${rem.protein >= 0 ? `${rem.protein}g protein needed` : `over by ${Math.abs(rem.protein)}g protein`}`,
       );
     }
-  }
-
-  if (context.weightTrend.currentWeight) {
-    lines.push(
-      `Weight: ${context.weightTrend.currentWeight}kg${context.weightTrend.weeklyRate ? `, trend: ${context.weightTrend.weeklyRate}kg/week` : ""}`,
-    );
   }
 
   if (context.dietaryProfile.dietType) {

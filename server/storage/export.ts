@@ -15,7 +15,6 @@ import {
   userProfiles,
   scannedItems,
   dailyLogs,
-  weightLogs,
   mealPlanRecipes,
   recipeIngredients,
   mealPlanItems,
@@ -26,10 +25,6 @@ import {
   groceryListItems,
   cookbooks,
   cookbookRecipes,
-  medicationLogs,
-  goalAdjustmentLogs,
-  fastingSchedules,
-  fastingLogs,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, isNull, inArray, asc, desc } from "drizzle-orm";
@@ -69,7 +64,6 @@ export interface UserDataExport {
   };
   scannedItems: Record<string, unknown>[];
   nutritionLogs: Record<string, unknown>[];
-  weightLogs: Record<string, unknown>[];
   mealPlans: {
     recipes: Record<string, unknown>[];
     items: Record<string, unknown>[];
@@ -86,15 +80,6 @@ export interface UserDataExport {
   cookbooks: {
     cookbooks: Record<string, unknown>[];
     recipes: Record<string, unknown>[];
-  };
-  /** Medication + goal-adjustment logs — the closest "activity" data we track. */
-  activityLogs: {
-    medication: Record<string, unknown>[];
-    goalAdjustments: Record<string, unknown>[];
-  };
-  fastingLogs: {
-    schedule: Record<string, unknown> | null;
-    logs: Record<string, unknown>[];
   };
 }
 
@@ -123,7 +108,6 @@ export async function getUserDataExport(
     dietaryRow,
     scannedRows,
     dailyLogRows,
-    weightLogRows,
     mealPlanRecipeRows,
     mealPlanItemRows,
     userRecipeRows,
@@ -133,10 +117,6 @@ export async function getUserDataExport(
     groceryListItemRows,
     cookbookRows,
     cookbookRecipeRows,
-    medicationLogRows,
-    goalAdjustmentLogRows,
-    fastingScheduleRow,
-    fastingLogRows,
   ] = await Promise.all([
     db.select(exportUserColumns).from(users).where(eq(users.id, userId)),
     db.select().from(userProfiles).where(eq(userProfiles.userId, userId)),
@@ -152,11 +132,6 @@ export async function getUserDataExport(
       .from(dailyLogs)
       .where(eq(dailyLogs.userId, userId))
       .orderBy(desc(dailyLogs.loggedAt)),
-    db
-      .select()
-      .from(weightLogs)
-      .where(eq(weightLogs.userId, userId))
-      .orderBy(desc(weightLogs.loggedAt)),
     db
       .select()
       .from(mealPlanRecipes)
@@ -213,25 +188,6 @@ export async function getUserDataExport(
       .from(cookbookRecipes)
       .innerJoin(cookbooks, eq(cookbookRecipes.cookbookId, cookbooks.id))
       .where(eq(cookbooks.userId, userId)),
-    db
-      .select()
-      .from(medicationLogs)
-      .where(eq(medicationLogs.userId, userId))
-      .orderBy(desc(medicationLogs.takenAt)),
-    db
-      .select()
-      .from(goalAdjustmentLogs)
-      .where(eq(goalAdjustmentLogs.userId, userId))
-      .orderBy(desc(goalAdjustmentLogs.appliedAt)),
-    db
-      .select()
-      .from(fastingSchedules)
-      .where(eq(fastingSchedules.userId, userId)),
-    db
-      .select()
-      .from(fastingLogs)
-      .where(eq(fastingLogs.userId, userId))
-      .orderBy(desc(fastingLogs.startedAt)),
   ]);
 
   // After fetching all parent rows, batch-load meal-plan recipe ingredients
@@ -269,7 +225,6 @@ export async function getUserDataExport(
     },
     scannedItems: scannedRows,
     nutritionLogs: dailyLogRows,
-    weightLogs: weightLogRows,
     mealPlans: {
       recipes: mealPlanRecipesWithIngredients,
       items: mealPlanItemRows,
@@ -286,14 +241,6 @@ export async function getUserDataExport(
     cookbooks: {
       cookbooks: cookbookRows,
       recipes: cookbookRecipeRows.map((r) => r.recipe),
-    },
-    activityLogs: {
-      medication: medicationLogRows,
-      goalAdjustments: goalAdjustmentLogRows,
-    },
-    fastingLogs: {
-      schedule: fastingScheduleRow[0] ?? null,
-      logs: fastingLogRows,
     },
   };
 }

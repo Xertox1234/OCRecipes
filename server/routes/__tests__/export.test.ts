@@ -23,14 +23,11 @@ function buildExport() {
     profile: { account: { id: "1", username: "demo" }, dietary: null },
     scannedItems: [],
     nutritionLogs: [],
-    weightLogs: [],
     mealPlans: { recipes: [], items: [] },
     recipes: [],
     chatHistory: { conversations: [], messages: [] },
     groceryLists: { lists: [], items: [] },
     cookbooks: { cookbooks: [], recipes: [] },
-    activityLogs: { medication: [], goalAdjustments: [] },
-    fastingLogs: { schedule: null, logs: [] },
   };
 }
 
@@ -69,14 +66,11 @@ describe("GET /api/users/me/export", () => {
       "profile",
       "scannedItems",
       "nutritionLogs",
-      "weightLogs",
       "mealPlans",
       "recipes",
       "chatHistory",
       "groceryLists",
       "cookbooks",
-      "activityLogs",
-      "fastingLogs",
     ]) {
       expect(res.body).toHaveProperty(key);
     }

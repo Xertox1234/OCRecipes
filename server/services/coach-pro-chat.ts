@@ -33,7 +33,6 @@ import {
 import { fireAndForget } from "../lib/fire-and-forget";
 import { createServiceLogger } from "../lib/logger";
 import { consumeWarmUp } from "./coach-warm-up";
-import { calculateWeeklyRate } from "./weight-trend";
 import {
   truncateNotebookToBudget,
   DEFAULT_NOTEBOOK_MAX_CHARS,
@@ -249,7 +248,6 @@ export function hashCoachCacheContext(
       JSON.stringify({
         goals: context.goals,
         todayIntake: context.todayIntake,
-        weightTrend: context.weightTrend,
         dietaryProfile: context.dietaryProfile,
         hour: now.getHours(),
       }),
@@ -424,14 +422,12 @@ export async function* handleCoachChat(
   const [
     profile,
     dailySummary,
-    recentWeights,
     history,
     recentLogsForPatterns,
     notebookEntries,
   ] = await Promise.all([
     storage.getUserProfile(userId),
     storage.getDailySummary(userId, today),
-    storage.getWeightLogs(userId, { limit: 14 }),
     storage.getChatMessages(conversationId, 20, userId),
     tierConfig.fetchMealPatterns
       ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
@@ -444,11 +440,6 @@ export async function* handleCoachChat(
           [] as Awaited<ReturnType<typeof storage.getActiveNotebookEntries>>,
         ),
   ]);
-
-  // Weekly rate of change — shared pure helper so this logic is unit-tested
-  // in isolation rather than through the full orchestrator.
-  const latestWeight = recentWeights[0] ?? undefined;
-  const weeklyRate = calculateWeeklyRate(recentWeights);
 
   const context: CoachContext = {
     goals: user.dailyCalorieGoal
@@ -464,10 +455,6 @@ export async function* handleCoachChat(
       protein: Number(dailySummary.totalProtein),
       carbs: Number(dailySummary.totalCarbs),
       fat: Number(dailySummary.totalFat),
-    },
-    weightTrend: {
-      currentWeight: latestWeight ? parseFloat(latestWeight.weight) : null,
-      weeklyRate,
     },
     dietaryProfile: {
       dietType: profile?.dietType || null,
