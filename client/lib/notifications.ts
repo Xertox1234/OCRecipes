@@ -8,11 +8,6 @@ import { Platform } from "react-native";
 /** Create the Android notification channel (no-op on iOS). Call once at app startup. */
 export async function setupNotificationChannel(): Promise<void> {
   if (Platform.OS !== "android") return;
-  await Notifications.setNotificationChannelAsync("fasting", {
-    name: "Fasting Timer",
-    importance: Notifications.AndroidImportance.DEFAULT,
-    sound: "default",
-  });
   await Notifications.setNotificationChannelAsync("coach-reminders", {
     name: "Coach Reminders",
     importance: Notifications.AndroidImportance.DEFAULT,

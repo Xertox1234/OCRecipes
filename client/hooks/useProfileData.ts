@@ -101,11 +101,6 @@ export function useProfileData() {
     navigation.navigate("DailyNutritionDetail");
   }, [haptics, navigation]);
 
-  const handleFastingPress = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate("FastingModal");
-  }, [haptics, navigation]);
-
   const handleDietaryProfile = useCallback(() => {
     navigation.navigate("EditDietaryProfile");
   }, [navigation]);
@@ -133,7 +128,6 @@ export function useProfileData() {
     handleGearPress,
     handleLockedPress,
     handleCaloriePress,
-    handleFastingPress,
     handleDietaryProfile,
     handleCloseUpgradeModal,
   };

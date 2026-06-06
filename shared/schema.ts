@@ -414,8 +414,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   groceryLists: many(groceryLists),
   pantryItems: many(pantryItems),
   chatConversations: many(chatConversations),
-  fastingSchedules: many(fastingSchedules),
-  fastingLogs: many(fastingLogs),
   profile: one(userProfiles, {
     fields: [users.id],
     references: [userProfiles.userId],
@@ -1009,71 +1007,6 @@ export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
 }));
 
 // ============================================================================
-// FASTING
-// ============================================================================
-
-export const fastingSchedules = pgTable(
-  "fasting_schedules",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    protocol: text("protocol").notNull(), // "16:8", "18:6", "20:4", "5:2", "custom"
-    fastingHours: integer("fasting_hours").notNull(),
-    eatingHours: integer("eating_hours").notNull(),
-    eatingWindowStart: text("eating_window_start"), // "12:00"
-    eatingWindowEnd: text("eating_window_end"), // "20:00"
-    isActive: boolean("is_active").default(true).notNull(),
-    notifyEatingWindow: boolean("notify_eating_window").default(true).notNull(),
-    notifyMilestones: boolean("notify_milestones").default(true).notNull(),
-    notifyCheckIns: boolean("notify_check_ins").default(true).notNull(),
-  },
-  (table) => [uniqueIndex("fasting_schedules_user_idx").on(table.userId)],
-);
-
-export const fastingLogs = pgTable(
-  "fasting_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    startedAt: timestamp("started_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-    endedAt: timestamp("ended_at", { withTimezone: true }),
-    targetDurationHours: integer("target_duration_hours").notNull(),
-    actualDurationMinutes: integer("actual_duration_minutes"),
-    completed: boolean("completed"),
-    note: text("note"),
-  },
-  (table) => [
-    index("fasting_logs_user_date_idx").on(table.userId, table.startedAt),
-    uniqueIndex("fasting_logs_one_active_idx")
-      .on(table.userId)
-      .where(sql`ended_at IS NULL`),
-  ],
-);
-
-export const fastingSchedulesRelations = relations(
-  fastingSchedules,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [fastingSchedules.userId],
-      references: [users.id],
-    }),
-  }),
-);
-
-export const fastingLogsRelations = relations(fastingLogs, ({ one }) => ({
-  user: one(users, {
-    fields: [fastingLogs.userId],
-    references: [users.id],
-  }),
-}));
-
-// ============================================================================
 // MENU SCANS
 // ============================================================================
 
@@ -1555,11 +1488,6 @@ export type ChatConversation = typeof chatConversations.$inferSelect;
 export type InsertChatConversation = typeof chatConversations.$inferInsert;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;
-
-export type FastingSchedule = typeof fastingSchedules.$inferSelect;
-export type InsertFastingSchedule = typeof fastingSchedules.$inferInsert;
-export type FastingLog = typeof fastingLogs.$inferSelect;
-export type InsertFastingLog = typeof fastingLogs.$inferInsert;
 
 // ============================================================================
 // COOKBOOKS

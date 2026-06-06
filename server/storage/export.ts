@@ -25,8 +25,6 @@ import {
   groceryListItems,
   cookbooks,
   cookbookRecipes,
-  fastingSchedules,
-  fastingLogs,
 } from "@shared/schema";
 import { db } from "../db";
 import { eq, and, isNull, inArray, asc, desc } from "drizzle-orm";
@@ -83,10 +81,6 @@ export interface UserDataExport {
     cookbooks: Record<string, unknown>[];
     recipes: Record<string, unknown>[];
   };
-  fastingLogs: {
-    schedule: Record<string, unknown> | null;
-    logs: Record<string, unknown>[];
-  };
 }
 
 /**
@@ -123,8 +117,6 @@ export async function getUserDataExport(
     groceryListItemRows,
     cookbookRows,
     cookbookRecipeRows,
-    fastingScheduleRow,
-    fastingLogRows,
   ] = await Promise.all([
     db.select(exportUserColumns).from(users).where(eq(users.id, userId)),
     db.select().from(userProfiles).where(eq(userProfiles.userId, userId)),
@@ -196,15 +188,6 @@ export async function getUserDataExport(
       .from(cookbookRecipes)
       .innerJoin(cookbooks, eq(cookbookRecipes.cookbookId, cookbooks.id))
       .where(eq(cookbooks.userId, userId)),
-    db
-      .select()
-      .from(fastingSchedules)
-      .where(eq(fastingSchedules.userId, userId)),
-    db
-      .select()
-      .from(fastingLogs)
-      .where(eq(fastingLogs.userId, userId))
-      .orderBy(desc(fastingLogs.startedAt)),
   ]);
 
   // After fetching all parent rows, batch-load meal-plan recipe ingredients
@@ -258,10 +241,6 @@ export async function getUserDataExport(
     cookbooks: {
       cookbooks: cookbookRows,
       recipes: cookbookRecipeRows.map((r) => r.recipe),
-    },
-    fastingLogs: {
-      schedule: fastingScheduleRow[0] ?? null,
-      logs: fastingLogRows,
     },
   };
 }

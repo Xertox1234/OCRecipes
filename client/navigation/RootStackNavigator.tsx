@@ -45,7 +45,6 @@ import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
 import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
 import PantryScreen from "@/screens/meal-plan/PantryScreen";
 import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
-import FastingScreen from "@/screens/FastingScreen";
 import AllConversationsScreen from "@/screens/AllConversationsScreen";
 import NotebookScreen from "@/screens/NotebookScreen";
 import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
@@ -144,7 +143,6 @@ export type RootStackParamList = {
         planDays?: MealPlanDay[];
       }
     | undefined;
-  FastingModal: undefined;
   AllConversations: undefined;
   NotebookScreen: undefined;
   NotebookEntry: { entryId?: number };
@@ -453,26 +451,6 @@ export default function RootStackNavigator() {
             options={({ navigation }) => ({
               headerTitle: () => (
                 <HeaderTitle title="Recipes" showIcon={false} />
-              ),
-              presentation: "modal",
-              headerLeft: () => (
-                <Pressable
-                  onPress={() => navigation.goBack()}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close"
-                >
-                  <Feather name="x" size={24} color={theme.text} />
-                </Pressable>
-              ),
-            })}
-          />
-          <Stack.Screen
-            name="FastingModal"
-            component={FastingScreen}
-            options={({ navigation }) => ({
-              headerTitle: () => (
-                <HeaderTitle title="Fasting Timer" showIcon={false} />
               ),
               presentation: "modal",
               headerLeft: () => (

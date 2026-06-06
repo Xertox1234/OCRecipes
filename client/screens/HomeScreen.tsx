@@ -17,7 +17,6 @@ import { DiscoveryCarousel } from "@/components/home/DiscoveryCarousel";
 import { CollapsibleSection } from "@/components/home/CollapsibleSection";
 import { ActionRow } from "@/components/home/ActionRow";
 import { QuickLogDrawer } from "@/components/home/QuickLogDrawer";
-import { FastingDrawer } from "@/components/home/FastingDrawer";
 import {
   HOME_ACTIONS,
   getActionsByGroup,
@@ -50,8 +49,6 @@ function renderInlineAction(action: HomeAction) {
   switch (action.id) {
     case "quick-log":
       return <QuickLogDrawer key={action.id} action={action} />;
-    case "fasting-timer":
-      return <FastingDrawer key={action.id} action={action} />;
     default:
       return null;
   }

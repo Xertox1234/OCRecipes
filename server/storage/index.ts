@@ -16,7 +16,6 @@ import * as pantry from "./pantry";
 import * as chat from "./chat";
 import * as cache from "./cache";
 import * as community from "./community";
-import * as fasting from "./fasting";
 import * as menu from "./menu";
 import * as receipt from "./receipt";
 import * as cookbooksStorage from "./cookbooks";
@@ -197,14 +196,6 @@ export const storage = {
   batchUpdateCommunityMealTypes: community.batchUpdateCommunityMealTypes,
   deleteCommunityRecipe: community.deleteCommunityRecipe,
   getUserRecipes: community.getUserRecipes,
-
-  // Fasting
-  getFastingSchedule: fasting.getFastingSchedule,
-  upsertFastingSchedule: fasting.upsertFastingSchedule,
-  getActiveFastingLog: fasting.getActiveFastingLog,
-  getFastingLogs: fasting.getFastingLogs,
-  createFastingLog: fasting.createFastingLog,
-  endFastingLog: fasting.endFastingLog,
 
   // Menu scans
   getMenuScans: menu.getMenuScans,

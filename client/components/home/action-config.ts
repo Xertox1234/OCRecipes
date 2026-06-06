@@ -40,9 +40,6 @@ export function navigateAction(
     case "quick-log":
       navigation.navigate("QuickLog");
       break;
-    case "fasting-timer":
-      navigation.navigate("Fasting");
-      break;
     // Recipes
     case "search-recipes":
       navigation.navigate("MealPlanTab", {
@@ -131,14 +128,6 @@ export const HOME_ACTIONS: HomeAction[] = [
     label: "Quick Log",
     renderInline: true,
   },
-  {
-    id: "fasting-timer",
-    group: "nutrition",
-    icon: "clock",
-    label: "Fasting Timer",
-    renderInline: true,
-  },
-
   // Recipes
   {
     id: "search-recipes",

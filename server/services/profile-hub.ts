@@ -1,15 +1,11 @@
 import { storage } from "../storage";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
-import type { FastingSchedule, FastingLog } from "@shared/schema";
+
 export interface ProfileWidgetData {
   dailyBudget: {
     calorieGoal: number;
     foodCalories: number;
     remaining: number;
-  };
-  fasting: {
-    schedule: FastingSchedule | null;
-    currentFast: FastingLog | null;
   };
 }
 
@@ -18,11 +14,9 @@ export async function getProfileWidgets(
 ): Promise<ProfileWidgetData | null> {
   const date = new Date();
 
-  const [user, dailySummary, schedule, currentFast] = await Promise.all([
+  const [user, dailySummary] = await Promise.all([
     storage.getUser(userId),
     storage.getDailySummary(userId, date),
-    storage.getFastingSchedule(userId),
-    storage.getActiveFastingLog(userId),
   ]);
 
   if (!user) return null;
@@ -35,10 +29,6 @@ export async function getProfileWidgets(
       calorieGoal,
       foodCalories,
       remaining: calorieGoal - foodCalories,
-    },
-    fasting: {
-      schedule: schedule ?? null,
-      currentFast: currentFast ?? null,
     },
   };
 }

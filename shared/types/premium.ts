@@ -34,7 +34,6 @@ export interface PremiumFeatures {
   dailyCoachMessages: number;
   coachPro: boolean;
   coachProDailyMessages: number;
-  advancedFasting: boolean;
   menuScanner: boolean;
   micronutrientTracking: boolean;
   receiptScanner: boolean;
@@ -78,7 +77,6 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     dailyCoachMessages: 3,
     coachPro: false,
     coachProDailyMessages: 0,
-    advancedFasting: false,
     menuScanner: false,
     micronutrientTracking: false,
     receiptScanner: false,
@@ -113,7 +111,6 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     dailyCoachMessages: 999999,
     coachPro: true,
     coachProDailyMessages: 999999,
-    advancedFasting: true,
     menuScanner: true,
     micronutrientTracking: true,
     receiptScanner: true,

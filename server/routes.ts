@@ -24,7 +24,6 @@ import { register as registerChat } from "./routes/chat";
 import { register as registerCoachContext } from "./routes/coach-context";
 import { register as registerNotebook } from "./routes/notebook";
 import { register as registerRecipeChat } from "./routes/recipe-chat";
-import { register as registerFasting } from "./routes/fasting";
 import { register as registerMenu } from "./routes/menu";
 import { register as registerMicronutrients } from "./routes/micronutrients";
 import { register as registerReceipt } from "./routes/receipt";
@@ -85,7 +84,6 @@ export function registerRoutes(app: Express): Server {
   registerCoachContext(app);
   registerNotebook(app);
   registerRecipeChat(app);
-  registerFasting(app);
   registerMenu(app);
   registerMicronutrients(app);
   registerReceipt(app);

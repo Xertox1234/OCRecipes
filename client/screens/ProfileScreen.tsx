@@ -57,7 +57,6 @@ export default function ProfileScreen() {
     handleGearPress,
     handleLockedPress,
     handleCaloriePress,
-    handleFastingPress,
     handleDietaryProfile,
     handleCloseUpgradeModal,
   } = useProfileData();
@@ -218,7 +217,6 @@ export default function ProfileScreen() {
             <MiniWidgetRow
               widgets={widgetData}
               onCaloriePress={handleCaloriePress}
-              onFastingPress={handleFastingPress}
             />
           </Animated.View>
         )}

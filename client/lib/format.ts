@@ -2,8 +2,7 @@
  * Shared formatting utilities for dates and durations.
  *
  * Consolidates helpers that were previously duplicated across
- * FastingScreen, WeightTrackingScreen, MealPlanHomeScreen,
- * ItemDetailScreen, and GroceryListsScreen.
+ * MealPlanHomeScreen, ItemDetailScreen, and GroceryListsScreen.
  */
 
 /** Short date: "Jan 5" */

@@ -30,7 +30,6 @@ export {
   createMockChatMessage,
   createMockCoachNotebookEntry,
 } from "./chat";
-export { createMockFastingSchedule, createMockFastingLog } from "./health";
 export { createMockTransaction } from "./subscription";
 export { createMockMenuScan, createMockReceiptScan } from "./scan";
 export {

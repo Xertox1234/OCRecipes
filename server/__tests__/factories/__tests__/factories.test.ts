@@ -26,8 +26,6 @@ import {
   createMockChatConversation,
   createMockChatMessage,
   createMockCoachNotebookEntry,
-  createMockFastingSchedule,
-  createMockFastingLog,
   createMockTransaction,
   createMockMenuScan,
   createMockReceiptScan,
@@ -501,44 +499,6 @@ describe("factories/chat", () => {
 
     it("merges overrides", () => {
       const obj = createMockCoachNotebookEntry({ id: 99 });
-      expect(obj.id).toBe(99);
-    });
-  });
-});
-
-describe("factories/health", () => {
-  describe("createMockFastingSchedule", () => {
-    it("creates valid defaults", () => {
-      const obj = createMockFastingSchedule();
-      expect(obj).toMatchObject({
-        id: 1,
-        userId: "1",
-        protocol: "16:8",
-        isActive: true,
-      });
-      expect(obj.eatingWindowStart).not.toBeNull();
-      expect(obj.eatingWindowEnd).not.toBeNull();
-    });
-
-    it("merges overrides", () => {
-      const obj = createMockFastingSchedule({ id: 99 });
-      expect(obj.id).toBe(99);
-    });
-  });
-
-  describe("createMockFastingLog", () => {
-    it("creates valid defaults", () => {
-      const obj = createMockFastingLog();
-      expect(obj).toMatchObject({
-        id: 1,
-        userId: "1",
-        targetDurationHours: 16,
-      });
-      expect(obj.startedAt).toBeInstanceOf(Date);
-    });
-
-    it("merges overrides", () => {
-      const obj = createMockFastingLog({ id: 99 });
       expect(obj.id).toBe(99);
     });
   });
