@@ -1,0 +1,32 @@
+name: Mutation testing
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Mutation target (see stryker.targets.mjs)"
+        required: true
+        default: "verification-consensus"
+
+jobs:
+  mutation:
+    name: Stryker (${{ inputs.target }})
+    runs-on: ubuntu-latest
+    env:
+      MUTATION_TARGET: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run mutation testing
+        run: npm run test:mutation
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-${{ inputs.target }}
+          path: reports/mutation/
