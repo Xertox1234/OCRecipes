@@ -36,6 +36,7 @@
     "test:coverage:ci": "vitest run --coverage --coverage.thresholds.autoUpdate=false",
     "coverage:ratchet": "tsx scripts/coverage-ratchet.ts",
     "test:mutation": "stryker run",
+    "mutation:explore": "node scripts/mutation-explore.mjs",
     "prepare": "husky",
     "android": "expo run:android",
     "ios": "expo run:ios",
