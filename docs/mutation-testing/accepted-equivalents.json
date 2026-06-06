@@ -1,5 +1,5 @@
 {
-  "_README": "Verified equivalent mutants on Hard-Exclusion (read-only) targets. These survive mutation testing but cannot be killed (no input distinguishes mutant from original) and are NOT suppressed in source (read-only policy). Each must carry a concrete equivalence argument. Line numbers drift when the source changes; re-verify on any edit to the listed file.",
+  "_README": "Verified equivalent mutants on Hard-Exclusion (read-only) targets. These survive mutation testing but cannot be killed (no input distinguishes mutant from original) and are NOT suppressed in source (read-only policy). Each must carry a concrete equivalence argument. ENFORCEMENT is via the per-target CI `break` threshold (set below 100 to absorb the immovable equivalent) — this file is an ADVISORY human-audit record + equivalence rationale, not auto-checked by CI. Line numbers drift when the source changes; re-verify on any edit to the listed file.",
   "adaptive-goals": [
     {
       "file": "server/services/adaptive-goals.ts",

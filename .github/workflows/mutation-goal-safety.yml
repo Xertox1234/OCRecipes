@@ -34,6 +34,9 @@ jobs:
           CHANGED="$(git diff --name-only "$BASE...$HEAD")"
           echo "Changed files in this PR:"
           echo "$CHANGED"
+          # NOTE: scripts/mutation-explore.mjs is intentionally NOT matched here — it is
+          # a dev-only spike tool that cannot affect `test:mutation` scores, so editing
+          # it should not trigger this gate.
           if echo "$CHANGED" | grep -qE '^(server/services/(goal-calculator|adaptive-goals)\.ts|server/services/__tests__/(goal-calculator|adaptive-goals)\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
