@@ -41,8 +41,9 @@ export const MUTATION_TARGETS = {
     // equivalent mutant (`"maintain"` -> `""`, see accepted-equivalents.json) that
     // cannot be killed (no input distinguishes it) and is not suppressed in source
     // (read-only on Hard-Exclusion modules). break=99 leaves margin: any NEW survivor
-    // drops the score to ~98.7, below the threshold. Because the equivalent is
-    // immovable it can never be "swapped" for a new gap at the same count.
+    // drops the score to ~98.7, below the threshold. No *test* can swap the
+    // equivalent for a new gap at the same count; a future refactor of line 203
+    // could, so re-triage when the source changes (the CI gate runs exactly then).
     breakThreshold: 99,
   },
 };
