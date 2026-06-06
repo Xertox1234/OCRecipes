@@ -155,6 +155,51 @@ describe("Goal Calculator", () => {
       expect(goals.dailyFat).toBe(expectedFat);
     });
 
+    it("applies the eat_healthier macro split (45% carbs / 30% protein / 25% fat)", () => {
+      const profile: UserPhysicalProfile = {
+        weight: 70,
+        height: 175,
+        age: 30,
+        gender: "male",
+        activityLevel: "moderate",
+        primaryGoal: "eat_healthier",
+      };
+
+      const goals = calculateGoals(profile);
+
+      // Ratios written independently of the source (0.45/0.30/0.25); the ObjectLiteral
+      // mutant `eat_healthier: {}` makes split.* undefined -> NaN, which fails toBe.
+      expect(goals.dailyProtein).toBe(
+        Math.round((goals.dailyCalories * 0.3) / 4),
+      );
+      expect(goals.dailyCarbs).toBe(
+        Math.round((goals.dailyCalories * 0.45) / 4),
+      );
+      expect(goals.dailyFat).toBe(Math.round((goals.dailyCalories * 0.25) / 9));
+    });
+
+    it("applies the manage_condition macro split (30/40/30; no NaN)", () => {
+      const profile: UserPhysicalProfile = {
+        weight: 70,
+        height: 175,
+        age: 30,
+        gender: "male",
+        activityLevel: "moderate",
+        primaryGoal: "manage_condition",
+      };
+
+      const goals = calculateGoals(profile);
+
+      // `manage_condition: {}` -> NaN macros; these exact-value assertions kill it.
+      expect(goals.dailyProtein).toBe(
+        Math.round((goals.dailyCalories * 0.3) / 4),
+      );
+      expect(goals.dailyCarbs).toBe(
+        Math.round((goals.dailyCalories * 0.4) / 4),
+      );
+      expect(goals.dailyFat).toBe(Math.round((goals.dailyCalories * 0.3) / 9));
+    });
+
     it("treats gender 'other' same as female (conservative formula)", () => {
       const femaleProfile: UserPhysicalProfile = {
         weight: 65,
