@@ -413,8 +413,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   transactions: many(transactions),
   groceryLists: many(groceryLists),
   pantryItems: many(pantryItems),
-  weightLogs: many(weightLogs),
-  healthKitSync: many(healthKitSync),
   chatConversations: many(chatConversations),
   fastingSchedules: many(fastingSchedules),
   fastingLogs: many(fastingLogs),
@@ -922,73 +920,6 @@ export const mealPlanItemsRelations = relations(mealPlanItems, ({ one }) => ({
   scannedItem: one(scannedItems, {
     fields: [mealPlanItems.scannedItemId],
     references: [scannedItems.id],
-  }),
-}));
-
-// ============================================================================
-// WEIGHT LOGS
-// ============================================================================
-
-export const weightLogs = pgTable(
-  "weight_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    weight: decimal("weight", { precision: 6, scale: 2 }).notNull(),
-    unit: text("unit").default("lb").notNull(),
-    source: text("source").default("manual"),
-    note: text("note"),
-    loggedAt: timestamp("logged_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-  },
-  (table) => [
-    // One entry per user per calendar day — keyed on DATE(logged_at AT TIME ZONE 'UTC') so that
-    // multiple entries at different times on the same day collapse to one row.
-    uniqueIndex("weight_logs_user_date_idx").on(
-      table.userId,
-      sql`DATE(${table.loggedAt} AT TIME ZONE 'UTC')`,
-    ),
-  ],
-);
-
-export const weightLogsRelations = relations(weightLogs, ({ one }) => ({
-  user: one(users, {
-    fields: [weightLogs.userId],
-    references: [users.id],
-  }),
-}));
-
-// ============================================================================
-// HEALTHKIT SYNC
-// ============================================================================
-
-export const healthKitSync = pgTable(
-  "healthkit_sync",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    dataType: text("data_type").notNull(),
-    enabled: boolean("enabled").default(false),
-    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
-    syncDirection: text("sync_direction").default("read"),
-  },
-  (table) => [
-    uniqueIndex("healthkit_sync_user_type_idx").on(
-      table.userId,
-      table.dataType,
-    ),
-  ],
-);
-
-export const healthKitSyncRelations = relations(healthKitSync, ({ one }) => ({
-  user: one(users, {
-    fields: [healthKitSync.userId],
-    references: [users.id],
   }),
 }));
 
@@ -1619,17 +1550,6 @@ export type PantryItem = typeof pantryItems.$inferSelect;
 export type InsertPantryItem = z.infer<typeof insertPantryItemSchema>;
 
 export type FavouriteScannedItem = typeof favouriteScannedItems.$inferSelect;
-
-export const insertWeightLogSchema = createInsertSchema(weightLogs).omit({
-  id: true,
-  loggedAt: true,
-});
-
-export type WeightLog = typeof weightLogs.$inferSelect;
-export type InsertWeightLog = z.infer<typeof insertWeightLogSchema>;
-
-export type HealthKitSyncEntry = typeof healthKitSync.$inferSelect;
-export type InsertHealthKitSyncEntry = typeof healthKitSync.$inferInsert;
 
 export type ChatConversation = typeof chatConversations.$inferSelect;
 export type InsertChatConversation = typeof chatConversations.$inferInsert;

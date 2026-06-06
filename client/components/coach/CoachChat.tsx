@@ -380,9 +380,6 @@ export default function CoachChat({
           case "DailyNutritionDetail":
             navigation.navigate("DailyNutritionDetail");
             break;
-          case "WeightTracking":
-            navigation.navigate("WeightTracking");
-            break;
           case "GoalSetup":
             navigation.navigate("GoalSetup");
             break;

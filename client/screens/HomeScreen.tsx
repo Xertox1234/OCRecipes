@@ -18,7 +18,6 @@ import { CollapsibleSection } from "@/components/home/CollapsibleSection";
 import { ActionRow } from "@/components/home/ActionRow";
 import { QuickLogDrawer } from "@/components/home/QuickLogDrawer";
 import { FastingDrawer } from "@/components/home/FastingDrawer";
-import { WeightLogDrawer } from "@/components/home/WeightLogDrawer";
 import {
   HOME_ACTIONS,
   getActionsByGroup,
@@ -53,8 +52,6 @@ function renderInlineAction(action: HomeAction) {
       return <QuickLogDrawer key={action.id} action={action} />;
     case "fasting-timer":
       return <FastingDrawer key={action.id} action={action} />;
-    case "log-weight":
-      return <WeightLogDrawer key={action.id} action={action} />;
     default:
       return null;
   }

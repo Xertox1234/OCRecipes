@@ -1,40 +1,4 @@
-import type {
-  WeightLog,
-  HealthKitSyncEntry,
-  FastingSchedule,
-  FastingLog,
-} from "@shared/schema";
-
-const weightLogDefaults: WeightLog = {
-  id: 1,
-  userId: "1",
-  weight: "75.00",
-  unit: "kg",
-  source: "manual",
-  note: null,
-  loggedAt: new Date("2024-01-01"),
-};
-
-export function createMockWeightLog(
-  overrides: Partial<WeightLog> = {},
-): WeightLog {
-  return { ...weightLogDefaults, ...overrides };
-}
-
-const healthKitSyncDefaults: HealthKitSyncEntry = {
-  id: 1,
-  userId: "1",
-  dataType: "weight",
-  enabled: false,
-  lastSyncAt: null,
-  syncDirection: "read",
-};
-
-export function createMockHealthKitSync(
-  overrides: Partial<HealthKitSyncEntry> = {},
-): HealthKitSyncEntry {
-  return { ...healthKitSyncDefaults, ...overrides };
-}
+import type { FastingSchedule, FastingLog } from "@shared/schema";
 
 const fastingScheduleDefaults: FastingSchedule = {
   id: 1,

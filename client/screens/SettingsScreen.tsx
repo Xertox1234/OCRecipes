@@ -22,7 +22,6 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumContext } from "@/context/PremiumContext";
-import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
@@ -42,7 +41,7 @@ interface SettingsItemConfig {
   id: string;
   icon: FeatherIconName;
   label: string;
-  premiumKey?: "healthKitSync";
+  premiumKey?: never;
   danger?: boolean;
   iosOnly?: boolean;
 }
@@ -50,13 +49,6 @@ interface SettingsItemConfig {
 const SETTINGS_ITEMS: SettingsItemConfig[] = [
   { id: "editProfile", icon: "edit-2", label: "Edit Profile" },
   { id: "tasteProfile", icon: "star", label: "Taste Profile" },
-  {
-    id: "healthkit",
-    icon: "heart",
-    label: "Apple Health",
-    premiumKey: "healthKitSync",
-    iosOnly: true,
-  },
   { id: "goals", icon: "target", label: "Nutrition Goals" },
   { id: "coachReminders", icon: "bell", label: "Coach Reminders" },
   { id: "subscription", icon: "credit-card", label: "Subscription" },
@@ -78,8 +70,6 @@ export default function SettingsScreen() {
   const { logout, deleteAccount, user, updateUser } = useAuthContext();
   const { isPremium } = usePremiumContext();
   const measurementUnit = useMeasurementUnit();
-
-  const healthKitUnlocked = usePremiumFeature("healthKitSync");
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
@@ -123,7 +113,7 @@ export default function SettingsScreen() {
     // the system share sheet — recipients of the share will see plaintext PII.
     Alert.alert(
       "Export My Data",
-      "This will create a JSON copy of all data we hold for you (profile, scan history, meal plans, chats, weight logs, etc.) and open the share sheet. Anyone you share the file with will see this data in plain text. Continue?",
+      "This will create a JSON copy of all data we hold for you (profile, scan history, meal plans, chats, etc.) and open the share sheet. Anyone you share the file with will see this data in plain text. Continue?",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -151,15 +141,6 @@ export default function SettingsScreen() {
     [measurementUnit, haptics, updateUser],
   );
 
-  const isUnlocked = useCallback(
-    (key?: string) => {
-      if (!key) return true;
-      if (key === "healthKitSync") return healthKitUnlocked;
-      return true;
-    },
-    [healthKitUnlocked],
-  );
-
   const handlePress = useCallback(
     (id: string) => {
       haptics.selection();
@@ -169,13 +150,6 @@ export default function SettingsScreen() {
           break;
         case "tasteProfile":
           navigation.navigate("TasteProfile");
-          break;
-        case "healthkit":
-          if (healthKitUnlocked) {
-            navigation.navigate("HealthKitSettings");
-          } else {
-            setShowUpgradeModal(true);
-          }
           break;
         case "goals":
           navigation.navigate("GoalSetup");
@@ -218,14 +192,7 @@ export default function SettingsScreen() {
           break;
       }
     },
-    [
-      haptics,
-      navigation,
-      healthKitUnlocked,
-      isPremium,
-      logout,
-      handleExportData,
-    ],
+    [haptics, navigation, isPremium, logout, handleExportData],
   );
 
   const visibleItems = SETTINGS_ITEMS.filter(
@@ -274,7 +241,7 @@ export default function SettingsScreen() {
     >
       <Card elevation={1} style={styles.card}>
         {visibleItems.map((item, index) => {
-          const unlocked = isUnlocked(item.premiumKey);
+          const unlocked = true;
           return (
             <React.Fragment key={item.id}>
               {index > 0 && (

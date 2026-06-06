@@ -11,7 +11,6 @@ vi.mock("../../storage", () => ({
     getDailySummary: vi.fn(),
     getFastingSchedule: vi.fn(),
     getActiveFastingLog: vi.fn(),
-    getLatestWeight: vi.fn(),
     getLibraryCounts: vi.fn(),
     getSubscriptionStatus: vi.fn(),
   },
@@ -58,7 +57,6 @@ describe("profile-hub routes", () => {
       vi.mocked(storage.getDailySummary).mockResolvedValue(mockSummary as any);
       vi.mocked(storage.getFastingSchedule).mockResolvedValue(undefined);
       vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
 
       const res = await request(app).get("/api/profile/widgets");
 
@@ -70,7 +68,6 @@ describe("profile-hub routes", () => {
       });
       expect(res.body.fasting.schedule).toBeNull();
       expect(res.body.fasting.currentFast).toBeNull();
-      expect(res.body.latestWeight).toBeNull();
     });
 
     it("returns fasting data when schedule exists", async () => {
@@ -94,38 +91,11 @@ describe("profile-hub routes", () => {
         mockSchedule as any,
       );
       vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
 
       const res = await request(app).get("/api/profile/widgets");
 
       expect(res.status).toBe(200);
       expect(res.body.fasting.schedule).toEqual(mockSchedule);
-    });
-
-    it("returns weight data when log exists", async () => {
-      const mockWeight = {
-        id: 1,
-        userId: "1",
-        weight: "158.5",
-        source: "manual",
-        note: null,
-        loggedAt: new Date("2026-04-01T10:00:00Z"),
-      };
-
-      vi.mocked(storage.getUser).mockResolvedValue(mockUser as any);
-      vi.mocked(storage.getDailySummary).mockResolvedValue(mockSummary as any);
-      vi.mocked(storage.getFastingSchedule).mockResolvedValue(undefined);
-      vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(mockWeight as any);
-
-      const res = await request(app).get("/api/profile/widgets");
-
-      expect(res.status).toBe(200);
-      expect(res.body.latestWeight).toEqual({
-        value: 158.5,
-        unit: "kg",
-        date: "2026-04-01T10:00:00.000Z",
-      });
     });
 
     it("uses default calorie goal when user has none set", async () => {
@@ -142,7 +112,6 @@ describe("profile-hub routes", () => {
       } as any);
       vi.mocked(storage.getFastingSchedule).mockResolvedValue(undefined);
       vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
 
       const res = await request(app).get("/api/profile/widgets");
 
@@ -162,7 +131,6 @@ describe("profile-hub routes", () => {
       } as any);
       vi.mocked(storage.getFastingSchedule).mockResolvedValue(undefined);
       vi.mocked(storage.getActiveFastingLog).mockResolvedValue(undefined);
-      vi.mocked(storage.getLatestWeight).mockResolvedValue(undefined);
 
       const res = await request(app).get("/api/profile/widgets");
 
@@ -178,9 +146,6 @@ describe("profile-hub routes", () => {
         new Error("DB error"),
       );
       vi.mocked(storage.getActiveFastingLog).mockRejectedValue(
-        new Error("DB error"),
-      );
-      vi.mocked(storage.getLatestWeight).mockRejectedValue(
         new Error("DB error"),
       );
 

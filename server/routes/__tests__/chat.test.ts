@@ -15,7 +15,6 @@ import {
   createMockChatMessage,
   createMockCommunityRecipe,
   createMockUser,
-  createMockWeightLog,
 } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
@@ -33,7 +32,6 @@ vi.mock("../../storage", () => ({
     getUser: vi.fn(),
     getUserProfile: vi.fn(),
     getDailySummary: vi.fn(),
-    getWeightLogs: vi.fn(),
     updateChatConversationTitle: vi.fn(),
     deleteChatConversation: vi.fn(),
     deleteChatMessage: vi.fn(),
@@ -410,9 +408,6 @@ describe("Chat Routes", () => {
         totalFat: 15,
         itemCount: 3,
       });
-      vi.mocked(storage.getWeightLogs).mockResolvedValue([
-        createMockWeightLog({ weight: "75.0" }),
-      ]);
       vi.mocked(storage.getChatMessages).mockResolvedValue([]);
       vi.mocked(storage.updateChatConversationTitle).mockResolvedValue(
         createMockChatConversation(),
@@ -492,8 +487,6 @@ describe("Chat Routes", () => {
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ dailyCalorieGoal: null }),
       );
-      vi.mocked(storage.getWeightLogs).mockResolvedValue([]);
-
       async function* emptyStream() {
         yield "Ok";
       }

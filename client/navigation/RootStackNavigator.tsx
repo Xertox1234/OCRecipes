@@ -39,7 +39,6 @@ import type { MealPlanDay } from "@shared/types/meal-plan";
 import FrontLabelConfirmScreen from "@/screens/FrontLabelConfirmScreen";
 import BatchScanScreen from "@/screens/BatchScanScreen";
 import BatchSummaryScreen from "@/screens/BatchSummaryScreen";
-import WeightTrackingScreen from "@/screens/WeightTrackingScreen";
 import CoachChatScreen from "@/screens/CoachChatScreen";
 import RecipeChatScreen from "@/screens/RecipeChatScreen";
 import CookbookListScreen from "@/screens/meal-plan/CookbookListScreen";
@@ -122,7 +121,6 @@ export type RootStackParamList = {
   };
   BatchScan: undefined;
   BatchSummary: undefined;
-  WeightTracking: undefined;
   CoachChat: {
     question: string;
     questionText: string;
@@ -366,16 +364,6 @@ export default function RootStackNavigator() {
             component={BatchSummaryScreen}
             options={{
               headerTitle: "Batch Summary",
-              presentation: "modal",
-            }}
-          />
-          <Stack.Screen
-            name="WeightTracking"
-            component={WeightTrackingScreen}
-            options={{
-              headerTitle: () => (
-                <HeaderTitle title="Weight Tracking" showIcon={false} />
-              ),
               presentation: "modal",
             }}
           />

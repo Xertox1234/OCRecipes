@@ -30,7 +30,6 @@ import * as carousel from "./carousel";
 import * as profileHub from "./profile-hub";
 import * as coachNotebook from "./coach-notebook";
 import * as recipeFromChat from "./recipe-from-chat";
-import * as health from "./health";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
 import * as canonicalRecipesStorage from "./canonical-recipes";
@@ -139,16 +138,6 @@ export const storage = {
   batchUpdateMealTypes: mealPlans.batchUpdateMealTypes,
   getAllMealPlanRecipes: mealPlans.getAllMealPlanRecipes,
   getAllRecipeIngredients: mealPlans.getAllRecipeIngredients,
-
-  // Weight & HealthKit
-  getWeightLogs: health.getWeightLogs,
-  createWeightLog: health.createWeightLog,
-  createWeightLogAndUpdateUser: health.createWeightLogAndUpdateUser,
-  deleteWeightLog: health.deleteWeightLog,
-  getLatestWeight: health.getLatestWeight,
-  getHealthKitSyncSettings: health.getHealthKitSyncSettings,
-  upsertHealthKitSyncSetting: health.upsertHealthKitSyncSetting,
-  updateHealthKitLastSync: health.updateHealthKitLastSync,
 
   // Chat
   getChatConversation: chat.getChatConversation,

@@ -106,11 +106,6 @@ export function useProfileData() {
     navigation.navigate("FastingModal");
   }, [haptics, navigation]);
 
-  const handleWeightPress = useCallback(() => {
-    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-    navigation.navigate("WeightTracking");
-  }, [haptics, navigation]);
-
   const handleDietaryProfile = useCallback(() => {
     navigation.navigate("EditDietaryProfile");
   }, [navigation]);
@@ -139,7 +134,6 @@ export function useProfileData() {
     handleLockedPress,
     handleCaloriePress,
     handleFastingPress,
-    handleWeightPress,
     handleDietaryProfile,
     handleCloseUpgradeModal,
   };

@@ -6,7 +6,6 @@ import SettingsScreen from "@/screens/SettingsScreen";
 import SavedItemsScreen from "@/screens/SavedItemsScreen";
 import HistoryScreen from "@/screens/HistoryScreen";
 import ItemDetailScreen from "@/screens/ItemDetailScreen";
-import HealthKitSettingsScreen from "@/screens/HealthKitSettingsScreen";
 import FavouriteRecipesScreen from "@/screens/FavouriteRecipesScreen";
 import CoachRemindersScreen from "@/screens/CoachRemindersScreen";
 import TasteProfileScreen from "@/screens/TasteProfileScreen";
@@ -19,7 +18,6 @@ export type ProfileStackParamList = {
   SavedItems: undefined;
   ScanHistory: { showAll?: boolean } | undefined;
   ItemDetail: { itemId: number };
-  HealthKitSettings: undefined;
   FavouriteRecipes: undefined;
   CoachReminders: undefined;
   TasteProfile: undefined;
@@ -69,15 +67,6 @@ export default function ProfileStackNavigator() {
         options={{
           headerTitle: () => (
             <HeaderTitle title="Item Details" showIcon={false} />
-          ),
-        }}
-      />
-      <Stack.Screen
-        name="HealthKitSettings"
-        component={HealthKitSettingsScreen}
-        options={{
-          headerTitle: () => (
-            <HeaderTitle title="Apple Health" showIcon={false} />
           ),
         }}
       />

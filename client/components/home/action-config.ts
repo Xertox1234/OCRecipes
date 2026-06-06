@@ -43,10 +43,6 @@ export function navigateAction(
     case "fasting-timer":
       navigation.navigate("Fasting");
       break;
-    case "log-weight":
-      navigation.navigate("WeightTracking");
-      break;
-
     // Recipes
     case "search-recipes":
       navigation.navigate("MealPlanTab", {
@@ -140,13 +136,6 @@ export const HOME_ACTIONS: HomeAction[] = [
     group: "nutrition",
     icon: "clock",
     label: "Fasting Timer",
-    renderInline: true,
-  },
-  {
-    id: "log-weight",
-    group: "nutrition",
-    icon: "trending-down",
-    label: "Log Weight",
     renderInline: true,
   },
 

@@ -15,7 +15,6 @@ import {
   userProfiles,
   scannedItems,
   dailyLogs,
-  weightLogs,
   mealPlanRecipes,
   recipeIngredients,
   mealPlanItems,
@@ -67,7 +66,6 @@ export interface UserDataExport {
   };
   scannedItems: Record<string, unknown>[];
   nutritionLogs: Record<string, unknown>[];
-  weightLogs: Record<string, unknown>[];
   mealPlans: {
     recipes: Record<string, unknown>[];
     items: Record<string, unknown>[];
@@ -116,7 +114,6 @@ export async function getUserDataExport(
     dietaryRow,
     scannedRows,
     dailyLogRows,
-    weightLogRows,
     mealPlanRecipeRows,
     mealPlanItemRows,
     userRecipeRows,
@@ -143,11 +140,6 @@ export async function getUserDataExport(
       .from(dailyLogs)
       .where(eq(dailyLogs.userId, userId))
       .orderBy(desc(dailyLogs.loggedAt)),
-    db
-      .select()
-      .from(weightLogs)
-      .where(eq(weightLogs.userId, userId))
-      .orderBy(desc(weightLogs.loggedAt)),
     db
       .select()
       .from(mealPlanRecipes)
@@ -250,7 +242,6 @@ export async function getUserDataExport(
     },
     scannedItems: scannedRows,
     nutritionLogs: dailyLogRows,
-    weightLogs: weightLogRows,
     mealPlans: {
       recipes: mealPlanRecipesWithIngredients,
       items: mealPlanItemRows,

@@ -26,8 +26,6 @@ import {
   createMockChatConversation,
   createMockChatMessage,
   createMockCoachNotebookEntry,
-  createMockWeightLog,
-  createMockHealthKitSync,
   createMockFastingSchedule,
   createMockFastingLog,
   createMockTransaction,
@@ -509,43 +507,6 @@ describe("factories/chat", () => {
 });
 
 describe("factories/health", () => {
-  describe("createMockWeightLog", () => {
-    it("creates valid defaults", () => {
-      const obj = createMockWeightLog();
-      expect(obj).toMatchObject({
-        id: 1,
-        userId: "1",
-        unit: "kg",
-        source: "manual",
-      });
-      expect(obj.weight).not.toBeNull();
-      expect(obj.loggedAt).toBeInstanceOf(Date);
-    });
-
-    it("merges overrides", () => {
-      const obj = createMockWeightLog({ id: 99 });
-      expect(obj.id).toBe(99);
-    });
-  });
-
-  describe("createMockHealthKitSync", () => {
-    it("creates valid defaults", () => {
-      const obj = createMockHealthKitSync();
-      expect(obj).toMatchObject({
-        id: 1,
-        userId: "1",
-        dataType: "weight",
-        enabled: false,
-        syncDirection: "read",
-      });
-    });
-
-    it("merges overrides", () => {
-      const obj = createMockHealthKitSync({ id: 99 });
-      expect(obj.id).toBe(99);
-    });
-  });
-
   describe("createMockFastingSchedule", () => {
     it("creates valid defaults", () => {
       const obj = createMockFastingSchedule();
