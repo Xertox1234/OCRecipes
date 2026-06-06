@@ -17,6 +17,10 @@ export default defineConfig({
       ".expo",
       ".claude/worktrees",
       ".worktrees",
+      // Stryker copies the project into .stryker-tmp/sandbox-*; without this, a
+      // local `test:run` after `test:mutation` discovers the copied *.test.ts and
+      // spuriously fails. Gitignored, so CI is unaffected.
+      ".stryker-tmp",
     ],
     coverage: {
       provider: "v8",
