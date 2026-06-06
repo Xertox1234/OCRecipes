@@ -26,8 +26,6 @@ import {
   groceryListItems,
   cookbooks,
   cookbookRecipes,
-  medicationLogs,
-  goalAdjustmentLogs,
   fastingSchedules,
   fastingLogs,
 } from "@shared/schema";
@@ -87,11 +85,6 @@ export interface UserDataExport {
     cookbooks: Record<string, unknown>[];
     recipes: Record<string, unknown>[];
   };
-  /** Medication + goal-adjustment logs — the closest "activity" data we track. */
-  activityLogs: {
-    medication: Record<string, unknown>[];
-    goalAdjustments: Record<string, unknown>[];
-  };
   fastingLogs: {
     schedule: Record<string, unknown> | null;
     logs: Record<string, unknown>[];
@@ -133,8 +126,6 @@ export async function getUserDataExport(
     groceryListItemRows,
     cookbookRows,
     cookbookRecipeRows,
-    medicationLogRows,
-    goalAdjustmentLogRows,
     fastingScheduleRow,
     fastingLogRows,
   ] = await Promise.all([
@@ -215,16 +206,6 @@ export async function getUserDataExport(
       .where(eq(cookbooks.userId, userId)),
     db
       .select()
-      .from(medicationLogs)
-      .where(eq(medicationLogs.userId, userId))
-      .orderBy(desc(medicationLogs.takenAt)),
-    db
-      .select()
-      .from(goalAdjustmentLogs)
-      .where(eq(goalAdjustmentLogs.userId, userId))
-      .orderBy(desc(goalAdjustmentLogs.appliedAt)),
-    db
-      .select()
       .from(fastingSchedules)
       .where(eq(fastingSchedules.userId, userId)),
     db
@@ -286,10 +267,6 @@ export async function getUserDataExport(
     cookbooks: {
       cookbooks: cookbookRows,
       recipes: cookbookRecipeRows.map((r) => r.recipe),
-    },
-    activityLogs: {
-      medication: medicationLogRows,
-      goalAdjustments: goalAdjustmentLogRows,
     },
     fastingLogs: {
       schedule: fastingScheduleRow[0] ?? null,

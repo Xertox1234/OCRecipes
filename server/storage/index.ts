@@ -16,7 +16,6 @@ import * as pantry from "./pantry";
 import * as chat from "./chat";
 import * as cache from "./cache";
 import * as community from "./community";
-import * as medication from "./medication";
 import * as fasting from "./fasting";
 import * as menu from "./menu";
 import * as receipt from "./receipt";
@@ -209,16 +208,6 @@ export const storage = {
   batchUpdateCommunityMealTypes: community.batchUpdateCommunityMealTypes,
   deleteCommunityRecipe: community.deleteCommunityRecipe,
   getUserRecipes: community.getUserRecipes,
-
-  // Medication & goal adjustment logs
-  getMedicationLogs: medication.getMedicationLogs,
-  createMedicationLog: medication.createMedicationLog,
-  updateMedicationLog: medication.updateMedicationLog,
-  deleteMedicationLog: medication.deleteMedicationLog,
-  createGoalAdjustmentLog: medication.createGoalAdjustmentLog,
-  applyAdaptiveGoalsAtomically: medication.applyAdaptiveGoalsAtomically,
-  dismissAdaptiveGoalsAtomically: medication.dismissAdaptiveGoalsAtomically,
-  getGoalAdjustmentLogs: medication.getGoalAdjustmentLogs,
 
   // Fasting
   getFastingSchedule: fasting.getFastingSchedule,

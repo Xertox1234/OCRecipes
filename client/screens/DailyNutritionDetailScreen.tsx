@@ -21,14 +21,11 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { CalorieRing } from "@/components/CalorieRing";
-import { AdaptiveGoalCard } from "@/components/AdaptiveGoalCard";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
-import { useAdaptiveGoals } from "@/hooks/useAdaptiveGoals";
-import { usePremiumContext } from "@/context/PremiumContext";
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
 import type { DailySummaryResponse, GoalsResponse } from "@/types/api";
@@ -120,7 +117,6 @@ export default function DailyNutritionDetailScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
-  const { isPremium } = usePremiumContext();
 
   const {
     data: budget,
@@ -158,8 +154,6 @@ export default function DailyNutritionDetailScreen() {
     queryKey: ["/api/goals"],
     meta: { silentError: true },
   });
-  const { data: adaptiveGoalData } = useAdaptiveGoals(isPremium);
-
   const isLoading = budgetLoading || summaryLoading || goalsLoading;
   const isError = budgetError || summaryError || goalsError;
 
@@ -339,20 +333,6 @@ export default function DailyNutritionDetailScreen() {
           />
         ))}
       </Animated.View>
-
-      {/* Adaptive Goal Card (conditional on premium + recommendation) */}
-      {adaptiveGoalData?.hasRecommendation &&
-        adaptiveGoalData.recommendation && (
-          <Animated.View
-            entering={
-              reducedMotion ? undefined : FadeInDown.duration(400).delay(200)
-            }
-          >
-            <AdaptiveGoalCard
-              recommendation={adaptiveGoalData.recommendation}
-            />
-          </Animated.View>
-        )}
     </ScrollView>
   );
 }

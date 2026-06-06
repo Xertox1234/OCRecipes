@@ -42,7 +42,7 @@ interface SettingsItemConfig {
   id: string;
   icon: FeatherIconName;
   label: string;
-  premiumKey?: "healthKitSync" | "glp1Companion" | "adaptiveGoals";
+  premiumKey?: "healthKitSync";
   danger?: boolean;
   iosOnly?: boolean;
 }
@@ -57,18 +57,7 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
     premiumKey: "healthKitSync",
     iosOnly: true,
   },
-  {
-    id: "glp1",
-    icon: "activity",
-    label: "GLP-1 Companion",
-    premiumKey: "glp1Companion",
-  },
-  {
-    id: "goals",
-    icon: "target",
-    label: "Nutrition Goals",
-    premiumKey: "adaptiveGoals",
-  },
+  { id: "goals", icon: "target", label: "Nutrition Goals" },
   { id: "coachReminders", icon: "bell", label: "Coach Reminders" },
   { id: "subscription", icon: "credit-card", label: "Subscription" },
   { id: "exportData", icon: "download", label: "Export My Data" },
@@ -91,8 +80,6 @@ export default function SettingsScreen() {
   const measurementUnit = useMeasurementUnit();
 
   const healthKitUnlocked = usePremiumFeature("healthKitSync");
-  const glp1Unlocked = usePremiumFeature("glp1Companion");
-  const goalsUnlocked = usePremiumFeature("adaptiveGoals");
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
@@ -168,11 +155,9 @@ export default function SettingsScreen() {
     (key?: string) => {
       if (!key) return true;
       if (key === "healthKitSync") return healthKitUnlocked;
-      if (key === "glp1Companion") return glp1Unlocked;
-      if (key === "adaptiveGoals") return goalsUnlocked;
       return true;
     },
-    [healthKitUnlocked, glp1Unlocked, goalsUnlocked],
+    [healthKitUnlocked],
   );
 
   const handlePress = useCallback(
@@ -192,19 +177,8 @@ export default function SettingsScreen() {
             setShowUpgradeModal(true);
           }
           break;
-        case "glp1":
-          if (glp1Unlocked) {
-            navigation.navigate("GLP1Companion");
-          } else {
-            setShowUpgradeModal(true);
-          }
-          break;
         case "goals":
-          if (goalsUnlocked) {
-            navigation.navigate("GoalSetup");
-          } else {
-            setShowUpgradeModal(true);
-          }
+          navigation.navigate("GoalSetup");
           break;
         case "coachReminders":
           navigation.navigate("CoachReminders");
@@ -248,8 +222,6 @@ export default function SettingsScreen() {
       haptics,
       navigation,
       healthKitUnlocked,
-      glp1Unlocked,
-      goalsUnlocked,
       isPremium,
       logout,
       handleExportData,

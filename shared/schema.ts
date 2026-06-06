@@ -418,7 +418,6 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   chatConversations: many(chatConversations),
   fastingSchedules: many(fastingSchedules),
   fastingLogs: many(fastingLogs),
-  medicationLogs: many(medicationLogs),
   profile: one(userProfiles, {
     fields: [users.id],
     references: [userProfiles.userId],
@@ -1144,43 +1143,6 @@ export const fastingLogsRelations = relations(fastingLogs, ({ one }) => ({
 }));
 
 // ============================================================================
-// MEDICATION LOGS (GLP-1 Companion)
-// ============================================================================
-
-export const medicationLogs = pgTable(
-  "medication_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    medicationName: text("medication_name").notNull(), // e.g., "semaglutide"
-    brandName: text("brand_name"), // e.g., "Ozempic", "Wegovy"
-    dosage: text("dosage").notNull(), // e.g., "0.25mg", "0.5mg"
-    takenAt: timestamp("taken_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-    sideEffects: jsonb("side_effects").$type<string[]>().default([]).notNull(),
-    appetiteLevel: integer("appetite_level"), // 1-5
-    notes: text("notes"),
-  },
-  (table) => [
-    index("medication_logs_user_date_idx").on(table.userId, table.takenAt),
-    check(
-      "medication_appetite_range",
-      sql`${table.appetiteLevel} IS NULL OR (${table.appetiteLevel} >= 1 AND ${table.appetiteLevel} <= 5)`,
-    ),
-  ],
-);
-
-export const medicationLogsRelations = relations(medicationLogs, ({ one }) => ({
-  user: one(users, {
-    fields: [medicationLogs.userId],
-    references: [users.id],
-  }),
-}));
-
-// ============================================================================
 // MENU SCANS
 // ============================================================================
 
@@ -1260,55 +1222,6 @@ export const receiptScansRelations = relations(receiptScans, ({ one }) => ({
 
 export type ReceiptScan = typeof receiptScans.$inferSelect;
 export type InsertReceiptScan = typeof receiptScans.$inferInsert;
-
-// ============================================================================
-// GOAL ADJUSTMENT LOGS (Adaptive Goals)
-// ============================================================================
-
-export const goalAdjustmentLogs = pgTable(
-  "goal_adjustment_logs",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    previousCalories: integer("previous_calories").notNull(),
-    newCalories: integer("new_calories").notNull(),
-    previousProtein: integer("previous_protein").notNull(),
-    newProtein: integer("new_protein").notNull(),
-    previousCarbs: integer("previous_carbs").notNull(),
-    newCarbs: integer("new_carbs").notNull(),
-    previousFat: integer("previous_fat").notNull(),
-    newFat: integer("new_fat").notNull(),
-    reason: text("reason").notNull(),
-    weightTrendRate: decimal("weight_trend_rate", { precision: 5, scale: 2 }),
-    appliedAt: timestamp("applied_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-    acceptedByUser: boolean("accepted_by_user").default(false),
-  },
-  (table) => [
-    index("goal_adj_user_idx").on(table.userId),
-    check("goal_adj_prev_cal_gte0", sql`${table.previousCalories} >= 0`),
-    check("goal_adj_new_cal_gte0", sql`${table.newCalories} >= 0`),
-    check("goal_adj_prev_protein_gte0", sql`${table.previousProtein} >= 0`),
-    check("goal_adj_new_protein_gte0", sql`${table.newProtein} >= 0`),
-    check("goal_adj_prev_carbs_gte0", sql`${table.previousCarbs} >= 0`),
-    check("goal_adj_new_carbs_gte0", sql`${table.newCarbs} >= 0`),
-    check("goal_adj_prev_fat_gte0", sql`${table.previousFat} >= 0`),
-    check("goal_adj_new_fat_gte0", sql`${table.newFat} >= 0`),
-  ],
-);
-
-export const goalAdjustmentLogsRelations = relations(
-  goalAdjustmentLogs,
-  ({ one }) => ({
-    user: one(users, {
-      fields: [goalAdjustmentLogs.userId],
-      references: [users.id],
-    }),
-  }),
-);
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -1727,12 +1640,6 @@ export type FastingSchedule = typeof fastingSchedules.$inferSelect;
 export type InsertFastingSchedule = typeof fastingSchedules.$inferInsert;
 export type FastingLog = typeof fastingLogs.$inferSelect;
 export type InsertFastingLog = typeof fastingLogs.$inferInsert;
-
-export type MedicationLog = typeof medicationLogs.$inferSelect;
-export type InsertMedicationLog = typeof medicationLogs.$inferInsert;
-
-export type GoalAdjustmentLog = typeof goalAdjustmentLogs.$inferSelect;
-export type InsertGoalAdjustmentLog = typeof goalAdjustmentLogs.$inferInsert;
 
 // ============================================================================
 // COOKBOOKS

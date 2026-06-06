@@ -30,8 +30,6 @@ import {
   createMockHealthKitSync,
   createMockFastingSchedule,
   createMockFastingLog,
-  createMockMedicationLog,
-  createMockGoalAdjustmentLog,
   createMockTransaction,
   createMockMenuScan,
   createMockReceiptScan,
@@ -580,45 +578,6 @@ describe("factories/health", () => {
 
     it("merges overrides", () => {
       const obj = createMockFastingLog({ id: 99 });
-      expect(obj.id).toBe(99);
-    });
-  });
-
-  describe("createMockMedicationLog", () => {
-    it("creates valid defaults", () => {
-      const obj = createMockMedicationLog();
-      expect(obj).toMatchObject({
-        id: 1,
-        userId: "1",
-        medicationName: "semaglutide",
-        dosage: "0.25mg",
-      });
-      expect(obj.sideEffects).not.toBeNull();
-      expect(obj.takenAt).toBeInstanceOf(Date);
-    });
-
-    it("merges overrides", () => {
-      const obj = createMockMedicationLog({ id: 99 });
-      expect(obj.id).toBe(99);
-    });
-  });
-
-  describe("createMockGoalAdjustmentLog", () => {
-    it("creates valid defaults", () => {
-      const obj = createMockGoalAdjustmentLog();
-      expect(obj).toMatchObject({
-        id: 1,
-        userId: "1",
-        previousCalories: 2000,
-        newCalories: 1800,
-        reason: "weight_trend",
-        acceptedByUser: false,
-      });
-      expect(obj.appliedAt).toBeInstanceOf(Date);
-    });
-
-    it("merges overrides", () => {
-      const obj = createMockGoalAdjustmentLog({ id: 99 });
       expect(obj.id).toBe(99);
     });
   });

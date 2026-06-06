@@ -22,14 +22,12 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { VoiceLogButton } from "@/components/VoiceLogButton";
 import { ParsedFoodPreview } from "@/components/ParsedFoodPreview";
-import { AdaptiveGoalCard } from "@/components/AdaptiveGoalCard";
 import { AnimatedCheckmark } from "@/components/AnimatedCheckmark";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useQuickLogSession } from "@/hooks/useQuickLogSession";
 import { usePremiumContext } from "@/context/PremiumContext";
-import { useAdaptiveGoals } from "@/hooks/useAdaptiveGoals";
 import {
   Spacing,
   BorderRadius,
@@ -64,8 +62,6 @@ export default function QuickLogScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { isPremium } = usePremiumContext();
-  const { data: adaptiveGoalData, isError: adaptiveGoalError } =
-    useAdaptiveGoals(isPremium);
   const [tip] = useState(randomTip);
   const [showCheckmark, setShowCheckmark] = useState(false);
 
@@ -218,16 +214,6 @@ export default function QuickLogScreen() {
             )}
           </View>
         </Card>
-
-        {/* Hide the recommendation card on a load error (distinct from "no
-            recommendation") — the global query-error toast surfaces the failure. */}
-        {!adaptiveGoalError &&
-          adaptiveGoalData?.hasRecommendation &&
-          adaptiveGoalData.recommendation && (
-            <AdaptiveGoalCard
-              recommendation={adaptiveGoalData.recommendation}
-            />
-          )}
 
         <ParsedFoodPreview
           items={session.parsedItems}

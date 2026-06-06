@@ -35,8 +35,6 @@ export {
   createMockHealthKitSync,
   createMockFastingSchedule,
   createMockFastingLog,
-  createMockMedicationLog,
-  createMockGoalAdjustmentLog,
 } from "./health";
 export { createMockTransaction } from "./subscription";
 export { createMockMenuScan, createMockReceiptScan } from "./scan";

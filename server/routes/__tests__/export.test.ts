@@ -29,7 +29,6 @@ function buildExport() {
     chatHistory: { conversations: [], messages: [] },
     groceryLists: { lists: [], items: [] },
     cookbooks: { cookbooks: [], recipes: [] },
-    activityLogs: { medication: [], goalAdjustments: [] },
     fastingLogs: { schedule: null, logs: [] },
   };
 }
@@ -75,7 +74,6 @@ describe("GET /api/users/me/export", () => {
       "chatHistory",
       "groceryLists",
       "cookbooks",
-      "activityLogs",
       "fastingLogs",
     ]) {
       expect(res.body).toHaveProperty(key);
