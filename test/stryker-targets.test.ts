@@ -67,6 +67,17 @@ describe("mutation target registry", () => {
     ).toThrow(/HUMAN_APPROVED_EXCLUSIONS/);
   });
 
+  it("fail-closed: a Hard-Exclusion target with an empty mutate is rejected", () => {
+    // Flagged via the testInclude path but with no `mutate` source to key an approval
+    // to — must be rejected, not vacuously allowed by the empty for-loop.
+    expect(() =>
+      assertAllowedTarget("fake-empty", {
+        mutate: [],
+        testInclude: ["server/services/__tests__/goal-calculator.test.ts"],
+      }),
+    ).toThrow(/fail-closed/i);
+  });
+
   it("fail-closed: an approval entry with an empty note does NOT count", () => {
     const approvals = {
       "server/middleware/auth.ts": {

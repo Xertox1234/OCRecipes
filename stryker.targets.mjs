@@ -32,10 +32,18 @@ export const MUTATION_TARGETS = {
   "goal-calculator": {
     mutate: ["server/services/goal-calculator.ts"],
     testInclude: ["server/services/__tests__/goal-calculator.test.ts"],
+    breakThreshold: 100, // all survivors killed (Task 3); no equivalents
   },
   "adaptive-goals": {
     mutate: ["server/services/adaptive-goals.ts"],
     testInclude: ["server/services/__tests__/adaptive-goals.test.ts"],
+    // Achieved 99.35% (152/153 killed). The 1 residual survivor is a verified
+    // equivalent mutant (`"maintain"` -> `""`, see accepted-equivalents.json) that
+    // cannot be killed (no input distinguishes it) and is not suppressed in source
+    // (read-only on Hard-Exclusion modules). break=99 leaves margin: any NEW survivor
+    // drops the score to ~98.7, below the threshold. Because the equivalent is
+    // immovable it can never be "swapped" for a new gap at the same count.
+    breakThreshold: 99,
   },
 };
 
@@ -112,8 +120,11 @@ export function isApprovedExclusion(
 
 /**
  * Throw unless every Hard-Exclusion target is human-approved. A target is
- * Hard-Exclusion if any of its paths matches isHardExclusion; it is allowed only if
- * each of its `mutate` source paths is an approved exclusion (fail-closed).
+ * Hard-Exclusion if any of its paths (mutate OR testInclude) matches
+ * isHardExclusion; it is allowed only if it has at least one `mutate` source and
+ * each `mutate` source is an approved exclusion (fail-closed). A target flagged
+ * solely by a `testInclude` path with an empty `mutate` has no source to key an
+ * approval to, so it is rejected rather than silently allowed.
  * @param {string} name
  * @param {MutationTarget} target
  * @param {Record<string, ApprovalEntry>} [approvals]
@@ -125,6 +136,12 @@ export function assertAllowedTarget(
 ) {
   const paths = [...target.mutate, ...target.testInclude];
   if (!paths.some(isHardExclusion)) return; // non-excluded → always allowed
+  if (target.mutate.length === 0) {
+    throw new Error(
+      `Hard-Exclusion target "${name}" is flagged via a testInclude path but has no ` +
+        `\`mutate\` source to approve. It cannot be allowed (fail-closed).`,
+    );
+  }
   for (const src of target.mutate) {
     if (!isApprovedExclusion(src, approvals)) {
       throw new Error(

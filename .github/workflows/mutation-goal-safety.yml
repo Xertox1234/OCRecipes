@@ -1,0 +1,61 @@
+name: Mutation testing (goal-safety)
+
+# Required, self-scoping gate. Runs on EVERY PR so it always reports a status (safe to
+# mark required in branch protection), but only runs Stryker when a goal-safety target
+# or the mutation harness actually changes — otherwise it self-scopes to success in
+# seconds. DB-free: the scoped vitest.mutation.config drops globalSetup and the targets'
+# tests are pure/storage-mocked.
+
+on:
+  pull_request:
+
+jobs:
+  mutation-goal-safety:
+    name: Mutation (goal-safety)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the merge-base for the three-dot diff below
+
+      - name: Detect target changes
+        id: changed
+        run: |
+          BASE='${{ github.event.pull_request.base.sha }}'
+          HEAD='${{ github.event.pull_request.head.sha }}'
+          # three-dot = merge-base..head, so a moved base branch does not pull in
+          # unrelated upstream changes (architecture rule for PR automation).
+          if git diff --name-only "$BASE...$HEAD" | grep -qE '^(server/services/(goal-calculator|adaptive-goals)\.ts|server/services/__tests__/(goal-calculator|adaptive-goals)\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Self-scope to success (no goal-safety target changed)
+        if: steps.changed.outputs.run == 'false'
+        run: echo "No goal-safety target or mutation harness changed; gate self-scopes to success."
+
+      - uses: actions/setup-node@v4
+        if: steps.changed.outputs.run == 'true'
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.changed.outputs.run == 'true'
+        run: npm ci
+
+      - name: Mutation test (goal-calculator, break=100)
+        if: steps.changed.outputs.run == 'true'
+        run: MUTATION_TARGET=goal-calculator npm run test:mutation
+
+      - name: Mutation test (adaptive-goals, break=99)
+        if: steps.changed.outputs.run == 'true'
+        run: MUTATION_TARGET=adaptive-goals npm run test:mutation
+
+      - name: Upload HTML reports
+        if: steps.changed.outputs.run == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-reports-goal-safety
+          path: reports/mutation/

@@ -2,7 +2,8 @@
 import { resolveTarget } from "./stryker.targets.mjs";
 
 const targetName = process.env.MUTATION_TARGET ?? "macro-gap-context";
-const { mutate, testInclude } = resolveTarget(targetName);
+const target = resolveTarget(targetName);
+const { mutate, testInclude } = target;
 
 // Hand the resolved test-discovery glob to vitest.mutation.config.ts. Stryker
 // evaluates this config in the main process before spawning runner workers, which
@@ -27,6 +28,11 @@ const config = {
   // transpiles via esbuild (no type-check), so type-invalid mutants run regardless.
   disableTypeChecks: false,
   mutate,
+  // Enforce a per-target mutation-score floor when the registry defines one
+  // (goal-safety targets). Stryker exits non-zero when score < break.
+  ...(target.breakThreshold != null
+    ? { thresholds: { high: 80, low: 60, break: target.breakThreshold } }
+    : {}),
   incremental: true,
   incrementalFile: `reports/mutation/incremental-${targetName}.json`,
   reporters: ["html", "clear-text", "progress"],
