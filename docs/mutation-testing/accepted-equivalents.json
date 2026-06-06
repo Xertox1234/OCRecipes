@@ -1,12 +1,3 @@
 {
-  "_README": "Verified equivalent mutants on Hard-Exclusion (read-only) targets. These survive mutation testing but cannot be killed (no input distinguishes mutant from original) and are NOT suppressed in source (read-only policy). Each must carry a concrete equivalence argument. ENFORCEMENT is via the per-target CI `break` threshold (set below 100 to absorb the immovable equivalent) — this file is an ADVISORY human-audit record + equivalence rationale, not auto-checked by CI. Line numbers drift when the source changes; re-verify on any edit to the listed file.",
-  "adaptive-goals": [
-    {
-      "file": "server/services/adaptive-goals.ts",
-      "line": 203,
-      "mutator": "StringLiteral",
-      "mutation": "\"maintain\" -> \"\"",
-      "reason": "`const goal = profile?.primaryGoal || \"maintain\"`. When the fallback fires, `goal` becomes \"\" (mutant) vs \"maintain\" (original). `goal` is consumed only by getGoalAdjustment (both \"\" and \"maintain\" hit the `return 0` fallthrough) and determineReason (both fail every `=== \"lose_weight\"|\"gain_weight\"` check -> \"scheduled\", whose explanation never references goal). It never enters the returned recommendation. No input distinguishes the two -> equivalent."
-    }
-  ]
+  "_README": "Verified equivalent mutants on Hard-Exclusion (read-only) targets. These survive mutation testing but cannot be killed (no input distinguishes mutant from original) and are NOT suppressed in source (read-only policy). Each must carry a concrete equivalence argument. ENFORCEMENT is via the per-target CI `break` threshold (set below 100 to absorb the immovable equivalent) — this file is an ADVISORY human-audit record + equivalence rationale, not auto-checked by CI. Line numbers drift when the source changes; re-verify on any edit to the listed file."
 }
